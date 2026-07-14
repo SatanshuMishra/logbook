@@ -1,5 +1,6 @@
 import Ajv from 'ajv';
 import { threadSchema } from './thread.schema.mjs';
+import { bindingSchema } from './binding.schema.mjs';
 
 const ajv = new Ajv({ allErrors: true });
 
@@ -29,5 +30,18 @@ export function validateThread(record) {
 export function assertValidThread(record) {
   const { valid, errors } = validateThread(record);
   if (!valid) throw new SchemaValidationError('Thread', errors);
+  return record;
+}
+
+const compiledBinding = ajv.compile(bindingSchema);
+
+export function validateBinding(record) {
+  const valid = compiledBinding(record);
+  return { valid, errors: valid ? [] : [...compiledBinding.errors] };
+}
+
+export function assertValidBinding(record) {
+  const { valid, errors } = validateBinding(record);
+  if (!valid) throw new SchemaValidationError('BranchBinding', errors);
   return record;
 }
