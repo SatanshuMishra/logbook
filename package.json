@@ -1,0 +1,14 @@
+{
+  "name": "session-continuity",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Git-native, multi-user, drift-aware session-continuity plugin for Claude Code.",
+  "license": "MIT",
+  "scripts": { "test": "node --test" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "ajv": "8.20.0",
+    "ulid": "3.0.2"
+  }
+}
