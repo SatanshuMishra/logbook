@@ -1,0 +1,40 @@
+{
+  "$schema": "./receipts.config.schema.json",
+  "version": 1,
+  "claim": {
+    "issue_link": "closes #(\\d+)",
+    "downgrade_tags": [
+      "unverified-reasoned",
+      "speculative",
+      "reverted"
+    ]
+  },
+  "build": {
+    "sha_source": "none",
+    "test_command": "node --test",
+    "suite_command": "npm test",
+    "integration_branch": "main"
+  },
+  "verify": {
+    "test_command": "npm test -- {test}",
+    "suite_command": "npm test",
+    "require_fresh_base": "warn",
+    "live_drive": null,
+    "scopedCheckCmd": "node --test",
+    "fullValidationCmd": "npm test"
+  },
+  "degrade": {
+    "on_no_receipt": "require-downgrade-tag",
+    "on_unreachable_build": "sha-bind-only"
+  },
+  "gates": {
+    "medium": "library",
+    "enabled": "all",
+    "G8": {
+      "integration_branch": "integration"
+    },
+    "G10": {
+      "mode": "warn"
+    }
+  }
+}

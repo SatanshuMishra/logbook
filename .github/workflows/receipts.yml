@@ -1,0 +1,32 @@
+name: receipts
+on:
+  pull_request:
+
+jobs:
+  receipts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+
+      - uses: shaheershoaib/receipts/enforcer@main
+
+      - name: D6 cluster-boundary interaction tests
+        run: node scripts/d6-check.cjs --base ${{ github.event.pull_request.base.sha }} --head ${{ github.event.pull_request.head.sha }}
+
+  pr-title-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Conventional Commits PR title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "$PR_TITLE" | grep -Eq '^(feat|fix|refactor|docs|test|chore|perf|ci)(\([a-z0-9-]+\))?!?: .+' \
+            || { echo "PR title must be Conventional Commits (the per-MSP squash message)"; exit 1; }
