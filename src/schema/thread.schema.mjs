@@ -1,0 +1,78 @@
+import { ULID_PATTERN, ISO_TIMESTAMP_PATTERN } from './patterns.mjs';
+
+export const threadSchema = {
+  $id: 'https://continuity-ledger/schema/thread.json',
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'schema_version',
+    'id',
+    'slug',
+    'title',
+    'status',
+    'parent_id',
+    'predecessor_id',
+    'completion_criteria',
+    'vcs_ref',
+    'external_refs',
+    'blocked_by',
+    'abandoned_reason',
+    'closure_statement',
+    'spine',
+    'created_at',
+    'updated_at',
+  ],
+  properties: {
+    schema_version: { type: 'integer', const: 1 },
+    id: { type: 'string', pattern: ULID_PATTERN },
+    slug: { type: 'string', minLength: 1 },
+    title: { type: 'string', minLength: 1 },
+    status: { type: 'string', enum: ['active', 'paused', 'blocked', 'done', 'abandoned'] },
+    parent_id: { type: ['string', 'null'], pattern: ULID_PATTERN },
+    predecessor_id: { type: ['string', 'null'], pattern: ULID_PATTERN },
+    completion_criteria: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['text', 'done'],
+        properties: {
+          text: { type: 'string', minLength: 1 },
+          done: { type: 'boolean' },
+        },
+      },
+    },
+    vcs_ref: { type: ['string', 'null'] },
+    external_refs: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['system', 'id', 'url'],
+        properties: {
+          system: { type: 'string' },
+          id: { type: 'string' },
+          url: { type: 'string' },
+        },
+      },
+    },
+    blocked_by: { type: ['string', 'null'] },
+    abandoned_reason: { type: ['string', 'null'] },
+    closure_statement: { type: ['string', 'null'] },
+    spine: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['status', 'active_goal', 'next_step', 'open_risks', 'key_decisions', 'out_of_scope'],
+      properties: {
+        status: { type: 'string' },
+        active_goal: { type: 'string' },
+        next_step: { type: 'string' },
+        open_risks: { type: 'array', items: { type: 'string' } },
+        key_decisions: { type: 'array', items: { type: 'string' } },
+        out_of_scope: { type: 'array', items: { type: 'string' } },
+      },
+    },
+    created_at: { type: 'string', pattern: ISO_TIMESTAMP_PATTERN },
+    updated_at: { type: 'string', pattern: ISO_TIMESTAMP_PATTERN },
+  },
+};
