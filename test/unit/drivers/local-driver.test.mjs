@@ -245,3 +245,54 @@ test('listDecisions returns {nnnn, slug} pairs sorted ascending', async (t) => {
     { nnnn: '0002', slug: 'second' },
   ]);
 });
+
+test('appendSessionEvent writes a per-event file under sessions/<threadId>', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  const path = await driver.appendSessionEvent(ULID_A, '2026-07-14T10:00:00.500Z', 'claude', '# note\n');
+  assert.equal(path, join(root, 'sessions', ULID_A, '2026-07-14T10-00-00-500Z--claude.md'));
+  assert.equal(await (await import('node:fs/promises')).readFile(path, 'utf8'), '# note\n');
+});
+
+test('appendSessionEvent sanitizes an actor with unsafe characters', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  const path = await driver.appendSessionEvent(ULID_A, '2026-07-14T10:00:00Z', 'agent x/y', 'body');
+  assert.equal(path, join(root, 'sessions', ULID_A, '2026-07-14T10-00-00Z--agent-x-y.md'));
+});
+
+test('appendSessionEvent rejects a non-ULID threadId', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await assert.rejects(() => driver.appendSessionEvent('not-a-ulid', '2026-07-14T10:00:00Z', 'claude', 'x'), /ULID/);
+});
+
+test('appendSessionEvent rejects a non-string markdown body', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await assert.rejects(() => driver.appendSessionEvent(ULID_A, '2026-07-14T10:00:00Z', 'claude', 42), /markdown/);
+});
+
+test('readIndexFile returns {} for a missing object index and [] for missing resumable', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  assert.deepEqual(await driver.readIndexFile('by-slug'), {});
+  assert.deepEqual(await driver.readIndexFile('resumable'), []);
+});
+
+test('writeIndexFile round-trips via readIndexFile and persists canonical bytes', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  const obj = { 'my-thread': ULID_A };
+  const path = await driver.writeIndexFile('by-slug', obj);
+  assert.equal(path, join(root, 'index', 'by-slug.json'));
+  assert.deepEqual(await driver.readIndexFile('by-slug'), obj);
+  const raw = await (await import('node:fs/promises')).readFile(path, 'utf8');
+  assert.equal(raw, JSON.stringify(obj, null, 2) + '\n');
+});
