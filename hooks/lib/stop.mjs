@@ -1,0 +1,13 @@
+function blockReason(threadId) {
+  return `Session-continuity: thread ${threadId} is still active. Run the session-handoff skill to hand it off (which pauses the thread and clears the active-thread pointer) before ending the session.\n`;
+}
+
+export async function handleStop(ctx) {
+  const active = await ctx.invokeCliJson(['active-thread']);
+  const threadId = active && typeof active.thread_id === 'string' ? active.thread_id : null;
+  if (threadId) {
+    return { stderr: blockReason(threadId), exitCode: 2 };
+  }
+  await ctx.invokeCli(['sync']);
+  return {};
+}
