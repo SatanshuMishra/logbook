@@ -1,0 +1,26 @@
+#!/bin/sh
+hook_name=$(basename -- "$0")
+managed_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
+case "$common_dir" in
+  /*) : ;;
+  *) common_dir="$(pwd)/$common_dir" ;;
+esac
+prior=$(git config --get continuity.priorHooksPath 2>/dev/null || true)
+if [ -n "$prior" ]; then
+  case "$prior" in
+    /*) : ;;
+    *) prior="$(pwd)/$prior" ;;
+  esac
+else
+  prior="$common_dir/hooks"
+fi
+prior_real=$(CDPATH= cd -- "$prior" 2>/dev/null && pwd || true)
+if [ -n "$prior_real" ] && [ "$prior_real" = "$managed_dir" ]; then
+  exit 0
+fi
+target="$prior/$hook_name"
+if [ -x "$target" ]; then
+  exec "$target" "$@"
+fi
+exit 0
