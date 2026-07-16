@@ -242,7 +242,25 @@ export class GitRefDriver extends LocalDriver {
     };
   }
 
-  async #observeDeleted() {
-    throw new Error('GitRefDriver: #observeDeleted not implemented yet (Task 7)');
+  async #observeDeleted(repo, firstCommit, base) {
+    let merged = false;
+    let squashMerged = false;
+    if (firstCommit !== null && base !== null) {
+      merged = await isAncestor(repo, firstCommit, base);
+      squashMerged = !merged && (await cherryAllMerged(repo, base, firstCommit));
+    }
+    return {
+      branch_exists: false,
+      head_sha: null,
+      first_commit_present: true,
+      merged,
+      squash_merged: squashMerged,
+      ahead: 0,
+      behind: 0,
+      force_push_detected: false,
+      diverged_from_upstream: false,
+      key_files_deleted: [],
+      key_files_modified: [],
+    };
   }
 }

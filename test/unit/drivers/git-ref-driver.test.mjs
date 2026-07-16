@@ -303,3 +303,51 @@ test('observeBranch validates the binding at the boundary', async (t) => {
   await assert.rejects(() => driver.observeBranch({ branch: 'x' }), /binding\.repo/);
   await assert.rejects(() => driver.observeBranch({ repo, branch: '' }), /binding\.branch/);
 });
+
+test('observeBranch reports merged:true best-effort for a merged-then-pruned branch', async (t) => {
+  const repo = await initGitRepo(t);
+  await commitFile(repo, 'base.txt', 'base\n', 'chore: base');
+  await gitExec(repo, ['checkout', '-q', '-b', 'feature']);
+  const firstCommit = await commitFile(repo, 'feat.txt', 'feat\n', 'feat: work');
+  await gitExec(repo, ['checkout', '-q', 'main']);
+  await gitExec(repo, ['merge', '-q', '--no-ff', '-m', 'merge feature', 'feature'], { env: { GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@t' } });
+  await gitExec(repo, ['branch', '-q', '-D', 'feature']);
+  process.env.LEDGER_BASE_REF = 'main';
+  t.after(() => { delete process.env.LEDGER_BASE_REF; });
+  const driver = await makeGitDriver(t, repo);
+  const obs = await driver.observeBranch({ repo, branch: 'feature', first_commit: firstCommit });
+  assert.equal(obs.branch_exists, false);
+  assert.equal(obs.head_sha, null);
+  assert.equal(obs.first_commit_present, true);
+  assert.equal(obs.merged, true);
+});
+
+test('observeBranch reports merged:false for a deleted-unmerged branch', async (t) => {
+  const repo = await initGitRepo(t);
+  await commitFile(repo, 'base.txt', 'base\n', 'chore: base');
+  await gitExec(repo, ['checkout', '-q', '-b', 'feature']);
+  const firstCommit = await commitFile(repo, 'feat.txt', 'feat\n', 'feat: work');
+  await gitExec(repo, ['checkout', '-q', 'main']);
+  await gitExec(repo, ['branch', '-q', '-D', 'feature']);
+  process.env.LEDGER_BASE_REF = 'main';
+  t.after(() => { delete process.env.LEDGER_BASE_REF; });
+  const driver = await makeGitDriver(t, repo);
+  const obs = await driver.observeBranch({ repo, branch: 'feature', first_commit: firstCommit });
+  assert.equal(obs.branch_exists, false);
+  assert.equal(obs.merged, false);
+  assert.equal(obs.squash_merged, false);
+  assert.equal(obs.first_commit_present, true);
+});
+
+test('observeBranch degrades honestly for a deleted branch with a null first_commit', async (t) => {
+  const repo = await initGitRepo(t);
+  await commitFile(repo, 'base.txt', 'base\n', 'chore: base');
+  process.env.LEDGER_BASE_REF = 'main';
+  t.after(() => { delete process.env.LEDGER_BASE_REF; });
+  const driver = await makeGitDriver(t, repo);
+  const obs = await driver.observeBranch({ repo, branch: 'gone', first_commit: null });
+  assert.equal(obs.branch_exists, false);
+  assert.equal(obs.merged, false);
+  assert.equal(obs.squash_merged, false);
+  assert.equal(obs.first_commit_present, true);
+});
