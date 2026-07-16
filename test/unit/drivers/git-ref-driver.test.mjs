@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GitRefDriver, resolveIntegrationBase } from '../../../src/drivers/git-ref-driver.mjs';
-import { initGitRepo, makeGitDriver, initBareRemote, initGitRepoWithRemote, commitFile } from '../../fixtures/git-repos.mjs';
+import { initGitRepo, makeGitDriver, initBareRemote, initGitRepoWithRemote, commitFile, makeTempDir } from '../../fixtures/git-repos.mjs';
 import { readFile, stat, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gitExec } from '../../../src/util/git-exec.mjs';
@@ -448,4 +448,61 @@ test('sync returns synced without pushing when already up to date', async (t) =>
   assert.equal(result.synced, true);
   assert.equal(result.pushed, false);
   assert.equal(result.merged, false);
+});
+
+async function twoClones(t) {
+  const remote = await initBareRemote(t);
+  const cloneA = await makeTempDir(t, 'git-driver-cloneA-');
+  const cloneB = await makeTempDir(t, 'git-driver-cloneB-');
+  for (const dir of [cloneA, cloneB]) {
+    await gitExec(dir, ['clone', '-q', remote, '.']);
+    await gitExec(dir, ['config', 'user.name', 'Test User']);
+    await gitExec(dir, ['config', 'user.email', 'test@example.com']);
+  }
+  return { remote, cloneA, cloneB };
+}
+
+test('two clones init the identical deterministic orphan root before any push', async (t) => {
+  const { cloneA, cloneB } = await twoClones(t);
+  const a = await makeGitDriver(t, cloneA);
+  const b = await makeGitDriver(t, cloneB);
+  await a.init();
+  await b.init();
+  const rootA = (await gitExec(cloneA, ['rev-list', '--max-parents=0', a.ledgerRef])).stdout.trim();
+  const rootB = (await gitExec(cloneB, ['rev-list', '--max-parents=0', b.ledgerRef])).stdout.trim();
+  assert.equal(rootA, rootB);
+  assert.equal(rootA, DETERMINISTIC_ROOT_SHA);
+});
+
+test('a first-divergence sync merges -X theirs without unrelated histories', async (t) => {
+  const { cloneA, cloneB } = await twoClones(t);
+  const a = await makeGitDriver(t, cloneA);
+  const b = await makeGitDriver(t, cloneB);
+  await a.init();
+  await b.init();
+  await a.writeThread(makeThread({ id: '01ARZ3NDEKTSV4RRFFQ69G5FAV', slug: 'from-a' }));
+  await a.commit('feat: from A');
+  assert.equal((await a.sync()).pushed, true);
+  await b.writeThread(makeThread({ id: '01BX5ZZKBKACTAV9WEVGEMMVRZ', slug: 'from-b' }));
+  await b.commit('feat: from B');
+  const result = await b.sync();
+  assert.equal(result.merged, true);
+  assert.equal(result.pushed, true);
+  const listed = (await b.listThreads()).map((r) => r.slug).sort();
+  assert.deepEqual(listed, ['from-a', 'from-b']);
+});
+
+test('sync refuses to merge unrelated ledger histories (divergent root)', async (t) => {
+  const { repo, remote } = await initGitRepoWithRemote(t);
+  const driver = await makeGitDriver(t, repo);
+  await driver.init();
+  const foreignRoot = (await gitExec(
+    repo,
+    ['commit-tree', '4b825dc642cb6eb9a060e54bf8d69288fbee4904', '-m', 'unrelated ledger'],
+    { env: { GIT_AUTHOR_NAME: 'Z', GIT_AUTHOR_EMAIL: 'z@z', GIT_AUTHOR_DATE: '2021-01-01T00:00:00Z', GIT_COMMITTER_NAME: 'Z', GIT_COMMITTER_EMAIL: 'z@z', GIT_COMMITTER_DATE: '2021-01-01T00:00:00Z' } },
+  )).stdout.trim();
+  await gitExec(repo, ['push', '-q', remote, `${foreignRoot}:refs/heads/_ledger`]);
+  await driver.writeThread(makeThread());
+  await driver.commit('feat: local');
+  await assert.rejects(() => driver.sync(), /unrelated ledger histories/);
 });
