@@ -19,6 +19,7 @@ const SUBDIRS = ['threads', 'bindings', 'decisions', 'sessions', 'index'];
 const GITATTRIBUTES = 'sessions/**/*.md merge=union\n';
 const GITIGNORE = 'index/\n';
 const SCAFFOLD_MESSAGE = 'chore: scaffold ledger';
+const MERGE_MESSAGE = 'chore: merge ledger';
 
 function ledgerCommitEnv() {
   return {
@@ -320,12 +321,23 @@ export class GitRefDriver extends LocalDriver {
     await gitExec(this.repoDir, ['update-ref', this.ledgerRef, remoteSha]);
   }
 
-  async #assertSharedRoot() {
-    throw new Error('GitRefDriver: #assertSharedRoot not implemented yet (Task 10)');
+  async #assertSharedRoot(localSha, remoteSha) {
+    const { code, stdout } = await gitExec(this.repoDir, ['merge-base', localSha, remoteSha], { check: false });
+    if (code !== 0 || stdout.trim() === '') {
+      throw new Error('sync: refusing to merge unrelated ledger histories (divergent root)');
+    }
   }
 
   async #mergeTheirs() {
-    throw new Error('GitRefDriver: #mergeTheirs not implemented yet (Task 10)');
+    await gitExec(
+      this.worktreeDir,
+      ['merge', '--no-verify', '--no-edit', '-X', 'theirs', '-m', MERGE_MESSAGE, this.mirrorRef],
+      { env: ledgerCommitEnv() },
+    );
+    const { stdout } = await gitExec(this.worktreeDir, ['rev-parse', 'HEAD']);
+    const sha = stdout.trim();
+    await gitExec(this.repoDir, ['update-ref', this.ledgerRef, sha]);
+    return sha;
   }
 
   async observeBranch(binding) {
