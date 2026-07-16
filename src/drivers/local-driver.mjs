@@ -3,6 +3,7 @@ import { isAbsolute, join } from 'node:path';
 import { StorageDriver } from './storage-driver.mjs';
 import { serializeRecord } from './layout.mjs';
 import { atomicWrite } from '../util/atomic-write.mjs';
+import { isUlid } from '../util/ulid.mjs';
 import { assertValidThread, assertValidBinding } from '../schema/validators.mjs';
 
 const SUBDIRS = ['threads', 'bindings', 'decisions', 'sessions', 'index'];
@@ -149,6 +150,34 @@ export class LocalDriver extends StorageDriver {
     }
     out.sort((a, b) => (a.nnnn < b.nnnn ? -1 : a.nnnn > b.nnnn ? 1 : 0));
     return out;
+  }
+
+  async appendSessionEvent(threadId, isoTs, actor, markdown) {
+    if (!isUlid(threadId)) {
+      throw new Error(`appendSessionEvent: threadId must be a ULID, received ${threadId}`);
+    }
+    if (typeof markdown !== 'string') {
+      throw new TypeError('appendSessionEvent: markdown must be a string');
+    }
+    const safeIso = String(isoTs).replace(/[:.]/g, '-');
+    const safeActor = String(actor).replace(/[^a-zA-Z0-9._-]/g, '-');
+    return atomicWrite(
+      join(this.ledgerRoot, 'sessions', threadId, `${safeIso}--${safeActor}.md`),
+      markdown,
+    );
+  }
+
+  async readIndexFile(name) {
+    const value = await readJsonOrNull(join(this.ledgerRoot, 'index', `${name}.json`));
+    if (value !== null) return value;
+    return name === 'resumable' ? [] : {};
+  }
+
+  async writeIndexFile(name, obj) {
+    return atomicWrite(
+      join(this.ledgerRoot, 'index', `${name}.json`),
+      serializeRecord(obj),
+    );
   }
 
   async commit(message) {
