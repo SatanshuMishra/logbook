@@ -351,3 +351,53 @@ test('observeBranch degrades honestly for a deleted branch with a null first_com
   assert.equal(obs.squash_merged, false);
   assert.equal(obs.first_commit_present, true);
 });
+
+test('observeNewBranch returns the first commit and its Thread-Id trailer', async (t) => {
+  const repo = await initGitRepo(t);
+  await commitFile(repo, 'base.txt', 'base\n', 'chore: base');
+  await gitExec(repo, ['checkout', '-q', '-b', 'feature']);
+  await gitExec(repo, ['commit', '-q', '--allow-empty', '--no-verify', '-m', 'feat: work\n\nThread-Id: 01ARZ3NDEKTSV4RRFFQ69G5FAV'], { env: { GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@t' } });
+  const first = (await gitExec(repo, ['rev-parse', 'HEAD'])).stdout.trim();
+  process.env.LEDGER_BASE_REF = 'main';
+  t.after(() => { delete process.env.LEDGER_BASE_REF; });
+  const driver = await makeGitDriver(t, repo);
+  const obs = await driver.observeNewBranch(repo, 'feature');
+  assert.equal(obs.first_commit, first);
+  assert.equal(obs.thread_id_trailer, '01ARZ3NDEKTSV4RRFFQ69G5FAV');
+});
+
+test('observeNewBranch returns nulls for a branch that carries no trailer', async (t) => {
+  const repo = await initGitRepo(t);
+  await commitFile(repo, 'base.txt', 'base\n', 'chore: base');
+  await gitExec(repo, ['checkout', '-q', '-b', 'feature']);
+  await commitFile(repo, 'feat.txt', 'feat\n', 'feat: work');
+  process.env.LEDGER_BASE_REF = 'main';
+  t.after(() => { delete process.env.LEDGER_BASE_REF; });
+  const driver = await makeGitDriver(t, repo);
+  const obs = await driver.observeNewBranch(repo, 'feature');
+  assert.match(obs.first_commit, /^[0-9a-f]{40}$/);
+  assert.equal(obs.thread_id_trailer, null);
+});
+
+test('observeNewBranch returns nulls for a missing branch', async (t) => {
+  const repo = await initGitRepo(t);
+  await commitFile(repo, 'base.txt', 'base\n', 'chore: base');
+  const driver = await makeGitDriver(t, repo);
+  assert.deepEqual(await driver.observeNewBranch(repo, 'nope'), { thread_id_trailer: null, first_commit: null });
+});
+
+test('listRepoBranches returns the feature repo branch names', async (t) => {
+  const repo = await initGitRepo(t);
+  await commitFile(repo, 'base.txt', 'base\n', 'chore: base');
+  await gitExec(repo, ['branch', 'feature-x']);
+  await gitExec(repo, ['branch', 'fix/y']);
+  const driver = await makeGitDriver(t, repo);
+  const branches = (await driver.listRepoBranches(repo)).sort();
+  assert.deepEqual(branches, ['feature-x', 'fix/y', 'main'].sort());
+});
+
+test('listRepoBranches validates repo at the boundary', async (t) => {
+  const repo = await initGitRepo(t);
+  const driver = await makeGitDriver(t, repo);
+  await assert.rejects(() => driver.listRepoBranches(''), /repo must be a non-empty string/);
+});

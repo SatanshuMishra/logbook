@@ -86,6 +86,44 @@ function assertBinding(binding) {
   }
 }
 
+async function firstCommitOf(repo, ref, base) {
+  if (base) {
+    const range = await gitExec(repo, ['rev-list', '--reverse', `${base}..${ref}`], { check: false });
+    if (range.code === 0) {
+      const first = range.stdout.trim().split('\n').filter(Boolean)[0];
+      if (first) return first;
+    }
+  }
+  const root = await gitExec(repo, ['rev-list', '--max-parents=0', ref], { check: false });
+  if (root.code !== 0) return null;
+  const roots = root.stdout.trim().split('\n').filter(Boolean);
+  return roots[roots.length - 1] || null;
+}
+
+async function threadIdTrailer(repo, commit) {
+  const { code, stdout } = await gitExec(
+    repo,
+    ['show', '-s', '--format=%(trailers:key=Thread-Id,valueonly)', commit],
+    { check: false },
+  );
+  if (code !== 0) return null;
+  const first = stdout.split('\n').map((s) => s.trim()).find((s) => s.length > 0);
+  return first || null;
+}
+
+function assertRepo(fn, repo) {
+  if (typeof repo !== 'string' || repo.length === 0) {
+    throw new Error(`${fn}: repo must be a non-empty string`);
+  }
+}
+
+function assertRepoBranch(fn, repo, branch) {
+  assertRepo(fn, repo);
+  if (typeof branch !== 'string' || branch.length === 0) {
+    throw new Error(`${fn}: branch must be a non-empty string`);
+  }
+}
+
 export async function resolveIntegrationBase(repo) {
   const override = process.env.LEDGER_BASE_REF;
   if (typeof override === 'string' && override.trim() !== '') {
@@ -262,5 +300,24 @@ export class GitRefDriver extends LocalDriver {
       key_files_deleted: [],
       key_files_modified: [],
     };
+  }
+
+  async observeNewBranch(repo, branch) {
+    assertRepoBranch('observeNewBranch', repo, branch);
+    const ref = `refs/heads/${branch}`;
+    const headSha = await revParseOrNull(repo, ref);
+    if (headSha === null) {
+      return { thread_id_trailer: null, first_commit: null };
+    }
+    const base = await resolveIntegrationBase(repo);
+    const firstCommit = await firstCommitOf(repo, ref, base);
+    const trailer = firstCommit ? await threadIdTrailer(repo, firstCommit) : null;
+    return { thread_id_trailer: trailer, first_commit: firstCommit };
+  }
+
+  async listRepoBranches(repo) {
+    assertRepo('listRepoBranches', repo);
+    const { stdout } = await gitExec(repo, ['for-each-ref', '--format=%(refname:short)', 'refs/heads/']);
+    return stdout.split('\n').map((s) => s.trim()).filter(Boolean);
   }
 }
