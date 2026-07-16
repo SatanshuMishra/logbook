@@ -46,6 +46,46 @@ async function cherryAllMerged(repo, base, tip) {
   return lines.length > 0 && lines.every((line) => line.startsWith('-'));
 }
 
+async function aheadBehind(repo, branch, headSha) {
+  const upstream = `refs/remotes/origin/${branch}`;
+  if ((await revParseOrNull(repo, upstream)) === null || headSha === null) {
+    return { ahead: 0, behind: 0 };
+  }
+  const { code, stdout } = await gitExec(
+    repo,
+    ['rev-list', '--left-right', '--count', `${upstream}...${headSha}`],
+    { check: false },
+  );
+  if (code !== 0) return { ahead: 0, behind: 0 };
+  const [behind, ahead] = stdout.trim().split(/\s+/).map(Number);
+  return { ahead: ahead || 0, behind: behind || 0 };
+}
+
+async function divergedFromUpstream(repo, branch, headSha) {
+  const upstream = `refs/remotes/origin/${branch}`;
+  const up = await revParseOrNull(repo, upstream);
+  if (up === null || headSha === null) return false;
+  const headAncestorOfUp = await isAncestor(repo, headSha, up);
+  const upAncestorOfHead = await isAncestor(repo, up, headSha);
+  return !headAncestorOfUp && !upAncestorOfHead;
+}
+
+function assertBinding(binding) {
+  if (!binding || typeof binding !== 'object') {
+    throw new Error('observeBranch: binding must be an object');
+  }
+  if (typeof binding.repo !== 'string' || binding.repo.length === 0) {
+    throw new Error('observeBranch: binding.repo must be a non-empty string');
+  }
+  if (typeof binding.branch !== 'string' || binding.branch.length === 0) {
+    throw new Error('observeBranch: binding.branch must be a non-empty string');
+  }
+  const fc = binding.first_commit;
+  if (fc !== null && fc !== undefined && typeof fc !== 'string') {
+    throw new Error('observeBranch: binding.first_commit must be a string or null');
+  }
+}
+
 export async function resolveIntegrationBase(repo) {
   const override = process.env.LEDGER_BASE_REF;
   if (typeof override === 'string' && override.trim() !== '') {
@@ -164,5 +204,45 @@ export class GitRefDriver extends LocalDriver {
 
   async commit(message) {
     return this.#commitWorktree(message);
+  }
+
+  async observeBranch(binding) {
+    assertBinding(binding);
+    const repo = binding.repo;
+    const branch = binding.branch;
+    const firstCommit = binding.first_commit ?? null;
+    const base = await resolveIntegrationBase(repo);
+    const headSha = await revParseOrNull(repo, `refs/heads/${branch}`);
+    if (headSha === null) {
+      return this.#observeDeleted(repo, firstCommit, base);
+    }
+    return this.#observeLive(repo, branch, headSha, firstCommit, base);
+  }
+
+  async #observeLive(repo, branch, headSha, firstCommit, base) {
+    const firstCommitPresent = firstCommit === null
+      ? true
+      : await isAncestor(repo, firstCommit, headSha);
+    const merged = base !== null && (await isAncestor(repo, headSha, base));
+    const squashMerged = !merged && base !== null && (await cherryAllMerged(repo, base, headSha));
+    const { ahead, behind } = await aheadBehind(repo, branch, headSha);
+    const diverged = await divergedFromUpstream(repo, branch, headSha);
+    return {
+      branch_exists: true,
+      head_sha: headSha,
+      first_commit_present: firstCommitPresent,
+      merged,
+      squash_merged: squashMerged,
+      ahead,
+      behind,
+      force_push_detected: false,
+      diverged_from_upstream: diverged,
+      key_files_deleted: [],
+      key_files_modified: [],
+    };
+  }
+
+  async #observeDeleted() {
+    throw new Error('GitRefDriver: #observeDeleted not implemented yet (Task 7)');
   }
 }

@@ -224,3 +224,82 @@ test('resolveIntegrationBase returns null when no base is resolvable', async (t)
   delete process.env.LEDGER_BASE_REF;
   assert.equal(await resolveIntegrationBase(repo), null);
 });
+
+async function featureRepoMergedInto(t) {
+  const repo = await initGitRepo(t);
+  await commitFile(repo, 'base.txt', 'base\n', 'chore: base');
+  await gitExec(repo, ['checkout', '-q', '-b', 'feature']);
+  const featureHead = await commitFile(repo, 'feat.txt', 'feat\n', 'feat: work');
+  await gitExec(repo, ['checkout', '-q', 'main']);
+  await gitExec(repo, ['merge', '-q', '--no-ff', '-m', 'merge feature', 'feature'], { env: { GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@t' } });
+  await gitExec(repo, ['checkout', '-q', 'feature']);
+  return { repo, featureHead };
+}
+
+test('observeBranch reports a merged live branch against the base override', async (t) => {
+  const { repo, featureHead } = await featureRepoMergedInto(t);
+  process.env.LEDGER_BASE_REF = 'main';
+  t.after(() => { delete process.env.LEDGER_BASE_REF; });
+  const driver = await makeGitDriver(t, repo);
+  const obs = await driver.observeBranch({ repo, branch: 'feature', first_commit: null });
+  assert.equal(obs.branch_exists, true);
+  assert.equal(obs.head_sha, featureHead);
+  assert.equal(obs.merged, true);
+  assert.equal(obs.first_commit_present, true);
+  assert.equal(obs.force_push_detected, false);
+  assert.deepEqual(obs.key_files_deleted, []);
+  assert.deepEqual(obs.key_files_modified, []);
+});
+
+test('observeBranch reports an unmerged live branch (no signal territory)', async (t) => {
+  const repo = await initGitRepo(t);
+  await commitFile(repo, 'base.txt', 'base\n', 'chore: base');
+  await gitExec(repo, ['checkout', '-q', '-b', 'feature']);
+  await commitFile(repo, 'feat.txt', 'feat\n', 'feat: work');
+  process.env.LEDGER_BASE_REF = 'main';
+  t.after(() => { delete process.env.LEDGER_BASE_REF; });
+  const driver = await makeGitDriver(t, repo);
+  const obs = await driver.observeBranch({ repo, branch: 'feature', first_commit: null });
+  assert.equal(obs.merged, false);
+  assert.equal(obs.squash_merged, false);
+  assert.equal(obs.ahead, 0);
+  assert.equal(obs.behind, 0);
+  assert.equal(obs.diverged_from_upstream, false);
+});
+
+test('observeBranch reports head-missing when the recorded first_commit was rewritten away', async (t) => {
+  const repo = await initGitRepo(t);
+  await commitFile(repo, 'base.txt', 'base\n', 'chore: base');
+  await gitExec(repo, ['checkout', '-q', '-b', 'feature']);
+  const firstCommit = await commitFile(repo, 'feat.txt', 'v1\n', 'feat: v1');
+  await gitExec(repo, ['commit', '-q', '--amend', '--no-verify', '-m', 'feat: v1 rewritten'], { env: { GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@t' } });
+  process.env.LEDGER_BASE_REF = 'main';
+  t.after(() => { delete process.env.LEDGER_BASE_REF; });
+  const driver = await makeGitDriver(t, repo);
+  const obs = await driver.observeBranch({ repo, branch: 'feature', first_commit: firstCommit });
+  assert.equal(obs.branch_exists, true);
+  assert.equal(obs.first_commit_present, false);
+});
+
+test('observeBranch computes ahead/behind and divergence against origin/<branch>', async (t) => {
+  const { repo } = await initGitRepoWithRemote(t);
+  await gitExec(repo, ['checkout', '-q', '-b', 'feature']);
+  await commitFile(repo, 'a.txt', 'a\n', 'feat: a');
+  await gitExec(repo, ['push', '-q', 'origin', 'feature']);
+  await gitExec(repo, ['fetch', '-q', 'origin']);
+  await gitExec(repo, ['reset', '-q', '--hard', 'main']);
+  await commitFile(repo, 'b.txt', 'b\n', 'feat: b');
+  const driver = await makeGitDriver(t, repo);
+  const obs = await driver.observeBranch({ repo, branch: 'feature', first_commit: null });
+  assert.equal(obs.ahead, 1);
+  assert.equal(obs.behind, 1);
+  assert.equal(obs.diverged_from_upstream, true);
+});
+
+test('observeBranch validates the binding at the boundary', async (t) => {
+  const repo = await initGitRepo(t);
+  const driver = await makeGitDriver(t, repo);
+  await assert.rejects(() => driver.observeBranch(null), /binding must be an object/);
+  await assert.rejects(() => driver.observeBranch({ branch: 'x' }), /binding\.repo/);
+  await assert.rejects(() => driver.observeBranch({ repo, branch: '' }), /binding\.branch/);
+});
