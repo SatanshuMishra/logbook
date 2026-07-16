@@ -185,3 +185,63 @@ test('listBindings returns every stored binding and [] on an empty store', async
   const ids = (await driver.listBindings()).map((r) => r.id).sort();
   assert.deepEqual(ids, [ULID_A, ULID_B].sort());
 });
+
+test('nextDecisionNumber starts at 0001 on an empty store', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  assert.equal(await driver.nextDecisionNumber(), '0001');
+});
+
+test('writeDecision writes raw markdown and readDecision returns it verbatim', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  const md = '---\nStatus: accepted\nThread-Id: 01ARZ3NDEKTSV4RRFFQ69G5FAV\n---\n\n# Adopt X\n';
+  const path = await driver.writeDecision('0001', 'adopt-x', md);
+  assert.equal(path, join(root, 'decisions', '0001-adopt-x.md'));
+  assert.equal(await driver.readDecision('0001'), md);
+});
+
+test('nextDecisionNumber advances past the highest existing decision', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await driver.writeDecision('0001', 'first', 'a');
+  await driver.writeDecision('0002', 'second', 'b');
+  assert.equal(await driver.nextDecisionNumber(), '0003');
+});
+
+test('writeDecision rejects a slug that could escape the decisions directory', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await assert.rejects(() => driver.writeDecision('0001', '../evil', 'x'), /invalid slug/);
+  await assert.rejects(() => driver.writeDecision('0001', 'Has_Caps', 'x'), /invalid slug/);
+});
+
+test('writeDecision rejects a non-string markdown body', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await assert.rejects(() => driver.writeDecision('0001', 'ok', { not: 'a string' }), /markdown/);
+});
+
+test('readDecision returns null when the number is absent', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  assert.equal(await driver.readDecision('0007'), null);
+});
+
+test('listDecisions returns {nnnn, slug} pairs sorted ascending', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await driver.writeDecision('0002', 'second', 'b');
+  await driver.writeDecision('0001', 'first', 'a');
+  assert.deepEqual(await driver.listDecisions(), [
+    { nnnn: '0001', slug: 'first' },
+    { nnnn: '0002', slug: 'second' },
+  ]);
+});

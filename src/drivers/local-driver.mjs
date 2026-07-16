@@ -6,6 +6,8 @@ import { atomicWrite } from '../util/atomic-write.mjs';
 import { assertValidThread, assertValidBinding } from '../schema/validators.mjs';
 
 const SUBDIRS = ['threads', 'bindings', 'decisions', 'sessions', 'index'];
+const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const DECISION_FILE = /^([0-9]+)-(.+)\.md$/;
 
 async function readJsonOrNull(path) {
   let raw;
@@ -98,6 +100,54 @@ export class LocalDriver extends StorageDriver {
       const record = await readJsonOrNull(join(this.ledgerRoot, 'bindings', name));
       if (record) out.push(record);
     }
+    return out;
+  }
+
+  async nextDecisionNumber() {
+    const names = await listDir(join(this.ledgerRoot, 'decisions'));
+    let max = 0;
+    for (const name of names) {
+      const match = DECISION_FILE.exec(name);
+      if (match) {
+        const n = Number(match[1]);
+        if (n > max) max = n;
+      }
+    }
+    return String(max + 1).padStart(4, '0');
+  }
+
+  async writeDecision(nnnn, slug, markdown) {
+    if (typeof nnnn !== 'string' || !/^[0-9]+$/.test(nnnn)) {
+      throw new Error(`writeDecision: invalid decision number ${JSON.stringify(nnnn)}`);
+    }
+    if (typeof slug !== 'string' || !SLUG_PATTERN.test(slug)) {
+      throw new Error(`writeDecision: invalid slug ${JSON.stringify(slug)}`);
+    }
+    if (typeof markdown !== 'string') {
+      throw new TypeError('writeDecision: markdown must be a string');
+    }
+    return atomicWrite(join(this.ledgerRoot, 'decisions', `${nnnn}-${slug}.md`), markdown);
+  }
+
+  async readDecision(nnnn) {
+    const prefix = `${nnnn}-`;
+    const names = await listDir(join(this.ledgerRoot, 'decisions'));
+    for (const name of names) {
+      if (name.startsWith(prefix) && name.endsWith('.md')) {
+        return readFile(join(this.ledgerRoot, 'decisions', name), 'utf8');
+      }
+    }
+    return null;
+  }
+
+  async listDecisions() {
+    const names = await listDir(join(this.ledgerRoot, 'decisions'));
+    const out = [];
+    for (const name of names) {
+      const match = DECISION_FILE.exec(name);
+      if (match) out.push({ nnnn: match[1], slug: match[2] });
+    }
+    out.sort((a, b) => (a.nnnn < b.nnnn ? -1 : a.nnnn > b.nnnn ? 1 : 0));
     return out;
   }
 
