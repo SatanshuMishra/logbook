@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
-import { buildContext } from '../src/tools/index.mjs';
+import { buildContext, callTool } from '../src/tools/index.mjs';
 import { rebuildIndex } from '../src/index/rebuild-index.mjs';
 import { readActiveThread } from '../src/util/active-thread.mjs';
 
@@ -18,13 +18,27 @@ async function runActiveThread() {
   return { thread_id: await readActiveThread(ctx) };
 }
 
+async function runReconcile() {
+  const ctx = await buildContext({});
+  return callTool('reconcile', {}, ctx);
+}
+
+async function runSync() {
+  const ctx = await buildContext({});
+  return ctx.driver.sync();
+}
+
 export async function runCli(argv) {
   const [command] = argv;
   switch (command) {
     case 'roster':
       return runRoster();
+    case 'reconcile':
+      return runReconcile();
     case 'active-thread':
       return runActiveThread();
+    case 'sync':
+      return runSync();
     default:
       throw new Error(`${USAGE}\nunknown command: ${command ?? '(none)'}`);
   }
