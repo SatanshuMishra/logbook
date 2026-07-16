@@ -22,6 +22,7 @@ async function handler(ctx, args) {
   const updated = {
     ...thread,
     status: 'active',
+    blocked_by: null,
     spine: { ...thread.spine, status: 'active' },
     updated_at: nowIso,
   };

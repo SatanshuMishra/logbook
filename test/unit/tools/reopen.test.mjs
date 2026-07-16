@@ -17,6 +17,21 @@ test('reopen moves a paused thread back to active and writes the pointer', async
   assert.equal(await readActiveThread(ctx), thread.id);
 });
 
+test('reopen moves a blocked thread back to active and clears blocked_by', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const { thread } = await openThread.handler(ctx, { title: 'R' });
+  await transitionThread.handler(ctx, {
+    thread_id: thread.id,
+    to_status: 'blocked',
+    blocked_by: 'waiting on upstream',
+  });
+  const { thread: reopened } = await reopen.handler(ctx, { thread_id: thread.id });
+  assert.equal(reopened.status, 'active');
+  assert.equal(reopened.spine.status, 'active');
+  assert.equal(reopened.blocked_by, null);
+  assert.equal(await readActiveThread(ctx), thread.id);
+});
+
 test('reopen refuses an already-active thread', async (t) => {
   const ctx = await makeToolCtx(t);
   const { thread } = await openThread.handler(ctx, { title: 'R' });
