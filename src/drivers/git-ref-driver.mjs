@@ -119,4 +119,8 @@ export class GitRefDriver extends LocalDriver {
     await gitExec(this.repoDir, ['update-ref', this.ledgerRef, sha]);
     return { committed: true, sha, empty: false };
   }
+
+  async commit(message) {
+    return this.#commitWorktree(message);
+  }
 }
