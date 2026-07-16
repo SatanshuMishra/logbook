@@ -33,6 +33,36 @@ async function revParseOrNull(repo, ref) {
   return code === 0 ? stdout.trim() : null;
 }
 
+async function isAncestor(repo, ancestor, descendant) {
+  if (!ancestor || !descendant) return false;
+  const { code } = await gitExec(repo, ['merge-base', '--is-ancestor', ancestor, descendant], { check: false });
+  return code === 0;
+}
+
+async function cherryAllMerged(repo, base, tip) {
+  const { code, stdout } = await gitExec(repo, ['cherry', base, tip], { check: false });
+  if (code !== 0) return false;
+  const lines = stdout.trim() === '' ? [] : stdout.trim().split('\n');
+  return lines.length > 0 && lines.every((line) => line.startsWith('-'));
+}
+
+export async function resolveIntegrationBase(repo) {
+  const override = process.env.LEDGER_BASE_REF;
+  if (typeof override === 'string' && override.trim() !== '') {
+    return override.trim();
+  }
+  const sym = await gitExec(repo, ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'], { check: false });
+  if (sym.code === 0 && sym.stdout.trim() !== '') {
+    return sym.stdout.trim().replace(/^refs\/remotes\//, '');
+  }
+  for (const candidate of ['refs/remotes/origin/main', 'refs/remotes/origin/master']) {
+    if ((await revParseOrNull(repo, candidate)) !== null) {
+      return candidate.replace(/^refs\/remotes\//, '');
+    }
+  }
+  return null;
+}
+
 export class GitRefDriver extends LocalDriver {
   constructor({
     repoDir,
