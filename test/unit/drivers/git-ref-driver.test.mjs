@@ -401,3 +401,51 @@ test('listRepoBranches validates repo at the boundary', async (t) => {
   const driver = await makeGitDriver(t, repo);
   await assert.rejects(() => driver.listRepoBranches(''), /repo must be a non-empty string/);
 });
+
+test('sync is a no-op with attempts:0 when there is no remote', async (t) => {
+  const repo = await initGitRepo(t);
+  const driver = await makeGitDriver(t, repo);
+  await driver.init();
+  assert.deepEqual(await driver.sync(), { synced: false, pushed: false, merged: false, remote: false, attempts: 0 });
+});
+
+test('sync creates the remote ledger ref on first publish', async (t) => {
+  const { repo, remote } = await initGitRepoWithRemote(t);
+  const driver = await makeGitDriver(t, repo);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  await driver.commit('feat: add thread');
+  const result = await driver.sync();
+  assert.equal(result.synced, true);
+  assert.equal(result.pushed, true);
+  assert.equal(result.remote, true);
+  const onRemote = await gitExec(remote, ['rev-parse', '--verify', 'refs/heads/_ledger']);
+  assert.match(onRemote.stdout.trim(), /^[0-9a-f]{40}$/);
+});
+
+test('sync fast-forward pushes when the remote ledger is behind', async (t) => {
+  const { repo } = await initGitRepoWithRemote(t);
+  const driver = await makeGitDriver(t, repo);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  await driver.commit('feat: one');
+  await driver.sync();
+  await driver.writeThread(makeThread({ id: '01BX5ZZKBKACTAV9WEVGEMMVRZ', slug: 'two' }));
+  await driver.commit('feat: two');
+  const result = await driver.sync();
+  assert.equal(result.pushed, true);
+  assert.equal(result.merged, false);
+});
+
+test('sync returns synced without pushing when already up to date', async (t) => {
+  const { repo } = await initGitRepoWithRemote(t);
+  const driver = await makeGitDriver(t, repo);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  await driver.commit('feat: one');
+  await driver.sync();
+  const result = await driver.sync();
+  assert.equal(result.synced, true);
+  assert.equal(result.pushed, false);
+  assert.equal(result.merged, false);
+});

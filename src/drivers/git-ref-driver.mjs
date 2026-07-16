@@ -5,6 +5,7 @@ import { gitExec } from '../util/git-exec.mjs';
 import {
   EMPTY_TREE_SHA,
   LEDGER_INIT_IDENTITY,
+  MAX_SYNC_ATTEMPTS,
   DEFAULT_LEDGER_BRANCH,
   DEFAULT_REMOTE,
   assertBackend,
@@ -31,6 +32,10 @@ function ledgerCommitEnv() {
 async function revParseOrNull(repo, ref) {
   const { code, stdout } = await gitExec(repo, ['rev-parse', '--verify', '--quiet', ref], { check: false });
   return code === 0 ? stdout.trim() : null;
+}
+
+function isContention(stderr) {
+  return /\b(rejected|stale info|fetch first|non-fast-forward)\b/i.test(stderr || '');
 }
 
 async function isAncestor(repo, ancestor, descendant) {
@@ -242,6 +247,85 @@ export class GitRefDriver extends LocalDriver {
 
   async commit(message) {
     return this.#commitWorktree(message);
+  }
+
+  async sync() {
+    if (!(await this.#hasRemote())) {
+      return { synced: false, pushed: false, merged: false, remote: false, attempts: 0 };
+    }
+    let attempts = 0;
+    while (attempts < MAX_SYNC_ATTEMPTS) {
+      attempts += 1;
+      await gitExec(this.repoDir, ['fetch', this.remote, this.fetchRefspec], { check: false });
+      const localSha = await revParseOrNull(this.repoDir, this.ledgerRef);
+      const remoteSha = await revParseOrNull(this.repoDir, this.mirrorRef);
+      if (remoteSha === null) {
+        if (await this.#pushCreate(localSha)) {
+          return { synced: true, pushed: true, merged: false, remote: true, attempts };
+        }
+        continue;
+      }
+      if (localSha === remoteSha) {
+        return { synced: true, pushed: false, merged: false, remote: true, attempts };
+      }
+      if (await isAncestor(this.repoDir, remoteSha, localSha)) {
+        if (await this.#pushLease(localSha, remoteSha)) {
+          return { synced: true, pushed: true, merged: false, remote: true, attempts };
+        }
+        continue;
+      }
+      if (await isAncestor(this.repoDir, localSha, remoteSha)) {
+        await this.#fastForwardLocal(remoteSha);
+        return { synced: true, pushed: false, merged: false, remote: true, attempts };
+      }
+      await this.#assertSharedRoot(localSha, remoteSha);
+      const mergeSha = await this.#mergeTheirs();
+      if (await this.#pushLease(mergeSha, remoteSha)) {
+        return { synced: true, pushed: true, merged: true, remote: true, attempts };
+      }
+    }
+    throw new Error(`sync: exceeded MAX_SYNC_ATTEMPTS (${MAX_SYNC_ATTEMPTS})`);
+  }
+
+  async #hasRemote() {
+    const { code, stdout } = await gitExec(this.repoDir, ['remote'], { check: false });
+    if (code !== 0) return false;
+    return stdout.split('\n').map((s) => s.trim()).includes(this.remote);
+  }
+
+  async #pushCreate(localSha) {
+    const result = await gitExec(
+      this.repoDir,
+      ['push', this.remote, `${localSha}:${this.ledgerRef}`],
+      { check: false },
+    );
+    if (result.code === 0) return true;
+    if (isContention(result.stderr)) return false;
+    throw new Error(`sync: push rejected: ${result.stderr.trim()}`);
+  }
+
+  async #pushLease(localSha, expectedRemoteSha) {
+    const result = await gitExec(
+      this.repoDir,
+      ['push', `--force-with-lease=${this.ledgerRef}:${expectedRemoteSha}`, this.remote, `${localSha}:${this.ledgerRef}`],
+      { check: false },
+    );
+    if (result.code === 0) return true;
+    if (isContention(result.stderr)) return false;
+    throw new Error(`sync: push rejected: ${result.stderr.trim()}`);
+  }
+
+  async #fastForwardLocal(remoteSha) {
+    await gitExec(this.worktreeDir, ['merge', '--ff-only', remoteSha], { env: ledgerCommitEnv() });
+    await gitExec(this.repoDir, ['update-ref', this.ledgerRef, remoteSha]);
+  }
+
+  async #assertSharedRoot() {
+    throw new Error('GitRefDriver: #assertSharedRoot not implemented yet (Task 10)');
+  }
+
+  async #mergeTheirs() {
+    throw new Error('GitRefDriver: #mergeTheirs not implemented yet (Task 10)');
   }
 
   async observeBranch(binding) {
