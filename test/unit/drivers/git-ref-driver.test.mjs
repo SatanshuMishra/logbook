@@ -9,6 +9,37 @@ import { mintLedgerRoot } from '../../../src/drivers/git-ledger.mjs';
 
 const DETERMINISTIC_ROOT_SHA = '2977eb960796d6bfa5f4649d708d319a9c0125e2';
 
+const ULID_A = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
+
+function makeThread(overrides = {}) {
+  return {
+    schema_version: 1,
+    id: ULID_A,
+    slug: 'my-thread',
+    title: 'My Thread',
+    status: 'active',
+    parent_id: null,
+    predecessor_id: null,
+    completion_criteria: [{ text: 'ship it', done: false }],
+    vcs_ref: null,
+    external_refs: [],
+    blocked_by: null,
+    abandoned_reason: null,
+    closure_statement: null,
+    spine: {
+      status: 'active',
+      active_goal: 'g',
+      next_step: 'n',
+      open_risks: [],
+      key_decisions: [],
+      out_of_scope: [],
+    },
+    created_at: '2026-07-14T10:00:00Z',
+    updated_at: '2026-07-14T10:00:00Z',
+    ...overrides,
+  };
+}
+
 test('GitRefDriver.isGit is synchronous and returns true', async (t) => {
   const repo = await initGitRepo(t);
   const driver = await makeGitDriver(t, repo);
@@ -99,3 +130,35 @@ async function mintForeignRoot(repo) {
     { env: { GIT_AUTHOR_NAME: 'X', GIT_AUTHOR_EMAIL: 'x@x', GIT_COMMITTER_NAME: 'X', GIT_COMMITTER_EMAIL: 'x@x' } },
   )).stdout.trim();
 }
+
+test('commit reports empty when nothing is staged', async (t) => {
+  const repo = await initGitRepo(t);
+  const driver = await makeGitDriver(t, repo);
+  await driver.init();
+  assert.deepEqual(await driver.commit('chore: noop'), { committed: false, sha: null, empty: true });
+});
+
+test('commit persists a written thread into the ledger ref', async (t) => {
+  const repo = await initGitRepo(t);
+  const driver = await makeGitDriver(t, repo);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  const result = await driver.commit('feat: add thread');
+  assert.equal(result.committed, true);
+  assert.equal(result.empty, false);
+  assert.match(result.sha, /^[0-9a-f]{40}$/);
+  const show = await gitExec(repo, ['show', `${driver.ledgerRef}:threads/${ULID_A}.json`]);
+  assert.equal(JSON.parse(show.stdout).id, ULID_A);
+});
+
+test('commit never writes the derived index/ into the ledger ref', async (t) => {
+  const repo = await initGitRepo(t);
+  const driver = await makeGitDriver(t, repo);
+  await driver.init();
+  await driver.writeIndexFile('by-slug', { 'my-thread': ULID_A });
+  await driver.writeThread(makeThread());
+  await driver.commit('feat: add thread');
+  const tree = await gitExec(repo, ['ls-tree', '-r', '--name-only', driver.ledgerRef]);
+  assert.equal(tree.stdout.includes('index/'), false);
+  assert.equal(tree.stdout.includes(`threads/${ULID_A}.json`), true);
+});
