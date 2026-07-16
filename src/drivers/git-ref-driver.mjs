@@ -66,6 +66,9 @@ export class GitRefDriver extends LocalDriver {
     await this.#ensureWorktree();
     await this.#ensureSubdirs();
     await this.#ensureScaffold();
+    if (this.backend === 'custom-ref') {
+      await this.#ensureFetchRefspec();
+    }
     return this.root();
   }
 
@@ -105,6 +108,15 @@ export class GitRefDriver extends LocalDriver {
     await writeFile(join(this.worktreeDir, '.gitattributes'), GITATTRIBUTES);
     await writeFile(join(this.worktreeDir, '.gitignore'), GITIGNORE);
     await this.#commitWorktree(SCAFFOLD_MESSAGE);
+  }
+
+  async #ensureFetchRefspec() {
+    const key = `remote.${this.remote}.fetch`;
+    const { code, stdout } = await gitExec(this.repoDir, ['config', '--get-all', key], { check: false });
+    const existing = code === 0 ? stdout.split('\n').map((s) => s.trim()).filter(Boolean) : [];
+    if (!existing.includes(this.fetchRefspec)) {
+      await gitExec(this.repoDir, ['config', '--add', key, this.fetchRefspec]);
+    }
   }
 
   async #commitWorktree(message) {
