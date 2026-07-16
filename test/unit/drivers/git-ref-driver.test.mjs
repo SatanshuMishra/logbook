@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GitRefDriver } from '../../../src/drivers/git-ref-driver.mjs';
-import { initGitRepo, makeGitDriver, initBareRemote } from '../../fixtures/git-repos.mjs';
+import { GitRefDriver, resolveIntegrationBase } from '../../../src/drivers/git-ref-driver.mjs';
+import { initGitRepo, makeGitDriver, initBareRemote, initGitRepoWithRemote, commitFile } from '../../fixtures/git-repos.mjs';
 import { readFile, stat, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gitExec } from '../../../src/util/git-exec.mjs';
@@ -197,4 +197,30 @@ test('custom-ref init is idempotent and does not duplicate the fetch refspec', a
   const after = await gitExec(repo, ['config', '--get-all', 'remote.origin.fetch']);
   const count = after.stdout.split('\n').filter((l) => l.trim() === '+refs/ledger/*:refs/ledger-remote/*').length;
   assert.equal(count, 1);
+});
+
+test('resolveIntegrationBase honors the LEDGER_BASE_REF override first', async (t) => {
+  const repo = await initGitRepo(t);
+  process.env.LEDGER_BASE_REF = 'refs/custom-base';
+  t.after(() => { delete process.env.LEDGER_BASE_REF; });
+  assert.equal(await resolveIntegrationBase(repo), 'refs/custom-base');
+});
+
+test('resolveIntegrationBase reads origin/HEAD when no override is set', async (t) => {
+  const { repo } = await initGitRepoWithRemote(t);
+  delete process.env.LEDGER_BASE_REF;
+  assert.equal(await resolveIntegrationBase(repo), 'origin/main');
+});
+
+test('resolveIntegrationBase falls back to origin/main when origin/HEAD is absent', async (t) => {
+  const { repo } = await initGitRepoWithRemote(t);
+  delete process.env.LEDGER_BASE_REF;
+  await gitExec(repo, ['remote', 'set-head', 'origin', '-d']);
+  assert.equal(await resolveIntegrationBase(repo), 'origin/main');
+});
+
+test('resolveIntegrationBase returns null when no base is resolvable', async (t) => {
+  const repo = await initGitRepo(t);
+  delete process.env.LEDGER_BASE_REF;
+  assert.equal(await resolveIntegrationBase(repo), null);
 });
