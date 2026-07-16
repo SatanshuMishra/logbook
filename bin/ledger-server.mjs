@@ -1,5 +1,8 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { buildContext, listTools, callTool } from '../src/tools/index.mjs';
 
 export const SERVER_INFO = { name: 'ledger', version: '0.1.0' };
@@ -58,4 +61,26 @@ export function createLedgerServer({
   });
 
   return server;
+}
+
+export async function main() {
+  const server = createLedgerServer();
+  await server.connect(new StdioServerTransport());
+}
+
+function isEntrypoint() {
+  const invoked = process.argv[1];
+  if (!invoked) return false;
+  try {
+    return realpathSync(invoked) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
+
+if (isEntrypoint()) {
+  main().catch((error) => {
+    process.stderr.write(`ledger-server: fatal: ${error?.message ?? error}\n`);
+    process.exitCode = 1;
+  });
 }
