@@ -1,0 +1,38 @@
+#!/bin/sh
+msg_file="$1"
+[ -n "$msg_file" ] || exit 0
+common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
+case "$common_dir" in
+  /*) : ;;
+  *) common_dir="$(pwd)/$common_dir" ;;
+esac
+managed_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+prior=$(git config --get continuity.priorHooksPath 2>/dev/null || true)
+if [ -n "$prior" ]; then
+  case "$prior" in
+    /*) : ;;
+    *) prior="$(pwd)/$prior" ;;
+  esac
+else
+  prior="$common_dir/hooks"
+fi
+prior_real=$(CDPATH= cd -- "$prior" 2>/dev/null && pwd || true)
+if [ -z "$prior_real" ] || [ "$prior_real" != "$managed_dir" ]; then
+  if [ -x "$prior/commit-msg" ]; then
+    "$prior/commit-msg" "$msg_file" || exit $?
+  fi
+fi
+if [ "$(git config --get continuity.trailer 2>/dev/null || true)" = "false" ]; then
+  exit 0
+fi
+tid="$LEDGER_THREAD_ID"
+if [ -z "$tid" ] && [ -f "$common_dir/ledger/active-thread" ]; then
+  tid=$(head -n 1 "$common_dir/ledger/active-thread")
+fi
+tid=$(printf '%s' "$tid" | head -n 1 | tr -d ' \t\r\n')
+case "$tid" in
+  *[!0-9A-HJKMNP-TV-Z]*|"") exit 0 ;;
+esac
+[ "${#tid}" -eq 26 ] || exit 0
+git interpret-trailers --in-place --if-exists doNothing --trailer "Thread-Id: $tid" "$msg_file" 2>/dev/null || exit 0
+exit 0
