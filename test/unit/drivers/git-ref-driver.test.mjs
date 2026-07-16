@@ -162,3 +162,39 @@ test('commit never writes the derived index/ into the ledger ref', async (t) => 
   assert.equal(tree.stdout.includes('index/'), false);
   assert.equal(tree.stdout.includes(`threads/${ULID_A}.json`), true);
 });
+
+test('custom-ref backend uses the refs/ledger/* namespace', async (t) => {
+  const repo = await initGitRepo(t);
+  const driver = await makeGitDriver(t, repo, { backend: 'custom-ref' });
+  assert.equal(driver.ledgerRef, 'refs/ledger/_ledger');
+  await driver.init();
+  const { stdout } = await gitExec(repo, ['rev-parse', '--verify', 'refs/ledger/_ledger']);
+  assert.match(stdout.trim(), /^[0-9a-f]{40}$/);
+  const heads = await gitExec(repo, ['rev-parse', '--verify', '--quiet', 'refs/heads/_ledger'], { check: false });
+  assert.notEqual(heads.code, 0);
+});
+
+test('custom-ref init appends the ledger fetch refspec without clobbering existing fetch config', async (t) => {
+  const repo = await initGitRepo(t);
+  const remote = await initBareRemote(t);
+  await gitExec(repo, ['remote', 'add', 'origin', remote]);
+  const before = await gitExec(repo, ['config', '--get-all', 'remote.origin.fetch']);
+  assert.equal(before.stdout.includes('+refs/heads/*:refs/remotes/origin/*'), true);
+  const driver = await makeGitDriver(t, repo, { backend: 'custom-ref' });
+  await driver.init();
+  const after = await gitExec(repo, ['config', '--get-all', 'remote.origin.fetch']);
+  assert.equal(after.stdout.includes('+refs/heads/*:refs/remotes/origin/*'), true);
+  assert.equal(after.stdout.includes('+refs/ledger/*:refs/ledger-remote/*'), true);
+});
+
+test('custom-ref init is idempotent and does not duplicate the fetch refspec', async (t) => {
+  const repo = await initGitRepo(t);
+  const remote = await initBareRemote(t);
+  await gitExec(repo, ['remote', 'add', 'origin', remote]);
+  const driver = await makeGitDriver(t, repo, { backend: 'custom-ref' });
+  await driver.init();
+  await driver.init();
+  const after = await gitExec(repo, ['config', '--get-all', 'remote.origin.fetch']);
+  const count = after.stdout.split('\n').filter((l) => l.trim() === '+refs/ledger/*:refs/ledger-remote/*').length;
+  assert.equal(count, 1);
+});
