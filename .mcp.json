@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "ledger": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/ledger-server.mjs"],
+      "env": {
+        "LEDGER_BACKEND": "${user_config.ledger_backend}",
+        "LEDGER_BRANCH": "${user_config.ledger_branch}"
+      }
+    }
+  }
+}
