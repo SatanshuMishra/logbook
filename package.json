@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Git-native, multi-user, drift-aware session-continuity plugin for Claude Code.",
   "license": "MIT",
+  "engines": { "node": ">=20" },
   "scripts": { "test": "node --test" },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
