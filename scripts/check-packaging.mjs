@@ -145,10 +145,25 @@ async function checkMcpDeclaration(root, problems) {
   }
 }
 
+async function checkHooksEnv(root, problems) {
+  const hooks = await readJsonFile(root, 'hooks/hooks.json', problems);
+  if (!hooks) return;
+  const env = hooks.env ?? {};
+  if (env.LEDGER_DISABLE_TRAILER !== '${user_config.disable_trailer}') {
+    problems.push('hooks/hooks.json: env must deliver LEDGER_DISABLE_TRAILER=${user_config.disable_trailer}');
+  }
+  for (const key of ['LEDGER_NUDGE_FRACTION', 'LEDGER_NUDGE_BYTES']) {
+    if (key in env) {
+      problems.push(`hooks/hooks.json: ${key} must NOT be in the env block (ambient process.env override, not user_config)`);
+    }
+  }
+}
+
 export async function checkPackaging(root) {
   const problems = [];
   await checkRequiredFiles(root, problems);
   await checkPackageManifest(root, problems);
   await checkMcpDeclaration(root, problems);
+  await checkHooksEnv(root, problems);
   return { ok: problems.length === 0, problems };
 }
