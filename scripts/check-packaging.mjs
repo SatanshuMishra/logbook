@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFile, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const REQUIRED_FILES = [
   '.claude-plugin/plugin.json',
@@ -204,4 +205,30 @@ export async function checkPackaging(root) {
   await checkExecutableBits(root, problems);
   await checkMarketplace(root, problems);
   return { ok: problems.length === 0, problems };
+}
+
+async function main(argv) {
+  const rootArg = argv[2];
+  const root = rootArg
+    ? resolve(rootArg)
+    : resolve(fileURLToPath(new URL('..', import.meta.url)));
+  const { ok, problems } = await checkPackaging(root);
+  if (ok) {
+    process.stdout.write('check-packaging: ok\n');
+    return 0;
+  }
+  process.stderr.write(`check-packaging: ${problems.length} problem(s) found\n`);
+  for (const problem of problems) {
+    process.stderr.write(`  - ${problem}\n`);
+  }
+  return 1;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main(process.argv)
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      process.stderr.write(`check-packaging: fatal ${err.stack || err}\n`);
+      process.exit(2);
+    });
 }

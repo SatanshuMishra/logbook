@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, chmod, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { checkPackaging, REQUIRED_FILES, EXECUTABLE_FILES, SERVER_ARGS } from '../../../scripts/check-packaging.mjs';
 
 async function writeFileEnsuringDir(path, content) {
@@ -439,4 +441,21 @@ test('an empty plugins array is rejected', async (t) => {
   const { ok, problems } = await checkPackaging(root);
   assert.equal(ok, false);
   assert.ok(problems.some((p) => p.includes('plugins[0]')), problems.join('; '));
+});
+
+const guardScript = fileURLToPath(new URL('../../../scripts/check-packaging.mjs', import.meta.url));
+
+test('the CLI exits 0 and prints ok on a complete ensemble', async (t) => {
+  const root = await freshEnsemble(t);
+  const result = spawnSync(process.execPath, [guardScript, root], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(result.stdout.includes('ok'), result.stdout);
+});
+
+test('the CLI exits 1 and names the defect on a broken ensemble', async (t) => {
+  const root = await freshEnsemble(t);
+  await rm(join(root, 'hooks/dispatcher'));
+  const result = spawnSync(process.execPath, [guardScript, root], { encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.ok(result.stderr.includes('hooks/dispatcher'), result.stderr);
 });
