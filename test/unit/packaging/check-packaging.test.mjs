@@ -331,3 +331,33 @@ test('a missing forwarded driver var is rejected', async (t) => {
   assert.equal(ok, false);
   assert.ok(problems.some((p) => p.includes('LEDGER_BACKEND')), problems.join('; '));
 });
+
+test('a hooks env block missing LEDGER_DISABLE_TRAILER is rejected', async (t) => {
+  const root = await freshEnsemble(t);
+  const hooks = await readEnsembleJson(root, 'hooks/hooks.json');
+  await rewriteJson(root, 'hooks/hooks.json', { ...hooks, env: {} });
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('LEDGER_DISABLE_TRAILER')), problems.join('; '));
+});
+
+test('a hooks env block with the wrong trailer source is rejected', async (t) => {
+  const root = await freshEnsemble(t);
+  const hooks = await readEnsembleJson(root, 'hooks/hooks.json');
+  await rewriteJson(root, 'hooks/hooks.json', { ...hooks, env: { LEDGER_DISABLE_TRAILER: 'true' } });
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('LEDGER_DISABLE_TRAILER')), problems.join('; '));
+});
+
+test('a nudge knob in the hooks env block is rejected', async (t) => {
+  const root = await freshEnsemble(t);
+  const hooks = await readEnsembleJson(root, 'hooks/hooks.json');
+  await rewriteJson(root, 'hooks/hooks.json', {
+    ...hooks,
+    env: { LEDGER_DISABLE_TRAILER: '${user_config.disable_trailer}', LEDGER_NUDGE_FRACTION: '0.7' },
+  });
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('LEDGER_NUDGE_FRACTION')), problems.join('; '));
+});
