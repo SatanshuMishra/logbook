@@ -190,3 +190,78 @@ test('a malformed JSON manifest yields a parse problem, never a crash', async (t
   assert.equal(ok, false);
   assert.ok(problems.some((p) => p.includes('package.json') && p.includes('invalid JSON')), problems.join('; '));
 });
+
+test('a missing ledger server key is rejected', async (t) => {
+  const root = await freshEnsemble(t);
+  await rewriteJson(root, '.mcp.json', {
+    mcpServers: { notledger: { command: 'node', args: ['x/bin/ledger-server.mjs'], env: {} } },
+  });
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('mcpServers.ledger')), problems.join('; '));
+});
+
+test('a non-node server command is rejected', async (t) => {
+  const root = await freshEnsemble(t);
+  const mcp = await readEnsembleJson(root, '.mcp.json');
+  const server = mcp.mcpServers.ledger;
+  await rewriteJson(root, '.mcp.json', {
+    mcpServers: { ledger: { ...server, command: 'deno' } },
+  });
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('command must be "node"')), problems.join('; '));
+});
+
+test('args that do not launch bin/ledger-server.mjs are rejected', async (t) => {
+  const root = await freshEnsemble(t);
+  const mcp = await readEnsembleJson(root, '.mcp.json');
+  const server = mcp.mcpServers.ledger;
+  await rewriteJson(root, '.mcp.json', {
+    mcpServers: { ledger: { ...server, args: ['${CLAUDE_PLUGIN_ROOT}/bin/other.mjs'] } },
+  });
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('bin/ledger-server.mjs')), problems.join('; '));
+});
+
+test('a hook-plane var leaking into the server env is a packaging failure', async (t) => {
+  const root = await freshEnsemble(t);
+  const mcp = await readEnsembleJson(root, '.mcp.json');
+  const server = mcp.mcpServers.ledger;
+  await rewriteJson(root, '.mcp.json', {
+    mcpServers: {
+      ledger: {
+        ...server,
+        env: { ...server.env, LEDGER_DISABLE_TRAILER: '${user_config.disable_trailer}' },
+      },
+    },
+  });
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('LEDGER_DISABLE_TRAILER') && p.includes('ABSENT')), problems.join('; '));
+});
+
+test('a nudge knob leaking into the server env is a packaging failure', async (t) => {
+  const root = await freshEnsemble(t);
+  const mcp = await readEnsembleJson(root, '.mcp.json');
+  const server = mcp.mcpServers.ledger;
+  await rewriteJson(root, '.mcp.json', {
+    mcpServers: { ledger: { ...server, env: { ...server.env, LEDGER_NUDGE_BYTES: '1200000' } } },
+  });
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('LEDGER_NUDGE_BYTES')), problems.join('; '));
+});
+
+test('a missing forwarded driver var is rejected', async (t) => {
+  const root = await freshEnsemble(t);
+  const mcp = await readEnsembleJson(root, '.mcp.json');
+  const server = mcp.mcpServers.ledger;
+  await rewriteJson(root, '.mcp.json', {
+    mcpServers: { ledger: { ...server, env: { LEDGER_BRANCH: '${user_config.ledger_branch}' } } },
+  });
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('LEDGER_BACKEND')), problems.join('; '));
+});

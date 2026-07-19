@@ -104,9 +104,39 @@ async function checkPackageManifest(root, problems) {
   }
 }
 
+async function checkMcpDeclaration(root, problems) {
+  const mcp = await readJsonFile(root, '.mcp.json', problems);
+  if (!mcp) return;
+  const server = mcp.mcpServers?.ledger;
+  if (!server) {
+    problems.push('.mcp.json: mcpServers.ledger is missing (the mcp__ledger__* surface depends on this key)');
+    return;
+  }
+  if (server.command !== 'node') {
+    problems.push(`.mcp.json: ledger server command must be "node" (found ${JSON.stringify(server.command)})`);
+  }
+  const launchesServer = Array.isArray(server.args)
+    && server.args.some((a) => typeof a === 'string' && a.includes('bin/ledger-server.mjs'));
+  if (!launchesServer) {
+    problems.push('.mcp.json: ledger server args must launch bin/ledger-server.mjs');
+  }
+  const env = server.env ?? {};
+  for (const key of SERVER_ENV_KEYS) {
+    if (typeof env[key] !== 'string') {
+      problems.push(`.mcp.json: ledger server env must forward ${key} as a string`);
+    }
+  }
+  for (const key of FORBIDDEN_SERVER_ENV_KEYS) {
+    if (key in env) {
+      problems.push(`.mcp.json: ${key} must be ABSENT from the ledger server env (hook-plane variable)`);
+    }
+  }
+}
+
 export async function checkPackaging(root) {
   const problems = [];
   await checkRequiredFiles(root, problems);
   await checkPackageManifest(root, problems);
+  await checkMcpDeclaration(root, problems);
   return { ok: problems.length === 0, problems };
 }
