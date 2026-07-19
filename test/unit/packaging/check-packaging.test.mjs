@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, chmod, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { checkPackaging, REQUIRED_FILES, SERVER_ARGS } from '../../../scripts/check-packaging.mjs';
+import { checkPackaging, REQUIRED_FILES, EXECUTABLE_FILES, SERVER_ARGS } from '../../../scripts/check-packaging.mjs';
 
 async function writeFileEnsuringDir(path, content) {
   await mkdir(dirname(path), { recursive: true });
@@ -360,4 +360,30 @@ test('a nudge knob in the hooks env block is rejected', async (t) => {
   const { ok, problems } = await checkPackaging(root);
   assert.equal(ok, false);
   assert.ok(problems.some((p) => p.includes('LEDGER_NUDGE_FRACTION')), problems.join('; '));
+});
+
+test('a hook script without the executable bit is rejected', async (t) => {
+  const root = await freshEnsemble(t);
+  await chmod(join(root, 'hooks/commit-msg'), 0o644);
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('hooks/commit-msg') && p.includes('executable bit')), problems.join('; '));
+});
+
+test('every EXECUTABLE_FILES entry is individually enforced', async (t) => {
+  for (const rel of EXECUTABLE_FILES) {
+    const root = await mkdtemp(join(tmpdir(), 'pkg-guard-'));
+    try {
+      await writeValidEnsemble(root);
+      await chmod(join(root, rel), 0o644);
+      const { ok, problems } = await checkPackaging(root);
+      assert.equal(ok, false, `stripping the exec bit from ${rel} must fail the guard`);
+      assert.ok(
+        problems.some((p) => p.includes(rel) && p.includes('executable bit')),
+        `a problem must name ${rel}: ${problems.join('; ')}`,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
 });

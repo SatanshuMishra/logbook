@@ -159,11 +159,26 @@ async function checkHooksEnv(root, problems) {
   }
 }
 
+async function checkExecutableBits(root, problems) {
+  for (const rel of EXECUTABLE_FILES) {
+    let info;
+    try {
+      info = await stat(join(root, rel));
+    } catch {
+      continue;
+    }
+    if ((info.mode & 0o111) === 0) {
+      problems.push(`${rel}: missing executable bit`);
+    }
+  }
+}
+
 export async function checkPackaging(root) {
   const problems = [];
   await checkRequiredFiles(root, problems);
   await checkPackageManifest(root, problems);
   await checkMcpDeclaration(root, problems);
   await checkHooksEnv(root, problems);
+  await checkExecutableBits(root, problems);
   return { ok: problems.length === 0, problems };
 }
