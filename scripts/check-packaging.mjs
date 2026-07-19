@@ -43,6 +43,8 @@ export const EXACT_DEPENDENCIES = {
 
 export const SERVER_ENV_KEYS = ['LEDGER_BACKEND', 'LEDGER_BRANCH'];
 
+export const SERVER_ARGS = ['${CLAUDE_PLUGIN_ROOT}/bin/ledger-server.mjs'];
+
 export const FORBIDDEN_SERVER_ENV_KEYS = [
   'LEDGER_DISABLE_TRAILER',
   'LEDGER_NUDGE_FRACTION',
@@ -107,6 +109,10 @@ async function checkPackageManifest(root, problems) {
 async function checkMcpDeclaration(root, problems) {
   const mcp = await readJsonFile(root, '.mcp.json', problems);
   if (!mcp) return;
+  const serverKeys = Object.keys(mcp.mcpServers ?? {});
+  if (serverKeys.length !== 1 || serverKeys[0] !== 'ledger') {
+    problems.push(`.mcp.json: mcpServers must declare exactly one server, "ledger" (found ${serverKeys.join(', ') || 'none'})`);
+  }
   const server = mcp.mcpServers?.ledger;
   if (!server) {
     problems.push('.mcp.json: mcpServers.ledger is missing (the mcp__ledger__* surface depends on this key)');
@@ -115,10 +121,11 @@ async function checkMcpDeclaration(root, problems) {
   if (server.command !== 'node') {
     problems.push(`.mcp.json: ledger server command must be "node" (found ${JSON.stringify(server.command)})`);
   }
-  const launchesServer = Array.isArray(server.args)
-    && server.args.some((a) => typeof a === 'string' && a.includes('bin/ledger-server.mjs'));
+  const args = Array.isArray(server.args) ? server.args : [];
+  const launchesServer = args.length === SERVER_ARGS.length
+    && args.every((a, i) => a === SERVER_ARGS[i]);
   if (!launchesServer) {
-    problems.push('.mcp.json: ledger server args must launch bin/ledger-server.mjs');
+    problems.push(`.mcp.json: ledger server args must be exactly ${JSON.stringify(SERVER_ARGS)} (found ${JSON.stringify(server.args)})`);
   }
   const env = server.env ?? {};
   for (const key of SERVER_ENV_KEYS) {
