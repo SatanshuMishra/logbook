@@ -387,3 +387,56 @@ test('every EXECUTABLE_FILES entry is individually enforced', async (t) => {
     }
   }
 });
+
+function marketplace(overrides = {}) {
+  return {
+    name: 'continuity-ledger',
+    owner: { name: 'SatanshuMishra' },
+    plugins: [{ name: 'session-continuity', source: './' }],
+    ...overrides,
+  };
+}
+
+test('a wrong marketplace name is rejected', async (t) => {
+  const root = await freshEnsemble(t);
+  await rewriteJson(root, '.claude-plugin/marketplace.json', marketplace({ name: 'wrong-market' }));
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('continuity-ledger')), problems.join('; '));
+});
+
+test('a missing owner.name is rejected', async (t) => {
+  const root = await freshEnsemble(t);
+  await rewriteJson(root, '.claude-plugin/marketplace.json', marketplace({ owner: {} }));
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('owner.name')), problems.join('; '));
+});
+
+test('a wrong plugins[0].name is rejected', async (t) => {
+  const root = await freshEnsemble(t);
+  await rewriteJson(root, '.claude-plugin/marketplace.json', marketplace({
+    plugins: [{ name: 'not-the-plugin', source: './' }],
+  }));
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('session-continuity')), problems.join('; '));
+});
+
+test('a wrong plugins[0].source is rejected', async (t) => {
+  const root = await freshEnsemble(t);
+  await rewriteJson(root, '.claude-plugin/marketplace.json', marketplace({
+    plugins: [{ name: 'session-continuity', source: '../' }],
+  }));
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('source')), problems.join('; '));
+});
+
+test('an empty plugins array is rejected', async (t) => {
+  const root = await freshEnsemble(t);
+  await rewriteJson(root, '.claude-plugin/marketplace.json', marketplace({ plugins: [] }));
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('plugins[0]')), problems.join('; '));
+});

@@ -173,6 +173,28 @@ async function checkExecutableBits(root, problems) {
   }
 }
 
+async function checkMarketplace(root, problems) {
+  const mkt = await readJsonFile(root, '.claude-plugin/marketplace.json', problems);
+  if (!mkt) return;
+  if (mkt.name !== 'continuity-ledger') {
+    problems.push(`.claude-plugin/marketplace.json: name must be "continuity-ledger" (found ${JSON.stringify(mkt.name)})`);
+  }
+  if (!mkt.owner || typeof mkt.owner.name !== 'string' || mkt.owner.name.length === 0) {
+    problems.push('.claude-plugin/marketplace.json: owner.name is required');
+  }
+  const entry = Array.isArray(mkt.plugins) ? mkt.plugins[0] : undefined;
+  if (!entry) {
+    problems.push('.claude-plugin/marketplace.json: plugins[0] is missing');
+    return;
+  }
+  if (entry.name !== 'session-continuity') {
+    problems.push(`.claude-plugin/marketplace.json: plugins[0].name must be "session-continuity" (found ${JSON.stringify(entry.name)})`);
+  }
+  if (entry.source !== './') {
+    problems.push(`.claude-plugin/marketplace.json: plugins[0].source must be "./" (found ${JSON.stringify(entry.source)})`);
+  }
+}
+
 export async function checkPackaging(root) {
   const problems = [];
   await checkRequiredFiles(root, problems);
@@ -180,5 +202,6 @@ export async function checkPackaging(root) {
   await checkMcpDeclaration(root, problems);
   await checkHooksEnv(root, problems);
   await checkExecutableBits(root, problems);
+  await checkMarketplace(root, problems);
   return { ok: problems.length === 0, problems };
 }
