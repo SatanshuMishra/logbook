@@ -1,0 +1,12 @@
+{
+  "name": "continuity-ledger",
+  "owner": {
+    "name": "SatanshuMishra"
+  },
+  "plugins": [
+    {
+      "name": "session-continuity",
+      "source": "./"
+    }
+  ]
+}
