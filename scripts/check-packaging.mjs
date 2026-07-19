@@ -128,6 +128,7 @@ async function checkMcpDeclaration(root, problems) {
     problems.push(`.mcp.json: ledger server args must be exactly ${JSON.stringify(SERVER_ARGS)} (found ${JSON.stringify(server.args)})`);
   }
   const env = server.env ?? {};
+  const allowedEnvKeys = new Set(SERVER_ENV_KEYS);
   for (const key of SERVER_ENV_KEYS) {
     if (typeof env[key] !== 'string') {
       problems.push(`.mcp.json: ledger server env must forward ${key} as a string`);
@@ -137,6 +138,10 @@ async function checkMcpDeclaration(root, problems) {
     if (key in env) {
       problems.push(`.mcp.json: ${key} must be ABSENT from the ledger server env (hook-plane variable)`);
     }
+  }
+  const unexpectedKeys = Object.keys(env).filter((key) => !allowedEnvKeys.has(key));
+  if (unexpectedKeys.length > 0) {
+    problems.push(`.mcp.json: ledger server env must contain only ${SERVER_ENV_KEYS.join(', ')} (found unexpected: ${unexpectedKeys.join(', ')})`);
   }
 }
 

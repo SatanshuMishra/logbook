@@ -306,6 +306,20 @@ test('a nudge knob leaking into the server env is a packaging failure', async (t
   assert.ok(problems.some((p) => p.includes('LEDGER_NUDGE_BYTES')), problems.join('; '));
 });
 
+test('an arbitrary unallowlisted env key is rejected', async (t) => {
+  const root = await freshEnsemble(t);
+  const mcp = await readEnsembleJson(root, '.mcp.json');
+  const server = mcp.mcpServers.ledger;
+  await rewriteJson(root, '.mcp.json', {
+    mcpServers: {
+      ledger: { ...server, env: { ...server.env, NODE_OPTIONS: '--require=/tmp/evil.js' } },
+    },
+  });
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('NODE_OPTIONS') && p.includes('unexpected')), problems.join('; '));
+});
+
 test('a missing forwarded driver var is rejected', async (t) => {
   const root = await freshEnsemble(t);
   const mcp = await readEnsembleJson(root, '.mcp.json');
