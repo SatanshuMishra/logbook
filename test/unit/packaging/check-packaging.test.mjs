@@ -116,3 +116,77 @@ test('every REQUIRED_FILES entry is individually enforced', async (t) => {
     }
   }
 });
+
+test('a devDependency is a packaging failure', async (t) => {
+  const root = await freshEnsemble(t);
+  const pkg = await readEnsembleJson(root, 'package.json');
+  await rewriteJson(root, 'package.json', { ...pkg, devDependencies: { eslint: '9.0.0' } });
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('devDependencies')), problems.join('; '));
+});
+
+test('a non-exact-pinned dependency is rejected', async (t) => {
+  const root = await freshEnsemble(t);
+  const pkg = await readEnsembleJson(root, 'package.json');
+  await rewriteJson(root, 'package.json', {
+    ...pkg,
+    dependencies: { ...pkg.dependencies, ulid: '^3.0.2' },
+  });
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('ulid') && p.includes('exact-pinned')), problems.join('; '));
+});
+
+test('a drifted dependency version is reported against the frozen pin', async (t) => {
+  const root = await freshEnsemble(t);
+  const pkg = await readEnsembleJson(root, 'package.json');
+  await rewriteJson(root, 'package.json', {
+    ...pkg,
+    dependencies: { ...pkg.dependencies, ajv: '8.99.0' },
+  });
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('ajv') && p.includes('8.20.0')), problems.join('; '));
+});
+
+test('a fourth dependency breaks the exact-three set', async (t) => {
+  const root = await freshEnsemble(t);
+  const pkg = await readEnsembleJson(root, 'package.json');
+  await rewriteJson(root, 'package.json', {
+    ...pkg,
+    dependencies: { ...pkg.dependencies, 'left-pad': '1.0.0' },
+  });
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('dependencies must be exactly')), problems.join('; '));
+});
+
+test('a test script that omits test/e2e while listing test/unit is rejected', async (t) => {
+  const root = await freshEnsemble(t);
+  const pkg = await readEnsembleJson(root, 'package.json');
+  await rewriteJson(root, 'package.json', {
+    ...pkg,
+    scripts: { test: 'node --test test/unit' },
+  });
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('test/e2e')), problems.join('; '));
+});
+
+test('a test script that does not run node --test is rejected', async (t) => {
+  const root = await freshEnsemble(t);
+  const pkg = await readEnsembleJson(root, 'package.json');
+  await rewriteJson(root, 'package.json', { ...pkg, scripts: { test: 'vitest run' } });
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('node --test')), problems.join('; '));
+});
+
+test('a malformed JSON manifest yields a parse problem, never a crash', async (t) => {
+  const root = await freshEnsemble(t);
+  await writeFile(join(root, 'package.json'), '{ not valid json');
+  const { ok, problems } = await checkPackaging(root);
+  assert.equal(ok, false);
+  assert.ok(problems.some((p) => p.includes('package.json') && p.includes('invalid JSON')), problems.join('; '));
+});
