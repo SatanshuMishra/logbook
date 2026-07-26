@@ -1,24 +1,35 @@
 import { invokeCli, invokeCliJson } from './cli.mjs';
 
-export async function readHookInput(stream = process.stdin) {
+const GUARDED_TOOLS = new Set(['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+const GUARD_FAILURE_REASON =
+  'the session-continuity guard could not evaluate this tool call and refused it; this is a guard failure, not a finding about the call itself';
+
+export async function readHookInputResult(stream = process.stdin) {
   const chunks = [];
   try {
     for await (const chunk of stream) {
       chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
     }
   } catch {
-    return {};
+    return { ok: false, reason: 'stream-error' };
   }
   const raw = Buffer.concat(chunks).toString('utf8').trim();
   if (raw.length === 0) {
-    return {};
+    return { ok: false, reason: 'empty' };
   }
   try {
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    return parsed && typeof parsed === 'object'
+      ? { ok: true, input: parsed }
+      : { ok: false, reason: 'malformed' };
   } catch {
-    return {};
+    return { ok: false, reason: 'malformed' };
   }
+}
+
+export async function readHookInput(stream = process.stdin) {
+  const result = await readHookInputResult(stream);
+  return result.ok ? result.input : {};
 }
 
 export function hookContext(input, env = process.env) {
@@ -54,5 +65,31 @@ export async function runEntry(handler, { stream = process.stdin, env = process.
     writeResult(result ?? {});
   } catch {
     process.exitCode = 0;
+  }
+}
+
+function guardDenial() {
+  return {
+    json: {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: GUARD_FAILURE_REASON,
+      },
+    },
+  };
+}
+
+export async function runGuardEntry(handler, { stream = process.stdin, env = process.env } = {}) {
+  const read = await readHookInputResult(stream);
+  if (!read.ok) {
+    writeResult(guardDenial());
+    return;
+  }
+  try {
+    const result = await handler(hookContext(read.input, env));
+    writeResult(result ?? {});
+  } catch {
+    writeResult(GUARDED_TOOLS.has(read.input.tool_name) ? guardDenial() : {});
   }
 }
