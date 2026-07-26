@@ -1,7 +1,7 @@
 ---
 name: lift-off
 description: Use when the user says "resume", "continue", "pick up where we left off", "/lift-off", or a near-equivalent at the start of work. Refreshes the derived index, presents the resumable roster (never auto-selecting), reconciles drift into the chosen thread, renders the spine-only resume brief through the ledger MCP tools, then STOPS for the user's instruction.
-allowed-tools: mcp__ledger__reconcile, mcp__ledger__rebuild_index, mcp__ledger__get_resume_brief
+allowed-tools: mcp__ledger__reconcile, mcp__plugin_session-continuity_ledger__reconcile, mcp__ledger__rebuild_index, mcp__plugin_session-continuity_ledger__rebuild_index, mcp__ledger__get_resume_brief, mcp__plugin_session-continuity_ledger__get_resume_brief
 ---
 
 # Lift Off
@@ -9,6 +9,8 @@ allowed-tools: mcp__ledger__reconcile, mcp__ledger__rebuild_index, mcp__ledger__
 Teach this session the cumulative project state through the `ledger` MCP tools, present the resume brief, then STOP. This skill only orchestrates the tools — the server owns the brief's content and every rule. The write side is the `ledgerize` skill.
 
 ## Read protocol
+
+Each ledger tool carries two names: `mcp__ledger__<name>` when the server is configured directly, and `mcp__plugin_session-continuity_ledger__<name>` when it is installed as a plugin. Both names reach the same server — call whichever one is present. The steps below use the short form.
 
 1. Refresh the roster. Call `mcp__ledger__rebuild_index` so the resumable roster is current before you show anything.
 

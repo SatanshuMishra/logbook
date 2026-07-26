@@ -9,6 +9,10 @@ import {
   FORBIDDEN_SUBSTRINGS,
 } from './skill-invariants.mjs';
 
+const PLUGIN_PREFIX = 'mcp__plugin_session-continuity_ledger__';
+
+const namespaced = (tool) => tool.replace('mcp__ledger__', PLUGIN_PREFIX);
+
 const TOOLS = [
   'mcp__ledger__reconcile',
   'mcp__ledger__rebuild_index',
@@ -31,21 +35,22 @@ test('lift-off frontmatter names the skill and carries a description', () => {
   assert.ok(front.description && front.description.length > 0);
 });
 
-test('lift-off allowed-tools is EXACTLY the three read-side ledger tools', () => {
-  assert.deepEqual(allowedTools(front).sort(), [...TOOLS].sort());
+test('lift-off allowed-tools is EXACTLY both spellings of the three read-side ledger tools', () => {
+  assert.deepEqual(allowedTools(front).sort(), [...TOOLS, ...TOOLS.map(namespaced)].sort());
 });
 
 test('lift-off exposes no write or session-reading tool', () => {
   const tools = allowedTools(front);
-  for (const forbidden of WRITE_OR_SESSION_TOOLS) {
+  for (const forbidden of [...WRITE_OR_SESSION_TOOLS, ...WRITE_OR_SESSION_TOOLS.map(namespaced)]) {
     assert.equal(tools.includes(forbidden), false, `must not allow ${forbidden}`);
   }
 });
 
-test('lift-off prose invokes each allowed tool it declares', () => {
+test('lift-off prose invokes each allowed tool it declares under both spellings', () => {
   for (const tool of TOOLS) {
     assert.ok(body.includes(tool), `expected the prose to call ${tool}`);
   }
+  assert.ok(body.includes(PLUGIN_PREFIX), 'expected the prose to name the plugin-namespaced spelling');
 });
 
 test('lift-off renders the brief then STOPS (present-then-stop invariant)', () => {

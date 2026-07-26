@@ -31,14 +31,14 @@ export function classifyPreToolUse(input, roots, baseDir) {
   if (WRITE_TOOLS.has(toolName)) {
     const path = targetPath(input);
     if (path && isUnderRoot(path, roots, baseDir)) {
-      return decision('deny', `${toolName} into the session-continuity ledger store is not permitted; use the mcp__ledger__* tools`);
+      return decision('deny', `${toolName} into the session-continuity ledger store is not permitted; use the ledger MCP tools (mcp__ledger__* when the server is configured directly, mcp__plugin_session-continuity_ledger__* when installed as a plugin)`);
     }
     return null;
   }
   if (toolName === 'Bash') {
     const command = input && input.tool_input ? input.tool_input.command : undefined;
     if (hasMutatingConstruct(command) && referencesRoot(command, roots)) {
-      return decision('deny', 'a mutating Bash command targeting the session-continuity ledger store is not permitted; use the mcp__ledger__* tools');
+      return decision('deny', 'a mutating Bash command targeting the session-continuity ledger store is not permitted; use the ledger MCP tools (mcp__ledger__* when the server is configured directly, mcp__plugin_session-continuity_ledger__* when installed as a plugin)');
     }
     return null;
   }

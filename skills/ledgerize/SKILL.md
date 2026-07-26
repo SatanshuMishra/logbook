@@ -1,7 +1,7 @@
 ---
 name: ledgerize
 description: Use when the user says "session handoff", "wrap up", "hand off", "handoff summary", or confirms wrapping up a session. Writes the project ledger through the ledger MCP tools — the session log, straggler decision records, the mandatory thread-spine refresh, and the state transition — so a fresh session resumes from the ledger alone, then prints the hand-off summary.
-allowed-tools: mcp__ledger__append_session_event, mcp__ledger__record_decision, mcp__ledger__update_thread, mcp__ledger__transition_thread, mcp__ledger__rebuild_index
+allowed-tools: mcp__ledger__append_session_event, mcp__plugin_session-continuity_ledger__append_session_event, mcp__ledger__record_decision, mcp__plugin_session-continuity_ledger__record_decision, mcp__ledger__update_thread, mcp__plugin_session-continuity_ledger__update_thread, mcp__ledger__transition_thread, mcp__plugin_session-continuity_ledger__transition_thread, mcp__ledger__rebuild_index, mcp__plugin_session-continuity_ledger__rebuild_index
 ---
 
 # Ledgerize
@@ -11,6 +11,8 @@ Write the ledger through the `ledger` MCP tools. The ledger is canonical; the ch
 Operate on the thread you have been working in this session. Its `thread_id` is the active thread the SessionStart context surfaced (the same id returned when the work was opened). Pass that `thread_id` to every write below.
 
 ## Wrap-up protocol
+
+Each ledger tool carries two names: `mcp__ledger__<name>` when the server is configured directly, and `mcp__plugin_session-continuity_ledger__<name>` when it is installed as a plugin. Both names reach the same server — call whichever one is present. The steps below use the short form.
 
 1. Wind down. Collect results from running subagents and background tasks, or stop them cleanly; never abandon a write mid-flight. Anything that must keep running belongs in the session-log body with its shell id and kill command.
 
