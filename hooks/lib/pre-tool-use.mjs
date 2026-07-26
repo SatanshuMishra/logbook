@@ -10,6 +10,9 @@ const DESTRUCTIVE = new Set([
   'chmod', 'chown', 'mkdir', 'rmdir', 'touch',
 ]);
 const MAX_COMMAND_BYTES = 16384;
+const CONTROL_WORDS = new Set(['(', ')', '{', '}']);
+const GROUP_OPENERS = new Set(['(', '{']);
+const FD_DUPLICATION = /^&(\d+|-)$/;
 const DENY_SUFFIX =
   'use the ledger MCP tools (mcp__ledger__* when the server is configured directly, mcp__plugin_session-continuity_ledger__* when installed as a plugin)';
 
@@ -56,6 +59,67 @@ function nextCwd(cwd, token) {
     return cwd;
   }
   return resolve(cwd, expandHome(token.text));
+}
+
+function derivedToken(token, text) {
+  return { kind: 'word', text, unresolvable: token.unresolvable };
+}
+
+export function splitControl(tokens) {
+  if (!Array.isArray(tokens)) {
+    return [];
+  }
+  const subSegments = [];
+  let current = [];
+  let previous = null;
+
+  const emit = (token) => {
+    current = [...current, token];
+    previous = token;
+  };
+
+  const boundary = () => {
+    if (current.length > 0) {
+      subSegments.push(current);
+      current = [];
+    }
+  };
+
+  const visit = (token) => {
+    if (token.kind !== 'word') {
+      emit(token);
+      return;
+    }
+    if (FD_DUPLICATION.test(token.text) && previous !== null && previous.kind === 'redirect') {
+      emit(token);
+      return;
+    }
+    if (CONTROL_WORDS.has(token.text)) {
+      boundary();
+      return;
+    }
+    if (GROUP_OPENERS.has(token.text.charAt(0))) {
+      boundary();
+      visit(derivedToken(token, token.text.slice(1)));
+      return;
+    }
+    if (token.text.includes('&')) {
+      token.text.split('&').forEach((part, index) => {
+        if (index > 0) {
+          boundary();
+        }
+        if (part !== '') {
+          visit(derivedToken(token, part));
+        }
+      });
+      return;
+    }
+    emit(token);
+  };
+
+  tokens.forEach((token) => visit(token));
+  boundary();
+  return subSegments;
 }
 
 export function mutatesUnderRoot(command, roots, baseDir) {
