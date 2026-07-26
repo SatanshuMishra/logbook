@@ -5,7 +5,7 @@ const DEFAULT_FRACTION = 0.7;
 const DEFAULT_BUDGET = 1_200_000;
 const COMMITISH = /\bgit\s+(commit|merge|rebase|cherry-pick|revert|pull|am)\b/;
 const NUDGE_TEXT =
-  'Session-continuity: this session is approaching the compaction threshold. Consider running the session-handoff skill now to refresh the spine and hand off the active thread before context is compacted.';
+  'Session-continuity: this session is approaching the compaction threshold. Consider running the ledgerize skill now to refresh the spine and hand off the active thread before context is compacted.';
 
 export function computeNudgeThreshold(env = process.env) {
   let fraction = Number(env.LEDGER_NUDGE_FRACTION);

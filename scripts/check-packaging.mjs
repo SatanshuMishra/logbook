@@ -21,8 +21,8 @@ export const REQUIRED_FILES = [
   'hooks/post-tool-use.mjs',
   'hooks/stop.mjs',
   'hooks/pre-compact.mjs',
-  'skills/session-handoff/SKILL.md',
-  'skills/resume-project/SKILL.md',
+  'skills/ledgerize/SKILL.md',
+  'skills/lift-off/SKILL.md',
 ];
 
 export const EXECUTABLE_FILES = [

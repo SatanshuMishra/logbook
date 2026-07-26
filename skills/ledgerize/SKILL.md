@@ -1,12 +1,12 @@
 ---
-name: session-handoff
+name: ledgerize
 description: Use when the user says "session handoff", "wrap up", "hand off", "handoff summary", or confirms wrapping up a session. Writes the project ledger through the ledger MCP tools — the session log, straggler decision records, the mandatory thread-spine refresh, and the state transition — so a fresh session resumes from the ledger alone, then prints the hand-off summary.
 allowed-tools: mcp__ledger__append_session_event, mcp__ledger__record_decision, mcp__ledger__update_thread, mcp__ledger__transition_thread, mcp__ledger__rebuild_index
 ---
 
-# Session Handoff
+# Ledgerize
 
-Write the ledger through the `ledger` MCP tools. The ledger is canonical; the chat summary is a courtesy for a future session that starts with zero context. This skill only orchestrates the tools — the server owns every rule (lifecycle, gates, caps, validation) and refuses anything illegal. The read side is the `resume-project` skill.
+Write the ledger through the `ledger` MCP tools. The ledger is canonical; the chat summary is a courtesy for a future session that starts with zero context. This skill only orchestrates the tools — the server owns every rule (lifecycle, gates, caps, validation) and refuses anything illegal. The read side is the `lift-off` skill.
 
 Operate on the thread you have been working in this session. Its `thread_id` is the active thread the SessionStart context surfaced (the same id returned when the work was opened). Pass that `thread_id` to every write below.
 

@@ -1,5 +1,5 @@
 function blockReason(threadId) {
-  return `Session-continuity: thread ${threadId} is still active. Run the session-handoff skill to hand it off (which pauses the thread and clears the active-thread pointer) before ending the session.\n`;
+  return `Session-continuity: thread ${threadId} is still active. Run the ledgerize skill to hand it off (which pauses the thread and clears the active-thread pointer) before ending the session.\n`;
 }
 
 export async function handleStop(ctx) {

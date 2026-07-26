@@ -58,8 +58,8 @@ export async function writeValidEnsemble(root) {
     'hooks/post-tool-use.mjs': '',
     'hooks/stop.mjs': '',
     'hooks/pre-compact.mjs': '',
-    'skills/session-handoff/SKILL.md': '# session-handoff\n',
-    'skills/resume-project/SKILL.md': '# resume-project\n',
+    'skills/ledgerize/SKILL.md': '# ledgerize\n',
+    'skills/lift-off/SKILL.md': '# lift-off\n',
   };
   for (const [rel, content] of Object.entries(files)) {
     await writeFileEnsuringDir(join(root, rel), content);
