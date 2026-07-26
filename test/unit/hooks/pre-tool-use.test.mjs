@@ -12,6 +12,12 @@ import { tempDir, cleanup, useEnv } from './fixtures.mjs';
 
 const ROOTS = ['/data/-proj/ledger'];
 const SPACED_ROOTS = ['/data/-proj/led ger'];
+const ROOT_READ = 'cat /data/-proj/ledger/f ';
+const OUTSIDE_READ = 'cat /tmp/f ';
+
+function padTo(head, length) {
+  return head + 'x'.repeat(length - head.length);
+}
 
 test('mutatesUnderRoot flags a write whose target lands under a root', () => {
   assert.equal(mutatesUnderRoot('echo x > /data/-proj/ledger/threads/a.json', ROOTS, '/proj'), true);
@@ -90,6 +96,30 @@ test('mutatesUnderRoot leaves an unresolvable expansion allowed', () => {
 test('mutatesUnderRoot holds the tracked cwd when a cd target is unresolvable', () => {
   assert.equal(mutatesUnderRoot('cd "$D" && rm -rf threads', ROOTS, '/data/-proj/ledger'), true);
   assert.equal(mutatesUnderRoot('cd "$D" && rm -rf threads', ROOTS, '/proj'), false);
+});
+
+test('mutatesUnderRoot denies an oversized command that names a ledger root', () => {
+  const under = padTo(ROOT_READ, 16383);
+  const atCap = padTo(ROOT_READ, 16384);
+  const over = padTo(ROOT_READ, 16385);
+  assert.equal(under.length, 16383);
+  assert.equal(atCap.length, 16384);
+  assert.equal(over.length, 16385);
+  assert.equal(mutatesUnderRoot(under, ROOTS, '/proj'), false);
+  assert.equal(mutatesUnderRoot(atCap, ROOTS, '/proj'), false);
+  assert.equal(mutatesUnderRoot(over, ROOTS, '/proj'), true);
+});
+
+test('mutatesUnderRoot allows an oversized command that never names a ledger root', () => {
+  const under = padTo(OUTSIDE_READ, 16383);
+  const atCap = padTo(OUTSIDE_READ, 16384);
+  const over = padTo(OUTSIDE_READ, 16385);
+  assert.equal(under.length, 16383);
+  assert.equal(atCap.length, 16384);
+  assert.equal(over.length, 16385);
+  assert.equal(mutatesUnderRoot(under, ROOTS, '/proj'), false);
+  assert.equal(mutatesUnderRoot(atCap, ROOTS, '/proj'), false);
+  assert.equal(mutatesUnderRoot(over, ROOTS, '/proj'), false);
 });
 
 test('classifyPreToolUse denies a quoted destructive Bash target', () => {

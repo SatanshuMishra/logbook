@@ -9,6 +9,7 @@ const DESTRUCTIVE = new Set([
   'rm', 'mv', 'cp', 'dd', 'tee', 'truncate', 'install', 'ln', 'shred',
   'chmod', 'chown', 'mkdir', 'rmdir', 'touch',
 ]);
+const MAX_COMMAND_BYTES = 16384;
 const DENY_SUFFIX =
   'use the ledger MCP tools (mcp__ledger__* when the server is configured directly, mcp__plugin_session-continuity_ledger__* when installed as a plugin)';
 
@@ -60,6 +61,9 @@ function nextCwd(cwd, token) {
 export function mutatesUnderRoot(command, roots, baseDir) {
   if (typeof command !== 'string' || !Array.isArray(roots) || roots.length === 0) {
     return false;
+  }
+  if (command.length > MAX_COMMAND_BYTES) {
+    return roots.some((root) => command.includes(root));
   }
   let cwd = baseDir ?? process.cwd();
   for (const tokens of scanSegments(command)) {
