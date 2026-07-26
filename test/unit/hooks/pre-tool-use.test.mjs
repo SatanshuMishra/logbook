@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import {
   classifyPreToolUse,
-  mutatesUnderRoot,
+  classifyBashCommand,
   handlePreToolUse,
 } from '../../../hooks/lib/pre-tool-use.mjs';
 import { resolveLedgerRoots } from '../../../hooks/lib/ledger-roots.mjs';
@@ -19,107 +19,99 @@ function padTo(head, length) {
   return head + 'x'.repeat(length - head.length);
 }
 
-test('mutatesUnderRoot flags a write whose target lands under a root', () => {
-  assert.equal(mutatesUnderRoot('echo x > /data/-proj/ledger/threads/a.json', ROOTS, '/proj'), true);
-  assert.equal(mutatesUnderRoot('rm -rf /data/-proj/ledger', ROOTS, '/proj'), true);
-  assert.equal(mutatesUnderRoot('cat /data/-proj/ledger/threads/a.json', ROOTS, '/proj'), false);
+test('classifyBashCommand denies a write whose target lands under a root', () => {
+  assert.equal(classifyBashCommand('echo x > /data/-proj/ledger/threads/a.json', ROOTS, '/proj'), 'deny');
+  assert.equal(classifyBashCommand('rm -rf /data/-proj/ledger', ROOTS, '/proj'), 'deny');
+  assert.equal(classifyBashCommand('cat /data/-proj/ledger/threads/a.json', ROOTS, '/proj'), null);
 });
 
-test('mutatesUnderRoot ignores a redirect that names a root but writes elsewhere', () => {
-  assert.equal(mutatesUnderRoot('grep -r x /data/-proj/ledger 2>/dev/null', ROOTS, '/proj'), false);
-  assert.equal(mutatesUnderRoot('ls -la /data/-proj/ledger 2>&1', ROOTS, '/proj'), false);
+test('classifyBashCommand ignores a redirect that names a root but writes elsewhere', () => {
+  assert.equal(classifyBashCommand('grep -r x /data/-proj/ledger 2>/dev/null', ROOTS, '/proj'), null);
+  assert.equal(classifyBashCommand('ls -la /data/-proj/ledger 2>&1', ROOTS, '/proj'), null);
 });
 
-test('mutatesUnderRoot ignores an angle bracket inside quotes', () => {
-  assert.equal(mutatesUnderRoot("awk '$1 > 5' /data/-proj/ledger/threads/a.json", ROOTS, '/proj'), false);
+test('classifyBashCommand follows cd into a root before a destructive verb', () => {
+  assert.equal(classifyBashCommand('cd ledger && rm -rf .', ROOTS, '/data/-proj'), 'deny');
 });
 
-test('mutatesUnderRoot follows cd into a root before a destructive verb', () => {
-  assert.equal(mutatesUnderRoot('cd ledger && rm -rf .', ROOTS, '/data/-proj'), true);
+test('classifyBashCommand resolves a quoted destructive target', () => {
+  assert.equal(classifyBashCommand('rm -rf "/data/-proj/ledger"', ROOTS, '/proj'), 'deny');
+  assert.equal(classifyBashCommand("rm -rf '/data/-proj/ledger'", ROOTS, '/proj'), 'deny');
+  assert.equal(classifyBashCommand('rm -rf "/data/-proj/ledger/threads"', ROOTS, '/proj'), 'deny');
 });
 
-test('mutatesUnderRoot resolves a quoted destructive target', () => {
-  assert.equal(mutatesUnderRoot('rm -rf "/data/-proj/ledger"', ROOTS, '/proj'), true);
-  assert.equal(mutatesUnderRoot("rm -rf '/data/-proj/ledger'", ROOTS, '/proj'), true);
-  assert.equal(mutatesUnderRoot('rm -rf "/data/-proj/ledger/threads"', ROOTS, '/proj'), true);
+test('classifyBashCommand resolves a quoted redirect target', () => {
+  assert.equal(classifyBashCommand('echo x > "/data/-proj/ledger/threads/x.json"', ROOTS, '/proj'), 'deny');
+  assert.equal(classifyBashCommand("echo x > '/data/-proj/ledger/threads/x.json'", ROOTS, '/proj'), 'deny');
+  assert.equal(classifyBashCommand('echo x >> "/data/-proj/ledger/log"', ROOTS, '/proj'), 'deny');
 });
 
-test('mutatesUnderRoot resolves a quoted redirect target', () => {
-  assert.equal(mutatesUnderRoot('echo x > "/data/-proj/ledger/threads/x.json"', ROOTS, '/proj'), true);
-  assert.equal(mutatesUnderRoot("echo x > '/data/-proj/ledger/threads/x.json'", ROOTS, '/proj'), true);
-  assert.equal(mutatesUnderRoot('echo x >> "/data/-proj/ledger/log"', ROOTS, '/proj'), true);
+test('classifyBashCommand keeps a quoted path with spaces as a single token', () => {
+  assert.equal(classifyBashCommand('rm -rf "/data/-proj/led ger/threads"', SPACED_ROOTS, '/proj'), 'deny');
+  assert.equal(classifyBashCommand("rm -rf '/data/-proj/led ger'", SPACED_ROOTS, '/proj'), 'deny');
+  assert.equal(classifyBashCommand('echo x > "/data/-proj/led ger/threads/a.json"', SPACED_ROOTS, '/proj'), 'deny');
+  assert.equal(classifyBashCommand('rm -rf /data/-proj/led\\ ger/threads', SPACED_ROOTS, '/proj'), 'deny');
+  assert.equal(classifyBashCommand('rm -rf "/data/-proj/led"', SPACED_ROOTS, '/proj'), null);
 });
 
-test('mutatesUnderRoot keeps a quoted path with spaces as a single token', () => {
-  assert.equal(mutatesUnderRoot('rm -rf "/data/-proj/led ger/threads"', SPACED_ROOTS, '/proj'), true);
-  assert.equal(mutatesUnderRoot("rm -rf '/data/-proj/led ger'", SPACED_ROOTS, '/proj'), true);
-  assert.equal(mutatesUnderRoot('echo x > "/data/-proj/led ger/threads/a.json"', SPACED_ROOTS, '/proj'), true);
-  assert.equal(mutatesUnderRoot('rm -rf /data/-proj/led\\ ger/threads', SPACED_ROOTS, '/proj'), true);
-  assert.equal(mutatesUnderRoot('rm -rf "/data/-proj/led"', SPACED_ROOTS, '/proj'), false);
+test('classifyBashCommand resolves a quoted in-place sed target', () => {
+  assert.equal(classifyBashCommand("sed -i '' s/x/y/ \"/data/-proj/ledger/f\"", ROOTS, '/proj'), 'deny');
 });
 
-test('mutatesUnderRoot resolves a quoted in-place sed target', () => {
-  assert.equal(mutatesUnderRoot("sed -i '' s/x/y/ \"/data/-proj/ledger/f\"", ROOTS, '/proj'), true);
+test('classifyBashCommand leaves read-only inspection of a root allowed', () => {
+  assert.equal(classifyBashCommand('ls -la /data/-proj/ledger 2>/dev/null', ROOTS, '/proj'), null);
+  assert.equal(classifyBashCommand('ls -la "/data/-proj/ledger" 2>/dev/null', ROOTS, '/proj'), null);
+  assert.equal(classifyBashCommand('git -C /data/-proj/ledger show HEAD --stat 2>&1', ROOTS, '/proj'), null);
+  assert.equal(classifyBashCommand('git -C "/data/-proj/ledger" show HEAD --stat 2>&1', ROOTS, '/proj'), null);
+  assert.equal(classifyBashCommand('echo hi >/tmp/safe.txt && ls /data/-proj/ledger', ROOTS, '/proj'), null);
 });
 
-test('mutatesUnderRoot leaves read-only inspection of a root allowed', () => {
-  assert.equal(mutatesUnderRoot('ls -la /data/-proj/ledger 2>/dev/null', ROOTS, '/proj'), false);
-  assert.equal(mutatesUnderRoot('ls -la "/data/-proj/ledger" 2>/dev/null', ROOTS, '/proj'), false);
-  assert.equal(mutatesUnderRoot('git -C /data/-proj/ledger show HEAD --stat 2>&1', ROOTS, '/proj'), false);
-  assert.equal(mutatesUnderRoot('git -C "/data/-proj/ledger" show HEAD --stat 2>&1', ROOTS, '/proj'), false);
-  assert.equal(mutatesUnderRoot('echo hi >/tmp/safe.txt && ls /data/-proj/ledger', ROOTS, '/proj'), false);
+test('classifyBashCommand tracks cd into a root through a quoted target', () => {
+  assert.equal(classifyBashCommand('cd /data/-proj/ledger && rm -rf threads', ROOTS, '/proj'), 'deny');
+  assert.equal(classifyBashCommand('cd "/data/-proj/ledger" && rm -rf threads', ROOTS, '/proj'), 'deny');
+  assert.equal(classifyBashCommand("cd '/data/-proj/ledger' && echo x > threads/a.json", ROOTS, '/proj'), 'deny');
+  assert.equal(classifyBashCommand('cd "/data/-proj/led ger" && rm -rf threads', SPACED_ROOTS, '/proj'), 'deny');
+  assert.equal(classifyBashCommand('cd "/data/-proj/ledger" && ls -la threads', ROOTS, '/proj'), null);
 });
 
-test('mutatesUnderRoot tracks cd into a root through a quoted target', () => {
-  assert.equal(mutatesUnderRoot('cd /data/-proj/ledger && rm -rf threads', ROOTS, '/proj'), true);
-  assert.equal(mutatesUnderRoot('cd "/data/-proj/ledger" && rm -rf threads', ROOTS, '/proj'), true);
-  assert.equal(mutatesUnderRoot("cd '/data/-proj/ledger' && echo x > threads/a.json", ROOTS, '/proj'), true);
-  assert.equal(mutatesUnderRoot('cd "/data/-proj/led ger" && rm -rf threads', SPACED_ROOTS, '/proj'), true);
-  assert.equal(mutatesUnderRoot('cd "/data/-proj/ledger" && ls -la threads', ROOTS, '/proj'), false);
+test('classifyBashCommand splits segments only on unquoted separators', () => {
+  assert.equal(classifyBashCommand('rm -rf "/data/-proj/ledger/a && b"', ROOTS, '/proj'), 'deny');
+  assert.equal(classifyBashCommand('rm -rf "/data/-proj/ledger/a;b"', ROOTS, '/proj'), 'deny');
+  assert.equal(classifyBashCommand('rm -rf "/data/-proj/ledger/a|b"', ROOTS, '/proj'), 'deny');
 });
 
-test('mutatesUnderRoot splits segments only on unquoted separators', () => {
-  assert.equal(mutatesUnderRoot('rm -rf "/data/-proj/ledger/a && b"', ROOTS, '/proj'), true);
-  assert.equal(mutatesUnderRoot('rm -rf "/data/-proj/ledger/a;b"', ROOTS, '/proj'), true);
-  assert.equal(mutatesUnderRoot('rm -rf "/data/-proj/ledger/a|b"', ROOTS, '/proj'), true);
-  assert.equal(mutatesUnderRoot('echo "before && rm -rf /data/-proj/ledger"', ROOTS, '/proj'), false);
-  assert.equal(mutatesUnderRoot("echo 'x | rm -rf /data/-proj/ledger'", ROOTS, '/proj'), false);
+test('classifyBashCommand leaves an unresolvable expansion outside every root allowed', () => {
+  assert.equal(classifyBashCommand('rm -rf "$(cat target.txt)"', ROOTS, '/proj'), null);
+  assert.equal(classifyBashCommand('rm -rf "`cat target.txt`"', ROOTS, '/proj'), null);
 });
 
-test('mutatesUnderRoot leaves an unresolvable expansion allowed', () => {
-  assert.equal(mutatesUnderRoot('D=/data/-proj/ledger; rm -rf "$D"', ROOTS, '/proj'), false);
-  assert.equal(mutatesUnderRoot('cd /data/-proj/ledger && rm -rf "$D"', ROOTS, '/proj'), false);
-  assert.equal(mutatesUnderRoot('rm -rf "$(cat target.txt)"', ROOTS, '/proj'), false);
-  assert.equal(mutatesUnderRoot('rm -rf "`cat target.txt`"', ROOTS, '/proj'), false);
+test('classifyBashCommand holds the tracked cwd when a cd target is unresolvable', () => {
+  assert.equal(classifyBashCommand('cd "$D" && rm -rf threads', ROOTS, '/data/-proj/ledger'), 'deny');
+  assert.equal(classifyBashCommand('cd "$D" && rm -rf threads', ROOTS, '/proj'), null);
 });
 
-test('mutatesUnderRoot holds the tracked cwd when a cd target is unresolvable', () => {
-  assert.equal(mutatesUnderRoot('cd "$D" && rm -rf threads', ROOTS, '/data/-proj/ledger'), true);
-  assert.equal(mutatesUnderRoot('cd "$D" && rm -rf threads', ROOTS, '/proj'), false);
-});
-
-test('mutatesUnderRoot denies an oversized command that names a ledger root', () => {
+test('classifyBashCommand denies an oversized command that names a ledger root', () => {
   const under = padTo(ROOT_READ, 16383);
   const atCap = padTo(ROOT_READ, 16384);
   const over = padTo(ROOT_READ, 16385);
   assert.equal(under.length, 16383);
   assert.equal(atCap.length, 16384);
   assert.equal(over.length, 16385);
-  assert.equal(mutatesUnderRoot(under, ROOTS, '/proj'), false);
-  assert.equal(mutatesUnderRoot(atCap, ROOTS, '/proj'), false);
-  assert.equal(mutatesUnderRoot(over, ROOTS, '/proj'), true);
+  assert.equal(classifyBashCommand(under, ROOTS, '/proj'), null);
+  assert.equal(classifyBashCommand(atCap, ROOTS, '/proj'), null);
+  assert.equal(classifyBashCommand(over, ROOTS, '/proj'), 'deny');
 });
 
-test('mutatesUnderRoot allows an oversized command that never names a ledger root', () => {
+test('classifyBashCommand allows an oversized command that never names a ledger root', () => {
   const under = padTo(OUTSIDE_READ, 16383);
   const atCap = padTo(OUTSIDE_READ, 16384);
   const over = padTo(OUTSIDE_READ, 16385);
   assert.equal(under.length, 16383);
   assert.equal(atCap.length, 16384);
   assert.equal(over.length, 16385);
-  assert.equal(mutatesUnderRoot(under, ROOTS, '/proj'), false);
-  assert.equal(mutatesUnderRoot(atCap, ROOTS, '/proj'), false);
-  assert.equal(mutatesUnderRoot(over, ROOTS, '/proj'), false);
+  assert.equal(classifyBashCommand(under, ROOTS, '/proj'), null);
+  assert.equal(classifyBashCommand(atCap, ROOTS, '/proj'), null);
+  assert.equal(classifyBashCommand(over, ROOTS, '/proj'), null);
 });
 
 test('classifyPreToolUse denies a quoted destructive Bash target', () => {

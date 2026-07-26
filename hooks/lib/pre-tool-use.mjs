@@ -1,20 +1,34 @@
-import { homedir } from 'node:os';
-import { resolve } from 'node:path';
 import { resolveLedgerRoots, isUnderRoot } from './ledger-roots.mjs';
 import { scanSegments } from './shell-tokens.mjs';
+import {
+  ALLOW_HEADS,
+  GIT_READ_SUBCOMMANDS,
+  SINK_HEADS,
+  findAllows,
+  normalizeHead,
+  resolveGitSubcommand,
+  sedAllows,
+} from './command-allowlist.mjs';
+import {
+  hasSuspiciousResidue,
+  hasUnresolvable,
+  nextCwd,
+  redirectTargetsRoot,
+  touchesRoot,
+} from './command-scope.mjs';
 
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 const LEDGER_TOOL = /^mcp__(?:plugin_session-continuity_)?ledger__/;
-const DESTRUCTIVE = new Set([
-  'rm', 'mv', 'cp', 'dd', 'tee', 'truncate', 'install', 'ln', 'shred',
-  'chmod', 'chown', 'mkdir', 'rmdir', 'touch',
-]);
 const MAX_COMMAND_BYTES = 16384;
 const CONTROL_WORDS = new Set(['(', ')', '{', '}']);
 const GROUP_OPENERS = new Set(['(', '{']);
 const FD_DUPLICATION = /^&(\d+|-)$/;
 const DENY_SUFFIX =
   'use the ledger MCP tools (mcp__ledger__* when the server is configured directly, mcp__plugin_session-continuity_ledger__* when installed as a plugin)';
+const BASH_REASONS = Object.freeze({
+  deny: `a Bash command that is not provably read-only against the session-continuity ledger store is not permitted; ${DENY_SUFFIX}`,
+  ask: `this Bash command reaches the session-continuity ledger store in a way the guard cannot resolve; to write the store, ${DENY_SUFFIX}`,
+});
 
 function decision(permissionDecision, reason) {
   return {
@@ -24,41 +38,6 @@ function decision(permissionDecision, reason) {
       permissionDecisionReason: reason,
     },
   };
-}
-
-function expandHome(text) {
-  if (text === '~') {
-    return homedir();
-  }
-  return text.startsWith('~/') ? resolve(homedir(), text.slice(2)) : text;
-}
-
-function resolvesUnderRoot(token, roots, cwd) {
-  if (!token || token.unresolvable) {
-    return false;
-  }
-  return isUnderRoot(expandHome(token.text), roots, cwd);
-}
-
-function redirectTargetsRoot(tokens, roots, cwd) {
-  return tokens.some((token, index) => {
-    const target = tokens[index + 1];
-    return token.kind === 'redirect'
-      && target !== undefined
-      && target.kind === 'word'
-      && resolvesUnderRoot(target, roots, cwd);
-  });
-}
-
-function isInPlaceSed(head, words) {
-  return head === 'sed' && words.some((word) => /^-[a-zA-Z]*i/.test(word.text));
-}
-
-function nextCwd(cwd, token) {
-  if (!token || token.unresolvable) {
-    return cwd;
-  }
-  return resolve(cwd, expandHome(token.text));
 }
 
 function derivedToken(token, text) {
@@ -122,32 +101,115 @@ export function splitControl(tokens) {
   return subSegments;
 }
 
-export function mutatesUnderRoot(command, roots, baseDir) {
-  if (typeof command !== 'string' || !Array.isArray(roots) || roots.length === 0) {
+function headClears(head, words) {
+  if (head.name === 'find') {
+    return findAllows(words);
+  }
+  if (head.name === 'sed') {
+    return sedAllows(words);
+  }
+  if (head.name === 'git') {
+    const resolved = resolveGitSubcommand(words, head.index + 1);
+    return resolved.ok === true && GIT_READ_SUBCOMMANDS.has(resolved.subcommand);
+  }
+  return ALLOW_HEADS.has(head.name);
+}
+
+function unitOf(tokens, roots, cwd) {
+  const words = tokens.filter((token) => token.kind === 'word');
+  const head = normalizeHead(words);
+  return {
+    tokens,
+    words,
+    head,
+    cwd,
+    cleared: head.kind === 'assignment-only'
+      || (head.kind === 'name' && headClears(head, words)),
+    direct: touchesRoot(tokens, roots, cwd),
+  };
+}
+
+function advanceCwd(unit) {
+  if (unit.head.kind !== 'name' || unit.head.name !== 'cd') {
+    return unit.cwd;
+  }
+  const target = unit.words
+    .slice(unit.head.index + 1)
+    .find((word) => !word.text.startsWith('-'));
+  return nextCwd(unit.cwd, target);
+}
+
+function scanSegment(tokens, roots, cwd) {
+  const scanned = splitControl(tokens).reduce((state, sub) => {
+    const unit = unitOf(sub, roots, state.cwd);
+    return { cwd: advanceCwd(unit), units: [...state.units, unit] };
+  }, { cwd, units: [] });
+  const inherited = scanned.units.some((unit) => unit.direct);
+  return {
+    cwd: scanned.cwd,
+    units: scanned.units.map((unit) => ({ ...unit, inScope: unit.direct || inherited })),
+  };
+}
+
+function scanCommand(command, roots, baseDir) {
+  return scanSegments(command).reduce((state, tokens) => {
+    const scanned = scanSegment(tokens, roots, state.cwd);
+    return { cwd: scanned.cwd, units: [...state.units, ...scanned.units] };
+  }, { cwd: baseDir, units: [] }).units;
+}
+
+function unitDenies(unit, roots) {
+  if (redirectTargetsRoot(unit.tokens, roots, unit.cwd)) {
+    return true;
+  }
+  if (!unit.inScope) {
     return false;
   }
+  if (unit.head.kind === 'obfuscated' || unit.head.kind === 'untrusted-path') {
+    return true;
+  }
+  return unit.head.kind === 'name' && !unit.cleared;
+}
+
+function sinkElsewhere(units, index, predicate) {
+  return units.some((unit, other) => (
+    other !== index
+    && unit.head.kind === 'name'
+    && SINK_HEADS.has(unit.head.name)
+    && predicate(unit)
+  ));
+}
+
+function overlaysAsk(units) {
+  return units.some((unit, index) => {
+    if (!unit.inScope) {
+      return false;
+    }
+    if (unit.head.kind === 'name' && unit.cleared) {
+      return sinkElsewhere(units, index, () => true);
+    }
+    if (unit.head.kind === 'assignment-only') {
+      return sinkElsewhere(units, index, (other) => hasUnresolvable(other.tokens));
+    }
+    return false;
+  });
+}
+
+export function classifyBashCommand(command, roots, baseDir) {
+  if (typeof command !== 'string' || !Array.isArray(roots) || roots.length === 0) {
+    return null;
+  }
   if (command.length > MAX_COMMAND_BYTES) {
-    return roots.some((root) => command.includes(root));
+    return roots.some((root) => command.includes(root)) ? 'deny' : null;
   }
-  let cwd = baseDir ?? process.cwd();
-  for (const tokens of scanSegments(command)) {
-    if (redirectTargetsRoot(tokens, roots, cwd)) {
-      return true;
-    }
-    const words = tokens.filter((token) => token.kind === 'word');
-    const head = words.length > 0 ? words[0].text : undefined;
-    const args = words.slice(1).filter((word) => !word.text.startsWith('-'));
-    if (head === 'cd') {
-      cwd = nextCwd(cwd, args[0]);
-      continue;
-    }
-    if (DESTRUCTIVE.has(head) || isInPlaceSed(head, words)) {
-      if (args.some((arg) => resolvesUnderRoot(arg, roots, cwd))) {
-        return true;
-      }
-    }
+  const units = scanCommand(command, roots, baseDir ?? process.cwd());
+  if (units.some((unit) => unitDenies(unit, roots))) {
+    return 'deny';
   }
-  return false;
+  const residue = units.some((unit) => (
+    unit.inScope && unit.cleared && hasSuspiciousResidue(unit.tokens)
+  ));
+  return residue || overlaysAsk(units) ? 'ask' : null;
 }
 
 function targetPath(input) {
@@ -166,10 +228,8 @@ export function classifyPreToolUse(input, roots, baseDir) {
   }
   if (toolName === 'Bash') {
     const command = input && input.tool_input ? input.tool_input.command : undefined;
-    if (mutatesUnderRoot(command, roots, baseDir)) {
-      return decision('deny', `a mutating Bash command targeting the session-continuity ledger store is not permitted; ${DENY_SUFFIX}`);
-    }
-    return null;
+    const verdict = classifyBashCommand(command, roots, baseDir);
+    return verdict ? decision(verdict, BASH_REASONS[verdict]) : null;
   }
   return null;
 }

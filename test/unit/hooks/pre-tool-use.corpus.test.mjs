@@ -1,14 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mutatesUnderRoot } from '../../../hooks/lib/pre-tool-use.mjs';
+import { classifyBashCommand } from '../../../hooks/lib/pre-tool-use.mjs';
 
 const ROOTS = Object.freeze(['/data/-proj/ledger']);
 const BASE = '/proj';
 const R = ROOTS[0];
-
-const legacyVerdict = (command, roots, baseDir) => (
-  mutatesUnderRoot(command, roots, baseDir) ? 'deny' : null
-);
 
 const caseOf = (expect) => ({ id, command, roots = ROOTS, baseDir = BASE, why }) => Object.freeze({
   id,
@@ -167,7 +163,7 @@ export const ALLOW_CORPUS = Object.freeze([
 const runCorpus = (corpus) => {
   for (const { id, command, roots, baseDir, expect, why } of corpus) {
     test(`${id} ${why}`, () => {
-      assert.equal(legacyVerdict(command, roots, baseDir), expect);
+      assert.equal(classifyBashCommand(command, roots, baseDir), expect);
     });
   }
 };
