@@ -12,6 +12,15 @@ export const DEFAULT_LEDGER_BRANCH = '_ledger';
 export const DEFAULT_REMOTE = 'origin';
 export const MAX_SYNC_ATTEMPTS = 5;
 
+export function ledgerCommitEnv() {
+  return {
+    GIT_AUTHOR_NAME: LEDGER_INIT_IDENTITY.name,
+    GIT_AUTHOR_EMAIL: LEDGER_INIT_IDENTITY.email,
+    GIT_COMMITTER_NAME: LEDGER_INIT_IDENTITY.name,
+    GIT_COMMITTER_EMAIL: LEDGER_INIT_IDENTITY.email,
+  };
+}
+
 export function assertBackend(backend) {
   if (!LEDGER_BACKENDS.includes(backend)) {
     throw new Error(`unknown ledger backend: ${backend}`);

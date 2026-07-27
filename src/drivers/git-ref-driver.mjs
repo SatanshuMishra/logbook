@@ -4,11 +4,11 @@ import { LocalDriver } from './local-driver.mjs';
 import { gitExec } from '../util/git-exec.mjs';
 import {
   EMPTY_TREE_SHA,
-  LEDGER_INIT_IDENTITY,
   MAX_SYNC_ATTEMPTS,
   DEFAULT_LEDGER_BRANCH,
   DEFAULT_REMOTE,
   assertBackend,
+  ledgerCommitEnv,
   ledgerRefName,
   mirrorRefName,
   fetchRefspecFor,
@@ -20,15 +20,6 @@ const GITATTRIBUTES = 'sessions/**/*.md merge=union\n';
 const GITIGNORE = 'index/\n';
 const SCAFFOLD_MESSAGE = 'chore: scaffold ledger';
 const MERGE_MESSAGE = 'chore: merge ledger';
-
-function ledgerCommitEnv() {
-  return {
-    GIT_AUTHOR_NAME: LEDGER_INIT_IDENTITY.name,
-    GIT_AUTHOR_EMAIL: LEDGER_INIT_IDENTITY.email,
-    GIT_COMMITTER_NAME: LEDGER_INIT_IDENTITY.name,
-    GIT_COMMITTER_EMAIL: LEDGER_INIT_IDENTITY.email,
-  };
-}
 
 async function revParseOrNull(repo, ref) {
   const { code, stdout } = await gitExec(repo, ['rev-parse', '--verify', '--quiet', ref], { check: false });
