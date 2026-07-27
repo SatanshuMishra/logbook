@@ -152,6 +152,17 @@ test('GitRefDriver commits land on the ledger ref, not on a private recovery bra
   assert.equal(tip.stdout.trim(), result.sha);
 });
 
+test('GitRefDriver.commit rejects a non-string or empty message', async (t) => {
+  const repo = await initGitRepo(t);
+  const driver = await makeGitDriver(t, repo);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  await assert.rejects(() => driver.commit(42), /message must be a non-empty string/);
+  await assert.rejects(() => driver.commit(''), /message must be a non-empty string/);
+  const tip = await gitExec(repo, ['log', '--format=%s', driver.ledgerRef]);
+  assert.equal(tip.stdout.includes('42'), false);
+});
+
 test('commit reports empty when nothing is staged', async (t) => {
   const repo = await initGitRepo(t);
   const driver = await makeGitDriver(t, repo);

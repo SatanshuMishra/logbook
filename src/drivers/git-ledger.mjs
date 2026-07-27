@@ -23,6 +23,13 @@ export function ledgerCommitEnv() {
   };
 }
 
+export function assertCommitMessage(fn, message) {
+  if (typeof message !== 'string' || message.length === 0) {
+    throw new Error(`${fn}: message must be a non-empty string`);
+  }
+  return message;
+}
+
 export function assertBackend(backend) {
   if (!LEDGER_BACKENDS.includes(backend)) {
     throw new Error(`unknown ledger backend: ${backend}`);

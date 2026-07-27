@@ -8,6 +8,7 @@ import {
   DEFAULT_LEDGER_BRANCH,
   DEFAULT_REMOTE,
   assertBackend,
+  assertCommitMessage,
   ledgerCommitEnv,
   ledgerRefName,
   mirrorRefName,
@@ -238,6 +239,7 @@ export class GitRefDriver extends LocalDriver {
   }
 
   async commit(message) {
+    assertCommitMessage('GitRefDriver.commit', message);
     return this.#commitWorktree(message);
   }
 

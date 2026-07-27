@@ -2,7 +2,7 @@ import { lstat, mkdir, readFile, readdir } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { StorageDriver } from './storage-driver.mjs';
 import { serializeRecord } from './layout.mjs';
-import { DEFAULT_LEDGER_BRANCH, ledgerCommitEnv } from './git-ledger.mjs';
+import { DEFAULT_LEDGER_BRANCH, assertCommitMessage, ledgerCommitEnv } from './git-ledger.mjs';
 import { atomicWrite } from '../util/atomic-write.mjs';
 import { gitExec } from '../util/git-exec.mjs';
 import { clearedGitLocationEnv, isolatedGitArgs, isolatedGitConfigEnv } from '../util/git-env.mjs';
@@ -240,9 +240,7 @@ export class LocalDriver extends StorageDriver {
   }
 
   async commit(message) {
-    if (typeof message !== 'string' || message.length === 0) {
-      throw new Error('LocalDriver.commit: message must be a non-empty string');
-    }
+    assertCommitMessage('LocalDriver.commit', message);
     if (this.isGit() || !(await this.#hasRecoveryRepo())) {
       return degradedCommit();
     }
