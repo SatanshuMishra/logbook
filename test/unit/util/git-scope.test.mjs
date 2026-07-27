@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { devNull, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { gitExec } from '../../../src/util/git-exec.mjs';
+import { hostileGitEnvironment, withGitEnv } from '../../fixtures/git-repos.mjs';
 import {
   hostScope,
   isolatedScope,
@@ -29,10 +30,35 @@ test('hostScope clears the ambient location variables without pinning', () => {
   const scope = hostScope('/abs/repo');
   assert.equal(scope.dir, '/abs/repo');
   assert.equal(scope.gitDir, null);
-  assert.deepEqual(scope.args, []);
   assert.equal(scope.env.GIT_DIR, undefined);
   assert.ok('GIT_DIR' in scope.env);
   assert.ok('GIT_WORK_TREE' in scope.env);
+});
+
+test('hostScope disables hooks and fsmonitor while leaving user config alone', async () => {
+  const scope = hostScope('/abs/repo');
+  const hooksSetting = scope.args.find((arg) => arg.startsWith('core.hooksPath='));
+  const hooksPath = hooksSetting.slice('core.hooksPath='.length);
+  assert.equal(isAbsolute(hooksPath), true);
+  await assert.rejects(() => stat(hooksPath));
+  assert.ok(scope.args.includes('core.fsmonitor=false'));
+  for (const name of ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'GIT_CONFIG_COUNT']) {
+    assert.equal(name in scope.env, false, name);
+  }
+});
+
+test('hostScope runs no ambient hook and still reads the repository', async (t) => {
+  const repo = await initRepo(t);
+  const trap = await hostileGitEnvironment(t);
+  await gitExec(repo, ['commit', '-q', '--allow-empty', '--no-verify', '-m', 'seed'], {
+    env: { GIT_CONFIG_GLOBAL: trap.emptyConfig, GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@e.invalid', GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@e.invalid' },
+  });
+  const branches = await withGitEnv(
+    { GIT_CONFIG_GLOBAL: trap.globalConfig, GIT_CONFIG_SYSTEM: trap.systemConfig },
+    () => scopedExec(hostScope(repo), ['for-each-ref', '--format=%(refname:short)', 'refs/heads/']),
+  );
+  assert.ok(branches.stdout.trim().length > 0);
+  await assert.rejects(() => stat(trap.marker), { code: 'ENOENT' });
 });
 
 test('pinnedScope pins GIT_DIR and adds no config overrides', () => {

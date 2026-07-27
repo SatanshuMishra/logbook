@@ -1,7 +1,9 @@
 import { join } from 'node:path';
 import { gitExec } from './git-exec.mjs';
 import {
+  ABSENT_HOOKS_PATH,
   clearedGitLocationEnv,
+  disabledHookArgs,
   isolatedGitArgs,
   isolatedGitConfigEnv,
   nulledGlobalGitConfigEnv,
@@ -32,7 +34,12 @@ export function safeDirectoryArgs(dir) {
 
 export function hostScope(dir) {
   assertDir('hostScope', dir);
-  return { dir, gitDir: null, env: clearedGitLocationEnv(), args: [] };
+  return {
+    dir,
+    gitDir: null,
+    env: clearedGitLocationEnv(),
+    args: disabledHookArgs(ABSENT_HOOKS_PATH),
+  };
 }
 
 export async function resolveGitDir(dir) {

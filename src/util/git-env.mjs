@@ -1,4 +1,5 @@
 import { devNull } from 'node:os';
+import { join } from 'node:path';
 
 export const GIT_LOCATION_VARS = Object.freeze([
   'GIT_DIR',
@@ -20,6 +21,8 @@ const HOOKS_PATH_KEY = 'core.hooksPath';
 const FSMONITOR_DISABLED = 'core.fsmonitor=false';
 const COMMIT_SIGNING_DISABLED = 'commit.gpgsign=false';
 const TAG_SIGNING_DISABLED = 'tag.gpgsign=false';
+
+export const ABSENT_HOOKS_PATH = join(devNull, 'hooks-disabled');
 
 function unsetAll(names) {
   const env = {};
@@ -51,13 +54,16 @@ export function isolatedGitConfigEnv() {
   return { ...volatileGitConfigEnv(), ...nulledGlobalGitConfigEnv() };
 }
 
-export function isolatedGitArgs(hooksPath) {
+export function disabledHookArgs(hooksPath) {
   if (typeof hooksPath !== 'string' || hooksPath.length === 0) {
-    throw new Error('isolatedGitArgs: hooksPath must be a non-empty string');
+    throw new Error('disabledHookArgs: hooksPath must be a non-empty string');
   }
+  return ['-c', `${HOOKS_PATH_KEY}=${hooksPath}`, '-c', FSMONITOR_DISABLED];
+}
+
+export function isolatedGitArgs(hooksPath) {
   return [
-    '-c', `${HOOKS_PATH_KEY}=${hooksPath}`,
-    '-c', FSMONITOR_DISABLED,
+    ...disabledHookArgs(hooksPath),
     '-c', COMMIT_SIGNING_DISABLED,
     '-c', TAG_SIGNING_DISABLED,
   ];
