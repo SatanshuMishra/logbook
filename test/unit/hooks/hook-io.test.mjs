@@ -105,6 +105,46 @@ test('readHookInputResult separates parsed input from the three unreadable state
   assert.deepEqual(await readHookInputResult(failingStream()), { ok: false, reason: 'stream-error' });
 });
 
+test('readHookInputResult reports a stream error when the chunks cannot be decoded', async () => {
+  assert.deepEqual(
+    await readHookInputResult(Readable.from([1, 2, 3])),
+    { ok: false, reason: 'stream-error' },
+  );
+  assert.deepEqual(
+    await readHookInputResult(Readable.from([{ not: 'a chunk' }])),
+    { ok: false, reason: 'stream-error' },
+  );
+});
+
+test('readHookInputResult refuses a payload beyond the accumulation cap', async () => {
+  const stream = Readable.from(['{"tool_name":"Bash"}']);
+  assert.deepEqual(await readHookInputResult(stream, { maxBytes: 8 }), {
+    ok: false,
+    reason: 'oversized',
+  });
+});
+
+test('readHookInputResult accepts a payload exactly at the accumulation cap', async () => {
+  const raw = '{"tool_name":"Bash"}';
+  assert.deepEqual(await readHookInputResult(Readable.from([raw]), { maxBytes: raw.length }), {
+    ok: true,
+    input: { tool_name: 'Bash' },
+  });
+});
+
+test('readHookInputResult stops accumulating once the cap is passed', async () => {
+  const chunks = [];
+  const source = (async function* generate() {
+    for (let i = 0; i < 1000; i += 1) {
+      chunks.push(i);
+      yield 'x'.repeat(64);
+    }
+  })();
+  const result = await readHookInputResult(Readable.from(source), { maxBytes: 128 });
+  assert.deepEqual(result, { ok: false, reason: 'oversized' });
+  assert.equal(chunks.length < 1000, true);
+});
+
 test('readHookInputResult rejects a JSON payload that is not a plain object', async () => {
   for (const raw of ['[1,2,3]', '[]', '"hello"', '42', 'null', 'true']) {
     assert.deepEqual(

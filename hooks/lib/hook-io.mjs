@@ -1,6 +1,7 @@
 import { invokeCli, invokeCliJson } from './cli.mjs';
 
 const GUARDED_TOOLS = new Set(['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+const MAX_INPUT_BYTES = 32 * 1024 * 1024;
 const GUARD_FAILURE_REASON =
   'the session-continuity guard could not evaluate this tool call and refused it; this is a guard failure, not a finding about the call itself';
 
@@ -8,16 +9,26 @@ function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export async function readHookInputResult(stream = process.stdin) {
+export async function readHookInputResult(stream = process.stdin, { maxBytes = MAX_INPUT_BYTES } = {}) {
   const chunks = [];
+  let raw;
   try {
+    let total = 0;
     for await (const chunk of stream) {
-      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+      const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+      if (!ArrayBuffer.isView(buffer)) {
+        return { ok: false, reason: 'stream-error' };
+      }
+      total += buffer.byteLength;
+      if (total > maxBytes) {
+        return { ok: false, reason: 'oversized' };
+      }
+      chunks.push(buffer);
     }
+    raw = Buffer.concat(chunks).toString('utf8').trim();
   } catch {
     return { ok: false, reason: 'stream-error' };
   }
-  const raw = Buffer.concat(chunks).toString('utf8').trim();
   if (raw.length === 0) {
     return { ok: false, reason: 'empty' };
   }
@@ -94,15 +105,34 @@ function isKnownUnguardedTool(input) {
 }
 
 export async function runGuardEntry(handler, { stream = process.stdin, env = process.env } = {}) {
-  const read = await readHookInputResult(stream);
-  if (!read.ok) {
-    writeResult(guardDenial());
-    return;
-  }
+  let emitted = false;
+  const emit = (result) => {
+    emitted = true;
+    writeResult(result);
+  };
   try {
-    const result = await handler(hookContext(read.input, env));
-    writeResult(result ?? {});
+    const read = await readHookInputResult(stream);
+    if (!read.ok) {
+      emit(guardDenial());
+      return;
+    }
+    try {
+      const result = await handler(hookContext(read.input, env));
+      emit(result ?? {});
+    } catch {
+      emit(isKnownUnguardedTool(read.input) ? {} : guardDenial());
+    }
   } catch {
-    writeResult(isKnownUnguardedTool(read.input) ? {} : guardDenial());
+    if (!emitted) {
+      try {
+        emit(guardDenial());
+      } catch {
+        void 0;
+      }
+    }
+  } finally {
+    if (!Number.isInteger(process.exitCode)) {
+      process.exitCode = 0;
+    }
   }
 }

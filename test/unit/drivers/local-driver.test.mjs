@@ -385,6 +385,23 @@ test('LocalDriver refuses a recovery .git symlinked into another repo', async (t
   assert.equal(signing.stdout.trim(), '');
 });
 
+test('LocalDriver.commit ignores an ambient GIT_AUTHOR_DATE and GIT_COMMITTER_DATE', async (t) => {
+  const root = await scratchRoot(t);
+  useEnv(t, {
+    GIT_AUTHOR_DATE: '2001-02-03T04:05:06Z',
+    GIT_COMMITTER_DATE: '2001-02-03T04:05:06Z',
+  });
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  const result = await driver.commit('chore(ledger): open thread');
+  assert.equal(result.committed, true);
+  const { stdout } = await gitExec(root, ['log', '-1', '--format=%aI %cI', result.sha]);
+  const [authored, committed] = stdout.trim().split(' ');
+  assert.equal(authored.startsWith('2001-'), false);
+  assert.equal(committed.startsWith('2001-'), false);
+});
+
 test('LocalDriver.commit reports degraded:false on a healthy recovery commit', async (t) => {
   const root = await scratchRoot(t);
   const driver = new LocalDriver(root);
