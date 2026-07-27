@@ -62,6 +62,9 @@ const FILE_COMPILE = Object.freeze([/^--compile$/, /^-[A-Za-z]*C/]);
 const RG_SPAWN = Object.freeze([/^--pre(=|$)/, /^--hostname-bin(=|$)/]);
 const GIT_OUTPUT = Object.freeze([/^--output(=|$)/, /^-O/, /^--open-files-in-pager/]);
 const GIT_EXEC_REDIRECT = Object.freeze([/^--exec-path=/]);
+const GIT_CONFIG_FLAGS = freezeSet(['-c', '--config-env']);
+const GIT_CONFIG_ENV_GLUED = '--config-env=';
+const GIT_EXEC_CONFIG_KEY = /(\.(pager|editor|external)|[Cc]ommand)$/;
 
 function tokenText(token) {
   return token && typeof token.text === 'string' ? token.text : '';
@@ -191,6 +194,23 @@ export function gitAllows(words, head) {
 
 export function gitRedirectsExec(words) {
   return !lacksAny(GIT_EXEC_REDIRECT, words);
+}
+
+function configAssignment(list, index) {
+  const text = tokenText(list[index]);
+  if (GIT_CONFIG_FLAGS.has(text)) {
+    return tokenText(list[index + 1]);
+  }
+  return text.startsWith(GIT_CONFIG_ENV_GLUED) ? text.slice(GIT_CONFIG_ENV_GLUED.length) : '';
+}
+
+export function gitInjectsExecConfig(words) {
+  const list = wordList(words);
+  return list.some((token, index) => {
+    const assignment = configAssignment(list, index);
+    const equals = assignment.indexOf('=');
+    return equals > 0 && GIT_EXEC_CONFIG_KEY.test(assignment.slice(0, equals));
+  });
 }
 
 export function uniqAllows(words, head) {

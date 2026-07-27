@@ -6,6 +6,7 @@ import {
   ALLOW_HEADS,
   CONDITIONAL_ALLOWS,
   SINK_HEADS,
+  gitInjectsExecConfig,
   gitRedirectsExec,
   normalizeHead,
 } from './command-allowlist.mjs';
@@ -125,6 +126,13 @@ function headClears(head, words) {
   return ALLOW_HEADS.has(head.name);
 }
 
+function gitEscapesBounds(head, words) {
+  if (head.kind !== 'name' || head.name !== 'git') {
+    return false;
+  }
+  return gitRedirectsExec(words) || gitInjectsExecConfig(words);
+}
+
 function unitOf(tokens, roots, cwd) {
   const words = tokens.filter((token) => token.kind === 'word');
   const head = normalizeHead(words);
@@ -136,7 +144,7 @@ function unitOf(tokens, roots, cwd) {
     cleared: head.kind === 'assignment-only'
       || (head.kind === 'name' && headClears(head, words)),
     direct: touchesRoot(tokens, roots, cwd),
-    unbounded: head.kind === 'name' && head.name === 'git' && gitRedirectsExec(words),
+    unbounded: gitEscapesBounds(head, words),
   };
 }
 
