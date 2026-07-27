@@ -4,6 +4,10 @@ const GUARDED_TOOLS = new Set(['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEd
 const GUARD_FAILURE_REASON =
   'the session-continuity guard could not evaluate this tool call and refused it; this is a guard failure, not a finding about the call itself';
 
+function isPlainObject(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export async function readHookInputResult(stream = process.stdin) {
   const chunks = [];
   try {
@@ -19,9 +23,7 @@ export async function readHookInputResult(stream = process.stdin) {
   }
   try {
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object'
-      ? { ok: true, input: parsed }
-      : { ok: false, reason: 'malformed' };
+    return isPlainObject(parsed) ? { ok: true, input: parsed } : { ok: false, reason: 'malformed' };
   } catch {
     return { ok: false, reason: 'malformed' };
   }
@@ -86,6 +88,11 @@ function guardDenial() {
   };
 }
 
+function isKnownUnguardedTool(input) {
+  const toolName = isPlainObject(input) ? input.tool_name : undefined;
+  return typeof toolName === 'string' && !GUARDED_TOOLS.has(toolName);
+}
+
 export async function runGuardEntry(handler, { stream = process.stdin, env = process.env } = {}) {
   const read = await readHookInputResult(stream);
   if (!read.ok) {
@@ -96,6 +103,6 @@ export async function runGuardEntry(handler, { stream = process.stdin, env = pro
     const result = await handler(hookContext(read.input, env));
     writeResult(result ?? {});
   } catch {
-    writeResult(GUARDED_TOOLS.has(read.input.tool_name) ? guardDenial() : {});
+    writeResult(isKnownUnguardedTool(read.input) ? {} : guardDenial());
   }
 }

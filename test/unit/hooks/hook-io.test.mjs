@@ -105,8 +105,30 @@ test('readHookInputResult separates parsed input from the three unreadable state
   assert.deepEqual(await readHookInputResult(failingStream()), { ok: false, reason: 'stream-error' });
 });
 
+test('readHookInputResult rejects a JSON payload that is not a plain object', async () => {
+  for (const raw of ['[1,2,3]', '[]', '"hello"', '42', 'null', 'true']) {
+    assert.deepEqual(
+      await readHookInputResult(Readable.from([raw])),
+      { ok: false, reason: 'malformed' },
+      raw,
+    );
+  }
+});
+
 test('runGuardEntry denies when stdin holds malformed JSON', async () => {
   assertGuardDeny(await runGuardFixture('silent', '{not json'));
+});
+
+test('runGuardEntry denies when stdin holds a JSON array', async () => {
+  assertGuardDeny(await runGuardFixture('silent', '[1,2,3]'));
+  assertGuardDeny(await runGuardFixture('throw', '[1,2,3]'));
+});
+
+test('runGuardEntry denies when the handler throws and the tool name is unreadable', async () => {
+  assertGuardDeny(await runGuardFixture('throw', JSON.stringify({ tool_input: { command: 'rm -rf /x' } })));
+  assertGuardDeny(await runGuardFixture('throw', JSON.stringify({ tool_name: 42 })));
+  assertGuardDeny(await runGuardFixture('throw', JSON.stringify({ __proto__: { tool_name: 'Bash' } })));
+  assertGuardDeny(await runGuardFixture('throw', '{"__proto__":{"tool_name":"Bash"}}'));
 });
 
 test('runGuardEntry denies when stdin is empty', async () => {
