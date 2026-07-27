@@ -673,6 +673,17 @@ test('ledger commits are unsigned even when global config demands signing', asyn
   assert.equal(stdout.trim(), 'N');
 });
 
+test('custom-ref init adds the fetch refspec even when global config already lists it', async (t) => {
+  const { repo } = await initGitRepoWithRemote(t);
+  const trap = await hostileGitEnvironment(t);
+  const driver = await makeGitDriver(t, repo, { backend: 'custom-ref' });
+  const globalFetch = join(trap.dir, 'gitconfig-fetch');
+  await writeFile(globalFetch, `[remote "origin"]\n\tfetch = ${driver.fetchRefspec}\n`);
+  await withGitEnv({ GIT_CONFIG_GLOBAL: globalFetch }, () => driver.init());
+  const local = await gitExec(repo, ['config', '--local', '--get-all', 'remote.origin.fetch']);
+  assert.equal(local.stdout.includes(driver.fetchRefspec), true);
+});
+
 test('ledger commits are unsigned even when the project repo local config demands signing', async (t) => {
   const repo = await initGitRepo(t);
   const trap = await hostileGitEnvironment(t);

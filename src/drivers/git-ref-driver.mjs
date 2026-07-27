@@ -254,7 +254,7 @@ export class GitRefDriver extends LocalDriver {
   }
 
   async #ensureFetchRefspec() {
-    const scope = await this.#remoteScope();
+    const scope = await this.#repoScope();
     const key = `remote.${this.remote}.fetch`;
     const { code, stdout } = await scopedExec(scope, ['config', '--get-all', key], { check: false });
     const existing = code === 0 ? stdout.split('\n').map((s) => s.trim()).filter(Boolean) : [];
