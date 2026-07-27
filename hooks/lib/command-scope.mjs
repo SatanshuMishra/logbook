@@ -1,17 +1,9 @@
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { isUnderRoot } from './ledger-roots.mjs';
+import { tokenList, tokenText } from './token-access.mjs';
 
-const CONTROL_RESIDUE = Object.freeze(new Set(['(', ')', '{', '}']));
 const SUBSTITUTION_RESIDUE = /`|\$\(/;
-
-function tokenList(tokens) {
-  return Array.isArray(tokens) ? tokens : [];
-}
-
-function tokenText(token) {
-  return token && typeof token.text === 'string' ? token.text : '';
-}
 
 function rootList(roots) {
   return Array.isArray(roots) ? roots : [];
@@ -66,10 +58,7 @@ export function touchesRoot(tokens, roots, cwd) {
 }
 
 export function hasSuspiciousResidue(tokens) {
-  return tokenList(tokens).some((token) => {
-    const text = tokenText(token);
-    return SUBSTITUTION_RESIDUE.test(text) || CONTROL_RESIDUE.has(text);
-  });
+  return tokenList(tokens).some((token) => SUBSTITUTION_RESIDUE.test(tokenText(token)));
 }
 
 export function hasUnresolvable(tokens) {

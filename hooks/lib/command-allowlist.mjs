@@ -1,4 +1,5 @@
 import { basename, dirname } from 'node:path';
+import { tokenList, tokenText } from './token-access.mjs';
 
 const freezeSet = (values) => Object.freeze(new Set(values));
 
@@ -66,14 +67,6 @@ const GIT_CONFIG_FLAGS = freezeSet(['-c', '--config-env']);
 const GIT_CONFIG_ENV_GLUED = '--config-env=';
 const GIT_EXEC_CONFIG_KEY = /(\.(pager|editor|external)|[Cc]ommand)$/;
 
-function tokenText(token) {
-  return token && typeof token.text === 'string' ? token.text : '';
-}
-
-function wordList(words) {
-  return Array.isArray(words) ? words : [];
-}
-
 function skipPrefixOperands(words, start, prefix) {
   let index = start;
   while (index < words.length && tokenText(words[index]).startsWith('-')) {
@@ -90,7 +83,7 @@ function skipPrefixOperands(words, start, prefix) {
 }
 
 export function normalizeHead(words) {
-  const list = wordList(words);
+  const list = tokenList(words);
   let index = 0;
   for (;;) {
     if (index >= list.length) {
@@ -124,7 +117,7 @@ export function normalizeHead(words) {
 }
 
 export function resolveGitSubcommand(words, startIndex) {
-  const list = wordList(words);
+  const list = tokenList(words);
   let index = Number.isInteger(startIndex) ? startIndex : 0;
   while (index >= 0 && index < list.length) {
     const text = tokenText(list[index]);
@@ -150,7 +143,7 @@ export function resolveGitSubcommand(words, startIndex) {
 }
 
 function lacksAny(patterns, words) {
-  return !wordList(words).some((token) => {
+  return !tokenList(words).some((token) => {
     const text = tokenText(token);
     return patterns.some((pattern) => pattern.test(text));
   });
@@ -158,13 +151,13 @@ function lacksAny(patterns, words) {
 
 function operandsAfterHead(words, head) {
   const start = head && Number.isInteger(head.index) ? head.index + 1 : 0;
-  return wordList(words)
+  return tokenList(words)
     .slice(start)
     .filter((token) => !tokenText(token).startsWith('-'));
 }
 
 export function findAllows(words) {
-  return !wordList(words).some((token) => FIND_ACTIONS.test(tokenText(token)));
+  return !tokenList(words).some((token) => FIND_ACTIONS.test(tokenText(token)));
 }
 
 export function sortAllows(words) {
@@ -205,7 +198,7 @@ function configAssignment(list, index) {
 }
 
 export function gitInjectsExecConfig(words) {
-  const list = wordList(words);
+  const list = tokenList(words);
   return list.some((token, index) => {
     const assignment = configAssignment(list, index);
     const equals = assignment.indexOf('=');
