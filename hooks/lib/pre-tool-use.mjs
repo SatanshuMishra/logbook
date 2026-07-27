@@ -5,7 +5,8 @@ import { shellCwd } from './hook-io.mjs';
 import { DEFAULT_LEDGER_BRANCH } from '../../src/drivers/git-ledger.mjs';
 
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
-const LEDGER_TOOL = /^mcp__(?:plugin_session-continuity_)?ledger__/;
+const LEDGER_TOOL = /^mcp__(?:plugin_session-continuity_)?ledger__(.+)$/;
+const TOOL_REGISTRY = '../../src/tools/registry.mjs';
 const MAX_COMMAND_BYTES = 16384;
 const CONSTANT_TRIGGERS = Object.freeze([DEFAULT_LEDGER_BRANCH, 'refs/ledger/', 'CLAUDE_PLUGIN_DATA']);
 const HOME_PREFIXES = Object.freeze(['~', '$HOME', '${HOME}']);
@@ -133,9 +134,23 @@ export function classifyPreToolUse(input, roots, baseDir, projectDir, env = proc
   return null;
 }
 
+let registeredToolNames = null;
+
+async function isRegisteredLedgerTool(toolName) {
+  const match = LEDGER_TOOL.exec(toolName);
+  if (match === null) {
+    return false;
+  }
+  if (registeredToolNames === null) {
+    const { TOOLS } = await import(TOOL_REGISTRY);
+    registeredToolNames = new Set(TOOLS.map((tool) => tool.name));
+  }
+  return registeredToolNames.has(match[1]);
+}
+
 export async function handlePreToolUse(ctx) {
   const toolName = ctx.input && typeof ctx.input.tool_name === 'string' ? ctx.input.tool_name : '';
-  if (LEDGER_TOOL.test(toolName)) {
+  if (await isRegisteredLedgerTool(toolName)) {
     return { json: decision('allow', 'session-continuity ledger tool auto-approved') };
   }
   const roots = await resolveLedgerRoots(ctx.projectDir, ctx.env);

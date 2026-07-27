@@ -13,6 +13,7 @@ import { resolveLedgerRoots } from '../../../hooks/lib/ledger-roots.mjs';
 import { hookContext } from '../../../hooks/lib/hook-io.mjs';
 import { projectKey } from '../../../src/util/project-key.mjs';
 import { DEFAULT_LEDGER_BRANCH } from '../../../src/drivers/git-ledger.mjs';
+import { TOOLS } from '../../../src/tools/registry.mjs';
 import { tempDir, cleanup, useEnv, initGitRepo } from './fixtures.mjs';
 
 const PROJECT_DIR = '/proj';
@@ -325,6 +326,34 @@ test('handlePreToolUse auto-approves the plugin-namespaced ledger tool', async (
   };
   const result = await handlePreToolUse(ctx);
   assert.equal(result.json.hookSpecificOutput.permissionDecision, 'allow');
+});
+
+test('handlePreToolUse auto-approves every tool this server actually registers', async () => {
+  for (const tool of TOOLS) {
+    for (const prefix of ['mcp__ledger__', 'mcp__plugin_session-continuity_ledger__']) {
+      const ctx = { input: { tool_name: `${prefix}${tool.name}` }, env: {}, projectDir: PROJECT_DIR };
+      const result = await handlePreToolUse(ctx);
+      assert.equal(
+        result.json.hookSpecificOutput.permissionDecision,
+        'allow',
+        `${prefix}${tool.name}`,
+      );
+    }
+  }
+});
+
+test('handlePreToolUse does not auto-approve a foreign tool on a ledger-named server', async () => {
+  const foreign = [
+    'mcp__ledger__drop_database',
+    'mcp__ledger__exec',
+    'mcp__plugin_session-continuity_ledger__exec',
+    'mcp__ledger__',
+    'mcp__ledger__open_thread_extra',
+  ];
+  for (const toolName of foreign) {
+    const ctx = { input: { tool_name: toolName }, env: {}, projectDir: PROJECT_DIR };
+    assert.deepEqual(await handlePreToolUse(ctx), {}, toolName);
+  }
 });
 
 test('resolveLedgerRoots keys the managed dir by project-key under CLAUDE_PLUGIN_DATA', async (t) => {
