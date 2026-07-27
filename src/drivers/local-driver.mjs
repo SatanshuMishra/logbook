@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, stat } from 'node:fs/promises';
+import { lstat, mkdir, readFile, readdir } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { StorageDriver } from './storage-driver.mjs';
 import { serializeRecord } from './layout.mjs';
@@ -82,18 +82,24 @@ export class LocalDriver extends StorageDriver {
     return this.ledgerRoot;
   }
 
-  async #hasRecoveryRepo() {
+  async #recoveryEntry() {
     try {
-      await stat(join(this.ledgerRoot, RECOVERY_DIR));
-      return true;
+      return await lstat(join(this.ledgerRoot, RECOVERY_DIR));
     } catch {
-      return false;
+      return null;
     }
+  }
+
+  async #hasRecoveryRepo() {
+    const entry = await this.#recoveryEntry();
+    return entry !== null && entry.isDirectory();
   }
 
   async #ensureRecoveryRepo() {
     if (this.isGit() || this.#recoveryDegraded) return false;
-    const existing = await this.#hasRecoveryRepo();
+    const entry = await this.#recoveryEntry();
+    if (entry !== null && !entry.isDirectory()) return false;
+    const existing = entry !== null;
     const env = recoveryEnv(this.ledgerRoot);
     const args = (rest) => recoveryArgs(this.ledgerRoot, rest);
     try {

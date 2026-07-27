@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalDriver } from '../../../src/drivers/local-driver.mjs';
@@ -69,6 +69,18 @@ async function installedTrapHooks(root) {
     return [];
   }
   return names.filter((name) => TRAP_HOOKS.includes(name)).sort();
+}
+
+async function foreignRepo(t) {
+  const dir = await mkdtemp(join(tmpdir(), 'local-driver-foreign-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await gitExec(dir, ['init', '-q']);
+  return dir;
+}
+
+async function commitCount(repo) {
+  const { code, stdout } = await gitExec(repo, ['rev-list', '--count', 'HEAD'], { check: false });
+  return code === 0 ? Number(stdout.trim()) : 0;
 }
 
 const ULID_A = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
@@ -344,6 +356,34 @@ test('LocalDriver.init re-asserts recovery signing config on an existing repo', 
     const { stdout } = await gitExec(root, ['config', '--local', '--get', key]);
     assert.equal(stdout.trim(), 'false');
   }
+});
+
+test('LocalDriver refuses a recovery .git that is a gitfile pointing elsewhere', async (t) => {
+  const root = await scratchRoot(t);
+  const foreign = await foreignRepo(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await rm(join(root, '.git'), { recursive: true, force: true });
+  await writeFile(join(root, '.git'), `gitdir: ${join(foreign, '.git')}\n`);
+  await driver.writeThread(makeThread());
+  const result = await driver.commit('chore(ledger): open thread');
+  assert.equal(result.committed, false);
+  assert.equal(await commitCount(foreign), 0);
+});
+
+test('LocalDriver refuses a recovery .git symlinked into another repo', async (t) => {
+  const root = await scratchRoot(t);
+  const foreign = await foreignRepo(t);
+  await mkdir(root, { recursive: true });
+  await symlink(join(foreign, '.git'), join(root, '.git'));
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  const result = await driver.commit('chore(ledger): open thread');
+  assert.equal(result.committed, false);
+  assert.equal(await commitCount(foreign), 0);
+  const signing = await gitExec(foreign, ['config', '--local', '--get', 'commit.gpgsign'], { check: false });
+  assert.equal(signing.stdout.trim(), '');
 });
 
 test('LocalDriver.commit rejects a non-string message', async (t) => {
