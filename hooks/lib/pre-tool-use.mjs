@@ -2,12 +2,11 @@ import { resolveLedgerRoots, isUnderRoot } from './ledger-roots.mjs';
 import { scanSegments } from './shell-tokens.mjs';
 import {
   ALLOW_HEADS,
+  CONDITIONAL_ALLOWS,
   GIT_READ_SUBCOMMANDS,
   SINK_HEADS,
-  findAllows,
   normalizeHead,
   resolveGitSubcommand,
-  sedAllows,
 } from './command-allowlist.mjs';
 import {
   hasSuspiciousResidue,
@@ -102,15 +101,13 @@ export function splitControl(tokens) {
 }
 
 function headClears(head, words) {
-  if (head.name === 'find') {
-    return findAllows(words);
-  }
-  if (head.name === 'sed') {
-    return sedAllows(words);
-  }
   if (head.name === 'git') {
     const resolved = resolveGitSubcommand(words, head.index + 1);
     return resolved.ok === true && GIT_READ_SUBCOMMANDS.has(resolved.subcommand);
+  }
+  const conditional = CONDITIONAL_ALLOWS.get(head.name);
+  if (conditional) {
+    return conditional(words, head);
   }
   return ALLOW_HEADS.has(head.name);
 }

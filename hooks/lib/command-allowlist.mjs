@@ -15,13 +15,13 @@ export const TRUSTED_BIN_DIRS = freezeSet([
 
 export const ALLOW_HEADS = freezeSet([
   'cat', 'head', 'tail', 'nl', 'wc',
-  'ls', 'stat', 'file', 'du', 'df', 'tree',
+  'ls', 'stat', 'du', 'df',
   'realpath', 'readlink', 'basename', 'dirname', 'pwd',
-  'grep', 'egrep', 'fgrep', 'rg',
-  'jq', 'yq',
+  'grep', 'egrep', 'fgrep',
+  'jq',
   'diff', 'cmp',
-  'sort', 'uniq', 'cut', 'tr', 'column', 'paste', 'join',
-  'md5', 'md5sum', 'shasum', 'sha256sum', 'cksum', 'od', 'xxd', 'strings',
+  'cut', 'tr', 'column', 'paste', 'join',
+  'md5', 'md5sum', 'shasum', 'sha256sum', 'cksum', 'od', 'strings',
   'cd',
 ]);
 
@@ -59,6 +59,10 @@ const OPERAND_SHAPE = /^[0-9]+(\.[0-9]+)?[smhd]?$/;
 const FIND_ACTIONS = /^-(delete|exec|execdir|ok|okdir|fls|fprint|fprint0|fprintf)$/;
 const SED_SHORT_IN_PLACE = /^-[a-zA-Z]*i/;
 const SED_LONG_IN_PLACE = /^--in-place/;
+const SORT_OUTPUT = Object.freeze([/^--output(=|$)/, /^-[A-Za-z]*o/]);
+const TREE_OUTPUT = Object.freeze([/^--output(=|$)/, /^-o$/]);
+const FILE_COMPILE = Object.freeze([/^--compile$/, /^-[A-Za-z]*C/]);
+const RG_SPAWN = Object.freeze([/^--pre(=|$)/, /^--hostname-bin(=|$)/]);
 
 function tokenText(token) {
   return token && typeof token.text === 'string' ? token.text : '';
@@ -140,13 +144,59 @@ export function resolveGitSubcommand(words, startIndex) {
   return { ok: false };
 }
 
+function lacksAny(patterns, words) {
+  return !wordList(words).some((token) => {
+    const text = tokenText(token);
+    return patterns.some((pattern) => pattern.test(text));
+  });
+}
+
+function operandsAfterHead(words, head) {
+  const start = head && Number.isInteger(head.index) ? head.index + 1 : 0;
+  return wordList(words)
+    .slice(start)
+    .filter((token) => !tokenText(token).startsWith('-'));
+}
+
 export function findAllows(words) {
   return !wordList(words).some((token) => FIND_ACTIONS.test(tokenText(token)));
 }
 
 export function sedAllows(words) {
-  return !wordList(words).some((token) => {
-    const text = tokenText(token);
-    return SED_SHORT_IN_PLACE.test(text) || SED_LONG_IN_PLACE.test(text);
-  });
+  return lacksAny([SED_SHORT_IN_PLACE, SED_LONG_IN_PLACE], words);
 }
+
+export function sortAllows(words) {
+  return lacksAny(SORT_OUTPUT, words);
+}
+
+export function treeAllows(words) {
+  return lacksAny(TREE_OUTPUT, words);
+}
+
+export function fileAllows(words) {
+  return lacksAny(FILE_COMPILE, words);
+}
+
+export function rgAllows(words) {
+  return lacksAny(RG_SPAWN, words);
+}
+
+export function uniqAllows(words, head) {
+  return operandsAfterHead(words, head).length <= 1;
+}
+
+export function xxdAllows(words, head) {
+  return operandsAfterHead(words, head).length <= 1;
+}
+
+export const CONDITIONAL_ALLOWS = Object.freeze(new Map([
+  ['find', findAllows],
+  ['sed', sedAllows],
+  ['sort', sortAllows],
+  ['tree', treeAllows],
+  ['file', fileAllows],
+  ['rg', rgAllows],
+  ['uniq', uniqAllows],
+  ['xxd', xxdAllows],
+]));

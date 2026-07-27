@@ -85,6 +85,8 @@ export const DENY_CORPUS = Object.freeze([
   { id: 'UNIQ_OUT', command: `uniq /etc/passwd ${R}/f`, why: 'uniq is an unconditional read allow head; its second operand is the output file and is never distinguished from an input operand' },
   { id: 'XXD_OUT', command: `xxd /etc/passwd ${R}/f`, why: 'xxd is an unconditional read allow head; its second operand is the output file and is never distinguished from an input operand' },
   { id: 'TREE_O', command: `tree -o ${R}/f /etc`, why: 'tree is an unconditional read allow head; the -o flag writes its listing into the named path with no output-flag check' },
+  { id: 'FILE_COMPILE', command: `file -C -m ${R}/magic`, why: 'file is an unconditional read allow head; its -C compile flag writes a pre-parsed magic.mgc output file derived from the named path' },
+  { id: 'RG_PRE', command: `rg --pre=rm x ${R}`, why: 'rg is an unconditional read allow head; its --pre flag spawns the given command once per searched path, running an arbitrary program against every file under the store' },
   { id: 'SED_W', command: `sed -n 'w ${R}/f' /etc/passwd`, why: 'sedAllows only inspects CLI flags for in place rewrite; the scripts own w command writes matched lines into the named path and is invisible to it' },
   { id: 'SED_SW', command: `sed 's/a/b/w ${R}/f' /etc/passwd`, why: 'sedAllows only inspects CLI flags for in place rewrite; the s///w suffix in the script body writes substituted lines into the named path and is invisible to it' },
   { id: 'SED_E', command: `sed '1e rm -rf ${R}/sessions' /etc/passwd`, why: 'sedAllows only inspects CLI flags for in place rewrite; the scripts e command executes an arbitrary shell command and is invisible to it' },
