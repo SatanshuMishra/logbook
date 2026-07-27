@@ -673,6 +673,21 @@ test('ledger commits are unsigned even when global config demands signing', asyn
   assert.equal(stdout.trim(), 'N');
 });
 
+test('ledger commits are unsigned even when the project repo local config demands signing', async (t) => {
+  const repo = await initGitRepo(t);
+  const trap = await hostileGitEnvironment(t);
+  await gitExec(repo, ['config', '--local', 'commit.gpgsign', 'true']);
+  await gitExec(repo, ['config', '--local', 'tag.gpgsign', 'true']);
+  await gitExec(repo, ['config', '--local', 'gpg.program', trap.gpgProgram]);
+  const driver = await makeGitDriver(t, repo);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  const result = await driver.commit('feat: add thread');
+  assert.equal(result.committed, true);
+  const { stdout } = await gitExec(repo, ['log', '-1', '--format=%G?', result.sha]);
+  assert.equal(stdout.trim(), 'N');
+});
+
 test('ledger operations survive a repository whose ownership differs', async (t) => {
   const repo = await initGitRepo(t);
   const trap = await hostileGitEnvironment(t);

@@ -42,14 +42,22 @@ test('pinnedScope pins GIT_DIR and adds no config overrides', () => {
   assert.deepEqual(scope.args, []);
 });
 
-test('networkScope disables hooks and fsmonitor while keeping user config readable', () => {
+test('networkScope disables hooks, fsmonitor and signing while keeping user config readable', () => {
   const scope = networkScope('/abs/repo', '/abs/repo/.git');
   assert.deepEqual(scope.args, [
     '-c', 'core.hooksPath=/abs/repo/.git/hooks-disabled',
     '-c', 'core.fsmonitor=false',
+    '-c', 'commit.gpgsign=false',
+    '-c', 'tag.gpgsign=false',
   ]);
   assert.equal('GIT_CONFIG_GLOBAL' in scope.env, false);
   assert.equal('GIT_CONFIG_NOSYSTEM' in scope.env, false);
+});
+
+test('isolatedScope overrides signing regardless of repository local config', () => {
+  const scope = isolatedScope('/abs/repo', '/abs/repo/.git');
+  assert.ok(scope.args.includes('commit.gpgsign=false'));
+  assert.ok(scope.args.includes('tag.gpgsign=false'));
 });
 
 test('networkScope closes the env-injected config channels', () => {

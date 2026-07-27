@@ -18,6 +18,8 @@ export const GIT_CONFIG_SOURCE_VARS = Object.freeze([
 
 const HOOKS_PATH_KEY = 'core.hooksPath';
 const FSMONITOR_DISABLED = 'core.fsmonitor=false';
+const COMMIT_SIGNING_DISABLED = 'commit.gpgsign=false';
+const TAG_SIGNING_DISABLED = 'tag.gpgsign=false';
 
 function unsetAll(names) {
   const env = {};
@@ -53,5 +55,10 @@ export function isolatedGitArgs(hooksPath) {
   if (typeof hooksPath !== 'string' || hooksPath.length === 0) {
     throw new Error('isolatedGitArgs: hooksPath must be a non-empty string');
   }
-  return ['-c', `${HOOKS_PATH_KEY}=${hooksPath}`, '-c', FSMONITOR_DISABLED];
+  return [
+    '-c', `${HOOKS_PATH_KEY}=${hooksPath}`,
+    '-c', FSMONITOR_DISABLED,
+    '-c', COMMIT_SIGNING_DISABLED,
+    '-c', TAG_SIGNING_DISABLED,
+  ];
 }
