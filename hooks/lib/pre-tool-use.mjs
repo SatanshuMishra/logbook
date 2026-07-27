@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { isAbsolute, relative, sep } from 'node:path';
+import { dirname, isAbsolute, relative, sep } from 'node:path';
 import { resolveLedgerRoots, isUnderRoot, canonicalPath } from './ledger-roots.mjs';
 import { shellCwd } from './hook-io.mjs';
 import { DEFAULT_LEDGER_BRANCH } from '../../src/drivers/git-ledger.mjs';
@@ -51,7 +51,19 @@ function relativeSpellings(root, projectDir) {
   return rel.length === 0 || escapes ? [] : [rel];
 }
 
-function ledgerTriggers(roots, projectDir) {
+function dataRootSpellings(env, home) {
+  const raw = env && typeof env === 'object' ? env.CLAUDE_PLUGIN_DATA : undefined;
+  if (typeof raw !== 'string' || raw.length === 0) {
+    return [];
+  }
+  const root = trimTrailingSep(raw);
+  if (!isAbsolute(root) || dirname(root) === root) {
+    return [];
+  }
+  return [root, canonicalPath(root), ...homeSpellings(root, home)];
+}
+
+function ledgerTriggers(roots, projectDir, env) {
   const home = trimTrailingSep(homedir());
   const paths = roots.filter((root) => typeof root === 'string' && root.length > 0);
   const spellings = paths.flatMap((root) => [
@@ -60,7 +72,7 @@ function ledgerTriggers(roots, projectDir) {
     ...homeSpellings(root, home),
     ...relativeSpellings(root, projectDir),
   ]);
-  return [...new Set([...CONSTANT_TRIGGERS, ...spellings])]
+  return [...new Set([...CONSTANT_TRIGGERS, ...spellings, ...dataRootSpellings(env, home)])]
     .filter((trigger) => typeof trigger === 'string' && trigger.length > 0);
 }
 
@@ -68,32 +80,32 @@ function isOversized(command) {
   return Buffer.byteLength(command, 'utf8') > MAX_COMMAND_BYTES;
 }
 
-function matchedTrigger(command, roots, projectDir) {
-  return ledgerTriggers(roots, projectDir).find((trigger) => command.includes(trigger)) ?? null;
+function matchedTrigger(command, roots, projectDir, env) {
+  return ledgerTriggers(roots, projectDir, env).find((trigger) => command.includes(trigger)) ?? null;
 }
 
-export function classifyBashCommand(command, roots, projectDir) {
+export function classifyBashCommand(command, roots, projectDir, env = process.env) {
   if (!Array.isArray(roots) || roots.length === 0) {
     return null;
   }
   if (typeof command !== 'string') {
     return 'ask';
   }
-  const trigger = matchedTrigger(command, roots, projectDir);
+  const trigger = matchedTrigger(command, roots, projectDir, env);
   if (isOversized(command)) {
     return trigger === null ? 'ask' : 'deny';
   }
   return trigger === null ? null : 'ask';
 }
 
-function bashReason(verdict, command, roots, projectDir) {
+function bashReason(verdict, command, roots, projectDir, env) {
   if (typeof command !== 'string') {
     return UNREADABLE_COMMAND_REASON;
   }
   if (isOversized(command)) {
     return BASH_REASONS[verdict];
   }
-  const trigger = matchedTrigger(command, roots, projectDir);
+  const trigger = matchedTrigger(command, roots, projectDir, env);
   return trigger === null
     ? BASH_REASONS.ask
     : `this Bash command contains "${trigger}", which names the session-continuity ledger store; ${GUARDRAIL_NOTE}; to write the store, ${DENY_SUFFIX}`;
@@ -104,7 +116,7 @@ function targetPath(input) {
   return toolInput.file_path ?? toolInput.notebook_path ?? null;
 }
 
-export function classifyPreToolUse(input, roots, baseDir, projectDir) {
+export function classifyPreToolUse(input, roots, baseDir, projectDir, env = process.env) {
   const toolName = input && typeof input.tool_name === 'string' ? input.tool_name : '';
   if (WRITE_TOOLS.has(toolName)) {
     const path = targetPath(input);
@@ -115,8 +127,8 @@ export function classifyPreToolUse(input, roots, baseDir, projectDir) {
   }
   if (toolName === 'Bash') {
     const command = input && input.tool_input ? input.tool_input.command : undefined;
-    const verdict = classifyBashCommand(command, roots, projectDir);
-    return verdict ? decision(verdict, bashReason(verdict, command, roots, projectDir)) : null;
+    const verdict = classifyBashCommand(command, roots, projectDir, env);
+    return verdict ? decision(verdict, bashReason(verdict, command, roots, projectDir, env)) : null;
   }
   return null;
 }
@@ -130,6 +142,12 @@ export async function handlePreToolUse(ctx) {
   if (roots.length === 0) {
     return {};
   }
-  const result = classifyPreToolUse(ctx.input, roots, shellCwd(ctx, ctx.projectDir), ctx.projectDir);
+  const result = classifyPreToolUse(
+    ctx.input,
+    roots,
+    shellCwd(ctx, ctx.projectDir),
+    ctx.projectDir,
+    ctx.env,
+  );
   return result ? { json: result } : {};
 }

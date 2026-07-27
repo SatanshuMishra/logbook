@@ -5,6 +5,7 @@ import { serializeRecord } from './layout.mjs';
 import { DEFAULT_LEDGER_BRANCH, ledgerCommitEnv } from './git-ledger.mjs';
 import { atomicWrite } from '../util/atomic-write.mjs';
 import { gitExec } from '../util/git-exec.mjs';
+import { clearedGitLocationEnv, isolatedGitArgs, isolatedGitConfigEnv } from '../util/git-env.mjs';
 import { isUlid } from '../util/ulid.mjs';
 import { assertValidThread, assertValidBinding } from '../schema/validators.mjs';
 
@@ -12,26 +13,22 @@ const SUBDIRS = ['threads', 'bindings', 'decisions', 'sessions', 'index'];
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 const DECISION_FILE = /^([0-9]+)-(.+)\.md$/;
 const RECOVERY_DIR = '.git';
+const RECOVERY_HOOKS_DIR = 'hooks-disabled';
 const RECOVERY_GITIGNORE = 'index/\n';
-const AMBIENT_GIT_LOCATION_VARS = Object.freeze([
-  'GIT_COMMON_DIR',
-  'GIT_INDEX_FILE',
-  'GIT_NAMESPACE',
-  'GIT_OBJECT_DIRECTORY',
-  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-]);
+const EMPTY_TEMPLATE = '--template=';
 
 function recoveryEnv(ledgerRoot, extra = {}) {
-  const pinned = {};
-  for (const name of AMBIENT_GIT_LOCATION_VARS) {
-    pinned[name] = undefined;
-  }
   return {
-    ...pinned,
+    ...clearedGitLocationEnv(),
+    ...isolatedGitConfigEnv(),
     GIT_DIR: join(ledgerRoot, RECOVERY_DIR),
     GIT_WORK_TREE: ledgerRoot,
     ...extra,
   };
+}
+
+function recoveryArgs(ledgerRoot, args) {
+  return [...isolatedGitArgs(join(ledgerRoot, RECOVERY_DIR, RECOVERY_HOOKS_DIR)), ...args];
 }
 
 function degradedCommit() {
@@ -98,10 +95,11 @@ export class LocalDriver extends StorageDriver {
     if (this.isGit() || this.#recoveryDegraded) return false;
     if (await this.#hasRecoveryRepo()) return true;
     const env = recoveryEnv(this.ledgerRoot);
+    const args = (rest) => recoveryArgs(this.ledgerRoot, rest);
     try {
-      await gitExec(this.ledgerRoot, ['init', '-q', '-b', DEFAULT_LEDGER_BRANCH], { env });
-      await gitExec(this.ledgerRoot, ['config', 'commit.gpgsign', 'false'], { env });
-      await gitExec(this.ledgerRoot, ['config', 'tag.gpgsign', 'false'], { env });
+      await gitExec(this.ledgerRoot, args(['init', '-q', EMPTY_TEMPLATE, '-b', DEFAULT_LEDGER_BRANCH]), { env });
+      await gitExec(this.ledgerRoot, args(['config', 'commit.gpgsign', 'false']), { env });
+      await gitExec(this.ledgerRoot, args(['config', 'tag.gpgsign', 'false']), { env });
       await atomicWrite(join(this.ledgerRoot, '.gitignore'), RECOVERY_GITIGNORE);
       return true;
     } catch {
@@ -244,18 +242,19 @@ export class LocalDriver extends StorageDriver {
       return degradedCommit();
     }
     const env = recoveryEnv(this.ledgerRoot);
+    const args = (rest) => recoveryArgs(this.ledgerRoot, rest);
     try {
-      await gitExec(this.ledgerRoot, ['add', '-A'], { env });
-      const staged = await gitExec(this.ledgerRoot, ['diff', '--cached', '--quiet'], { env, check: false });
+      await gitExec(this.ledgerRoot, args(['add', '-A']), { env });
+      const staged = await gitExec(this.ledgerRoot, args(['diff', '--cached', '--quiet']), { env, check: false });
       if (staged.code === 0) {
         return { committed: false, sha: null, empty: true };
       }
       await gitExec(
         this.ledgerRoot,
-        ['commit', '--no-verify', '-m', message],
+        args(['commit', '--no-verify', '-m', message]),
         { env: recoveryEnv(this.ledgerRoot, ledgerCommitEnv()) },
       );
-      const { stdout } = await gitExec(this.ledgerRoot, ['rev-parse', 'HEAD'], { env });
+      const { stdout } = await gitExec(this.ledgerRoot, args(['rev-parse', 'HEAD']), { env });
       return { committed: true, sha: stdout.trim(), empty: false };
     } catch {
       return degradedCommit();

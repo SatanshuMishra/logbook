@@ -64,6 +64,43 @@ test('classifyBashCommand asks about the plugin data root variable by name', () 
   assert.equal(classifyBashCommand('rm -rf $CLAUDE_PLUGIN_DATA/-proj', ROOTS, PROJECT_DIR), 'ask');
 });
 
+test('classifyBashCommand asks about the expanded literal plugin data root', () => {
+  const env = { CLAUDE_PLUGIN_DATA: '/data' };
+  assert.equal(classifyBashCommand('rm -rf /data', ROOTS, PROJECT_DIR, env), 'ask');
+  assert.equal(classifyBashCommand('rm -rf /data/', ROOTS, PROJECT_DIR, env), 'ask');
+  assert.equal(classifyBashCommand('rm -rf "/data"', ROOTS, PROJECT_DIR, env), 'ask');
+});
+
+test('classifyBashCommand asks about home-abbreviated spellings of the plugin data root', () => {
+  const tail = join(sep, '.claude', 'session-continuity');
+  const env = { CLAUDE_PLUGIN_DATA: join(homedir(), '.claude', 'session-continuity') };
+  assert.equal(classifyBashCommand(`rm -rf ~${tail}`, ROOTS, PROJECT_DIR, env), 'ask');
+  assert.equal(classifyBashCommand(`rm -rf $HOME${tail}`, ROOTS, PROJECT_DIR, env), 'ask');
+  assert.equal(classifyBashCommand(`rm -rf "${HOME_BRACED}${tail}"`, ROOTS, PROJECT_DIR, env), 'ask');
+});
+
+test('classifyBashCommand tolerates an absent or degenerate plugin data root', () => {
+  assert.equal(classifyBashCommand('npm test', ROOTS, PROJECT_DIR, {}), null);
+  assert.equal(classifyBashCommand('npm test', ROOTS, PROJECT_DIR, { CLAUDE_PLUGIN_DATA: '' }), null);
+  assert.equal(classifyBashCommand('npm test', ROOTS, PROJECT_DIR, { CLAUDE_PLUGIN_DATA: 7 }), null);
+  assert.equal(classifyBashCommand('npm test', ROOTS, PROJECT_DIR, null), null);
+  assert.equal(classifyBashCommand('ls /etc', ROOTS, PROJECT_DIR, { CLAUDE_PLUGIN_DATA: sep }), null);
+  assert.equal(classifyBashCommand('ls /etc', ROOTS, PROJECT_DIR, { CLAUDE_PLUGIN_DATA: 'data' }), null);
+});
+
+test('handlePreToolUse asks about removing the literal plugin data root', async (t) => {
+  const projectDir = await tempDir('hooks-dataroot-proj-');
+  const dataRoot = await tempDir('hooks-dataroot-data-');
+  cleanup(t, projectDir, dataRoot);
+  const result = await handlePreToolUse({
+    input: { tool_name: 'Bash', tool_input: { command: `rm -rf ${dataRoot}` } },
+    env: { CLAUDE_PLUGIN_DATA: dataRoot },
+    projectDir,
+  });
+  assert.equal(result.json.hookSpecificOutput.permissionDecision, 'ask');
+  assert.equal(result.json.hookSpecificOutput.permissionDecisionReason.includes(dataRoot), true);
+});
+
 test('classifyBashCommand asks about the custom-ref ledger namespace', () => {
   assert.equal(classifyBashCommand('git update-ref -d refs/ledger/notes', ROOTS, PROJECT_DIR), 'ask');
   assert.equal(classifyBashCommand('git push origin :refs/ledger/notes', ROOTS, PROJECT_DIR), 'ask');
@@ -137,6 +174,30 @@ test('handlePreToolUse asks about a real Bash call carrying no command string', 
     projectDir,
   });
   assert.equal(result.json.hookSpecificOutput.permissionDecision, 'ask');
+});
+
+test('classifyBashCommand keeps the read-only noise corpus silent with the data root set', () => {
+  const dataRoot = join(homedir(), '.claude', 'plugins', 'data', 'session-continuity');
+  const env = { CLAUDE_PLUGIN_DATA: dataRoot };
+  const roots = [...GIT_ROOTS, ...HOME_ROOTS, join(dataRoot, projectKey(PROJECT_DIR))];
+  const quiet = [
+    'npm test',
+    'ls -la',
+    'git status --short',
+    'git log --oneline -5',
+    'cat .git/config',
+    'git commit -m "wire the parser"',
+    'git push origin refs/heads/main',
+    'rm -rf node_modules && npm ci',
+    `echo $HOME${sep}notes.md`,
+    `cat ~${sep}.claude${sep}settings.json`,
+    `ls ~${sep}.claude${sep}plugins`,
+    'rm -rf /tmp/scratch',
+    'node --test test/unit',
+  ];
+  for (const command of quiet) {
+    assert.equal(classifyBashCommand(command, roots, PROJECT_DIR, env), null, command);
+  }
 });
 
 test('classifyBashCommand denies an oversized command that names a ledger root', () => {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalDriver } from '../../../src/drivers/local-driver.mjs';
@@ -69,18 +69,6 @@ async function installedTrapHooks(root) {
     return [];
   }
   return names.filter((name) => TRAP_HOOKS.includes(name)).sort();
-}
-
-async function foreignRepo(t) {
-  const dir = await mkdtemp(join(tmpdir(), 'local-driver-foreign-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  await gitExec(dir, ['init', '-q']);
-  return dir;
-}
-
-async function commitCount(repo) {
-  const { code, stdout } = await gitExec(repo, ['rev-list', '--count', 'HEAD'], { check: false });
-  return code === 0 ? Number(stdout.trim()) : 0;
 }
 
 const ULID_A = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
@@ -190,6 +178,7 @@ test('LocalDriver.commit records real history for the non-git store', async (t) 
   await driver.init();
   await driver.writeThread(makeThread());
   const result = await driver.commit('chore(ledger): open thread');
+  assert.deepEqual(Object.keys(result).sort(), ['committed', 'empty', 'sha']);
   assert.equal(result.committed, true);
   assert.equal(result.empty, false);
   assert.match(result.sha, /^[0-9a-f]{40}$/);
@@ -270,12 +259,7 @@ test('LocalDriver.commit degrades without throwing when the recovery repo is unu
 test('LocalDriver pins the recovery repo despite an ambient GIT_DIR', async (t) => {
   const root = await scratchRoot(t);
   const hijack = join(root, '..', 'hijacked.git');
-  const previous = process.env.GIT_DIR;
-  t.after(() => {
-    if (previous === undefined) delete process.env.GIT_DIR;
-    else process.env.GIT_DIR = previous;
-  });
-  process.env.GIT_DIR = hijack;
+  useEnv(t, { GIT_DIR: hijack });
   const driver = new LocalDriver(root);
   await driver.init();
   await driver.writeThread(makeThread());
@@ -284,6 +268,54 @@ test('LocalDriver pins the recovery repo despite an ambient GIT_DIR', async (t) 
   assert.equal(result.committed, true);
   assert.equal((await stat(join(root, '.git'))).isDirectory(), true);
   await assert.rejects(() => stat(hijack), { code: 'ENOENT' });
+  assert.ok((await trackedPaths(root, result.sha)).includes(`threads/${ULID_A}.json`));
+});
+
+test('LocalDriver runs no hook under a fully hostile ambient git config', async (t) => {
+  const root = await scratchRoot(t);
+  const trap = await hostileGitConfig(t);
+  useEnv(t, {
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'core.hooksPath',
+    GIT_CONFIG_VALUE_0: trap.hooksDir,
+    GIT_CONFIG_PARAMETERS: `'core.hooksPath'='${trap.hooksDir}'`,
+    GIT_CONFIG_GLOBAL: trap.globalConfig,
+    GIT_CONFIG_SYSTEM: trap.systemConfig,
+    GIT_TEMPLATE_DIR: trap.dir,
+  });
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  const result = await driver.commit('chore(ledger): open thread');
+  await assert.rejects(() => stat(trap.marker), { code: 'ENOENT' });
+  assert.deepEqual(await installedTrapHooks(root), []);
+  assert.equal(result.committed, true);
+  assert.ok((await trackedPaths(root, result.sha)).includes(`threads/${ULID_A}.json`));
+});
+
+test('LocalDriver installs no template hook that would outlive the hostile env', async (t) => {
+  const root = await scratchRoot(t);
+  const trap = await hostileGitConfig(t);
+  useEnv(t, { GIT_TEMPLATE_DIR: trap.dir });
+  const driver = new LocalDriver(root);
+  await driver.init();
+  delete process.env.GIT_TEMPLATE_DIR;
+  await driver.writeThread(makeThread());
+  const result = await driver.commit('chore(ledger): open thread');
+  assert.deepEqual(await installedTrapHooks(root), []);
+  await assert.rejects(() => stat(trap.marker), { code: 'ENOENT' });
+  assert.equal(result.committed, true);
+});
+
+test('LocalDriver tracks thread records despite a global core.excludesFile', async (t) => {
+  const root = await scratchRoot(t);
+  const trap = await hostileGitConfig(t);
+  useEnv(t, { GIT_CONFIG_GLOBAL: trap.globalConfig });
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  const result = await driver.commit('chore(ledger): open thread');
+  assert.equal(result.committed, true);
   assert.ok((await trackedPaths(root, result.sha)).includes(`threads/${ULID_A}.json`));
 });
 
