@@ -103,6 +103,8 @@ export async function hostileGitEnvironment(t) {
   );
   const emptyConfig = join(dir, 'gitconfig-empty');
   await writeFile(emptyConfig, '');
+  const extHelper = join(dir, 'ext-helper');
+  await writeFile(extHelper, `#!/bin/sh\necho ext-transport >> ${marker}\n`, { mode: 0o755 });
   return {
     dir,
     hooksDir,
@@ -114,6 +116,24 @@ export async function hostileGitEnvironment(t) {
     signingConfig,
     gpgProgram,
     emptyConfig,
+    extHelper,
+  };
+}
+
+export function extTransportCountEnv(trap, remoteUrl) {
+  return {
+    GIT_CONFIG_COUNT: '2',
+    GIT_CONFIG_KEY_0: `url.ext::${trap.extHelper}.insteadOf`,
+    GIT_CONFIG_VALUE_0: remoteUrl,
+    GIT_CONFIG_KEY_1: 'protocol.ext.allow',
+    GIT_CONFIG_VALUE_1: 'always',
+  };
+}
+
+export function extTransportParametersEnv(trap, remoteUrl) {
+  return {
+    GIT_CONFIG_PARAMETERS:
+      `'url.ext::${trap.extHelper}.insteadOf'='${remoteUrl}' 'protocol.ext.allow'='always'`,
   };
 }
 

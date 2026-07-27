@@ -1,6 +1,12 @@
 import { join } from 'node:path';
 import { gitExec } from './git-exec.mjs';
-import { clearedGitLocationEnv, isolatedGitArgs, isolatedGitConfigEnv } from './git-env.mjs';
+import {
+  clearedGitLocationEnv,
+  isolatedGitArgs,
+  isolatedGitConfigEnv,
+  nulledGlobalGitConfigEnv,
+  volatileGitConfigEnv,
+} from './git-env.mjs';
 
 const SAFE_DIRECTORY_KEY = 'safe.directory';
 const DISABLED_HOOKS_DIR = 'hooks-disabled';
@@ -58,14 +64,18 @@ export function pinnedScope(dir, gitDir) {
 
 export function networkScope(dir, gitDir) {
   const base = pinnedScope(dir, gitDir);
-  return { ...base, args: isolatedGitArgs(join(gitDir, DISABLED_HOOKS_DIR)) };
+  return {
+    ...base,
+    env: { ...base.env, ...volatileGitConfigEnv() },
+    args: isolatedGitArgs(join(gitDir, DISABLED_HOOKS_DIR)),
+  };
 }
 
 export function isolatedScope(dir, gitDir) {
   const base = networkScope(dir, gitDir);
   return {
     ...base,
-    env: { ...base.env, ...isolatedGitConfigEnv() },
+    env: { ...base.env, ...nulledGlobalGitConfigEnv() },
     args: [...base.args, ...safeDirectoryArgs(dir)],
   };
 }

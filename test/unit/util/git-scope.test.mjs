@@ -48,8 +48,17 @@ test('networkScope disables hooks and fsmonitor while keeping user config readab
     '-c', 'core.hooksPath=/abs/repo/.git/hooks-disabled',
     '-c', 'core.fsmonitor=false',
   ]);
-  assert.equal(scope.env.GIT_CONFIG_GLOBAL, undefined);
-  assert.equal(scope.env.GIT_CONFIG_NOSYSTEM, undefined);
+  assert.equal('GIT_CONFIG_GLOBAL' in scope.env, false);
+  assert.equal('GIT_CONFIG_NOSYSTEM' in scope.env, false);
+});
+
+test('networkScope closes the env-injected config channels', () => {
+  const scope = networkScope('/abs/repo', '/abs/repo/.git');
+  assert.equal(scope.env.GIT_CONFIG_COUNT, '0');
+  for (const name of ['GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_SYSTEM', 'GIT_TEMPLATE_DIR']) {
+    assert.ok(name in scope.env, name);
+    assert.equal(scope.env[name], undefined, name);
+  }
 });
 
 test('isolatedScope nulls global config and re-injects safe.directory for its target', () => {

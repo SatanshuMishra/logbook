@@ -11,6 +11,8 @@ import {
   withGitEnv,
   hostileGitEnvironment,
   hostileConfigEnv,
+  extTransportCountEnv,
+  extTransportParametersEnv,
 } from '../../fixtures/git-repos.mjs';
 import { readFile, stat, writeFile, mkdir, realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -686,4 +688,48 @@ test('ledger operations survive a repository whose ownership differs', async (t)
   assert.match(control.stderr, /dubious ownership/);
   assert.equal(result.committed, true);
   assert.ok((await trackedPaths(repo, result.sha)).includes(`threads/${ULID_A}.json`));
+});
+
+async function syncedUnder(t, injectionEnv) {
+  const { repo, remote } = await initGitRepoWithRemote(t);
+  const trap = await hostileGitEnvironment(t);
+  const driver = await makeGitDriver(t, repo);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  await driver.commit('feat: add thread');
+  const result = await withGitEnv(injectionEnv(trap, remote), () => driver.sync());
+  return { trap, result };
+}
+
+test('sync runs no transport helper injected through GIT_CONFIG_COUNT', async (t) => {
+  const { trap, result } = await syncedUnder(t, extTransportCountEnv);
+  await assert.rejects(() => stat(trap.marker), { code: 'ENOENT' });
+  assert.equal(result.pushed, true);
+  assert.equal(result.remote, true);
+});
+
+test('sync runs no transport helper injected through GIT_CONFIG_PARAMETERS', async (t) => {
+  const { trap, result } = await syncedUnder(t, extTransportParametersEnv);
+  await assert.rejects(() => stat(trap.marker), { code: 'ENOENT' });
+  assert.equal(result.pushed, true);
+  assert.equal(result.remote, true);
+});
+
+test('sync still resolves an insteadOf rewrite from the user global config', async (t) => {
+  const { repo, remote } = await initGitRepoWithRemote(t);
+  const trap = await hostileGitEnvironment(t);
+  const alias = await makeTempDir(t, 'git-driver-alias-');
+  await gitExec(alias, ['init', '-q', '--bare', '-b', 'main']);
+  const aliasConfig = join(trap.dir, 'gitconfig-alias');
+  await writeFile(aliasConfig, `[url "${alias}"]\n\tinsteadOf = ${remote}\n`);
+  const driver = await makeGitDriver(t, repo);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  await driver.commit('feat: add thread');
+  const result = await withGitEnv({ GIT_CONFIG_GLOBAL: aliasConfig }, () => driver.sync());
+  assert.equal(result.pushed, true);
+  const mirrored = await gitExec(alias, ['rev-parse', '--verify', driver.ledgerRef]);
+  assert.equal(mirrored.code, 0);
+  const untouched = await gitExec(remote, ['rev-parse', '--verify', '--quiet', driver.ledgerRef], { check: false });
+  assert.notEqual(untouched.code, 0);
 });

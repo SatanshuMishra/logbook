@@ -31,13 +31,22 @@ export function clearedGitLocationEnv() {
   return unsetAll(GIT_LOCATION_VARS);
 }
 
-export function isolatedGitConfigEnv() {
+export function volatileGitConfigEnv() {
   return {
     ...unsetAll(GIT_CONFIG_SOURCE_VARS),
     GIT_CONFIG_COUNT: '0',
+  };
+}
+
+export function nulledGlobalGitConfigEnv() {
+  return {
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_CONFIG_GLOBAL: devNull,
   };
+}
+
+export function isolatedGitConfigEnv() {
+  return { ...volatileGitConfigEnv(), ...nulledGlobalGitConfigEnv() };
 }
 
 export function isolatedGitArgs(hooksPath) {
