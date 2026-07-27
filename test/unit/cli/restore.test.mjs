@@ -77,6 +77,7 @@ test('restore materializes the ledger ref into an empty target and rebuilds the 
   assert.equal(restored.id, thread.id);
   const resumable = JSON.parse(await readFile(join(target, 'index', 'resumable.json'), 'utf8'));
   assert.equal(resumable.length, 1);
+  assert.equal(await pathExists(join(target, '.git')), false);
 });
 
 test('restore refuses a non-empty target without --force, and proceeds with --force', async (t) => {

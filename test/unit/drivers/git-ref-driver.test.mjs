@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GitRefDriver, resolveIntegrationBase } from '../../../src/drivers/git-ref-driver.mjs';
 import { initGitRepo, makeGitDriver, initBareRemote, initGitRepoWithRemote, commitFile, makeTempDir } from '../../fixtures/git-repos.mjs';
-import { readFile, stat, writeFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, stat, writeFile, mkdir, realpath } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { gitExec } from '../../../src/util/git-exec.mjs';
 import { mintLedgerRoot } from '../../../src/drivers/git-ledger.mjs';
 
@@ -130,6 +130,27 @@ async function mintForeignRoot(repo) {
     { env: { GIT_AUTHOR_NAME: 'X', GIT_AUTHOR_EMAIL: 'x@x', GIT_COMMITTER_NAME: 'X', GIT_COMMITTER_EMAIL: 'x@x' } },
   )).stdout.trim();
 }
+
+test('GitRefDriver.init never creates a nested recovery repo inside its worktree', async (t) => {
+  const repo = await initGitRepo(t);
+  const driver = await makeGitDriver(t, repo);
+  await driver.init();
+  assert.equal((await stat(join(driver.worktreeDir, '.git'))).isDirectory(), false);
+  const { stdout } = await gitExec(driver.worktreeDir, ['rev-parse', '--git-common-dir']);
+  const commonDir = resolve(driver.worktreeDir, stdout.trim());
+  assert.notEqual(commonDir, join(driver.worktreeDir, '.git'));
+  assert.equal(await realpath(commonDir), await realpath(join(repo, '.git')));
+});
+
+test('GitRefDriver commits land on the ledger ref, not on a private recovery branch', async (t) => {
+  const repo = await initGitRepo(t);
+  const driver = await makeGitDriver(t, repo);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  const result = await driver.commit('feat: add thread');
+  const tip = await gitExec(repo, ['rev-parse', driver.ledgerRef]);
+  assert.equal(tip.stdout.trim(), result.sha);
+});
 
 test('commit reports empty when nothing is staged', async (t) => {
   const repo = await initGitRepo(t);

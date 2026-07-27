@@ -1,14 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalDriver } from '../../../src/drivers/local-driver.mjs';
+import { gitExec } from '../../../src/util/git-exec.mjs';
 
 async function scratchRoot(t) {
   const dir = await mkdtemp(join(tmpdir(), 'local-driver-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   return join(dir, 'ledger');
+}
+
+function withoutGitOnPath(t) {
+  const previous = process.env.PATH;
+  t.after(() => {
+    if (previous === undefined) delete process.env.PATH;
+    else process.env.PATH = previous;
+  });
+  process.env.PATH = join(tmpdir(), 'local-driver-absent-bin');
+}
+
+async function trackedPaths(root, sha) {
+  const { stdout } = await gitExec(root, ['ls-tree', '-r', '--name-only', sha]);
+  return stdout.split('\n').map((line) => line.trim()).filter(Boolean);
 }
 
 const ULID_A = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
@@ -88,9 +103,140 @@ test('LocalDriver.root returns the absolute ledger root', async (t) => {
   assert.equal(await driver.root(), root);
 });
 
-test('LocalDriver.commit reports committed:false for the non-git store', async () => {
+test('LocalDriver.commit degrades when the ledger root has no recovery repo', async () => {
   const driver = new LocalDriver('/abs/ledger');
-  assert.deepEqual(await driver.commit('msg'), { committed: false });
+  assert.deepEqual(await driver.commit('msg'), { committed: false, sha: null, empty: false });
+});
+
+test('LocalDriver.init creates a private recovery repo under the ledger root', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  assert.equal((await stat(join(root, '.git'))).isDirectory(), true);
+  assert.equal(driver.isGit(), false);
+});
+
+test('LocalDriver.init leaves an existing recovery repo and its history intact', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  const first = await driver.commit('chore(ledger): open thread');
+  await driver.init();
+  const { stdout } = await gitExec(root, ['rev-parse', 'HEAD']);
+  assert.equal(stdout.trim(), first.sha);
+});
+
+test('LocalDriver.commit records real history for the non-git store', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  const result = await driver.commit('chore(ledger): open thread');
+  assert.deepEqual(Object.keys(result).sort(), ['committed', 'empty', 'sha']);
+  assert.equal(result.committed, true);
+  assert.equal(result.empty, false);
+  assert.match(result.sha, /^[0-9a-f]{40}$/);
+  const log = await gitExec(root, ['log', '--format=%H %an <%ae> %s']);
+  assert.equal(
+    log.stdout.trim(),
+    `${result.sha} Continuity Ledger <ledger@continuity.invalid> chore(ledger): open thread`,
+  );
+  assert.ok((await trackedPaths(root, result.sha)).includes(`threads/${ULID_A}.json`));
+});
+
+test('LocalDriver.commit accumulates one recovery commit per mutation', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  await driver.commit('chore(ledger): open thread');
+  await driver.writeThread(makeThread({ id: ULID_B, slug: 'second' }));
+  const second = await driver.commit('chore(ledger): open second thread');
+  assert.equal(second.committed, true);
+  const { stdout } = await gitExec(root, ['rev-list', '--count', 'HEAD']);
+  assert.equal(stdout.trim(), '2');
+});
+
+test('LocalDriver.commit reports empty:true when nothing changed since the last commit', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  assert.equal((await driver.commit('chore(ledger): open thread')).committed, true);
+  assert.deepEqual(
+    await driver.commit('chore(ledger): nothing to record'),
+    { committed: false, sha: null, empty: true },
+  );
+});
+
+test('LocalDriver.commit keeps the derived index out of recovery history', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  await driver.writeIndexFile('by-slug', { 'my-thread': ULID_A });
+  const result = await driver.commit('chore(ledger): open thread');
+  const tracked = await trackedPaths(root, result.sha);
+  assert.ok(tracked.includes(`threads/${ULID_A}.json`));
+  assert.equal(tracked.some((path) => path.startsWith('index/')), false);
+});
+
+test('LocalDriver.init and commit degrade without throwing when git is unavailable', async (t) => {
+  const root = await scratchRoot(t);
+  withoutGitOnPath(t);
+  const driver = new LocalDriver(root);
+  assert.equal(await driver.init(), root);
+  for (const sub of ['threads', 'bindings', 'decisions', 'sessions', 'index']) {
+    assert.equal((await stat(join(root, sub))).isDirectory(), true);
+  }
+  await driver.writeThread(makeThread());
+  assert.deepEqual(
+    await driver.commit('chore(ledger): open thread'),
+    { committed: false, sha: null, empty: false },
+  );
+  assert.deepEqual(await driver.readThread(ULID_A), makeThread());
+});
+
+test('LocalDriver.commit degrades without throwing when the recovery repo is unusable', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await rm(join(root, '.git'), { recursive: true, force: true });
+  await writeFile(join(root, '.git'), 'not a gitfile\n');
+  await driver.writeThread(makeThread());
+  assert.deepEqual(
+    await driver.commit('chore(ledger): open thread'),
+    { committed: false, sha: null, empty: false },
+  );
+});
+
+test('LocalDriver pins the recovery repo despite an ambient GIT_DIR', async (t) => {
+  const root = await scratchRoot(t);
+  const hijack = join(root, '..', 'hijacked.git');
+  const previous = process.env.GIT_DIR;
+  t.after(() => {
+    if (previous === undefined) delete process.env.GIT_DIR;
+    else process.env.GIT_DIR = previous;
+  });
+  process.env.GIT_DIR = hijack;
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  const result = await driver.commit('chore(ledger): open thread');
+  delete process.env.GIT_DIR;
+  assert.equal(result.committed, true);
+  assert.equal((await stat(join(root, '.git'))).isDirectory(), true);
+  await assert.rejects(() => stat(hijack), { code: 'ENOENT' });
+  assert.ok((await trackedPaths(root, result.sha)).includes(`threads/${ULID_A}.json`));
+});
+
+test('LocalDriver.commit rejects a non-string message', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await assert.rejects(() => driver.commit(42), /message/);
+  await assert.rejects(() => driver.commit(''), /message/);
 });
 
 test('LocalDriver.sync reports synced:false for the non-git store', async () => {
