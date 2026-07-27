@@ -6,6 +6,7 @@ import { buildContext, callTool, commitAndReindex } from '../src/tools/index.mjs
 import { rebuildIndex } from '../src/index/rebuild-index.mjs';
 import { readActiveThread } from '../src/util/active-thread.mjs';
 import { gitExec } from '../src/util/git-exec.mjs';
+import { clearedGitLocationEnv } from '../src/util/git-env.mjs';
 import { atomicWrite } from '../src/util/atomic-write.mjs';
 import { LocalDriver } from '../src/drivers/local-driver.mjs';
 import { DEFAULT_LEDGER_BRANCH } from '../src/drivers/git-ledger.mjs';
@@ -139,15 +140,16 @@ async function runRestore(rest) {
     throw new Error(`restore: target ${target} is not empty (pass --force to overwrite)`);
   }
   const repoDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-  const verify = await gitExec(
-    repoDir,
+  const repoExec = (args, options = {}) =>
+    gitExec(repoDir, args, { ...options, env: clearedGitLocationEnv() });
+  const verify = await repoExec(
     ['rev-parse', '--verify', '--quiet', '--end-of-options', `${ref}^{commit}`],
     { check: false },
   );
   if (verify.code !== 0) {
     throw new Error(`restore: ledger ref ${ref} not found in ${repoDir}`);
   }
-  const listing = await gitExec(repoDir, ['ls-tree', '-r', '-z', '--end-of-options', ref]);
+  const listing = await repoExec(['ls-tree', '-r', '-z', '--end-of-options', ref]);
   const entries = parseTreeEntries(listing.stdout);
   await mkdir(target, { recursive: true });
   let restored = 0;
@@ -156,7 +158,7 @@ async function runRestore(rest) {
       continue;
     }
     const dest = resolveWithinTarget(target, entry.path);
-    const show = await gitExec(repoDir, ['show', '--end-of-options', `${ref}:${entry.path}`]);
+    const show = await repoExec(['show', '--end-of-options', `${ref}:${entry.path}`]);
     await atomicWrite(dest, show.stdout);
     restored += 1;
   }

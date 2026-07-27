@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { runCli } from '../../../bin/ledger-cli.mjs';
 import { buildContext, callTool } from '../../../src/tools/index.mjs';
 import { tempDir, cleanupDirs, useEnv, initGitRepo } from './fixtures.mjs';
+import { withGitEnv } from '../../fixtures/git-repos.mjs';
 
 function git(repo, args, input) {
   return new Promise((resolvePromise, reject) => {
@@ -121,6 +122,28 @@ test('restore refuses a ledger tree entry that escapes the target (path traversa
 
   await assert.rejects(() => runCli(['restore', target]), /escapes target|parent-directory segment/);
   assert.equal(await pathExists(escaped), false);
+});
+
+test('restore reads the ledger ref from the project repo despite an ambient GIT_DIR', async (t) => {
+  const { thread } = await seedLedgerRef(t);
+  const foreign = await tempDir('cli-foreign-');
+  cleanupDirs(t, foreign);
+  await initGitRepo(foreign);
+  const poison = await hashBlob(foreign, 'poisoned\n');
+  const tree = (await git(foreign, ['mktree'], `100644 blob ${poison}\tpoison.txt\n`)).trim();
+  await updateLedgerRef(foreign, tree);
+
+  const target = await tempDir('cli-restore-');
+  cleanupDirs(t, target);
+  const result = await withGitEnv(
+    { GIT_DIR: join(foreign, '.git') },
+    () => runCli(['restore', target]),
+  );
+
+  assert.equal(result.counts.threads, 1);
+  assert.equal(await pathExists(join(target, 'poison.txt')), false);
+  const restored = JSON.parse(await readFile(join(target, 'threads', `${thread.id}.json`), 'utf8'));
+  assert.equal(restored.id, thread.id);
 });
 
 test('restore skips non-blob (symlink) tree entries instead of materializing them', async (t) => {
