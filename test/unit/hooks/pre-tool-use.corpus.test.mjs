@@ -5,6 +5,10 @@ import { classifyBashCommand } from '../../../hooks/lib/pre-tool-use.mjs';
 const ROOTS = Object.freeze(['/data/-proj/ledger']);
 const BASE = '/proj';
 const R = ROOTS[0];
+const AMP_ROOT = '/data/a&b/ledger';
+const DEEP_OPENERS_DENY_COMMAND = `${'('.repeat(16000)}rm -rf ${R}`;
+const DEEP_OPENERS_ALLOW_COMMAND = `${'('.repeat(16000)}rm -rf /tmp/x`;
+const OVERSIZE_NOROOT_COMMAND = `echo ${'x'.repeat(16400)}`;
 
 const caseOf = (expect) => ({ id, command, roots = ROOTS, baseDir = BASE, why }) => Object.freeze({
   id,
@@ -62,7 +66,7 @@ export const DENY_CORPUS = Object.freeze([
   { id: 'E17', command: `rm -rf ${R}/`, why: 'trailing slash form of the store root' },
   { id: 'E22', command: `for f in ${R}/*; do rm -f "$f"; done`, why: 'loop body hides the destructive head behind do' },
   { id: 'E23', command: `./cat ${R}/f`, why: 'relative path head impersonates an allowlisted read head' },
-  { id: 'FP1', command: `find ${R} \\( -name a -o -name b \\)`, why: 'accepted over-block: bare paren grouping residue is indistinguishable from a subshell' },
+  { id: 'FP1', command: `find ${R} \\( -name a -o -name b \\)`, why: 'accepted over-block: the split -name fragment is not itself a cleared head; it denies via scope inheritance from the preceding find ${R} unit in the same segment, not from the control split alone' },
   { id: 'J1', command: `jq '{a:.b}' ${R}/f`, why: 'accepted over-block: leading brace object construction is indistinguishable from a brace group' },
   { id: 'OB1', command: `echo "before && rm -rf ${R}"`, why: 'accepted over-block: echo is not an allowlisted read head' },
   { id: 'OB2', command: `echo 'x | rm -rf ${R}'`, why: 'accepted over-block: echo is not an allowlisted read head' },
@@ -76,6 +80,29 @@ export const DENY_CORPUS = Object.freeze([
   { id: 'OB10', command: `sed -i '' s/x/y/ "${R}/f"`, why: 'in place sed rewrites a store file' },
   { id: 'OB11', command: `git -C ${R} gc`, why: 'git gc is not a read subcommand' },
   { id: 'OB12', command: `git -C ${R} commit -m "fix ledger at ${R}"`, why: 'git commit is not a read subcommand' },
+  { id: 'SORT_O', command: `sort -o ${R}/f /etc/passwd`, why: 'sort is an unconditional read allow head; the -o flag writes its output into the named path with no output-flag check' },
+  { id: 'SORT_LONG', command: `sort --output=${R}/f /etc/passwd`, why: 'sort is an unconditional read allow head; --output= writes into the named path with no output-flag check' },
+  { id: 'UNIQ_OUT', command: `uniq /etc/passwd ${R}/f`, why: 'uniq is an unconditional read allow head; its second operand is the output file and is never distinguished from an input operand' },
+  { id: 'XXD_OUT', command: `xxd /etc/passwd ${R}/f`, why: 'xxd is an unconditional read allow head; its second operand is the output file and is never distinguished from an input operand' },
+  { id: 'TREE_O', command: `tree -o ${R}/f /etc`, why: 'tree is an unconditional read allow head; the -o flag writes its listing into the named path with no output-flag check' },
+  { id: 'SED_W', command: `sed -n 'w ${R}/f' /etc/passwd`, why: 'sedAllows only inspects CLI flags for in place rewrite; the scripts own w command writes matched lines into the named path and is invisible to it' },
+  { id: 'SED_SW', command: `sed 's/a/b/w ${R}/f' /etc/passwd`, why: 'sedAllows only inspects CLI flags for in place rewrite; the s///w suffix in the script body writes substituted lines into the named path and is invisible to it' },
+  { id: 'SED_E', command: `sed '1e rm -rf ${R}/sessions' /etc/passwd`, why: 'sedAllows only inspects CLI flags for in place rewrite; the scripts e command executes an arbitrary shell command and is invisible to it' },
+  { id: 'GIT_OUTPUT', command: `git diff --output=${R}/f`, why: 'git clearance resolves the subcommand as diff and stops; it never inspects trailing subcommand flags like --output= that redirect gits own output into the named path' },
+  { id: 'GIT_PAGER', command: `git -p -c core.pager='rm -rf ${R}/sessions' log`, why: 'resolveGitSubcommand walks past the valued -c global to reach the log subcommand; it never evaluates the -c value, which sets core.pager to a shell command git executes when paging output' },
+  { id: 'GIT_EXECPATH', command: `git --exec-path=/tmp/evil log`, why: 'resolveGitSubcommand walks past the valued --exec-path= global to reach the log subcommand and never evaluates it; the command also names no ledger root so the guard never engages, leaving a global flag that can redirect internal git helper binaries completely unchecked' },
+  { id: 'GIT_GREP_PAGER', command: `git grep -O'rm -rf ${R}/sessions' foo ${R}`, why: 'git clearance resolves the subcommand as grep and stops; it never inspects the -O flag that follows, which opens each match in an arbitrary pager or command' },
+  { id: 'PREFIX_UNTRUSTED', command: `./env cat ${R}/f`, why: 'prefix word matching keys off basename alone; ./env matches the trusted env prefix by name and is stripped without checking its own path is trusted, exposing cat as the head' },
+  { id: 'PREFIX_ABS_UNTRUSTED', command: `/tmp/evil/sudo cat ${R}/f`, why: 'prefix word matching keys off basename alone; an attacker binary at /tmp/evil/sudo matches the trusted sudo prefix by name and is stripped without checking its own directory is trusted, exposing cat as the head' },
+  { id: 'AMP_ROOT_QUOTED', command: `rm -rf "${AMP_ROOT}"`, roots: [AMP_ROOT], why: 'a literal & inside a properly double-quoted root path survives tokenizing as plain text, but splitControl still shreds the word on that & into /data/a and b/ledger, so neither fragment matches or resolves to the configured root' },
+  { id: 'AMP_ROOT_ESCAPED', command: 'rm -rf /data/a\\&b/ledger', roots: [AMP_ROOT], why: 'a backslash-escaped & in a bare argument is reduced to a literal & before splitControl ever sees it, and splitControl still shreds the word on that & into /data/a and b/ledger, so neither fragment matches or resolves to the configured root' },
+  { id: 'INHERIT_EVASION', command: `ls ${R} & rm -rf "$D"`, why: 'already denied today: the backgrounded rm names no root and carries only an unresolvable $D, but scope inheritance from the preceding ls ${R} unit in the same segment puts it in scope and its head is not cleared' },
+  { id: 'INHERIT_OVERBLOCK', command: `ls ${R} & npm test`, why: 'already denied today: npm test names no root, but scope inheritance from the preceding ls ${R} unit in the same segment puts it in scope and npm is not a cleared head; accepted over-block bought by the same inheritance that catches INHERIT_EVASION' },
+  { id: 'DEEP_OPENERS', command: DEEP_OPENERS_DENY_COMMAND, why: 'splitControl recurses once per leading ( character; 16000 glued opens overflow the call stack before the trailing rm -rf reaches the root, so the guard throws instead of returning a verdict' },
+  { id: 'YQ_READ', command: `yq '.a' ${R}/f`, why: 'yq is a full expression language capable of arbitrary transforms and side effects; it must not carry unconditional read clearance the way jq does' },
+  { id: 'SED_READ', command: `sed -n 1,20p ${R}/f`, why: 'sed no longer carries conditional read clearance; sedAllows only rules out in place rewrite flags and cannot prove any given sed invocation is read only given the w and e script commands' },
+  { id: 'CD_FAILED', command: `cd ledger && cd /nonexistent-xyz; rm -rf .`, roots: ['/proj/ledger'], baseDir: '/proj', why: 'nextCwd advances the tracked cwd on every cd regardless of success; a real shell cd to a nonexistent directory fails and stays inside the ledger root, so the trailing rm -rf . truly runs there, but the guard tracks the cwd as having left the root; today it lands on ask only via an unrelated overlay match between the earlier cleared cd and the later rm sink, not because the destructive unit is recognized as in scope' },
+  { id: 'CD_SUBSHELL', command: `cd ledger && (cd /tmp) && rm -rf .`, roots: ['/proj/ledger'], baseDir: '/proj', why: 'nextCwd advances the tracked cwd through a parenthesized cd as if it were not a subshell; a real shell running cd inside ( ) does not change the cwd of the parent shell, so the trailing rm -rf . truly runs inside the ledger root, but the guard tracks the cwd as having moved to /tmp; today it lands on ask only via the same unrelated cleared-cd-plus-sink overlay as CD_FAILED, not because the destructive unit is recognized as in scope' },
 ].map(caseOf('deny')));
 
 export const ASK_CORPUS = Object.freeze([
@@ -84,6 +111,7 @@ export const ASK_CORPUS = Object.freeze([
   { id: 'HEREDOC1', command: `cat ${R}/f && python3 - <<'EOT'\nprint(1)\nEOT`, why: 'overlay O1 store read feeds a python3 sink' },
   { id: 'AWKPIPE', command: `grep -c . ${R}/f | awk '{print $1}'`, why: 'overlay O1 store read feeds an awk sink' },
   { id: 'SUBST', command: `cat "$(ls ${R}/threads | head -1)"`, why: 'command substitution residue around a store path' },
+  { id: 'OVERSIZE_NOROOT', command: OVERSIZE_NOROOT_COMMAND, why: 'the oversize gate returns allow whenever no root string appears in an over-cap command; an unscannable oversized command is not provably read-only and must ask instead of falling open' },
 ].map(caseOf('ask')));
 
 export const ALLOW_CORPUS = Object.freeze([
@@ -100,7 +128,6 @@ export const ALLOW_CORPUS = Object.freeze([
   { id: 'BIN1', command: `/usr/bin/cat ${R}/f`, why: 'trusted bin dir head resolves to an allowlisted read head' },
   { id: 'SUDO_READ', command: `sudo cat ${R}/f`, why: 'privilege prefix strips to an allowlisted read head' },
   { id: 'FIND_READ', command: `find ${R} -name x`, why: 'find without an action flag is read only' },
-  { id: 'SED_READ', command: `sed -n 1,20p ${R}/f`, why: 'sed without in place rewrite is read only' },
   readHead('cat', `cat ${R}/f`),
   readHead('head', `head -5 ${R}/f`),
   readHead('tail', `tail -5 ${R}/f`),
@@ -122,7 +149,6 @@ export const ALLOW_CORPUS = Object.freeze([
   readHead('fgrep', `fgrep -n x ${R}/f`),
   readHead('rg', `rg x ${R}`),
   readHead('jq', `jq . ${R}/f`),
-  readHead('yq', `yq '.a' ${R}/f`),
   readHead('diff', `diff ${R}/a ${R}/b`),
   readHead('cmp', `cmp ${R}/a ${R}/b`),
   readHead('sort', `sort ${R}/f`),
@@ -158,6 +184,11 @@ export const ALLOW_CORPUS = Object.freeze([
   { id: 'BOUND1', command: 'npm test', why: 'bounding guarantee command never names the store' },
   { id: 'BOUND2', command: 'rm -rf /tmp/scratch', why: 'bounding guarantee destructive command outside the store' },
   { id: 'BOUND3', command: 'echo hi', why: 'bounding guarantee command never names the store' },
+  { id: 'AMP_LITERAL', command: `grep -rn "R&D" ${R}/f`, why: 'splitControl shreds the quoted literal R&D on its & into R and D, and the stray D fragment is treated as an uncleared head in scope, denying a fully quoted grep that never leaves the read allowlist' },
+  { id: 'READ_THEN_ORIENT', command: `cat ${R}/PROJECT.md; git status`, why: 'overlaysAsk treats git as a sink head anywhere in the command; the cleared cat unit paired with the independently cleared git status unit still trips the sink-elsewhere check and asks instead of allowing' },
+  { id: 'READ_THEN_GIT', command: `ls ${R} && git status`, why: 'overlaysAsk treats git as a sink head anywhere in the command; the cleared ls unit paired with the independently cleared git status unit still trips the sink-elsewhere check and asks instead of allowing' },
+  { id: 'READ_THEN_FIND', command: `cat ${R}/f && find . -name x`, why: 'overlaysAsk treats find as a sink head anywhere in the command; the cleared cat unit paired with the independently cleared find unit still trips the sink-elsewhere check and asks instead of allowing' },
+  { id: 'DEEP_OPENERS_NOROOT', command: DEEP_OPENERS_ALLOW_COMMAND, why: 'splitControl recurses once per leading ( character; 16000 glued opens overflow the call stack before the trailing rm -rf /tmp/x is ever reached, so the guard throws instead of returning a verdict even though the command names no root' },
 ].map(caseOf(null)));
 
 const runCorpus = (corpus) => {
