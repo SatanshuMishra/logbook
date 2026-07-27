@@ -5,6 +5,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalDriver } from '../../../src/drivers/local-driver.mjs';
 import { gitExec } from '../../../src/util/git-exec.mjs';
+import {
+  hostileConfigEnv,
+  hostileGitEnvironment,
+  withGitEnv,
+} from '../../fixtures/git-repos.mjs';
 
 async function scratchRoot(t) {
   const dir = await mkdtemp(join(tmpdir(), 'local-driver-'));
@@ -12,63 +17,21 @@ async function scratchRoot(t) {
   return join(dir, 'ledger');
 }
 
-function useEnv(t, overrides) {
-  const saved = {};
-  for (const key of Object.keys(overrides)) {
-    saved[key] = process.env[key];
-  }
-  t.after(() => {
-    for (const key of Object.keys(saved)) {
-      if (saved[key] === undefined) delete process.env[key];
-      else process.env[key] = saved[key];
-    }
-  });
-  for (const [key, value] of Object.entries(overrides)) {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
-  }
-}
-
-function withoutGitOnPath(t) {
-  useEnv(t, { PATH: join(tmpdir(), 'local-driver-absent-bin') });
-}
+const ABSENT_BIN = join(tmpdir(), 'local-driver-absent-bin');
 
 async function trackedPaths(root, sha) {
   const { stdout } = await gitExec(root, ['ls-tree', '-r', '--name-only', sha]);
   return stdout.split('\n').map((line) => line.trim()).filter(Boolean);
 }
 
-const TRAP_HOOKS = ['post-commit', 'post-index-change', 'pre-commit', 'commit-msg'];
-
-async function hostileGitConfig(t) {
-  const dir = await mkdtemp(join(tmpdir(), 'local-driver-hostile-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  const hooksDir = join(dir, 'hooks');
-  const marker = join(dir, 'fired');
-  await mkdir(hooksDir, { recursive: true });
-  for (const hook of TRAP_HOOKS) {
-    await writeFile(join(hooksDir, hook), `#!/bin/sh\necho ${hook} >> ${marker}\n`, { mode: 0o755 });
-  }
-  const excludes = join(dir, 'excludes');
-  await writeFile(excludes, '*.json\n');
-  const globalConfig = join(dir, 'gitconfig-global');
-  await writeFile(
-    globalConfig,
-    `[core]\n\thooksPath = ${hooksDir}\n\tfsmonitor = ${join(hooksDir, 'post-commit')}\n\texcludesFile = ${excludes}\n`,
-  );
-  const systemConfig = join(dir, 'gitconfig-system');
-  await writeFile(systemConfig, `[core]\n\thooksPath = ${hooksDir}\n`);
-  return { dir, hooksDir, marker, excludes, globalConfig, systemConfig };
-}
-
-async function installedTrapHooks(root) {
+async function installedTrapHooks(root, trap) {
   let names;
   try {
     names = await readdir(join(root, '.git', 'hooks'));
   } catch {
     return [];
   }
-  return names.filter((name) => TRAP_HOOKS.includes(name)).sort();
+  return names.filter((name) => trap.hookNames.includes(name)).sort();
 }
 
 async function foreignRepo(t) {
@@ -240,18 +203,19 @@ test('LocalDriver.commit keeps the derived index out of recovery history', async
 
 test('LocalDriver.init and commit degrade without throwing when git is unavailable', async (t) => {
   const root = await scratchRoot(t);
-  withoutGitOnPath(t);
   const driver = new LocalDriver(root);
-  assert.equal(await driver.init(), root);
-  for (const sub of ['threads', 'bindings', 'decisions', 'sessions', 'index']) {
-    assert.equal((await stat(join(root, sub))).isDirectory(), true);
-  }
-  await driver.writeThread(makeThread());
-  assert.deepEqual(
-    await driver.commit('chore(ledger): open thread'),
-    { committed: false, sha: null, empty: false, degraded: true },
-  );
-  assert.deepEqual(await driver.readThread(ULID_A), makeThread());
+  await withGitEnv({ PATH: ABSENT_BIN }, async () => {
+    assert.equal(await driver.init(), root);
+    for (const sub of ['threads', 'bindings', 'decisions', 'sessions', 'index']) {
+      assert.equal((await stat(join(root, sub))).isDirectory(), true);
+    }
+    await driver.writeThread(makeThread());
+    assert.deepEqual(
+      await driver.commit('chore(ledger): open thread'),
+      { committed: false, sha: null, empty: false, degraded: true },
+    );
+    assert.deepEqual(await driver.readThread(ULID_A), makeThread());
+  });
 });
 
 test('LocalDriver.commit degrades without throwing when the recovery repo is unusable', async (t) => {
@@ -270,12 +234,12 @@ test('LocalDriver.commit degrades without throwing when the recovery repo is unu
 test('LocalDriver pins the recovery repo despite an ambient GIT_DIR', async (t) => {
   const root = await scratchRoot(t);
   const hijack = join(root, '..', 'hijacked.git');
-  useEnv(t, { GIT_DIR: hijack });
   const driver = new LocalDriver(root);
-  await driver.init();
-  await driver.writeThread(makeThread());
-  const result = await driver.commit('chore(ledger): open thread');
-  delete process.env.GIT_DIR;
+  const result = await withGitEnv({ GIT_DIR: hijack }, async () => {
+    await driver.init();
+    await driver.writeThread(makeThread());
+    return driver.commit('chore(ledger): open thread');
+  });
   assert.equal(result.committed, true);
   assert.equal((await stat(join(root, '.git'))).isDirectory(), true);
   await assert.rejects(() => stat(hijack), { code: 'ENOENT' });
@@ -284,48 +248,40 @@ test('LocalDriver pins the recovery repo despite an ambient GIT_DIR', async (t) 
 
 test('LocalDriver runs no hook under a fully hostile ambient git config', async (t) => {
   const root = await scratchRoot(t);
-  const trap = await hostileGitConfig(t);
-  useEnv(t, {
-    GIT_CONFIG_COUNT: '1',
-    GIT_CONFIG_KEY_0: 'core.hooksPath',
-    GIT_CONFIG_VALUE_0: trap.hooksDir,
-    GIT_CONFIG_PARAMETERS: `'core.hooksPath'='${trap.hooksDir}'`,
-    GIT_CONFIG_GLOBAL: trap.globalConfig,
-    GIT_CONFIG_SYSTEM: trap.systemConfig,
-    GIT_TEMPLATE_DIR: trap.dir,
-  });
+  const trap = await hostileGitEnvironment(t);
   const driver = new LocalDriver(root);
-  await driver.init();
-  await driver.writeThread(makeThread());
-  const result = await driver.commit('chore(ledger): open thread');
+  const result = await withGitEnv(hostileConfigEnv(trap), async () => {
+    await driver.init();
+    await driver.writeThread(makeThread());
+    return driver.commit('chore(ledger): open thread');
+  });
   await assert.rejects(() => stat(trap.marker), { code: 'ENOENT' });
-  assert.deepEqual(await installedTrapHooks(root), []);
+  assert.deepEqual(await installedTrapHooks(root, trap), []);
   assert.equal(result.committed, true);
   assert.ok((await trackedPaths(root, result.sha)).includes(`threads/${ULID_A}.json`));
 });
 
 test('LocalDriver installs no template hook that would outlive the hostile env', async (t) => {
   const root = await scratchRoot(t);
-  const trap = await hostileGitConfig(t);
-  useEnv(t, { GIT_TEMPLATE_DIR: trap.dir });
+  const trap = await hostileGitEnvironment(t);
   const driver = new LocalDriver(root);
-  await driver.init();
-  delete process.env.GIT_TEMPLATE_DIR;
+  await withGitEnv({ GIT_TEMPLATE_DIR: trap.dir }, () => driver.init());
   await driver.writeThread(makeThread());
   const result = await driver.commit('chore(ledger): open thread');
-  assert.deepEqual(await installedTrapHooks(root), []);
+  assert.deepEqual(await installedTrapHooks(root, trap), []);
   await assert.rejects(() => stat(trap.marker), { code: 'ENOENT' });
   assert.equal(result.committed, true);
 });
 
 test('LocalDriver tracks thread records despite a global core.excludesFile', async (t) => {
   const root = await scratchRoot(t);
-  const trap = await hostileGitConfig(t);
-  useEnv(t, { GIT_CONFIG_GLOBAL: trap.globalConfig });
+  const trap = await hostileGitEnvironment(t);
   const driver = new LocalDriver(root);
-  await driver.init();
-  await driver.writeThread(makeThread());
-  const result = await driver.commit('chore(ledger): open thread');
+  const result = await withGitEnv({ GIT_CONFIG_GLOBAL: trap.globalConfig }, async () => {
+    await driver.init();
+    await driver.writeThread(makeThread());
+    return driver.commit('chore(ledger): open thread');
+  });
   assert.equal(result.committed, true);
   assert.ok((await trackedPaths(root, result.sha)).includes(`threads/${ULID_A}.json`));
 });
@@ -387,14 +343,15 @@ test('LocalDriver refuses a recovery .git symlinked into another repo', async (t
 
 test('LocalDriver.commit ignores an ambient GIT_AUTHOR_DATE and GIT_COMMITTER_DATE', async (t) => {
   const root = await scratchRoot(t);
-  useEnv(t, {
-    GIT_AUTHOR_DATE: '2001-02-03T04:05:06Z',
-    GIT_COMMITTER_DATE: '2001-02-03T04:05:06Z',
-  });
   const driver = new LocalDriver(root);
-  await driver.init();
-  await driver.writeThread(makeThread());
-  const result = await driver.commit('chore(ledger): open thread');
+  const result = await withGitEnv(
+    { GIT_AUTHOR_DATE: '2001-02-03T04:05:06Z', GIT_COMMITTER_DATE: '2001-02-03T04:05:06Z' },
+    async () => {
+      await driver.init();
+      await driver.writeThread(makeThread());
+      return driver.commit('chore(ledger): open thread');
+    },
+  );
   assert.equal(result.committed, true);
   const { stdout } = await gitExec(root, ['log', '-1', '--format=%aI %cI', result.sha]);
   const [authored, committed] = stdout.trim().split(' ');

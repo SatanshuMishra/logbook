@@ -45,15 +45,16 @@ export async function initGitRepoWithRemote(t) {
   return { repo, remote };
 }
 
-const TRAP_HOOKS = [
+const TRAP_HOOKS = Object.freeze([
   'post-commit',
   'post-checkout',
   'post-merge',
+  'post-index-change',
   'pre-commit',
   'commit-msg',
   'pre-push',
   'reference-transaction',
-];
+]);
 
 function applyEnv(values) {
   for (const [key, value] of Object.entries(values)) {
@@ -107,6 +108,7 @@ export async function hostileGitEnvironment(t) {
   await writeFile(extHelper, `#!/bin/sh\necho ext-transport >> ${marker}\n`, { mode: 0o755 });
   return {
     dir,
+    hookNames: TRAP_HOOKS,
     hooksDir,
     serverHooks,
     marker,
