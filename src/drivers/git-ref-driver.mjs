@@ -1,7 +1,13 @@
 import { rm, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LocalDriver } from './local-driver.mjs';
-import { gitExec } from '../util/git-exec.mjs';
+import {
+  hostScope,
+  isolatedScope,
+  networkScope,
+  resolveGitDir,
+  scopedExec,
+} from '../util/git-scope.mjs';
 import {
   EMPTY_TREE_SHA,
   MAX_SYNC_ATTEMPTS,
@@ -22,8 +28,8 @@ const GITIGNORE = 'index/\n';
 const SCAFFOLD_MESSAGE = 'chore: scaffold ledger';
 const MERGE_MESSAGE = 'chore: merge ledger';
 
-async function revParseOrNull(repo, ref) {
-  const { code, stdout } = await gitExec(repo, ['rev-parse', '--verify', '--quiet', ref], { check: false });
+async function revParseOrNull(scope, ref) {
+  const { code, stdout } = await scopedExec(scope, ['rev-parse', '--verify', '--quiet', ref], { check: false });
   return code === 0 ? stdout.trim() : null;
 }
 
@@ -31,26 +37,26 @@ function isContention(stderr) {
   return /\b(rejected|stale info|fetch first|non-fast-forward)\b/i.test(stderr || '');
 }
 
-async function isAncestor(repo, ancestor, descendant) {
+async function isAncestor(scope, ancestor, descendant) {
   if (!ancestor || !descendant) return false;
-  const { code } = await gitExec(repo, ['merge-base', '--is-ancestor', ancestor, descendant], { check: false });
+  const { code } = await scopedExec(scope, ['merge-base', '--is-ancestor', ancestor, descendant], { check: false });
   return code === 0;
 }
 
-async function cherryAllMerged(repo, base, tip) {
-  const { code, stdout } = await gitExec(repo, ['cherry', base, tip], { check: false });
+async function cherryAllMerged(scope, base, tip) {
+  const { code, stdout } = await scopedExec(scope, ['cherry', base, tip], { check: false });
   if (code !== 0) return false;
   const lines = stdout.trim() === '' ? [] : stdout.trim().split('\n');
   return lines.length > 0 && lines.every((line) => line.startsWith('-'));
 }
 
-async function aheadBehind(repo, branch, headSha) {
+async function aheadBehind(scope, branch, headSha) {
   const upstream = `refs/remotes/origin/${branch}`;
-  if ((await revParseOrNull(repo, upstream)) === null || headSha === null) {
+  if ((await revParseOrNull(scope, upstream)) === null || headSha === null) {
     return { ahead: 0, behind: 0 };
   }
-  const { code, stdout } = await gitExec(
-    repo,
+  const { code, stdout } = await scopedExec(
+    scope,
     ['rev-list', '--left-right', '--count', `${upstream}...${headSha}`],
     { check: false },
   );
@@ -59,12 +65,12 @@ async function aheadBehind(repo, branch, headSha) {
   return { ahead: ahead || 0, behind: behind || 0 };
 }
 
-async function divergedFromUpstream(repo, branch, headSha) {
+async function divergedFromUpstream(scope, branch, headSha) {
   const upstream = `refs/remotes/origin/${branch}`;
-  const up = await revParseOrNull(repo, upstream);
+  const up = await revParseOrNull(scope, upstream);
   if (up === null || headSha === null) return false;
-  const headAncestorOfUp = await isAncestor(repo, headSha, up);
-  const upAncestorOfHead = await isAncestor(repo, up, headSha);
+  const headAncestorOfUp = await isAncestor(scope, headSha, up);
+  const upAncestorOfHead = await isAncestor(scope, up, headSha);
   return !headAncestorOfUp && !upAncestorOfHead;
 }
 
@@ -84,23 +90,23 @@ function assertBinding(binding) {
   }
 }
 
-async function firstCommitOf(repo, ref, base) {
+async function firstCommitOf(scope, ref, base) {
   if (base) {
-    const range = await gitExec(repo, ['rev-list', '--reverse', `${base}..${ref}`], { check: false });
+    const range = await scopedExec(scope, ['rev-list', '--reverse', `${base}..${ref}`], { check: false });
     if (range.code === 0) {
       const first = range.stdout.trim().split('\n').filter(Boolean)[0];
       if (first) return first;
     }
   }
-  const root = await gitExec(repo, ['rev-list', '--max-parents=0', ref], { check: false });
+  const root = await scopedExec(scope, ['rev-list', '--max-parents=0', ref], { check: false });
   if (root.code !== 0) return null;
   const roots = root.stdout.trim().split('\n').filter(Boolean);
   return roots[roots.length - 1] || null;
 }
 
-async function threadIdTrailer(repo, commit) {
-  const { code, stdout } = await gitExec(
-    repo,
+async function threadIdTrailer(scope, commit) {
+  const { code, stdout } = await scopedExec(
+    scope,
     ['show', '-s', '--format=%(trailers:key=Thread-Id,valueonly)', commit],
     { check: false },
   );
@@ -127,12 +133,13 @@ export async function resolveIntegrationBase(repo) {
   if (typeof override === 'string' && override.trim() !== '') {
     return override.trim();
   }
-  const sym = await gitExec(repo, ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'], { check: false });
+  const scope = hostScope(repo);
+  const sym = await scopedExec(scope, ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'], { check: false });
   if (sym.code === 0 && sym.stdout.trim() !== '') {
     return sym.stdout.trim().replace(/^refs\/remotes\//, '');
   }
   for (const candidate of ['refs/remotes/origin/main', 'refs/remotes/origin/master']) {
-    if ((await revParseOrNull(repo, candidate)) !== null) {
+    if ((await revParseOrNull(scope, candidate)) !== null) {
       return candidate.replace(/^refs\/remotes\//, '');
     }
   }
@@ -140,6 +147,10 @@ export async function resolveIntegrationBase(repo) {
 }
 
 export class GitRefDriver extends LocalDriver {
+  #repoGitDir = null;
+
+  #worktreeGitDir = null;
+
   constructor({
     repoDir,
     worktreeDir,
@@ -166,6 +177,28 @@ export class GitRefDriver extends LocalDriver {
     return true;
   }
 
+  async #resolvedRepoGitDir() {
+    if (this.#repoGitDir === null) {
+      this.#repoGitDir = await resolveGitDir(this.repoDir);
+    }
+    return this.#repoGitDir;
+  }
+
+  async #repoScope() {
+    return isolatedScope(this.repoDir, await this.#resolvedRepoGitDir());
+  }
+
+  async #remoteScope() {
+    return networkScope(this.repoDir, await this.#resolvedRepoGitDir());
+  }
+
+  async #worktreeScope() {
+    if (this.#worktreeGitDir === null) {
+      this.#worktreeGitDir = await resolveGitDir(this.worktreeDir);
+    }
+    return isolatedScope(this.worktreeDir, this.#worktreeGitDir);
+  }
+
   async init() {
     await this.#ensureLedgerRef();
     await this.#assertDeterministicRoot();
@@ -179,18 +212,20 @@ export class GitRefDriver extends LocalDriver {
   }
 
   async #ensureLedgerRef() {
-    const existing = await revParseOrNull(this.repoDir, this.ledgerRef);
+    const scope = await this.#repoScope();
+    const existing = await revParseOrNull(scope, this.ledgerRef);
     if (existing !== null) return;
-    const rootSha = await mintLedgerRoot(this.repoDir);
-    await gitExec(this.repoDir, ['update-ref', this.ledgerRef, rootSha]);
+    const rootSha = await mintLedgerRoot(scope);
+    await scopedExec(scope, ['update-ref', this.ledgerRef, rootSha]);
   }
 
   async #assertDeterministicRoot() {
-    const roots = await gitExec(this.repoDir, ['rev-list', '--max-parents=0', this.ledgerRef], { check: false });
+    const scope = await this.#repoScope();
+    const roots = await scopedExec(scope, ['rev-list', '--max-parents=0', this.ledgerRef], { check: false });
     if (roots.code !== 0) return;
     const rootSha = roots.stdout.trim().split('\n').filter(Boolean).pop();
     if (!rootSha) return;
-    const tree = await gitExec(this.repoDir, ['rev-parse', `${rootSha}^{tree}`], { check: false });
+    const tree = await scopedExec(scope, ['rev-parse', `${rootSha}^{tree}`], { check: false });
     if (tree.code === 0 && tree.stdout.trim() !== EMPTY_TREE_SHA) {
       throw new Error(
         `GitRefDriver: ${this.ledgerRef} root tree ${tree.stdout.trim()} is not the empty tree; refusing to adopt a non-ledger ref`,
@@ -199,9 +234,11 @@ export class GitRefDriver extends LocalDriver {
   }
 
   async #ensureWorktree() {
+    const scope = await this.#repoScope();
     await rm(this.worktreeDir, { recursive: true, force: true });
-    await gitExec(this.repoDir, ['worktree', 'prune']);
-    await gitExec(this.repoDir, ['worktree', 'add', '--detach', this.worktreeDir, this.ledgerRef]);
+    await scopedExec(scope, ['worktree', 'prune']);
+    await scopedExec(scope, ['worktree', 'add', '--detach', this.worktreeDir, this.ledgerRef]);
+    this.#worktreeGitDir = null;
   }
 
   async #ensureSubdirs() {
@@ -217,24 +254,26 @@ export class GitRefDriver extends LocalDriver {
   }
 
   async #ensureFetchRefspec() {
+    const scope = await this.#remoteScope();
     const key = `remote.${this.remote}.fetch`;
-    const { code, stdout } = await gitExec(this.repoDir, ['config', '--get-all', key], { check: false });
+    const { code, stdout } = await scopedExec(scope, ['config', '--get-all', key], { check: false });
     const existing = code === 0 ? stdout.split('\n').map((s) => s.trim()).filter(Boolean) : [];
     if (!existing.includes(this.fetchRefspec)) {
-      await gitExec(this.repoDir, ['config', '--add', key, this.fetchRefspec]);
+      await scopedExec(scope, ['config', '--add', key, this.fetchRefspec]);
     }
   }
 
   async #commitWorktree(message) {
-    await gitExec(this.worktreeDir, ['add', '-A']);
-    const staged = await gitExec(this.worktreeDir, ['diff', '--cached', '--quiet'], { check: false });
+    const worktree = await this.#worktreeScope();
+    await scopedExec(worktree, ['add', '-A']);
+    const staged = await scopedExec(worktree, ['diff', '--cached', '--quiet'], { check: false });
     if (staged.code === 0) {
       return { committed: false, sha: null, empty: true, degraded: false };
     }
-    await gitExec(this.worktreeDir, ['commit', '--no-verify', '-m', message], { env: ledgerCommitEnv() });
-    const { stdout } = await gitExec(this.worktreeDir, ['rev-parse', 'HEAD']);
+    await scopedExec(worktree, ['commit', '--no-verify', '-m', message], { env: ledgerCommitEnv() });
+    const { stdout } = await scopedExec(worktree, ['rev-parse', 'HEAD']);
     const sha = stdout.trim();
-    await gitExec(this.repoDir, ['update-ref', this.ledgerRef, sha]);
+    await scopedExec(await this.#repoScope(), ['update-ref', this.ledgerRef, sha]);
     return { committed: true, sha, empty: false, degraded: false };
   }
 
@@ -244,17 +283,19 @@ export class GitRefDriver extends LocalDriver {
   }
 
   async sync() {
-    if (!(await this.#hasRemote())) {
+    const remote = await this.#remoteScope();
+    if (!(await this.#hasRemote(remote))) {
       return { synced: false, pushed: false, merged: false, remote: false, attempts: 0 };
     }
+    const repo = await this.#repoScope();
     let attempts = 0;
     while (attempts < MAX_SYNC_ATTEMPTS) {
       attempts += 1;
-      await gitExec(this.repoDir, ['fetch', this.remote, this.fetchRefspec], { check: false });
-      const localSha = await revParseOrNull(this.repoDir, this.ledgerRef);
-      const remoteSha = await revParseOrNull(this.repoDir, this.mirrorRef);
+      await scopedExec(remote, ['fetch', this.remote, this.fetchRefspec], { check: false });
+      const localSha = await revParseOrNull(repo, this.ledgerRef);
+      const remoteSha = await revParseOrNull(repo, this.mirrorRef);
       if (remoteSha === null) {
-        if (await this.#pushCreate(localSha)) {
+        if (await this.#pushCreate(remote, localSha)) {
           return { synced: true, pushed: true, merged: false, remote: true, attempts };
         }
         continue;
@@ -262,34 +303,34 @@ export class GitRefDriver extends LocalDriver {
       if (localSha === remoteSha) {
         return { synced: true, pushed: false, merged: false, remote: true, attempts };
       }
-      if (await isAncestor(this.repoDir, remoteSha, localSha)) {
-        if (await this.#pushLease(localSha, remoteSha)) {
+      if (await isAncestor(repo, remoteSha, localSha)) {
+        if (await this.#pushLease(remote, localSha, remoteSha)) {
           return { synced: true, pushed: true, merged: false, remote: true, attempts };
         }
         continue;
       }
-      if (await isAncestor(this.repoDir, localSha, remoteSha)) {
+      if (await isAncestor(repo, localSha, remoteSha)) {
         await this.#fastForwardLocal(remoteSha);
         return { synced: true, pushed: false, merged: false, remote: true, attempts };
       }
-      await this.#assertSharedRoot(localSha, remoteSha);
+      await this.#assertSharedRoot(repo, localSha, remoteSha);
       const mergeSha = await this.#mergeTheirs();
-      if (await this.#pushLease(mergeSha, remoteSha)) {
+      if (await this.#pushLease(remote, mergeSha, remoteSha)) {
         return { synced: true, pushed: true, merged: true, remote: true, attempts };
       }
     }
     throw new Error(`sync: exceeded MAX_SYNC_ATTEMPTS (${MAX_SYNC_ATTEMPTS})`);
   }
 
-  async #hasRemote() {
-    const { code, stdout } = await gitExec(this.repoDir, ['remote'], { check: false });
+  async #hasRemote(scope) {
+    const { code, stdout } = await scopedExec(scope, ['remote'], { check: false });
     if (code !== 0) return false;
     return stdout.split('\n').map((s) => s.trim()).includes(this.remote);
   }
 
-  async #pushCreate(localSha) {
-    const result = await gitExec(
-      this.repoDir,
+  async #pushCreate(scope, localSha) {
+    const result = await scopedExec(
+      scope,
       ['push', this.remote, `${localSha}:${this.ledgerRef}`],
       { check: false },
     );
@@ -298,9 +339,9 @@ export class GitRefDriver extends LocalDriver {
     throw new Error(`sync: push rejected: ${result.stderr.trim()}`);
   }
 
-  async #pushLease(localSha, expectedRemoteSha) {
-    const result = await gitExec(
-      this.repoDir,
+  async #pushLease(scope, localSha, expectedRemoteSha) {
+    const result = await scopedExec(
+      scope,
       ['push', `--force-with-lease=${this.ledgerRef}:${expectedRemoteSha}`, this.remote, `${localSha}:${this.ledgerRef}`],
       { check: false },
     );
@@ -310,26 +351,27 @@ export class GitRefDriver extends LocalDriver {
   }
 
   async #fastForwardLocal(remoteSha) {
-    await gitExec(this.worktreeDir, ['merge', '--ff-only', remoteSha], { env: ledgerCommitEnv() });
-    await gitExec(this.repoDir, ['update-ref', this.ledgerRef, remoteSha]);
+    await scopedExec(await this.#worktreeScope(), ['merge', '--ff-only', remoteSha], { env: ledgerCommitEnv() });
+    await scopedExec(await this.#repoScope(), ['update-ref', this.ledgerRef, remoteSha]);
   }
 
-  async #assertSharedRoot(localSha, remoteSha) {
-    const { code, stdout } = await gitExec(this.repoDir, ['merge-base', localSha, remoteSha], { check: false });
+  async #assertSharedRoot(scope, localSha, remoteSha) {
+    const { code, stdout } = await scopedExec(scope, ['merge-base', localSha, remoteSha], { check: false });
     if (code !== 0 || stdout.trim() === '') {
       throw new Error('sync: refusing to merge unrelated ledger histories (divergent root)');
     }
   }
 
   async #mergeTheirs() {
-    await gitExec(
-      this.worktreeDir,
+    const worktree = await this.#worktreeScope();
+    await scopedExec(
+      worktree,
       ['merge', '--no-verify', '--no-edit', '-X', 'theirs', '-m', MERGE_MESSAGE, this.mirrorRef],
       { env: ledgerCommitEnv() },
     );
-    const { stdout } = await gitExec(this.worktreeDir, ['rev-parse', 'HEAD']);
+    const { stdout } = await scopedExec(worktree, ['rev-parse', 'HEAD']);
     const sha = stdout.trim();
-    await gitExec(this.repoDir, ['update-ref', this.ledgerRef, sha]);
+    await scopedExec(await this.#repoScope(), ['update-ref', this.ledgerRef, sha]);
     return sha;
   }
 
@@ -339,21 +381,22 @@ export class GitRefDriver extends LocalDriver {
     const branch = binding.branch;
     const firstCommit = binding.first_commit ?? null;
     const base = await resolveIntegrationBase(repo);
-    const headSha = await revParseOrNull(repo, `refs/heads/${branch}`);
+    const scope = hostScope(repo);
+    const headSha = await revParseOrNull(scope, `refs/heads/${branch}`);
     if (headSha === null) {
-      return this.#observeDeleted(repo, firstCommit, base);
+      return this.#observeDeleted(scope, firstCommit, base);
     }
-    return this.#observeLive(repo, branch, headSha, firstCommit, base);
+    return this.#observeLive(scope, branch, headSha, firstCommit, base);
   }
 
-  async #observeLive(repo, branch, headSha, firstCommit, base) {
+  async #observeLive(scope, branch, headSha, firstCommit, base) {
     const firstCommitPresent = firstCommit === null
       ? true
-      : await isAncestor(repo, firstCommit, headSha);
-    const merged = base !== null && (await isAncestor(repo, headSha, base));
-    const squashMerged = !merged && base !== null && (await cherryAllMerged(repo, base, headSha));
-    const { ahead, behind } = await aheadBehind(repo, branch, headSha);
-    const diverged = await divergedFromUpstream(repo, branch, headSha);
+      : await isAncestor(scope, firstCommit, headSha);
+    const merged = base !== null && (await isAncestor(scope, headSha, base));
+    const squashMerged = !merged && base !== null && (await cherryAllMerged(scope, base, headSha));
+    const { ahead, behind } = await aheadBehind(scope, branch, headSha);
+    const diverged = await divergedFromUpstream(scope, branch, headSha);
     return {
       branch_exists: true,
       head_sha: headSha,
@@ -369,12 +412,12 @@ export class GitRefDriver extends LocalDriver {
     };
   }
 
-  async #observeDeleted(repo, firstCommit, base) {
+  async #observeDeleted(scope, firstCommit, base) {
     let merged = false;
     let squashMerged = false;
     if (firstCommit !== null && base !== null) {
-      merged = await isAncestor(repo, firstCommit, base);
-      squashMerged = !merged && (await cherryAllMerged(repo, base, firstCommit));
+      merged = await isAncestor(scope, firstCommit, base);
+      squashMerged = !merged && (await cherryAllMerged(scope, base, firstCommit));
     }
     return {
       branch_exists: false,
@@ -393,20 +436,24 @@ export class GitRefDriver extends LocalDriver {
 
   async observeNewBranch(repo, branch) {
     assertRepoBranch('observeNewBranch', repo, branch);
+    const scope = hostScope(repo);
     const ref = `refs/heads/${branch}`;
-    const headSha = await revParseOrNull(repo, ref);
+    const headSha = await revParseOrNull(scope, ref);
     if (headSha === null) {
       return { thread_id_trailer: null, first_commit: null };
     }
     const base = await resolveIntegrationBase(repo);
-    const firstCommit = await firstCommitOf(repo, ref, base);
-    const trailer = firstCommit ? await threadIdTrailer(repo, firstCommit) : null;
+    const firstCommit = await firstCommitOf(scope, ref, base);
+    const trailer = firstCommit ? await threadIdTrailer(scope, firstCommit) : null;
     return { thread_id_trailer: trailer, first_commit: firstCommit };
   }
 
   async listRepoBranches(repo) {
     assertRepo('listRepoBranches', repo);
-    const { stdout } = await gitExec(repo, ['for-each-ref', '--format=%(refname:short)', 'refs/heads/']);
+    const { stdout } = await scopedExec(
+      hostScope(repo),
+      ['for-each-ref', '--format=%(refname:short)', 'refs/heads/'],
+    );
     return stdout.split('\n').map((s) => s.trim()).filter(Boolean);
   }
 }

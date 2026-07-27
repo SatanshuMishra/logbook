@@ -1,4 +1,4 @@
-import { gitExec } from '../util/git-exec.mjs';
+import { scopedExec } from '../util/git-scope.mjs';
 
 export const EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 export const LEDGER_ROOT_MESSAGE = 'chore: initialize continuity ledger';
@@ -65,7 +65,7 @@ export function fetchRefspecFor(backend, branch = DEFAULT_LEDGER_BRANCH, remote 
     : `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`;
 }
 
-export async function mintLedgerRoot(repoDir) {
+export async function mintLedgerRoot(scope) {
   const env = {
     GIT_AUTHOR_NAME: LEDGER_INIT_IDENTITY.name,
     GIT_AUTHOR_EMAIL: LEDGER_INIT_IDENTITY.email,
@@ -74,8 +74,8 @@ export async function mintLedgerRoot(repoDir) {
     GIT_COMMITTER_EMAIL: LEDGER_INIT_IDENTITY.email,
     GIT_COMMITTER_DATE: LEDGER_INIT_IDENTITY.date,
   };
-  const { stdout } = await gitExec(
-    repoDir,
+  const { stdout } = await scopedExec(
+    scope,
     ['commit-tree', EMPTY_TREE_SHA, '-m', LEDGER_ROOT_MESSAGE],
     { env },
   );

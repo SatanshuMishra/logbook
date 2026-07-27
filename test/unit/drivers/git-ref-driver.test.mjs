@@ -1,7 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GitRefDriver, resolveIntegrationBase } from '../../../src/drivers/git-ref-driver.mjs';
-import { initGitRepo, makeGitDriver, initBareRemote, initGitRepoWithRemote, commitFile, makeTempDir } from '../../fixtures/git-repos.mjs';
+import {
+  initGitRepo,
+  makeGitDriver,
+  initBareRemote,
+  initGitRepoWithRemote,
+  commitFile,
+  makeTempDir,
+  withGitEnv,
+  hostileGitEnvironment,
+  hostileConfigEnv,
+} from '../../fixtures/git-repos.mjs';
 import { readFile, stat, writeFile, mkdir, realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { gitExec } from '../../../src/util/git-exec.mjs';
@@ -537,4 +547,143 @@ test('sync refuses to merge unrelated ledger histories (divergent root)', async 
   await driver.writeThread(makeThread());
   await driver.commit('feat: local');
   await assert.rejects(() => driver.sync(), /unrelated ledger histories/);
+});
+
+async function trackedPaths(repo, ref) {
+  const { stdout } = await gitExec(repo, ['ls-tree', '-r', '--name-only', ref]);
+  return stdout.split('\n').map((line) => line.trim()).filter(Boolean);
+}
+
+function hijackEnv(foreign) {
+  return { GIT_DIR: join(foreign, '.git'), GIT_WORK_TREE: foreign };
+}
+
+test('init and commit land the ledger ref in the target repo despite an ambient GIT_DIR', async (t) => {
+  const repo = await initGitRepo(t);
+  const foreign = await initGitRepo(t);
+  const driver = await makeGitDriver(t, repo);
+  const result = await withGitEnv(hijackEnv(foreign), async () => {
+    await driver.init();
+    await driver.writeThread(makeThread());
+    return driver.commit('feat: add thread');
+  });
+  assert.equal(result.committed, true);
+  const tip = await gitExec(repo, ['rev-parse', '--verify', '--quiet', driver.ledgerRef], { check: false });
+  assert.equal(tip.code, 0);
+  assert.equal(tip.stdout.trim(), result.sha);
+  assert.ok((await trackedPaths(repo, driver.ledgerRef)).includes(`threads/${ULID_A}.json`));
+  const hijacked = await gitExec(foreign, ['rev-parse', '--verify', '--quiet', driver.ledgerRef], { check: false });
+  assert.notEqual(hijacked.code, 0);
+});
+
+test('sync publishes from the target repo despite an ambient GIT_DIR', async (t) => {
+  const { repo, remote } = await initGitRepoWithRemote(t);
+  const foreign = await initGitRepo(t);
+  const driver = await makeGitDriver(t, repo);
+  const result = await withGitEnv(hijackEnv(foreign), async () => {
+    await driver.init();
+    await driver.writeThread(makeThread());
+    await driver.commit('feat: add thread');
+    return driver.sync();
+  });
+  assert.equal(result.remote, true);
+  assert.equal(result.pushed, true);
+  const onRemote = await gitExec(remote, ['rev-parse', '--verify', '--quiet', 'refs/heads/_ledger'], { check: false });
+  assert.equal(onRemote.code, 0);
+});
+
+test('custom-ref init records the fetch refspec in the target repo despite an ambient GIT_DIR', async (t) => {
+  const repo = await initGitRepo(t);
+  const remote = await initBareRemote(t);
+  await gitExec(repo, ['remote', 'add', 'origin', remote]);
+  const foreign = await initGitRepo(t);
+  await gitExec(foreign, ['remote', 'add', 'origin', remote]);
+  const driver = await makeGitDriver(t, repo, { backend: 'custom-ref' });
+  await withGitEnv(hijackEnv(foreign), () => driver.init());
+  const target = await gitExec(repo, ['config', '--get-all', 'remote.origin.fetch']);
+  assert.equal(target.stdout.includes(driver.fetchRefspec), true);
+  const hijacked = await gitExec(foreign, ['config', '--get-all', 'remote.origin.fetch']);
+  assert.equal(hijacked.stdout.includes(driver.fetchRefspec), false);
+});
+
+test('branch observation reads the target repo despite an ambient GIT_DIR', async (t) => {
+  const repo = await initGitRepo(t);
+  await commitFile(repo, 'base.txt', 'base\n', 'chore: base');
+  await gitExec(repo, ['branch', 'feature-x']);
+  const foreign = await initGitRepo(t);
+  await commitFile(foreign, 'other.txt', 'other\n', 'chore: other');
+  await gitExec(foreign, ['branch', 'foreign-only']);
+  const driver = await makeGitDriver(t, repo);
+  const { branches, observed } = await withGitEnv(
+    { ...hijackEnv(foreign), LEDGER_BASE_REF: 'main' },
+    async () => ({
+      branches: (await driver.listRepoBranches(repo)).sort(),
+      observed: await driver.observeBranch({ repo, branch: 'feature-x', first_commit: null }),
+    }),
+  );
+  assert.deepEqual(branches, ['feature-x', 'main']);
+  assert.equal(observed.branch_exists, true);
+  const head = await gitExec(repo, ['rev-parse', 'refs/heads/feature-x']);
+  assert.equal(observed.head_sha, head.stdout.trim());
+});
+
+test('commit tracks thread records despite a global core.excludesFile', async (t) => {
+  const repo = await initGitRepo(t);
+  const trap = await hostileGitEnvironment(t);
+  const driver = await makeGitDriver(t, repo);
+  const result = await withGitEnv({ GIT_CONFIG_GLOBAL: trap.globalConfig }, async () => {
+    await driver.init();
+    await driver.writeThread(makeThread());
+    return driver.commit('feat: add thread');
+  });
+  assert.equal(result.committed, true);
+  assert.ok((await trackedPaths(repo, result.sha)).includes(`threads/${ULID_A}.json`));
+});
+
+test('ledger operations run no client-side hook under a fully hostile ambient git config', async (t) => {
+  const { repo, remote } = await initGitRepoWithRemote(t);
+  const trap = await hostileGitEnvironment(t);
+  await gitExec(remote, ['config', 'core.hooksPath', trap.serverHooks]);
+  const driver = await makeGitDriver(t, repo);
+  const result = await withGitEnv(hostileConfigEnv(trap), async () => {
+    await driver.init();
+    await driver.writeThread(makeThread());
+    const committed = await driver.commit('feat: add thread');
+    await driver.sync();
+    return committed;
+  });
+  await assert.rejects(() => stat(trap.marker), { code: 'ENOENT' });
+  assert.equal(result.committed, true);
+  assert.ok((await trackedPaths(repo, result.sha)).includes(`threads/${ULID_A}.json`));
+});
+
+test('ledger commits are unsigned even when global config demands signing', async (t) => {
+  const repo = await initGitRepo(t);
+  const trap = await hostileGitEnvironment(t);
+  const driver = await makeGitDriver(t, repo);
+  const result = await withGitEnv({ GIT_CONFIG_GLOBAL: trap.signingConfig }, async () => {
+    await driver.init();
+    await driver.writeThread(makeThread());
+    return driver.commit('feat: add thread');
+  });
+  assert.equal(result.committed, true);
+  const { stdout } = await gitExec(repo, ['log', '-1', '--format=%G?', result.sha]);
+  assert.equal(stdout.trim(), 'N');
+});
+
+test('ledger operations survive a repository whose ownership differs', async (t) => {
+  const repo = await initGitRepo(t);
+  const trap = await hostileGitEnvironment(t);
+  const driver = await makeGitDriver(t, repo);
+  const ownership = { GIT_TEST_ASSUME_DIFFERENT_OWNER: '1', GIT_CONFIG_GLOBAL: trap.emptyConfig };
+  const { control, result } = await withGitEnv(ownership, async () => {
+    const probe = await gitExec(repo, ['rev-parse', '--absolute-git-dir'], { check: false });
+    await driver.init();
+    await driver.writeThread(makeThread());
+    return { control: probe, result: await driver.commit('feat: add thread') };
+  });
+  assert.notEqual(control.code, 0);
+  assert.match(control.stderr, /dubious ownership/);
+  assert.equal(result.committed, true);
+  assert.ok((await trackedPaths(repo, result.sha)).includes(`threads/${ULID_A}.json`));
 });
