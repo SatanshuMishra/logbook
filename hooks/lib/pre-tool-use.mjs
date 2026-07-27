@@ -23,6 +23,10 @@ const MAX_COMMAND_BYTES = 16384;
 const CONTROL_WORDS = new Set(['(', ')', '{', '}']);
 const GROUP_OPENERS = new Set(['(', '{']);
 const FD_DUPLICATION = /^&(\d+|-)$/;
+const ORIENTATION_HEADS = new Set(['git', 'find']);
+const CLEARED_UNIT_SINKS = Object.freeze(
+  new Set([...SINK_HEADS].filter((name) => !ORIENTATION_HEADS.has(name))),
+);
 const DENY_SUFFIX =
   'use the ledger MCP tools (mcp__ledger__* when the server is configured directly, mcp__plugin_session-continuity_ledger__* when installed as a plugin)';
 const BASH_REASONS = Object.freeze({
@@ -190,11 +194,11 @@ function unitDenies(unit, roots) {
   return unit.head.kind === 'name' && !unit.cleared;
 }
 
-function sinkElsewhere(units, index, predicate) {
+function sinkElsewhere(units, index, sinks, predicate) {
   return units.some((unit, other) => (
     other !== index
     && unit.head.kind === 'name'
-    && SINK_HEADS.has(unit.head.name)
+    && sinks.has(unit.head.name)
     && predicate(unit)
   ));
 }
@@ -205,10 +209,10 @@ function overlaysAsk(units) {
       return false;
     }
     if (unit.head.kind === 'name' && unit.cleared) {
-      return sinkElsewhere(units, index, () => true);
+      return sinkElsewhere(units, index, CLEARED_UNIT_SINKS, () => true);
     }
     if (unit.head.kind === 'assignment-only') {
-      return sinkElsewhere(units, index, (other) => hasUnresolvable(other.tokens));
+      return sinkElsewhere(units, index, SINK_HEADS, (other) => hasUnresolvable(other.tokens));
     }
     return false;
   });
