@@ -319,6 +319,33 @@ test('LocalDriver tracks thread records despite a global core.excludesFile', asy
   assert.ok((await trackedPaths(root, result.sha)).includes(`threads/${ULID_A}.json`));
 });
 
+test('LocalDriver.init restores a deleted recovery .gitignore', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await rm(join(root, '.gitignore'), { force: true });
+  await driver.init();
+  await driver.writeThread(makeThread());
+  await driver.writeIndexFile('by-slug', { 'my-thread': ULID_A });
+  const result = await driver.commit('chore(ledger): open thread');
+  const tracked = await trackedPaths(root, result.sha);
+  assert.ok(tracked.includes(`threads/${ULID_A}.json`));
+  assert.equal(tracked.some((path) => path.startsWith('index/')), false);
+});
+
+test('LocalDriver.init re-asserts recovery signing config on an existing repo', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await gitExec(root, ['config', '--local', '--unset', 'commit.gpgsign'], { check: false });
+  await gitExec(root, ['config', '--local', '--unset', 'tag.gpgsign'], { check: false });
+  await driver.init();
+  for (const key of ['commit.gpgsign', 'tag.gpgsign']) {
+    const { stdout } = await gitExec(root, ['config', '--local', '--get', key]);
+    assert.equal(stdout.trim(), 'false');
+  }
+});
+
 test('LocalDriver.commit rejects a non-string message', async (t) => {
   const root = await scratchRoot(t);
   const driver = new LocalDriver(root);
