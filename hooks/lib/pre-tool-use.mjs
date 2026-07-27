@@ -64,6 +64,10 @@ function ledgerTriggers(roots, projectDir) {
     .filter((trigger) => typeof trigger === 'string' && trigger.length > 0);
 }
 
+function isOversized(command) {
+  return Buffer.byteLength(command, 'utf8') > MAX_COMMAND_BYTES;
+}
+
 function matchedTrigger(command, roots, projectDir) {
   return ledgerTriggers(roots, projectDir).find((trigger) => command.includes(trigger)) ?? null;
 }
@@ -76,7 +80,7 @@ export function classifyBashCommand(command, roots, projectDir) {
     return 'ask';
   }
   const trigger = matchedTrigger(command, roots, projectDir);
-  if (command.length > MAX_COMMAND_BYTES) {
+  if (isOversized(command)) {
     return trigger === null ? 'ask' : 'deny';
   }
   return trigger === null ? null : 'ask';
@@ -86,7 +90,7 @@ function bashReason(verdict, command, roots, projectDir) {
   if (typeof command !== 'string') {
     return UNREADABLE_COMMAND_REASON;
   }
-  if (command.length > MAX_COMMAND_BYTES) {
+  if (isOversized(command)) {
     return BASH_REASONS[verdict];
   }
   const trigger = matchedTrigger(command, roots, projectDir);

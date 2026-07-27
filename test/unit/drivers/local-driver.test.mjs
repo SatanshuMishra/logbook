@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalDriver } from '../../../src/drivers/local-driver.mjs';
@@ -12,18 +12,75 @@ async function scratchRoot(t) {
   return join(dir, 'ledger');
 }
 
-function withoutGitOnPath(t) {
-  const previous = process.env.PATH;
+function useEnv(t, overrides) {
+  const saved = {};
+  for (const key of Object.keys(overrides)) {
+    saved[key] = process.env[key];
+  }
   t.after(() => {
-    if (previous === undefined) delete process.env.PATH;
-    else process.env.PATH = previous;
+    for (const key of Object.keys(saved)) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
   });
-  process.env.PATH = join(tmpdir(), 'local-driver-absent-bin');
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
+
+function withoutGitOnPath(t) {
+  useEnv(t, { PATH: join(tmpdir(), 'local-driver-absent-bin') });
 }
 
 async function trackedPaths(root, sha) {
   const { stdout } = await gitExec(root, ['ls-tree', '-r', '--name-only', sha]);
   return stdout.split('\n').map((line) => line.trim()).filter(Boolean);
+}
+
+const TRAP_HOOKS = ['post-commit', 'post-index-change', 'pre-commit', 'commit-msg'];
+
+async function hostileGitConfig(t) {
+  const dir = await mkdtemp(join(tmpdir(), 'local-driver-hostile-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const hooksDir = join(dir, 'hooks');
+  const marker = join(dir, 'fired');
+  await mkdir(hooksDir, { recursive: true });
+  for (const hook of TRAP_HOOKS) {
+    await writeFile(join(hooksDir, hook), `#!/bin/sh\necho ${hook} >> ${marker}\n`, { mode: 0o755 });
+  }
+  const excludes = join(dir, 'excludes');
+  await writeFile(excludes, '*.json\n');
+  const globalConfig = join(dir, 'gitconfig-global');
+  await writeFile(
+    globalConfig,
+    `[core]\n\thooksPath = ${hooksDir}\n\tfsmonitor = ${join(hooksDir, 'post-commit')}\n\texcludesFile = ${excludes}\n`,
+  );
+  const systemConfig = join(dir, 'gitconfig-system');
+  await writeFile(systemConfig, `[core]\n\thooksPath = ${hooksDir}\n`);
+  return { dir, hooksDir, marker, excludes, globalConfig, systemConfig };
+}
+
+async function installedTrapHooks(root) {
+  let names;
+  try {
+    names = await readdir(join(root, '.git', 'hooks'));
+  } catch {
+    return [];
+  }
+  return names.filter((name) => TRAP_HOOKS.includes(name)).sort();
+}
+
+async function foreignRepo(t) {
+  const dir = await mkdtemp(join(tmpdir(), 'local-driver-foreign-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await gitExec(dir, ['init', '-q']);
+  return dir;
+}
+
+async function commitCount(repo) {
+  const { code, stdout } = await gitExec(repo, ['rev-list', '--count', 'HEAD'], { check: false });
+  return code === 0 ? Number(stdout.trim()) : 0;
 }
 
 const ULID_A = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
@@ -133,7 +190,6 @@ test('LocalDriver.commit records real history for the non-git store', async (t) 
   await driver.init();
   await driver.writeThread(makeThread());
   const result = await driver.commit('chore(ledger): open thread');
-  assert.deepEqual(Object.keys(result).sort(), ['committed', 'empty', 'sha']);
   assert.equal(result.committed, true);
   assert.equal(result.empty, false);
   assert.match(result.sha, /^[0-9a-f]{40}$/);

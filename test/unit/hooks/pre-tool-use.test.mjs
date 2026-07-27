@@ -163,6 +163,37 @@ test('classifyBashCommand asks about an oversized command that never names a led
   assert.equal(classifyBashCommand(over, ROOTS, PROJECT_DIR), 'ask');
 });
 
+test('classifyBashCommand measures the size cap in UTF-8 bytes, not code units', () => {
+  const wide = 'é'.repeat(8179);
+  const atCap = `${ROOT_READ}${wide}x`;
+  const over = `${ROOT_READ}${wide}xx`;
+  assert.equal(Buffer.byteLength(atCap, 'utf8'), 16384);
+  assert.equal(Buffer.byteLength(over, 'utf8'), 16385);
+  assert.equal(over.length < 16384, true);
+  assert.equal(classifyBashCommand(atCap, ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(over, ROOTS, PROJECT_DIR), 'deny');
+});
+
+test('classifyBashCommand asks about a multibyte oversized command with no trigger', () => {
+  const over = `${OUTSIDE_READ}${'é'.repeat(8187)}`;
+  assert.equal(Buffer.byteLength(over, 'utf8'), 16385);
+  assert.equal(over.length < 16384, true);
+  assert.equal(classifyBashCommand(over, ROOTS, PROJECT_DIR), 'ask');
+});
+
+test('classifyPreToolUse reports the size reason for a multibyte oversized command', () => {
+  const d = classifyPreToolUse(
+    { tool_name: 'Bash', tool_input: { command: `${ROOT_READ}${'é'.repeat(8180)}` } },
+    ROOTS,
+    PROJECT_DIR,
+  );
+  assert.equal(d.hookSpecificOutput.permissionDecision, 'deny');
+  assert.equal(
+    d.hookSpecificOutput.permissionDecisionReason.includes('larger than the session-continuity guard reads'),
+    true,
+  );
+});
+
 test('classifyBashCommand denies an oversized command that names any ledger spelling', () => {
   assert.equal(classifyBashCommand(padTo(`cat ~${HOME_TAIL}/f `, 16385), HOME_ROOTS, PROJECT_DIR), 'deny');
   assert.equal(classifyBashCommand(padTo('git update-ref -d refs/heads/_ledger ', 16385), ROOTS, PROJECT_DIR), 'deny');
