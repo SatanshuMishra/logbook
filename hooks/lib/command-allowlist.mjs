@@ -102,6 +102,9 @@ export function normalizeHead(words) {
     if (!PREFIX_WORDS.has(prefix)) {
       break;
     }
+    if (OBFUSCATION.test(text) || (text.includes('/') && !TRUSTED_BIN_DIRS.has(dirname(text)))) {
+      return { kind: 'untrusted-path' };
+    }
     index = skipPrefixOperands(list, index + 1, prefix);
   }
   const raw = tokenText(list[index]);
