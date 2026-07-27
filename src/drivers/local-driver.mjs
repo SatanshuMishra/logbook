@@ -97,13 +97,10 @@ export class LocalDriver extends StorageDriver {
     if (this.isGit()) return false;
     const entry = await this.#recoveryEntry();
     if (entry !== null && !entry.isDirectory()) return false;
-    const existing = entry !== null;
     const env = recoveryEnv(this.ledgerRoot);
     const args = (rest) => recoveryArgs(this.ledgerRoot, rest);
     try {
-      if (!existing) {
-        await gitExec(this.ledgerRoot, args(['init', '-q', EMPTY_TEMPLATE, '-b', DEFAULT_LEDGER_BRANCH]), { env });
-      }
+      await gitExec(this.ledgerRoot, args(['init', '-q', EMPTY_TEMPLATE, '-b', DEFAULT_LEDGER_BRANCH]), { env });
       await gitExec(this.ledgerRoot, args(['config', '--local', 'commit.gpgsign', 'false']), { env });
       await gitExec(this.ledgerRoot, args(['config', '--local', 'tag.gpgsign', 'false']), { env });
       await atomicWrite(join(this.ledgerRoot, '.gitignore'), RECOVERY_GITIGNORE);

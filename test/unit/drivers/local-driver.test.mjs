@@ -313,6 +313,18 @@ test('LocalDriver.init re-asserts recovery signing config on an existing repo', 
   }
 });
 
+test('LocalDriver.init repairs a recovery .git directory that is not a repo', async (t) => {
+  const root = await scratchRoot(t);
+  await mkdir(join(root, '.git'), { recursive: true });
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  const result = await driver.commit('chore(ledger): open thread');
+  assert.equal(result.committed, true);
+  assert.equal(result.degraded, false);
+  assert.ok((await trackedPaths(root, result.sha)).includes(`threads/${ULID_A}.json`));
+});
+
 test('LocalDriver refuses a recovery .git that is a gitfile pointing elsewhere', async (t) => {
   const root = await scratchRoot(t);
   const foreign = await foreignRepo(t);
