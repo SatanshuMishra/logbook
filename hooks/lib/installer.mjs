@@ -1,7 +1,12 @@
 import { dirname, join, resolve } from 'node:path';
 import { mkdir, copyFile, chmod } from 'node:fs/promises';
 import { gitExec } from '../../src/util/git-exec.mjs';
+import { clearedGitLocationEnv } from '../../src/util/git-env.mjs';
 import { projectKey } from '../../src/util/project-key.mjs';
+
+function repoExec(repoDir, args, options = {}) {
+  return gitExec(repoDir, args, { ...options, env: clearedGitLocationEnv() });
+}
 
 export const STANDARD_HOOKS = Object.freeze([
   'applypatch-msg',
@@ -38,12 +43,12 @@ export function parseHooksPathSupport(versionOutput) {
 }
 
 export async function supportsHooksPath(repoDir) {
-  const { stdout } = await gitExec(repoDir, ['--version']);
+  const { stdout } = await repoExec(repoDir, ['--version']);
   return parseHooksPathSupport(stdout);
 }
 
 async function readConfig(repoDir, key) {
-  const { code, stdout } = await gitExec(repoDir, ['config', '--get', key], { check: false });
+  const { code, stdout } = await repoExec(repoDir, ['config', '--get', key], { check: false });
   return code === 0 ? stdout.replace(/\r?\n$/, '') : null;
 }
 
@@ -61,9 +66,9 @@ async function copyManagedHooks(managedDir, dispatcherSource, sourceHook) {
 
 async function applyTrailerConfig(repoDir, disableTrailer) {
   if (disableTrailer === true) {
-    await gitExec(repoDir, ['config', 'continuity.trailer', 'false']);
+    await repoExec(repoDir, ['config', 'continuity.trailer', 'false']);
   } else {
-    await gitExec(repoDir, ['config', '--unset', 'continuity.trailer'], { check: false });
+    await repoExec(repoDir, ['config', '--unset', 'continuity.trailer'], { check: false });
   }
 }
 
@@ -88,8 +93,8 @@ export async function installCommitMsgHook({ repoDir, managedDir, sourceHook, di
   await copyManagedHooks(managedDir, dispatcherSource, sourceHook);
 
   if (!alreadyInstalled) {
-    await gitExec(repoDir, ['config', 'continuity.priorHooksPath', current ?? '']);
-    await gitExec(repoDir, ['config', 'core.hooksPath', managedDir]);
+    await repoExec(repoDir, ['config', 'continuity.priorHooksPath', current ?? '']);
+    await repoExec(repoDir, ['config', 'core.hooksPath', managedDir]);
   }
 
   await applyTrailerConfig(repoDir, disableTrailer);
@@ -116,11 +121,11 @@ export async function uninstallCommitMsgHook({ repoDir, managedDir } = {}) {
 
   const prior = await readConfig(repoDir, 'continuity.priorHooksPath');
   if (prior && prior.length > 0) {
-    await gitExec(repoDir, ['config', 'core.hooksPath', prior]);
+    await repoExec(repoDir, ['config', 'core.hooksPath', prior]);
   } else {
-    await gitExec(repoDir, ['config', '--unset', 'core.hooksPath'], { check: false });
+    await repoExec(repoDir, ['config', '--unset', 'core.hooksPath'], { check: false });
   }
-  await gitExec(repoDir, ['config', '--unset', 'continuity.priorHooksPath'], { check: false });
+  await repoExec(repoDir, ['config', '--unset', 'continuity.priorHooksPath'], { check: false });
 
   return { removed: true, restoredHooksPath: (prior && prior.length > 0) ? prior : null };
 }

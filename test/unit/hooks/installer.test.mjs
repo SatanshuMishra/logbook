@@ -14,6 +14,7 @@ import {
   installCommitMsgHook,
   uninstallCommitMsgHook,
 } from '../../../hooks/lib/installer.mjs';
+import { withGitEnv } from '../../fixtures/git-repos.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '../../..');
@@ -144,4 +145,46 @@ test('uninstallCommitMsgHook no-ops when the managed dir is not the current hook
   const managed = join(repo, 'managed', 'githooks');
   const res = await uninstallCommitMsgHook({ repoDir: repo, managedDir: managed });
   assert.deepEqual(res, { removed: false });
+});
+
+test('installCommitMsgHook configures the target repo despite an ambient GIT_DIR', async (t) => {
+  const repo = await initRepo(t);
+  const foreign = await initRepo(t);
+  const managed = join(repo, 'managed', 'githooks');
+  const res = await withGitEnv(
+    { GIT_DIR: join(foreign, '.git') },
+    () => installCommitMsgHook({ repoDir: repo, managedDir: managed, sourceHook: SOURCE_HOOK }),
+  );
+  assert.equal(res.alreadyInstalled, false);
+  assert.equal(resolve(await config(repo, 'core.hooksPath')), resolve(managed));
+  assert.equal(await config(foreign, 'core.hooksPath'), null);
+  assert.equal(await config(foreign, 'continuity.priorHooksPath'), null);
+});
+
+test('installCommitMsgHook reports alreadyInstalled from the target repo under an ambient GIT_DIR', async (t) => {
+  const repo = await initRepo(t);
+  const foreign = await initRepo(t);
+  const managed = join(repo, 'managed', 'githooks');
+  await installCommitMsgHook({ repoDir: repo, managedDir: managed, sourceHook: SOURCE_HOOK });
+  const res = await withGitEnv(
+    { GIT_DIR: join(foreign, '.git') },
+    () => installCommitMsgHook({ repoDir: repo, managedDir: managed, sourceHook: SOURCE_HOOK }),
+  );
+  assert.equal(res.alreadyInstalled, true);
+});
+
+test('uninstallCommitMsgHook restores the target repo despite an ambient GIT_DIR', async (t) => {
+  const repo = await initRepo(t);
+  const foreign = await initRepo(t);
+  const priorPath = join(repo, 'user-hooks');
+  await gitExec(repo, ['config', 'core.hooksPath', priorPath]);
+  const managed = join(repo, 'managed', 'githooks');
+  await installCommitMsgHook({ repoDir: repo, managedDir: managed, sourceHook: SOURCE_HOOK });
+  const res = await withGitEnv(
+    { GIT_DIR: join(foreign, '.git') },
+    () => uninstallCommitMsgHook({ repoDir: repo, managedDir: managed }),
+  );
+  assert.equal(res.removed, true);
+  assert.equal(resolve(await config(repo, 'core.hooksPath')), resolve(priorPath));
+  assert.equal(await config(foreign, 'core.hooksPath'), null);
 });
