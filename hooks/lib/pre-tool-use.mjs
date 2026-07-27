@@ -9,6 +9,7 @@ import {
   normalizeHead,
 } from './command-allowlist.mjs';
 import {
+  cwdUnderRoot,
   hasSuspiciousResidue,
   hasUnresolvable,
   nextCwd,
@@ -144,14 +145,19 @@ function advanceCwd(unit) {
   return nextCwd(unit.cwd, target);
 }
 
-function scanSegment(tokens, roots, cwd, splitsAmpersand) {
-  const scanned = splitControl(tokens, splitsAmpersand).reduce((state, sub) => {
-    const unit = unitOf(sub, roots, state.cwd);
-    return { cwd: advanceCwd(unit), units: [...state.units, unit] };
-  }, { cwd, units: [] });
-  const inherited = scanned.units.some((unit) => unit.direct);
+function scanSegment(tokens, roots, state, splitsAmpersand) {
+  const scanned = splitControl(tokens, splitsAmpersand).reduce((acc, sub) => {
+    const unit = unitOf(sub, roots, acc.cwd);
+    return {
+      cwd: advanceCwd(unit),
+      rooted: acc.rooted || cwdUnderRoot(acc.cwd, roots),
+      units: [...acc.units, unit],
+    };
+  }, { cwd: state.cwd, rooted: state.rooted, units: [] });
+  const inherited = scanned.rooted || scanned.units.some((unit) => unit.direct);
   return {
     cwd: scanned.cwd,
+    rooted: scanned.rooted,
     units: scanned.units.map((unit) => ({ ...unit, inScope: unit.direct || inherited })),
   };
 }
@@ -159,9 +165,13 @@ function scanSegment(tokens, roots, cwd, splitsAmpersand) {
 function scanCommand(command, roots, baseDir) {
   const splitsAmpersand = hasUnquotedAmpersand(command);
   return scanSegments(command).reduce((state, tokens) => {
-    const scanned = scanSegment(tokens, roots, state.cwd, splitsAmpersand);
-    return { cwd: scanned.cwd, units: [...state.units, ...scanned.units] };
-  }, { cwd: baseDir, units: [] }).units;
+    const scanned = scanSegment(tokens, roots, state, splitsAmpersand);
+    return {
+      cwd: scanned.cwd,
+      rooted: scanned.rooted,
+      units: [...state.units, ...scanned.units],
+    };
+  }, { cwd: baseDir, rooted: false, units: [] }).units;
 }
 
 function unitDenies(unit, roots) {
