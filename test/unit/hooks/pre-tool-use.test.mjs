@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdir, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   classifyPreToolUse,
@@ -198,6 +199,43 @@ test('resolveLedgerRoots keys the managed dir by project-key under CLAUDE_PLUGIN
   useEnv(t, { CLAUDE_PLUGIN_DATA: dataRoot });
   const roots = await resolveLedgerRoots(projectDir, process.env);
   assert.equal(roots.includes(join(dataRoot, projectKey(projectDir))), true);
+});
+
+async function symlinkedStore(t) {
+  const base = await tempDir('hooks-symlink-');
+  cleanup(t, base);
+  const store = join(base, 'store');
+  await mkdir(join(store, 'ledger'), { recursive: true });
+  await symlink(store, join(base, 'link'), 'dir');
+  return { base, roots: [join(store, 'ledger')], real: join(store, 'ledger'), aliased: join(base, 'link', 'ledger') };
+}
+
+const writeVerdict = (path, roots, baseDir) => classifyPreToolUse(
+  { tool_name: 'Write', tool_input: { file_path: path } },
+  roots,
+  baseDir,
+);
+
+test('classifyBashCommand denies a destructive target reached through a symlinked component', async (t) => {
+  const { base, roots, aliased } = await symlinkedStore(t);
+  assert.equal(classifyBashCommand(`rm -rf ${aliased}`, roots, base), 'deny');
+  assert.equal(classifyBashCommand(`rm -rf ${aliased}/threads`, roots, base), 'deny');
+});
+
+test('classifyBashCommand keeps denying the literal spelling of a symlinked root', async (t) => {
+  const { base, roots, real } = await symlinkedStore(t);
+  assert.equal(classifyBashCommand(`rm -rf ${real}`, roots, base), 'deny');
+});
+
+test('classifyPreToolUse denies a Write reached through a symlinked component', async (t) => {
+  const { base, roots, aliased } = await symlinkedStore(t);
+  const d = writeVerdict(join(aliased, 'threads', 'a.json'), roots, base);
+  assert.equal(d.hookSpecificOutput.permissionDecision, 'deny');
+});
+
+test('classifyPreToolUse allows a Write that only shares the symlinked prefix', async (t) => {
+  const { base, roots } = await symlinkedStore(t);
+  assert.equal(writeVerdict(join(base, 'link', 'other.txt'), roots, base), null);
 });
 
 async function shellCwdCtx(t, command, cwdOf) {
