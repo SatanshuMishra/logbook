@@ -43,11 +43,19 @@ function derivedToken(token, text) {
   return { kind: 'word', text, unresolvable: token.unresolvable };
 }
 
+function leadingOpeners(text) {
+  let count = 0;
+  while (count < text.length && GROUP_OPENERS.has(text.charAt(count))) {
+    count += 1;
+  }
+  return count;
+}
+
 export function splitControl(tokens, splitsAmpersand = true) {
   if (!Array.isArray(tokens)) {
     return [];
   }
-  const subSegments = [];
+  let subSegments = [];
   let current = [];
   let previous = null;
 
@@ -58,7 +66,7 @@ export function splitControl(tokens, splitsAmpersand = true) {
 
   const boundary = () => {
     if (current.length > 0) {
-      subSegments.push(current);
+      subSegments = [...subSegments, current];
       current = [];
     }
   };
@@ -68,31 +76,34 @@ export function splitControl(tokens, splitsAmpersand = true) {
       emit(token);
       return;
     }
-    if (FD_DUPLICATION.test(token.text) && previous !== null && previous.kind === 'redirect') {
-      emit(token);
+    const openers = leadingOpeners(token.text);
+    if (openers > 0) {
+      boundary();
+    }
+    const word = openers > 0 ? derivedToken(token, token.text.slice(openers)) : token;
+    if (word.text === '') {
       return;
     }
-    if (CONTROL_WORDS.has(token.text)) {
+    if (FD_DUPLICATION.test(word.text) && previous !== null && previous.kind === 'redirect') {
+      emit(word);
+      return;
+    }
+    if (CONTROL_WORDS.has(word.text)) {
       boundary();
       return;
     }
-    if (GROUP_OPENERS.has(token.text.charAt(0))) {
-      boundary();
-      visit(derivedToken(token, token.text.slice(1)));
-      return;
-    }
-    if (splitsAmpersand && token.text.includes('&')) {
-      token.text.split('&').forEach((part, index) => {
+    if (splitsAmpersand && word.text.includes('&')) {
+      word.text.split('&').forEach((part, index) => {
         if (index > 0) {
           boundary();
         }
         if (part !== '') {
-          visit(derivedToken(token, part));
+          visit(derivedToken(word, part));
         }
       });
       return;
     }
-    emit(token);
+    emit(word);
   };
 
   tokens.forEach((token) => visit(token));
