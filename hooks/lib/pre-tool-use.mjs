@@ -2,12 +2,12 @@ import { homedir } from 'node:os';
 import { isAbsolute, relative, sep } from 'node:path';
 import { resolveLedgerRoots, isUnderRoot, canonicalPath } from './ledger-roots.mjs';
 import { shellCwd } from './hook-io.mjs';
+import { DEFAULT_LEDGER_BRANCH } from '../../src/drivers/git-ledger.mjs';
 
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 const LEDGER_TOOL = /^mcp__(?:plugin_session-continuity_)?ledger__/;
 const MAX_COMMAND_BYTES = 16384;
-const LEDGER_REF = '_ledger';
-const CONSTANT_TRIGGERS = Object.freeze([LEDGER_REF, 'refs/ledger/', 'CLAUDE_PLUGIN_DATA']);
+const CONSTANT_TRIGGERS = Object.freeze([DEFAULT_LEDGER_BRANCH, 'refs/ledger/', 'CLAUDE_PLUGIN_DATA']);
 const HOME_PREFIXES = Object.freeze(['~', '$HOME', '${HOME}']);
 const TRAILING_SEP = /[\\/]+$/;
 const DENY_SUFFIX =

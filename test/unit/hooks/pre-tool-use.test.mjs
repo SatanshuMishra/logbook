@@ -12,6 +12,7 @@ import {
 import { resolveLedgerRoots } from '../../../hooks/lib/ledger-roots.mjs';
 import { hookContext } from '../../../hooks/lib/hook-io.mjs';
 import { projectKey } from '../../../src/util/project-key.mjs';
+import { DEFAULT_LEDGER_BRANCH } from '../../../src/drivers/git-ledger.mjs';
 import { tempDir, cleanup, useEnv, initGitRepo } from './fixtures.mjs';
 
 const PROJECT_DIR = '/proj';
@@ -31,6 +32,17 @@ test('classifyBashCommand asks about any command that names a resolved ledger ro
   assert.equal(classifyBashCommand('rm -rf /data/-proj/ledger', ROOTS, PROJECT_DIR), 'ask');
   assert.equal(classifyBashCommand('cat /data/-proj/ledger/threads/a.json', ROOTS, PROJECT_DIR), 'ask');
   assert.equal(classifyBashCommand('echo x > "/data/-proj/ledger/threads/a.json"', ROOTS, PROJECT_DIR), 'ask');
+});
+
+test('classifyBashCommand asks about the ledger branch the git driver actually writes', () => {
+  assert.equal(
+    classifyBashCommand(`git branch -D ${DEFAULT_LEDGER_BRANCH}`, ROOTS, PROJECT_DIR),
+    'ask',
+  );
+  assert.equal(
+    classifyBashCommand(`git update-ref -d refs/heads/${DEFAULT_LEDGER_BRANCH}`, ROOTS, PROJECT_DIR),
+    'ask',
+  );
 });
 
 test('classifyBashCommand asks about the ledger ref-kill commands', () => {
