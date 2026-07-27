@@ -17,6 +17,7 @@ const BASH_REASONS = Object.freeze({
   deny: `this Bash command is larger than the session-continuity guard reads and names the ledger store; ${DENY_SUFFIX}`,
   ask: `this Bash command is larger than the session-continuity guard reads; ${GUARDRAIL_NOTE}; to write the ledger store, ${DENY_SUFFIX}`,
 });
+const UNREADABLE_COMMAND_REASON = `the session-continuity guard could not read this Bash command as a string and refused to judge it; ${GUARDRAIL_NOTE}; to write the ledger store, ${DENY_SUFFIX}`;
 
 function decision(permissionDecision, reason) {
   return {
@@ -68,8 +69,11 @@ function matchedTrigger(command, roots, projectDir) {
 }
 
 export function classifyBashCommand(command, roots, projectDir) {
-  if (typeof command !== 'string' || !Array.isArray(roots) || roots.length === 0) {
+  if (!Array.isArray(roots) || roots.length === 0) {
     return null;
+  }
+  if (typeof command !== 'string') {
+    return 'ask';
   }
   const trigger = matchedTrigger(command, roots, projectDir);
   if (command.length > MAX_COMMAND_BYTES) {
@@ -79,6 +83,9 @@ export function classifyBashCommand(command, roots, projectDir) {
 }
 
 function bashReason(verdict, command, roots, projectDir) {
+  if (typeof command !== 'string') {
+    return UNREADABLE_COMMAND_REASON;
+  }
   if (command.length > MAX_COMMAND_BYTES) {
     return BASH_REASONS[verdict];
   }

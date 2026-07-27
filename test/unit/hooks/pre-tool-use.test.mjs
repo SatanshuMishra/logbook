@@ -91,6 +91,54 @@ test('classifyBashCommand leaves ordinary commands alone under the widened trigg
   assert.equal(classifyBashCommand(`echo $HOME${sep}notes.md`, roots, PROJECT_DIR), null);
 });
 
+test('classifyBashCommand asks when the command itself cannot be read', () => {
+  assert.equal(classifyBashCommand(undefined, ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(null, ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(7, ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(['rm', '-rf', ROOTS[0]], ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand({ command: 'npm test' }, ROOTS, PROJECT_DIR), 'ask');
+});
+
+test('classifyBashCommand stays silent when no ledger root resolved at all', () => {
+  assert.equal(classifyBashCommand(undefined, [], PROJECT_DIR), null);
+  assert.equal(classifyBashCommand('rm -rf /data/-proj/ledger', [], PROJECT_DIR), null);
+});
+
+test('classifyPreToolUse asks about a Bash call whose command is unreadable', () => {
+  const missing = classifyPreToolUse({ tool_name: 'Bash', tool_input: {} }, ROOTS, PROJECT_DIR);
+  assert.equal(missing.hookSpecificOutput.permissionDecision, 'ask');
+  assert.equal(
+    missing.hookSpecificOutput.permissionDecisionReason.includes('could not read'),
+    true,
+  );
+  const noInput = classifyPreToolUse({ tool_name: 'Bash' }, ROOTS, PROJECT_DIR);
+  assert.equal(noInput.hookSpecificOutput.permissionDecision, 'ask');
+  const stringInput = classifyPreToolUse(
+    { tool_name: 'Bash', tool_input: 'rm -rf /data/-proj/ledger' },
+    ROOTS,
+    PROJECT_DIR,
+  );
+  assert.equal(stringInput.hookSpecificOutput.permissionDecision, 'ask');
+  const arrayInput = classifyPreToolUse(
+    { tool_name: 'Bash', tool_input: { command: ['rm', '-rf'] } },
+    ROOTS,
+    PROJECT_DIR,
+  );
+  assert.equal(arrayInput.hookSpecificOutput.permissionDecision, 'ask');
+});
+
+test('handlePreToolUse asks about a real Bash call carrying no command string', async (t) => {
+  const projectDir = await tempDir('hooks-nocmd-proj-');
+  const dataRoot = await tempDir('hooks-nocmd-data-');
+  cleanup(t, projectDir, dataRoot);
+  const result = await handlePreToolUse({
+    input: { tool_name: 'Bash', tool_input: {} },
+    env: { CLAUDE_PLUGIN_DATA: dataRoot },
+    projectDir,
+  });
+  assert.equal(result.json.hookSpecificOutput.permissionDecision, 'ask');
+});
+
 test('classifyBashCommand denies an oversized command that names a ledger root', () => {
   const under = padTo(ROOT_READ, 16383);
   const atCap = padTo(ROOT_READ, 16384);
