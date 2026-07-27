@@ -1,5 +1,6 @@
 import { resolveLedgerRoots, isUnderRoot } from './ledger-roots.mjs';
 import { scanSegments } from './shell-tokens.mjs';
+import { hasUnquotedAmpersand } from './shell-source.mjs';
 import {
   ALLOW_HEADS,
   CONDITIONAL_ALLOWS,
@@ -42,7 +43,7 @@ function derivedToken(token, text) {
   return { kind: 'word', text, unresolvable: token.unresolvable };
 }
 
-export function splitControl(tokens) {
+export function splitControl(tokens, splitsAmpersand = true) {
   if (!Array.isArray(tokens)) {
     return [];
   }
@@ -80,7 +81,7 @@ export function splitControl(tokens) {
       visit(derivedToken(token, token.text.slice(1)));
       return;
     }
-    if (token.text.includes('&')) {
+    if (splitsAmpersand && token.text.includes('&')) {
       token.text.split('&').forEach((part, index) => {
         if (index > 0) {
           boundary();
@@ -132,8 +133,8 @@ function advanceCwd(unit) {
   return nextCwd(unit.cwd, target);
 }
 
-function scanSegment(tokens, roots, cwd) {
-  const scanned = splitControl(tokens).reduce((state, sub) => {
+function scanSegment(tokens, roots, cwd, splitsAmpersand) {
+  const scanned = splitControl(tokens, splitsAmpersand).reduce((state, sub) => {
     const unit = unitOf(sub, roots, state.cwd);
     return { cwd: advanceCwd(unit), units: [...state.units, unit] };
   }, { cwd, units: [] });
@@ -145,8 +146,9 @@ function scanSegment(tokens, roots, cwd) {
 }
 
 function scanCommand(command, roots, baseDir) {
+  const splitsAmpersand = hasUnquotedAmpersand(command);
   return scanSegments(command).reduce((state, tokens) => {
-    const scanned = scanSegment(tokens, roots, state.cwd);
+    const scanned = scanSegment(tokens, roots, state.cwd, splitsAmpersand);
     return { cwd: scanned.cwd, units: [...state.units, ...scanned.units] };
   }, { cwd: baseDir, units: [] }).units;
 }
