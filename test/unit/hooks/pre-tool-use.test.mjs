@@ -7,6 +7,7 @@ import {
   handlePreToolUse,
 } from '../../../hooks/lib/pre-tool-use.mjs';
 import { resolveLedgerRoots } from '../../../hooks/lib/ledger-roots.mjs';
+import { hookContext } from '../../../hooks/lib/hook-io.mjs';
 import { projectKey } from '../../../src/util/project-key.mjs';
 import { tempDir, cleanup, useEnv } from './fixtures.mjs';
 
@@ -197,6 +198,28 @@ test('resolveLedgerRoots keys the managed dir by project-key under CLAUDE_PLUGIN
   useEnv(t, { CLAUDE_PLUGIN_DATA: dataRoot });
   const roots = await resolveLedgerRoots(projectDir, process.env);
   assert.equal(roots.includes(join(dataRoot, projectKey(projectDir))), true);
+});
+
+async function shellCwdCtx(t, command, cwdOf) {
+  const projectDir = await tempDir('hooks-cwd-proj-');
+  const dataRoot = await tempDir('hooks-cwd-data-');
+  cleanup(t, projectDir, dataRoot);
+  const root = join(dataRoot, projectKey(projectDir));
+  return hookContext(
+    { tool_name: 'Bash', tool_input: { command }, cwd: cwdOf({ projectDir, root }) },
+    { CLAUDE_PROJECT_DIR: projectDir, CLAUDE_PLUGIN_DATA: dataRoot },
+  );
+}
+
+test('handlePreToolUse denies a bare relative destructive command run from inside a root', async (t) => {
+  const ctx = await shellCwdCtx(t, 'rm -rf sessions', ({ root }) => join(root, 'ledger'));
+  const result = await handlePreToolUse(ctx);
+  assert.equal(result.json.hookSpecificOutput.permissionDecision, 'deny');
+});
+
+test('handlePreToolUse leaves a bare relative destructive command outside every root alone', async (t) => {
+  const ctx = await shellCwdCtx(t, 'rm -rf sessions', ({ projectDir }) => projectDir);
+  assert.deepEqual(await handlePreToolUse(ctx), {});
 });
 
 test('handlePreToolUse denies a real ledger-root write end to end', async (t) => {

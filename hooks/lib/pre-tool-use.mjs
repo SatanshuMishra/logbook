@@ -1,4 +1,5 @@
 import { resolveLedgerRoots, isUnderRoot } from './ledger-roots.mjs';
+import { shellCwd } from './hook-io.mjs';
 import { scanSegments } from './shell-tokens.mjs';
 import { hasUnquotedAmpersand } from './shell-source.mjs';
 import {
@@ -266,6 +267,6 @@ export async function handlePreToolUse(ctx) {
   if (roots.length === 0) {
     return {};
   }
-  const result = classifyPreToolUse(ctx.input, roots, ctx.projectDir);
+  const result = classifyPreToolUse(ctx.input, roots, shellCwd(ctx, ctx.projectDir));
   return result ? { json: result } : {};
 }

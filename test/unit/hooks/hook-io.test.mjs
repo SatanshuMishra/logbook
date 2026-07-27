@@ -80,6 +80,18 @@ test('hookContext falls back to input.cwd then pluginRoot null', () => {
   assert.equal(ctx.pluginRoot, null);
 });
 
+test('hookContext exposes the shell cwd separately from the project dir', () => {
+  const ctx = hookContext({ cwd: '/from/input' }, { CLAUDE_PROJECT_DIR: '/from/env' });
+  assert.equal(ctx.projectDir, '/from/env');
+  assert.equal(ctx.cwd, '/from/input');
+});
+
+test('hookContext falls back to the project dir when the input carries no cwd', () => {
+  assert.equal(hookContext({}, { CLAUDE_PROJECT_DIR: '/from/env' }).cwd, '/from/env');
+  assert.equal(hookContext({ cwd: '' }, { CLAUDE_PROJECT_DIR: '/from/env' }).cwd, '/from/env');
+  assert.equal(hookContext({ cwd: 7 }, { CLAUDE_PROJECT_DIR: '/from/env' }).cwd, '/from/env');
+});
+
 test('readHookInputResult separates parsed input from the three unreadable states', async () => {
   assert.deepEqual(
     await readHookInputResult(Readable.from([JSON.stringify({ tool_name: 'Bash' })])),

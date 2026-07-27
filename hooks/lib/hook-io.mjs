@@ -32,6 +32,11 @@ export async function readHookInput(stream = process.stdin) {
   return result.ok ? result.input : {};
 }
 
+export function shellCwd(source, fallback) {
+  const value = source && typeof source === 'object' ? source.cwd : undefined;
+  return typeof value === 'string' && value.length > 0 ? value : fallback;
+}
+
 export function hookContext(input, env = process.env) {
   const source = input && typeof input === 'object' ? input : {};
   const projectDir = env.CLAUDE_PROJECT_DIR || source.cwd || process.cwd();
@@ -39,6 +44,7 @@ export function hookContext(input, env = process.env) {
     input: source,
     env,
     projectDir,
+    cwd: shellCwd(source, projectDir),
     pluginRoot: env.CLAUDE_PLUGIN_ROOT ?? null,
     invokeCli: (args, options) => invokeCli(args, { env, cwd: projectDir, ...options }),
     invokeCliJson: (args, options) => invokeCliJson(args, { env, cwd: projectDir, ...options }),
