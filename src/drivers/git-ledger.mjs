@@ -16,8 +16,10 @@ export function ledgerCommitEnv() {
   return {
     GIT_AUTHOR_NAME: LEDGER_INIT_IDENTITY.name,
     GIT_AUTHOR_EMAIL: LEDGER_INIT_IDENTITY.email,
+    GIT_AUTHOR_DATE: undefined,
     GIT_COMMITTER_NAME: LEDGER_INIT_IDENTITY.name,
     GIT_COMMITTER_EMAIL: LEDGER_INIT_IDENTITY.email,
+    GIT_COMMITTER_DATE: undefined,
   };
 }
 
