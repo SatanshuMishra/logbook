@@ -57,8 +57,6 @@ const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const OBFUSCATION = /[$`'"\\(){}&*?\[]/;
 const OPERAND_SHAPE = /^[0-9]+(\.[0-9]+)?[smhd]?$/;
 const FIND_ACTIONS = /^-(delete|exec|execdir|ok|okdir|fls|fprint|fprint0|fprintf)$/;
-const SED_SHORT_IN_PLACE = /^-[a-zA-Z]*i/;
-const SED_LONG_IN_PLACE = /^--in-place/;
 const SORT_OUTPUT = Object.freeze([/^--output(=|$)/, /^-[A-Za-z]*o/]);
 const TREE_OUTPUT = Object.freeze([/^--output(=|$)/, /^-o$/]);
 const FILE_COMPILE = Object.freeze([/^--compile$/, /^-[A-Za-z]*C/]);
@@ -162,10 +160,6 @@ export function findAllows(words) {
   return !wordList(words).some((token) => FIND_ACTIONS.test(tokenText(token)));
 }
 
-export function sedAllows(words) {
-  return lacksAny([SED_SHORT_IN_PLACE, SED_LONG_IN_PLACE], words);
-}
-
 export function sortAllows(words) {
   return lacksAny(SORT_OUTPUT, words);
 }
@@ -192,7 +186,6 @@ export function xxdAllows(words, head) {
 
 export const CONDITIONAL_ALLOWS = Object.freeze(new Map([
   ['find', findAllows],
-  ['sed', sedAllows],
   ['sort', sortAllows],
   ['tree', treeAllows],
   ['file', fileAllows],
