@@ -61,8 +61,11 @@ async function runRecordSha(rest) {
   for (const binding of targets) {
     await ctx.driver.writeBinding({ ...binding, first_commit: sha });
   }
-  await commitAndReindex(ctx.driver, 'chore(ledger): record first-commit sha');
-  return {};
+  const { recovery_degraded } = await commitAndReindex(
+    ctx.driver,
+    'chore(ledger): record first-commit sha',
+  );
+  return { recovery_degraded };
 }
 
 function parseRestoreArgs(rest) {
