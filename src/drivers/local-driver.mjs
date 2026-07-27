@@ -56,8 +56,6 @@ async function listDir(dir) {
 }
 
 export class LocalDriver extends StorageDriver {
-  #recoveryDegraded = false;
-
   constructor(ledgerRoot) {
     super();
     if (typeof ledgerRoot !== 'string' || ledgerRoot.length === 0) {
@@ -96,7 +94,7 @@ export class LocalDriver extends StorageDriver {
   }
 
   async #ensureRecoveryRepo() {
-    if (this.isGit() || this.#recoveryDegraded) return false;
+    if (this.isGit()) return false;
     const entry = await this.#recoveryEntry();
     if (entry !== null && !entry.isDirectory()) return false;
     const existing = entry !== null;
@@ -111,7 +109,6 @@ export class LocalDriver extends StorageDriver {
       await atomicWrite(join(this.ledgerRoot, '.gitignore'), RECOVERY_GITIGNORE);
       return true;
     } catch {
-      this.#recoveryDegraded = true;
       return false;
     }
   }
