@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, relative, sep } from 'node:path';
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { resolveLedgerRoots, isUnderRoot, canonicalPath } from './ledger-roots.mjs';
 import { shellCwd } from './hook-io.mjs';
 import { DEFAULT_LEDGER_BRANCH } from '../../src/drivers/git-ledger.mjs';
@@ -52,16 +52,21 @@ function relativeSpellings(root, projectDir) {
   return rel.length === 0 || escapes ? [] : [rel];
 }
 
+function isFilesystemRoot(path) {
+  return dirname(path) === path;
+}
+
 function dataRootSpellings(env, home) {
   const raw = env && typeof env === 'object' ? env.CLAUDE_PLUGIN_DATA : undefined;
-  if (typeof raw !== 'string' || raw.length === 0) {
+  if (typeof raw !== 'string' || raw.length === 0 || !isAbsolute(raw)) {
     return [];
   }
-  const root = trimTrailingSep(raw);
-  if (!isAbsolute(root) || dirname(root) === root) {
+  const root = resolve(raw);
+  if (isFilesystemRoot(root)) {
     return [];
   }
-  return [root, canonicalPath(root), ...homeSpellings(root, home)];
+  return [root, canonicalPath(root), ...homeSpellings(root, home)]
+    .filter((spelling) => !isFilesystemRoot(spelling));
 }
 
 function ledgerTriggers(roots, projectDir, env) {

@@ -89,6 +89,35 @@ test('classifyBashCommand tolerates an absent or degenerate plugin data root', (
   assert.equal(classifyBashCommand('ls /etc', ROOTS, PROJECT_DIR, { CLAUDE_PLUGIN_DATA: 'data' }), null);
 });
 
+const ROOT_SPELLINGS = [sep, sep.repeat(2), sep.repeat(3), `${sep}.`, `${sep}..`, `${sep}.${sep}`];
+
+test('classifyBashCommand stays silent for every spelling of the filesystem root', () => {
+  for (const spelling of ROOT_SPELLINGS) {
+    const env = { CLAUDE_PLUGIN_DATA: spelling };
+    assert.equal(classifyBashCommand('ls /etc', ROOTS, PROJECT_DIR, env), null, spelling);
+    assert.equal(classifyBashCommand('cat /tmp/x', ROOTS, PROJECT_DIR, env), null, spelling);
+  }
+});
+
+test('classifyBashCommand never denies on a filesystem-root plugin data root', () => {
+  const over = padTo(OUTSIDE_READ, 16385);
+  for (const spelling of ROOT_SPELLINGS) {
+    const env = { CLAUDE_PLUGIN_DATA: spelling };
+    assert.equal(classifyBashCommand(over, ROOTS, PROJECT_DIR, env), 'ask', spelling);
+  }
+});
+
+test('classifyBashCommand ignores a data root that canonicalizes to the filesystem root', async (t) => {
+  const base = await tempDir('hooks-rootlink-');
+  cleanup(t, base);
+  const link = join(base, 'link');
+  await symlink(sep, link, 'dir');
+  const env = { CLAUDE_PLUGIN_DATA: link };
+  assert.equal(classifyBashCommand('ls /etc', ROOTS, PROJECT_DIR, env), null);
+  assert.equal(classifyBashCommand(padTo(OUTSIDE_READ, 16385), ROOTS, PROJECT_DIR, env), 'ask');
+  assert.equal(classifyBashCommand(`rm -rf ${link}`, ROOTS, PROJECT_DIR, env), 'ask');
+});
+
 test('handlePreToolUse asks about removing the literal plugin data root', async (t) => {
   const projectDir = await tempDir('hooks-dataroot-proj-');
   const dataRoot = await tempDir('hooks-dataroot-data-');
