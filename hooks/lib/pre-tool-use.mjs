@@ -209,7 +209,7 @@ export function classifyBashCommand(command, roots, baseDir) {
     return null;
   }
   if (command.length > MAX_COMMAND_BYTES) {
-    return roots.some((root) => command.includes(root)) ? 'deny' : null;
+    return roots.some((root) => command.includes(root)) ? 'deny' : 'ask';
   }
   const units = scanCommand(command, roots, baseDir ?? process.cwd());
   if (units.some((unit) => unitDenies(unit, roots))) {

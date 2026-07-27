@@ -102,7 +102,7 @@ test('classifyBashCommand denies an oversized command that names a ledger root',
   assert.equal(classifyBashCommand(over, ROOTS, '/proj'), 'deny');
 });
 
-test('classifyBashCommand allows an oversized command that never names a ledger root', () => {
+test('classifyBashCommand asks about an oversized command that never names a ledger root', () => {
   const under = padTo(OUTSIDE_READ, 16383);
   const atCap = padTo(OUTSIDE_READ, 16384);
   const over = padTo(OUTSIDE_READ, 16385);
@@ -111,7 +111,7 @@ test('classifyBashCommand allows an oversized command that never names a ledger 
   assert.equal(over.length, 16385);
   assert.equal(classifyBashCommand(under, ROOTS, '/proj'), null);
   assert.equal(classifyBashCommand(atCap, ROOTS, '/proj'), null);
-  assert.equal(classifyBashCommand(over, ROOTS, '/proj'), null);
+  assert.equal(classifyBashCommand(over, ROOTS, '/proj'), 'ask');
 });
 
 test('classifyPreToolUse denies a quoted destructive Bash target', () => {
