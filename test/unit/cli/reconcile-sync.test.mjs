@@ -10,7 +10,7 @@ test('reconcile returns an empty drift envelope for a non-git project', async (t
   useEnv(t, { CLAUDE_PROJECT_DIR: projectDir, CLAUDE_PLUGIN_DATA: dataDir });
 
   const result = await runCli(['reconcile']);
-  assert.deepEqual(result, { drift: [], dispositions: [] });
+  assert.deepEqual(result, { drift: [], dispositions: [], recovery_degraded: false });
 });
 
 test('sync reports synced:false for a non-git LocalDriver', async (t) => {

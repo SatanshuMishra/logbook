@@ -228,13 +228,13 @@ export class GitRefDriver extends LocalDriver {
     await gitExec(this.worktreeDir, ['add', '-A']);
     const staged = await gitExec(this.worktreeDir, ['diff', '--cached', '--quiet'], { check: false });
     if (staged.code === 0) {
-      return { committed: false, sha: null, empty: true };
+      return { committed: false, sha: null, empty: true, degraded: false };
     }
     await gitExec(this.worktreeDir, ['commit', '--no-verify', '-m', message], { env: ledgerCommitEnv() });
     const { stdout } = await gitExec(this.worktreeDir, ['rev-parse', 'HEAD']);
     const sha = stdout.trim();
     await gitExec(this.repoDir, ['update-ref', this.ledgerRef, sha]);
-    return { committed: true, sha, empty: false };
+    return { committed: true, sha, empty: false, degraded: false };
   }
 
   async commit(message) {

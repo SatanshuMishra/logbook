@@ -32,7 +32,7 @@ function recoveryArgs(ledgerRoot, args) {
 }
 
 function degradedCommit() {
-  return { committed: false, sha: null, empty: false };
+  return { committed: false, sha: null, empty: false, degraded: true };
 }
 
 async function readJsonOrNull(path) {
@@ -255,7 +255,7 @@ export class LocalDriver extends StorageDriver {
       await gitExec(this.ledgerRoot, args(['add', '-A']), { env });
       const staged = await gitExec(this.ledgerRoot, args(['diff', '--cached', '--quiet']), { env, check: false });
       if (staged.code === 0) {
-        return { committed: false, sha: null, empty: true };
+        return { committed: false, sha: null, empty: true, degraded: false };
       }
       await gitExec(
         this.ledgerRoot,
@@ -263,7 +263,7 @@ export class LocalDriver extends StorageDriver {
         { env: recoveryEnv(this.ledgerRoot, ledgerCommitEnv()) },
       );
       const { stdout } = await gitExec(this.ledgerRoot, args(['rev-parse', 'HEAD']), { env });
-      return { committed: true, sha: stdout.trim(), empty: false };
+      return { committed: true, sha: stdout.trim(), empty: false, degraded: false };
     } catch {
       return degradedCommit();
     }

@@ -4,8 +4,8 @@ import { emptyInput } from './schemas.mjs';
 
 async function handler(ctx) {
   const { drift, dispositions } = await runReconcile(ctx);
-  await commitAndReindex(ctx.driver, 'chore(ledger): reconcile');
-  return { drift, dispositions };
+  const { recovery_degraded } = await commitAndReindex(ctx.driver, 'chore(ledger): reconcile');
+  return { drift, dispositions, recovery_degraded };
 }
 
 export default {

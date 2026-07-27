@@ -7,8 +7,12 @@ export class ToolError extends Error {
   }
 }
 
+export function isRecoveryDegraded(commitResult) {
+  return commitResult != null && commitResult.degraded === true;
+}
+
 export async function commitAndReindex(driver, message) {
   const counts = await rebuildIndex(driver);
-  await driver.commit(message);
-  return counts;
+  const result = await driver.commit(message);
+  return { counts, recovery_degraded: isRecoveryDegraded(result) };
 }

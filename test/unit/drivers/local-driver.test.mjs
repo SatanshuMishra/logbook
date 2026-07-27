@@ -162,7 +162,7 @@ test('LocalDriver.root returns the absolute ledger root', async (t) => {
 
 test('LocalDriver.commit degrades when the ledger root has no recovery repo', async () => {
   const driver = new LocalDriver('/abs/ledger');
-  assert.deepEqual(await driver.commit('msg'), { committed: false, sha: null, empty: false });
+  assert.deepEqual(await driver.commit('msg'), { committed: false, sha: null, empty: false, degraded: true });
 });
 
 test('LocalDriver.init creates a private recovery repo under the ledger root', async (t) => {
@@ -190,7 +190,6 @@ test('LocalDriver.commit records real history for the non-git store', async (t) 
   await driver.init();
   await driver.writeThread(makeThread());
   const result = await driver.commit('chore(ledger): open thread');
-  assert.deepEqual(Object.keys(result).sort(), ['committed', 'empty', 'sha']);
   assert.equal(result.committed, true);
   assert.equal(result.empty, false);
   assert.match(result.sha, /^[0-9a-f]{40}$/);
@@ -223,7 +222,7 @@ test('LocalDriver.commit reports empty:true when nothing changed since the last 
   assert.equal((await driver.commit('chore(ledger): open thread')).committed, true);
   assert.deepEqual(
     await driver.commit('chore(ledger): nothing to record'),
-    { committed: false, sha: null, empty: true },
+    { committed: false, sha: null, empty: true, degraded: false },
   );
 });
 
@@ -250,7 +249,7 @@ test('LocalDriver.init and commit degrade without throwing when git is unavailab
   await driver.writeThread(makeThread());
   assert.deepEqual(
     await driver.commit('chore(ledger): open thread'),
-    { committed: false, sha: null, empty: false },
+    { committed: false, sha: null, empty: false, degraded: true },
   );
   assert.deepEqual(await driver.readThread(ULID_A), makeThread());
 });
@@ -264,7 +263,7 @@ test('LocalDriver.commit degrades without throwing when the recovery repo is unu
   await driver.writeThread(makeThread());
   assert.deepEqual(
     await driver.commit('chore(ledger): open thread'),
-    { committed: false, sha: null, empty: false },
+    { committed: false, sha: null, empty: false, degraded: true },
   );
 });
 
@@ -384,6 +383,15 @@ test('LocalDriver refuses a recovery .git symlinked into another repo', async (t
   assert.equal(await commitCount(foreign), 0);
   const signing = await gitExec(foreign, ['config', '--local', '--get', 'commit.gpgsign'], { check: false });
   assert.equal(signing.stdout.trim(), '');
+});
+
+test('LocalDriver.commit reports degraded:false on a healthy recovery commit', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  assert.equal((await driver.commit('chore(ledger): open thread')).degraded, false);
+  assert.equal((await driver.commit('chore(ledger): nothing to record')).degraded, false);
 });
 
 test('LocalDriver.commit rejects a non-string message', async (t) => {

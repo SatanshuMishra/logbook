@@ -156,7 +156,7 @@ test('commit reports empty when nothing is staged', async (t) => {
   const repo = await initGitRepo(t);
   const driver = await makeGitDriver(t, repo);
   await driver.init();
-  assert.deepEqual(await driver.commit('chore: noop'), { committed: false, sha: null, empty: true });
+  assert.deepEqual(await driver.commit('chore: noop'), { committed: false, sha: null, empty: true, degraded: false });
 });
 
 test('commit persists a written thread into the ledger ref', async (t) => {

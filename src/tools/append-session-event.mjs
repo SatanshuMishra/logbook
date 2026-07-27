@@ -1,4 +1,4 @@
-import { ToolError } from './shared.mjs';
+import { ToolError, isRecoveryDegraded } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
 
 async function handler(ctx, args) {
@@ -8,8 +8,8 @@ async function handler(ctx, args) {
     throw new ToolError(`append_session_event: thread_id ${args.thread_id} does not reference an existing thread`);
   }
   const path = await driver.appendSessionEvent(args.thread_id, now(), args.actor, args.body);
-  await driver.commit(`chore(ledger): session event for ${thread.slug}`);
-  return { path };
+  const result = await driver.commit(`chore(ledger): session event for ${thread.slug}`);
+  return { path, recovery_degraded: isRecoveryDegraded(result) };
 }
 
 export default {
