@@ -1,6 +1,7 @@
 import { join, resolve } from 'node:path';
 import { readFile, rm } from 'node:fs/promises';
 import { gitExec } from './git-exec.mjs';
+import { clearedGitLocationEnv } from './git-env.mjs';
 import { atomicWrite } from './atomic-write.mjs';
 import { projectKey } from './project-key.mjs';
 import { isUlid } from './ulid.mjs';
@@ -15,7 +16,9 @@ export async function activeThreadPath(ctx) {
     throw new Error('activeThreadPath: ctx.projectDir must be a non-empty string');
   }
   if (driver.isGit()) {
-    const { stdout } = await gitExec(projectDir, ['rev-parse', '--git-common-dir']);
+    const { stdout } = await gitExec(projectDir, ['rev-parse', '--git-common-dir'], {
+      env: clearedGitLocationEnv(),
+    });
     const commonDir = resolve(projectDir, stdout.trim());
     return join(commonDir, 'ledger', 'active-thread');
   }
