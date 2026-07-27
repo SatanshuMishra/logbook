@@ -39,12 +39,11 @@ export const GIT_READ_SUBCOMMANDS = freezeSet([
 ]);
 
 const GIT_VALUED_GLOBALS = freezeSet([
-  '-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path',
-  '--config-env', '--super-prefix',
+  '-C', '--git-dir', '--work-tree',
 ]);
 
 const GIT_VALUELESS_GLOBALS = freezeSet([
-  '-p', '--paginate', '--no-pager', '--bare',
+  '--no-pager', '--bare',
   '--literal-pathspecs', '--no-literal-pathspecs',
   '--glob-pathspecs', '--icase-pathspecs',
   '--no-replace-objects', '--no-optional-locks',
@@ -61,6 +60,8 @@ const SORT_OUTPUT = Object.freeze([/^--output(=|$)/, /^-[A-Za-z]*o/]);
 const TREE_OUTPUT = Object.freeze([/^--output(=|$)/, /^-o$/]);
 const FILE_COMPILE = Object.freeze([/^--compile$/, /^-[A-Za-z]*C/]);
 const RG_SPAWN = Object.freeze([/^--pre(=|$)/, /^--hostname-bin(=|$)/]);
+const GIT_OUTPUT = Object.freeze([/^--output(=|$)/, /^-O/, /^--open-files-in-pager/]);
+const GIT_EXEC_REDIRECT = Object.freeze([/^--exec-path=/]);
 
 function tokenText(token) {
   return token && typeof token.text === 'string' ? token.text : '';
@@ -176,6 +177,19 @@ export function rgAllows(words) {
   return lacksAny(RG_SPAWN, words);
 }
 
+export function gitAllows(words, head) {
+  if (!lacksAny(GIT_OUTPUT, words)) {
+    return false;
+  }
+  const start = head && Number.isInteger(head.index) ? head.index + 1 : 0;
+  const resolved = resolveGitSubcommand(words, start);
+  return resolved.ok === true && GIT_READ_SUBCOMMANDS.has(resolved.subcommand);
+}
+
+export function gitRedirectsExec(words) {
+  return !lacksAny(GIT_EXEC_REDIRECT, words);
+}
+
 export function uniqAllows(words, head) {
   return operandsAfterHead(words, head).length <= 1;
 }
@@ -185,6 +199,7 @@ export function xxdAllows(words, head) {
 }
 
 export const CONDITIONAL_ALLOWS = Object.freeze(new Map([
+  ['git', gitAllows],
   ['find', findAllows],
   ['sort', sortAllows],
   ['tree', treeAllows],

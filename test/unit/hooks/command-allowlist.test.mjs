@@ -21,7 +21,15 @@ test('resolveGitSubcommand resolves past the spaced form of a valued global', ()
 });
 
 test('resolveGitSubcommand resolves past a chain of spaced valued globals', () => {
-  assert.deepEqual(gitSubcommand('git -c core.x=1 -C /r status'), { ok: true, subcommand: 'status' });
+  assert.deepEqual(gitSubcommand('git --git-dir /r/.git -C /r status'), { ok: true, subcommand: 'status' });
+});
+
+test('resolveGitSubcommand fails closed on the config global', () => {
+  assert.deepEqual(gitSubcommand('git -c core.x=1 -C /r status'), { ok: false });
+});
+
+test('resolveGitSubcommand fails closed on the pager global', () => {
+  assert.deepEqual(gitSubcommand('git -p log'), { ok: false });
 });
 
 test('normalizeHead reports assignment-only for a bare assignment with no command', () => {

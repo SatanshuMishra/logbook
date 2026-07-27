@@ -3,10 +3,9 @@ import { scanSegments } from './shell-tokens.mjs';
 import {
   ALLOW_HEADS,
   CONDITIONAL_ALLOWS,
-  GIT_READ_SUBCOMMANDS,
   SINK_HEADS,
+  gitRedirectsExec,
   normalizeHead,
-  resolveGitSubcommand,
 } from './command-allowlist.mjs';
 import {
   hasSuspiciousResidue,
@@ -101,10 +100,6 @@ export function splitControl(tokens) {
 }
 
 function headClears(head, words) {
-  if (head.name === 'git') {
-    const resolved = resolveGitSubcommand(words, head.index + 1);
-    return resolved.ok === true && GIT_READ_SUBCOMMANDS.has(resolved.subcommand);
-  }
   const conditional = CONDITIONAL_ALLOWS.get(head.name);
   if (conditional) {
     return conditional(words, head);
@@ -123,6 +118,7 @@ function unitOf(tokens, roots, cwd) {
     cleared: head.kind === 'assignment-only'
       || (head.kind === 'name' && headClears(head, words)),
     direct: touchesRoot(tokens, roots, cwd),
+    unbounded: head.kind === 'name' && head.name === 'git' && gitRedirectsExec(words),
   };
 }
 
@@ -157,6 +153,9 @@ function scanCommand(command, roots, baseDir) {
 
 function unitDenies(unit, roots) {
   if (redirectTargetsRoot(unit.tokens, roots, unit.cwd)) {
+    return true;
+  }
+  if (unit.unbounded) {
     return true;
   }
   if (!unit.inScope) {
