@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { realpathSync } from 'node:fs';
 import { mkdir, symlink } from 'node:fs/promises';
-import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { join, sep } from 'node:path';
 import {
   classifyPreToolUse,
   classifyBashCommand,
@@ -10,10 +12,14 @@ import {
 import { resolveLedgerRoots } from '../../../hooks/lib/ledger-roots.mjs';
 import { hookContext } from '../../../hooks/lib/hook-io.mjs';
 import { projectKey } from '../../../src/util/project-key.mjs';
-import { tempDir, cleanup, useEnv } from './fixtures.mjs';
+import { tempDir, cleanup, useEnv, initGitRepo } from './fixtures.mjs';
 
+const PROJECT_DIR = '/proj';
 const ROOTS = ['/data/-proj/ledger'];
-const SPACED_ROOTS = ['/data/-proj/led ger'];
+const HOME_TAIL = join(sep, '.claude', 'session-continuity', projectKey(PROJECT_DIR));
+const HOME_ROOTS = [join(homedir(), HOME_TAIL)];
+const HOME_BRACED = '${HOME}';
+const GIT_ROOTS = [join(PROJECT_DIR, '.git', 'ledger')];
 const ROOT_READ = 'cat /data/-proj/ledger/f ';
 const OUTSIDE_READ = 'cat /tmp/f ';
 
@@ -21,63 +27,56 @@ function padTo(head, length) {
   return head + 'x'.repeat(length - head.length);
 }
 
-test('classifyBashCommand denies a write whose target lands under a root', () => {
-  assert.equal(classifyBashCommand('echo x > /data/-proj/ledger/threads/a.json', ROOTS, '/proj'), 'deny');
-  assert.equal(classifyBashCommand('rm -rf /data/-proj/ledger', ROOTS, '/proj'), 'deny');
-  assert.equal(classifyBashCommand('cat /data/-proj/ledger/threads/a.json', ROOTS, '/proj'), null);
+test('classifyBashCommand asks about any command that names a resolved ledger root', () => {
+  assert.equal(classifyBashCommand('rm -rf /data/-proj/ledger', ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('cat /data/-proj/ledger/threads/a.json', ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('echo x > "/data/-proj/ledger/threads/a.json"', ROOTS, PROJECT_DIR), 'ask');
 });
 
-test('classifyBashCommand follows cd into a root before a destructive verb', () => {
-  assert.equal(classifyBashCommand('cd ledger && rm -rf .', ROOTS, '/data/-proj'), 'deny');
+test('classifyBashCommand asks about the ledger ref-kill commands', () => {
+  assert.equal(classifyBashCommand('git branch -D _ledger', ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('git update-ref -d refs/heads/_ledger', ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('git push origin :_ledger', ROOTS, PROJECT_DIR), 'ask');
 });
 
-test('classifyBashCommand resolves a quoted destructive target', () => {
-  assert.equal(classifyBashCommand('rm -rf "/data/-proj/ledger"', ROOTS, '/proj'), 'deny');
-  assert.equal(classifyBashCommand("rm -rf '/data/-proj/ledger'", ROOTS, '/proj'), 'deny');
-  assert.equal(classifyBashCommand('rm -rf "/data/-proj/ledger/threads"', ROOTS, '/proj'), 'deny');
+test('classifyBashCommand asks about every home-abbreviated spelling of a root', () => {
+  assert.equal(classifyBashCommand(`rm -rf ${HOME_ROOTS[0]}`, HOME_ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(`rm -rf ~${HOME_TAIL}`, HOME_ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(`rm -rf $HOME${HOME_TAIL}`, HOME_ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(`rm -rf "${HOME_BRACED}${HOME_TAIL}"`, HOME_ROOTS, PROJECT_DIR), 'ask');
 });
 
-test('classifyBashCommand resolves a quoted redirect target', () => {
-  assert.equal(classifyBashCommand('echo x > "/data/-proj/ledger/threads/x.json"', ROOTS, '/proj'), 'deny');
-  assert.equal(classifyBashCommand("echo x > '/data/-proj/ledger/threads/x.json'", ROOTS, '/proj'), 'deny');
-  assert.equal(classifyBashCommand('echo x >> "/data/-proj/ledger/log"', ROOTS, '/proj'), 'deny');
+test('classifyBashCommand asks about the plugin data root variable by name', () => {
+  assert.equal(classifyBashCommand('rm -rf "$CLAUDE_PLUGIN_DATA"', ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('rm -rf ${CLAUDE_PLUGIN_DATA}/-proj', ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('rm -rf $CLAUDE_PLUGIN_DATA/-proj', ROOTS, PROJECT_DIR), 'ask');
 });
 
-test('classifyBashCommand keeps a quoted path with spaces as a single token', () => {
-  assert.equal(classifyBashCommand('rm -rf "/data/-proj/led ger/threads"', SPACED_ROOTS, '/proj'), 'deny');
-  assert.equal(classifyBashCommand("rm -rf '/data/-proj/led ger'", SPACED_ROOTS, '/proj'), 'deny');
-  assert.equal(classifyBashCommand('echo x > "/data/-proj/led ger/threads/a.json"', SPACED_ROOTS, '/proj'), 'deny');
-  assert.equal(classifyBashCommand('rm -rf /data/-proj/led\\ ger/threads', SPACED_ROOTS, '/proj'), 'deny');
-  assert.equal(classifyBashCommand('rm -rf "/data/-proj/led"', SPACED_ROOTS, '/proj'), null);
+test('classifyBashCommand asks about the custom-ref ledger namespace', () => {
+  assert.equal(classifyBashCommand('git update-ref -d refs/ledger/notes', ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('git push origin :refs/ledger/notes', ROOTS, PROJECT_DIR), 'ask');
 });
 
-test('classifyBashCommand leaves read-only inspection of a root allowed', () => {
-  assert.equal(classifyBashCommand('ls -la "/data/-proj/ledger" 2>/dev/null', ROOTS, '/proj'), null);
-  assert.equal(classifyBashCommand('git -C /data/-proj/ledger show HEAD --stat 2>&1', ROOTS, '/proj'), null);
-  assert.equal(classifyBashCommand('git -C "/data/-proj/ledger" show HEAD --stat 2>&1', ROOTS, '/proj'), null);
-  assert.equal(classifyBashCommand('echo hi >/tmp/safe.txt && ls /data/-proj/ledger', ROOTS, '/proj'), null);
+test('classifyBashCommand asks about the project-relative spelling of an in-repo root', () => {
+  assert.equal(classifyBashCommand('rm -rf .git/ledger', GIT_ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('rm -rf ./.git/ledger/threads', GIT_ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(`rm -rf ${GIT_ROOTS[0]}`, GIT_ROOTS, PROJECT_DIR), 'ask');
 });
 
-test('classifyBashCommand tracks cd into a root through a quoted target', () => {
-  assert.equal(classifyBashCommand('cd /data/-proj/ledger && rm -rf threads', ROOTS, '/proj'), 'deny');
-  assert.equal(classifyBashCommand('cd "/data/-proj/ledger" && rm -rf threads', ROOTS, '/proj'), 'deny');
-  assert.equal(classifyBashCommand("cd '/data/-proj/ledger' && echo x > threads/a.json", ROOTS, '/proj'), 'deny');
-  assert.equal(classifyBashCommand('cd "/data/-proj/led ger" && rm -rf threads', SPACED_ROOTS, '/proj'), 'deny');
+test('classifyBashCommand leaves a command that names nothing ledger alone', () => {
+  assert.equal(classifyBashCommand('npm test', ROOTS, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand('ls -la', ROOTS, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand('git status --short', ROOTS, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand('rm -rf /tmp/scratch', HOME_ROOTS, PROJECT_DIR), null);
 });
 
-test('classifyBashCommand splits segments only on unquoted separators', () => {
-  assert.equal(classifyBashCommand('rm -rf "/data/-proj/ledger/a && b"', ROOTS, '/proj'), 'deny');
-  assert.equal(classifyBashCommand('rm -rf "/data/-proj/ledger/a;b"', ROOTS, '/proj'), 'deny');
-  assert.equal(classifyBashCommand('rm -rf "/data/-proj/ledger/a|b"', ROOTS, '/proj'), 'deny');
-});
-
-test('classifyBashCommand leaves an unresolvable expansion outside every root allowed', () => {
-  assert.equal(classifyBashCommand('rm -rf "`cat target.txt`"', ROOTS, '/proj'), null);
-});
-
-test('classifyBashCommand holds the tracked cwd when a cd target is unresolvable', () => {
-  assert.equal(classifyBashCommand('cd "$D" && rm -rf threads', ROOTS, '/data/-proj/ledger'), 'deny');
-  assert.equal(classifyBashCommand('cd "$D" && rm -rf threads', ROOTS, '/proj'), null);
+test('classifyBashCommand leaves ordinary commands alone under the widened trigger set', () => {
+  const roots = [...GIT_ROOTS, ...HOME_ROOTS];
+  assert.equal(classifyBashCommand('git commit -m "wire the parser"', roots, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand('cat .git/config', roots, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand('git push origin refs/heads/main', roots, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand('rm -rf node_modules && npm ci', roots, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand(`echo $HOME${sep}notes.md`, roots, PROJECT_DIR), null);
 });
 
 test('classifyBashCommand denies an oversized command that names a ledger root', () => {
@@ -87,9 +86,9 @@ test('classifyBashCommand denies an oversized command that names a ledger root',
   assert.equal(under.length, 16383);
   assert.equal(atCap.length, 16384);
   assert.equal(over.length, 16385);
-  assert.equal(classifyBashCommand(under, ROOTS, '/proj'), null);
-  assert.equal(classifyBashCommand(atCap, ROOTS, '/proj'), null);
-  assert.equal(classifyBashCommand(over, ROOTS, '/proj'), 'deny');
+  assert.equal(classifyBashCommand(under, ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(atCap, ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(over, ROOTS, PROJECT_DIR), 'deny');
 });
 
 test('classifyBashCommand asks about an oversized command that never names a ledger root', () => {
@@ -99,40 +98,54 @@ test('classifyBashCommand asks about an oversized command that never names a led
   assert.equal(under.length, 16383);
   assert.equal(atCap.length, 16384);
   assert.equal(over.length, 16385);
-  assert.equal(classifyBashCommand(under, ROOTS, '/proj'), null);
-  assert.equal(classifyBashCommand(atCap, ROOTS, '/proj'), null);
-  assert.equal(classifyBashCommand(over, ROOTS, '/proj'), 'ask');
+  assert.equal(classifyBashCommand(under, ROOTS, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand(atCap, ROOTS, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand(over, ROOTS, PROJECT_DIR), 'ask');
 });
 
-test('classifyPreToolUse denies a quoted destructive Bash target', () => {
+test('classifyBashCommand denies an oversized command that names any ledger spelling', () => {
+  assert.equal(classifyBashCommand(padTo(`cat ~${HOME_TAIL}/f `, 16385), HOME_ROOTS, PROJECT_DIR), 'deny');
+  assert.equal(classifyBashCommand(padTo('git update-ref -d refs/heads/_ledger ', 16385), ROOTS, PROJECT_DIR), 'deny');
+});
+
+test('classifyPreToolUse reports the size reason for an oversized command that names a trigger', () => {
   const d = classifyPreToolUse(
-    { tool_name: 'Bash', tool_input: { command: 'rm -rf "/data/-proj/ledger"' } },
+    { tool_name: 'Bash', tool_input: { command: padTo('git branch -D _ledger ', 16385) } },
     ROOTS,
-    '/proj',
+    PROJECT_DIR,
   );
   assert.equal(d.hookSpecificOutput.permissionDecision, 'deny');
+  const reason = d.hookSpecificOutput.permissionDecisionReason;
+  assert.equal(reason.includes('larger than the session-continuity guard reads'), true);
 });
 
-test('classifyPreToolUse asks about a Bash command it cannot resolve against a root', () => {
+test('classifyPreToolUse names the matched trigger and disclaims a security boundary', () => {
   const d = classifyPreToolUse(
-    { tool_name: 'Bash', tool_input: { command: 'D=/data/-proj/ledger; rm -rf "$D"' } },
+    { tool_name: 'Bash', tool_input: { command: 'git update-ref -d refs/heads/_ledger' } },
     ROOTS,
-    '/proj',
+    PROJECT_DIR,
   );
   assert.equal(d.hookSpecificOutput.permissionDecision, 'ask');
-  assert.equal(
-    d.hookSpecificOutput.permissionDecisionReason,
-    'this Bash command reaches the session-continuity ledger store in a way the guard cannot resolve;'
-    + ' to write the store, use the ledger MCP tools (mcp__ledger__* when the server is configured'
-    + ' directly, mcp__plugin_session-continuity_ledger__* when installed as a plugin)',
+  const reason = d.hookSpecificOutput.permissionDecisionReason;
+  assert.equal(reason.includes('"_ledger"'), true);
+  assert.equal(reason.includes('is not a security boundary'), true);
+});
+
+test('classifyPreToolUse names a matched root path as the trigger', () => {
+  const d = classifyPreToolUse(
+    { tool_name: 'Bash', tool_input: { command: 'rm -rf /data/-proj/ledger' } },
+    ROOTS,
+    PROJECT_DIR,
   );
+  assert.equal(d.hookSpecificOutput.permissionDecision, 'ask');
+  assert.equal(d.hookSpecificOutput.permissionDecisionReason.includes('"/data/-proj/ledger"'), true);
 });
 
 test('classifyPreToolUse denies a Write under a ledger root', () => {
   const d = classifyPreToolUse(
     { tool_name: 'Write', tool_input: { file_path: '/data/-proj/ledger/threads/a.json' } },
     ROOTS,
-    '/proj',
+    PROJECT_DIR,
   );
   assert.equal(d.hookSpecificOutput.permissionDecision, 'deny');
 });
@@ -141,42 +154,9 @@ test('classifyPreToolUse allows a Write outside every ledger root', () => {
   const d = classifyPreToolUse(
     { tool_name: 'Write', tool_input: { file_path: '/proj/src/app.js' } },
     ROOTS,
-    '/proj',
+    PROJECT_DIR,
   );
   assert.equal(d, null);
-});
-
-test('classifyPreToolUse denies a mutating Bash that targets a ledger root but allows reads', () => {
-  const deny = classifyPreToolUse(
-    { tool_name: 'Bash', tool_input: { command: 'echo x > /data/-proj/ledger/threads/a.json' } },
-    ROOTS,
-    '/proj',
-  );
-  assert.equal(deny.hookSpecificOutput.permissionDecision, 'deny');
-  const read = classifyPreToolUse(
-    { tool_name: 'Bash', tool_input: { command: 'cat /data/-proj/ledger/threads/a.json' } },
-    ROOTS,
-    '/proj',
-  );
-  assert.equal(read, null);
-});
-
-test('classifyPreToolUse allows a read-only inspection that redirects stderr', () => {
-  const d = classifyPreToolUse(
-    { tool_name: 'Bash', tool_input: { command: 'ls -la /data/-proj/ledger 2>&1 | head -12' } },
-    ROOTS,
-    '/proj',
-  );
-  assert.equal(d, null);
-});
-
-test('classifyPreToolUse denies a destructive Bash that reaches a root by cd', () => {
-  const d = classifyPreToolUse(
-    { tool_name: 'Bash', tool_input: { command: 'cd ledger && rm -rf .' } },
-    ROOTS,
-    '/data/-proj',
-  );
-  assert.equal(d.hookSpecificOutput.permissionDecision, 'deny');
 });
 
 test('handlePreToolUse auto-approves any mcp__ledger__* tool', async () => {
@@ -210,7 +190,7 @@ async function symlinkedStore(t) {
   const store = join(base, 'store');
   await mkdir(join(store, 'ledger'), { recursive: true });
   await symlink(store, join(base, 'link'), 'dir');
-  return { base, roots: [join(store, 'ledger')], real: join(store, 'ledger'), aliased: join(base, 'link', 'ledger') };
+  return { base, roots: [join(store, 'ledger')], aliased: join(base, 'link', 'ledger') };
 }
 
 const writeVerdict = (path, roots, baseDir) => classifyPreToolUse(
@@ -218,17 +198,6 @@ const writeVerdict = (path, roots, baseDir) => classifyPreToolUse(
   roots,
   baseDir,
 );
-
-test('classifyBashCommand denies a destructive target reached through a symlinked component', async (t) => {
-  const { base, roots, aliased } = await symlinkedStore(t);
-  assert.equal(classifyBashCommand(`rm -rf ${aliased}`, roots, base), 'deny');
-  assert.equal(classifyBashCommand(`rm -rf ${aliased}/threads`, roots, base), 'deny');
-});
-
-test('classifyBashCommand keeps denying the literal spelling of a symlinked root', async (t) => {
-  const { base, roots, real } = await symlinkedStore(t);
-  assert.equal(classifyBashCommand(`rm -rf ${real}`, roots, base), 'deny');
-});
 
 test('classifyPreToolUse denies a Write reached through a symlinked component', async (t) => {
   const { base, roots, aliased } = await symlinkedStore(t);
@@ -241,26 +210,62 @@ test('classifyPreToolUse allows a Write that only shares the symlinked prefix', 
   assert.equal(writeVerdict(join(base, 'link', 'other.txt'), roots, base), null);
 });
 
-async function shellCwdCtx(t, command, cwdOf) {
+test('classifyBashCommand asks about the canonical spelling of an aliased root', async (t) => {
+  const { aliased } = await symlinkedStore(t);
+  const canonical = realpathSync(aliased);
+  assert.notEqual(canonical, aliased);
+  assert.equal(classifyBashCommand(`rm -rf ${canonical}`, [aliased], PROJECT_DIR), 'ask');
+});
+
+async function bashCtx(t, commandFor) {
+  const projectDir = await tempDir('hooks-bash-proj-');
+  const dataRoot = await tempDir('hooks-bash-data-');
+  cleanup(t, projectDir, dataRoot);
+  return {
+    input: { tool_name: 'Bash', tool_input: { command: commandFor(join(dataRoot, projectKey(projectDir))) } },
+    env: { CLAUDE_PLUGIN_DATA: dataRoot },
+    projectDir,
+  };
+}
+
+test('handlePreToolUse asks about a Bash command that names a real resolved root', async (t) => {
+  const ctx = await bashCtx(t, (root) => `rm -rf ${root}`);
+  const result = await handlePreToolUse(ctx);
+  assert.equal(result.json.hookSpecificOutput.permissionDecision, 'ask');
+});
+
+test('handlePreToolUse leaves an unrelated Bash command alone', async (t) => {
+  const ctx = await bashCtx(t, () => 'npm test');
+  assert.deepEqual(await handlePreToolUse(ctx), {});
+});
+
+test('handlePreToolUse asks about the project-relative spelling of a real in-repo root', async (t) => {
+  const projectDir = await tempDir('hooks-relative-proj-');
+  cleanup(t, projectDir);
+  await initGitRepo(projectDir);
+  const ctx = hookContext(
+    { tool_name: 'Bash', tool_input: { command: 'rm -rf .git/ledger' }, cwd: projectDir },
+    { CLAUDE_PROJECT_DIR: projectDir },
+  );
+  const result = await handlePreToolUse(ctx);
+  assert.equal(result.json.hookSpecificOutput.permissionDecision, 'ask');
+  assert.equal(result.json.hookSpecificOutput.permissionDecisionReason.includes('".git/ledger"'), true);
+});
+
+test('handlePreToolUse resolves a relative write path against the session cwd', async (t) => {
   const projectDir = await tempDir('hooks-cwd-proj-');
   const dataRoot = await tempDir('hooks-cwd-data-');
   cleanup(t, projectDir, dataRoot);
-  const root = join(dataRoot, projectKey(projectDir));
-  return hookContext(
-    { tool_name: 'Bash', tool_input: { command }, cwd: cwdOf({ projectDir, root }) },
-    { CLAUDE_PROJECT_DIR: projectDir, CLAUDE_PLUGIN_DATA: dataRoot },
+  const ctx = hookContext(
+    {
+      tool_name: 'Write',
+      tool_input: { file_path: join('threads', 'a.json') },
+      cwd: join(dataRoot, projectKey(projectDir)),
+    },
+    { CLAUDE_PLUGIN_DATA: dataRoot, CLAUDE_PROJECT_DIR: projectDir },
   );
-}
-
-test('handlePreToolUse denies a bare relative destructive command run from inside a root', async (t) => {
-  const ctx = await shellCwdCtx(t, 'rm -rf sessions', ({ root }) => join(root, 'ledger'));
   const result = await handlePreToolUse(ctx);
   assert.equal(result.json.hookSpecificOutput.permissionDecision, 'deny');
-});
-
-test('handlePreToolUse leaves a bare relative destructive command outside every root alone', async (t) => {
-  const ctx = await shellCwdCtx(t, 'rm -rf sessions', ({ projectDir }) => projectDir);
-  assert.deepEqual(await handlePreToolUse(ctx), {});
 });
 
 test('handlePreToolUse denies a real ledger-root write end to end', async (t) => {
