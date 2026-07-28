@@ -75,15 +75,17 @@ test('networkScope disables hooks, fsmonitor and signing while keeping user conf
     '-c', 'core.fsmonitor=false',
     '-c', 'commit.gpgsign=false',
     '-c', 'tag.gpgsign=false',
+    '-c', 'merge.verifySignatures=false',
   ]);
   assert.equal('GIT_CONFIG_GLOBAL' in scope.env, false);
   assert.equal('GIT_CONFIG_NOSYSTEM' in scope.env, false);
 });
 
-test('isolatedScope overrides signing regardless of repository local config', () => {
+test('isolatedScope overrides signing and signature verification regardless of repository local config', () => {
   const scope = isolatedScope('/abs/repo', '/abs/repo/.git');
   assert.ok(scope.args.includes('commit.gpgsign=false'));
   assert.ok(scope.args.includes('tag.gpgsign=false'));
+  assert.ok(scope.args.includes('merge.verifySignatures=false'));
 });
 
 test('networkScope closes the env-injected config channels', () => {

@@ -21,6 +21,7 @@ const HOOKS_PATH_KEY = 'core.hooksPath';
 const FSMONITOR_DISABLED = 'core.fsmonitor=false';
 const COMMIT_SIGNING_DISABLED = 'commit.gpgsign=false';
 const TAG_SIGNING_DISABLED = 'tag.gpgsign=false';
+const MERGE_SIGNATURE_VERIFICATION_DISABLED = 'merge.verifySignatures=false';
 
 export const ABSENT_HOOKS_PATH = join(devNull, 'hooks-disabled');
 
@@ -66,5 +67,6 @@ export function isolatedGitArgs(hooksPath) {
     ...disabledHookArgs(hooksPath),
     '-c', COMMIT_SIGNING_DISABLED,
     '-c', TAG_SIGNING_DISABLED,
+    '-c', MERGE_SIGNATURE_VERIFICATION_DISABLED,
   ];
 }

@@ -536,6 +536,28 @@ test('a first-divergence sync merges -X theirs without unrelated histories', asy
   assert.deepEqual(listed, ['from-a', 'from-b']);
 });
 
+test('sync merges and fast-forwards under a repository-local merge.verifySignatures', async (t) => {
+  const { cloneA, cloneB } = await twoClones(t);
+  for (const dir of [cloneA, cloneB]) {
+    await gitExec(dir, ['config', 'merge.verifySignatures', 'true']);
+  }
+  const a = await makeGitDriver(t, cloneA);
+  const b = await makeGitDriver(t, cloneB);
+  await a.init();
+  await b.init();
+  await a.writeThread(makeThread({ id: '01ARZ3NDEKTSV4RRFFQ69G5FAV', slug: 'from-a' }));
+  await a.commit('feat: from A');
+  await a.sync();
+  await b.writeThread(makeThread({ id: '01BX5ZZKBKACTAV9WEVGEMMVRZ', slug: 'from-b' }));
+  await b.commit('feat: from B');
+  const merged = await b.sync();
+  assert.equal(merged.merged, true);
+  assert.equal(merged.pushed, true);
+  const fastForwarded = await a.sync();
+  assert.equal(fastForwarded.synced, true);
+  assert.deepEqual((await a.listThreads()).map((r) => r.slug).sort(), ['from-a', 'from-b']);
+});
+
 test('sync refuses to merge unrelated ledger histories (divergent root)', async (t) => {
   const { repo, remote } = await initGitRepoWithRemote(t);
   const driver = await makeGitDriver(t, repo);
