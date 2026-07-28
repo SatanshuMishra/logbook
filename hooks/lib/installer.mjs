@@ -2,11 +2,10 @@ import { dirname, join, resolve } from 'node:path';
 import { mkdir, copyFile, chmod } from 'node:fs/promises';
 import { gitExec } from '../../src/util/git-exec.mjs';
 import { clearedGitLocationEnv, isolatedGitConfigEnv } from '../../src/util/git-env.mjs';
-import { safeDirectoryArgs } from '../../src/util/git-scope.mjs';
 import { projectKey } from '../../src/util/project-key.mjs';
 
 function repoExec(repoDir, args, options = {}) {
-  return gitExec(repoDir, [...safeDirectoryArgs(repoDir), ...args], {
+  return gitExec(repoDir, args, {
     ...options,
     env: { ...clearedGitLocationEnv(), ...isolatedGitConfigEnv() },
   });
@@ -70,9 +69,9 @@ async function copyManagedHooks(managedDir, dispatcherSource, sourceHook) {
 
 async function applyTrailerConfig(repoDir, disableTrailer) {
   if (disableTrailer === true) {
-    await repoExec(repoDir, ['config', 'continuity.trailer', 'false']);
+    await repoExec(repoDir, ['config', '--local', 'continuity.trailer', 'false']);
   } else {
-    await repoExec(repoDir, ['config', '--unset', 'continuity.trailer'], { check: false });
+    await repoExec(repoDir, ['config', '--local', '--unset', 'continuity.trailer'], { check: false });
   }
 }
 
