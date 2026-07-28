@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { projectKey } from '../util/project-key.mjs';
+import { clearedGitLocationEnv } from '../util/git-env.mjs';
 import { DEFAULT_LEDGER_BRANCH, DEFAULT_REMOTE } from './git-ledger.mjs';
 import { LocalDriver } from './local-driver.mjs';
 import { GitRefDriver } from './git-ref-driver.mjs';
@@ -12,6 +13,7 @@ export function isGitWorkTreeSync(projectDir) {
   try {
     const out = execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
       cwd: projectDir,
+      env: { ...process.env, ...clearedGitLocationEnv() },
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     });

@@ -6,7 +6,7 @@ import { makeToolCtx } from '../../fixtures/tool-ctx.mjs';
 test('reconcile returns {drift, dispositions} and short-circuits on a non-git driver', async (t) => {
   const ctx = await makeToolCtx(t);
   const result = await reconcile.handler(ctx, {});
-  assert.deepEqual(result, { drift: [], dispositions: [] });
+  assert.deepEqual(result, { drift: [], dispositions: [], recovery_degraded: false });
 });
 
 test('reconcile wraps runReconcile with exactly one commitAndReindex', async (t) => {

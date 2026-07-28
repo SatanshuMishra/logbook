@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import appendSessionEvent from '../../../src/tools/append-session-event.mjs';
 import openThread from '../../../src/tools/open-thread.mjs';
 import { makeToolCtx } from '../../fixtures/tool-ctx.mjs';
@@ -32,4 +33,15 @@ test('append_session_event rejects an unknown thread_id', async (t) => {
     () => appendSessionEvent.handler(ctx, { thread_id: '01ARZ3NDEKTSV4RRFFQ69G5FAV', actor: 'human', body: 'x' }),
     /thread_id .* does not reference an existing thread/,
   );
+});
+
+test('append_session_event reports recovery_degraded when the recovery repo is gone', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const { thread } = await openThread.handler(ctx, { title: 'Log' });
+  const healthy = await appendSessionEvent.handler(ctx, { thread_id: thread.id, actor: 'human', body: 'ok' });
+  assert.equal(healthy.recovery_degraded, false);
+  await rm(join(await ctx.driver.root(), '.git'), { recursive: true, force: true });
+  const degraded = await appendSessionEvent.handler(ctx, { thread_id: thread.id, actor: 'human', body: 'gone' });
+  assert.equal(degraded.recovery_degraded, true);
+  assert.equal(typeof degraded.path, 'string');
 });

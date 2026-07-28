@@ -1,7 +1,24 @@
-import { resolveLedgerRoots, isUnderRoot } from './ledger-roots.mjs';
+import { homedir } from 'node:os';
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { resolveLedgerRoots, isUnderRoot, canonicalPath } from './ledger-roots.mjs';
+import { shellCwd } from './hook-io.mjs';
+import { DEFAULT_LEDGER_BRANCH } from '../../src/drivers/git-ledger.mjs';
 
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
-const MUTATING = /(?:(?:^|[\s;&|`(])(?:rm|mv|cp|dd|tee|truncate|install|ln|shred|chmod|chown|mkdir|rmdir|touch)\s)|>>?|>\||\bsed\s+-[a-zA-Z]*i\b/;
+const LEDGER_TOOL = /^mcp__(?:plugin_session-continuity_)?ledger__(.+)$/;
+const TOOL_REGISTRY = '../../src/tools/registry.mjs';
+const MAX_COMMAND_BYTES = 16384;
+const CONSTANT_TRIGGERS = Object.freeze([DEFAULT_LEDGER_BRANCH, 'refs/ledger/', 'CLAUDE_PLUGIN_DATA']);
+const HOME_PREFIXES = Object.freeze(['~', '$HOME', '${HOME}']);
+const TRAILING_SEP = /[\\/]+$/;
+const DENY_SUFFIX =
+  'use the ledger MCP tools (mcp__ledger__* when the server is configured directly, mcp__plugin_session-continuity_ledger__* when installed as a plugin)';
+const GUARDRAIL_NOTE = 'this guard prompts for confirmation and is not a security boundary';
+const BASH_REASONS = Object.freeze({
+  deny: `this Bash command is larger than the session-continuity guard reads and names the ledger store; ${DENY_SUFFIX}`,
+  ask: `this Bash command is larger than the session-continuity guard reads; ${GUARDRAIL_NOTE}; to write the ledger store, ${DENY_SUFFIX}`,
+});
+const UNREADABLE_COMMAND_REASON = `the session-continuity guard could not read this Bash command as a string and refused to judge it; ${GUARDRAIL_NOTE}; to write the ledger store, ${DENY_SUFFIX}`;
 
 function decision(permissionDecision, reason) {
   return {
@@ -13,8 +30,91 @@ function decision(permissionDecision, reason) {
   };
 }
 
-export function hasMutatingConstruct(command) {
-  return typeof command === 'string' && MUTATING.test(command);
+function trimTrailingSep(value) {
+  const trimmed = value.replace(TRAILING_SEP, '');
+  return trimmed.length > 0 ? trimmed : value;
+}
+
+function homeSpellings(root, home) {
+  if (home.length === 0 || !root.startsWith(home + sep)) {
+    return [];
+  }
+  const tail = root.slice(home.length);
+  return HOME_PREFIXES.map((prefix) => `${prefix}${tail}`);
+}
+
+function relativeSpellings(root, projectDir) {
+  if (typeof projectDir !== 'string' || !isAbsolute(projectDir) || !isAbsolute(root)) {
+    return [];
+  }
+  const rel = relative(projectDir, root);
+  const escapes = rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+  return rel.length === 0 || escapes ? [] : [rel];
+}
+
+function isFilesystemRoot(path) {
+  return dirname(path) === path;
+}
+
+function dataRootSpellings(env, home) {
+  const raw = env && typeof env === 'object' ? env.CLAUDE_PLUGIN_DATA : undefined;
+  if (typeof raw !== 'string' || raw.length === 0 || !isAbsolute(raw)) {
+    return [];
+  }
+  const root = resolve(raw);
+  if (isFilesystemRoot(root)) {
+    return [];
+  }
+  return [root, canonicalPath(root), ...homeSpellings(root, home)]
+    .filter((spelling) => !isFilesystemRoot(spelling));
+}
+
+function ledgerTriggers(roots, projectDir, env) {
+  const home = trimTrailingSep(homedir());
+  const paths = roots.filter((root) => typeof root === 'string' && root.length > 0);
+  const spellings = paths.flatMap((root) => [
+    root,
+    canonicalPath(root),
+    ...homeSpellings(root, home),
+    ...relativeSpellings(root, projectDir),
+  ]);
+  return [...new Set([...CONSTANT_TRIGGERS, ...spellings, ...dataRootSpellings(env, home)])]
+    .filter((trigger) => typeof trigger === 'string' && trigger.length > 0);
+}
+
+function isOversized(command) {
+  return Buffer.byteLength(command, 'utf8') > MAX_COMMAND_BYTES;
+}
+
+function matchedTrigger(command, roots, projectDir, env) {
+  return ledgerTriggers(roots, projectDir, env).find((trigger) => command.includes(trigger)) ?? null;
+}
+
+export function classifyBashCommand(command, roots, projectDir, env = process.env) {
+  if (!Array.isArray(roots) || roots.length === 0) {
+    return null;
+  }
+  if (typeof command !== 'string') {
+    return 'ask';
+  }
+  const trigger = matchedTrigger(command, roots, projectDir, env);
+  if (isOversized(command)) {
+    return trigger === null ? 'ask' : 'deny';
+  }
+  return trigger === null ? null : 'ask';
+}
+
+function bashReason(verdict, command, roots, projectDir, env) {
+  if (typeof command !== 'string') {
+    return UNREADABLE_COMMAND_REASON;
+  }
+  if (isOversized(command)) {
+    return BASH_REASONS[verdict];
+  }
+  const trigger = matchedTrigger(command, roots, projectDir, env);
+  return trigger === null
+    ? BASH_REASONS.ask
+    : `this Bash command contains "${trigger}", which names the session-continuity ledger store; ${GUARDRAIL_NOTE}; to write the store, ${DENY_SUFFIX}`;
 }
 
 function targetPath(input) {
@@ -22,38 +122,52 @@ function targetPath(input) {
   return toolInput.file_path ?? toolInput.notebook_path ?? null;
 }
 
-function referencesRoot(command, roots) {
-  return typeof command === 'string' && roots.some((root) => command.includes(root));
-}
-
-export function classifyPreToolUse(input, roots, baseDir) {
+export function classifyPreToolUse(input, roots, baseDir, projectDir, env = process.env) {
   const toolName = input && typeof input.tool_name === 'string' ? input.tool_name : '';
   if (WRITE_TOOLS.has(toolName)) {
     const path = targetPath(input);
     if (path && isUnderRoot(path, roots, baseDir)) {
-      return decision('deny', `${toolName} into the session-continuity ledger store is not permitted; use the ledger MCP tools (mcp__ledger__* when the server is configured directly, mcp__plugin_session-continuity_ledger__* when installed as a plugin)`);
+      return decision('deny', `${toolName} into the session-continuity ledger store is not permitted; ${DENY_SUFFIX}`);
     }
     return null;
   }
   if (toolName === 'Bash') {
     const command = input && input.tool_input ? input.tool_input.command : undefined;
-    if (hasMutatingConstruct(command) && referencesRoot(command, roots)) {
-      return decision('deny', 'a mutating Bash command targeting the session-continuity ledger store is not permitted; use the ledger MCP tools (mcp__ledger__* when the server is configured directly, mcp__plugin_session-continuity_ledger__* when installed as a plugin)');
-    }
-    return null;
+    const verdict = classifyBashCommand(command, roots, projectDir, env);
+    return verdict ? decision(verdict, bashReason(verdict, command, roots, projectDir, env)) : null;
   }
   return null;
 }
 
+let registeredToolNames = null;
+
+async function isRegisteredLedgerTool(toolName) {
+  const match = LEDGER_TOOL.exec(toolName);
+  if (match === null) {
+    return false;
+  }
+  if (registeredToolNames === null) {
+    const { TOOLS } = await import(TOOL_REGISTRY);
+    registeredToolNames = new Set(TOOLS.map((tool) => tool.name));
+  }
+  return registeredToolNames.has(match[1]);
+}
+
 export async function handlePreToolUse(ctx) {
   const toolName = ctx.input && typeof ctx.input.tool_name === 'string' ? ctx.input.tool_name : '';
-  if (/^mcp__ledger__/.test(toolName)) {
+  if (await isRegisteredLedgerTool(toolName)) {
     return { json: decision('allow', 'session-continuity ledger tool auto-approved') };
   }
   const roots = await resolveLedgerRoots(ctx.projectDir, ctx.env);
   if (roots.length === 0) {
     return {};
   }
-  const result = classifyPreToolUse(ctx.input, roots, ctx.projectDir);
+  const result = classifyPreToolUse(
+    ctx.input,
+    roots,
+    shellCwd(ctx, ctx.projectDir),
+    ctx.projectDir,
+    ctx.env,
+  );
   return result ? { json: result } : {};
 }

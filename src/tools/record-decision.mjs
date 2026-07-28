@@ -54,8 +54,8 @@ async function handler(ctx, args) {
     updated_at: now(),
   };
   await driver.writeThread(updated);
-  await commitAndReindex(driver, `docs(ledger): decision ${ref}`);
-  return { number: nnnn, path };
+  const { recovery_degraded } = await commitAndReindex(driver, `docs(ledger): decision ${ref}`);
+  return { number: nnnn, path, recovery_degraded };
 }
 
 export default {

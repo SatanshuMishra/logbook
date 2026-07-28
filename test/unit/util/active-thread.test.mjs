@@ -34,6 +34,23 @@ test('git activeThreadPath resolves under the git-common-dir', async (t) => {
   assert.equal(path, resolve(dir, '.git', 'ledger', 'active-thread'));
 });
 
+test('git activeThreadPath resolves the project repo despite an ambient GIT_DIR', async (t) => {
+  const dir = await initRepo(t);
+  const foreign = await initRepo(t);
+  const priorDir = process.env.GIT_DIR;
+  const priorWorkTree = process.env.GIT_WORK_TREE;
+  process.env.GIT_DIR = join(foreign, '.git');
+  process.env.GIT_WORK_TREE = foreign;
+  t.after(() => {
+    if (priorDir === undefined) delete process.env.GIT_DIR;
+    else process.env.GIT_DIR = priorDir;
+    if (priorWorkTree === undefined) delete process.env.GIT_WORK_TREE;
+    else process.env.GIT_WORK_TREE = priorWorkTree;
+  });
+  const path = await activeThreadPath(gitCtx(dir));
+  assert.equal(path, resolve(dir, '.git', 'ledger', 'active-thread'));
+});
+
 test('git write/read/clear round-trip', async (t) => {
   const dir = await initRepo(t);
   const ctx = gitCtx(dir);

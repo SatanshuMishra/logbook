@@ -12,8 +12,8 @@ async function handler(ctx, args) {
   const binding = newBinding(args, { now });
   await driver.writeBinding(binding);
   await writeActiveThread(ctx, thread.id);
-  await commitAndReindex(driver, `feat(ledger): bind ${args.branch} to ${thread.slug}`);
-  return { binding };
+  const { recovery_degraded } = await commitAndReindex(driver, `feat(ledger): bind ${args.branch} to ${thread.slug}`);
+  return { binding, recovery_degraded };
 }
 
 export default {

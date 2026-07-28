@@ -1,4 +1,5 @@
-import { join, resolve, sep } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { dirname, join, resolve, sep } from 'node:path';
 import { projectKey } from '../../src/util/project-key.mjs';
 import { gitCommonDir } from './git.mjs';
 
@@ -19,10 +20,41 @@ export async function resolveLedgerRoots(projectDir, env = process.env) {
   return roots;
 }
 
+function realPathOrNull(target) {
+  try {
+    return realpathSync.native(target);
+  } catch {
+    return null;
+  }
+}
+
+export function canonicalPath(target) {
+  let current = target;
+  for (;;) {
+    const real = realPathOrNull(current);
+    if (real !== null) {
+      return real + target.slice(current.length);
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      return target;
+    }
+    current = parent;
+  }
+}
+
+function contains(candidate, root) {
+  return candidate === root || candidate.startsWith(root + sep);
+}
+
 export function isUnderRoot(candidate, roots, baseDir) {
-  if (typeof candidate !== 'string' || candidate.length === 0) {
+  if (typeof candidate !== 'string' || candidate.length === 0 || !Array.isArray(roots)) {
     return false;
   }
   const abs = resolve(baseDir ?? process.cwd(), candidate);
-  return roots.some((root) => abs === root || abs.startsWith(root + sep));
+  if (roots.some((root) => contains(abs, root))) {
+    return true;
+  }
+  const real = canonicalPath(abs);
+  return roots.some((root) => contains(real, canonicalPath(root)));
 }

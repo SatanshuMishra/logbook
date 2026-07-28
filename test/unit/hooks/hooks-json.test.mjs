@@ -31,9 +31,18 @@ test('hooks.json points each event at its plugin-root entry script', async () =>
   }
 });
 
+test('the PreToolUse matcher reaches both ledger tool-name spellings', async () => {
+  const cfg = await loadHooksJson();
+  const matcher = new RegExp(cfg.hooks.PreToolUse[0].matcher);
+  assert.equal(matcher.test('mcp__ledger__open_thread'), true);
+  assert.equal(matcher.test('mcp__plugin_session-continuity_ledger__open_thread'), true);
+  for (const tool of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash']) {
+    assert.equal(matcher.test(tool), true);
+  }
+});
+
 test('only PreToolUse and PostToolUse carry a matcher', async () => {
   const cfg = await loadHooksJson();
-  assert.equal(cfg.hooks.PreToolUse[0].matcher, 'Write|Edit|MultiEdit|NotebookEdit|Bash|mcp__ledger__.*');
   assert.equal(cfg.hooks.PostToolUse[0].matcher, 'Write|Edit|MultiEdit|NotebookEdit|Bash');
   for (const name of ['SessionStart', 'UserPromptSubmit', 'Stop', 'PreCompact']) {
     assert.equal(Object.prototype.hasOwnProperty.call(cfg.hooks[name][0], 'matcher'), false);

@@ -29,8 +29,8 @@ async function handler(ctx, args) {
   await driver.writeThread(updated);
   await writeActiveThread(ctx, updated.id);
   await driver.appendSessionEvent(updated.id, nowIso, 'ledger', `Reopened ${thread.status} -> active`);
-  await commitAndReindex(driver, `chore(ledger): reopen ${updated.slug}`);
-  return { thread: updated };
+  const { recovery_degraded } = await commitAndReindex(driver, `chore(ledger): reopen ${updated.slug}`);
+  return { thread: updated, recovery_degraded };
 }
 
 export default {

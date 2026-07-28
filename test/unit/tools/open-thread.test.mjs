@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import openThread from '../../../src/tools/open-thread.mjs';
 import { readActiveThread } from '../../../src/util/active-thread.mjs';
 import { makeToolCtx, FIXED } from '../../fixtures/tool-ctx.mjs';
@@ -41,4 +43,18 @@ test('open_thread links an EXISTING parent_id', async (t) => {
   const { thread: parent } = await openThread.handler(ctx, { title: 'Parent' });
   const { thread: child } = await openThread.handler(ctx, { title: 'Child', parent_id: parent.id });
   assert.equal(child.parent_id, parent.id);
+});
+
+test('open_thread reports recovery_degraded:false while the recovery repo is healthy', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const result = await openThread.handler(ctx, { title: 'Healthy' });
+  assert.equal(result.recovery_degraded, false);
+});
+
+test('open_thread reports recovery_degraded:true when the recovery repo is gone', async (t) => {
+  const ctx = await makeToolCtx(t);
+  await rm(join(await ctx.driver.root(), '.git'), { recursive: true, force: true });
+  const result = await openThread.handler(ctx, { title: 'Degraded' });
+  assert.equal(result.recovery_degraded, true);
+  assert.equal(result.thread.status, 'active');
 });
