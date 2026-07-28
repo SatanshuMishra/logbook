@@ -5,7 +5,8 @@ function blockReason(threadId) {
 export async function handleStop(ctx) {
   const active = await ctx.invokeCliJson(['active-thread']);
   const threadId = active && typeof active.thread_id === 'string' ? active.thread_id : null;
-  if (threadId) {
+  const stopHookActive = Boolean(ctx.input && ctx.input.stop_hook_active);
+  if (threadId && !stopHookActive) {
     return { stderr: blockReason(threadId), exitCode: 2 };
   }
   await ctx.invokeCli(['sync']);
