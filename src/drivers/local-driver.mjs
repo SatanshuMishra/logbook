@@ -16,6 +16,7 @@ const RECOVERY_DIR = '.git';
 const RECOVERY_HOOKS_DIR = 'hooks-disabled';
 const RECOVERY_GITIGNORE = 'index/\n';
 const EMPTY_TEMPLATE = '--template=';
+const RECOVERY_HEAD_REF = `refs/heads/${DEFAULT_LEDGER_BRANCH}`;
 
 function recoveryEnv(ledgerRoot, extra = {}) {
   return {
@@ -29,6 +30,20 @@ function recoveryEnv(ledgerRoot, extra = {}) {
 
 function recoveryArgs(ledgerRoot, args) {
   return [...isolatedGitArgs(join(ledgerRoot, RECOVERY_DIR, RECOVERY_HOOKS_DIR)), ...args];
+}
+
+function recoveryProbe(ledgerRoot, rest) {
+  return gitExec(ledgerRoot, recoveryArgs(ledgerRoot, rest), {
+    env: recoveryEnv(ledgerRoot),
+    check: false,
+  });
+}
+
+async function recoveryRepoState(ledgerRoot) {
+  const present = await recoveryProbe(ledgerRoot, ['rev-parse', '--git-dir']);
+  if (present.code !== 0) return { present: false, own: false };
+  const head = await recoveryProbe(ledgerRoot, ['symbolic-ref', '--quiet', 'HEAD']);
+  return { present: true, own: head.code === 0 && head.stdout.trim() === RECOVERY_HEAD_REF };
 }
 
 function degradedCommit() {
@@ -90,7 +105,13 @@ export class LocalDriver extends StorageDriver {
 
   async #hasRecoveryRepo() {
     const entry = await this.#recoveryEntry();
-    return entry !== null && entry.isDirectory();
+    if (entry === null || !entry.isDirectory()) return false;
+    try {
+      const state = await recoveryRepoState(this.ledgerRoot);
+      return state.present && state.own;
+    } catch {
+      return false;
+    }
   }
 
   async #ensureRecoveryRepo() {
@@ -100,11 +121,14 @@ export class LocalDriver extends StorageDriver {
     const env = recoveryEnv(this.ledgerRoot);
     const args = (rest) => recoveryArgs(this.ledgerRoot, rest);
     try {
+      const existing = await recoveryRepoState(this.ledgerRoot);
+      if (existing.present && !existing.own) return false;
       await gitExec(this.ledgerRoot, args(['init', '-q', EMPTY_TEMPLATE, '-b', DEFAULT_LEDGER_BRANCH]), { env });
       await gitExec(this.ledgerRoot, args(['config', '--local', 'commit.gpgsign', 'false']), { env });
       await gitExec(this.ledgerRoot, args(['config', '--local', 'tag.gpgsign', 'false']), { env });
       await atomicWrite(join(this.ledgerRoot, '.gitignore'), RECOVERY_GITIGNORE);
-      return true;
+      const ensured = await recoveryRepoState(this.ledgerRoot);
+      return ensured.present && ensured.own;
     } catch {
       return false;
     }

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { LocalDriver } from '../../../src/drivers/local-driver.mjs';
 import { gitExec } from '../../../src/util/git-exec.mjs';
 import {
+  commitFile,
   hostileConfigEnv,
   hostileGitEnvironment,
   withGitEnv,
@@ -351,6 +352,33 @@ test('LocalDriver refuses a recovery .git symlinked into another repo', async (t
   assert.equal(await commitCount(foreign), 0);
   const signing = await gitExec(foreign, ['config', '--local', '--get', 'commit.gpgsign'], { check: false });
   assert.equal(signing.stdout.trim(), '');
+});
+
+test('LocalDriver refuses a recovery .git directory holding an unrelated repository', async (t) => {
+  const root = await scratchRoot(t);
+  await mkdir(root, { recursive: true });
+  await gitExec(root, ['init', '-q', '-b', 'main']);
+  await gitExec(root, ['config', 'user.name', 'Stranger']);
+  await gitExec(root, ['config', 'user.email', 'stranger@example.invalid']);
+  const stranger = await commitFile(root, 'unrelated.txt', 'stranger history\n', 'chore: stranger history');
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await driver.writeThread(makeThread());
+  assert.deepEqual(
+    await driver.commit('chore(ledger): open thread'),
+    { committed: false, sha: null, empty: false, degraded: true },
+  );
+  assert.equal(await commitCount(root), 1);
+  const head = await gitExec(root, ['rev-parse', 'HEAD']);
+  assert.equal(head.stdout.trim(), stranger);
+  const branch = await gitExec(root, ['symbolic-ref', '--quiet', 'HEAD']);
+  assert.equal(branch.stdout.trim(), 'refs/heads/main');
+  const staged = await gitExec(root, ['diff', '--cached', '--quiet'], { check: false });
+  assert.equal(staged.code, 0);
+  const signing = await gitExec(root, ['config', '--local', '--get', 'commit.gpgsign'], { check: false });
+  assert.equal(signing.stdout.trim(), '');
+  await assert.rejects(() => stat(join(root, '.gitignore')), { code: 'ENOENT' });
+  assert.deepEqual(await driver.readThread(ULID_A), makeThread());
 });
 
 test('LocalDriver.commit ignores an ambient GIT_AUTHOR_DATE and GIT_COMMITTER_DATE', async (t) => {
