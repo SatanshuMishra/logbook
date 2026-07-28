@@ -42,7 +42,7 @@ test('hostScope disables hooks and fsmonitor while leaving user config alone', a
   assert.equal(isAbsolute(hooksPath), true);
   await assert.rejects(() => stat(hooksPath));
   assert.ok(scope.args.includes('core.fsmonitor=false'));
-  for (const name of ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'GIT_CONFIG_COUNT']) {
+  for (const name of ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'GIT_ATTR_NOSYSTEM', 'GIT_CONFIG_COUNT']) {
     assert.equal(name in scope.env, false, name);
   }
 });
@@ -76,9 +76,12 @@ test('networkScope disables hooks, fsmonitor and signing while keeping user conf
     '-c', 'commit.gpgsign=false',
     '-c', 'tag.gpgsign=false',
     '-c', 'merge.verifySignatures=false',
+    '-c', `core.attributesFile=${devNull}`,
+    '-c', 'merge.union.driver=git merge-file --union -L ours -L base -L theirs %A %O %B',
   ]);
   assert.equal('GIT_CONFIG_GLOBAL' in scope.env, false);
   assert.equal('GIT_CONFIG_NOSYSTEM' in scope.env, false);
+  assert.equal('GIT_ATTR_NOSYSTEM' in scope.env, false);
 });
 
 test('isolatedScope overrides signing and signature verification regardless of repository local config', () => {
@@ -86,6 +89,15 @@ test('isolatedScope overrides signing and signature verification regardless of r
   assert.ok(scope.args.includes('commit.gpgsign=false'));
   assert.ok(scope.args.includes('tag.gpgsign=false'));
   assert.ok(scope.args.includes('merge.verifySignatures=false'));
+});
+
+test('isolatedScope neutralizes every attribute source it can reach', () => {
+  const scope = isolatedScope('/abs/repo', '/abs/repo/.git');
+  assert.equal(scope.env.GIT_ATTR_NOSYSTEM, '1');
+  assert.ok(scope.args.includes(`core.attributesFile=${devNull}`));
+  assert.ok(
+    scope.args.includes('merge.union.driver=git merge-file --union -L ours -L base -L theirs %A %O %B'),
+  );
 });
 
 test('networkScope closes the env-injected config channels', () => {

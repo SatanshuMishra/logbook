@@ -558,6 +558,85 @@ test('sync merges and fast-forwards under a repository-local merge.verifySignatu
   assert.deepEqual((await a.listThreads()).map((r) => r.slug).sort(), ['from-a', 'from-b']);
 });
 
+const SESSION_TS = '2026-07-28T10:00:00Z';
+const SESSION_FILE = join('sessions', ULID_A, '2026-07-28T10-00-00Z--agent.md');
+
+async function hijackMergeDriver(t, clones, driverName, attributes) {
+  const trap = await makeTempDir(t, 'git-driver-merge-hijack-');
+  const marker = join(trap, 'fired');
+  const program = join(trap, 'hijack-driver');
+  await writeFile(
+    program,
+    `#!/bin/sh\necho fired >> ${marker}\nprintf 'hijacked\\n' > "$1"\nexit 0\n`,
+    { mode: 0o755 },
+  );
+  const attributesFile = join(trap, 'attributes');
+  if (attributes !== null) await writeFile(attributesFile, attributes);
+  for (const dir of clones) {
+    await gitExec(dir, ['config', `merge.${driverName}.name`, 'hijacked driver']);
+    await gitExec(dir, ['config', `merge.${driverName}.driver`, `${program} %A %O %B`]);
+    if (attributes !== null) await gitExec(dir, ['config', 'core.attributesFile', attributesFile]);
+  }
+  return marker;
+}
+
+async function divergentSessionMerge(t, marker, a, b) {
+  await a.init();
+  await b.init();
+  await a.appendSessionEvent(ULID_A, SESSION_TS, 'agent', 'shared\n');
+  await a.commit('feat: seed session');
+  await a.sync();
+  await b.sync();
+  await a.appendSessionEvent(ULID_A, SESSION_TS, 'agent', 'shared\nfrom a\n');
+  await a.commit('feat: session from A');
+  await a.sync();
+  await b.appendSessionEvent(ULID_A, SESSION_TS, 'agent', 'shared\nfrom b\n');
+  await b.commit('feat: session from B');
+  const result = await b.sync();
+  assert.equal(result.merged, true);
+  await assert.rejects(() => stat(marker), { code: 'ENOENT' });
+  return readFile(join(b.worktreeDir, SESSION_FILE), 'utf8');
+}
+
+test('sync ignores a repository-local merge.union driver and keeps built-in union semantics', async (t) => {
+  const { cloneA, cloneB } = await twoClones(t);
+  const marker = await hijackMergeDriver(t, [cloneA, cloneB], 'union', null);
+  const merged = await divergentSessionMerge(
+    t,
+    marker,
+    await makeGitDriver(t, cloneA),
+    await makeGitDriver(t, cloneB),
+  );
+  assert.equal(merged, 'shared\nfrom b\nfrom a\n');
+});
+
+test('sync ignores a repository-local core.attributesFile that attaches a merge driver', async (t) => {
+  const { cloneA, cloneB } = await twoClones(t);
+  const marker = await hijackMergeDriver(
+    t,
+    [cloneA, cloneB],
+    'hijack',
+    'threads/*.json merge=hijack\n',
+  );
+  const a = await makeGitDriver(t, cloneA);
+  const b = await makeGitDriver(t, cloneB);
+  await a.init();
+  await b.init();
+  await a.writeThread(makeThread({ title: 'Shared' }));
+  await a.commit('feat: seed thread');
+  await a.sync();
+  await b.sync();
+  await a.writeThread(makeThread({ title: 'From A' }));
+  await a.commit('feat: thread from A');
+  await a.sync();
+  await b.writeThread(makeThread({ title: 'From B' }));
+  await b.commit('feat: thread from B');
+  const result = await b.sync();
+  assert.equal(result.merged, true);
+  await assert.rejects(() => stat(marker), { code: 'ENOENT' });
+  assert.equal((await b.readThread(ULID_A)).title, 'From A');
+});
+
 test('sync refuses to merge unrelated ledger histories (divergent root)', async (t) => {
   const { repo, remote } = await initGitRepoWithRemote(t);
   const driver = await makeGitDriver(t, repo);

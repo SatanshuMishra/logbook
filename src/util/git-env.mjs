@@ -22,6 +22,9 @@ const FSMONITOR_DISABLED = 'core.fsmonitor=false';
 const COMMIT_SIGNING_DISABLED = 'commit.gpgsign=false';
 const TAG_SIGNING_DISABLED = 'tag.gpgsign=false';
 const MERGE_SIGNATURE_VERIFICATION_DISABLED = 'merge.verifySignatures=false';
+const ATTRIBUTES_FILE_DISABLED = `core.attributesFile=${devNull}`;
+const UNION_MERGE_DRIVER_RESTORED =
+  'merge.union.driver=git merge-file --union -L ours -L base -L theirs %A %O %B';
 
 export const ABSENT_HOOKS_PATH = join(devNull, 'hooks-disabled');
 
@@ -47,6 +50,7 @@ export function volatileGitConfigEnv() {
 export function nulledGlobalGitConfigEnv() {
   return {
     GIT_CONFIG_NOSYSTEM: '1',
+    GIT_ATTR_NOSYSTEM: '1',
     GIT_CONFIG_GLOBAL: devNull,
   };
 }
@@ -68,5 +72,7 @@ export function isolatedGitArgs(hooksPath) {
     '-c', COMMIT_SIGNING_DISABLED,
     '-c', TAG_SIGNING_DISABLED,
     '-c', MERGE_SIGNATURE_VERIFICATION_DISABLED,
+    '-c', ATTRIBUTES_FILE_DISABLED,
+    '-c', UNION_MERGE_DRIVER_RESTORED,
   ];
 }
