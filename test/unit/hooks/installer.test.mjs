@@ -144,6 +144,55 @@ test('uninstallCommitMsgHook restores a recorded prior hooksPath', async (t) => 
   assert.equal(await config(repo, 'continuity.priorHooksPath'), null);
 });
 
+async function seedLegacyPoisonedState(t, poisonedPrior) {
+  const repo = await initRepo(t);
+  const managed = join(repo, 'managed', 'githooks');
+  await gitExec(repo, ['config', '--local', 'core.hooksPath', managed]);
+  await gitExec(repo, ['config', '--local', 'continuity.priorHooksPath', poisonedPrior]);
+  return { repo, managed };
+}
+
+test('uninstallCommitMsgHook drops a legacy prior pin that a global core.hooksPath already provides', async (t) => {
+  const trap = await hostileGitEnvironment(t);
+  const { repo, managed } = await seedLegacyPoisonedState(t, trap.hooksDir);
+
+  const res = await withGitEnv(
+    { GIT_CONFIG_GLOBAL: trap.globalConfig, GIT_CONFIG_SYSTEM: trap.systemConfig },
+    () => uninstallCommitMsgHook({ repoDir: repo, managedDir: managed }),
+  );
+  assert.deepEqual(res, { removed: true, restoredHooksPath: null });
+  assert.equal(await config(repo, 'core.hooksPath'), null);
+  assert.equal(await config(repo, 'continuity.priorHooksPath'), null);
+});
+
+test('uninstallCommitMsgHook drops a legacy prior pin that only a system core.hooksPath provides', async (t) => {
+  const trap = await hostileGitEnvironment(t);
+  const { repo, managed } = await seedLegacyPoisonedState(t, trap.hooksDir);
+
+  const res = await withGitEnv(
+    { GIT_CONFIG_GLOBAL: trap.emptyConfig, GIT_CONFIG_SYSTEM: trap.systemConfig },
+    () => uninstallCommitMsgHook({ repoDir: repo, managedDir: managed }),
+  );
+  assert.deepEqual(res, { removed: true, restoredHooksPath: null });
+  assert.equal(await config(repo, 'core.hooksPath'), null);
+  assert.equal(await config(repo, 'continuity.priorHooksPath'), null);
+});
+
+test('uninstallCommitMsgHook still restores a prior that differs from the inherited hooksPath', async (t) => {
+  const trap = await hostileGitEnvironment(t);
+  const priorPath = join(trap.dir, 'user-hooks');
+  const { repo, managed } = await seedLegacyPoisonedState(t, priorPath);
+
+  const res = await withGitEnv(
+    { GIT_CONFIG_GLOBAL: trap.globalConfig, GIT_CONFIG_SYSTEM: trap.systemConfig },
+    () => uninstallCommitMsgHook({ repoDir: repo, managedDir: managed }),
+  );
+  assert.equal(res.removed, true);
+  assert.equal(resolve(res.restoredHooksPath), resolve(priorPath));
+  assert.equal(resolve(await config(repo, 'core.hooksPath')), resolve(priorPath));
+  assert.equal(await config(repo, 'continuity.priorHooksPath'), null);
+});
+
 test('uninstallCommitMsgHook no-ops when the managed dir is not the current hooksPath', async (t) => {
   const repo = await initRepo(t);
   const managed = join(repo, 'managed', 'githooks');
@@ -202,7 +251,7 @@ async function assertCycleKeepsLocalStateClean(t, hostileFor) {
     () => uninstallCommitMsgHook({ repoDir: repo, managedDir: managed }),
   );
   assert.deepEqual(removal, { removed: true, restoredHooksPath: null });
-  assert.notEqual((await localRead(repo, 'core.hooksPath')).code, 0);
+  assert.equal(await config(repo, 'core.hooksPath'), null);
   assert.equal(await config(repo, 'continuity.priorHooksPath'), null);
 }
 

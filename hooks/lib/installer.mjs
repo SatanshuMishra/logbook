@@ -11,6 +11,12 @@ function repoExec(repoDir, args, options = {}) {
   });
 }
 
+function persistentScopeExec(repoDir, args) {
+  return gitExec(repoDir, args, { check: false, env: clearedGitLocationEnv() });
+}
+
+const INHERITED_HOOKS_PATH_SCOPES = Object.freeze(['--global', '--system']);
+
 export const STANDARD_HOOKS = Object.freeze([
   'applypatch-msg',
   'pre-applypatch',
@@ -53,6 +59,27 @@ export async function supportsHooksPath(repoDir) {
 async function readConfig(repoDir, key) {
   const { code, stdout } = await repoExec(repoDir, ['config', '--local', '--get', key], { check: false });
   return code === 0 ? stdout.replace(/\r?\n$/, '') : null;
+}
+
+async function readInheritedHooksPath(repoDir) {
+  for (const scope of INHERITED_HOOKS_PATH_SCOPES) {
+    const { code, stdout } = await persistentScopeExec(
+      repoDir,
+      ['config', scope, '--get', 'core.hooksPath'],
+    );
+    if (code !== 0) {
+      continue;
+    }
+    const value = stdout.replace(/\r?\n$/, '');
+    if (value.length > 0) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function samePath(a, b) {
+  return typeof a === 'string' && typeof b === 'string' && resolve(a) === resolve(b);
 }
 
 async function copyManagedHooks(managedDir, dispatcherSource, sourceHook) {
@@ -123,12 +150,15 @@ export async function uninstallCommitMsgHook({ repoDir, managedDir } = {}) {
   }
 
   const prior = await readConfig(repoDir, 'continuity.priorHooksPath');
-  if (prior && prior.length > 0) {
-    await repoExec(repoDir, ['config', '--local', 'core.hooksPath', prior]);
+  const inherited = await readInheritedHooksPath(repoDir);
+  const restored = (prior && prior.length > 0 && !samePath(prior, inherited)) ? prior : null;
+
+  if (restored !== null) {
+    await repoExec(repoDir, ['config', '--local', 'core.hooksPath', restored]);
   } else {
     await repoExec(repoDir, ['config', '--local', '--unset', 'core.hooksPath'], { check: false });
   }
   await repoExec(repoDir, ['config', '--local', '--unset', 'continuity.priorHooksPath'], { check: false });
 
-  return { removed: true, restoredHooksPath: (prior && prior.length > 0) ? prior : null };
+  return { removed: true, restoredHooksPath: restored };
 }
