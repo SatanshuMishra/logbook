@@ -1,11 +1,15 @@
 import { dirname, join, resolve } from 'node:path';
 import { mkdir, copyFile, chmod } from 'node:fs/promises';
 import { gitExec } from '../../src/util/git-exec.mjs';
-import { clearedGitLocationEnv } from '../../src/util/git-env.mjs';
+import { clearedGitLocationEnv, isolatedGitConfigEnv } from '../../src/util/git-env.mjs';
+import { safeDirectoryArgs } from '../../src/util/git-scope.mjs';
 import { projectKey } from '../../src/util/project-key.mjs';
 
 function repoExec(repoDir, args, options = {}) {
-  return gitExec(repoDir, args, { ...options, env: clearedGitLocationEnv() });
+  return gitExec(repoDir, [...safeDirectoryArgs(repoDir), ...args], {
+    ...options,
+    env: { ...clearedGitLocationEnv(), ...isolatedGitConfigEnv() },
+  });
 }
 
 export const STANDARD_HOOKS = Object.freeze([
@@ -48,7 +52,7 @@ export async function supportsHooksPath(repoDir) {
 }
 
 async function readConfig(repoDir, key) {
-  const { code, stdout } = await repoExec(repoDir, ['config', '--get', key], { check: false });
+  const { code, stdout } = await repoExec(repoDir, ['config', '--local', '--get', key], { check: false });
   return code === 0 ? stdout.replace(/\r?\n$/, '') : null;
 }
 
@@ -93,8 +97,8 @@ export async function installCommitMsgHook({ repoDir, managedDir, sourceHook, di
   await copyManagedHooks(managedDir, dispatcherSource, sourceHook);
 
   if (!alreadyInstalled) {
-    await repoExec(repoDir, ['config', 'continuity.priorHooksPath', current ?? '']);
-    await repoExec(repoDir, ['config', 'core.hooksPath', managedDir]);
+    await repoExec(repoDir, ['config', '--local', 'continuity.priorHooksPath', current ?? '']);
+    await repoExec(repoDir, ['config', '--local', 'core.hooksPath', managedDir]);
   }
 
   await applyTrailerConfig(repoDir, disableTrailer);
@@ -121,11 +125,11 @@ export async function uninstallCommitMsgHook({ repoDir, managedDir } = {}) {
 
   const prior = await readConfig(repoDir, 'continuity.priorHooksPath');
   if (prior && prior.length > 0) {
-    await repoExec(repoDir, ['config', 'core.hooksPath', prior]);
+    await repoExec(repoDir, ['config', '--local', 'core.hooksPath', prior]);
   } else {
-    await repoExec(repoDir, ['config', '--unset', 'core.hooksPath'], { check: false });
+    await repoExec(repoDir, ['config', '--local', '--unset', 'core.hooksPath'], { check: false });
   }
-  await repoExec(repoDir, ['config', '--unset', 'continuity.priorHooksPath'], { check: false });
+  await repoExec(repoDir, ['config', '--local', '--unset', 'continuity.priorHooksPath'], { check: false });
 
   return { removed: true, restoredHooksPath: (prior && prior.length > 0) ? prior : null };
 }
