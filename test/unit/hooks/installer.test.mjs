@@ -107,6 +107,35 @@ test('installCommitMsgHook reinstall reports alreadyInstalled and never overwrit
   assert.equal(resolve(await config(repo, 'core.hooksPath')), resolve(managed));
 });
 
+test('installCommitMsgHook installing a second managed dir keeps the real prior instead of capturing a managed dir', async (t) => {
+  const repo = await initRepo(t);
+  const priorPath = '.githooks';
+  await gitExec(repo, ['config', 'core.hooksPath', priorPath]);
+  const mainManaged = join(repo, 'data', 'main-key', 'githooks');
+  const worktreeManaged = join(repo, 'data', 'worktree-key', 'githooks');
+
+  await installCommitMsgHook({ repoDir: repo, managedDir: mainManaged, sourceHook: SOURCE_HOOK });
+  assert.equal(await config(repo, 'continuity.priorHooksPath'), priorPath);
+
+  const res = await installCommitMsgHook({ repoDir: repo, managedDir: worktreeManaged, sourceHook: SOURCE_HOOK });
+
+  assert.equal(await config(repo, 'continuity.priorHooksPath'), priorPath);
+  assert.equal(res.priorHooksPath, priorPath);
+  assert.equal(resolve(await config(repo, 'core.hooksPath')), resolve(worktreeManaged));
+});
+
+test('installCommitMsgHook alternating between two managed dirs never degrades the prior', async (t) => {
+  const repo = await initRepo(t);
+  const priorPath = '.githooks';
+  await gitExec(repo, ['config', 'core.hooksPath', priorPath]);
+  const a = join(repo, 'data', 'key-a', 'githooks');
+  const b = join(repo, 'data', 'key-b', 'githooks');
+  for (const managedDir of [a, b, a, b, a]) {
+    await installCommitMsgHook({ repoDir: repo, managedDir, sourceHook: SOURCE_HOOK });
+    assert.equal(await config(repo, 'continuity.priorHooksPath'), priorPath);
+  }
+});
+
 test('installCommitMsgHook drives continuity.trailer from disableTrailer', async (t) => {
   const repo = await initRepo(t);
   const managed = join(repo, 'managed', 'githooks');

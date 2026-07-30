@@ -1,5 +1,5 @@
 import { dirname, join, resolve } from 'node:path';
-import { mkdir, copyFile, chmod } from 'node:fs/promises';
+import { mkdir, copyFile, chmod, readFile } from 'node:fs/promises';
 import { gitExec } from '../../src/util/git-exec.mjs';
 import { projectKey } from '../../src/util/project-key.mjs';
 
@@ -40,6 +40,20 @@ export function parseHooksPathSupport(versionOutput) {
 export async function supportsHooksPath(repoDir) {
   const { stdout } = await gitExec(repoDir, ['--version']);
   return parseHooksPathSupport(stdout);
+}
+
+const MANAGED_DISPATCHER_MARKER = 'continuity.priorHooksPath';
+
+export async function isManagedHooksDir(dir) {
+  if (typeof dir !== 'string' || dir.length === 0) {
+    return false;
+  }
+  try {
+    const probe = await readFile(join(dir, 'pre-commit'), 'utf8');
+    return probe.includes(MANAGED_DISPATCHER_MARKER);
+  } catch {
+    return false;
+  }
 }
 
 async function readConfig(repoDir, key) {
@@ -83,20 +97,21 @@ export async function installCommitMsgHook({ repoDir, managedDir, sourceHook, di
 
   const dispatcherSource = join(dirname(sourceHook), 'dispatcher');
   const current = await readConfig(repoDir, 'core.hooksPath');
-  const alreadyInstalled = current !== null && resolve(current) === resolve(managedDir);
+  const currentDir = current === null || current === '' ? null : resolve(repoDir, current);
+  const alreadyInstalled = currentDir !== null && currentDir === resolve(managedDir);
 
   await copyManagedHooks(managedDir, dispatcherSource, sourceHook);
 
   if (!alreadyInstalled) {
-    await gitExec(repoDir, ['config', 'continuity.priorHooksPath', current ?? '']);
+    if (!(await isManagedHooksDir(currentDir))) {
+      await gitExec(repoDir, ['config', 'continuity.priorHooksPath', current ?? '']);
+    }
     await gitExec(repoDir, ['config', 'core.hooksPath', managedDir]);
   }
 
   await applyTrailerConfig(repoDir, disableTrailer);
 
-  const priorHooksPath = alreadyInstalled
-    ? await readConfig(repoDir, 'continuity.priorHooksPath')
-    : (current ?? '');
+  const priorHooksPath = (await readConfig(repoDir, 'continuity.priorHooksPath')) ?? '';
 
   return { installed: true, alreadyInstalled, managedDir, priorHooksPath };
 }
