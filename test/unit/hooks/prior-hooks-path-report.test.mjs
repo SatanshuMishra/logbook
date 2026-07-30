@@ -77,6 +77,22 @@ function install(repo, managed, env) {
   );
 }
 
+test('a corrupt prior does not report once per hook invocation across a whole commit', async (t) => {
+  const repo = await initRepo(t);
+  const env = await scopes(t, null);
+  const managed = join(repo, 'data', 'main-key', 'githooks');
+  await install(repo, managed, env);
+  await gitExec(repo, ['config', '--local', 'continuity.priorHooksPath', managed]);
+
+  const commit = await commitOnce(repo, env, 'seed.txt');
+
+  assert.equal(commit.code, 0, commit.stderr);
+  const reported = commit.stderr.split('\n').filter((l) => l.startsWith('continuity:'));
+  assert.equal(reported.some((l) => l.includes('reference-transaction')), false, commit.stderr);
+  assert.equal(reported.some((l) => l.includes('post-index-change')), false, commit.stderr);
+  assert.ok(reported.length <= 4, `hook chain reported ${reported.length} times: ${commit.stderr}`);
+});
+
 test('an unrecoverable corrupt prior reports the state instead of claiming success', async (t) => {
   const repo = await initRepo(t);
   const env = await scopes(t, null);

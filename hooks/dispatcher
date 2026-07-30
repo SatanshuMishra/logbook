@@ -1,23 +1,48 @@
 #!/bin/sh
 hook_name=$(basename -- "$0")
-managed_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+managed_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
 case "$common_dir" in
   /*) : ;;
   *) common_dir="$(pwd)/$common_dir" ;;
 esac
+continuity_gating_hook() {
+  case "$hook_name" in
+    reference-transaction|post-index-change) return 1 ;;
+  esac
+  return 0
+}
+continuity_label() {
+  label=$(printf '%s' "$1" | head -n 1 | LC_ALL=C tr -d '[:cntrl:]' | sed -e 's|/*$||' -e 's|.*/||')
+  [ -n "$label" ] || label='unprintable'
+  printf '%s' "$label"
+}
+continuity_warn() {
+  continuity_gating_hook || return 0
+  printf 'continuity: %s\n' "$1" >&2
+}
 prior=$(git config --get continuity.priorHooksPath 2>/dev/null || true)
+prior_configured=0
 if [ -n "$prior" ]; then
+  prior_configured=1
   case "$prior" in
     /*) : ;;
     *) prior="$(pwd)/$prior" ;;
   esac
 else
+  corrupt=$(git config --get continuity.priorHooksPathCorrupt 2>/dev/null || true)
+  if [ -n "$corrupt" ]; then
+    continuity_warn "continuity.priorHooksPath was reset after corruption and the original could not be recovered, so no prior $hook_name hook runs - run: git config --get continuity.priorHooksPathCorrupt"
+  fi
   prior="$common_dir/hooks"
 fi
-prior_real=$(CDPATH= cd -- "$prior" 2>/dev/null && pwd || true)
+prior_real=$(CDPATH= cd -- "$prior" 2>/dev/null && pwd -P || true)
 if [ -n "$prior_real" ] && [ "$prior_real" = "$managed_dir" ]; then
-  printf 'continuity: continuity.priorHooksPath=%s points at this managed hooks dir; skipping the prior %s hook\n' "$prior" "$hook_name" >&2
+  continuity_warn "continuity.priorHooksPath (.../$(continuity_label "$prior")) points at this managed hooks dir, so the prior $hook_name hook was skipped - run: git config --get continuity.priorHooksPath"
+  exit 0
+fi
+if [ -z "$prior_real" ] && [ "$prior_configured" -eq 1 ]; then
+  continuity_warn "continuity.priorHooksPath (.../$(continuity_label "$prior")) does not resolve to a directory, so no prior $hook_name hook ran - run: git config --get continuity.priorHooksPath"
   exit 0
 fi
 target="$prior/$hook_name"
