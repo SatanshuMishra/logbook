@@ -1,5 +1,5 @@
 import { dirname, join, resolve } from 'node:path';
-import { mkdir, copyFile, chmod, readFile, realpath } from 'node:fs/promises';
+import { mkdir, copyFile, chmod, readFile, realpath, writeFile } from 'node:fs/promises';
 import { gitExec } from '../../src/util/git-exec.mjs';
 import { clearedGitLocationEnv, isolatedGitConfigEnv } from '../../src/util/git-env.mjs';
 import { projectKey } from '../../src/util/project-key.mjs';
@@ -58,7 +58,30 @@ export async function supportsHooksPath(repoDir) {
 
 const MANAGED_DISPATCHER_MARKER = 'continuity.priorHooksPath';
 
+export const MANAGED_SENTINEL_FILE = '.continuity-managed-hooks';
+
+async function readManagedSentinel(dir) {
+  try {
+    const raw = await readFile(join(dir, MANAGED_SENTINEL_FILE), 'utf8');
+    return raw.split('\n')[0].trim();
+  } catch {
+    return null;
+  }
+}
+
 export async function isManagedHooksDir(dir) {
+  if (typeof dir !== 'string' || dir.length === 0) {
+    return false;
+  }
+  const declared = await readManagedSentinel(dir);
+  if (declared === null || declared.length === 0) {
+    return false;
+  }
+  const [declaredReal, dirReal] = await Promise.all([realHooksDir(declared), realHooksDir(dir)]);
+  return declaredReal !== null && dirReal !== null && declaredReal === dirReal;
+}
+
+export async function hasManagedDispatcherContent(dir) {
   if (typeof dir !== 'string' || dir.length === 0) {
     return false;
   }
@@ -107,7 +130,7 @@ async function realHooksDir(dir) {
   }
 }
 
-async function resolvesToManagedHooksDir(candidateDir, managedDir) {
+async function isManagedHooksDirIdentity(candidateDir, managedDir) {
   if (typeof candidateDir !== 'string' || candidateDir.length === 0) {
     return false;
   }
@@ -121,17 +144,24 @@ async function resolvesToManagedHooksDir(candidateDir, managedDir) {
   return isManagedHooksDir(candidateDir);
 }
 
+async function looksLikeManagedHooksDir(candidateDir, managedDir) {
+  if (await isManagedHooksDirIdentity(candidateDir, managedDir)) {
+    return true;
+  }
+  return hasManagedDispatcherContent(candidateDir);
+}
+
 async function healPriorHooksPath(repoDir, managedDir) {
   const stored = await readConfig(repoDir, 'continuity.priorHooksPath');
   if (stored === null || stored.length === 0) {
     return '';
   }
-  if (!(await resolvesToManagedHooksDir(resolve(repoDir, stored), managedDir))) {
+  if (!(await isManagedHooksDirIdentity(resolve(repoDir, stored), managedDir))) {
     return stored;
   }
   const inherited = await readInheritedHooksPath(repoDir);
   const inheritedIsManaged = inherited !== null
-    && await resolvesToManagedHooksDir(resolve(repoDir, inherited), managedDir);
+    && await isManagedHooksDirIdentity(resolve(repoDir, inherited), managedDir);
   const healed = (inherited !== null && !inheritedIsManaged) ? inherited : '';
   const { code } = await repoExec(
     repoDir,
@@ -139,6 +169,11 @@ async function healPriorHooksPath(repoDir, managedDir) {
     { check: false },
   );
   return code === 0 ? healed : stored;
+}
+
+async function writeManagedSentinel(managedDir) {
+  const declared = (await realHooksDir(managedDir)) ?? resolve(managedDir);
+  await writeFile(join(managedDir, MANAGED_SENTINEL_FILE), `${declared}\n`, { mode: 0o644 });
 }
 
 async function copyManagedHooks(managedDir, dispatcherSource, sourceHook) {
@@ -151,6 +186,7 @@ async function copyManagedHooks(managedDir, dispatcherSource, sourceHook) {
   const commitMsgDest = join(managedDir, 'commit-msg');
   await copyFile(sourceHook, commitMsgDest);
   await chmod(commitMsgDest, 0o755);
+  await writeManagedSentinel(managedDir);
 }
 
 async function applyTrailerConfig(repoDir, disableTrailer) {
@@ -183,7 +219,7 @@ export async function installCommitMsgHook({ repoDir, managedDir, sourceHook, di
   await copyManagedHooks(managedDir, dispatcherSource, sourceHook);
 
   if (!alreadyInstalled) {
-    if (!(await resolvesToManagedHooksDir(currentDir, managedDir))) {
+    if (!(await looksLikeManagedHooksDir(currentDir, managedDir))) {
       await repoExec(repoDir, ['config', '--local', 'continuity.priorHooksPath', current ?? '']);
     }
     await repoExec(repoDir, ['config', '--local', 'core.hooksPath', managedDir]);

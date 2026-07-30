@@ -90,7 +90,7 @@ test('install heals a latched managed dir in continuity.priorHooksPath and the i
   assert.equal(await config(repo, 'continuity.priorHooksPath'), '');
 });
 
-test('install heals a symlinked spelling of the managed dir in continuity.priorHooksPath', async (t) => {
+test('install heals a spelling of the managed dir reached through a symlinked parent', async (t) => {
   const repo = await initRepo(t);
   const scopes = await persistentScopes(t, null);
   const managed = join(repo, 'data', 'main-key', 'githooks');
@@ -102,8 +102,8 @@ test('install heals a symlinked spelling of the managed dir in continuity.priorH
     () => installCommitMsgHook({ repoDir: repo, managedDir: managed, sourceHook: SOURCE_HOOK }),
   );
 
-  const linked = join(repo, 'linked-githooks');
-  await symlink(managed, linked);
+  await symlink(join(repo, 'data'), join(repo, 'linked-data'));
+  const linked = join(repo, 'linked-data', 'main-key', 'githooks');
   await gitExec(repo, ['config', '--local', 'continuity.priorHooksPath', linked]);
 
   const res = await withGitEnv(
