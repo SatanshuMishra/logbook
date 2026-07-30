@@ -8,7 +8,7 @@ case "$common_dir" in
 esac
 managed_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 continuity_label() {
-  label=$(printf '%s' "$1" | head -n 1 | LC_ALL=C tr -d '[:cntrl:]' | sed -e 's|/*$||' -e 's|.*/||')
+  label=$(printf '%s' "$1" | head -n 1 | LC_ALL=C tr -d '[:cntrl:]' | sed -e 's|/*$||' -e 's|.*/||' | cut -c1-64)
   [ -n "$label" ] || label='unprintable'
   printf '%s' "$label"
 }

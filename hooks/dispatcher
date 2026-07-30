@@ -1,5 +1,6 @@
 #!/bin/sh
 hook_name=$(basename -- "$0")
+hook_state="$1"
 managed_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
 case "$common_dir" in
@@ -8,12 +9,13 @@ case "$common_dir" in
 esac
 continuity_gating_hook() {
   case "$hook_name" in
-    reference-transaction|post-index-change) return 1 ;;
+    post-index-change) return 1 ;;
+    reference-transaction) [ "$hook_state" = 'prepared' ] || return 1 ;;
   esac
   return 0
 }
 continuity_label() {
-  label=$(printf '%s' "$1" | head -n 1 | LC_ALL=C tr -d '[:cntrl:]' | sed -e 's|/*$||' -e 's|.*/||')
+  label=$(printf '%s' "$1" | head -n 1 | LC_ALL=C tr -d '[:cntrl:]' | sed -e 's|/*$||' -e 's|.*/||' | cut -c1-64)
   [ -n "$label" ] || label='unprintable'
   printf '%s' "$label"
 }

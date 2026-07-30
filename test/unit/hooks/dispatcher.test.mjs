@@ -134,16 +134,50 @@ test('dispatcher stays silent on an unset prior hooks path with no default hooks
   assert.equal(r.stderr, '');
 });
 
-test('dispatcher stays silent on high-frequency hooks when the prior hooks path is corrupt', async (t) => {
+test('dispatcher stays silent on post-index-change when the prior hooks path is corrupt', async (t) => {
   const repo = await initRepo(t);
   const managed = join(repo, 'managed');
   await gitExec(repo, ['config', 'continuity.priorHooksPath', managed]);
-  for (const hookName of ['reference-transaction', 'post-index-change']) {
-    const script = await stageAs(managed, hookName);
-    const r = run(script, repo);
+  const script = await stageAs(managed, 'post-index-change');
+  const r = run(script, repo);
+  assert.equal(r.status, 0);
+  assert.equal(r.stderr, '', `post-index-change reported on stderr: ${r.stderr}`);
+});
+
+test('dispatcher reports a skipped reference-transaction prior in the state that gates', async (t) => {
+  const repo = await initRepo(t);
+  const managed = join(repo, 'managed');
+  await gitExec(repo, ['config', 'continuity.priorHooksPath', managed]);
+  const script = await stageAs(managed, 'reference-transaction');
+  const r = run(script, repo, ['prepared']);
+  assert.equal(r.status, 0);
+  assert.equal(r.stderr.trimEnd().split('\n').length, 1);
+  assert.match(r.stderr, /reference-transaction/);
+  assert.match(r.stderr, /continuity\.priorHooksPath/);
+});
+
+test('dispatcher does not repeat the reference-transaction report in non-gating states', async (t) => {
+  const repo = await initRepo(t);
+  const managed = join(repo, 'managed');
+  await gitExec(repo, ['config', 'continuity.priorHooksPath', managed]);
+  const script = await stageAs(managed, 'reference-transaction');
+  for (const state of ['committed', 'aborted']) {
+    const r = run(script, repo, [state]);
     assert.equal(r.status, 0);
-    assert.equal(r.stderr, '', `${hookName} reported on stderr: ${r.stderr}`);
+    assert.equal(r.stderr, '', `state ${state} reported on stderr: ${r.stderr}`);
   }
+});
+
+test('dispatcher caps the reported label so one hostile value cannot flood stderr', async (t) => {
+  const repo = await initRepo(t);
+  const managed = join(repo, 'managed');
+  const script = await stageAs(managed, 'pre-commit');
+  await gitExec(repo, ['config', 'continuity.priorHooksPath', `/nowhere/${'z'.repeat(4000)}`]);
+  const r = run(script, repo);
+  assert.equal(r.status, 0);
+  const line = r.stderr.trimEnd();
+  assert.equal(line.split('\n').length, 1);
+  assert.ok(line.length <= 320, `report line was ${line.length} chars: ${line.slice(0, 120)}`);
 });
 
 test('dispatcher reports one control-free line for a value carrying terminal escapes', async (t) => {
