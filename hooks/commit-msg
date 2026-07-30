@@ -21,6 +21,8 @@ if [ -z "$prior_real" ] || [ "$prior_real" != "$managed_dir" ]; then
   if [ -x "$prior/commit-msg" ]; then
     "$prior/commit-msg" "$msg_file" || exit $?
   fi
+else
+  printf 'continuity: continuity.priorHooksPath=%s points at this managed hooks dir; skipping the prior commit-msg hook\n' "$prior" >&2
 fi
 if [ "$(git config --get continuity.trailer 2>/dev/null || true)" = "false" ]; then
   exit 0

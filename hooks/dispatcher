@@ -17,6 +17,7 @@ else
 fi
 prior_real=$(CDPATH= cd -- "$prior" 2>/dev/null && pwd || true)
 if [ -n "$prior_real" ] && [ "$prior_real" = "$managed_dir" ]; then
+  printf 'continuity: continuity.priorHooksPath=%s points at this managed hooks dir; skipping the prior %s hook\n' "$prior" "$hook_name" >&2
   exit 0
 fi
 target="$prior/$hook_name"

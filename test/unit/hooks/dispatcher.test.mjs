@@ -87,6 +87,31 @@ test('dispatcher guards against self-exec when the prior dir is the managed dir'
   assert.equal(r.status, 0);
 });
 
+test('dispatcher names the offending config key and value on stderr before the self-exec guard', async (t) => {
+  const repo = await initRepo(t);
+  const managed = join(repo, 'managed');
+  const script = await stageAs(managed, 'pre-commit');
+  await gitExec(repo, ['config', 'continuity.priorHooksPath', managed]);
+  const r = run(script, repo);
+  assert.equal(r.status, 0);
+  assert.equal(r.stderr.trimEnd().split('\n').length, 1);
+  assert.match(r.stderr, /continuity\.priorHooksPath/);
+  assert.ok(r.stderr.includes(managed), `stderr did not name the value: ${r.stderr}`);
+  assert.equal(r.stdout, '');
+});
+
+test('dispatcher stays silent when the prior hooks path is honest', async (t) => {
+  const repo = await initRepo(t);
+  const managed = join(repo, 'managed');
+  const priorDir = join(repo, 'priorhooks');
+  await writePriorHook(priorDir, 'pre-commit', `#!/bin/sh\nexit 0\n`);
+  await gitExec(repo, ['config', 'continuity.priorHooksPath', priorDir]);
+  const script = await stageAs(managed, 'pre-commit');
+  const r = run(script, repo);
+  assert.equal(r.status, 0);
+  assert.equal(r.stderr, '');
+});
+
 test('dispatcher fails open outside a git work tree', async (t) => {
   const nongit = await mkdtemp(join(tmpdir(), 'dispatcher-nongit-'));
   t.after(() => rm(nongit, { recursive: true, force: true }));
