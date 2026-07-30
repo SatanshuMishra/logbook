@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, mkdir, writeFile, chmod, copyFile, access } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, chmod, copyFile, access, symlink } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
@@ -45,7 +45,7 @@ async function config(repo, key) {
 
 async function writeUserGate(dir, sentinel, mentionsMarker) {
   await mkdir(dir, { recursive: true });
-  const preamble = mentionsMarker ? `x=${MARKER}\n` : '';
+  const preamble = mentionsMarker ? `git config --get ${MARKER} >/dev/null 2>&1 || true\n` : '';
   const p = join(dir, 'pre-commit');
   await writeFile(p, `#!/bin/sh\n${preamble}printf ran > "${sentinel}"\nexit 0\n`);
   await chmod(p, 0o755);
@@ -121,16 +121,99 @@ test('a user gate that mentions the config key survives a later install and stil
   assert.equal(await exists(sentinel), true, 'the user gate never ran');
 });
 
-test('a legacy managed dir without a sentinel is still declined as a capture candidate', async (t) => {
+test('a first install captures a user gate whose body calls the config key', async (t) => {
+  const repo = await initRepo(t);
+  const scopes = await isolatedScopes(t);
+  const managed = join(repo, 'data', 'main-key', 'githooks');
+  const userHooks = join(repo, '.githooks');
+  const sentinel = join(repo, 'user-gate-ran');
+  await writeUserGate(userHooks, sentinel, true);
+  await gitExec(repo, ['config', '--local', 'core.hooksPath', userHooks]);
+
+  const res = await withGitEnv(
+    scopes,
+    () => installCommitMsgHook({ repoDir: repo, managedDir: managed, sourceHook: SOURCE_HOOK }),
+  );
+
+  assert.equal(res.priorHooksPathCapture, 'captured', 'the first install declined to capture the user gate');
+  assert.equal(res.priorHooksPath, userHooks);
+  assert.equal(await config(repo, 'continuity.priorHooksPath'), userHooks);
+
+  const commit = await commitOnce(repo, scopes, 'seed.txt');
+  assert.equal(commit.code, 0, commit.stderr);
+  assert.equal(await exists(sentinel), true, 'the user gate never ran');
+});
+
+test('a first install captures a user gate reached through a symlinked hooks dir', async (t) => {
+  const repo = await initRepo(t);
+  const scopes = await isolatedScopes(t);
+  const managed = join(repo, 'data', 'main-key', 'githooks');
+  const userHooks = join(repo, 'real-githooks');
+  const linked = join(repo, 'linked-githooks');
+  const sentinel = join(repo, 'symlinked-gate-ran');
+  await writeUserGate(userHooks, sentinel, true);
+  await symlink(userHooks, linked);
+  await gitExec(repo, ['config', '--local', 'core.hooksPath', linked]);
+
+  const res = await withGitEnv(
+    scopes,
+    () => installCommitMsgHook({ repoDir: repo, managedDir: managed, sourceHook: SOURCE_HOOK }),
+  );
+
+  assert.equal(res.priorHooksPathCapture, 'captured');
+  const commit = await commitOnce(repo, scopes, 'seed.txt');
+  assert.equal(commit.code, 0, commit.stderr);
+  assert.equal(await exists(sentinel), true, 'the symlinked user gate never ran');
+});
+
+test('a user hooks dir sitting under the data root is captured unless its parent is a project key', async (t) => {
+  const repo = await initRepo(t);
+  const scopes = await isolatedScopes(t);
+  const dataRoot = await tempDir(t, 'managed-identity-data-');
+  const managed = join(dataRoot, 'main-key', 'githooks');
+  const userHooks = join(dataRoot, 'dotfiles', 'githooks');
+  const sentinel = join(repo, 'data-root-neighbour-ran');
+  await writeUserGate(userHooks, sentinel, true);
+  await gitExec(repo, ['config', '--local', 'core.hooksPath', userHooks]);
+
+  const res = await withGitEnv(
+    scopes,
+    () => installCommitMsgHook({ repoDir: repo, managedDir: managed, sourceHook: SOURCE_HOOK }),
+  );
+
+  assert.equal(res.priorHooksPathCapture, 'captured', 'a neighbour of the data root was claimed as managed');
+  assert.equal(res.priorHooksPath, userHooks);
+
+  const commit = await commitOnce(repo, scopes, 'seed.txt');
+  assert.equal(commit.code, 0, commit.stderr);
+  assert.equal(await exists(sentinel), true, 'the gate next door to the data root never ran');
+});
+
+test('a declined capture is recorded under its own key rather than passing silently', async (t) => {
   const repo = await initRepo(t);
   const scopes = await isolatedScopes(t);
   const legacyManaged = join(repo, 'data', 'legacy-key', 'githooks');
   await mkdir(legacyManaged, { recursive: true });
-  for (const name of ['pre-commit', 'commit-msg']) {
-    const dest = join(legacyManaged, name);
-    await copyFile(DISPATCHER, dest);
-    await chmod(dest, 0o755);
-  }
+  await gitExec(repo, ['config', '--local', 'core.hooksPath', legacyManaged]);
+
+  const managed = join(repo, 'data', 'main-key', 'githooks');
+  const res = await withGitEnv(
+    scopes,
+    () => installCommitMsgHook({ repoDir: repo, managedDir: managed, sourceHook: SOURCE_HOOK }),
+  );
+
+  assert.equal(res.priorHooksPathCapture, 'declined-managed');
+  assert.equal(res.declinedHooksPath, legacyManaged);
+  assert.equal(await config(repo, 'continuity.priorHooksPathDeclined'), legacyManaged);
+});
+
+test('a legacy managed dir carrying no sentinel and no dispatcher content is still declined', async (t) => {
+  const repo = await initRepo(t);
+  const scopes = await isolatedScopes(t);
+  const legacyManaged = join(repo, 'data', 'legacy-key', 'githooks');
+  await mkdir(legacyManaged, { recursive: true });
+  await writeFile(join(legacyManaged, 'pre-commit'), '#!/bin/sh\nexit 0\n');
+  await chmod(join(legacyManaged, 'pre-commit'), 0o755);
   await gitExec(repo, ['config', '--local', 'continuity.priorHooksPath', '']);
   await gitExec(repo, ['config', '--local', 'core.hooksPath', legacyManaged]);
 

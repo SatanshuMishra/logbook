@@ -80,6 +80,8 @@ test('installCommitMsgHook fresh install repoints hooksPath, records empty prior
     installed: true,
     alreadyInstalled: false,
     managedDir: managed,
+    priorHooksPathCapture: 'captured',
+    declinedHooksPath: null,
     priorHooksPath: '',
     priorHooksPathHeal: 'not-needed',
     corruptPriorHooksPath: null,
