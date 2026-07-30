@@ -1,5 +1,5 @@
 import { dirname, join, resolve } from 'node:path';
-import { mkdir, copyFile, chmod, readFile } from 'node:fs/promises';
+import { mkdir, copyFile, chmod, readFile, realpath } from 'node:fs/promises';
 import { gitExec } from '../../src/util/git-exec.mjs';
 import { clearedGitLocationEnv, isolatedGitConfigEnv } from '../../src/util/git-env.mjs';
 import { projectKey } from '../../src/util/project-key.mjs';
@@ -96,6 +96,51 @@ function samePath(a, b) {
   return typeof a === 'string' && typeof b === 'string' && resolve(a) === resolve(b);
 }
 
+async function realHooksDir(dir) {
+  if (typeof dir !== 'string' || dir.length === 0) {
+    return null;
+  }
+  try {
+    return await realpath(dir);
+  } catch {
+    return null;
+  }
+}
+
+async function resolvesToManagedHooksDir(candidateDir, managedDir) {
+  if (typeof candidateDir !== 'string' || candidateDir.length === 0) {
+    return false;
+  }
+  const [candidateReal, managedReal] = await Promise.all([
+    realHooksDir(candidateDir),
+    realHooksDir(managedDir),
+  ]);
+  if (candidateReal !== null && candidateReal === managedReal) {
+    return true;
+  }
+  return isManagedHooksDir(candidateDir);
+}
+
+async function healPriorHooksPath(repoDir, managedDir) {
+  const stored = await readConfig(repoDir, 'continuity.priorHooksPath');
+  if (stored === null || stored.length === 0) {
+    return '';
+  }
+  if (!(await resolvesToManagedHooksDir(resolve(repoDir, stored), managedDir))) {
+    return stored;
+  }
+  const inherited = await readInheritedHooksPath(repoDir);
+  const inheritedIsManaged = inherited !== null
+    && await resolvesToManagedHooksDir(resolve(repoDir, inherited), managedDir);
+  const healed = (inherited !== null && !inheritedIsManaged) ? inherited : '';
+  const { code } = await repoExec(
+    repoDir,
+    ['config', '--local', 'continuity.priorHooksPath', healed],
+    { check: false },
+  );
+  return code === 0 ? healed : stored;
+}
+
 async function copyManagedHooks(managedDir, dispatcherSource, sourceHook) {
   await mkdir(managedDir, { recursive: true });
   for (const name of STANDARD_HOOKS) {
@@ -138,7 +183,7 @@ export async function installCommitMsgHook({ repoDir, managedDir, sourceHook, di
   await copyManagedHooks(managedDir, dispatcherSource, sourceHook);
 
   if (!alreadyInstalled) {
-    if (!(await isManagedHooksDir(currentDir))) {
+    if (!(await resolvesToManagedHooksDir(currentDir, managedDir))) {
       await repoExec(repoDir, ['config', '--local', 'continuity.priorHooksPath', current ?? '']);
     }
     await repoExec(repoDir, ['config', '--local', 'core.hooksPath', managedDir]);
@@ -146,7 +191,7 @@ export async function installCommitMsgHook({ repoDir, managedDir, sourceHook, di
 
   await applyTrailerConfig(repoDir, disableTrailer);
 
-  const priorHooksPath = (await readConfig(repoDir, 'continuity.priorHooksPath')) ?? '';
+  const priorHooksPath = await healPriorHooksPath(repoDir, managedDir);
 
   return { installed: true, alreadyInstalled, managedDir, priorHooksPath };
 }
