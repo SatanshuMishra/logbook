@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { selectDriver, isGitWorkTreeSync } from '../../../src/drivers/select.mjs';
 import { GitRefDriver } from '../../../src/drivers/git-ref-driver.mjs';
 import { LocalDriver } from '../../../src/drivers/local-driver.mjs';
-import { initGitRepo, makeTempDir } from '../../fixtures/git-repos.mjs';
+import { initGitRepo, makeTempDir, withGitEnv } from '../../fixtures/git-repos.mjs';
 import { projectKey } from '../../../src/util/project-key.mjs';
 
 function withDataDir(t) {
@@ -20,6 +20,18 @@ test('isGitWorkTreeSync is true inside a git work tree and false outside', async
   const plain = await makeTempDir(t, 'select-nongit-');
   assert.equal(isGitWorkTreeSync(repo), true);
   assert.equal(isGitWorkTreeSync(plain), false);
+});
+
+test('isGitWorkTreeSync classifies the given directory despite an ambient GIT_DIR', async (t) => {
+  const repo = await initGitRepo(t);
+  const plain = await makeTempDir(t, 'select-nongit-');
+  const hijack = { GIT_DIR: join(repo, '.git'), GIT_WORK_TREE: undefined };
+  const classified = await withGitEnv(hijack, () => ({
+    repo: isGitWorkTreeSync(repo),
+    plain: isGitWorkTreeSync(plain),
+  }));
+  assert.equal(classified.repo, true);
+  assert.equal(classified.plain, false);
 });
 
 test('selectDriver returns a GitRefDriver for a git project with the pinned construction', async (t) => {

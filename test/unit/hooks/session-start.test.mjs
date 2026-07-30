@@ -7,7 +7,7 @@ import { handleSessionStart } from '../../../hooks/lib/session-start.mjs';
 import { tempDir, cleanup, initGitRepo, REPO_ROOT } from './fixtures.mjs';
 
 async function config(repo, key) {
-  const { code, stdout } = await gitExec(repo, ['config', '--get', key], { check: false });
+  const { code, stdout } = await gitExec(repo, ['config', '--local', '--get', key], { check: false });
   return code === 0 ? stdout.replace(/\r?\n$/, '') : null;
 }
 

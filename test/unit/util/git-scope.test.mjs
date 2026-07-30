@@ -1,0 +1,159 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { devNull, tmpdir } from 'node:os';
+import { isAbsolute, join } from 'node:path';
+import { gitExec } from '../../../src/util/git-exec.mjs';
+import { hostileGitEnvironment, withGitEnv } from '../../fixtures/git-repos.mjs';
+import {
+  hostScope,
+  isolatedScope,
+  networkScope,
+  pinnedScope,
+  resolveGitDir,
+  scopedExec,
+} from '../../../src/util/git-scope.mjs';
+
+async function scratchDir(t) {
+  const dir = await mkdtemp(join(tmpdir(), 'git-scope-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+async function initRepo(t) {
+  const dir = await scratchDir(t);
+  await gitExec(dir, ['init', '-q']);
+  return dir;
+}
+
+test('hostScope clears the ambient location variables without pinning', () => {
+  const scope = hostScope('/abs/repo');
+  assert.equal(scope.dir, '/abs/repo');
+  assert.equal(scope.gitDir, null);
+  assert.equal(scope.env.GIT_DIR, undefined);
+  assert.ok('GIT_DIR' in scope.env);
+  assert.ok('GIT_WORK_TREE' in scope.env);
+});
+
+test('hostScope disables hooks and fsmonitor while leaving user config alone', async () => {
+  const scope = hostScope('/abs/repo');
+  const hooksSetting = scope.args.find((arg) => arg.startsWith('core.hooksPath='));
+  const hooksPath = hooksSetting.slice('core.hooksPath='.length);
+  assert.equal(isAbsolute(hooksPath), true);
+  await assert.rejects(() => stat(hooksPath));
+  assert.ok(scope.args.includes('core.fsmonitor=false'));
+  for (const name of ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'GIT_ATTR_NOSYSTEM', 'GIT_CONFIG_COUNT']) {
+    assert.equal(name in scope.env, false, name);
+  }
+});
+
+test('hostScope runs no ambient hook and still reads the repository', async (t) => {
+  const repo = await initRepo(t);
+  const trap = await hostileGitEnvironment(t);
+  await gitExec(repo, ['commit', '-q', '--allow-empty', '--no-verify', '-m', 'seed'], {
+    env: { GIT_CONFIG_GLOBAL: trap.emptyConfig, GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@e.invalid', GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@e.invalid' },
+  });
+  const branches = await withGitEnv(
+    { GIT_CONFIG_GLOBAL: trap.globalConfig, GIT_CONFIG_SYSTEM: trap.systemConfig },
+    () => scopedExec(hostScope(repo), ['for-each-ref', '--format=%(refname:short)', 'refs/heads/']),
+  );
+  assert.ok(branches.stdout.trim().length > 0);
+  await assert.rejects(() => stat(trap.marker), { code: 'ENOENT' });
+});
+
+test('pinnedScope pins GIT_DIR and adds no config overrides', () => {
+  const scope = pinnedScope('/abs/repo', '/abs/repo/.git');
+  assert.equal(scope.env.GIT_DIR, '/abs/repo/.git');
+  assert.equal(scope.env.GIT_CONFIG_GLOBAL, undefined);
+  assert.deepEqual(scope.args, []);
+});
+
+test('networkScope disables hooks, fsmonitor and signing while keeping user config readable', () => {
+  const scope = networkScope('/abs/repo', '/abs/repo/.git');
+  assert.deepEqual(scope.args, [
+    '-c', 'core.hooksPath=/abs/repo/.git/hooks-disabled',
+    '-c', 'core.fsmonitor=false',
+    '-c', 'commit.gpgsign=false',
+    '-c', 'tag.gpgsign=false',
+    '-c', 'merge.verifySignatures=false',
+    '-c', `core.attributesFile=${devNull}`,
+    '-c', 'merge.union.driver=git merge-file --union -L ours -L base -L theirs %A %O %B',
+  ]);
+  assert.equal('GIT_CONFIG_GLOBAL' in scope.env, false);
+  assert.equal('GIT_CONFIG_NOSYSTEM' in scope.env, false);
+  assert.equal('GIT_ATTR_NOSYSTEM' in scope.env, false);
+});
+
+test('isolatedScope overrides signing and signature verification regardless of repository local config', () => {
+  const scope = isolatedScope('/abs/repo', '/abs/repo/.git');
+  assert.ok(scope.args.includes('commit.gpgsign=false'));
+  assert.ok(scope.args.includes('tag.gpgsign=false'));
+  assert.ok(scope.args.includes('merge.verifySignatures=false'));
+});
+
+test('isolatedScope neutralizes every attribute source it can reach', () => {
+  const scope = isolatedScope('/abs/repo', '/abs/repo/.git');
+  assert.equal(scope.env.GIT_ATTR_NOSYSTEM, '1');
+  assert.ok(scope.args.includes(`core.attributesFile=${devNull}`));
+  assert.ok(
+    scope.args.includes('merge.union.driver=git merge-file --union -L ours -L base -L theirs %A %O %B'),
+  );
+});
+
+test('networkScope closes the env-injected config channels', () => {
+  const scope = networkScope('/abs/repo', '/abs/repo/.git');
+  assert.equal(scope.env.GIT_CONFIG_COUNT, '0');
+  for (const name of ['GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_SYSTEM', 'GIT_TEMPLATE_DIR']) {
+    assert.ok(name in scope.env, name);
+    assert.equal(scope.env[name], undefined, name);
+  }
+});
+
+test('isolatedScope nulls global config and re-injects safe.directory for its target', () => {
+  const repo = isolatedScope('/abs/repo', '/abs/repo/.git');
+  const worktree = isolatedScope('/abs/wt', '/abs/repo/.git/worktrees/wt');
+  assert.equal(repo.env.GIT_CONFIG_GLOBAL, devNull);
+  assert.equal(repo.env.GIT_CONFIG_NOSYSTEM, '1');
+  assert.equal(repo.env.GIT_CONFIG_COUNT, '0');
+  assert.ok(repo.args.includes('-c'));
+  assert.ok(repo.args.includes('safe.directory=/abs/repo'));
+  assert.ok(worktree.args.includes('safe.directory=/abs/wt'));
+  assert.ok(repo.args.includes('core.hooksPath=/abs/repo/.git/hooks-disabled'));
+});
+
+test('resolveGitDir returns the absolute git dir of the directory it is given', async (t) => {
+  const repo = await initRepo(t);
+  const gitDir = await resolveGitDir(repo);
+  assert.equal(gitDir.endsWith('/.git'), true);
+  const { stdout } = await gitExec(repo, ['rev-parse', '--absolute-git-dir']);
+  assert.equal(gitDir, stdout.trim());
+});
+
+test('resolveGitDir reports the directory that could not be resolved', async (t) => {
+  const plain = await scratchDir(t);
+  await assert.rejects(
+    () => resolveGitDir(plain),
+    (error) => error.message.startsWith('resolveGitDir:') && error.message.includes(plain),
+  );
+});
+
+test('resolveGitDir reports a directory git cannot even be run in', async (t) => {
+  const plain = await scratchDir(t);
+  await assert.rejects(
+    () => resolveGitDir(join(plain, 'missing')),
+    (error) => error.message.startsWith('resolveGitDir:') && error.message.includes('missing'),
+  );
+});
+
+test('scopedExec prefixes the scope arguments ahead of the subcommand', async (t) => {
+  const repo = await initRepo(t);
+  const scope = isolatedScope(repo, await resolveGitDir(repo));
+  const { code, stdout } = await scopedExec(scope, ['config', '--get', 'core.hooksPath'], { check: false });
+  assert.equal(code, 0);
+  assert.equal(stdout.trim(), join(scope.gitDir, 'hooks-disabled'));
+});
+
+test('scopedExec rejects a malformed scope', async () => {
+  await assert.rejects(() => scopedExec(null, ['status']), /scope must carry/);
+  await assert.rejects(() => scopedExec(hostScope('/abs'), 'status'), /args must be an array/);
+});

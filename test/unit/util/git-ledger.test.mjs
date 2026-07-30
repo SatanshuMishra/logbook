@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gitExec } from '../../../src/util/git-exec.mjs';
+import { hostScope } from '../../../src/util/git-scope.mjs';
 import {
   EMPTY_TREE_SHA,
   LEDGER_ROOT_MESSAGE,
@@ -77,15 +78,15 @@ test('fetchRefspecFor maps each backend', () => {
 test('mintLedgerRoot is deterministic across independent repos', async (t) => {
   const a = await initRepo(t);
   const b = await initRepo(t);
-  const shaA = await mintLedgerRoot(a);
-  const shaB = await mintLedgerRoot(b);
+  const shaA = await mintLedgerRoot(hostScope(a));
+  const shaB = await mintLedgerRoot(hostScope(b));
   assert.equal(shaA, shaB);
   assert.equal(shaA, DETERMINISTIC_ROOT_SHA);
 });
 
 test('mintLedgerRoot writes the fixed identity, dates, tree and message', async (t) => {
   const dir = await initRepo(t);
-  const sha = await mintLedgerRoot(dir);
+  const sha = await mintLedgerRoot(hostScope(dir));
   const { stdout } = await gitExec(dir, ['cat-file', 'commit', sha]);
   assert.match(stdout, /^tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904$/m);
   assert.match(stdout, /^author Continuity Ledger <ledger@continuity\.invalid> 1577836800 \+0000$/m);

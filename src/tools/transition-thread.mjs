@@ -44,8 +44,8 @@ async function handler(ctx, args) {
     await clearActiveThread(ctx);
   }
   await driver.appendSessionEvent(candidate.id, nowIso, 'ledger', `Transition ${thread.status} -> ${to}`);
-  await commitAndReindex(driver, `chore(ledger): transition ${candidate.slug} ${thread.status} -> ${to}`);
-  return { thread: candidate };
+  const { recovery_degraded } = await commitAndReindex(driver, `chore(ledger): transition ${candidate.slug} ${thread.status} -> ${to}`);
+  return { thread: candidate, recovery_degraded };
 }
 
 export default {

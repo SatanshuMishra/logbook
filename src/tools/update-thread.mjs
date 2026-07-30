@@ -36,8 +36,8 @@ async function handler(ctx, args) {
     : thread.completion_criteria;
   const updated = { ...thread, spine, completion_criteria: completionCriteria, updated_at: now() };
   await driver.writeThread(updated);
-  await commitAndReindex(driver, `chore(ledger): update ${updated.slug}`);
-  return { thread: updated };
+  const { recovery_degraded } = await commitAndReindex(driver, `chore(ledger): update ${updated.slug}`);
+  return { thread: updated, recovery_degraded };
 }
 
 export default {

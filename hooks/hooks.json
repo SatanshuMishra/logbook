@@ -2,7 +2,7 @@
   "hooks": {
     "SessionStart":     [{ "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs\"", "timeout": 30 }] }],
     "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/user-prompt-submit.mjs\"", "timeout": 15 }] }],
-    "PreToolUse":       [{ "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|mcp__ledger__.*", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.mjs\"", "timeout": 10 }] }],
+    "PreToolUse":       [{ "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|mcp__(plugin_session-continuity_)?ledger__.*", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.mjs\"", "timeout": 10 }] }],
     "PostToolUse":      [{ "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/post-tool-use.mjs\"", "timeout": 15 }] }],
     "Stop":             [{ "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/stop.mjs\"", "timeout": 15 }] }],
     "PreCompact":       [{ "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-compact.mjs\"", "timeout": 10 }] }]

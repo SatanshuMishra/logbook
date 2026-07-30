@@ -45,6 +45,112 @@ export async function initGitRepoWithRemote(t) {
   return { repo, remote };
 }
 
+const TRAP_HOOKS = Object.freeze([
+  'post-commit',
+  'post-checkout',
+  'post-merge',
+  'post-index-change',
+  'pre-commit',
+  'commit-msg',
+  'pre-push',
+  'reference-transaction',
+]);
+
+function applyEnv(values) {
+  for (const [key, value] of Object.entries(values)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
+
+export async function withGitEnv(overrides, fn) {
+  const saved = {};
+  for (const key of Object.keys(overrides)) {
+    saved[key] = process.env[key];
+  }
+  applyEnv(overrides);
+  try {
+    return await fn();
+  } finally {
+    applyEnv(saved);
+  }
+}
+
+export async function hostileGitEnvironment(t) {
+  const dir = await makeTempDir(t, 'git-driver-hostile-');
+  const hooksDir = join(dir, 'hooks');
+  const marker = join(dir, 'fired');
+  await mkdir(hooksDir, { recursive: true });
+  for (const hook of TRAP_HOOKS) {
+    await writeFile(join(hooksDir, hook), `#!/bin/sh\necho ${hook} >> ${marker}\n`, { mode: 0o755 });
+  }
+  const serverHooks = join(dir, 'server-hooks');
+  await mkdir(serverHooks, { recursive: true });
+  const excludes = join(dir, 'excludes');
+  await writeFile(excludes, '*.json\nsessions/\n');
+  const globalConfig = join(dir, 'gitconfig-global');
+  await writeFile(
+    globalConfig,
+    `[core]\n\thooksPath = ${hooksDir}\n\tfsmonitor = ${join(hooksDir, 'post-commit')}\n\texcludesFile = ${excludes}\n`,
+  );
+  const systemConfig = join(dir, 'gitconfig-system');
+  await writeFile(systemConfig, `[core]\n\thooksPath = ${hooksDir}\n`);
+  const gpgProgram = join(dir, 'gpg-refuses');
+  await writeFile(gpgProgram, '#!/bin/sh\necho "gpg: signing failed: refused" >&2\nexit 1\n', { mode: 0o755 });
+  const signingConfig = join(dir, 'gitconfig-signing');
+  await writeFile(
+    signingConfig,
+    `[commit]\n\tgpgsign = true\n[tag]\n\tgpgsign = true\n[gpg]\n\tprogram = ${gpgProgram}\n`,
+  );
+  const emptyConfig = join(dir, 'gitconfig-empty');
+  await writeFile(emptyConfig, '');
+  const extHelper = join(dir, 'ext-helper');
+  await writeFile(extHelper, `#!/bin/sh\necho ext-transport >> ${marker}\n`, { mode: 0o755 });
+  return {
+    dir,
+    hookNames: TRAP_HOOKS,
+    hooksDir,
+    serverHooks,
+    marker,
+    excludes,
+    globalConfig,
+    systemConfig,
+    signingConfig,
+    gpgProgram,
+    emptyConfig,
+    extHelper,
+  };
+}
+
+export function extTransportCountEnv(trap, remoteUrl) {
+  return {
+    GIT_CONFIG_COUNT: '2',
+    GIT_CONFIG_KEY_0: `url.ext::${trap.extHelper}.insteadOf`,
+    GIT_CONFIG_VALUE_0: remoteUrl,
+    GIT_CONFIG_KEY_1: 'protocol.ext.allow',
+    GIT_CONFIG_VALUE_1: 'always',
+  };
+}
+
+export function extTransportParametersEnv(trap, remoteUrl) {
+  return {
+    GIT_CONFIG_PARAMETERS:
+      `'url.ext::${trap.extHelper}.insteadOf'='${remoteUrl}' 'protocol.ext.allow'='always'`,
+  };
+}
+
+export function hostileConfigEnv(trap) {
+  return {
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'core.hooksPath',
+    GIT_CONFIG_VALUE_0: trap.hooksDir,
+    GIT_CONFIG_PARAMETERS: `'core.hooksPath'='${trap.hooksDir}'`,
+    GIT_CONFIG_GLOBAL: trap.globalConfig,
+    GIT_CONFIG_SYSTEM: trap.systemConfig,
+    GIT_TEMPLATE_DIR: trap.dir,
+  };
+}
+
 export async function makeGitDriver(t, repo, overrides = {}) {
   const worktreeParent = await makeTempDir(t, 'git-driver-wt-');
   return new GitRefDriver({

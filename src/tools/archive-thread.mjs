@@ -27,8 +27,8 @@ async function handler(ctx, args) {
     await clearActiveThread(ctx);
   }
   await driver.appendSessionEvent(updated.id, nowIso, 'ledger', `Archived (${thread.status} -> abandoned): ${args.reason}`);
-  await commitAndReindex(driver, `chore(ledger): archive ${updated.slug}`);
-  return { thread: updated };
+  const { recovery_degraded } = await commitAndReindex(driver, `chore(ledger): archive ${updated.slug}`);
+  return { thread: updated, recovery_degraded };
 }
 
 export default {

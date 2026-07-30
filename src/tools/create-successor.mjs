@@ -20,8 +20,8 @@ async function handler(ctx, args) {
   }, { now });
   await driver.writeThread(thread);
   await writeActiveThread(ctx, thread.id);
-  await commitAndReindex(driver, `feat(ledger): successor of ${predecessor.slug}`);
-  return { thread };
+  const { recovery_degraded } = await commitAndReindex(driver, `feat(ledger): successor of ${predecessor.slug}`);
+  return { thread, recovery_degraded };
 }
 
 export default {
