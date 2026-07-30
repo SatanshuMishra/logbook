@@ -1,4 +1,4 @@
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { mkdir, copyFile, chmod, readFile, realpath, writeFile } from 'node:fs/promises';
 import { gitExec } from '../../src/util/git-exec.mjs';
 import { clearedGitLocationEnv, isolatedGitConfigEnv } from '../../src/util/git-env.mjs';
@@ -93,9 +93,61 @@ export async function hasManagedDispatcherContent(dir) {
   }
 }
 
+export const PRIOR_HOOKS_PATH_KEY = 'continuity.priorHooksPath';
+export const CAPTURED_PRIOR_HOOKS_PATH_KEY = 'continuity.priorHooksPathCaptured';
+export const CORRUPT_PRIOR_HOOKS_PATH_KEY = 'continuity.priorHooksPathCorrupt';
+
+export const PRIOR_HOOKS_PATH_HEAL = Object.freeze({
+  notNeeded: 'not-needed',
+  healed: 'healed',
+  unrecoverable: 'unrecoverable',
+  failed: 'failed',
+});
+
+function trimTrailingNewline(value) {
+  return String(value ?? '').replace(/\r?\n$/, '');
+}
+
 async function readConfig(repoDir, key) {
   const { code, stdout } = await repoExec(repoDir, ['config', '--local', '--get', key], { check: false });
-  return code === 0 ? stdout.replace(/\r?\n$/, '') : null;
+  return code === 0 ? trimTrailingNewline(stdout) : null;
+}
+
+async function priorHooksPathOriginScope(repoDir, origin) {
+  if (typeof origin !== 'string' || origin.length === 0) {
+    return null;
+  }
+  const originFile = resolve(repoDir, origin.replace(/^file:/, ''));
+  const { code, stdout } = await repoExec(repoDir, ['rev-parse', '--absolute-git-dir'], { check: false });
+  if (code !== 0) {
+    return 'inherited';
+  }
+  const gitDir = trimTrailingNewline(stdout);
+  if (originFile === join(gitDir, 'config.worktree')) {
+    return 'worktree';
+  }
+  if (originFile === join(gitDir, 'config')) {
+    return 'local';
+  }
+  return 'inherited';
+}
+
+async function readEffectivePriorHooksPath(repoDir) {
+  const all = await persistentScopeExec(repoDir, ['config', '--get-all', PRIOR_HOOKS_PATH_KEY]);
+  if (all.code !== 0) {
+    return { value: null, count: 0, scope: null };
+  }
+  const values = trimTrailingNewline(all.stdout).split('\n');
+  const shown = await persistentScopeExec(
+    repoDir,
+    ['config', '--show-origin', '--get', PRIOR_HOOKS_PATH_KEY],
+  );
+  const origin = shown.code === 0 ? trimTrailingNewline(shown.stdout).split('\t')[0] : null;
+  return {
+    value: values[values.length - 1],
+    count: values.length,
+    scope: await priorHooksPathOriginScope(repoDir, origin),
+  };
 }
 
 async function readInheritedHooksPath(repoDir) {
@@ -151,24 +203,125 @@ async function looksLikeManagedHooksDir(candidateDir, managedDir) {
   return hasManagedDispatcherContent(candidateDir);
 }
 
-async function healPriorHooksPath(repoDir, managedDir) {
-  const stored = await readConfig(repoDir, 'continuity.priorHooksPath');
-  if (stored === null || stored.length === 0) {
-    return '';
+async function physicalPath(candidate) {
+  const direct = await realHooksDir(candidate);
+  if (direct !== null) {
+    return direct;
   }
-  if (!(await isManagedHooksDirIdentity(resolve(repoDir, stored), managedDir))) {
-    return stored;
+  const parent = await realHooksDir(dirname(candidate));
+  return parent === null ? resolve(candidate) : join(parent, basename(candidate));
+}
+
+async function isInsideWorkTree(repoDir, candidate) {
+  const { code, stdout } = await repoExec(repoDir, ['rev-parse', '--show-toplevel'], { check: false });
+  const top = trimTrailingNewline(stdout);
+  if (code !== 0 || top.length === 0) {
+    return false;
+  }
+  const rel = relative(await physicalPath(top), await physicalPath(candidate));
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+async function priorHooksPathIsCorrupt(repoDir, managedDir, effective) {
+  if (effective.count > 1) {
+    return true;
+  }
+  if (effective.value === null || effective.value.length === 0) {
+    return false;
+  }
+  return isManagedHooksDirIdentity(resolve(repoDir, effective.value), managedDir);
+}
+
+async function recoverPriorHooksPath(repoDir, managedDir) {
+  const captured = await readConfig(repoDir, CAPTURED_PRIOR_HOOKS_PATH_KEY);
+  if (captured !== null && captured.length === 0) {
+    return { value: '', recovered: true };
+  }
+  if (captured !== null && !(await isManagedHooksDirIdentity(resolve(repoDir, captured), managedDir))) {
+    return { value: resolve(repoDir, captured), recovered: true };
   }
   const inherited = await readInheritedHooksPath(repoDir);
-  const inheritedIsManaged = inherited !== null
-    && await isManagedHooksDirIdentity(resolve(repoDir, inherited), managedDir);
-  const healed = (inherited !== null && !inheritedIsManaged) ? inherited : '';
-  const { code } = await repoExec(
+  if (inherited === null) {
+    return { value: '', recovered: false };
+  }
+  const absolute = resolve(repoDir, inherited);
+  const unusable = await isManagedHooksDirIdentity(absolute, managedDir)
+    || await isInsideWorkTree(repoDir, absolute);
+  return unusable ? { value: '', recovered: false } : { value: absolute, recovered: true };
+}
+
+async function worktreeConfigEnabled(repoDir) {
+  const { code, stdout } = await repoExec(
     repoDir,
-    ['config', '--local', 'continuity.priorHooksPath', healed],
+    ['config', '--local', '--get', 'extensions.worktreeConfig'],
     { check: false },
   );
-  return code === 0 ? healed : stored;
+  return code === 0 && trimTrailingNewline(stdout) === 'true';
+}
+
+async function clearWorktreeScopePriorHooksPath(repoDir) {
+  if (!(await worktreeConfigEnabled(repoDir))) {
+    return;
+  }
+  const { code } = await repoExec(
+    repoDir,
+    ['config', '--worktree', '--get', PRIOR_HOOKS_PATH_KEY],
+    { check: false },
+  );
+  if (code !== 0) {
+    return;
+  }
+  await repoExec(
+    repoDir,
+    ['config', '--worktree', '--unset-all', PRIOR_HOOKS_PATH_KEY],
+    { check: false },
+  );
+}
+
+function healOutcome(corruptValue, scope, priorHooksPath, priorHooksPathHeal) {
+  return {
+    priorHooksPath,
+    priorHooksPathHeal,
+    corruptPriorHooksPath: corruptValue,
+    corruptPriorHooksPathScope: scope,
+  };
+}
+
+async function writeHealedPriorHooksPath(repoDir, effective, recovered) {
+  const corruptValue = effective.value ?? '';
+  const scope = effective.scope;
+  await repoExec(
+    repoDir,
+    ['config', '--local', '--replace-all', CORRUPT_PRIOR_HOOKS_PATH_KEY, corruptValue],
+    { check: false },
+  );
+  const { code } = await repoExec(
+    repoDir,
+    ['config', '--local', '--replace-all', PRIOR_HOOKS_PATH_KEY, recovered.value],
+    { check: false },
+  );
+  if (code !== 0) {
+    return healOutcome(corruptValue, scope, corruptValue, PRIOR_HOOKS_PATH_HEAL.failed);
+  }
+  await clearWorktreeScopePriorHooksPath(repoDir);
+  if (!recovered.recovered) {
+    return healOutcome(corruptValue, scope, '', PRIOR_HOOKS_PATH_HEAL.unrecoverable);
+  }
+  await repoExec(
+    repoDir,
+    ['config', '--local', '--unset-all', CORRUPT_PRIOR_HOOKS_PATH_KEY],
+    { check: false },
+  );
+  return healOutcome(corruptValue, scope, recovered.value, PRIOR_HOOKS_PATH_HEAL.healed);
+}
+
+async function healPriorHooksPath(repoDir, managedDir) {
+  const effective = await readEffectivePriorHooksPath(repoDir);
+  if (!(await priorHooksPathIsCorrupt(repoDir, managedDir, effective))) {
+    return healOutcome(null, null, effective.value ?? '', PRIOR_HOOKS_PATH_HEAL.notNeeded);
+  }
+  const recovered = await recoverPriorHooksPath(repoDir, managedDir);
+  return writeHealedPriorHooksPath(repoDir, effective, recovered);
 }
 
 async function writeManagedSentinel(managedDir) {
@@ -187,6 +340,16 @@ async function copyManagedHooks(managedDir, dispatcherSource, sourceHook) {
   await copyFile(sourceHook, commitMsgDest);
   await chmod(commitMsgDest, 0o755);
   await writeManagedSentinel(managedDir);
+}
+
+async function capturePriorHooksPath(repoDir, current) {
+  await repoExec(repoDir, ['config', '--local', '--replace-all', PRIOR_HOOKS_PATH_KEY, current]);
+  const captured = current.length === 0 ? '' : resolve(repoDir, current);
+  await repoExec(
+    repoDir,
+    ['config', '--local', '--replace-all', CAPTURED_PRIOR_HOOKS_PATH_KEY, captured],
+    { check: false },
+  );
 }
 
 async function applyTrailerConfig(repoDir, disableTrailer) {
@@ -220,16 +383,16 @@ export async function installCommitMsgHook({ repoDir, managedDir, sourceHook, di
 
   if (!alreadyInstalled) {
     if (!(await looksLikeManagedHooksDir(currentDir, managedDir))) {
-      await repoExec(repoDir, ['config', '--local', 'continuity.priorHooksPath', current ?? '']);
+      await capturePriorHooksPath(repoDir, current ?? '');
     }
     await repoExec(repoDir, ['config', '--local', 'core.hooksPath', managedDir]);
   }
 
   await applyTrailerConfig(repoDir, disableTrailer);
 
-  const priorHooksPath = await healPriorHooksPath(repoDir, managedDir);
+  const heal = await healPriorHooksPath(repoDir, managedDir);
 
-  return { installed: true, alreadyInstalled, managedDir, priorHooksPath };
+  return { installed: true, alreadyInstalled, managedDir, ...heal };
 }
 
 export async function uninstallCommitMsgHook({ repoDir, managedDir } = {}) {
@@ -245,7 +408,7 @@ export async function uninstallCommitMsgHook({ repoDir, managedDir } = {}) {
     return { removed: false };
   }
 
-  const prior = await readConfig(repoDir, 'continuity.priorHooksPath');
+  const prior = await readConfig(repoDir, PRIOR_HOOKS_PATH_KEY);
   const inherited = await readInheritedHooksPath(repoDir);
   const restored = (prior && prior.length > 0 && !samePath(prior, inherited)) ? prior : null;
 
@@ -254,7 +417,9 @@ export async function uninstallCommitMsgHook({ repoDir, managedDir } = {}) {
   } else {
     await repoExec(repoDir, ['config', '--local', '--unset', 'core.hooksPath'], { check: false });
   }
-  await repoExec(repoDir, ['config', '--local', '--unset', 'continuity.priorHooksPath'], { check: false });
+  for (const key of [PRIOR_HOOKS_PATH_KEY, CAPTURED_PRIOR_HOOKS_PATH_KEY, CORRUPT_PRIOR_HOOKS_PATH_KEY]) {
+    await repoExec(repoDir, ['config', '--local', '--unset-all', key], { check: false });
+  }
 
   return { removed: true, restoredHooksPath: restored };
 }

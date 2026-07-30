@@ -87,6 +87,8 @@ test('install heals a latched managed dir in continuity.priorHooksPath and the i
   assert.equal(await readFile(sentinel, 'utf8'), 'ran');
 
   assert.equal(res.priorHooksPath, '');
+  assert.equal(res.priorHooksPathHeal, 'unrecoverable');
+  assert.equal(res.corruptPriorHooksPath, managed);
   assert.equal(await config(repo, 'continuity.priorHooksPath'), '');
 });
 

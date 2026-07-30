@@ -81,6 +81,9 @@ test('installCommitMsgHook fresh install repoints hooksPath, records empty prior
     alreadyInstalled: false,
     managedDir: managed,
     priorHooksPath: '',
+    priorHooksPathHeal: 'not-needed',
+    corruptPriorHooksPath: null,
+    corruptPriorHooksPathScope: null,
   });
   assert.equal(resolve(await config(repo, 'core.hooksPath')), resolve(managed));
   assert.equal(await config(repo, 'continuity.priorHooksPath'), '');
