@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, mkdir, writeFile, chmod, access } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, chmod, access, symlink } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
@@ -77,7 +77,27 @@ function install(repo, managed, env) {
   );
 }
 
-test('a corrupt prior does not report once per hook invocation across a whole commit', async (t) => {
+async function captureSessionStartStderr(t, projectDir, dataRoot) {
+  const written = [];
+  const original = process.stderr.write;
+  process.stderr.write = (chunk) => { written.push(String(chunk)); return true; };
+  t.after(() => { process.stderr.write = original; });
+  try {
+    await handleSessionStart({
+      input: {},
+      env: { CLAUDE_PLUGIN_DATA: dataRoot, CLAUDE_PLUGIN_ROOT: REPO_ROOT },
+      projectDir,
+      pluginRoot: REPO_ROOT,
+      invokeCli: async () => ({ code: 0, stdout: '{}', stderr: '' }),
+      invokeCliJson: async () => [],
+    });
+  } finally {
+    process.stderr.write = original;
+  }
+  return written.join('').trimEnd().split('\n').filter((line) => line.length > 0);
+}
+
+test('a corrupt prior reports every gating hook and no non-gating hook across a whole commit', async (t) => {
   const repo = await initRepo(t);
   const env = await scopes(t, null);
   const managed = join(repo, 'data', 'main-key', 'githooks');
@@ -88,9 +108,9 @@ test('a corrupt prior does not report once per hook invocation across a whole co
 
   assert.equal(commit.code, 0, commit.stderr);
   const reported = commit.stderr.split('\n').filter((l) => l.startsWith('continuity:'));
-  assert.equal(reported.some((l) => l.includes('reference-transaction')), false, commit.stderr);
   assert.equal(reported.some((l) => l.includes('post-index-change')), false, commit.stderr);
-  assert.ok(reported.length <= 4, `hook chain reported ${reported.length} times: ${commit.stderr}`);
+  assert.equal(reported.some((l) => l.includes('reference-transaction')), true, commit.stderr);
+  assert.ok(reported.length <= 8, `hook chain reported ${reported.length} times: ${commit.stderr}`);
 });
 
 test('an unrecoverable corrupt prior reports the state instead of claiming success', async (t) => {
@@ -129,7 +149,7 @@ test('a repo-local prior captured by an earlier install is restored and the gate
   assert.equal(await exists(sentinel), true, 'the repo-local gate never ran after the heal');
 });
 
-test('a multi-valued prior key is detected as corrupt and collapsed to a single value', async (t) => {
+test('a multi-valued prior key collapses to one value and the surviving gate still runs', async (t) => {
   const repo = await initRepo(t);
   const env = await scopes(t, null);
   const managed = join(repo, 'data', 'main-key', 'githooks');
@@ -143,11 +163,97 @@ test('a multi-valued prior key is detected as corrupt and collapsed to a single 
   const res = await install(repo, managed, env);
 
   assert.notEqual(res.priorHooksPathHeal, 'failed');
+  assert.equal(res.priorHooksPath, priorDir);
   const all = await gitExec(repo, ['config', '--local', '--get-all', 'continuity.priorHooksPath'], { check: false });
   assert.equal(all.stdout.trimEnd().split('\n').length, 1, `key is still multi-valued: ${all.stdout}`);
 
   const commit = await commitOnce(repo, env, 'seed.txt');
   assert.equal(commit.code, 0, commit.stderr);
+  assert.equal(await exists(sentinel), true, 'the surviving prior gate never ran');
+});
+
+test('a multi-valued core.hooksPath is replaced instead of failing the whole install', async (t) => {
+  const repo = await initRepo(t);
+  const env = await scopes(t, null);
+  const managed = join(repo, 'data', 'main-key', 'githooks');
+  await gitExec(repo, ['config', '--local', '--add', 'core.hooksPath', join(repo, 'first-hooks')]);
+  await gitExec(repo, ['config', '--local', '--add', 'core.hooksPath', join(repo, 'second-hooks')]);
+
+  const res = await install(repo, managed, env);
+
+  assert.equal(res.installed, true);
+  const all = await gitExec(repo, ['config', '--local', '--get-all', 'core.hooksPath'], { check: false });
+  assert.equal(all.stdout.trimEnd().split('\n').length, 1, `core.hooksPath is still multi-valued: ${all.stdout}`);
+  assert.equal(resolve(all.stdout.trimEnd()), resolve(managed));
+});
+
+test('SessionStart reports an install that threw instead of swallowing it', async (t) => {
+  const projectDir = await initRepo(t);
+  const dataRoot = await tempDir(t, 'prior-report-data-');
+  await gitExec(projectDir, ['config', '--local', 'core.hooksPath', join(projectDir, '.githooks')]);
+  const lockFile = join(projectDir, '.git', 'config.lock');
+  await writeFile(lockFile, '');
+  t.after(() => rm(lockFile, { force: true }));
+
+  const lines = await captureSessionStartStderr(t, projectDir, dataRoot);
+
+  assert.equal(lines.length, 1, `expected one report line, got: ${JSON.stringify(lines)}`);
+  assert.match(lines[0], /did not complete/);
+  assert.equal(lines[0].includes(projectDir), false, `the report leaked the project path: ${lines[0]}`);
+});
+
+test('SessionStart reports a capture it declined so the drop is never silent', async (t) => {
+  const projectDir = await initRepo(t);
+  const dataRoot = await tempDir(t, 'prior-report-data-');
+  const legacyManaged = join(dataRoot, 'legacy-key', 'githooks');
+  await mkdir(legacyManaged, { recursive: true });
+  await gitExec(projectDir, ['config', '--local', 'core.hooksPath', legacyManaged]);
+
+  const lines = await captureSessionStartStderr(t, projectDir, dataRoot);
+
+  assert.equal(lines.length, 1, `expected one report line, got: ${JSON.stringify(lines)}`);
+  assert.match(lines[0], /continuity\.priorHooksPathDeclined/);
+});
+
+test('an unrecovered corruption keeps reporting each session and clears once the user fixes it', async (t) => {
+  const repo = await initRepo(t);
+  const env = await scopes(t, null);
+  const managed = join(repo, 'data', 'main-key', 'githooks');
+  await gitExec(repo, ['config', '--local', 'core.hooksPath', managed]);
+  await gitExec(repo, ['config', '--local', 'continuity.priorHooksPath', managed]);
+
+  assert.equal((await install(repo, managed, env)).priorHooksPathHeal, 'unrecoverable');
+  assert.equal((await install(repo, managed, env)).priorHooksPathHeal, 'unrecovered');
+  assert.equal(await localConfig(repo, 'continuity.priorHooksPathCorrupt'), managed);
+
+  const priorDir = join(repo, 'user-hooks');
+  await writeMarkerHook(priorDir, 'pre-commit', join(repo, 'fixed-gate-ran'));
+  await gitExec(repo, ['config', '--local', 'continuity.priorHooksPath', priorDir]);
+
+  const res = await install(repo, managed, env);
+
+  assert.equal(res.priorHooksPathHeal, 'not-needed');
+  assert.equal(await localConfig(repo, 'continuity.priorHooksPathCorrupt'), null);
+});
+
+test('a corrupt prior in the local scope of a symlinked repo path is reported as local', async (t) => {
+  const parent = await tempDir(t, 'prior-report-symlink-');
+  const real = join(parent, 'real-repo');
+  const linked = join(parent, 'linked-repo');
+  await mkdir(real, { recursive: true });
+  await gitExec(real, ['init', '-q', '-b', 'main']);
+  await gitExec(real, ['config', '--local', 'user.name', 'Test User']);
+  await gitExec(real, ['config', '--local', 'user.email', 'test@example.com']);
+  await symlink(real, linked);
+  const env = await scopes(t, null);
+  const managed = join(parent, 'data', 'main-key', 'githooks');
+  await gitExec(linked, ['config', '--local', 'core.hooksPath', managed]);
+  await gitExec(linked, ['config', '--local', 'continuity.priorHooksPath', managed]);
+
+  const res = await install(linked, managed, env);
+
+  assert.equal(res.priorHooksPathHeal, 'unrecoverable');
+  assert.equal(res.corruptPriorHooksPathScope, 'local');
 });
 
 test('a failed heal write is reported rather than swallowed', async (t) => {
@@ -167,32 +273,19 @@ test('a failed heal write is reported rather than swallowed', async (t) => {
   assert.equal(res.corruptPriorHooksPath, managed);
 });
 
-test('SessionStart emits one stderr line when the heal could not repair the config', async (t) => {
+test('SessionStart emits one stderr line naming the real scope when the heal could not repair the config', async (t) => {
   const projectDir = await initRepo(t);
   const dataRoot = await tempDir(t, 'prior-report-data-');
   const managed = managedHooksDir(dataRoot, projectDir);
   await gitExec(projectDir, ['config', '--local', 'core.hooksPath', managed]);
   await gitExec(projectDir, ['config', '--local', 'continuity.priorHooksPath', managed]);
 
-  const written = [];
-  const original = process.stderr.write;
-  process.stderr.write = (chunk) => { written.push(String(chunk)); return true; };
-  t.after(() => { process.stderr.write = original; });
+  const lines = await captureSessionStartStderr(t, projectDir, dataRoot);
 
-  const ctx = {
-    input: {},
-    env: { CLAUDE_PLUGIN_DATA: dataRoot, CLAUDE_PLUGIN_ROOT: REPO_ROOT },
-    projectDir,
-    pluginRoot: REPO_ROOT,
-    invokeCli: async () => ({ code: 0, stdout: '{}', stderr: '' }),
-    invokeCliJson: async () => [],
-  };
-  await handleSessionStart(ctx);
-  process.stderr.write = original;
-
-  const lines = written.join('').trimEnd().split('\n').filter((l) => l.length > 0);
   assert.equal(lines.length, 1, `expected one report line, got: ${JSON.stringify(lines)}`);
   assert.match(lines[0], /continuity\.priorHooksPath/);
+  assert.match(lines[0], /in local scope/);
+  assert.equal(lines[0].includes('inherited'), false, `the local value was blamed on another scope: ${lines[0]}`);
 });
 
 test('a corrupt prior that only a global scope provides is neutralised for this repo', async (t) => {
