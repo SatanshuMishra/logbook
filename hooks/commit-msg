@@ -6,21 +6,37 @@ case "$common_dir" in
   /*) : ;;
   *) common_dir="$(pwd)/$common_dir" ;;
 esac
-managed_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+managed_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+continuity_label() {
+  label=$(printf '%s' "$1" | head -n 1 | LC_ALL=C tr -d '[:cntrl:]' | sed -e 's|/*$||' -e 's|.*/||' | cut -c1-64)
+  [ -n "$label" ] || label='unprintable'
+  printf '%s' "$label"
+}
+continuity_warn() {
+  printf 'continuity: %s\n' "$1" >&2
+}
 prior=$(git config --get continuity.priorHooksPath 2>/dev/null || true)
+prior_configured=0
 if [ -n "$prior" ]; then
+  prior_configured=1
   case "$prior" in
     /*) : ;;
     *) prior="$(pwd)/$prior" ;;
   esac
 else
+  corrupt=$(git config --get continuity.priorHooksPathCorrupt 2>/dev/null || true)
+  if [ -n "$corrupt" ]; then
+    continuity_warn "continuity.priorHooksPath was reset after corruption and the original could not be recovered, so no prior commit-msg hook runs - run: git config --get continuity.priorHooksPathCorrupt"
+  fi
   prior="$common_dir/hooks"
 fi
-prior_real=$(CDPATH= cd -- "$prior" 2>/dev/null && pwd || true)
-if [ -z "$prior_real" ] || [ "$prior_real" != "$managed_dir" ]; then
-  if [ -x "$prior/commit-msg" ]; then
-    "$prior/commit-msg" "$msg_file" || exit $?
-  fi
+prior_real=$(CDPATH= cd -- "$prior" 2>/dev/null && pwd -P || true)
+if [ -n "$prior_real" ] && [ "$prior_real" = "$managed_dir" ]; then
+  continuity_warn "continuity.priorHooksPath (.../$(continuity_label "$prior")) points at this managed hooks dir, so the prior commit-msg hook was skipped - run: git config --get continuity.priorHooksPath"
+elif [ -z "$prior_real" ] && [ "$prior_configured" -eq 1 ]; then
+  continuity_warn "continuity.priorHooksPath (.../$(continuity_label "$prior")) does not resolve to a directory, so no prior commit-msg hook ran - run: git config --get continuity.priorHooksPath"
+elif [ -x "$prior/commit-msg" ]; then
+  "$prior/commit-msg" "$msg_file" || exit $?
 fi
 if [ "$(git config --get continuity.trailer 2>/dev/null || true)" = "false" ]; then
   exit 0

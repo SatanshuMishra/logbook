@@ -1,45 +1,34 @@
 import { dirname, join, resolve } from 'node:path';
-import { mkdir, copyFile, chmod, readFile } from 'node:fs/promises';
-import { gitExec } from '../../src/util/git-exec.mjs';
-import { clearedGitLocationEnv, isolatedGitConfigEnv } from '../../src/util/git-env.mjs';
-import { projectKey } from '../../src/util/project-key.mjs';
+import { mkdir, copyFile, chmod } from 'node:fs/promises';
+import { STANDARD_HOOKS } from './hook-names.mjs';
+import { readConfig, repoExec } from './git-config-scope.mjs';
+import { writeManagedSentinel } from './managed-hooks-identity.mjs';
+import {
+  PRIOR_HOOKS_PATH_CAPTURE,
+  PRIOR_HOOKS_PATH_KEY,
+  PRIOR_HOOKS_PATH_KEYS,
+  capturePriorHooksPath,
+  healPriorHooksPath,
+  readInheritedHooksPath,
+} from './prior-hooks-path.mjs';
 
-function repoExec(repoDir, args, options = {}) {
-  return gitExec(repoDir, args, {
-    ...options,
-    env: { ...clearedGitLocationEnv(), ...isolatedGitConfigEnv() },
-  });
-}
-
-function persistentScopeExec(repoDir, args) {
-  return gitExec(repoDir, args, { check: false, env: clearedGitLocationEnv() });
-}
-
-const INHERITED_HOOKS_PATH_SCOPES = Object.freeze(['--global', '--system']);
-
-export const STANDARD_HOOKS = Object.freeze([
-  'applypatch-msg',
-  'pre-applypatch',
-  'post-applypatch',
-  'pre-commit',
-  'pre-merge-commit',
-  'prepare-commit-msg',
-  'post-commit',
-  'pre-rebase',
-  'post-checkout',
-  'post-merge',
-  'pre-push',
-  'post-rewrite',
-  'pre-auto-gc',
-  'push-to-checkout',
-  'post-index-change',
-  'sendemail-validate',
-  'reference-transaction',
-]);
-
-export function managedHooksDir(dataRoot, projectDir) {
-  return join(dataRoot, projectKey(projectDir), 'githooks');
-}
+export { STANDARD_HOOKS, CHAINABLE_HOOKS } from './hook-names.mjs';
+export {
+  MANAGED_HOOKS_DIRNAME,
+  MANAGED_SENTINEL_FILE,
+  isManagedHooksDir,
+  isManagedHooksDirIdentity,
+  managedHooksDir,
+  pluginDataRoot,
+} from './managed-hooks-identity.mjs';
+export {
+  CAPTURED_PRIOR_HOOKS_PATH_KEY,
+  CORRUPT_PRIOR_HOOKS_PATH_KEY,
+  DECLINED_PRIOR_HOOKS_PATH_KEY,
+  PRIOR_HOOKS_PATH_CAPTURE,
+  PRIOR_HOOKS_PATH_HEAL,
+  PRIOR_HOOKS_PATH_KEY,
+} from './prior-hooks-path.mjs';
 
 export function parseHooksPathSupport(versionOutput) {
   const match = /(\d+)\.(\d+)/.exec(String(versionOutput ?? ''));
@@ -56,44 +45,12 @@ export async function supportsHooksPath(repoDir) {
   return parseHooksPathSupport(stdout);
 }
 
-const MANAGED_DISPATCHER_MARKER = 'continuity.priorHooksPath';
-
-export async function isManagedHooksDir(dir) {
-  if (typeof dir !== 'string' || dir.length === 0) {
-    return false;
-  }
-  try {
-    const probe = await readFile(join(dir, 'pre-commit'), 'utf8');
-    return probe.includes(MANAGED_DISPATCHER_MARKER);
-  } catch {
-    return false;
-  }
-}
-
-async function readConfig(repoDir, key) {
-  const { code, stdout } = await repoExec(repoDir, ['config', '--local', '--get', key], { check: false });
-  return code === 0 ? stdout.replace(/\r?\n$/, '') : null;
-}
-
-async function readInheritedHooksPath(repoDir) {
-  for (const scope of INHERITED_HOOKS_PATH_SCOPES) {
-    const { code, stdout } = await persistentScopeExec(
-      repoDir,
-      ['config', scope, '--get', 'core.hooksPath'],
-    );
-    if (code !== 0) {
-      continue;
-    }
-    const value = stdout.replace(/\r?\n$/, '');
-    if (value.length > 0) {
-      return value;
-    }
-  }
-  return null;
-}
-
 function samePath(a, b) {
   return typeof a === 'string' && typeof b === 'string' && resolve(a) === resolve(b);
+}
+
+function setLocalConfig(repoDir, key, value) {
+  return repoExec(repoDir, ['config', '--local', '--replace-all', key, value]);
 }
 
 async function copyManagedHooks(managedDir, dispatcherSource, sourceHook) {
@@ -106,26 +63,27 @@ async function copyManagedHooks(managedDir, dispatcherSource, sourceHook) {
   const commitMsgDest = join(managedDir, 'commit-msg');
   await copyFile(sourceHook, commitMsgDest);
   await chmod(commitMsgDest, 0o755);
+  await writeManagedSentinel(managedDir);
 }
 
 async function applyTrailerConfig(repoDir, disableTrailer) {
   if (disableTrailer === true) {
-    await repoExec(repoDir, ['config', '--local', 'continuity.trailer', 'false']);
-  } else {
-    await repoExec(repoDir, ['config', '--local', '--unset', 'continuity.trailer'], { check: false });
+    await setLocalConfig(repoDir, 'continuity.trailer', 'false');
+    return;
+  }
+  await repoExec(repoDir, ['config', '--local', '--unset-all', 'continuity.trailer'], { check: false });
+}
+
+function requireString(name, field, value) {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`${name}: ${field} must be a non-empty string`);
   }
 }
 
 export async function installCommitMsgHook({ repoDir, managedDir, sourceHook, disableTrailer } = {}) {
-  if (typeof repoDir !== 'string' || repoDir.length === 0) {
-    throw new Error('installCommitMsgHook: repoDir must be a non-empty string');
-  }
-  if (typeof managedDir !== 'string' || managedDir.length === 0) {
-    throw new Error('installCommitMsgHook: managedDir must be a non-empty string');
-  }
-  if (typeof sourceHook !== 'string' || sourceHook.length === 0) {
-    throw new Error('installCommitMsgHook: sourceHook must be a non-empty string');
-  }
+  requireString('installCommitMsgHook', 'repoDir', repoDir);
+  requireString('installCommitMsgHook', 'managedDir', managedDir);
+  requireString('installCommitMsgHook', 'sourceHook', sourceHook);
   if (!(await supportsHooksPath(repoDir))) {
     return { installed: false, alreadyInstalled: false, reason: 'unsupported-git' };
   }
@@ -137,43 +95,41 @@ export async function installCommitMsgHook({ repoDir, managedDir, sourceHook, di
 
   await copyManagedHooks(managedDir, dispatcherSource, sourceHook);
 
+  const capture = alreadyInstalled
+    ? { priorHooksPathCapture: PRIOR_HOOKS_PATH_CAPTURE.retained, declinedHooksPath: null }
+    : await capturePriorHooksPath(repoDir, managedDir, current, currentDir);
   if (!alreadyInstalled) {
-    if (!(await isManagedHooksDir(currentDir))) {
-      await repoExec(repoDir, ['config', '--local', 'continuity.priorHooksPath', current ?? '']);
-    }
-    await repoExec(repoDir, ['config', '--local', 'core.hooksPath', managedDir]);
+    await setLocalConfig(repoDir, 'core.hooksPath', managedDir);
   }
 
   await applyTrailerConfig(repoDir, disableTrailer);
 
-  const priorHooksPath = (await readConfig(repoDir, 'continuity.priorHooksPath')) ?? '';
+  const heal = await healPriorHooksPath(repoDir, managedDir);
 
-  return { installed: true, alreadyInstalled, managedDir, priorHooksPath };
+  return { installed: true, alreadyInstalled, managedDir, ...capture, ...heal };
 }
 
 export async function uninstallCommitMsgHook({ repoDir, managedDir } = {}) {
-  if (typeof repoDir !== 'string' || repoDir.length === 0) {
-    throw new Error('uninstallCommitMsgHook: repoDir must be a non-empty string');
-  }
-  if (typeof managedDir !== 'string' || managedDir.length === 0) {
-    throw new Error('uninstallCommitMsgHook: managedDir must be a non-empty string');
-  }
+  requireString('uninstallCommitMsgHook', 'repoDir', repoDir);
+  requireString('uninstallCommitMsgHook', 'managedDir', managedDir);
 
   const current = await readConfig(repoDir, 'core.hooksPath');
   if (current === null || resolve(current) !== resolve(managedDir)) {
     return { removed: false };
   }
 
-  const prior = await readConfig(repoDir, 'continuity.priorHooksPath');
+  const prior = await readConfig(repoDir, PRIOR_HOOKS_PATH_KEY);
   const inherited = await readInheritedHooksPath(repoDir);
   const restored = (prior && prior.length > 0 && !samePath(prior, inherited)) ? prior : null;
 
   if (restored !== null) {
-    await repoExec(repoDir, ['config', '--local', 'core.hooksPath', restored]);
+    await setLocalConfig(repoDir, 'core.hooksPath', restored);
   } else {
-    await repoExec(repoDir, ['config', '--local', '--unset', 'core.hooksPath'], { check: false });
+    await repoExec(repoDir, ['config', '--local', '--unset-all', 'core.hooksPath'], { check: false });
   }
-  await repoExec(repoDir, ['config', '--local', '--unset', 'continuity.priorHooksPath'], { check: false });
+  for (const key of PRIOR_HOOKS_PATH_KEYS) {
+    await repoExec(repoDir, ['config', '--local', '--unset-all', key], { check: false });
+  }
 
   return { removed: true, restoredHooksPath: restored };
 }

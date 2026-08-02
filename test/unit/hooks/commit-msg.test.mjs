@@ -130,4 +130,51 @@ test('commit-msg chains to a prior commit-msg and still inserts the trailer', as
   assert.equal(r.status, 0);
   assert.equal(await readFile(marker, 'utf8'), 'ran');
   assert.match(await readFile(msg, 'utf8'), new RegExp(`^Thread-Id: ${ULID_A}$`, 'm'));
+  assert.equal(r.stderr, '');
+});
+
+test('commit-msg names the offending config key on stderr and still inserts the trailer', async (t) => {
+  const repo = await initRepo(t);
+  await writePointer(repo, ULID_A);
+  const managed = join(repo, 'managed');
+  const script = await stageCommitMsg(managed);
+  await gitExec(repo, ['config', 'continuity.priorHooksPath', managed]);
+  const msg = await writeMsg(repo, 'subject\n');
+  const r = run(script, repo, msg);
+  assert.equal(r.status, 0);
+  assert.equal(r.stderr.trimEnd().split('\n').length, 1);
+  assert.match(r.stderr, /continuity\.priorHooksPath/);
+  assert.match(r.stderr, /git config --get/);
+  assert.ok(r.stderr.includes('managed'), `stderr did not name the offending dir: ${r.stderr}`);
+  assert.equal(r.stderr.includes(repo), false, `stderr disclosed the project path: ${r.stderr}`);
+  assert.match(await readFile(msg, 'utf8'), new RegExp(`^Thread-Id: ${ULID_A}$`, 'm'));
+});
+
+test('commit-msg warns when the prior hooks path is set but resolves to nothing', async (t) => {
+  const repo = await initRepo(t);
+  await writePointer(repo, ULID_A);
+  const script = await stageCommitMsg(join(repo, 'managed'));
+  await gitExec(repo, ['config', 'continuity.priorHooksPath', join(repo, 'gone-hooks')]);
+  const msg = await writeMsg(repo, 'subject\n');
+  const r = run(script, repo, msg);
+  assert.equal(r.status, 0);
+  assert.equal(r.stderr.trimEnd().split('\n').length, 1);
+  assert.match(r.stderr, /continuity\.priorHooksPath/);
+  assert.match(r.stderr, /does not resolve/);
+  assert.match(await readFile(msg, 'utf8'), new RegExp(`^Thread-Id: ${ULID_A}$`, 'm'));
+});
+
+test('commit-msg surfaces the recorded corrupt value once the prior key has been reset', async (t) => {
+  const repo = await initRepo(t);
+  await writePointer(repo, ULID_A);
+  const managed = join(repo, 'managed');
+  const script = await stageCommitMsg(managed);
+  await gitExec(repo, ['config', 'continuity.priorHooksPath', '']);
+  await gitExec(repo, ['config', 'continuity.priorHooksPathCorrupt', managed]);
+  const msg = await writeMsg(repo, 'subject\n');
+  const r = run(script, repo, msg);
+  assert.equal(r.status, 0);
+  assert.equal(r.stderr.trimEnd().split('\n').length, 1);
+  assert.match(r.stderr, /continuity\.priorHooksPathCorrupt/);
+  assert.match(await readFile(msg, 'utf8'), new RegExp(`^Thread-Id: ${ULID_A}$`, 'm'));
 });
