@@ -1,6 +1,6 @@
-# Session Continuity Plugin
+# Logbook Plugin
 
-A Git-native, multi-user session-continuity plugin for Claude Code, built from a frozen design spec.
+A Git-native, multi-user session continuity plugin for Claude Code, built from a frozen design spec.
 
 ## Ledger protection: what guards it, what doesn't, and what's unverified
 

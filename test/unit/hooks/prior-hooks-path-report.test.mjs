@@ -107,7 +107,7 @@ test('a corrupt prior reports every gating hook and no non-gating hook across a 
   const commit = await commitOnce(repo, env, 'seed.txt');
 
   assert.equal(commit.code, 0, commit.stderr);
-  const reported = commit.stderr.split('\n').filter((l) => l.startsWith('continuity:'));
+  const reported = commit.stderr.split('\n').filter((l) => l.startsWith('logbook:'));
   assert.equal(reported.some((l) => l.includes('post-index-change')), false, commit.stderr);
   assert.equal(reported.some((l) => l.includes('reference-transaction')), true, commit.stderr);
   assert.ok(reported.length <= 8, `hook chain reported ${reported.length} times: ${commit.stderr}`);

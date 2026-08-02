@@ -18,7 +18,7 @@ import { tempDir, cleanup, useEnv, initGitRepo } from './fixtures.mjs';
 
 const PROJECT_DIR = '/proj';
 const ROOTS = ['/data/-proj/ledger'];
-const HOME_TAIL = join(sep, '.claude', 'session-continuity', projectKey(PROJECT_DIR));
+const HOME_TAIL = join(sep, '.claude', 'logbook', projectKey(PROJECT_DIR));
 const HOME_ROOTS = [join(homedir(), HOME_TAIL)];
 const HOME_BRACED = '${HOME}';
 const GIT_ROOTS = [join(PROJECT_DIR, '.git', 'ledger')];
@@ -73,8 +73,8 @@ test('classifyBashCommand asks about the expanded literal plugin data root', () 
 });
 
 test('classifyBashCommand asks about home-abbreviated spellings of the plugin data root', () => {
-  const tail = join(sep, '.claude', 'session-continuity');
-  const env = { CLAUDE_PLUGIN_DATA: join(homedir(), '.claude', 'session-continuity') };
+  const tail = join(sep, '.claude', 'logbook');
+  const env = { CLAUDE_PLUGIN_DATA: join(homedir(), '.claude', 'logbook') };
   assert.equal(classifyBashCommand(`rm -rf ~${tail}`, ROOTS, PROJECT_DIR, env), 'ask');
   assert.equal(classifyBashCommand(`rm -rf $HOME${tail}`, ROOTS, PROJECT_DIR, env), 'ask');
   assert.equal(classifyBashCommand(`rm -rf "${HOME_BRACED}${tail}"`, ROOTS, PROJECT_DIR, env), 'ask');
@@ -207,7 +207,7 @@ test('handlePreToolUse asks about a real Bash call carrying no command string', 
 });
 
 test('classifyBashCommand keeps the read-only noise corpus silent with the data root set', () => {
-  const dataRoot = join(homedir(), '.claude', 'plugins', 'data', 'session-continuity');
+  const dataRoot = join(homedir(), '.claude', 'plugins', 'data', 'logbook');
   const env = { CLAUDE_PLUGIN_DATA: dataRoot };
   const roots = [...GIT_ROOTS, ...HOME_ROOTS, join(dataRoot, projectKey(PROJECT_DIR))];
   const quiet = [
@@ -280,7 +280,7 @@ test('classifyPreToolUse reports the size reason for a multibyte oversized comma
   );
   assert.equal(d.hookSpecificOutput.permissionDecision, 'deny');
   assert.equal(
-    d.hookSpecificOutput.permissionDecisionReason.includes('larger than the session-continuity guard reads'),
+    d.hookSpecificOutput.permissionDecisionReason.includes('larger than the Logbook guard reads'),
     true,
   );
 });
@@ -298,7 +298,7 @@ test('classifyPreToolUse reports the size reason for an oversized command that n
   );
   assert.equal(d.hookSpecificOutput.permissionDecision, 'deny');
   const reason = d.hookSpecificOutput.permissionDecisionReason;
-  assert.equal(reason.includes('larger than the session-continuity guard reads'), true);
+  assert.equal(reason.includes('larger than the Logbook guard reads'), true);
 });
 
 test('classifyPreToolUse names the matched trigger and disclaims a security boundary', () => {
@@ -349,7 +349,7 @@ test('handlePreToolUse auto-approves any mcp__ledger__* tool', async () => {
 
 test('handlePreToolUse auto-approves the plugin-namespaced ledger tool', async () => {
   const ctx = {
-    input: { tool_name: 'mcp__plugin_session-continuity_ledger__open_thread' },
+    input: { tool_name: 'mcp__plugin_logbook_ledger__open_thread' },
     env: {},
     projectDir: '/proj',
   };
@@ -359,7 +359,7 @@ test('handlePreToolUse auto-approves the plugin-namespaced ledger tool', async (
 
 test('handlePreToolUse auto-approves every tool this server actually registers', async () => {
   for (const tool of TOOLS) {
-    for (const prefix of ['mcp__ledger__', 'mcp__plugin_session-continuity_ledger__']) {
+    for (const prefix of ['mcp__ledger__', 'mcp__plugin_logbook_ledger__']) {
       const ctx = { input: { tool_name: `${prefix}${tool.name}` }, env: {}, projectDir: PROJECT_DIR };
       const result = await handlePreToolUse(ctx);
       assert.equal(
@@ -375,7 +375,7 @@ test('handlePreToolUse does not auto-approve a foreign tool on a ledger-named se
   const foreign = [
     'mcp__ledger__drop_database',
     'mcp__ledger__exec',
-    'mcp__plugin_session-continuity_ledger__exec',
+    'mcp__plugin_logbook_ledger__exec',
     'mcp__ledger__',
     'mcp__ledger__open_thread_extra',
   ];

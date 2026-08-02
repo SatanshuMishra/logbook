@@ -21,8 +21,8 @@ export const REQUIRED_FILES = [
   'hooks/post-tool-use.mjs',
   'hooks/stop.mjs',
   'hooks/pre-compact.mjs',
-  'skills/ledgerize/SKILL.md',
-  'skills/lift-off/SKILL.md',
+  'skills/debrief/SKILL.md',
+  'skills/preflight/SKILL.md',
 ];
 
 export const EXECUTABLE_FILES = [
@@ -177,8 +177,8 @@ async function checkExecutableBits(root, problems) {
 async function checkMarketplace(root, problems) {
   const mkt = await readJsonFile(root, '.claude-plugin/marketplace.json', problems);
   if (!mkt) return;
-  if (mkt.name !== 'continuity-ledger') {
-    problems.push(`.claude-plugin/marketplace.json: name must be "continuity-ledger" (found ${JSON.stringify(mkt.name)})`);
+  if (mkt.name !== 'logbook') {
+    problems.push(`.claude-plugin/marketplace.json: name must be "logbook" (found ${JSON.stringify(mkt.name)})`);
   }
   if (!mkt.owner || typeof mkt.owner.name !== 'string' || mkt.owner.name.length === 0) {
     problems.push('.claude-plugin/marketplace.json: owner.name is required');
@@ -188,8 +188,8 @@ async function checkMarketplace(root, problems) {
     problems.push('.claude-plugin/marketplace.json: plugins[0] is missing');
     return;
   }
-  if (entry.name !== 'session-continuity') {
-    problems.push(`.claude-plugin/marketplace.json: plugins[0].name must be "session-continuity" (found ${JSON.stringify(entry.name)})`);
+  if (entry.name !== 'logbook') {
+    problems.push(`.claude-plugin/marketplace.json: plugins[0].name must be "logbook" (found ${JSON.stringify(entry.name)})`);
   }
   if (entry.source !== './') {
     problems.push(`.claude-plugin/marketplace.json: plugins[0].source must be "./" (found ${JSON.stringify(entry.source)})`);

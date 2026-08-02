@@ -14,11 +14,11 @@ async function writeFileEnsuringDir(path, content) {
 
 export async function writeValidEnsemble(root) {
   const files = {
-    '.claude-plugin/plugin.json': JSON.stringify({ name: 'session-continuity', version: '0.1.0' }),
+    '.claude-plugin/plugin.json': JSON.stringify({ name: 'logbook', version: '0.1.0' }),
     '.claude-plugin/marketplace.json': JSON.stringify({
-      name: 'continuity-ledger',
+      name: 'logbook',
       owner: { name: 'SatanshuMishra' },
-      plugins: [{ name: 'session-continuity', source: './' }],
+      plugins: [{ name: 'logbook', source: './' }],
     }),
     '.mcp.json': JSON.stringify({
       mcpServers: {
@@ -58,8 +58,8 @@ export async function writeValidEnsemble(root) {
     'hooks/post-tool-use.mjs': '',
     'hooks/stop.mjs': '',
     'hooks/pre-compact.mjs': '',
-    'skills/ledgerize/SKILL.md': '# ledgerize\n',
-    'skills/lift-off/SKILL.md': '# lift-off\n',
+    'skills/debrief/SKILL.md': '# debrief\n',
+    'skills/preflight/SKILL.md': '# preflight\n',
   };
   for (const [rel, content] of Object.entries(files)) {
     await writeFileEnsuringDir(join(root, rel), content);
@@ -392,9 +392,9 @@ test('every EXECUTABLE_FILES entry is individually enforced', async (t) => {
 
 function marketplace(overrides = {}) {
   return {
-    name: 'continuity-ledger',
+    name: 'logbook',
     owner: { name: 'SatanshuMishra' },
-    plugins: [{ name: 'session-continuity', source: './' }],
+    plugins: [{ name: 'logbook', source: './' }],
     ...overrides,
   };
 }
@@ -404,7 +404,7 @@ test('a wrong marketplace name is rejected', async (t) => {
   await rewriteJson(root, '.claude-plugin/marketplace.json', marketplace({ name: 'wrong-market' }));
   const { ok, problems } = await checkPackaging(root);
   assert.equal(ok, false);
-  assert.ok(problems.some((p) => p.includes('continuity-ledger')), problems.join('; '));
+  assert.ok(problems.some((p) => p.includes('logbook')), problems.join('; '));
 });
 
 test('a missing owner.name is rejected', async (t) => {
@@ -422,13 +422,13 @@ test('a wrong plugins[0].name is rejected', async (t) => {
   }));
   const { ok, problems } = await checkPackaging(root);
   assert.equal(ok, false);
-  assert.ok(problems.some((p) => p.includes('session-continuity')), problems.join('; '));
+  assert.ok(problems.some((p) => p.includes('logbook')), problems.join('; '));
 });
 
 test('a wrong plugins[0].source is rejected', async (t) => {
   const root = await freshEnsemble(t);
   await rewriteJson(root, '.claude-plugin/marketplace.json', marketplace({
-    plugins: [{ name: 'session-continuity', source: '../' }],
+    plugins: [{ name: 'logbook', source: '../' }],
   }));
   const { ok, problems } = await checkPackaging(root);
   assert.equal(ok, false);

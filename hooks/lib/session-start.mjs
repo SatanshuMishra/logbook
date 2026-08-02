@@ -28,15 +28,15 @@ async function selfHeal(ctx) {
 function healReportLine(result) {
   const scope = result.corruptPriorHooksPathScope ?? 'local';
   if (result.priorHooksPathHeal === PRIOR_HOOKS_PATH_HEAL.failed) {
-    return `continuity: ${PRIOR_HOOKS_PATH_KEY} is corrupt in ${scope} scope and could not be rewritten;`
+    return `logbook: ${PRIOR_HOOKS_PATH_KEY} is corrupt in ${scope} scope and could not be rewritten;`
       + ` the prior hook chain stays disabled - run: git config --get ${PRIOR_HOOKS_PATH_KEY}`;
   }
   if (result.priorHooksPathHeal === PRIOR_HOOKS_PATH_HEAL.unrecoverable) {
-    return `continuity: ${PRIOR_HOOKS_PATH_KEY} was corrupt in ${scope} scope and the original value could not`
+    return `logbook: ${PRIOR_HOOKS_PATH_KEY} was corrupt in ${scope} scope and the original value could not`
       + ` be recovered - run: git config --get ${CORRUPT_PRIOR_HOOKS_PATH_KEY}`;
   }
   if (result.priorHooksPathHeal === PRIOR_HOOKS_PATH_HEAL.unrecovered) {
-    return `continuity: ${PRIOR_HOOKS_PATH_KEY} is still empty after an unrecovered corruption in ${scope} scope;`
+    return `logbook: ${PRIOR_HOOKS_PATH_KEY} is still empty after an unrecovered corruption in ${scope} scope;`
       + ` set it to your hooks dir, or clear the record with:`
       + ` git config --local --unset-all ${CORRUPT_PRIOR_HOOKS_PATH_KEY}`;
   }
@@ -47,7 +47,7 @@ function captureReportLine(result) {
   if (result.priorHooksPathCapture !== PRIOR_HOOKS_PATH_CAPTURE.declined) {
     return null;
   }
-  return `continuity: core.hooksPath already pointed at a continuity-managed hooks dir, so it was not captured`
+  return `logbook: core.hooksPath already pointed at a continuity-managed hooks dir, so it was not captured`
     + ` as the prior hook chain - run: git config --get ${DECLINED_PRIOR_HOOKS_PATH_KEY}`;
 }
 
@@ -64,7 +64,7 @@ function sanitizeReason(error) {
 }
 
 function installFailureLine(error) {
-  return `continuity: the managed hooks install did not complete, so the prior hook chain may be unmanaged`
+  return `logbook: the managed hooks install did not complete, so the prior hook chain may be unmanaged`
     + ` - ${sanitizeReason(error)}`;
 }
 

@@ -21,7 +21,7 @@ continuity_label() {
 }
 continuity_warn() {
   continuity_gating_hook || return 0
-  printf 'continuity: %s\n' "$1" >&2
+  printf 'logbook: %s\n' "$1" >&2
 }
 prior=$(git config --get continuity.priorHooksPath 2>/dev/null || true)
 prior_configured=0
