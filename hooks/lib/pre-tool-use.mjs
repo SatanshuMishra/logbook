@@ -5,20 +5,20 @@ import { shellCwd } from './hook-io.mjs';
 import { DEFAULT_LEDGER_BRANCH } from '../../src/drivers/git-ledger.mjs';
 
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
-const LEDGER_TOOL = /^mcp__(?:plugin_session-continuity_)?ledger__(.+)$/;
+const LEDGER_TOOL = /^mcp__(?:plugin_logbook_)?ledger__(.+)$/;
 const TOOL_REGISTRY = '../../src/tools/registry.mjs';
 const MAX_COMMAND_BYTES = 16384;
 const CONSTANT_TRIGGERS = Object.freeze([DEFAULT_LEDGER_BRANCH, 'refs/ledger/', 'CLAUDE_PLUGIN_DATA']);
 const HOME_PREFIXES = Object.freeze(['~', '$HOME', '${HOME}']);
 const TRAILING_SEP = /[\\/]+$/;
 const DENY_SUFFIX =
-  'use the ledger MCP tools (mcp__ledger__* when the server is configured directly, mcp__plugin_session-continuity_ledger__* when installed as a plugin)';
+  'use the ledger MCP tools (mcp__ledger__* when the server is configured directly, mcp__plugin_logbook_ledger__* when installed as a plugin)';
 const GUARDRAIL_NOTE = 'this guard prompts for confirmation and is not a security boundary';
 const BASH_REASONS = Object.freeze({
-  deny: `this Bash command is larger than the session-continuity guard reads and names the ledger store; ${DENY_SUFFIX}`,
-  ask: `this Bash command is larger than the session-continuity guard reads; ${GUARDRAIL_NOTE}; to write the ledger store, ${DENY_SUFFIX}`,
+  deny: `this Bash command is larger than the Logbook guard reads and names the ledger store; ${DENY_SUFFIX}`,
+  ask: `this Bash command is larger than the Logbook guard reads; ${GUARDRAIL_NOTE}; to write the ledger store, ${DENY_SUFFIX}`,
 });
-const UNREADABLE_COMMAND_REASON = `the session-continuity guard could not read this Bash command as a string and refused to judge it; ${GUARDRAIL_NOTE}; to write the ledger store, ${DENY_SUFFIX}`;
+const UNREADABLE_COMMAND_REASON = `the Logbook guard could not read this Bash command as a string and refused to judge it; ${GUARDRAIL_NOTE}; to write the ledger store, ${DENY_SUFFIX}`;
 
 function decision(permissionDecision, reason) {
   return {
@@ -114,7 +114,7 @@ function bashReason(verdict, command, roots, projectDir, env) {
   const trigger = matchedTrigger(command, roots, projectDir, env);
   return trigger === null
     ? BASH_REASONS.ask
-    : `this Bash command contains "${trigger}", which names the session-continuity ledger store; ${GUARDRAIL_NOTE}; to write the store, ${DENY_SUFFIX}`;
+    : `this Bash command contains "${trigger}", which names the Logbook ledger store; ${GUARDRAIL_NOTE}; to write the store, ${DENY_SUFFIX}`;
 }
 
 function targetPath(input) {
@@ -127,7 +127,7 @@ export function classifyPreToolUse(input, roots, baseDir, projectDir, env = proc
   if (WRITE_TOOLS.has(toolName)) {
     const path = targetPath(input);
     if (path && isUnderRoot(path, roots, baseDir)) {
-      return decision('deny', `${toolName} into the session-continuity ledger store is not permitted; ${DENY_SUFFIX}`);
+      return decision('deny', `${toolName} into the Logbook ledger store is not permitted; ${DENY_SUFFIX}`);
     }
     return null;
   }
@@ -156,7 +156,7 @@ async function isRegisteredLedgerTool(toolName) {
 export async function handlePreToolUse(ctx) {
   const toolName = ctx.input && typeof ctx.input.tool_name === 'string' ? ctx.input.tool_name : '';
   if (await isRegisteredLedgerTool(toolName)) {
-    return { json: decision('allow', 'session-continuity ledger tool auto-approved') };
+    return { json: decision('allow', 'logbook ledger tool auto-approved') };
   }
   const roots = await resolveLedgerRoots(ctx.projectDir, ctx.env);
   if (roots.length === 0) {

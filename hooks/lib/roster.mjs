@@ -1,4 +1,4 @@
-const EMPTY = 'Session-continuity: no resumable threads.';
+const EMPTY = 'Logbook: no resumable threads.';
 
 export function formatRoster(roster) {
   if (!Array.isArray(roster) || roster.length === 0) {
@@ -12,5 +12,5 @@ export function formatRoster(roster) {
     const id = thread.id ?? '(no id)';
     return `- [${status}] ${slug}: ${title}${nextStep} (id ${id})`;
   });
-  return `Session-continuity resumable threads (${roster.length}):\n${lines.join('\n')}`;
+  return `Logbook resumable threads (${roster.length}):\n${lines.join('\n')}`;
 }

@@ -1,11 +1,11 @@
 {
-  "name": "continuity-ledger",
+  "name": "logbook",
   "owner": {
     "name": "SatanshuMishra"
   },
   "plugins": [
     {
-      "name": "session-continuity",
+      "name": "logbook",
       "source": "./"
     }
   ]

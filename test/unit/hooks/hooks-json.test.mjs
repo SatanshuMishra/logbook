@@ -35,7 +35,7 @@ test('the PreToolUse matcher reaches both ledger tool-name spellings', async () 
   const cfg = await loadHooksJson();
   const matcher = new RegExp(cfg.hooks.PreToolUse[0].matcher);
   assert.equal(matcher.test('mcp__ledger__open_thread'), true);
-  assert.equal(matcher.test('mcp__plugin_session-continuity_ledger__open_thread'), true);
+  assert.equal(matcher.test('mcp__plugin_logbook_ledger__open_thread'), true);
   for (const tool of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash']) {
     assert.equal(matcher.test(tool), true);
   }

@@ -92,7 +92,7 @@ test('a reference-transaction prior that cannot run is reported on the ref updat
   const moved = await gitExec(repo, ['branch', '-f', 'protected', 'main'], { check: false, env });
 
   assert.equal(moved.code, 0, moved.stderr);
-  const reported = moved.stderr.trimEnd().split('\n').filter((l) => l.startsWith('continuity:'));
+  const reported = moved.stderr.trimEnd().split('\n').filter((l) => l.startsWith('logbook:'));
   assert.equal(reported.length, 1, `expected one report, got: ${moved.stderr}`);
   assert.match(reported[0], /reference-transaction/);
 });
@@ -108,7 +108,7 @@ test('a dangling reference-transaction prior is reported rather than passing sil
   const moved = await gitExec(repo, ['branch', '-f', 'protected', 'main'], { check: false, env });
 
   assert.equal(moved.code, 0, moved.stderr);
-  const reported = moved.stderr.trimEnd().split('\n').filter((l) => l.startsWith('continuity:'));
+  const reported = moved.stderr.trimEnd().split('\n').filter((l) => l.startsWith('logbook:'));
   assert.equal(reported.length, 1, `expected one report, got: ${moved.stderr}`);
   assert.match(reported[0], /does not resolve/);
 });
@@ -124,5 +124,5 @@ test('an installed managed chain leaves an unrelated ref update silent', async (
   const moved = await gitExec(repo, ['branch', '-f', 'sidebranch', 'main'], { check: false, env });
 
   assert.equal(moved.code, 0, moved.stderr);
-  assert.equal(moved.stderr.includes('continuity:'), false, moved.stderr);
+  assert.equal(moved.stderr.includes('logbook:'), false, moved.stderr);
 });

@@ -1,9 +1,9 @@
 {
-  "name": "session-continuity",
+  "name": "logbook",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Git-native, multi-user, drift-aware session-continuity plugin for Claude Code.",
+  "description": "Git-native, multi-user, drift-aware logbook plugin for Claude Code.",
   "license": "MIT",
   "engines": { "node": ">=20" },
   "scripts": { "test": "node --test" },

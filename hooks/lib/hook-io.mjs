@@ -3,7 +3,7 @@ import { invokeCli, invokeCliJson } from './cli.mjs';
 const GUARDED_TOOLS = new Set(['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 const MAX_INPUT_BYTES = 32 * 1024 * 1024;
 const GUARD_FAILURE_REASON =
-  'the session-continuity guard could not evaluate this tool call and refused it; this is a guard failure, not a finding about the call itself';
+  'the Logbook guard could not evaluate this tool call and refused it; this is a guard failure, not a finding about the call itself';
 
 function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

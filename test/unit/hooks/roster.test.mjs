@@ -14,7 +14,7 @@ test('formatRoster renders a header and one bullet per thread', () => {
 });
 
 test('formatRoster degrades to a stable line for an empty or missing roster', () => {
-  const expected = 'Session-continuity: no resumable threads.';
+  const expected = 'Logbook: no resumable threads.';
   assert.equal(formatRoster([]), expected);
   assert.equal(formatRoster(null), expected);
   assert.equal(formatRoster(undefined), expected);

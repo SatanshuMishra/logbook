@@ -9,14 +9,14 @@ async function readManifest() {
 
 test('plugin.json parses and carries the exact metadata contract', async () => {
   const m = await readManifest();
-  assert.equal(m.name, 'session-continuity');
+  assert.equal(m.name, 'logbook');
   assert.match(m.version, /^\d+\.\d+\.\d+$/);
-  assert.equal(m.displayName, 'Session Continuity');
-  assert.equal(m.author.name, 'Session Continuity Plugin');
+  assert.equal(m.displayName, 'Logbook');
+  assert.equal(m.author.name, 'Logbook Plugin');
   assert.equal(m.license, 'MIT');
   assert.equal(typeof m.description, 'string');
   assert.ok(m.description.length > 0);
-  assert.deepEqual(m.keywords, ['session-continuity', 'ledger', 'mcp', 'handoff', 'resume', 'drift']);
+  assert.deepEqual(m.keywords, ['logbook', 'ledger', 'mcp', 'handoff', 'resume', 'drift']);
 });
 
 test('userConfig declares EXACTLY the three keys and never ledger_remote', async () => {

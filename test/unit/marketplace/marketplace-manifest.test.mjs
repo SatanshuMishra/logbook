@@ -18,9 +18,9 @@ function loadJson(path, label) {
   }
 }
 
-test('marketplace.json pins the continuity-ledger marketplace identity', () => {
+test('marketplace.json pins the logbook marketplace identity', () => {
   const manifest = loadJson(marketplacePath, 'marketplace.json');
-  assert.equal(manifest.name, 'continuity-ledger');
+  assert.equal(manifest.name, 'logbook');
   assert.equal(typeof manifest.owner, 'object');
   assert.notEqual(manifest.owner, null);
   assert.equal(manifest.owner.name, 'SatanshuMishra');
@@ -31,7 +31,7 @@ test('the single plugin entry points the marketplace root at the plugin root', (
   assert.ok(Array.isArray(manifest.plugins));
   assert.equal(manifest.plugins.length, 1);
   const entry = manifest.plugins[0];
-  assert.equal(entry.name, 'session-continuity');
+  assert.equal(entry.name, 'logbook');
   assert.equal(entry.source, './');
 });
 
@@ -44,6 +44,6 @@ test('strict defaults to true so plugin.json stays authoritative', () => {
 test('the plugin entry name agrees with plugin.json (packaging-manifests dependency)', () => {
   const manifest = loadJson(marketplacePath, 'marketplace.json');
   const plugin = loadJson(pluginPath, 'plugin.json');
-  assert.equal(plugin.name, 'session-continuity');
+  assert.equal(plugin.name, 'logbook');
   assert.equal(manifest.plugins[0].name, plugin.name);
 });
