@@ -1,7 +1,4 @@
-import { THREAD_SCOPE } from '../schema/patterns.mjs';
-
-const PLANNED_KIND = 'planned';
-const DETOUR_KIND = 'detour';
+import { THREAD_SCOPE, DETOUR_KIND } from '../schema/patterns.mjs';
 
 export const SELECTION_STATES = Object.freeze(['in-progress', 'ready-to-close']);
 
@@ -12,12 +9,12 @@ export function liveCriteria(thread) {
   return criteria.filter((c) => c && typeof c === 'object' && (c.struck_by ?? null) === null);
 }
 
-function firstOpen(live) {
-  return live.find((c) => c.done !== true) ?? null;
+export function currentCriterion(thread) {
+  return liveCriteria(thread).find((c) => c.done !== true) ?? null;
 }
 
 function anchorCriterion(live) {
-  return firstOpen(live) ?? live[live.length - 1] ?? null;
+  return live.find((c) => c.done !== true) ?? live[live.length - 1] ?? null;
 }
 
 export function resolveWriteScope(thread) {
@@ -25,21 +22,28 @@ export function resolveWriteScope(thread) {
   return anchor && typeof anchor.id === 'string' ? anchor.id : THREAD_SCOPE;
 }
 
+export function criteriaProgress(thread) {
+  const live = liveCriteria(thread);
+  const planned = live.filter((c) => c.kind !== DETOUR_KIND);
+  return {
+    done: planned.filter((c) => c.done === true).length,
+    total: planned.length,
+    detoursOpen: live.filter((c) => c.kind === DETOUR_KIND && c.done !== true).length,
+  };
+}
+
 export function selectCurrent(thread) {
   const live = liveCriteria(thread);
-  const current = firstOpen(live);
-  const anchor = current ?? live[live.length - 1] ?? null;
-  const planned = live.filter((c) => c.kind === PLANNED_KIND);
+  const current = currentCriterion(thread);
+  const anchor = anchorCriterion(live);
   const visibleScopes = new Set([THREAD_SCOPE]);
   if (anchor && typeof anchor.id === 'string') {
     visibleScopes.add(anchor.id);
   }
   return {
+    ...criteriaProgress(thread),
     current,
     state: current === null ? 'ready-to-close' : 'in-progress',
-    done: planned.filter((c) => c.done === true).length,
-    total: planned.length,
-    detoursOpen: live.filter((c) => c.kind === DETOUR_KIND && c.done !== true).length,
     visibleScopes,
   };
 }

@@ -1,5 +1,6 @@
 import { renderBriefing } from '../render/briefing.mjs';
-import { BRIEFING_INDEX, DRIFT_INDEX } from '../index/index-files.mjs';
+import { BRIEFING_INDEX } from '../index/index-files.mjs';
+import { takeDriftSnapshot } from '../drift/index.mjs';
 import { ToolError } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
 
@@ -7,13 +8,6 @@ function byId(a, b) {
   if (a.id < b.id) return -1;
   if (a.id > b.id) return 1;
   return 0;
-}
-
-async function readDriftFor(driver, threadId) {
-  const snapshot = await driver.readIndexFile(DRIFT_INDEX);
-  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return [];
-  const entries = snapshot[threadId];
-  return Array.isArray(entries) ? entries : [];
 }
 
 async function handler(ctx, args) {
@@ -31,7 +25,7 @@ async function handler(ctx, args) {
     ? all.find((t) => t.id === thread.predecessor_id) ?? null
     : null;
   const predecessor = predecessorRecord ? { slug: predecessorRecord.slug } : null;
-  const drift = await readDriftFor(driver, thread.id);
+  const drift = await takeDriftSnapshot(driver, thread.id);
   const briefing = renderBriefing({ thread, drift, children, predecessor });
   await driver.writeIndexFile(BRIEFING_INDEX, {
     thread_id: thread.id,

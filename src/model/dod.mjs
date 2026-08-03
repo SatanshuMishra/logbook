@@ -1,12 +1,12 @@
+import { liveCriteria } from './selection.mjs';
+
 export function checkDefinitionOfDone(thread) {
-  const criteria = thread && Array.isArray(thread.completion_criteria)
-    ? thread.completion_criteria
-    : [];
+  const criteria = liveCriteria(thread);
   if (criteria.length === 0) {
-    return { ok: false, reason: 'completion_criteria must be non-empty for done' };
+    return { ok: false, reason: 'completion_criteria must list at least one un-struck entry for done' };
   }
   if (!criteria.every((item) => item && item.done === true)) {
-    return { ok: false, reason: 'every completion_criteria entry must be done:true for done' };
+    return { ok: false, reason: 'every un-struck completion_criteria entry must be done:true for done' };
   }
   const closure = thread ? thread.closure_statement : null;
   if (typeof closure !== 'string' || closure.trim().length === 0) {

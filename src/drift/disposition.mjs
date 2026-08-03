@@ -1,4 +1,4 @@
-import { isTerminal } from '../model/index.mjs';
+import { isTerminal, liveCriteria } from '../model/index.mjs';
 
 function hasCode(entry, code) {
   return entry.signals.some((s) => s.code === code);
@@ -9,12 +9,8 @@ function hasBranchGoneDetail(entry, detail) {
 }
 
 function dodReady(thread) {
-  return Boolean(
-    thread &&
-      Array.isArray(thread.completion_criteria) &&
-      thread.completion_criteria.length > 0 &&
-      thread.completion_criteria.every((c) => c && c.done === true),
-  );
+  const criteria = liveCriteria(thread);
+  return criteria.length > 0 && criteria.every((c) => c && c.done === true);
 }
 
 export function disposeBinding(entry, thread) {

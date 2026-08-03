@@ -6,19 +6,20 @@ import { makeToolCtx } from '../../fixtures/tool-ctx.mjs';
 
 const FROZEN = [
   'open_thread', 'bind_branch', 'append_session_event', 'record_decision',
-  'transition_thread', 'update_thread', 'archive_thread', 'create_successor',
-  'reopen', 'reconcile', 'rebuild_index', 'get_resume_brief', 'read_decision',
+  'transition_thread', 'update_thread', 'amend_criteria', 'archive_thread',
+  'create_successor', 'reopen', 'reconcile', 'rebuild_index', 'get_resume_brief',
+  'read_decision',
 ];
 
-test('listTools exposes exactly the frozen 13-tool surface with inputSchemas', () => {
+test('listTools exposes exactly the frozen 14-tool surface with inputSchemas', () => {
   const names = listTools().map((t) => t.name);
   assert.deepEqual([...names].sort(), [...FROZEN].sort());
-  assert.equal(names.length, 13);
+  assert.equal(names.length, 14);
   for (const descriptor of listTools()) {
     assert.equal(descriptor.inputSchema.type, 'object');
     assert.equal('handler' in descriptor, false);
   }
-  assert.equal(TOOLS.length, 13);
+  assert.equal(TOOLS.length, 14);
 });
 
 test('callTool validates args against the per-tool schema before dispatch', async (t) => {

@@ -14,8 +14,11 @@ export {
 export {
   SELECTION_STATES,
   liveCriteria,
+  currentCriterion,
+  criteriaProgress,
   resolveWriteScope,
   selectCurrent,
 } from './selection.mjs';
+export { nextCriterionId } from './criteria.mjs';
 export { newThread } from './thread.mjs';
 export { newBinding } from './binding.mjs';

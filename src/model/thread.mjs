@@ -1,6 +1,7 @@
 import { newUlid } from '../util/ulid.mjs';
 import { assertValidThread, THREAD_SCHEMA_VERSION } from '../schema/index.mjs';
 import { isoNow } from './clock.mjs';
+import { nextCriterionId } from './criteria.mjs';
 
 const NEW_THREAD_STATUS = 'active';
 const DEFAULT_CRITERION_KIND = 'planned';
@@ -16,13 +17,13 @@ function normalizeCriteria(input) {
   if (!Array.isArray(input) || input.length === 0) {
     throw new TypeError('newThread: completion_criteria must list at least one criterion');
   }
-  return input.map((item, index) => ({
-    id: `c${index + 1}`,
+  return input.reduce((acc, item) => [...acc, {
+    id: nextCriterionId(acc),
     text: item.text,
     done: item.done === true,
     kind: item.kind ?? DEFAULT_CRITERION_KIND,
     struck_by: null,
-  }));
+  }], []);
 }
 
 function emptySpine() {

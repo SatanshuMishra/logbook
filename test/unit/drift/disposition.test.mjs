@@ -41,6 +41,14 @@ test('merged reports dod_ready false when a criterion is unchecked', () => {
   assert.equal(d.dod_ready, false);
 });
 
+test('merged reports dod_ready true when the only unchecked criterion was struck', () => {
+  const d = disposeBinding(entry([branchGoneMerged]), thread('active', [
+    { id: 'c1', text: 'x', done: true, struck_by: null },
+    { id: 'c2', text: 'y', done: false, struck_by: '0007-the-plan-was-wrong' },
+  ]));
+  assert.equal(d.dod_ready, true);
+});
+
 test('squash-merged CODE marks merged even when the entry-max is WARNING', () => {
   const d = disposeBinding(entry([keyFileModified, squashMerged, branchGoneMerged]), thread('active', []));
   assert.equal(d.action, 'mark-merged');

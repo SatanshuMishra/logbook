@@ -52,15 +52,16 @@ test('the server identifies as "ledger" so the mcp__ledger__* surface resolves',
   assert.equal(client.getServerVersion().name, 'ledger');
 });
 
-test('listTools exposes the frozen 13-tool surface (no restore) through the live server', async (t) => {
+test('listTools exposes the frozen 14-tool surface (no restore) through the live server', async (t) => {
   const client = await liveServer(t);
   const { tools } = await client.listTools();
-  assert.equal(tools.length, 13);
+  assert.equal(tools.length, 14);
   const names = tools.map((x) => x.name).sort();
   assert.deepEqual(names, [
-    'append_session_event', 'archive_thread', 'bind_branch', 'create_successor',
-    'get_resume_brief', 'open_thread', 'read_decision', 'rebuild_index', 'reconcile',
-    'record_decision', 'reopen', 'transition_thread', 'update_thread',
+    'amend_criteria', 'append_session_event', 'archive_thread', 'bind_branch',
+    'create_successor', 'get_resume_brief', 'open_thread', 'read_decision',
+    'rebuild_index', 'reconcile', 'record_decision', 'reopen', 'transition_thread',
+    'update_thread',
   ]);
   assert.equal(names.includes('restore'), false);
 });
