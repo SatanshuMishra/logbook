@@ -1,6 +1,6 @@
 export function makeFakeDriver(config = {}) {
   const isGit = config.isGit ?? true;
-  const bindings = (config.bindings ?? []).map((b) => ({ ...b }));
+  let bindings = (config.bindings ?? []).map((b) => ({ ...b }));
   const threads = { ...(config.threads ?? {}) };
   const observations = { ...(config.observations ?? {}) };
   const newBranchObservations = { ...(config.newBranchObservations ?? {}) };
@@ -25,6 +25,10 @@ export function makeFakeDriver(config = {}) {
     },
     async writeBinding(binding) {
       calls.writeBinding.push(binding);
+      const known = bindings.some((b) => b.id === binding.id);
+      bindings = known
+        ? bindings.map((b) => (b.id === binding.id ? { ...binding } : b))
+        : [...bindings, { ...binding }];
       return binding;
     },
     async readIndexFile(name) {

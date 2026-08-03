@@ -103,17 +103,50 @@ test('reconcile persists the drift snapshot grouped by thread_id', async () => {
   assert.equal(result.drift.length, 3);
 });
 
-test('reconcile overwrites a stale drift snapshot wholesale when the run finds nothing', async () => {
+test('reconcile keeps drift already captured for another thread', async () => {
   const { fake, ctx } = fakeCtx({
     bindings: [binding('01BA1', THREAD_A, 'feat/a1')],
     threads: { [THREAD_A]: thread(THREAD_A) },
-    observations: { '01BA1': observation() },
-    indexFiles: { drift: { [THREAD_B]: [{ thread_id: THREAD_B, branch: 'feat/stale' }] } },
+    observations: { '01BA1': observation({ ahead: 1 }) },
+    indexFiles: {
+      drift: { [THREAD_B]: [{ binding_id: '01BB9', thread_id: THREAD_B, branch: 'feat/b9', classification: 'CRITICAL', signals: [] }] },
+    },
   });
 
   await reconcile.handler(ctx, {});
 
-  assert.deepEqual(fake.indexFiles.drift, {});
+  assert.deepEqual(Object.keys(fake.indexFiles.drift).sort(), [THREAD_A, THREAD_B]);
+  assert.deepEqual(fake.indexFiles.drift[THREAD_B].map((e) => e.branch), ['feat/b9']);
+});
+
+test('reconcile keeps a terminal drift entry when the next run observes nothing', async () => {
+  const { fake, ctx } = fakeCtx({
+    bindings: [binding('01BA1', THREAD_A, 'feat/a1')],
+    threads: { [THREAD_A]: thread(THREAD_A) },
+    observations: { '01BA1': observation({ merged: true, branch_exists: false }) },
+  });
+
+  await reconcile.handler(ctx, {});
+  const second = await reconcile.handler(ctx, {});
+
+  assert.deepEqual(second.drift, []);
+  const snapshot = fake.indexFiles.drift;
+  assert.equal(snapshot[THREAD_A].length, 1);
+  assert.equal(snapshot[THREAD_A][0].classification, 'COMPLETE');
+  assert.ok(snapshot[THREAD_A][0].signals.some((s) => s.code === 'branch-gone' && s.detail === 'merged'));
+});
+
+test('reconcile does not duplicate the entry of a binding it re-observes', async () => {
+  const { fake, ctx } = fakeCtx({
+    bindings: [binding('01BA1', THREAD_A, 'feat/a1')],
+    threads: { [THREAD_A]: thread(THREAD_A) },
+    observations: { '01BA1': observation({ ahead: 2 }) },
+  });
+
+  await reconcile.handler(ctx, {});
+  await reconcile.handler(ctx, {});
+
+  assert.equal(fake.indexFiles.drift[THREAD_A].length, 1);
 });
 
 test('reconcile input schema is a closed empty object', () => {
