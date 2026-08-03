@@ -6,8 +6,9 @@ export function makeFakeDriver(config = {}) {
   const newBranchObservations = { ...(config.newBranchObservations ?? {}) };
   const repoBranches = { ...(config.repoBranches ?? {}) };
   const bySlug = { ...(config.bySlug ?? {}) };
+  const indexFiles = { ...(config.indexFiles ?? {}) };
 
-  const calls = { writeBinding: [], observeBranch: [], commit: 0, sync: 0 };
+  const calls = { writeBinding: [], observeBranch: [], writeIndexFile: [], commit: 0, sync: 0 };
 
   const driver = {
     isGit() {
@@ -15,6 +16,9 @@ export function makeFakeDriver(config = {}) {
     },
     async listBindings() {
       return bindings.map((b) => ({ ...b }));
+    },
+    async listThreads() {
+      return Object.values(threads).map((t) => ({ ...t }));
     },
     async readThread(id) {
       return threads[id] ? { ...threads[id] } : null;
@@ -24,7 +28,12 @@ export function makeFakeDriver(config = {}) {
       return binding;
     },
     async readIndexFile(name) {
-      return name === 'by-slug' ? { ...bySlug } : {};
+      if (name === 'by-slug') return { ...bySlug };
+      return indexFiles[name] ?? {};
+    },
+    async writeIndexFile(name, obj) {
+      calls.writeIndexFile.push(name);
+      indexFiles[name] = obj;
     },
     async observeBranch(binding) {
       calls.observeBranch.push(binding.id);
@@ -49,5 +58,5 @@ export function makeFakeDriver(config = {}) {
     },
   };
 
-  return { driver, calls };
+  return { driver, calls, indexFiles };
 }

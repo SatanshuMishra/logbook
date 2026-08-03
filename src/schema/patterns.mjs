@@ -7,7 +7,11 @@ export const CRITERION_ID_PATTERN = '^c[1-9][0-9]*$';
 
 export const DECISION_REF_PATTERN = '^[0-9]{4}-[a-z0-9-]+$';
 
-export const CRITERION_KINDS = Object.freeze(['planned', 'detour']);
+export const PLANNED_KIND = 'planned';
+
+export const DETOUR_KIND = 'detour';
+
+export const CRITERION_KINDS = Object.freeze([PLANNED_KIND, DETOUR_KIND]);
 
 export const CRITERION_TEXT_MAX_CHARS = 200;
 
