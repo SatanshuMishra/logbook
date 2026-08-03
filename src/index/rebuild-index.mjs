@@ -1,3 +1,5 @@
+import { criteriaProgress } from '../model/selection.mjs';
+
 const RESUMABLE_STATUSES = new Set(['active', 'paused', 'blocked']);
 
 function byCreatedThenId(a, b) {
@@ -39,12 +41,16 @@ export async function rebuildIndex(driver) {
       const nextStep = thread.spine && typeof thread.spine.next_step === 'string'
         ? thread.spine.next_step
         : '';
+      const progress = criteriaProgress(thread);
       resumable.push({
         id: thread.id,
         slug: thread.slug,
         title: thread.title,
         status: thread.status,
         next_step: nextStep,
+        done: progress.done,
+        total: progress.total,
+        detours_open: progress.detoursOpen,
       });
     }
   }
