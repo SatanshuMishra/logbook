@@ -1,3 +1,4 @@
+import { takeDriftSnapshot } from '../drift/index.mjs';
 import { ToolError } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
 
@@ -11,6 +12,7 @@ async function handler(ctx, args) {
   const children = all
     .filter((t) => t.parent_id === thread.id)
     .map((t) => ({ id: t.id, slug: t.slug, title: t.title, status: t.status }));
+  const drift = await takeDriftSnapshot(driver, thread.id);
   const brief = {
     thread_id: thread.id,
     slug: thread.slug,
@@ -23,7 +25,7 @@ async function handler(ctx, args) {
     out_of_scope: thread.spine.out_of_scope,
     children,
     predecessor_id: thread.predecessor_id,
-    drift: [],
+    drift,
   };
   return { brief };
 }

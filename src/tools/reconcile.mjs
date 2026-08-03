@@ -1,9 +1,10 @@
-import { runReconcile } from '../drift/index.mjs';
+import { runReconcile, writeDriftSnapshot } from '../drift/index.mjs';
 import { commitAndReindex } from './shared.mjs';
 import { emptyInput } from './schemas.mjs';
 
 async function handler(ctx) {
   const { drift, dispositions } = await runReconcile(ctx);
+  await writeDriftSnapshot(ctx.driver, drift);
   const { recovery_degraded } = await commitAndReindex(ctx.driver, 'chore(ledger): reconcile');
   return { drift, dispositions, recovery_degraded };
 }

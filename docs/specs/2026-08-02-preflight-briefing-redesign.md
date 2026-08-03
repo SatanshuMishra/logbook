@@ -319,7 +319,7 @@ measure the same quantity.
 
 Everything the removed object carried is either rendered (progress, criteria, drift, not-shown counts,
 children, predecessor) or was never read. The hardcoded `drift: []` at `get-resume-brief.mjs:26` is
-deleted; drift is read from the index snapshot (7.6).
+deleted; drift is taken from the index snapshot — read and cleared in the same call (7.6).
 
 Consumers are five in-repo tests (`test/unit/tools/get-resume-brief.test.mjs`,
 `test/e2e/{non-git-parity,branch-reattach,resume-substrate,handoff-chain}.test.mjs`) plus the preflight
@@ -329,12 +329,21 @@ surface a reader actually receives.
 ### 7.6 `reconcile`
 
 Additionally persists a drift snapshot to the derived index: `index/drift.json`, shape
-`{ [thread_id]: DriftEntry[] }`, overwritten wholesale each run.
+`{ [thread_id]: DriftEntry[] }`. Each run UNIONS its entries into the existing snapshot, keyed by
+`binding_id`: a re-observed binding replaces its prior entry in place, a newly drifting one is appended,
+and an entry no longer re-observed survives untouched. `get_resume_brief` is the single clear point — it
+takes the briefed thread's entries and writes the snapshot back without them, leaving every other
+thread's drift intact.
 
-Recomputing drift inside `get_resume_brief` is NOT viable: the skill reconciles first, and reconcile
-closes merged and orphaned bindings (`reconcile.mjs:43-46`, `disposition.mjs:31-52`), so a later
-recompute observes nothing. The snapshot also empties naturally on the next resume, which is the correct
-semantic for "since you left".
+A wholesale overwrite each run would destroy the highest-value entries before any reader saw them.
+Reconcile runs twice in the normal resume flow (`hooks/lib/session-start.mjs:99` at SessionStart, then
+step 3 of the preflight skill), and the first run closes the merged and orphaned bindings
+(`reconcile.mjs:43-46`, `disposition.mjs:31-52`) that `runReconcile` then skips as non-active
+(`reconcile.mjs:32-34`) — so the second run observes nothing and would wipe the terminal signals the
+first captured.
+
+That same closing is why recomputing drift inside `get_resume_brief` is NOT viable: by then the
+observation is gone. Clearing on read, not on write, is what makes the snapshot mean "since you left".
 
 `index/` is gitignored in both drivers (`local-driver.mjs:17`, `git-ref-driver.mjs:27`). This is correct:
 drift is observer-local and must not be shared through the ledger ref.
