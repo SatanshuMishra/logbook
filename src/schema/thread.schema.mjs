@@ -5,9 +5,32 @@ import {
   CRITERION_KINDS,
   CRITERION_TEXT_MAX_CHARS,
   DECISION_REF_PATTERN,
+  SCOPE_PATTERN,
 } from './patterns.mjs';
 
 export const THREAD_SCHEMA_VERSION = 2;
+
+const riskItem = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['text', 'scope', 'refs'],
+  properties: {
+    text: { type: 'string', minLength: 1 },
+    scope: { type: 'string', pattern: SCOPE_PATTERN },
+    refs: { type: 'array', items: { type: 'string', minLength: 1 } },
+  },
+};
+
+const decisionItem = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['ref', 'title', 'scope'],
+  properties: {
+    ref: { type: 'string', pattern: DECISION_REF_PATTERN },
+    title: { type: 'string', minLength: 1 },
+    scope: { type: 'string', pattern: SCOPE_PATTERN },
+  },
+};
 
 export const threadSchema = {
   $id: 'https://continuity-ledger/schema/thread.json',
@@ -74,14 +97,14 @@ export const threadSchema = {
     spine: {
       type: 'object',
       additionalProperties: false,
-      required: ['status', 'active_goal', 'next_step', 'open_risks', 'key_decisions', 'out_of_scope'],
+      required: ['active_goal', 'next_step', 'last_session', 'open_risks', 'key_decisions', 'out_of_scope'],
       properties: {
-        status: { type: 'string' },
         active_goal: { type: 'string' },
         next_step: { type: 'string' },
-        open_risks: { type: 'array', items: { type: 'string' } },
-        key_decisions: { type: 'array', items: { type: 'string' } },
-        out_of_scope: { type: 'array', items: { type: 'string' } },
+        last_session: { type: 'string' },
+        open_risks: { type: 'array', items: riskItem },
+        key_decisions: { type: 'array', items: decisionItem },
+        out_of_scope: { type: 'array', items: { type: 'string', minLength: 1 } },
       },
     },
     created_at: { type: 'string', pattern: ISO_TIMESTAMP_PATTERN },

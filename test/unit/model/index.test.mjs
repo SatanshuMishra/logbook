@@ -14,9 +14,10 @@ test('the barrel re-exports the full model surface', () => {
     'canTransition',
     'checkDefinitionOfDone',
     'SPINE_CAPS',
-    'COUNT_CAPPED_ARRAY_FIELDS',
     'assertSpineCaps',
     'CapViolationError',
+    'liveCriteria',
+    'resolveWriteScope',
   ]) {
     assert.ok(name in model, `expected export: ${name}`);
   }
@@ -39,10 +40,16 @@ test('constructors from the barrel produce schema-valid records end-to-end', () 
   assert.equal(b.thread_id, t.id);
 });
 
-test('fsm and caps helpers are reachable through the barrel', () => {
+test('fsm, caps and selection helpers are reachable through the barrel', () => {
   assert.equal(model.isTerminal('done'), true);
   assert.equal(model.canTransition('active', 'done'), true);
   assert.equal(model.canTransition('blocked', 'abandoned'), false);
-  assert.deepEqual(model.SPINE_CAPS, { scalarFieldMaxChars: 500, arrayMaxItems: 20, arrayItemMaxChars: 300 });
-  assert.deepEqual([...model.COUNT_CAPPED_ARRAY_FIELDS], ['open_risks', 'out_of_scope']);
+  assert.equal(model.SPINE_CAPS.activeGoalMaxChars, 200);
+  assert.equal(model.SPINE_CAPS.openRisksMaxPerScope, 20);
+  assert.equal(
+    model.resolveWriteScope({
+      completion_criteria: [{ id: 'c1', done: true, struck_by: null }, { id: 'c2', done: false, struck_by: null }],
+    }),
+    'c2',
+  );
 });

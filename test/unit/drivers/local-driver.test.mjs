@@ -68,9 +68,9 @@ function makeThread(overrides = {}) {
     abandoned_reason: null,
     closure_statement: null,
     spine: {
-      status: 'active',
       active_goal: 'g',
       next_step: 'n',
+      last_session: '',
       open_risks: [],
       key_decisions: [],
       out_of_scope: [],

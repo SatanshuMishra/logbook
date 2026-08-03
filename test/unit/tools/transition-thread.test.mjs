@@ -11,7 +11,7 @@ test('transition_thread active->paused clears the pointer (identity-matched)', a
   const { thread } = await openThread.handler(ctx, { title: 'T', completion_criteria: [{ text: 'ship it' }] });
   const { thread: paused } = await transitionThread.handler(ctx, { thread_id: thread.id, to_status: 'paused' });
   assert.equal(paused.status, 'paused');
-  assert.equal(paused.spine.status, 'paused');
+  assert.equal('status' in paused.spine, false);
   assert.equal(await readActiveThread(ctx), null);
 });
 

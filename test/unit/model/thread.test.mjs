@@ -48,7 +48,7 @@ test('newThread builds a schema-valid active thread from a title', () => {
   assert.equal(t.abandoned_reason, null);
   assert.equal(t.closure_statement, null);
   assert.deepEqual(t.spine, {
-    status: 'active', active_goal: '', next_step: '',
+    active_goal: '', next_step: '', last_session: '',
     open_risks: [], key_decisions: [], out_of_scope: [],
   });
 });

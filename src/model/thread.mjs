@@ -25,11 +25,11 @@ function normalizeCriteria(input) {
   }));
 }
 
-function emptySpine(status) {
+function emptySpine() {
   return {
-    status,
     active_goal: '',
     next_step: '',
+    last_session: '',
     open_risks: [],
     key_decisions: [],
     out_of_scope: [],
@@ -63,7 +63,7 @@ export function newThread(fields = {}, options = {}) {
     blocked_by: null,
     abandoned_reason: null,
     closure_statement: null,
-    spine: emptySpine(NEW_THREAD_STATUS),
+    spine: emptySpine(),
     created_at: timestamp,
     updated_at: timestamp,
   };

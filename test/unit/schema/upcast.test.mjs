@@ -25,9 +25,9 @@ function makeV1Thread(overrides = {}) {
       status: 'paused',
       active_goal: 'g',
       next_step: 'n',
-      open_risks: [],
-      key_decisions: [],
-      out_of_scope: [],
+      open_risks: ['ci is flaky on the widget path'],
+      key_decisions: ['0007-adopt-the-widget'],
+      out_of_scope: ['widget docs'],
     },
     created_at: '2026-07-14T10:00:00Z',
     updated_at: '2026-07-14T10:00:00Z',
@@ -53,12 +53,51 @@ test('an upcast v1 thread satisfies the v2 schema', () => {
   assert.deepEqual(errors, []);
 });
 
-test('upcastThread leaves every non-criteria field untouched', () => {
+test('upcastThread leaves every field outside completion_criteria and spine untouched', () => {
   const v1 = makeV1Thread();
   const upcast = upcastThread(v1);
-  const { schema_version: _sv, completion_criteria: _cc, ...rest } = upcast;
-  const { schema_version: _sv1, completion_criteria: _cc1, ...v1Rest } = v1;
+  const { schema_version: _sv, completion_criteria: _cc, spine: _sp, ...rest } = upcast;
+  const { schema_version: _sv1, completion_criteria: _cc1, spine: _sp1, ...v1Rest } = v1;
   assert.deepEqual(rest, v1Rest);
+});
+
+test('upcastThread drops spine.status and seeds an empty last_session', () => {
+  const spine = upcastThread(makeV1Thread()).spine;
+  assert.equal('status' in spine, false);
+  assert.equal(spine.last_session, '');
+});
+
+test('upcastThread turns every legacy risk string into a visible thread-scoped risk object', () => {
+  const spine = upcastThread(makeV1Thread()).spine;
+  assert.deepEqual(spine.open_risks, [
+    { text: 'ci is flaky on the widget path', scope: 'thread', refs: [] },
+  ]);
+});
+
+test('upcastThread turns every legacy decision slug into a hidden legacy-scoped decision object', () => {
+  const spine = upcastThread(makeV1Thread()).spine;
+  assert.deepEqual(spine.key_decisions, [
+    { ref: '0007-adopt-the-widget', title: 'Adopt the widget', scope: 'legacy' },
+  ]);
+});
+
+test('upcastThread carries out_of_scope and the remaining spine scalars through unchanged', () => {
+  const spine = upcastThread(makeV1Thread()).spine;
+  assert.deepEqual(spine.out_of_scope, ['widget docs']);
+  assert.equal(spine.active_goal, 'g');
+  assert.equal(spine.next_step, 'n');
+});
+
+test('upcastThread refuses a legacy risk or decision entry that is not a string', () => {
+  const base = makeV1Thread();
+  assert.throws(
+    () => upcastThread(makeV1Thread({ spine: { ...base.spine, open_risks: [{ text: 'x' }] } })),
+    /open_risks\[0\] must be a string/,
+  );
+  assert.throws(
+    () => upcastThread(makeV1Thread({ spine: { ...base.spine, key_decisions: [7] } })),
+    /key_decisions\[0\] must be a string/,
+  );
 });
 
 test('upcastThread does not mutate the record it is given', () => {

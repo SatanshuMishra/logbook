@@ -1,9 +1,38 @@
 import { isTerminal, assertSpineCaps } from '../model/index.mjs';
 import { commitAndReindex, ToolError } from './shared.mjs';
-import { ULID_PATTERN, criteriaToggleItem } from './schemas.mjs';
+import { ULID_PATTERN, criteriaToggleItem, riskInputItem, decisionInputItem } from './schemas.mjs';
+import { normalizeRisks, normalizeDecisions, assertNoRestatedDecision } from './spine-input.mjs';
 
-function patchSpine(thread, spinePatch) {
-  const spine = { ...thread.spine, ...spinePatch, status: thread.status };
+async function knownDecisionRefs(driver) {
+  const decisions = await driver.listDecisions();
+  return new Set(decisions.map((d) => `${d.nnnn}-${d.slug}`));
+}
+
+async function patchSpine(driver, thread, spinePatch) {
+  const normalized = { ...spinePatch };
+  if (Array.isArray(spinePatch.open_risks)) {
+    normalized.open_risks = normalizeRisks(
+      spinePatch.open_risks,
+      thread,
+      'update_thread: spine.open_risks',
+    );
+  }
+  if (Array.isArray(spinePatch.key_decisions)) {
+    normalized.key_decisions = normalizeDecisions(
+      spinePatch.key_decisions,
+      thread,
+      await knownDecisionRefs(driver),
+      'update_thread: spine.key_decisions',
+    );
+  }
+  const spine = { ...thread.spine, ...normalized };
+  if (Array.isArray(spinePatch.out_of_scope)) {
+    assertNoRestatedDecision(
+      spinePatch.out_of_scope,
+      spine.key_decisions,
+      'update_thread: spine.out_of_scope',
+    );
+  }
   assertSpineCaps(spine);
   return spine;
 }
@@ -30,7 +59,9 @@ async function handler(ctx, args) {
   if (isTerminal(thread.status)) {
     throw new ToolError(`update_thread: cannot mutate a terminal (${thread.status}) thread`);
   }
-  const spine = args.spine && typeof args.spine === 'object' ? patchSpine(thread, args.spine) : thread.spine;
+  const spine = args.spine && typeof args.spine === 'object'
+    ? await patchSpine(driver, thread, args.spine)
+    : thread.spine;
   const completionCriteria = Array.isArray(args.completion_criteria)
     ? toggleCriteria(thread, args.completion_criteria)
     : thread.completion_criteria;
@@ -42,7 +73,7 @@ async function handler(ctx, args) {
 
 export default {
   name: 'update_thread',
-  description: 'Patch spine fields and toggle completion_criteria done by criterion id (status unchanged; caps-enforced; terminal-refused).',
+  description: 'Patch spine fields and toggle completion_criteria done by criterion id. Risks and decisions are scoped: an omitted scope defaults to the current criterion, "thread" must be explicit, "legacy" is refused. Caps-enforced; terminal-refused.',
   inputSchema: {
     type: 'object',
     additionalProperties: false,
@@ -55,9 +86,10 @@ export default {
         properties: {
           active_goal: { type: 'string' },
           next_step: { type: 'string' },
-          open_risks: { type: 'array', items: { type: 'string' } },
-          key_decisions: { type: 'array', items: { type: 'string' } },
-          out_of_scope: { type: 'array', items: { type: 'string' } },
+          last_session: { type: 'string' },
+          open_risks: { type: 'array', items: riskInputItem },
+          key_decisions: { type: 'array', items: decisionInputItem },
+          out_of_scope: { type: 'array', items: { type: 'string', minLength: 1 } },
         },
       },
       completion_criteria: { type: 'array', items: criteriaToggleItem },

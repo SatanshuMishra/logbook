@@ -12,7 +12,7 @@ test('archive_thread abandons an active thread and clears the pointer', async (t
   const { thread: archived } = await archiveThread.handler(ctx, { thread_id: thread.id, reason: 'obsolete' });
   assert.equal(archived.status, 'abandoned');
   assert.equal(archived.abandoned_reason, 'obsolete');
-  assert.equal(archived.spine.status, 'abandoned');
+  assert.equal('status' in archived.spine, false);
   assert.equal(await readActiveThread(ctx), null);
 });
 

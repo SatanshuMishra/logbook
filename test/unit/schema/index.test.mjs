@@ -40,9 +40,9 @@ test('assertValidThread from the barrel validates a real record end-to-end', () 
     abandoned_reason: null,
     closure_statement: null,
     spine: {
-      status: 'active',
       active_goal: '',
       next_step: '',
+      last_session: '',
       open_risks: [],
       key_decisions: [],
       out_of_scope: [],

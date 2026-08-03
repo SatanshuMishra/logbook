@@ -37,12 +37,19 @@ test('the handoff chain writes the substrate and clears the pointer on paused', 
     spine: {
       active_goal: 'wire the widget end to end',
       next_step: 'add the failing integration test',
-      open_risks: ['flaky ci on the widget path'],
+      open_risks: [{ text: 'rerun the widget suite before pushing — ci is flaky on that path' }],
       out_of_scope: ['widget docs'],
     },
   });
   assert.equal(refreshed.thread.spine.next_step, 'add the failing integration test');
-  assert.deepEqual(refreshed.thread.spine.key_decisions, [`${decision.number}-use-widget`]);
+  assert.deepEqual(refreshed.thread.spine.open_risks, [{
+    text: 'rerun the widget suite before pushing — ci is flaky on that path',
+    scope: 'c1',
+    refs: [],
+  }]);
+  assert.deepEqual(refreshed.thread.spine.key_decisions, [
+    { ref: `${decision.number}-use-widget`, title: 'Use the widget', scope: 'c1' },
+  ]);
 
   const paused = await callTool(client, 'transition_thread', { thread_id: thread.id, to_status: 'paused' });
   assert.equal(paused.thread.status, 'paused');
