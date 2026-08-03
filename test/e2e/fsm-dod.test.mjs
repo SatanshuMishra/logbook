@@ -49,7 +49,7 @@ test('the multi-session path reaches done after checking off a criterion', async
     to_status: 'done',
     closure_statement: 'done and dusted',
   });
-  assert.match(early.message, /every completion_criteria entry must be done:true for done/);
+  assert.match(early.message, /every un-struck completion_criteria entry must be done:true for done/);
 
   const checked = await callTool(client, 'update_thread', {
     thread_id: thread.id,

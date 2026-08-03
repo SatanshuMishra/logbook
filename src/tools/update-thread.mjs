@@ -1,12 +1,7 @@
 import { isTerminal, assertSpineCaps } from '../model/index.mjs';
-import { commitAndReindex, ToolError } from './shared.mjs';
+import { commitAndReindex, knownDecisionRefs, ToolError } from './shared.mjs';
 import { ULID_PATTERN, criteriaToggleItem, riskInputItem, decisionInputItem } from './schemas.mjs';
 import { normalizeRisks, normalizeDecisions, assertNoRestatedDecision } from './spine-input.mjs';
-
-async function knownDecisionRefs(driver) {
-  const decisions = await driver.listDecisions();
-  return new Set(decisions.map((d) => `${d.nnnn}-${d.slug}`));
-}
 
 async function patchSpine(driver, thread, spinePatch) {
   const normalized = { ...spinePatch };

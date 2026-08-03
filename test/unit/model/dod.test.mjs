@@ -42,6 +42,24 @@ test('a whitespace-only closure_statement refuses done', () => {
   assert.match(result.reason, /closure_statement/);
 });
 
+test('a struck criterion no longer blocks done', () => {
+  const result = checkDefinitionOfDone(doneCandidate({
+    completion_criteria: [
+      { id: 'c1', text: 'a', done: true, struck_by: null },
+      { id: 'c2', text: 'b', done: false, struck_by: '0007-the-plan-was-wrong' },
+    ],
+  }));
+  assert.deepEqual(result, { ok: true });
+});
+
+test('criteria that are all struck refuse done', () => {
+  const result = checkDefinitionOfDone(doneCandidate({
+    completion_criteria: [{ id: 'c1', text: 'a', done: true, struck_by: '0007-the-plan-was-wrong' }],
+  }));
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /completion_criteria/);
+});
+
 test('non-empty criteria all done plus a non-empty closure passes', () => {
   const result = checkDefinitionOfDone(doneCandidate());
   assert.deepEqual(result, { ok: true });

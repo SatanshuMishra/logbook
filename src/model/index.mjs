@@ -11,6 +11,7 @@ export {
   CapViolationError,
   assertSpineCaps,
 } from './caps.mjs';
-export { liveCriteria, resolveWriteScope, criteriaProgress } from './selection.mjs';
+export { liveCriteria, currentCriterion, resolveWriteScope } from './selection.mjs';
+export { nextCriterionId } from './criteria.mjs';
 export { newThread } from './thread.mjs';
 export { newBinding } from './binding.mjs';

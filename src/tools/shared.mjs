@@ -7,6 +7,11 @@ export class ToolError extends Error {
   }
 }
 
+export async function knownDecisionRefs(driver) {
+  const decisions = await driver.listDecisions();
+  return new Set(decisions.map((d) => `${d.nnnn}-${d.slug}`));
+}
+
 export function isRecoveryDegraded(commitResult) {
   return commitResult != null && commitResult.degraded === true;
 }
