@@ -7,9 +7,9 @@ import { makeToolCtx } from '../../fixtures/tool-ctx.mjs';
 
 test('get_resume_brief returns a spine-only brief with resolved children and empty drift', async (t) => {
   const ctx = await makeToolCtx(t);
-  const { thread: parent } = await openThread.handler(ctx, { title: 'Epic' });
+  const { thread: parent } = await openThread.handler(ctx, { title: 'Epic', completion_criteria: [{ text: 'ship it' }] });
   await updateThread.handler(ctx, { thread_id: parent.id, spine: { active_goal: 'ship', next_step: 'code' } });
-  const { thread: child } = await openThread.handler(ctx, { title: 'Leaf', parent_id: parent.id });
+  const { thread: child } = await openThread.handler(ctx, { title: 'Leaf', parent_id: parent.id, completion_criteria: [{ text: 'ship it' }] });
   const { brief } = await getResumeBrief.handler(ctx, { thread_id: parent.id });
   assert.equal(brief.thread_id, parent.id);
   assert.equal(brief.slug, 'epic');

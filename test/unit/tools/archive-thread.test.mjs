@@ -8,7 +8,7 @@ import { makeToolCtx } from '../../fixtures/tool-ctx.mjs';
 
 test('archive_thread abandons an active thread and clears the pointer', async (t) => {
   const ctx = await makeToolCtx(t);
-  const { thread } = await openThread.handler(ctx, { title: 'A' });
+  const { thread } = await openThread.handler(ctx, { title: 'A', completion_criteria: [{ text: 'ship it' }] });
   const { thread: archived } = await archiveThread.handler(ctx, { thread_id: thread.id, reason: 'obsolete' });
   assert.equal(archived.status, 'abandoned');
   assert.equal(archived.abandoned_reason, 'obsolete');
@@ -18,7 +18,7 @@ test('archive_thread abandons an active thread and clears the pointer', async (t
 
 test('archive_thread refuses a blocked thread (no blocked -> abandoned edge)', async (t) => {
   const ctx = await makeToolCtx(t);
-  const { thread } = await openThread.handler(ctx, { title: 'A' });
+  const { thread } = await openThread.handler(ctx, { title: 'A', completion_criteria: [{ text: 'ship it' }] });
   await transitionThread.handler(ctx, { thread_id: thread.id, to_status: 'blocked', blocked_by: 'CI' });
   await assert.rejects(
     () => archiveThread.handler(ctx, { thread_id: thread.id, reason: 'x' }),

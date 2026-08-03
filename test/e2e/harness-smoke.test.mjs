@@ -11,7 +11,7 @@ test('harness drives the real server over stdio on a non-git project', async (t)
   const client = await startLedger({ projectDir, dataDir });
   t.after(() => stopLedger(client));
 
-  const { thread } = await callTool(client, 'open_thread', { title: 'Smoke Non Git' });
+  const { thread } = await callTool(client, 'open_thread', { title: 'Smoke Non Git', completion_criteria: [{ text: 'ship it' }] });
   assert.equal(thread.status, 'active');
   assert.equal(thread.slug, 'smoke-non-git');
 
@@ -32,7 +32,7 @@ test('harness drives the real server over stdio on a git project', async (t) => 
   const client = await startLedger({ projectDir, dataDir });
   t.after(() => stopLedger(client));
 
-  const { thread } = await callTool(client, 'open_thread', { title: 'Smoke Git' });
+  const { thread } = await callTool(client, 'open_thread', { title: 'Smoke Git', completion_criteria: [{ text: 'ship it' }] });
   assert.equal(thread.status, 'active');
 
   const pointer = await readActiveThread({ projectDir, dataDir });

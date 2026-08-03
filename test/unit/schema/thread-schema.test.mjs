@@ -8,14 +8,16 @@ import {
 
 function makeValidThread() {
   return {
-    schema_version: 1,
+    schema_version: 2,
     id: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
     slug: 'my-thread',
     title: 'My Thread',
     status: 'active',
     parent_id: null,
     predecessor_id: null,
-    completion_criteria: [{ text: 'ship it', done: false }],
+    completion_criteria: [
+      { id: 'c1', text: 'ship it', done: false, kind: 'planned', struck_by: null },
+    ],
     vcs_ref: null,
     external_refs: [{ system: 'linear', id: 'ABC-1', url: 'https://x/ABC-1' }],
     blocked_by: null,
@@ -46,8 +48,8 @@ test('an unknown top-level field is rejected (additionalProperties false)', () =
   assert.equal(errors[0].keyword, 'additionalProperties');
 });
 
-test('schema_version must be the constant 1, not 2', () => {
-  const { valid, errors } = validateThread({ ...makeValidThread(), schema_version: 2 });
+test('schema_version must be the constant 2, not 1', () => {
+  const { valid, errors } = validateThread({ ...makeValidThread(), schema_version: 1 });
   assert.equal(valid, false);
   assert.equal(errors[0].keyword, 'const');
 });
@@ -93,24 +95,68 @@ test('spine requires all six fields', () => {
   assert.equal(validateThread({ ...base, spine: spineMissingStatus }).valid, false);
 });
 
-test('each completion_criteria item is closed and requires text and done', () => {
+test('each completion_criteria item is closed and requires id, text, done, kind and struck_by', () => {
   const base = makeValidThread();
+  const criterion = base.completion_criteria[0];
+  for (const field of ['id', 'text', 'done', 'kind', 'struck_by']) {
+    const { [field]: _dropped, ...missing } = criterion;
+    assert.equal(
+      validateThread({ ...base, completion_criteria: [missing] }).valid,
+      false,
+      `expected a missing ${field} to be rejected`,
+    );
+  }
   assert.equal(
-    validateThread({ ...base, completion_criteria: [{ text: 'x' }] }).valid,
+    validateThread({ ...base, completion_criteria: [{ ...criterion, note: 1 }] }).valid,
     false,
   );
   assert.equal(
-    validateThread({ ...base, completion_criteria: [{ text: 'x', done: true, note: 1 }] }).valid,
+    validateThread({ ...base, completion_criteria: [{ ...criterion, text: '' }] }).valid,
     false,
   );
   assert.equal(
-    validateThread({ ...base, completion_criteria: [{ text: '', done: false }] }).valid,
+    validateThread({ ...base, completion_criteria: [{ ...criterion, text: 'x'.repeat(201) }] }).valid,
     false,
   );
 });
 
-test('an empty completion_criteria array is schema-valid', () => {
-  assert.equal(validateThread({ ...makeValidThread(), completion_criteria: [] }).valid, true);
+test('a completion_criteria id must match ^c[1-9][0-9]*$', () => {
+  const base = makeValidThread();
+  const criterion = base.completion_criteria[0];
+  for (const id of ['c1', 'c2', 'c10', 'c137']) {
+    assert.equal(validateThread({ ...base, completion_criteria: [{ ...criterion, id }] }).valid, true, id);
+  }
+  for (const id of ['c0', 'c01', '1', 'C1', 'c-1', 'thread', '']) {
+    assert.equal(validateThread({ ...base, completion_criteria: [{ ...criterion, id }] }).valid, false, id);
+  }
+});
+
+test('a completion_criteria kind is planned or detour and nothing else', () => {
+  const base = makeValidThread();
+  const criterion = base.completion_criteria[0];
+  assert.equal(validateThread({ ...base, completion_criteria: [{ ...criterion, kind: 'planned' }] }).valid, true);
+  assert.equal(validateThread({ ...base, completion_criteria: [{ ...criterion, kind: 'detour' }] }).valid, true);
+  assert.equal(validateThread({ ...base, completion_criteria: [{ ...criterion, kind: 'child' }] }).valid, false);
+});
+
+test('struck_by is null or a NNNN-slug decision ref', () => {
+  const base = makeValidThread();
+  const criterion = base.completion_criteria[0];
+  assert.equal(validateThread({ ...base, completion_criteria: [{ ...criterion, struck_by: null }] }).valid, true);
+  assert.equal(
+    validateThread({ ...base, completion_criteria: [{ ...criterion, struck_by: '0021-detours' }] }).valid,
+    true,
+  );
+  assert.equal(
+    validateThread({ ...base, completion_criteria: [{ ...criterion, struck_by: 'detours' }] }).valid,
+    false,
+  );
+});
+
+test('an empty completion_criteria array is rejected (a thread needs a definition of done)', () => {
+  const { valid, errors } = validateThread({ ...makeValidThread(), completion_criteria: [] });
+  assert.equal(valid, false);
+  assert.equal(errors[0].keyword, 'minItems');
 });
 
 test('each external_refs item is closed and requires system, id, url', () => {

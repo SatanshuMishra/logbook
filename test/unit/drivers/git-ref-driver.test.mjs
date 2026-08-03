@@ -25,14 +25,16 @@ const ULID_A = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
 
 function makeThread(overrides = {}) {
   return {
-    schema_version: 1,
+    schema_version: 2,
     id: ULID_A,
     slug: 'my-thread',
     title: 'My Thread',
     status: 'active',
     parent_id: null,
     predecessor_id: null,
-    completion_criteria: [{ text: 'ship it', done: false }],
+    completion_criteria: [
+      { id: 'c1', text: 'ship it', done: false, kind: 'planned', struck_by: null },
+    ],
     vcs_ref: null,
     external_refs: [],
     blocked_by: null,

@@ -8,6 +8,7 @@ import { gitExec } from '../util/git-exec.mjs';
 import { clearedGitLocationEnv, isolatedGitArgs, isolatedGitConfigEnv } from '../util/git-env.mjs';
 import { isUlid } from '../util/ulid.mjs';
 import { assertValidThread, assertValidBinding } from '../schema/validators.mjs';
+import { upcastThread } from '../schema/upcast.mjs';
 
 const SUBDIRS = ['threads', 'bindings', 'decisions', 'sessions', 'index'];
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
@@ -139,7 +140,7 @@ export class LocalDriver extends StorageDriver {
   }
 
   async readThread(id) {
-    return readJsonOrNull(join(this.ledgerRoot, 'threads', `${id}.json`));
+    return upcastThread(await readJsonOrNull(join(this.ledgerRoot, 'threads', `${id}.json`)));
   }
 
   async writeThread(thread) {

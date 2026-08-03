@@ -7,7 +7,7 @@ import { makeToolCtx } from '../../fixtures/tool-ctx.mjs';
 
 test('bind_branch writes a binding for an existing thread and sets the pointer', async (t) => {
   const ctx = await makeToolCtx(t);
-  const { thread } = await openThread.handler(ctx, { title: 'Work' });
+  const { thread } = await openThread.handler(ctx, { title: 'Work', completion_criteria: [{ text: 'ship it' }] });
   const { binding } = await bindBranch.handler(ctx, { thread_id: thread.id, repo: 'acme/app', branch: 'feat/x' });
   assert.equal(binding.thread_id, thread.id);
   assert.equal(binding.repo, 'acme/app');
@@ -20,7 +20,7 @@ test('bind_branch writes a binding for an existing thread and sets the pointer',
 
 test('bind_branch preserves first_commit and trailer_present', async (t) => {
   const ctx = await makeToolCtx(t);
-  const { thread } = await openThread.handler(ctx, { title: 'Work' });
+  const { thread } = await openThread.handler(ctx, { title: 'Work', completion_criteria: [{ text: 'ship it' }] });
   const { binding } = await bindBranch.handler(ctx, {
     thread_id: thread.id, repo: 'acme/app', branch: 'feat/y', first_commit: 'deadbeef', trailer_present: true,
   });

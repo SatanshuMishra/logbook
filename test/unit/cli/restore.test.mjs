@@ -58,7 +58,7 @@ async function seedLedgerRef(t) {
   useEnv(t, { CLAUDE_PROJECT_DIR: projectDir, CLAUDE_PLUGIN_DATA: dataDir });
   await initGitRepo(projectDir);
   const ctx = await buildContext({});
-  const { thread } = await callTool('open_thread', { title: 'Recover Me' }, ctx);
+  const { thread } = await callTool('open_thread', { title: 'Recover Me', completion_criteria: [{ text: 'ship it' }] }, ctx);
   return { projectDir, thread };
 }
 

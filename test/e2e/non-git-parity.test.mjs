@@ -11,7 +11,7 @@ test('the same tool surface runs on a non-git project at parity', async (t) => {
   const client = await startLedger({ projectDir, dataDir });
   t.after(() => stopLedger(client));
 
-  const { thread } = await callTool(client, 'open_thread', { title: 'Parity' });
+  const { thread } = await callTool(client, 'open_thread', { title: 'Parity', completion_criteria: [{ text: 'ship it' }] });
   assert.equal(thread.vcs_ref, null);
 
   const reconcile = await callTool(client, 'reconcile', {});

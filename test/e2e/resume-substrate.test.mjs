@@ -11,8 +11,8 @@ test('a multi-thread roster counts both resumables and the brief is spine-only',
   const client = await startLedger({ projectDir, dataDir });
   t.after(() => stopLedger(client));
 
-  const a = (await callTool(client, 'open_thread', { title: 'Alpha' })).thread;
-  const b = (await callTool(client, 'open_thread', { title: 'Beta' })).thread;
+  const a = (await callTool(client, 'open_thread', { title: 'Alpha', completion_criteria: [{ text: 'ship it' }] })).thread;
+  const b = (await callTool(client, 'open_thread', { title: 'Beta', completion_criteria: [{ text: 'ship it' }] })).thread;
   assert.equal(await readActiveThread({ projectDir, dataDir }), b.id);
 
   await callTool(client, 'update_thread', {

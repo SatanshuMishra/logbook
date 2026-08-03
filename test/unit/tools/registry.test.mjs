@@ -24,12 +24,12 @@ test('listTools exposes exactly the frozen 12-tool surface with inputSchemas', (
 test('callTool validates args against the per-tool schema before dispatch', async (t) => {
   const ctx = await makeToolCtx(t);
   await assert.rejects(() => callTool('open_thread', {}, ctx), ToolValidationError);
-  await assert.rejects(() => callTool('open_thread', { title: 'X', bogus: 1 }, ctx), ToolValidationError);
+  await assert.rejects(() => callTool('open_thread', { title: 'X', bogus: 1, completion_criteria: [{ text: 'ship it' }] }, ctx), ToolValidationError);
 });
 
 test('callTool dispatches a valid call to the handler', async (t) => {
   const ctx = await makeToolCtx(t);
-  const { thread } = await callTool('open_thread', { title: 'Via Registry' }, ctx);
+  const { thread } = await callTool('open_thread', { title: 'Via Registry', completion_criteria: [{ text: 'ship it' }] }, ctx);
   assert.equal(thread.slug, 'via-registry');
   assert.equal(thread.status, 'active');
 });

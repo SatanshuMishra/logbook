@@ -19,7 +19,7 @@ async function record(ctx, thread, over = {}) {
 
 test('record_decision writes a numbered MADR file with Thread-Id frontmatter', async (t) => {
   const ctx = await makeToolCtx(t);
-  const { thread } = await openThread.handler(ctx, { title: 'Decisions' });
+  const { thread } = await openThread.handler(ctx, { title: 'Decisions', completion_criteria: [{ text: 'ship it' }] });
   const { number, path } = await record(ctx, thread);
   assert.equal(number, '0001');
   const md = await readFile(path, 'utf8');
@@ -30,7 +30,7 @@ test('record_decision writes a numbered MADR file with Thread-Id frontmatter', a
 
 test('record_decision links NNNN-slug into the thread spine (dedup)', async (t) => {
   const ctx = await makeToolCtx(t);
-  const { thread } = await openThread.handler(ctx, { title: 'Decisions' });
+  const { thread } = await openThread.handler(ctx, { title: 'Decisions', completion_criteria: [{ text: 'ship it' }] });
   await record(ctx, thread);
   const after = await ctx.driver.readThread(thread.id);
   assert.deepEqual(after.spine.key_decisions, ['0001-adopt-x']);

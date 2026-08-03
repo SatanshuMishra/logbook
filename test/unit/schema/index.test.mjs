@@ -12,6 +12,7 @@ test('the barrel re-exports the full public surface', () => {
     'formatValidationErrors',
     'threadSchema',
     'bindingSchema',
+    'upcastThread',
   ]) {
     assert.ok(name in schema, `expected export: ${name}`);
   }
@@ -23,14 +24,16 @@ test('the barrel re-exports the full public surface', () => {
 
 test('assertValidThread from the barrel validates a real record end-to-end', () => {
   const thread = {
-    schema_version: 1,
+    schema_version: 2,
     id: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
     slug: 's',
     title: 't',
     status: 'active',
     parent_id: null,
     predecessor_id: null,
-    completion_criteria: [],
+    completion_criteria: [
+      { id: 'c1', text: 'ship it', done: false, kind: 'planned', struck_by: null },
+    ],
     vcs_ref: null,
     external_refs: [],
     blocked_by: null,

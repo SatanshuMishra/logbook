@@ -20,7 +20,7 @@ Each ledger tool carries two names: `mcp__ledger__<name>` when the server is con
 
 3. Promote straggler decisions. For each decision locked this session that has no record yet, call `mcp__ledger__record_decision` with the `thread_id`, a kebab-case `slug`, a `title`, the `context`, the `options` you weighed (a plain list of strings), and the `outcome`. Decision-time capture is the norm; this is the safety net. Skip any decision already recorded.
 
-4. Refresh the spine — MANDATORY, and BEFORE any transition. Call `mcp__ledger__update_thread` with the `thread_id` to set the spine's forward-looking fields (the active goal, the next step, the open risks) and to flip each satisfied completion criterion to done (match a criterion by its exact text and supply its done flag). This step is the linchpin: it is what populates the roster's next step and the resume brief. Skip it and the brief comes back blank. Do it even when nothing else changed.
+4. Refresh the spine — MANDATORY, and BEFORE any transition. Call `mcp__ledger__update_thread` with the `thread_id` to set the spine's forward-looking fields (the active goal, the next step, the open risks) and to flip each satisfied completion criterion to done (match a criterion by its id and supply its done flag). This step is the linchpin: it is what populates the roster's next step and the resume brief. Skip it and the brief comes back blank. Do it even when nothing else changed.
 
 5. Transition the thread. Call `mcp__ledger__transition_thread` with the `thread_id` and the target status:
    - the normal hand-off parks the thread at `paused`;

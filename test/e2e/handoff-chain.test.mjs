@@ -11,7 +11,7 @@ test('the handoff chain writes the substrate and clears the pointer on paused', 
   const client = await startLedger({ projectDir, dataDir });
   t.after(() => stopLedger(client));
 
-  const { thread } = await callTool(client, 'open_thread', { title: 'Handoff Widget' });
+  const { thread } = await callTool(client, 'open_thread', { title: 'Handoff Widget', completion_criteria: [{ text: 'ship it' }] });
   assert.equal(await readActiveThread({ projectDir, dataDir }), thread.id);
 
   const event = await callTool(client, 'append_session_event', {

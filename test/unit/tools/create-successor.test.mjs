@@ -8,7 +8,7 @@ import { makeToolCtx } from '../../fixtures/tool-ctx.mjs';
 
 test('create_successor requires a TERMINAL predecessor', async (t) => {
   const ctx = await makeToolCtx(t);
-  const { thread } = await openThread.handler(ctx, { title: 'Live' });
+  const { thread } = await openThread.handler(ctx, { title: 'Live', completion_criteria: [{ text: 'ship it' }] });
   await assert.rejects(
     () => createSuccessor.handler(ctx, { predecessor_id: thread.id, title: 'Next', completion_criteria: [{ text: 'go' }] }),
     /predecessor must be terminal/,
@@ -17,8 +17,8 @@ test('create_successor requires a TERMINAL predecessor', async (t) => {
 
 test('create_successor inherits parent_id and links the predecessor', async (t) => {
   const ctx = await makeToolCtx(t);
-  const { thread: parent } = await openThread.handler(ctx, { title: 'Parent' });
-  const { thread: pred } = await openThread.handler(ctx, { title: 'Pred', parent_id: parent.id });
+  const { thread: parent } = await openThread.handler(ctx, { title: 'Parent', completion_criteria: [{ text: 'ship it' }] });
+  const { thread: pred } = await openThread.handler(ctx, { title: 'Pred', parent_id: parent.id, completion_criteria: [{ text: 'ship it' }] });
   await archiveThread.handler(ctx, { thread_id: pred.id, reason: 'superseded' });
   const { thread: succ } = await createSuccessor.handler(ctx, {
     predecessor_id: pred.id, title: 'Successor', completion_criteria: [{ text: 'finish' }],
@@ -26,7 +26,9 @@ test('create_successor inherits parent_id and links the predecessor', async (t) 
   assert.equal(succ.status, 'active');
   assert.equal(succ.predecessor_id, pred.id);
   assert.equal(succ.parent_id, parent.id);
-  assert.deepEqual(succ.completion_criteria, [{ text: 'finish', done: false }]);
+  assert.deepEqual(succ.completion_criteria, [
+    { id: 'c1', text: 'finish', done: false, kind: 'planned', struck_by: null },
+  ]);
   assert.equal(await readActiveThread(ctx), succ.id);
 });
 

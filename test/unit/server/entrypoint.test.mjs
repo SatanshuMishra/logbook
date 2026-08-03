@@ -67,7 +67,7 @@ test('listTools exposes the frozen 12-tool surface (no restore) through the live
 
 test('a real open_thread call flows through buildContext into the live tool layer', async (t) => {
   const client = await liveServer(t);
-  const res = await client.callTool({ name: 'open_thread', arguments: { title: 'Via Server' } });
+  const res = await client.callTool({ name: 'open_thread', arguments: { title: 'Via Server', completion_criteria: [{ text: 'ship it' }] } });
   assert.equal(res.isError, undefined);
   const payload = JSON.parse(res.content[0].text);
   assert.equal(payload.thread.status, 'active');

@@ -52,14 +52,16 @@ const ULID_B = '01BX5ZZKBKACTAV9WEVGEMMVRZ';
 
 function makeThread(overrides = {}) {
   return {
-    schema_version: 1,
+    schema_version: 2,
     id: ULID_A,
     slug: 'my-thread',
     title: 'My Thread',
     status: 'active',
     parent_id: null,
     predecessor_id: null,
-    completion_criteria: [{ text: 'ship it', done: false }],
+    completion_criteria: [
+      { id: 'c1', text: 'ship it', done: false, kind: 'planned', struck_by: null },
+    ],
     vcs_ref: null,
     external_refs: [],
     blocked_by: null,
@@ -461,6 +463,23 @@ test('writeThread rejects an invalid record before writing', async (t) => {
   const driver = new LocalDriver(root);
   await driver.init();
   await assert.rejects(() => driver.writeThread(makeThread({ status: 'bogus' })), /schema validation/);
+});
+
+test('readThread upcasts a stored v1 record to v2 in memory', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  const stored = makeThread({
+    schema_version: 1,
+    completion_criteria: [{ text: 'ship it', done: false }, { text: 'measure', done: true }],
+  });
+  await writeFile(join(root, 'threads', `${ULID_A}.json`), JSON.stringify(stored, null, 2) + '\n');
+  const record = await driver.readThread(ULID_A);
+  assert.equal(record.schema_version, 2);
+  assert.deepEqual(record.completion_criteria, [
+    { id: 'c1', text: 'ship it', done: false, kind: 'planned', struck_by: null },
+    { id: 'c2', text: 'measure', done: true, kind: 'planned', struck_by: null },
+  ]);
 });
 
 test('readThread returns null for a missing thread', async (t) => {
