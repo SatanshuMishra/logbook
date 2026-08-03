@@ -14,7 +14,7 @@ async function freshLedger(t) {
 
 test('the server refuses a transition absent from the FSM matrix', async (t) => {
   const client = await freshLedger(t);
-  const { thread } = await callTool(client, 'open_thread', { title: 'FSM Guard' });
+  const { thread } = await callTool(client, 'open_thread', { title: 'FSM Guard', completion_criteria: [{ text: 'ship it' }] });
   const paused = await callTool(client, 'transition_thread', { thread_id: thread.id, to_status: 'paused' });
   assert.equal(paused.thread.status, 'paused');
 
@@ -23,17 +23,17 @@ test('the server refuses a transition absent from the FSM matrix', async (t) => 
   assert.match(err.message, /illegal transition paused -> blocked/);
 });
 
-test('the server refuses a premature done (empty completion_criteria)', async (t) => {
+test('the server refuses opening a thread without a definition of done', async (t) => {
   const client = await freshLedger(t);
-  const { thread } = await callTool(client, 'open_thread', { title: 'No Criteria' });
 
-  const err = await expectToolError(client, 'transition_thread', {
-    thread_id: thread.id,
-    to_status: 'done',
-    closure_statement: 'ship it',
+  const missing = await expectToolError(client, 'open_thread', { title: 'No Criteria' });
+  assert.match(missing.message, /completion_criteria/);
+
+  const empty = await expectToolError(client, 'open_thread', {
+    title: 'No Criteria',
+    completion_criteria: [],
   });
-  assert.equal(err.error, 'ToolError');
-  assert.match(err.message, /completion_criteria must be non-empty for done/);
+  assert.match(empty.message, /completion_criteria/);
 });
 
 test('the multi-session path reaches done after checking off a criterion', async (t) => {
@@ -42,6 +42,7 @@ test('the multi-session path reaches done after checking off a criterion', async
     title: 'Shippable',
     completion_criteria: [{ text: 'ship the widget' }],
   });
+  assert.equal(thread.completion_criteria[0].id, 'c1');
 
   const early = await expectToolError(client, 'transition_thread', {
     thread_id: thread.id,
@@ -52,7 +53,7 @@ test('the multi-session path reaches done after checking off a criterion', async
 
   const checked = await callTool(client, 'update_thread', {
     thread_id: thread.id,
-    completion_criteria: [{ text: 'ship the widget', done: true }],
+    completion_criteria: [{ id: 'c1', done: true }],
   });
   assert.equal(checked.thread.completion_criteria[0].done, true);
 

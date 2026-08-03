@@ -1,8 +1,9 @@
 import { newUlid } from '../util/ulid.mjs';
-import { assertValidThread } from '../schema/index.mjs';
+import { assertValidThread, THREAD_SCHEMA_VERSION } from '../schema/index.mjs';
 import { isoNow } from './clock.mjs';
 
 const NEW_THREAD_STATUS = 'active';
+const DEFAULT_CRITERION_KIND = 'planned';
 
 function toSlug(title) {
   return String(title)
@@ -12,10 +13,16 @@ function toSlug(title) {
 }
 
 function normalizeCriteria(input) {
-  if (!Array.isArray(input)) {
-    return [];
+  if (!Array.isArray(input) || input.length === 0) {
+    throw new TypeError('newThread: completion_criteria must list at least one criterion');
   }
-  return input.map((item) => ({ text: item.text, done: item.done === true }));
+  return input.map((item, index) => ({
+    id: `c${index + 1}`,
+    text: item.text,
+    done: item.done === true,
+    kind: item.kind ?? DEFAULT_CRITERION_KIND,
+    struck_by: null,
+  }));
 }
 
 function emptySpine(status) {
@@ -43,7 +50,7 @@ export function newThread(fields = {}, options = {}) {
   }
   const timestamp = isoNow(options.now);
   const record = {
-    schema_version: 1,
+    schema_version: THREAD_SCHEMA_VERSION,
     id: typeof options.id === 'string' ? options.id : newUlid(),
     slug,
     title,

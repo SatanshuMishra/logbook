@@ -1,23 +1,28 @@
-import { ULID_PATTERN } from '../schema/patterns.mjs';
+import {
+  ULID_PATTERN,
+  CRITERION_ID_PATTERN,
+  CRITERION_KINDS,
+  CRITERION_TEXT_MAX_CHARS,
+} from '../schema/patterns.mjs';
 
-export { ULID_PATTERN };
+export { ULID_PATTERN, CRITERION_ID_PATTERN };
 
 export const criteriaCreateItem = {
   type: 'object',
   additionalProperties: false,
   required: ['text'],
   properties: {
-    text: { type: 'string', minLength: 1 },
-    done: { type: 'boolean' },
+    text: { type: 'string', minLength: 1, maxLength: CRITERION_TEXT_MAX_CHARS },
+    kind: { type: 'string', enum: [...CRITERION_KINDS] },
   },
 };
 
 export const criteriaToggleItem = {
   type: 'object',
   additionalProperties: false,
-  required: ['text', 'done'],
+  required: ['id', 'done'],
   properties: {
-    text: { type: 'string', minLength: 1 },
+    id: { type: 'string', pattern: CRITERION_ID_PATTERN },
     done: { type: 'boolean' },
   },
 };

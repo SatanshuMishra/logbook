@@ -1,4 +1,13 @@
-import { ULID_PATTERN, ISO_TIMESTAMP_PATTERN } from './patterns.mjs';
+import {
+  ULID_PATTERN,
+  ISO_TIMESTAMP_PATTERN,
+  CRITERION_ID_PATTERN,
+  CRITERION_KINDS,
+  CRITERION_TEXT_MAX_CHARS,
+  DECISION_REF_PATTERN,
+} from './patterns.mjs';
+
+export const THREAD_SCHEMA_VERSION = 2;
 
 export const threadSchema = {
   $id: 'https://continuity-ledger/schema/thread.json',
@@ -23,7 +32,7 @@ export const threadSchema = {
     'updated_at',
   ],
   properties: {
-    schema_version: { type: 'integer', const: 1 },
+    schema_version: { type: 'integer', const: THREAD_SCHEMA_VERSION },
     id: { type: 'string', pattern: ULID_PATTERN },
     slug: { type: 'string', minLength: 1 },
     title: { type: 'string', minLength: 1 },
@@ -35,10 +44,13 @@ export const threadSchema = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['text', 'done'],
+        required: ['id', 'text', 'done', 'kind', 'struck_by'],
         properties: {
-          text: { type: 'string', minLength: 1 },
+          id: { type: 'string', pattern: CRITERION_ID_PATTERN },
+          text: { type: 'string', minLength: 1, maxLength: CRITERION_TEXT_MAX_CHARS },
           done: { type: 'boolean' },
+          kind: { type: 'string', enum: [...CRITERION_KINDS] },
+          struck_by: { type: ['string', 'null'], pattern: DECISION_REF_PATTERN },
         },
       },
     },

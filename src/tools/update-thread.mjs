@@ -1,6 +1,6 @@
 import { isTerminal, assertSpineCaps } from '../model/index.mjs';
 import { commitAndReindex, ToolError } from './shared.mjs';
-import { ULID_PATTERN } from './schemas.mjs';
+import { ULID_PATTERN, criteriaToggleItem } from './schemas.mjs';
 
 function patchSpine(thread, spinePatch) {
   const spine = { ...thread.spine, ...spinePatch, status: thread.status };
@@ -9,15 +9,15 @@ function patchSpine(thread, spinePatch) {
 }
 
 function toggleCriteria(thread, patches) {
-  const known = new Set(thread.completion_criteria.map((c) => c.text));
+  const known = new Set(thread.completion_criteria.map((c) => c.id));
   for (const patch of patches) {
-    if (!known.has(patch.text)) {
-      throw new ToolError(`update_thread: unknown completion_criteria text "${patch.text}"`);
+    if (!known.has(patch.id)) {
+      throw new ToolError(`update_thread: unknown completion_criteria id "${patch.id}"`);
     }
   }
-  const byText = new Map(patches.map((p) => [p.text, p.done === true]));
+  const byId = new Map(patches.map((p) => [p.id, p.done === true]));
   return thread.completion_criteria.map((c) => (
-    byText.has(c.text) ? { text: c.text, done: byText.get(c.text) } : c
+    byId.has(c.id) ? { ...c, done: byId.get(c.id) } : c
   ));
 }
 
@@ -42,7 +42,7 @@ async function handler(ctx, args) {
 
 export default {
   name: 'update_thread',
-  description: 'Patch spine fields and toggle completion_criteria done (status unchanged; caps-enforced; terminal-refused).',
+  description: 'Patch spine fields and toggle completion_criteria done by criterion id (status unchanged; caps-enforced; terminal-refused).',
   inputSchema: {
     type: 'object',
     additionalProperties: false,
@@ -60,18 +60,7 @@ export default {
           out_of_scope: { type: 'array', items: { type: 'string' } },
         },
       },
-      completion_criteria: {
-        type: 'array',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['text', 'done'],
-          properties: {
-            text: { type: 'string', minLength: 1 },
-            done: { type: 'boolean' },
-          },
-        },
-      },
+      completion_criteria: { type: 'array', items: criteriaToggleItem },
     },
   },
   handler,
