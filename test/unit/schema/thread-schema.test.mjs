@@ -153,10 +153,10 @@ test('struck_by is null or a NNNN-slug decision ref', () => {
   );
 });
 
-test('an empty completion_criteria array is rejected (a thread needs a definition of done)', () => {
+test('an empty completion_criteria array is accepted — the definition of done gates opening, not the record', () => {
   const { valid, errors } = validateThread({ ...makeValidThread(), completion_criteria: [] });
-  assert.equal(valid, false);
-  assert.equal(errors[0].keyword, 'minItems');
+  assert.equal(valid, true);
+  assert.deepEqual(errors, []);
 });
 
 test('each external_refs item is closed and requires system, id, url', () => {

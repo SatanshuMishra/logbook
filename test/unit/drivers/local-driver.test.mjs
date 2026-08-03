@@ -482,6 +482,20 @@ test('readThread upcasts a stored v1 record to v2 in memory', async (t) => {
   ]);
 });
 
+test('a stored v1 thread with no completion_criteria stays writable after the upcast', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  const stored = makeThread({ schema_version: 1, completion_criteria: [] });
+  await writeFile(join(root, 'threads', `${ULID_A}.json`), JSON.stringify(stored, null, 2) + '\n');
+  const record = await driver.readThread(ULID_A);
+  await driver.writeThread({ ...record, spine: { ...record.spine, next_step: 'define a DoD' } });
+  const reread = await driver.readThread(ULID_A);
+  assert.equal(reread.schema_version, 2);
+  assert.deepEqual(reread.completion_criteria, []);
+  assert.equal(reread.spine.next_step, 'define a DoD');
+});
+
 test('readThread returns null for a missing thread', async (t) => {
   const root = await scratchRoot(t);
   const driver = new LocalDriver(root);

@@ -41,7 +41,6 @@ export const threadSchema = {
     predecessor_id: { type: ['string', 'null'], pattern: ULID_PATTERN },
     completion_criteria: {
       type: 'array',
-      minItems: 1,
       items: {
         type: 'object',
         additionalProperties: false,

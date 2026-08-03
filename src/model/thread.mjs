@@ -13,8 +13,8 @@ function toSlug(title) {
 }
 
 function normalizeCriteria(input) {
-  if (!Array.isArray(input)) {
-    return [];
+  if (!Array.isArray(input) || input.length === 0) {
+    throw new TypeError('newThread: completion_criteria must list at least one criterion');
   }
   return input.map((item, index) => ({
     id: `c${index + 1}`,
