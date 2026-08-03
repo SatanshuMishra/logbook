@@ -13,6 +13,7 @@ import reopen from './reopen.mjs';
 import reconcile from './reconcile.mjs';
 import rebuildIndex from './rebuild-index.mjs';
 import getResumeBrief from './get-resume-brief.mjs';
+import readDecision from './read-decision.mjs';
 
 export const TOOLS = [
   openThread,
@@ -27,6 +28,7 @@ export const TOOLS = [
   reconcile,
   rebuildIndex,
   getResumeBrief,
+  readDecision,
 ];
 
 const ajv = new Ajv({ allErrors: true });

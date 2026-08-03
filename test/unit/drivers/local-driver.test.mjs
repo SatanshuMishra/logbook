@@ -652,3 +652,25 @@ test('writeIndexFile round-trips via readIndexFile and persists canonical bytes'
   const raw = await (await import('node:fs/promises')).readFile(path, 'utf8');
   assert.equal(raw, JSON.stringify(obj, null, 2) + '\n');
 });
+
+test('deleteIndexFile removes an index file and reports an absent one without throwing', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await driver.writeIndexFile('briefing', { thread_id: ULID_A, rendered: 'x' });
+  assert.equal(await driver.deleteIndexFile('briefing'), true);
+  assert.deepEqual(await driver.readIndexFile('briefing'), {});
+  assert.equal(await driver.deleteIndexFile('briefing'), false);
+});
+
+test('deleteIndexFile refuses a name that could escape the index directory', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  for (const name of ['../threads/x', 'a/b', '', null]) {
+    await assert.rejects(
+      () => driver.deleteIndexFile(name),
+      /deleteIndexFile: invalid index name/,
+    );
+  }
+});

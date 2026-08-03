@@ -64,7 +64,10 @@ test('the handoff chain writes the substrate and clears the pointer on paused', 
   assert.equal(entry.next_step, 'add the failing integration test');
   assert.notEqual(entry.next_step.trim(), '');
 
-  const { brief } = await callTool(client, 'get_resume_brief', { thread_id: thread.id });
-  assert.equal(brief.active_goal, 'wire the widget end to end');
-  assert.equal(brief.next_step, 'add the failing integration test');
+  const { briefing } = await callTool(client, 'get_resume_brief', { thread_id: thread.id });
+  assert.ok(briefing.includes('## WHY\nwire the widget end to end'));
+  assert.ok(briefing.includes('## NEXT STEP\nadd the failing integration test'));
+  assert.ok(briefing.includes('## WATCH OUT FOR\n- rerun the widget suite before pushing — ci is flaky on that path'));
+  assert.ok(briefing.includes(`## DECIDED ON THIS STEP\n- ${decision.number} — Use the widget`));
+  assert.ok(briefing.includes('## NOT IN SCOPE\n- widget docs'));
 });

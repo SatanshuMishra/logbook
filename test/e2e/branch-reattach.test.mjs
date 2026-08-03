@@ -51,6 +51,8 @@ test('reconcile re-attaches by trailer and by slug and leaves an unmatched branc
   );
 
   await git(repo, ['branch', '-q', '-D', 'feat/trailer']);
-  const { brief } = await callTool(client, 'get_resume_brief', { thread_id: trailerThread.id });
-  assert.equal(brief.thread_id, trailerThread.id);
+  const { thread_id, briefing } = await callTool(client, 'get_resume_brief', { thread_id: trailerThread.id });
+  assert.equal(thread_id, trailerThread.id);
+  assert.ok(briefing.startsWith('# PREFLIGHT BRIEFING — Trailer Thread\n'));
+  assert.ok(briefing.includes('- [>] c1 — ship it'));
 });

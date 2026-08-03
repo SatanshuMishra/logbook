@@ -4,7 +4,7 @@ import { startLedger, stopLedger, callTool } from './helpers/harness.mjs';
 import { initNonGitDir, tempDir, cleanup } from './helpers/fixtures.mjs';
 import { readActiveThread, readResumableIndex } from './helpers/readers.mjs';
 
-test('a multi-thread roster counts both resumables and the brief is spine-only', async (t) => {
+test('a multi-thread roster counts both resumables and the briefing is scoped to one thread', async (t) => {
   const projectDir = await initNonGitDir();
   const dataDir = await tempDir('e2e-data-');
   t.after(() => cleanup(projectDir, dataDir));
@@ -38,8 +38,10 @@ test('a multi-thread roster counts both resumables and the brief is spine-only',
   const betaEntry = roster.find((r) => r.id === b.id);
   assert.equal(betaEntry.next_step, 'beta next step');
 
-  const { brief } = await callTool(client, 'get_resume_brief', { thread_id: b.id });
-  assert.equal(brief.thread_id, b.id);
-  assert.equal(brief.next_step, 'beta next step');
-  assert.deepEqual(brief.drift, []);
+  const { thread_id, briefing } = await callTool(client, 'get_resume_brief', { thread_id: b.id });
+  assert.equal(thread_id, b.id);
+  assert.ok(briefing.startsWith('# PREFLIGHT BRIEFING — Beta\n'));
+  assert.ok(briefing.includes('## NEXT STEP\nbeta next step'));
+  assert.equal(briefing.includes('alpha next step'), false, 'the briefing is scoped to one thread');
+  assert.equal(briefing.includes('## SINCE YOU LEFT'), false, 'no drift snapshot means no drift section');
 });

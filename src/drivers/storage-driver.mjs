@@ -63,6 +63,10 @@ export class StorageDriver {
     throw new Error('StorageDriver.writeIndexFile not implemented');
   }
 
+  async deleteIndexFile(name) {
+    throw new Error('StorageDriver.deleteIndexFile not implemented');
+  }
+
   async commit(message) {
     throw new Error('StorageDriver.commit not implemented');
   }

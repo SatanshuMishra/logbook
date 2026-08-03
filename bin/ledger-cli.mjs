@@ -4,6 +4,7 @@ import { mkdir, readdir } from 'node:fs/promises';
 import { isAbsolute, resolve, sep } from 'node:path';
 import { buildContext, callTool, commitAndReindex } from '../src/tools/index.mjs';
 import { rebuildIndex } from '../src/index/rebuild-index.mjs';
+import { BRIEFING_INDEX } from '../src/index/index-files.mjs';
 import { readActiveThread } from '../src/util/active-thread.mjs';
 import { gitExec } from '../src/util/git-exec.mjs';
 import { clearedGitLocationEnv } from '../src/util/git-env.mjs';
@@ -12,7 +13,7 @@ import { LocalDriver } from '../src/drivers/local-driver.mjs';
 import { DEFAULT_LEDGER_BRANCH } from '../src/drivers/git-ledger.mjs';
 
 const USAGE =
-  'usage: ledger-cli <roster | reconcile | active-thread | record-sha <sha> | sync | restore <target> [--ref <ref>] [--force]>';
+  'usage: ledger-cli <roster | reconcile | active-thread | briefing-pledge [--clear] | record-sha <sha> | sync | restore <target> [--ref <ref>] [--force]>';
 
 const SHA_PATTERN = /^[0-9a-fA-F]{4,64}$/;
 
@@ -27,6 +28,33 @@ async function runRoster() {
 async function runActiveThread() {
   const ctx = await buildContext({});
   return { thread_id: await readActiveThread(ctx) };
+}
+
+function parseBriefingPledgeArgs(rest) {
+  let clear = false;
+  for (const arg of rest) {
+    if (arg !== '--clear') {
+      throw new Error(`briefing-pledge: unexpected argument ${arg}`);
+    }
+    clear = true;
+  }
+  return { clear };
+}
+
+function asPledge(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (typeof value.thread_id !== 'string' || typeof value.rendered !== 'string') return null;
+  if (value.rendered.length === 0) return null;
+  return value;
+}
+
+async function runBriefingPledge(rest) {
+  const { clear } = parseBriefingPledgeArgs(rest);
+  const ctx = await buildContext({});
+  if (clear) {
+    return { cleared: await ctx.driver.deleteIndexFile(BRIEFING_INDEX) };
+  }
+  return asPledge(await ctx.driver.readIndexFile(BRIEFING_INDEX));
 }
 
 async function runReconcile() {
@@ -180,6 +208,8 @@ export async function runCli(argv) {
       return runReconcile();
     case 'active-thread':
       return runActiveThread();
+    case 'briefing-pledge':
+      return runBriefingPledge(rest);
     case 'record-sha':
       return runRecordSha(rest);
     case 'sync':
