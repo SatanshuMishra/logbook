@@ -158,6 +158,24 @@ test('an omitted risk scope defaults to the current criterion id', async (t) => 
   assert.deepEqual(updated.spine.open_risks, [{ text: WELL_FORMED_RISK, scope: 'c2', refs: [] }]);
 });
 
+test('an omitted scope resolves against the criteria as toggled by the same call', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx, [{ text: 'a' }, { text: 'b' }]);
+  await recordDecision.handler(ctx, {
+    thread_id: thread.id, slug: 'adopt-x', title: 'Adopt X', context: 'c', options: ['x'], outcome: 'x',
+  });
+  const { thread: updated } = await updateThread.handler(ctx, {
+    thread_id: thread.id,
+    completion_criteria: [{ id: 'c1', done: true }],
+    spine: {
+      open_risks: [{ text: WELL_FORMED_RISK }],
+      key_decisions: [{ ref: '0001-adopt-x', title: 'Adopt X' }],
+    },
+  });
+  assert.deepEqual(updated.spine.open_risks, [{ text: WELL_FORMED_RISK, scope: 'c2', refs: [] }]);
+  assert.deepEqual(updated.spine.key_decisions, [{ ref: '0001-adopt-x', title: 'Adopt X', scope: 'c2' }]);
+});
+
 test('a thread scope is only ever set by passing it explicitly', async (t) => {
   const ctx = await makeToolCtx(t);
   const thread = await seedThread(ctx);

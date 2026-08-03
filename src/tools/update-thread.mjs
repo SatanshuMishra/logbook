@@ -59,13 +59,14 @@ async function handler(ctx, args) {
   if (isTerminal(thread.status)) {
     throw new ToolError(`update_thread: cannot mutate a terminal (${thread.status}) thread`);
   }
-  const spine = args.spine && typeof args.spine === 'object'
-    ? await patchSpine(driver, thread, args.spine)
-    : thread.spine;
   const completionCriteria = Array.isArray(args.completion_criteria)
     ? toggleCriteria(thread, args.completion_criteria)
     : thread.completion_criteria;
-  const updated = { ...thread, spine, completion_criteria: completionCriteria, updated_at: now() };
+  const toggled = { ...thread, completion_criteria: completionCriteria };
+  const spine = args.spine && typeof args.spine === 'object'
+    ? await patchSpine(driver, toggled, args.spine)
+    : thread.spine;
+  const updated = { ...toggled, spine, updated_at: now() };
   await driver.writeThread(updated);
   const { recovery_degraded } = await commitAndReindex(driver, `chore(ledger): update ${updated.slug}`);
   return { thread: updated, recovery_degraded };
@@ -73,7 +74,7 @@ async function handler(ctx, args) {
 
 export default {
   name: 'update_thread',
-  description: 'Patch spine fields and toggle completion_criteria done by criterion id. Risks and decisions are scoped: an omitted scope defaults to the current criterion, "thread" must be explicit, "legacy" is refused. Caps-enforced; terminal-refused.',
+  description: 'Patch spine fields and toggle completion_criteria done by criterion id. Risks and decisions are scoped: an omitted scope defaults to the criterion current AFTER this call\'s own completion_criteria toggles, "thread" must be explicit, "legacy" is refused. Caps-enforced; terminal-refused.',
   inputSchema: {
     type: 'object',
     additionalProperties: false,
