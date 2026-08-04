@@ -4,6 +4,7 @@ import { newThread } from '../../../src/model/index.mjs';
 import updateThread from '../../../src/tools/update-thread.mjs';
 import openThread from '../../../src/tools/open-thread.mjs';
 import recordDecision from '../../../src/tools/record-decision.mjs';
+import amendCriteria from '../../../src/tools/amend-criteria.mjs';
 import { callTool, ToolValidationError } from '../../../src/tools/registry.mjs';
 import { makeToolCtx, fixedClock } from '../../fixtures/tool-ctx.mjs';
 
@@ -58,6 +59,34 @@ test('update_thread rejects an unknown completion_criteria id, naming it', async
   );
 });
 
+test('update_thread refuses to flip a struck criterion, naming the decision that struck it', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx, [{ text: 'a' }, { text: 'b' }]);
+  const { number } = await recordDecision.handler(ctx, {
+    thread_id: thread.id,
+    slug: 'the-plan-was-wrong',
+    title: 'The plan was wrong',
+    context: 'c', options: ['x'], outcome: 'x',
+  });
+  const ref = `${number}-the-plan-was-wrong`;
+  await amendCriteria.handler(ctx, {
+    thread_id: thread.id, operations: [{ op: 'strike', id: 'c1', decision_ref: ref }],
+  });
+  await assert.rejects(
+    () => updateThread.handler(ctx, {
+      thread_id: thread.id, completion_criteria: [{ id: 'c1', done: true }],
+    }),
+    new RegExp(ref),
+  );
+  const { thread: updated } = await updateThread.handler(ctx, {
+    thread_id: thread.id, completion_criteria: [{ id: 'c2', done: true }],
+  });
+  assert.deepEqual(updated.completion_criteria, [
+    { id: 'c1', text: 'a', done: false, kind: 'planned', struck_by: ref },
+    { id: 'c2', text: 'b', done: true, kind: 'planned', struck_by: null },
+  ]);
+});
+
 test('update_thread no longer accepts a text-matched completion_criteria patch', async (t) => {
   const ctx = await makeToolCtx(t);
   const thread = await seedThread(ctx, [{ text: 'a' }]);
@@ -84,6 +113,22 @@ test('update_thread enforces the 200-char active_goal cap', async (t) => {
   const thread = await seedThread(ctx);
   await assert.rejects(
     () => updateThread.handler(ctx, { thread_id: thread.id, spine: { active_goal: 'a'.repeat(201) } }),
+    /active_goal/,
+  );
+});
+
+test('an untouched over-cap legacy scalar never blocks an unrelated patch', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const legacyGoal = 'a'.repeat(231);
+  const seed = newThread({ title: 'Legacy', completion_criteria: DOD }, { now: fixedClock });
+  await ctx.driver.writeThread({ ...seed, spine: { ...seed.spine, active_goal: legacyGoal } });
+  const { thread: updated } = await updateThread.handler(ctx, {
+    thread_id: seed.id, spine: { next_step: 'carry on' },
+  });
+  assert.equal(updated.spine.next_step, 'carry on');
+  assert.equal(updated.spine.active_goal, legacyGoal);
+  await assert.rejects(
+    () => updateThread.handler(ctx, { thread_id: seed.id, spine: { active_goal: legacyGoal } }),
     /active_goal/,
   );
 });
@@ -173,7 +218,10 @@ test('an omitted scope resolves against the criteria as toggled by the same call
     },
   });
   assert.deepEqual(updated.spine.open_risks, [{ text: WELL_FORMED_RISK, scope: 'c2', refs: [] }]);
-  assert.deepEqual(updated.spine.key_decisions, [{ ref: '0001-adopt-x', title: 'Adopt X', scope: 'c2' }]);
+  assert.deepEqual(updated.spine.key_decisions, [
+    { ref: '0001-adopt-x', title: 'Adopt X', scope: 'c1' },
+    { ref: '0001-adopt-x', title: 'Adopt X', scope: 'c2' },
+  ]);
 });
 
 test('a thread scope is only ever set by passing it explicitly', async (t) => {
@@ -206,6 +254,131 @@ test('update_thread refuses the legacy scope on a risk and on a decision', async
       spine: { key_decisions: [{ ref: '0001-adopt-x', title: 'Adopt X', scope: 'legacy' }] },
     }),
     /legacy/,
+  );
+});
+
+test('a risk write replaces only the scopes it submits and carries every other scope', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx, [{ text: 'a' }, { text: 'b' }]);
+  await updateThread.handler(ctx, {
+    thread_id: thread.id,
+    spine: {
+      open_risks: [
+        { text: 'hold the c1 fixture — it is shared with the driver suite', scope: 'c1' },
+        { text: 'wire the c2 adapter last — nothing calls it yet', scope: 'c2' },
+        { text: WELL_FORMED_RISK, scope: 'thread' },
+      ],
+    },
+  });
+  const { thread: updated } = await updateThread.handler(ctx, {
+    thread_id: thread.id,
+    spine: { open_risks: [{ text: 'hold the c1 fixture — the driver suite still shares it' }] },
+  });
+  assert.deepEqual(updated.spine.open_risks, [
+    { text: 'wire the c2 adapter last — nothing calls it yet', scope: 'c2', refs: [] },
+    { text: WELL_FORMED_RISK, scope: 'thread', refs: [] },
+    { text: 'hold the c1 fixture — the driver suite still shares it', scope: 'c1', refs: [] },
+  ]);
+});
+
+test('a key_decisions write carries the scopes it does not mention, legacy included', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx, [{ text: 'a' }, { text: 'b' }]);
+  await recordDecision.handler(ctx, {
+    thread_id: thread.id, slug: 'adopt-x', title: 'Adopt X', context: 'c', options: ['x'], outcome: 'x',
+  });
+  const stored = await ctx.driver.readThread(thread.id);
+  await ctx.driver.writeThread({
+    ...stored,
+    spine: {
+      ...stored.spine,
+      key_decisions: [
+        { ref: '0009-upcast-from-v1', title: 'Upcast from v1', scope: 'legacy' },
+        { ref: '0001-adopt-x', title: 'Adopt X', scope: 'c2' },
+      ],
+    },
+  });
+  const { thread: updated } = await updateThread.handler(ctx, {
+    thread_id: thread.id, spine: { key_decisions: [{ ref: '0001-adopt-x', title: 'Adopt X on this step' }] },
+  });
+  assert.deepEqual(updated.spine.key_decisions, [
+    { ref: '0009-upcast-from-v1', title: 'Upcast from v1', scope: 'legacy' },
+    { ref: '0001-adopt-x', title: 'Adopt X', scope: 'c2' },
+    { ref: '0001-adopt-x', title: 'Adopt X on this step', scope: 'c1' },
+  ]);
+});
+
+test('a scope named in replace_scopes is cleared, so its last risk can be retired', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx, [{ text: 'a' }, { text: 'b' }]);
+  await updateThread.handler(ctx, {
+    thread_id: thread.id,
+    spine: {
+      open_risks: [
+        { text: 'hold the c1 fixture — it is shared with the driver suite', scope: 'c1' },
+        { text: WELL_FORMED_RISK, scope: 'thread' },
+      ],
+    },
+  });
+  const { thread: updated } = await updateThread.handler(ctx, {
+    thread_id: thread.id,
+    spine: { open_risks: [] },
+    replace_scopes: { open_risks: ['c1'] },
+  });
+  assert.deepEqual(updated.spine.open_risks, [
+    { text: WELL_FORMED_RISK, scope: 'thread', refs: [] },
+  ]);
+});
+
+test('replace_scopes retires a scope with no spine payload of its own', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx, [{ text: 'a' }, { text: 'b' }]);
+  await recordDecision.handler(ctx, {
+    thread_id: thread.id, slug: 'adopt-x', title: 'Adopt X', context: 'c', options: ['x'], outcome: 'x',
+  });
+  await updateThread.handler(ctx, {
+    thread_id: thread.id,
+    spine: {
+      open_risks: [{ text: WELL_FORMED_RISK, scope: 'thread' }],
+      key_decisions: [{ ref: '0001-adopt-x', title: 'Adopt X', scope: 'c1' }],
+    },
+  });
+  const { thread: updated } = await updateThread.handler(ctx, {
+    thread_id: thread.id,
+    replace_scopes: { open_risks: ['thread'], key_decisions: ['c1'] },
+  });
+  assert.deepEqual(updated.spine.open_risks, []);
+  assert.deepEqual(updated.spine.key_decisions, []);
+});
+
+test('an empty risks array that names no scope is refused rather than silently kept', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx);
+  await updateThread.handler(ctx, {
+    thread_id: thread.id, spine: { open_risks: [{ text: WELL_FORMED_RISK }] },
+  });
+  await assert.rejects(
+    () => updateThread.handler(ctx, { thread_id: thread.id, spine: { open_risks: [] } }),
+    /replace_scopes/,
+  );
+  const stored = await ctx.driver.readThread(thread.id);
+  assert.equal(stored.spine.open_risks.length, 1);
+});
+
+test('update_thread refuses the legacy scope in replace_scopes', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx);
+  await assert.rejects(
+    () => updateThread.handler(ctx, {
+      thread_id: thread.id, replace_scopes: { open_risks: ['legacy'] },
+    }),
+    /legacy/,
+  );
+  await assert.rejects(
+    () => callTool('update_thread', {
+      thread_id: thread.id, replace_scopes: { key_decisions: ['legacy'] },
+    }, ctx),
+    ToolValidationError,
   );
 });
 
