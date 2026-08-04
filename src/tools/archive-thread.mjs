@@ -19,7 +19,6 @@ async function handler(ctx, args) {
     ...thread,
     status: 'abandoned',
     abandoned_reason: args.reason,
-    spine: { ...thread.spine, status: 'abandoned' },
     updated_at: nowIso,
   };
   await driver.writeThread(updated);

@@ -1,5 +1,7 @@
+import { resolveWriteScope } from '../model/index.mjs';
 import { commitAndReindex, ToolError } from './shared.mjs';
-import { ULID_PATTERN } from './schemas.mjs';
+import { ULID_PATTERN, WRITABLE_SCOPE_PATTERN } from './schemas.mjs';
+import { assertWritableScope } from './spine-input.mjs';
 
 const BULLET_MARKER = /^[-*]\s+/;
 
@@ -47,6 +49,10 @@ async function handler(ctx, args) {
   if (!thread) {
     throw new ToolError(`record_decision: thread_id ${args.thread_id} does not reference an existing thread`);
   }
+  const scope = assertWritableScope(
+    args.scope ?? resolveWriteScope(thread),
+    'record_decision: scope',
+  );
   const nnnn = await driver.nextDecisionNumber();
   const markdown = renderDecision({
     nnnn,
@@ -59,9 +65,9 @@ async function handler(ctx, args) {
   });
   const path = await driver.writeDecision(nnnn, args.slug, markdown);
   const ref = `${nnnn}-${args.slug}`;
-  const keyDecisions = thread.spine.key_decisions.includes(ref)
+  const keyDecisions = thread.spine.key_decisions.some((d) => d.ref === ref)
     ? thread.spine.key_decisions
-    : [...thread.spine.key_decisions, ref];
+    : [...thread.spine.key_decisions, { ref, title: args.title, scope }];
   const updated = {
     ...thread,
     spine: { ...thread.spine, key_decisions: keyDecisions },
@@ -74,7 +80,7 @@ async function handler(ctx, args) {
 
 export default {
   name: 'record_decision',
-  description: 'Record a numbered MADR decision (Thread-Id frontmatter) and link it into the thread spine.',
+  description: 'Record a numbered MADR decision (Thread-Id frontmatter) and link it into the thread spine under a scope that defaults to the current criterion.',
   inputSchema: {
     type: 'object',
     additionalProperties: false,
@@ -91,6 +97,7 @@ export default {
         ],
       },
       outcome: { type: 'string' },
+      scope: { type: 'string', pattern: WRITABLE_SCOPE_PATTERN },
     },
   },
   handler,

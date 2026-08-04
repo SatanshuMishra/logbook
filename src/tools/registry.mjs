@@ -7,12 +7,14 @@ import appendSessionEvent from './append-session-event.mjs';
 import recordDecision from './record-decision.mjs';
 import transitionThread from './transition-thread.mjs';
 import updateThread from './update-thread.mjs';
+import amendCriteria from './amend-criteria.mjs';
 import archiveThread from './archive-thread.mjs';
 import createSuccessor from './create-successor.mjs';
 import reopen from './reopen.mjs';
 import reconcile from './reconcile.mjs';
 import rebuildIndex from './rebuild-index.mjs';
 import getResumeBrief from './get-resume-brief.mjs';
+import readDecision from './read-decision.mjs';
 
 export const TOOLS = [
   openThread,
@@ -21,12 +23,14 @@ export const TOOLS = [
   recordDecision,
   transitionThread,
   updateThread,
+  amendCriteria,
   archiveThread,
   createSuccessor,
   reopen,
   reconcile,
   rebuildIndex,
   getResumeBrief,
+  readDecision,
 ];
 
 const ajv = new Ajv({ allErrors: true });

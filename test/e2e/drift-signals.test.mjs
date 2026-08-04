@@ -9,7 +9,7 @@ async function boundReconcile(t, { repo, branch, firstCommit = null, extraEnv })
   t.after(() => cleanup(dataDir));
   const client = await startLedger({ projectDir: repo, dataDir, extraEnv });
   t.after(() => stopLedger(client));
-  const { thread } = await callTool(client, 'open_thread', { title: `Drift ${branch}` });
+  const { thread } = await callTool(client, 'open_thread', { title: `Drift ${branch}`, completion_criteria: [{ text: 'ship it' }] });
   await callTool(client, 'bind_branch', {
     thread_id: thread.id,
     repo,

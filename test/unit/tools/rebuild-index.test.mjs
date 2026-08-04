@@ -7,8 +7,8 @@ import { makeToolCtx } from '../../fixtures/tool-ctx.mjs';
 
 test('rebuild_index returns counts including a resumable count', async (t) => {
   const ctx = await makeToolCtx(t);
-  await openThread.handler(ctx, { title: 'One' });
-  const { thread: two } = await openThread.handler(ctx, { title: 'Two' });
+  await openThread.handler(ctx, { title: 'One', completion_criteria: [{ text: 'ship it' }] });
+  const { thread: two } = await openThread.handler(ctx, { title: 'Two', completion_criteria: [{ text: 'ship it' }] });
   await transitionThread.handler(ctx, { thread_id: two.id, to_status: 'paused' });
   const { counts } = await rebuildIndexTool.handler(ctx, {});
   assert.equal(counts.threads, 2);

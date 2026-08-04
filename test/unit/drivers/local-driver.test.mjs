@@ -52,23 +52,25 @@ const ULID_B = '01BX5ZZKBKACTAV9WEVGEMMVRZ';
 
 function makeThread(overrides = {}) {
   return {
-    schema_version: 1,
+    schema_version: 2,
     id: ULID_A,
     slug: 'my-thread',
     title: 'My Thread',
     status: 'active',
     parent_id: null,
     predecessor_id: null,
-    completion_criteria: [{ text: 'ship it', done: false }],
+    completion_criteria: [
+      { id: 'c1', text: 'ship it', done: false, kind: 'planned', struck_by: null },
+    ],
     vcs_ref: null,
     external_refs: [],
     blocked_by: null,
     abandoned_reason: null,
     closure_statement: null,
     spine: {
-      status: 'active',
       active_goal: 'g',
       next_step: 'n',
+      last_session: '',
       open_risks: [],
       key_decisions: [],
       out_of_scope: [],
@@ -463,6 +465,37 @@ test('writeThread rejects an invalid record before writing', async (t) => {
   await assert.rejects(() => driver.writeThread(makeThread({ status: 'bogus' })), /schema validation/);
 });
 
+test('readThread upcasts a stored v1 record to v2 in memory', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  const stored = makeThread({
+    schema_version: 1,
+    completion_criteria: [{ text: 'ship it', done: false }, { text: 'measure', done: true }],
+  });
+  await writeFile(join(root, 'threads', `${ULID_A}.json`), JSON.stringify(stored, null, 2) + '\n');
+  const record = await driver.readThread(ULID_A);
+  assert.equal(record.schema_version, 2);
+  assert.deepEqual(record.completion_criteria, [
+    { id: 'c1', text: 'ship it', done: false, kind: 'planned', struck_by: null },
+    { id: 'c2', text: 'measure', done: true, kind: 'planned', struck_by: null },
+  ]);
+});
+
+test('a stored v1 thread with no completion_criteria stays writable after the upcast', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  const stored = makeThread({ schema_version: 1, completion_criteria: [] });
+  await writeFile(join(root, 'threads', `${ULID_A}.json`), JSON.stringify(stored, null, 2) + '\n');
+  const record = await driver.readThread(ULID_A);
+  await driver.writeThread({ ...record, spine: { ...record.spine, next_step: 'define a DoD' } });
+  const reread = await driver.readThread(ULID_A);
+  assert.equal(reread.schema_version, 2);
+  assert.deepEqual(reread.completion_criteria, []);
+  assert.equal(reread.spine.next_step, 'define a DoD');
+});
+
 test('readThread returns null for a missing thread', async (t) => {
   const root = await scratchRoot(t);
   const driver = new LocalDriver(root);
@@ -618,4 +651,26 @@ test('writeIndexFile round-trips via readIndexFile and persists canonical bytes'
   assert.deepEqual(await driver.readIndexFile('by-slug'), obj);
   const raw = await (await import('node:fs/promises')).readFile(path, 'utf8');
   assert.equal(raw, JSON.stringify(obj, null, 2) + '\n');
+});
+
+test('deleteIndexFile removes an index file and reports an absent one without throwing', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  await driver.writeIndexFile('briefing', { thread_id: ULID_A, rendered: 'x' });
+  assert.equal(await driver.deleteIndexFile('briefing'), true);
+  assert.deepEqual(await driver.readIndexFile('briefing'), {});
+  assert.equal(await driver.deleteIndexFile('briefing'), false);
+});
+
+test('deleteIndexFile refuses a name that could escape the index directory', async (t) => {
+  const root = await scratchRoot(t);
+  const driver = new LocalDriver(root);
+  await driver.init();
+  for (const name of ['../threads/x', 'a/b', '', null]) {
+    await assert.rejects(
+      () => driver.deleteIndexFile(name),
+      /deleteIndexFile: invalid index name/,
+    );
+  }
 });

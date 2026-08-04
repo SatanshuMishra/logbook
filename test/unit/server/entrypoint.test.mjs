@@ -52,22 +52,23 @@ test('the server identifies as "ledger" so the mcp__ledger__* surface resolves',
   assert.equal(client.getServerVersion().name, 'ledger');
 });
 
-test('listTools exposes the frozen 12-tool surface (no restore) through the live server', async (t) => {
+test('listTools exposes the frozen 14-tool surface (no restore) through the live server', async (t) => {
   const client = await liveServer(t);
   const { tools } = await client.listTools();
-  assert.equal(tools.length, 12);
+  assert.equal(tools.length, 14);
   const names = tools.map((x) => x.name).sort();
   assert.deepEqual(names, [
-    'append_session_event', 'archive_thread', 'bind_branch', 'create_successor',
-    'get_resume_brief', 'open_thread', 'rebuild_index', 'reconcile',
-    'record_decision', 'reopen', 'transition_thread', 'update_thread',
+    'amend_criteria', 'append_session_event', 'archive_thread', 'bind_branch',
+    'create_successor', 'get_resume_brief', 'open_thread', 'read_decision',
+    'rebuild_index', 'reconcile', 'record_decision', 'reopen', 'transition_thread',
+    'update_thread',
   ]);
   assert.equal(names.includes('restore'), false);
 });
 
 test('a real open_thread call flows through buildContext into the live tool layer', async (t) => {
   const client = await liveServer(t);
-  const res = await client.callTool({ name: 'open_thread', arguments: { title: 'Via Server' } });
+  const res = await client.callTool({ name: 'open_thread', arguments: { title: 'Via Server', completion_criteria: [{ text: 'ship it' }] } });
   assert.equal(res.isError, undefined);
   const payload = JSON.parse(res.content[0].text);
   assert.equal(payload.thread.status, 'active');

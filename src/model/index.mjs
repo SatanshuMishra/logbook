@@ -8,9 +8,17 @@ export {
 export { checkDefinitionOfDone } from './dod.mjs';
 export {
   SPINE_CAPS,
-  COUNT_CAPPED_ARRAY_FIELDS,
   CapViolationError,
   assertSpineCaps,
 } from './caps.mjs';
+export {
+  SELECTION_STATES,
+  liveCriteria,
+  currentCriterion,
+  criteriaProgress,
+  resolveWriteScope,
+  selectCurrent,
+} from './selection.mjs';
+export { nextCriterionId } from './criteria.mjs';
 export { newThread } from './thread.mjs';
 export { newBinding } from './binding.mjs';

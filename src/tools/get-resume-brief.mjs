@@ -1,8 +1,17 @@
+import { renderBriefing } from '../render/briefing.mjs';
+import { BRIEFING_INDEX } from '../index/index-files.mjs';
+import { takeDriftSnapshot } from '../drift/index.mjs';
 import { ToolError } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
 
+function byId(a, b) {
+  if (a.id < b.id) return -1;
+  if (a.id > b.id) return 1;
+  return 0;
+}
+
 async function handler(ctx, args) {
-  const { driver } = ctx;
+  const { driver, now } = ctx;
   const thread = await driver.readThread(args.thread_id);
   if (!thread) {
     throw new ToolError(`get_resume_brief: thread_id ${args.thread_id} does not reference an existing thread`);
@@ -10,27 +19,25 @@ async function handler(ctx, args) {
   const all = await driver.listThreads();
   const children = all
     .filter((t) => t.parent_id === thread.id)
-    .map((t) => ({ id: t.id, slug: t.slug, title: t.title, status: t.status }));
-  const brief = {
+    .sort(byId)
+    .map((t) => ({ slug: t.slug, status: t.status }));
+  const predecessorRecord = thread.predecessor_id
+    ? all.find((t) => t.id === thread.predecessor_id) ?? null
+    : null;
+  const predecessor = predecessorRecord ? { slug: predecessorRecord.slug } : null;
+  const drift = await takeDriftSnapshot(driver, thread.id);
+  const briefing = renderBriefing({ thread, drift, children, predecessor });
+  await driver.writeIndexFile(BRIEFING_INDEX, {
     thread_id: thread.id,
-    slug: thread.slug,
-    title: thread.title,
-    status: thread.status,
-    active_goal: thread.spine.active_goal,
-    next_step: thread.spine.next_step,
-    open_risks: thread.spine.open_risks,
-    key_decisions: thread.spine.key_decisions,
-    out_of_scope: thread.spine.out_of_scope,
-    children,
-    predecessor_id: thread.predecessor_id,
-    drift: [],
-  };
-  return { brief };
+    rendered: briefing,
+    rendered_at: now(),
+  });
+  return { thread_id: thread.id, briefing };
 }
 
 export default {
   name: 'get_resume_brief',
-  description: 'Return the spine-only resume brief for a thread plus resolved child summaries.',
+  description: 'Render the preflight briefing for a thread as markdown, filtered to the current criterion, and pledge it for the verbatim gate. The rendered string is the only payload.',
   inputSchema: {
     type: 'object',
     additionalProperties: false,

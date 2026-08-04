@@ -6,30 +6,31 @@ import { makeToolCtx } from '../../fixtures/tool-ctx.mjs';
 
 const FROZEN = [
   'open_thread', 'bind_branch', 'append_session_event', 'record_decision',
-  'transition_thread', 'update_thread', 'archive_thread', 'create_successor',
-  'reopen', 'reconcile', 'rebuild_index', 'get_resume_brief',
+  'transition_thread', 'update_thread', 'amend_criteria', 'archive_thread',
+  'create_successor', 'reopen', 'reconcile', 'rebuild_index', 'get_resume_brief',
+  'read_decision',
 ];
 
-test('listTools exposes exactly the frozen 12-tool surface with inputSchemas', () => {
+test('listTools exposes exactly the frozen 14-tool surface with inputSchemas', () => {
   const names = listTools().map((t) => t.name);
   assert.deepEqual([...names].sort(), [...FROZEN].sort());
-  assert.equal(names.length, 12);
+  assert.equal(names.length, 14);
   for (const descriptor of listTools()) {
     assert.equal(descriptor.inputSchema.type, 'object');
     assert.equal('handler' in descriptor, false);
   }
-  assert.equal(TOOLS.length, 12);
+  assert.equal(TOOLS.length, 14);
 });
 
 test('callTool validates args against the per-tool schema before dispatch', async (t) => {
   const ctx = await makeToolCtx(t);
   await assert.rejects(() => callTool('open_thread', {}, ctx), ToolValidationError);
-  await assert.rejects(() => callTool('open_thread', { title: 'X', bogus: 1 }, ctx), ToolValidationError);
+  await assert.rejects(() => callTool('open_thread', { title: 'X', bogus: 1, completion_criteria: [{ text: 'ship it' }] }, ctx), ToolValidationError);
 });
 
 test('callTool dispatches a valid call to the handler', async (t) => {
   const ctx = await makeToolCtx(t);
-  const { thread } = await callTool('open_thread', { title: 'Via Registry' }, ctx);
+  const { thread } = await callTool('open_thread', { title: 'Via Registry', completion_criteria: [{ text: 'ship it' }] }, ctx);
   assert.equal(thread.slug, 'via-registry');
   assert.equal(thread.status, 'active');
 });

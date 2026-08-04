@@ -11,7 +11,7 @@ test('the same tool surface runs on a non-git project at parity', async (t) => {
   const client = await startLedger({ projectDir, dataDir });
   t.after(() => stopLedger(client));
 
-  const { thread } = await callTool(client, 'open_thread', { title: 'Parity' });
+  const { thread } = await callTool(client, 'open_thread', { title: 'Parity', completion_criteria: [{ text: 'ship it' }] });
   assert.equal(thread.vcs_ref, null);
 
   const reconcile = await callTool(client, 'reconcile', {});
@@ -32,7 +32,10 @@ test('the same tool surface runs on a non-git project at parity', async (t) => {
   assert.equal(roster[0].id, thread.id);
   assert.equal(roster[0].next_step, 'parity next step');
 
-  const { brief } = await callTool(client, 'get_resume_brief', { thread_id: thread.id });
-  assert.equal(brief.thread_id, thread.id);
-  assert.equal(brief.next_step, 'parity next step');
+  const response = await callTool(client, 'get_resume_brief', { thread_id: thread.id });
+  assert.deepEqual(Object.keys(response).sort(), ['briefing', 'thread_id']);
+  assert.equal(response.thread_id, thread.id);
+  assert.ok(response.briefing.startsWith('# PREFLIGHT BRIEFING — Parity\n'));
+  assert.ok(response.briefing.includes('## WHY\nparity goal'));
+  assert.ok(response.briefing.includes('## NEXT STEP\nparity next step'));
 });

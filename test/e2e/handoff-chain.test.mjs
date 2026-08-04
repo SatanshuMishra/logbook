@@ -11,7 +11,7 @@ test('the handoff chain writes the substrate and clears the pointer on paused', 
   const client = await startLedger({ projectDir, dataDir });
   t.after(() => stopLedger(client));
 
-  const { thread } = await callTool(client, 'open_thread', { title: 'Handoff Widget' });
+  const { thread } = await callTool(client, 'open_thread', { title: 'Handoff Widget', completion_criteria: [{ text: 'ship it' }] });
   assert.equal(await readActiveThread({ projectDir, dataDir }), thread.id);
 
   const event = await callTool(client, 'append_session_event', {
@@ -37,12 +37,19 @@ test('the handoff chain writes the substrate and clears the pointer on paused', 
     spine: {
       active_goal: 'wire the widget end to end',
       next_step: 'add the failing integration test',
-      open_risks: ['flaky ci on the widget path'],
+      open_risks: [{ text: 'rerun the widget suite before pushing — ci is flaky on that path' }],
       out_of_scope: ['widget docs'],
     },
   });
   assert.equal(refreshed.thread.spine.next_step, 'add the failing integration test');
-  assert.deepEqual(refreshed.thread.spine.key_decisions, [`${decision.number}-use-widget`]);
+  assert.deepEqual(refreshed.thread.spine.open_risks, [{
+    text: 'rerun the widget suite before pushing — ci is flaky on that path',
+    scope: 'c1',
+    refs: [],
+  }]);
+  assert.deepEqual(refreshed.thread.spine.key_decisions, [
+    { ref: `${decision.number}-use-widget`, title: 'Use the widget', scope: 'c1' },
+  ]);
 
   const paused = await callTool(client, 'transition_thread', { thread_id: thread.id, to_status: 'paused' });
   assert.equal(paused.thread.status, 'paused');
@@ -57,7 +64,10 @@ test('the handoff chain writes the substrate and clears the pointer on paused', 
   assert.equal(entry.next_step, 'add the failing integration test');
   assert.notEqual(entry.next_step.trim(), '');
 
-  const { brief } = await callTool(client, 'get_resume_brief', { thread_id: thread.id });
-  assert.equal(brief.active_goal, 'wire the widget end to end');
-  assert.equal(brief.next_step, 'add the failing integration test');
+  const { briefing } = await callTool(client, 'get_resume_brief', { thread_id: thread.id });
+  assert.ok(briefing.includes('## WHY\nwire the widget end to end'));
+  assert.ok(briefing.includes('## NEXT STEP\nadd the failing integration test'));
+  assert.ok(briefing.includes('## WATCH OUT FOR\n- rerun the widget suite before pushing — ci is flaky on that path'));
+  assert.ok(briefing.includes(`## DECIDED ON THIS STEP\n- ${decision.number} — Use the widget`));
+  assert.ok(briefing.includes('## NOT IN SCOPE\n- widget docs'));
 });
