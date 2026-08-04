@@ -421,6 +421,14 @@ the partial-write ghost-thread defects.
   `:30`; reject `closure_statement` on a non-`done` target rather than silently dropping it.
 - `open_thread`: constrain `slug` with the same pattern already enforced for decision slugs
   (`local-driver.mjs:206`), replacing the free-text `minLength: 1` at `open-thread.mjs:33`.
+- **Added during execution (MSP-1B final review, 2026-08-04). Read this before adding any union.**
+  `disagrees` in `src/schema/error-projection.mjs:204` demotes a branch on **any** `const`/`enum`
+  error anywhere in its subtree, not only on a discriminator. It is inert today because the one
+  shipped `anyOf` (`record_decision.options`) has `array`/`string` branches with no enum, and
+  `amend_criteria` uses `if`/`then`, which forms no branch container. The first union with an
+  enum-bearing branch trips it silently: a caller sending the *correct* branch with a bad enum value
+  has that branch demoted and is guided into the wrong one, with the real problem suppressed. Gate
+  it on the const/enum error's `instancePath` matching the branch container's own instance depth.
 - **Scope validity (critical 7).** Validate `scope` against the thread's actual criterion ids, not
   only `WRITABLE_SCOPE_PATTERN`. Refuse an unknown scope with a `retryable:false` error listing
   the valid ids.
