@@ -1,10 +1,18 @@
 import { canTransition, checkDefinitionOfDone } from '../model/index.mjs';
-import { writeActiveThread, readActiveThread, clearActiveThread } from '../util/active-thread.mjs';
-import { commitAndReindex, ToolError, unknownThread, illegalTransition } from './shared.mjs';
+import { writeActiveThreadOrWarn, readActiveThreadOrWarn, clearActiveThreadOrWarn } from '../util/active-thread.mjs';
+import { commitAndReindex, withWarnings, ToolError, unknownThread, illegalTransition } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
+
+const NO_POINTER = Object.freeze({ value: null, warning: null });
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+async function syncPointer(ctx, candidate, to, pointer) {
+  if (to === 'active') return writeActiveThreadOrWarn(ctx, candidate.id);
+  if (pointer.value === candidate.id) return clearActiveThreadOrWarn(ctx);
+  return NO_POINTER;
 }
 
 function companionRequired(field, status) {
@@ -54,15 +62,14 @@ async function handler(ctx, args) {
       });
     }
   }
+  const pointer = to !== 'active' && thread.status === 'active'
+    ? await readActiveThreadOrWarn(ctx)
+    : NO_POINTER;
   await driver.writeThread(candidate);
-  if (to === 'active') {
-    await writeActiveThread(ctx, candidate.id);
-  } else if (thread.status === 'active' && (await readActiveThread(ctx)) === candidate.id) {
-    await clearActiveThread(ctx);
-  }
+  const synced = await syncPointer(ctx, candidate, to, pointer);
   await driver.appendSessionEvent(candidate.id, nowIso, 'ledger', `Transition ${thread.status} -> ${to}`);
   const { recovery_degraded } = await commitAndReindex(driver, `chore(ledger): transition ${candidate.slug} ${thread.status} -> ${to}`);
-  return { thread: candidate, recovery_degraded };
+  return withWarnings({ thread: candidate, recovery_degraded }, [pointer.warning, synced.warning]);
 }
 
 export default {

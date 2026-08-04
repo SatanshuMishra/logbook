@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import recordDecision from '../../../src/tools/record-decision.mjs';
 import openThread from '../../../src/tools/open-thread.mjs';
 import updateThread from '../../../src/tools/update-thread.mjs';
@@ -25,6 +26,25 @@ async function record(ctx, thread, over = {}) {
 
 function withoutNumber(markdown, number) {
   return markdown.replace(`# ${number}. `, '# NNNN. ');
+}
+
+const UNVALIDATABLE_SPINE = { out_of_scope: [''] };
+
+async function storeUnvalidatableThread(ctx, thread) {
+  const root = await ctx.driver.root();
+  const corrupted = { ...thread, spine: { ...thread.spine, ...UNVALIDATABLE_SPINE } };
+  await writeFile(
+    join(root, 'threads', `${thread.id}.json`),
+    `${JSON.stringify(corrupted, null, 2)}\n`,
+  );
+  return root;
+}
+
+async function openWithUnvalidatableRecord(ctx) {
+  const { thread } = await openThread.handler(ctx, {
+    title: 'Decisions', completion_criteria: [{ text: 'ship it' }],
+  });
+  return { thread, root: await storeUnvalidatableThread(ctx, thread) };
 }
 
 test('record_decision writes a numbered MADR file with Thread-Id frontmatter', async (t) => {
@@ -108,6 +128,26 @@ test('record_decision still rejects omitted options', async (t) => {
     () => callTool('record_decision', withoutOptions, ctx),
     /missing_parameter: record_decision\.options/,
   );
+});
+
+test('record_decision leaves decisions/ empty when the thread record fails validation', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const { thread, root } = await openWithUnvalidatableRecord(ctx);
+  await assert.rejects(
+    () => callTool('record_decision', decisionArgs(thread), ctx),
+    /invalid_length: Thread\.spine\.out_of_scope\[0\]/,
+  );
+  assert.deepEqual(await readdir(join(root, 'decisions')), []);
+});
+
+test('a record_decision that fails validation does not advance nextDecisionNumber', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const { thread } = await openWithUnvalidatableRecord(ctx);
+  await assert.rejects(
+    () => callTool('record_decision', decisionArgs(thread), ctx),
+    /invalid_length: Thread\.spine\.out_of_scope\[0\]/,
+  );
+  assert.equal(await ctx.driver.nextDecisionNumber(), '0001');
 });
 
 test('record_decision rejects an unknown thread_id', async (t) => {

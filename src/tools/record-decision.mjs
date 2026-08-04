@@ -71,7 +71,6 @@ async function handler(ctx, args) {
     threadId: args.thread_id,
     date: now(),
   });
-  const path = await driver.writeDecision(nnnn, args.slug, markdown);
   const ref = `${nnnn}-${args.slug}`;
   const keyDecisions = thread.spine.key_decisions.some((d) => d.ref === ref)
     ? thread.spine.key_decisions
@@ -82,6 +81,7 @@ async function handler(ctx, args) {
     updated_at: now(),
   };
   await driver.writeThread(updated);
+  const path = await driver.writeDecision(nnnn, args.slug, markdown);
   const { recovery_degraded } = await commitAndReindex(driver, `docs(ledger): decision ${ref}`);
   return { number: nnnn, path, recovery_degraded };
 }

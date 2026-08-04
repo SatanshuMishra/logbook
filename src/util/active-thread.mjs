@@ -6,6 +6,13 @@ import { atomicWrite } from './atomic-write.mjs';
 import { projectKey } from './project-key.mjs';
 import { isUlid } from './ulid.mjs';
 
+export class ActivePointerUnavailable extends Error {
+  constructor(reason) {
+    super(reason);
+    this.name = 'ActivePointerUnavailable';
+  }
+}
+
 export async function activeThreadPath(ctx) {
   const driver = ctx && ctx.driver;
   if (!driver || typeof driver.isGit !== 'function') {
@@ -24,7 +31,9 @@ export async function activeThreadPath(ctx) {
   }
   const dataRoot = process.env.CLAUDE_PLUGIN_DATA;
   if (!dataRoot) {
-    throw new Error('activeThreadPath: CLAUDE_PLUGIN_DATA is not set for a non-git project');
+    throw new ActivePointerUnavailable(
+      'CLAUDE_PLUGIN_DATA is not set, so a non-git project has nowhere to keep the pointer',
+    );
   }
   return join(dataRoot, projectKey(projectDir), 'active-thread');
 }
@@ -56,4 +65,27 @@ export async function clearActiveThread(ctx) {
   const target = await activeThreadPath(ctx);
   await rm(target, { force: true });
   return target;
+}
+
+async function tolerateUnavailable(action, run) {
+  try {
+    return { value: await run(), warning: null };
+  } catch (error) {
+    if (error instanceof ActivePointerUnavailable) {
+      return { value: null, warning: `active-thread pointer not ${action}: ${error.message}` };
+    }
+    throw error;
+  }
+}
+
+export function writeActiveThreadOrWarn(ctx, threadId) {
+  return tolerateUnavailable('written', () => writeActiveThread(ctx, threadId));
+}
+
+export function readActiveThreadOrWarn(ctx) {
+  return tolerateUnavailable('read', () => readActiveThread(ctx));
+}
+
+export function clearActiveThreadOrWarn(ctx) {
+  return tolerateUnavailable('cleared', () => clearActiveThread(ctx));
 }

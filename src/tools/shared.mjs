@@ -113,6 +113,11 @@ export async function knownDecisionRefs(driver) {
   return new Set(decisions.map((d) => `${d.nnnn}-${d.slug}`));
 }
 
+export function withWarnings(result, warnings) {
+  const raised = warnings.filter((warning) => typeof warning === 'string' && warning.length > 0);
+  return raised.length === 0 ? result : { ...result, warnings: raised };
+}
+
 export function isRecoveryDegraded(commitResult) {
   return commitResult != null && commitResult.degraded === true;
 }
