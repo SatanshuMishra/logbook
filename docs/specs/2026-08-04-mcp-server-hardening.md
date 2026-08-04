@@ -528,13 +528,23 @@ the partial-write ghost-thread defects.
   syscall failure (`code` and `syscall` both strings) from the pointer **write or clear**, plus a
   failure to resolve the git directory, into `{value, warning}`. The ULID guard and every
   programming error still propagate; the tolerance is not a blanket catch.
-- **The pointer READ is deliberately NOT tolerated, and that is load-bearing.** A tolerated read
-  returns `null`, `null` never equals the thread id, so the clear is skipped and the thread is
-  durably terminal while the pointer still names it — `hooks/lib/stop.mjs:101-105` then returns
-  `exitCode: 2` and every later session end blocks demanding a debrief for an abandoned thread. The
-  read is hoisted ahead of `writeThread`, so propagating its failure costs nothing: the call aborts
-  with nothing durable. Clearing unconditionally on leaving `active` is worse still — it clobbers a
-  pointer naming a different thread.
+- **The pointer read splits on one distinction: can a pointer name this thread at all?**
+  `readActiveThreadOrAbsent` tolerates *only* `ActivePointerUnavailable` — the pointer **store** is
+  unreachable, so no pointer names anything, nothing can dangle, and the condition is reported as a
+  warning. A syscall failure on the pointer **file** still propagates: that file may exist and may
+  name this thread, and the read is hoisted ahead of `writeThread`, so aborting costs nothing and
+  the call leaves nothing durable.
+- Both halves of that distinction were shipped wrong, in opposite directions, on consecutive
+  rounds. Tolerating everything (round 7) returned `null`, `null` never equals the thread id, the
+  clear was skipped, and the thread went durably terminal while the pointer still named it —
+  `hooks/lib/stop.mjs:101-105` then returns `exitCode: 2` and every later session end blocks
+  demanding a debrief for an abandoned thread. Tolerating nothing (round 8) meant a thread opened
+  while the store was unreachable could never afterwards be paused, finished or abandoned by any
+  tool: `open_thread` warned and continued while `transition_thread` and `archive_thread` threw on
+  the identical condition, stranding the record permanently. The abort protected nothing there —
+  `hooks/lib/cli.mjs:31` returns `null` on a non-zero CLI exit, so the gate never fires for a
+  thread whose store cannot be resolved. Clearing unconditionally on leaving `active` is worse than
+  either: it clobbers a pointer naming a different thread. Decision 0040.
 - Each tolerated action names its **own** consequence. A failed write means the gate will not fire
   until the pointer is written; a failed clear means the pointer survives and the gate will keep
   firing until it is removed. One shared string had been appended to both, which stated the exact
@@ -641,11 +651,24 @@ Round 8 then found two more, both introduced by the round-7 fix itself, both gre
 cleared: the pointer file is unusable (ENOTDIR); the end-of-session debrief gate will not fire for
 this thread until the pointer is restored` — the precise inverse of the truth.
 
-**A green suite is not evidence here.** Eight consecutive reviews of this server have now each
-found a real defect at 100% pass, and three of those defects were introduced by the fix for the
-one before it. The pattern is specific: each was a *widening* — of an order, of a tolerated error
-class, of a shared string — that looked like generalization and was actually a loss of a
-distinction the narrow version had been carrying.
+Round 9 found one more, again introduced by the previous round's fix, again green at 963/963: a
+thread opened while the pointer store was unreachable threw `ActivePointerUnavailable` from both
+`transition_thread` and `archive_thread` and stayed `active` forever.
+
+**A green suite is not evidence here.** Nine consecutive reviews of this server have now each found
+a real defect at 100% pass, and four of those were introduced by the fix for the one before it.
+Three were *widenings* — of the write order, of the tolerated error class, of one consequence
+string across three actions — and the fourth was a *narrowing*. So the rule is **not** "prefer
+narrow": it is **preserve the distinction**. Every one of the four collapsed two conditions that
+needed to stay apart. State, before committing, which distinction a change preserves and which it
+collapses; that question would have caught all four, and "is this narrow enough?" caught none.
+
+Classification by error *shape* was a symptom of the same thing: `isGitInvocationFailure` enumerated
+`typeof code === 'number' || (code && syscall)`, which a signal-killed git (`code: null,
+signal: 'SIGKILL'`) and a stdio overflow both slipped past, letting `writeActiveThreadOrWarn` throw
+*after* the record was durable. Classification by **origin** — `gitExec` tags its own argument
+rejections, everything else from it is an invocation failure — cannot be outrun by an error shape
+nobody has seen yet.
 
 **PR title:** `fix(writes): validate the full record before any durable write`
 
