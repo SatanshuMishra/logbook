@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { buildContext, listTools, callTool } from '../src/tools/index.mjs';
 import { toLedgerError } from '../src/errors.mjs';
 
-export const SERVER_INFO = { name: 'ledger', version: '0.2.0' };
+export const SERVER_INFO = { name: 'ledger', version: '0.2.1' };
 
 export const SERVER_ENV_MAP = {
   LEDGER_BACKEND: 'ledger_backend',
