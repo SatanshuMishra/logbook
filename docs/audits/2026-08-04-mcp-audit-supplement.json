@@ -1,0 +1,686 @@
+{
+  "artifact": "logbook MCP server audit — MSP-0B coverage supplement",
+  "date": "2026-08-04",
+  "msp": "MSP-0B",
+  "supplements": "docs/audits/2026-08-04-mcp-audit.json",
+  "supplements_sha256": "56deb0a723cbc6fc3f90146b7bce7e15b6539cd68718f4348b1cd47f30222251",
+  "why": "The first audit covered five dimensions, but three areas were only grepped, never read: the `src/drift/*` internals, `src/schema/upcast.mjs` and the full v1 to v2 path, and every `GitRefDriver` payload measurement. Absence of findings there was not evidence of absence. Two of the twelve criticals already lived in `git-ref-driver.mjs` and were found incidentally rather than systematically. MSP-7, MSP-9 and MSP-11 are each specified from partial knowledge of exactly these areas, and this supplement gates them.",
+  "deviation_from_spec": "SPEC section MSP-0B directed appending a `supplement` key into `docs/audits/2026-08-04-mcp-audit.json`. That file is byte-frozen: its sha256 is recorded in SPEC section 2 as proof that the committed copy is byte-identical to the original workflow output, and re-serializing it would destroy that provenance. This separate sibling artifact was written instead, on orchestrator direction, and the one line of SPEC section MSP-0B that said otherwise was amended in the same PR.",
+  "method": "Every file in `.result.coverage.files` was opened and read in full. Every finding cites a repo-relative `file:line` the author personally opened, with the deciding code quoted. No behavior was inferred from a function name, a variable name, a comment or a test name. Each candidate finding then got an adversarial pass whose goal was to make it FALSE — by reading the guards, call sites and callers that would refute it, and, where the claim was about runtime behavior, by reproducing it against a throwaway ledger. Findings that survived are CONFIRMED; findings true only under stated conditions are NARROWED; findings the refutation killed are recorded as REFUTED rather than deleted, so the adversarial pass is auditable.",
+  "id_convention": "Every id carries a `sup-` prefix so supplement ids can never collide with the 121 ids in the original artifact.",
+  "result": {
+    "coverage": {
+      "files": [
+        { "path": "src/drift/classification.mjs", "lines": 102, "read": "full" },
+        { "path": "src/drift/disposition.mjs", "lines": 58, "read": "full" },
+        { "path": "src/drift/reattach.mjs", "lines": 103, "read": "full" },
+        { "path": "src/drift/reconcile.mjs", "lines": 67, "read": "full" },
+        { "path": "src/drift/slug.mjs", "lines": 6, "read": "full" },
+        { "path": "src/drift/snapshot.mjs", "lines": 93, "read": "full" },
+        { "path": "src/drift/index.mjs", "lines": 12, "read": "full" },
+        { "path": "src/schema/upcast.mjs", "lines": 89, "read": "full" },
+        { "path": "src/schema/thread.schema.mjs", "lines": 112, "read": "full" },
+        { "path": "src/schema/patterns.mjs", "lines": 24, "read": "full" },
+        { "path": "src/drivers/git-ref-driver.mjs", "lines": 580, "read": "full" },
+        { "path": "src/drivers/git-ledger.mjs", "lines": 83, "read": "full" },
+        { "path": "src/drivers/select.mjs", "lines": 49, "read": "full" },
+        { "path": "src/drivers/layout.mjs", "lines": 3, "read": "full" },
+        { "path": "src/drivers/local-driver.mjs", "lines": 306, "read": "full" },
+        { "path": "src/drivers/storage-driver.mjs", "lines": 89, "read": "full" },
+        { "path": "src/util/git-scope.mjs", "lines": 102, "read": "full" },
+        { "path": "src/util/active-thread.mjs", "lines": 59, "read": "full" },
+        { "path": "src/util/ulid.mjs", "lines": 11, "read": "full" },
+        { "path": "src/model/selection.mjs", "lines": 49, "read": "full" },
+        { "path": "src/model/binding.mjs", "lines": 29, "read": "full" },
+        { "path": "src/index/rebuild-index.mjs", "lines": 77, "read": "full" },
+        { "path": "src/index/index-files.mjs", "lines": 5, "read": "full" },
+        { "path": "src/tools/reconcile.mjs", "lines": 17, "read": "full" },
+        { "path": "src/tools/get-resume-brief.mjs", "lines": 50, "read": "full" },
+        { "path": "src/tools/update-thread.mjs", "lines": 154, "read": "full" },
+        { "path": "src/tools/rebuild-index.mjs", "lines": 15, "read": "full" },
+        { "path": "src/tools/shared.mjs", "lines": 23, "read": "full" },
+        { "path": "src/tools/context.mjs", "lines": 12, "read": "full" },
+        { "path": "hooks/lib/cli.mjs", "lines": 39, "read": "full" },
+        { "path": "hooks/lib/session-start.mjs", "lines": 104, "read": "full" },
+        { "path": "bin/ledger-server.mjs", "lines": 86, "read": "full" },
+        { "path": "bin/ledger-cli.mjs", "lines": 234, "read": "read for the commands the drift and index paths reach: roster, reconcile, briefing-pledge, active-thread, sync (lines 1-90, 190-234)" }
+      ],
+      "not_read": [
+        "src/render/briefing.mjs — MSP-10's surface, out of this MSP's scope; read only where the drift block's consumption of `src/drift/*` output had to be confirmed.",
+        "src/tools/* beyond the five listed above — covered by the first audit's five dimensions.",
+        "test/** — tests are not evidence of behavior under this SPEC's evidence law; two test files are cited only where an amendment requires changing them."
+      ],
+      "scope_declared_by_spec": [
+        "src/drift/{classification,disposition,reattach,slug,reconcile,snapshot}.mjs",
+        "src/schema/upcast.mjs and the full v1 to v2 path",
+        "src/drivers/{git-ref-driver,git-ledger,select,layout}.mjs"
+      ]
+    },
+    "findings": [
+      {
+        "id": "sup-gitref-init-destroys-every-index-file",
+        "title": "GitRefDriver.init() rm -rf's the worktree on every process start, and because index/ is gitignored and lives inside it, every derived index file is destroyed with nothing to rebuild it from",
+        "severity": "critical",
+        "category": "storage-custody",
+        "area": "git-ref",
+        "confidence": "certain",
+        "evidence": [
+          "src/drivers/git-ref-driver.mjs:356 — `await rm(this.worktreeDir, { recursive: true, force: true });` — unconditional, with no health check on the existing worktree",
+          "src/drivers/git-ref-driver.mjs:343-352 — `#ensureWorktree()` calls `#provisionWorktree()` inside the try block with no condition",
+          "src/drivers/git-ref-driver.mjs:312 — `await this.#ensureWorktree();` in `init()`",
+          "src/drivers/git-ref-driver.mjs:29 — `const GITIGNORE = 'index/\\n';`, written to the worktree at :369, so index files are never committed to the ledger ref and `git worktree add` at :358 cannot restore them",
+          "src/drivers/git-ref-driver.mjs:215 — `super(worktreeDir);` — the LocalDriver ledgerRoot IS the worktree, so `readIndexFile`/`writeIndexFile` (src/drivers/local-driver.mjs:252-263) resolve inside the deleted tree",
+          "src/tools/context.mjs:10 — `await driver.init();` on every `buildContext`"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "Refutation attempted three ways and all three failed. (1) Searched for a guard on the rm: `#provisionWorktree` has no early return and `#ensureWorktree` does not condition the call on the lock or on worktree health. (2) Searched for an override of `readIndexFile`/`writeIndexFile` that would move index state outside the worktree: `GitRefDriver` overrides `writeIndexFile` only to wrap it in `#writeInWorktree` (:305-307) and does not change the path. (3) Reproduced it: with CLAUDE_PLUGIN_DATA set to a temp dir and a temp git repo, one context wrote index files `drift`, `briefing` and `by-slug`; a second `buildContext` on the same project returned `drift_entries_after: 0`, `briefing_pledge_survived: false`, `by_slug_survived: false`, while the identical experiment on LocalDriver returned all three surviving. The empirical result matches the reading exactly.",
+          "reproduction": "scratchpad/measure/durability.mjs — LocalDriver: drift 1 entry before and after. GitRefDriver: 1 entry before, 0 after; index/drift.json present before, absent after."
+        }
+      },
+      {
+        "id": "sup-gitref-sessionstart-destroys-its-own-drift",
+        "title": "The SessionStart hook's own three-process sequence destroys the drift snapshot it just wrote, so the entire src/drift feature is non-functional end to end on the deployed backend",
+        "severity": "critical",
+        "category": "storage-custody",
+        "area": "git-ref",
+        "confidence": "certain",
+        "evidence": [
+          "hooks/lib/session-start.mjs:98-100 — `await ctx.invokeCli(['sync']); await ctx.invokeCli(['reconcile']); const roster = await ctx.invokeCliJson(['roster']);`",
+          "hooks/lib/cli.mjs:17-19 — `execFile(process.execPath, [cliPath, ...args], ...)` — each invocation is a separate OS process",
+          "bin/ledger-cli.mjs:61 and :23 — `runReconcile` and `runRoster` each call `await buildContext({})`, and src/tools/context.mjs:10 calls `driver.init()`",
+          "src/tools/reconcile.mjs:7 — `await writeDriftSnapshot(ctx.driver, drift);`, which writes the `drift` index file at src/drift/snapshot.mjs:76",
+          "src/tools/get-resume-brief.mjs:28 — `const drift = await takeDriftSnapshot(driver, thread.id);` — the only consumer, running in the MCP server process, a fourth process"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "Refutation attempted by looking for any persistence outside the worktree, any caching across CLI invocations, and any ordering that would let a consumer read between `reconcile` and `roster`. None exists: `invokeCli` spawns a fresh process every time (hooks/lib/cli.mjs:17), and `roster` is the very next call. Then reproduced with the REAL CLI binary rather than an in-process model: process 1 wrote index/drift.json and index/briefing.json; `node bin/ledger-cli.mjs roster` was then run as its own process, and afterwards the index directory contained only by-branch.json, by-slug.json, children.json and resumable.json — the four files `rebuildIndex` had just written. drift.json and briefing.json were gone.",
+          "reproduction": "Real-CLI subprocess sequence against a temp git repo; index dir before: briefing.json, drift.json. After `ledger-cli briefing-pledge` and `ledger-cli roster`: by-branch.json, by-slug.json, children.json, resumable.json only."
+        }
+      },
+      {
+        "id": "sup-gitref-verbatim-gate-can-never-fire",
+        "title": "The Stop hook's verbatim gate reads its pledge through a separate CLI process whose own init() has already deleted it, so the gate returns null and never fires on the git backend",
+        "severity": "critical",
+        "category": "instruction-drift",
+        "area": "git-ref",
+        "confidence": "certain",
+        "evidence": [
+          "src/tools/get-resume-brief.mjs:30-34 — `await driver.writeIndexFile(BRIEFING_INDEX, {...})`, written in the MCP server process",
+          "src/index/index-files.mjs:1 — `export const BRIEFING_INDEX = 'briefing';` — an index file, therefore inside the gitignored, deleted directory",
+          "hooks/lib/stop.mjs:61 — `return asPledge(await ctx.invokeCliJson(PLEDGE_ARGS));` — a separate process",
+          "bin/ledger-cli.mjs:53-57 — `runBriefingPledge` calls `buildContext({})` and then `ctx.driver.readIndexFile(BRIEFING_INDEX)`",
+          "hooks/lib/stop.mjs:80-81 — `const pledge = await readPledge(ctx); if (pledge === null) return null;` — a null pledge silently passes the gate"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "Refutation attempted by checking whether the pledge might live outside the index directory (it does not — BRIEFING_INDEX is passed to writeIndexFile), and by checking whether `readPledge`'s catch could mask a different failure mode (it cannot: the observed result is a clean `null`, not an exception). Reproduced with the real binary: after writing the pledge in one process, `node bin/ledger-cli.mjs briefing-pledge` — the exact command hooks/lib/stop.mjs:61 runs — printed `null`. This is additive to critical 8, which is about the active-thread pointer; the pointer itself survives, because activeThreadPath resolves to `<git-common-dir>/ledger/active-thread` (src/util/active-thread.mjs:19-23), outside the worktree. The pledge does not.",
+          "reproduction": "`node bin/ledger-cli.mjs briefing-pledge` printed `null` immediately after a pledge was written by a prior process."
+        }
+      },
+      {
+        "id": "sup-gitref-second-process-destroys-uncommitted-writes",
+        "title": "Starting a second server or CLI process destroys the first process's uncommitted thread, binding and decision writes outright",
+        "severity": "critical",
+        "category": "storage-custody",
+        "area": "git-ref",
+        "confidence": "certain",
+        "evidence": [
+          "src/drivers/git-ref-driver.mjs:356 — the unconditional `rm` runs from `init()` via :312, and `init()` has no `#uncommittedWrite` guard",
+          "src/drivers/git-ref-driver.mjs:268 — `if (this.#uncommittedWrite) throw error;` — the guard exists only on the lazy repair path in `#worktreeGitDir`, not on `init()`",
+          "src/drivers/git-ref-driver.mjs:289-303 — `writeThread`, `writeBinding`, `writeDecision` and `appendSessionEvent` all write into the worktree and are durable only after `commit()`",
+          "src/drivers/git-ref-driver.mjs:27 — `const SUBDIRS = ['threads', 'bindings', 'decisions', 'sessions', 'index'];` — all five live inside the deleted directory"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "This is the SPEC's critical 4; the supplement's contribution is a reproduction and the precise blast radius. Refutation attempted by checking whether `init()` consults `#uncommittedWrite` (it does not) and whether an uncommitted write is recoverable from the ledger ref (it is not — it was never committed). Reproduced: process A wrote a thread and could read it back; a second `buildContext` on the same project ran `init()`; afterwards A could no longer read its own thread, B could not either, and `listThreads()` returned 0.",
+          "reproduction": "A wrote thread, readable by A: true. After B's init(): A sees it: false; B sees it: false; threads on disk: 0."
+        }
+      },
+      {
+        "id": "sup-gitref-worktree-lock-gates-nothing",
+        "title": "The worktree lock never prevents the destructive path: a failed acquisition still runs #provisionWorktree, and `locked` is consulted only to decide whether to release",
+        "severity": "high",
+        "category": "concurrency",
+        "area": "git-ref",
+        "confidence": "certain",
+        "evidence": [
+          "src/drivers/git-ref-driver.mjs:346-351 — `const locked = await acquireWorktreeLock(lockPath, token); try { await this.#provisionWorktree(); } finally { if (locked) await releaseWorktreeLock(lockPath, token); }` — `#provisionWorktree()` is not conditional on `locked`",
+          "src/drivers/git-ref-driver.mjs:62 — `if (error?.code !== 'EEXIST') return false;` — a non-EEXIST failure returns false and the destructive path still runs",
+          "src/drivers/git-ref-driver.mjs:64 — `if (Date.now() >= deadline) return false;` — timing out also returns false and still proceeds",
+          "src/drivers/git-ref-driver.mjs:34 and :40 — `WORKTREE_LOCK_TIMEOUT_MS = 10_000` is used both as the acquisition deadline (:56) and as the staleness threshold (:40), so a lock legitimately held for ten seconds is force-removed at :66 while its holder is still running"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "MSP-9 already states the lock 'wraps only the deletion and gives up silently after ten seconds'. Refutation attempted by re-reading whether `locked` gates anything other than the release: it does not; the only other use is at :350. The claim is therefore stronger than the SPEC's wording — the lock does not even gate the deletion. The equal timeout and staleness constants make the ten-second give-up worse than a give-up: the waiter deletes a live holder's lock and proceeds concurrently."
+        }
+      },
+      {
+        "id": "sup-gitref-commit-finally-clears-the-only-guard",
+        "title": "commit() clears the uncommitted-write flag in a finally block, so a commit that throws leaves real uncommitted writes with the guard that protects them switched off",
+        "severity": "medium",
+        "category": "storage-custody",
+        "area": "git-ref",
+        "confidence": "certain",
+        "evidence": [
+          "src/drivers/git-ref-driver.mjs:399-403 — `try { return await this.#commitWorktree(message); } finally { this.#uncommittedWrite = false; }`",
+          "src/drivers/git-ref-driver.mjs:390 — `await scopedExec(worktree, ['commit', '--no-verify', '-m', message], { env: ledgerCommitEnv() });` — no `check: false`, so a non-zero exit throws",
+          "src/util/git-scope.mjs:98-101 — `scopedExec` forwards options to `gitExec` unchanged; `check` defaults to throwing",
+          "src/drivers/git-ref-driver.mjs:268 — `if (this.#uncommittedWrite) throw error;` — the guard that the finally has just cleared"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "Refutation attempted by testing whether `#commitWorktree` can actually throw. It can: `git commit` at :390 runs without `check: false`, unlike the `diff --cached --quiet` probe at :386 which is explicitly `check: false`. A failing commit (locked index, gpg failure, exhausted disk) therefore propagates, and the finally has already lied about the worktree being clean. The window is narrow, which is why this is medium rather than high, but the consequence is the destructive repair path running over live data."
+        }
+      },
+      {
+        "id": "sup-gitref-reads-never-repair-and-report-empty",
+        "title": "Only the write path can repair a missing worktree; every read path returns null or an empty array instead, so a destroyed ledger reads as an empty one rather than as an error",
+        "severity": "high",
+        "category": "silent-success",
+        "area": "git-ref",
+        "confidence": "certain",
+        "evidence": [
+          "src/drivers/git-ref-driver.mjs:282-287 — `#writeInWorktree` calls `#worktreeGitDir()` first, which is the only caller that can trigger `#ensureWorktree()` at :270",
+          "src/drivers/git-ref-driver.mjs:289-307 — the only methods routed through `#writeInWorktree` are the five write methods; no read method is overridden",
+          "src/drivers/local-driver.mjs:143-145 — `readThread` calls `readJsonOrNull` directly",
+          "src/drivers/local-driver.mjs:60 — `if (error && error.code === 'ENOENT') return null;`",
+          "src/drivers/local-driver.mjs:69 — `if (error && error.code === 'ENOENT') return [];` in `listDir`, which backs `listThreads` (:156), `listBindings` (:179) and `listDecisions` (:227)",
+          "src/drivers/local-driver.mjs:254-255 — `if (value !== null) return value; return name === 'resumable' ? [] : {};`"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "Refutation attempted by checking whether `init()` always precedes reads. It does on every entry path examined (bin/ledger-server.mjs:37 resolves the context lazily but through `buildContext`, and every bin/ledger-cli.mjs subcommand calls `buildContext`), which narrows WHEN the state is reachable — but does not refute the claim, because `init()` itself is what deletes the tree, and any concurrent process can delete it after this process's init. The reproduction under sup-gitref-second-process-destroys-uncommitted-writes exhibits exactly this: after B's init, A's `readThread` returned null and `listThreads()` returned 0 rather than raising. A caller cannot distinguish a destroyed ledger from an empty one."
+        }
+      },
+      {
+        "id": "sup-gitref-merge-theirs-is-the-sole-discard-not-the-push",
+        "title": "The silent discard in ledger sync comes entirely from `-X theirs`; the push is leased, so the SPEC's framing of critical 3 as a force-push problem points at the wrong half",
+        "severity": "critical",
+        "category": "multi-user",
+        "area": "git-ref",
+        "confidence": "certain",
+        "evidence": [
+          "src/drivers/git-ref-driver.mjs:490 — `['merge', '--no-verify', '--no-edit', '-X', 'theirs', '-m', MERGE_MESSAGE, this.mirrorRef]` — every conflicting hunk resolves to the remote side with no record",
+          "src/drivers/git-ref-driver.mjs:466 — `['push', `--force-with-lease=${this.ledgerRef}:${expectedRemoteSha}`, this.remote, ...]` — the push is leased against the exact sha the merge was computed from",
+          "src/drivers/git-ref-driver.mjs:439 — `if (await this.#pushLease(remote, mergeSha, remoteSha))` — the lease is passed the observed remote sha, so a remote that moved rejects the push and the loop retries",
+          "src/drivers/git-ref-driver.mjs:459 and :470 — `if (isContention(result.stderr)) return false;` — contention retries rather than overwriting"
+        ],
+        "verdict": {
+          "verdict": "NARROWED",
+          "reasoning": "The SPEC's critical 3 reads 'merges `-X theirs` then force-pushes, silently discarding local writes'. Refutation attempted against the second half and it succeeded: `--force-with-lease` with an explicit expected sha (:466) is not an unconditional force-push, and a remote that advanced between fetch and push causes a rejection handled at :470, not an overwrite. The data loss is real but its sole mechanism is the merge strategy at :490. This matters for MSP-11's design: replacing the push is unnecessary work, and replacing the merge strategy is sufficient."
+        }
+      },
+      {
+        "id": "sup-gitref-upstream-hardcodes-origin",
+        "title": "Ahead/behind and divergence detection hardcode refs/remotes/origin, ignoring the driver's configured remote, so both drift WARNING signals silently never fire on a repository whose remote is not named origin",
+        "severity": "medium",
+        "category": "silent-success",
+        "area": "git-ref",
+        "confidence": "certain",
+        "evidence": [
+          "src/drivers/git-ref-driver.mjs:106 — `const upstream = `refs/remotes/origin/${branch}`;` in `aheadBehind`",
+          "src/drivers/git-ref-driver.mjs:121 — `const upstream = `refs/remotes/origin/${branch}`;` in `divergedFromUpstream`",
+          "src/drivers/git-ref-driver.mjs:223 — `this.remote = remote;` — the configured remote, never consulted by either function",
+          "src/drivers/git-ref-driver.mjs:107-108 — `if ((await revParseOrNull(scope, upstream)) === null || headSha === null) { return { ahead: 0, behind: 0 }; }` — an absent upstream returns the neutral value rather than reporting that it could not tell",
+          "src/drift/classification.mjs:72-74 — the `divergence` WARNING fires only on `o.ahead > 0 || o.behind > 0`",
+          "src/drift/classification.mjs:69-71 — the `not-ancestor` WARNING fires only on `o.diverged_from_upstream`"
+        ],
+        "verdict": {
+          "verdict": "NARROWED",
+          "reasoning": "Refutation attempted on reachability: `DEFAULT_REMOTE = 'origin'` (src/drivers/git-ledger.mjs:12) and src/drivers/select.mjs:45 passes `remote: DEFAULT_REMOTE` with no user override, so today `this.remote` is always 'origin' and the two values agree. The defect is therefore latent rather than active: it is a correctness trap that fires the moment a remote name becomes configurable, plus an unconditional silent-neutral return for any repository with no `origin` remote at all — which includes every local-only clone. In that case both signals are silently suppressed rather than reported as unknown, which is live today."
+        }
+      },
+      {
+        "id": "sup-gitref-first-commit-falls-back-to-repo-root",
+        "title": "firstCommitOf falls back to the repository root commit whenever a branch has no commits beyond the integration base, so unrelated branches collide on one identifier and reattachment can bind a branch to the wrong thread",
+        "severity": "high",
+        "category": "silent-destruction",
+        "area": "git-ref",
+        "confidence": "high",
+        "evidence": [
+          "src/drivers/git-ref-driver.mjs:147-151 — the `base..ref` range is tried first and only used `if (first)`",
+          "src/drivers/git-ref-driver.mjs:153-156 — `const root = await scopedExec(scope, ['rev-list', '--max-parents=0', ref], ...); return roots[roots.length - 1] || null;` — the fallback, and for a multi-root repository it picks the last root arbitrarily",
+          "src/drivers/git-ref-driver.mjs:567 — `const firstCommit = await firstCommitOf(scope, ref, base);` in `observeNewBranch`",
+          "src/drift/reattach.mjs:89 — `first_commit: observation.first_commit ?? null,` — persisted into the binding",
+          "src/drift/reattach.mjs:31-37 — `for (const b of bindings) { if (b.first_commit === target) { ... return { thread_id: b.thread_id, ... } } }` — first match in listing order wins, with no repo filter and no binding-status filter"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "Refutation attempted on three fronts. (1) Whether `tryTrailer` always shadows `tryFirstCommit`: it does not — src/drift/reattach.mjs:63-66 falls through whenever `thread_id_trailer` is null, which is every branch whose first commit carries no Thread-Id trailer, including every branch created before the hook was installed and every branch when LEDGER_DISABLE_TRAILER is set (hooks/lib/session-start.mjs:24). (2) Whether a status or repo filter narrows the candidate set: src/drift/reattach.mjs:30-31 iterates the full `listBindings()` with neither. (3) Whether the fallback is unreachable: it is the documented-by-code path for any branch fully contained in base, which is precisely the state of every branch awaiting cleanup after a merge. Severity is high rather than critical because the collision requires two bindings in that state simultaneously."
+        }
+      },
+      {
+        "id": "sup-drift-reconcile-aborts-on-an-absent-bound-repo",
+        "title": "One binding naming a repository path absent from this machine aborts the entire reconcile with `spawn git ENOENT`, discarding all drift computed before it, and the SessionStart hook swallows the failure entirely",
+        "severity": "high",
+        "category": "error-attribution",
+        "area": "drift",
+        "confidence": "certain",
+        "evidence": [
+          "src/drift/reconcile.mjs:35 — `const observation = await driver.observeBranch(binding);` — no try/catch",
+          "src/drift/reconcile.mjs:54 — `const branches = await driver.listRepoBranches(repo);` — no try/catch",
+          "src/drivers/git-ref-driver.mjs:574-577 — `scopedExec(hostScope(repo), ['for-each-ref', ...])` with no `check: false`",
+          "src/drift/reconcile.mjs:51 — `const repos = [...new Set(bindings.map((b) => b.repo))];` — derived from bindings of ANY status, so a long-closed binding still drives a git invocation",
+          "src/tools/reconcile.mjs:6-7 — `const { drift, dispositions } = await runReconcile(ctx); await writeDriftSnapshot(ctx.driver, drift);` — the snapshot is written only after the whole loop returns, so a throw loses every entry computed so far",
+          "hooks/lib/cli.mjs:16-26 — `return new Promise((resolve) => { execFile(..., (error, stdout, stderr) => { ... resolve({ code, stdout, stderr }); }); });` — never rejects",
+          "hooks/lib/session-start.mjs:99 — `await ctx.invokeCli(['reconcile']);` — the return value, including a non-zero code and the stderr, is discarded"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "Refutation attempted by looking for error handling at any layer and by testing whether the git calls degrade gracefully. Direct probe: `listRepoBranches`, `observeBranch` and `resolveIntegrationBase` against a nonexistent path all threw `Error: spawn git ENOENT` — the `check: false` on the inner rev-parse calls does not help, because the failure is the spawn itself with a missing cwd. Then reproduced end to end: a ledger with one healthy binding and one binding naming an absent repo produced `reconcile THREW -> Error: spawn git ENOENT`, an empty drift snapshot `{}`, and the offending binding still `active`. The error text is itself misattributing: it reads as 'git is not installed' when the actual cause is a missing working directory. MSP-11's acceptance criterion 'reconcile on a machine that does not host a bound repository leaves that binding untouched' is not merely unmet — the operation does not survive to reach it.",
+          "reproduction": "Two bindings, one naming an absent path: reconcile threw; drift snapshot `{}`; ghost binding status still `active`."
+        }
+      },
+      {
+        "id": "sup-drift-closed-binding-blocks-reattachment-forever",
+        "title": "A closed binding keeps reserving its repo/branch key, so a branch that is deleted and later recreated can never be re-attached: the drift loop skips the closed binding and the reattach loop skips the branch",
+        "severity": "medium",
+        "category": "guard-asymmetry",
+        "area": "drift",
+        "confidence": "certain",
+        "evidence": [
+          "src/drift/reconcile.mjs:32-34 — `if (binding.status !== 'active') { continue; }` — the drift loop ignores closed bindings",
+          "src/drift/reconcile.mjs:50 — `const boundKeys = new Set(bindings.map((b) => `${b.repo} ${b.branch}`));` — built from ALL bindings, with no status filter",
+          "src/drift/reconcile.mjs:56-58 — `if (boundKeys.has(`${repo} ${branch}`)) { continue; }` — the reattach loop skips any key a closed binding still holds",
+          "src/drift/disposition.mjs:38-48 — the `mark-orphaned` disposition that sets `binding_status: 'orphaned'`",
+          "src/drift/reconcile.mjs:43-46 — `if (disposition.binding_status !== null) { const closed = closedBinding(...); await driver.writeBinding(closed); }`"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "Refutation attempted by searching for any other reattachment entry point: `reattach` is exported from src/drift/index.mjs:4 but the only call site outside the module is src/drift/reconcile.mjs:59, and nothing anywhere deletes or reopens a closed binding. Then reproduced across three reconciles against a temp git repo: with the branch present, no drift; after deleting the branch, one `mark-orphaned` disposition and the binding closed as `orphaned`/`deleted`; after recreating the same branch, `drift entries: 0 | dispositions: []` and the binding still `orphaned`. The thread is permanently detached from a branch that exists.",
+          "reproduction": "Three-pass reconcile: present -> none; deleted -> mark-orphaned; recreated -> zero drift, zero dispositions, binding still orphaned."
+        }
+      },
+      {
+        "id": "sup-drift-disposition-invents-a-recommendation-for-a-missing-thread",
+        "title": "disposeBinding treats a thread that does not exist as non-terminal, so a binding pointing at a deleted thread yields a `complete` recommendation and is silently closed",
+        "severity": "medium",
+        "category": "silent-success",
+        "area": "drift",
+        "confidence": "certain",
+        "evidence": [
+          "src/drift/reconcile.mjs:41-42 — `const thread = await driver.readThread(binding.thread_id); const disposition = disposeBinding(entry, thread);` — the null return is not checked",
+          "src/drivers/local-driver.mjs:143-145 — `readThread` returns `upcastThread(await readJsonOrNull(...))`, and src/schema/upcast.mjs:78 returns null for a null record",
+          "src/drift/disposition.mjs:21 — `const terminal = thread ? isTerminal(thread.status) : false;` — a missing thread is treated as not terminal",
+          "src/drift/disposition.mjs:33 — `thread_recommendation: terminal ? 'none' : 'complete',` — so a missing thread is recommended for completion",
+          "src/drift/disposition.mjs:11-14 — `dodReady` calls `liveCriteria(thread)`, which returns [] for null (src/model/selection.mjs:6-9), so `dod_ready` is false and nothing signals that the thread is absent rather than incomplete"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "Refutation attempted by checking whether a dangling `thread_id` is prevented upstream: `newBinding` (src/model/binding.mjs:12) requires only a non-empty string, and nothing deletes bindings when a thread is removed. The output is indistinguishable from a genuine recommendation about a live thread — the disposition carries the thread_id at src/drift/disposition.mjs:25 and no absence marker."
+        }
+      },
+      {
+        "id": "sup-drift-resolved-drift-is-never-pruned",
+        "title": "The drift snapshot only ever grows: an entry whose drift has since been resolved is carried forward indefinitely, because the merge replaces matching keys and drops nothing",
+        "severity": "medium",
+        "category": "silent-success",
+        "area": "drift",
+        "confidence": "certain",
+        "evidence": [
+          "src/drift/snapshot.mjs:37-40 — `[...prior.map((entry) => replacements.get(entryKey(entry)) ?? entry), ...incoming.filter(...)]` — every prior entry survives; there is no removal branch",
+          "src/drift/classification.mjs:90-92 — `if (signals.length === 0) { return null; }` — a resolved branch produces no entry at all, so it can never appear in `incoming` to replace its stale predecessor",
+          "src/drift/reconcile.mjs:37-39 — `if (entry === null) { continue; }` — the null is dropped rather than recorded as a clearance",
+          "src/drift/snapshot.mjs:80-93 — `takeDriftSnapshot` is the only removal path, and it removes a thread's entire list on read"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "Refutation attempted by searching the module for any expiry, pruning or invalidation: `writeDriftSnapshot` (:73-78) and `takeDriftSnapshot` (:80-93) are the only writers of the index, and only the latter removes anything. On LocalDriver a resolved drift is therefore reported as current until some `get_resume_brief` consumes it. On the git backend this defect is masked by sup-gitref-init-destroys-every-index-file, which deletes the snapshot before it can go stale — one defect concealing another, which is precisely why fixing MSP-9's custody problem will expose this one."
+        }
+      },
+      {
+        "id": "sup-drift-three-of-eight-signal-codes-are-unreachable",
+        "title": "The only production observation source hardcodes force_push_detected false and both key-file arrays empty, so three of the eight drift signal codes — two of them CRITICAL — can never fire",
+        "severity": "medium",
+        "category": "instruction-drift",
+        "area": "drift",
+        "confidence": "certain",
+        "evidence": [
+          "src/drivers/git-ref-driver.mjs:529-532 — `force_push_detected: false, diverged_from_upstream: diverged, key_files_deleted: [], key_files_modified: [],` in `#observeLive`",
+          "src/drivers/git-ref-driver.mjs:551-554 — the same four literals in `#observeDeleted`",
+          "src/drift/classification.mjs:63-65 — the `force-push` CRITICAL signal, gated on `o.force_push_detected`",
+          "src/drift/classification.mjs:66-68 — the `key-file-deleted` CRITICAL signal, gated on `o.key_files_deleted.length > 0`",
+          "src/drift/classification.mjs:75-77 — the `key-file-modified` WARNING signal, gated on `o.key_files_modified.length > 0`",
+          "src/drivers/storage-driver.mjs:78-80 — the base `observeBranch` throws, so no non-git driver supplies observations"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "Refutation attempted by searching for another observation producer that could supply non-default values. `observeBranch` is implemented once, in GitRefDriver, and both of its return sites hardcode the three fields. The classification code that consumes them is therefore dead in production. It is not harmless dead code: two of the three are the CRITICAL tier, so the drift feature advertises detection it does not perform, and MSP-11's merge design must not assume these signals exist."
+        }
+      },
+      {
+        "id": "sup-drift-terminal-reattach-reports-a-match-it-did-not-make",
+        "title": "reattach returns matched:true with a null binding for a terminal thread, and runReconcile records it as a reattach disposition, so the caller is told a branch was attached when no binding was written",
+        "severity": "low",
+        "category": "silent-success",
+        "area": "drift",
+        "confidence": "certain",
+        "evidence": [
+          "src/drift/reattach.mjs:74-82 — `if (isTerminal(thread.status)) { return { matched: true, method, thread_id, binding: null, recommendation: { action: 'offer-successor', ... } }; }`",
+          "src/drift/reconcile.mjs:60-62 — `if (result.matched) { dispositions.push({ kind: 'reattach', thread_id: result.thread_id, branch, repo, method: result.method }); }` — the recommendation and the null binding are both discarded",
+          "src/drift/reattach.mjs:94 — `await driver.writeBinding(binding);` — reached only on the non-terminal path"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "Refutation attempted by checking whether the disposition shape distinguishes the two cases: it does not — src/drift/reconcile.mjs:61 emits the identical `{kind:'reattach', ...}` object for both, and drops `recommendation.action === 'offer-successor'`, which is the only field that carried the distinction. Severity is low because nothing is destroyed; the cost is that the successor offer, which is the useful outcome, never reaches the caller."
+        }
+      },
+      {
+        "id": "sup-drift-thread-id-trailer-is-an-unauthenticated-attach-primitive",
+        "title": "Any commit message trailer named Thread-Id attaches its branch to that thread with no further check, and the binding is written without user action",
+        "severity": "medium",
+        "category": "trust-boundary",
+        "area": "drift",
+        "confidence": "certain",
+        "evidence": [
+          "src/drivers/git-ref-driver.mjs:162 — `['show', '-s', '--format=%(trailers:key=Thread-Id,valueonly)', commit]`",
+          "src/drivers/git-ref-driver.mjs:166 — `const first = stdout.split('\\n').map((s) => s.trim()).find((s) => s.length > 0);` — the first non-empty trailer value wins",
+          "src/drift/reattach.mjs:20-22 — `const id = observation.thread_id_trailer; const thread = await resolveThread(driver, id); return thread ? { thread_id: id, thread, method: 'trailer' } : null;` — existence is the only check",
+          "src/drift/reattach.mjs:63-66 — the trailer is tried first, ahead of first-commit and slug matching",
+          "src/drift/reattach.mjs:94 — `await driver.writeBinding(binding);` — a durable write, reached from the SessionStart reconcile with no user interaction"
+        ],
+        "verdict": {
+          "verdict": "NARROWED",
+          "reasoning": "Refutation attempted on the threat model. The trailer is only read from a branch already present in a repository the user has bound, so this is not remote code execution and not a cross-repo primitive; a fabricated trailer requires the ability to push a commit to a repo the user reconciles. That narrows it to the multi-user case the SPEC already cares about: a teammate's commit can silently attach their branch to a thread they do not own, and the resulting binding then participates in dispositions that close it. Within that scope the claim survives: no ownership check, no confirmation, and the write happens during a hook, not a user action."
+        }
+      },
+      {
+        "id": "sup-drift-bindings-store-machine-local-absolute-paths",
+        "title": "Bindings persist an absolute repository path, and every drift operation re-derives observations by running git at that path on whatever machine reads the ledger",
+        "severity": "medium",
+        "category": "multi-user",
+        "area": "drift",
+        "confidence": "certain",
+        "evidence": [
+          "src/model/binding.mjs:19 — `repo: fields.repo,` — stored verbatim",
+          "src/drift/reattach.mjs:86 — `repo,` — the value comes from the reconciling machine's own filesystem",
+          "src/drift/reconcile.mjs:51 — `const repos = [...new Set(bindings.map((b) => b.repo))];`",
+          "src/drift/reconcile.mjs:54 — `const branches = await driver.listRepoBranches(repo);` — executed against that path on THIS machine",
+          "src/drivers/git-ref-driver.mjs:504 — `const base = await resolveIntegrationBase(repo);` — likewise",
+          "bindings are committed and shared: src/drivers/git-ref-driver.mjs:27 lists `bindings` as a tracked subdir while :29 gitignores only `index/`"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "MSP-11 already names binding portability; the supplement's contribution is proving the paths are actually shared rather than local. Refutation attempted by checking whether bindings might be gitignored like the index: they are not. Verified empirically — after a commit, `git ls-tree -r --name-only refs/heads/_ledger` listed `.gitattributes`, `.gitignore`, `bindings/<ulid>.json`, `decisions/0001-a-decision.md` and `threads/<ulid>.json`, with no `index/` entry. So one machine's absolute paths are pushed to every collaborator, and sup-drift-reconcile-aborts-on-an-absent-bound-repo is the consequence they will hit.",
+          "reproduction": "`git ls-tree -r --name-only refs/heads/_ledger` on a temp ledger: bindings, decisions and threads tracked; index/ absent."
+        }
+      },
+      {
+        "id": "sup-drift-snapshot-read-throws-on-a-malformed-index",
+        "title": "takeDriftSnapshot asserts the stored snapshot's shape and throws, so a single malformed drift index makes get_resume_brief fail outright rather than degrade",
+        "severity": "low",
+        "category": "read-path-fragility",
+        "area": "drift",
+        "confidence": "certain",
+        "evidence": [
+          "src/drift/snapshot.mjs:85 — `const snapshot = assertSnapshot(await driver.readIndexFile(DRIFT_INDEX_NAME), 'takeDriftSnapshot');`",
+          "src/drift/snapshot.mjs:16-24 — `assertSnapshot` throws TypeError for a non-object, for any thread key whose value is not an array, and for any entry lacking a string `thread_id`",
+          "src/tools/get-resume-brief.mjs:28 — the call site, with no try/catch, ahead of `renderBriefing` at :29",
+          "src/drivers/local-driver.mjs:63 — `return JSON.parse(raw);` — a truncated index file throws before validation even runs"
+        ],
+        "verdict": {
+          "verdict": "NARROWED",
+          "reasoning": "Refutation attempted on reachability. The drift index is gitignored (src/drivers/git-ref-driver.mjs:29) so it never participates in a merge, which removes the most likely corruption source and refutes any claim that MSP-11's merge driver must handle it. What remains is a partial write from a crash, or a stale file from an older format — real but uncommon. Recorded at low severity, and specifically as evidence that MSP-11's stated obligation to 'handle records src/drift/* produces' applies to bindings only, not to drift entries."
+        }
+      },
+      {
+        "id": "sup-upcast-decision-ref-copied-verbatim",
+        "title": "The v1 upcast copies a legacy decision string verbatim into `ref` while the split regex gates only the title, so any non-conforming v1 decision produces a thread that reads but can never be written again",
+        "severity": "high",
+        "category": "validation-coherence",
+        "area": "upcast",
+        "confidence": "certain",
+        "evidence": [
+          "src/schema/upcast.mjs:55 — `ref: item,` — the raw v1 string",
+          "src/schema/upcast.mjs:6 — `const DECISION_REF_SPLIT = /^([0-9]{4})-(.+)$/;` — used at :53 only to derive the title at :56",
+          "src/schema/thread.schema.mjs:28 — `ref: { type: 'string', pattern: DECISION_REF_PATTERN },`",
+          "src/schema/patterns.mjs:8 — `export const DECISION_REF_PATTERN = '^[0-9]{4}-[a-z0-9-]+$';`",
+          "src/drivers/local-driver.mjs:148 — `assertValidThread(thread);` on write, versus :144 `upcastThread(await readJsonOrNull(...))` on read, which validates nothing"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "Refutation attempted by searching for a v1 spelling that survives: free text, uppercase, three-digit, five-digit, underscore, trailing space, embedded space, accented and trailing-newline forms were each fed through `upcastThread` then `assertValidThread`. All were rejected with `/spine/key_decisions/0/ref must match pattern \"^[0-9]{4}-[a-z0-9-]+$\"`. The trailing-newline case was tested specifically because JavaScript `$` can match before a final newline; ajv rejected it too. Only degenerate forms such as `0007---` survive. This is a third upcast defect beyond the two MSP-7 names."
+        }
+      },
+      {
+        "id": "sup-upcast-manufactures-an-empty-decision-title",
+        "title": "unkebab returns its input unchanged when the de-kebabbed string is empty, so an empty-string v1 decision upcasts to a title that violates minLength",
+        "severity": "medium",
+        "category": "validation-coherence",
+        "area": "upcast",
+        "confidence": "certain",
+        "evidence": [
+          "src/schema/upcast.mjs:33-35 — `const spaced = slug.replace(/-+/g, ' ').trim(); if (spaced.length === 0) return slug;`",
+          "src/schema/upcast.mjs:56 — `title: unkebab(match ? match[2] : item),`",
+          "src/schema/thread.schema.mjs:29 — `title: { type: 'string', minLength: 1 },`"
+        ],
+        "verdict": {
+          "verdict": "NARROWED",
+          "reasoning": "Refutation attempted with a whitespace-only input, expecting `.trim()` to empty the title as well. It does not: the guard returns the untrimmed `slug`, so `'   '` yields a three-character title and only the ref error fires. The title violation is reachable only through the exact empty string, and even then the ref error at the same path always accompanies it, so this never surfaces as an independent failure. Recorded because a migration that fixes only the ref will still leave this record invalid."
+        }
+      },
+      {
+        "id": "sup-upcast-passes-unknown-keys-through-a-closed-schema",
+        "title": "The upcast spreads both the record and the spine wholesale into a schema that forbids additional properties, and supplies no default for the two required spine scalars",
+        "severity": "high",
+        "category": "validation-coherence",
+        "area": "upcast",
+        "confidence": "certain",
+        "evidence": [
+          "src/schema/upcast.mjs:67-69 — `const { status: _status, ...rest } = spine; return { ...rest, ... };` — only `status` is removed",
+          "src/schema/upcast.mjs:84 — `...record,` — the same passthrough at the root",
+          "src/schema/thread.schema.mjs:98 — `additionalProperties: false` on `spine`",
+          "src/schema/thread.schema.mjs:37 — `additionalProperties: false` at the root",
+          "src/schema/upcast.mjs:70-73 — defaults are supplied for `last_session`, `open_risks`, `key_decisions` and `out_of_scope` only",
+          "src/schema/thread.schema.mjs:99 — `required: ['active_goal', 'next_step', 'last_session', 'open_risks', 'key_decisions', 'out_of_scope']` — `active_goal` and `next_step` get no default"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "Refutation attempted by checking whether ajv's configuration relaxes `additionalProperties`: src/schema/validators.mjs:5 constructs `Ajv({ allErrors: true })`, which changes error accumulation only. Each half was then exercised: an extra spine key produced `/spine must NOT have additional properties`; an extra root key produced `(root) must NOT have additional properties`; a missing `active_goal` produced `/spine must have required property 'active_goal'`; a missing `next_step` the same for `next_step`. Four distinct manufactured violations, none named by MSP-7."
+        }
+      },
+      {
+        "id": "sup-upcast-drops-criteria-and-copies-text-unguarded",
+        "title": "A non-array v1 completion_criteria upcasts to an empty array — a valid record with the criteria permanently gone — and a criterion missing text upcasts to a record that cannot be written",
+        "severity": "high",
+        "category": "silent-destruction",
+        "area": "upcast",
+        "confidence": "certain",
+        "evidence": [
+          "src/schema/upcast.mjs:28 — `if (!Array.isArray(criteria)) return [];`",
+          "src/schema/upcast.mjs:20 — `text: item.text,` — copied with no default and no check",
+          "src/schema/thread.schema.mjs:69 — `required: ['id', 'text', 'done', 'kind', 'struck_by'],`",
+          "src/schema/thread.schema.mjs:72 — `text: { type: 'string', minLength: 1 },`",
+          "src/drivers/local-driver.mjs:147-152 — `writeThread` validates then persists whatever is in memory, so a read-modify-write makes the empty array durable"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "Refutation attempted on the silent-drop half by arguing it is self-limiting because the record would fail validation later. It does not: an empty `completion_criteria` is perfectly valid under src/schema/thread.schema.mjs:64-78, so the record writes back cleanly with every criterion gone and no error anywhere. The refutation made the finding worse rather than weaker. The unguarded-text half was exercised directly and produced `/completion_criteria/0 must have required property 'text'`, `.../text must NOT have fewer than 1 characters` and `.../text must be string` for the missing, empty and non-string cases."
+        }
+      },
+      {
+        "id": "sup-upcast-returns-unknown-versions-raw-and-unvalidated",
+        "title": "upcastThread returns the record untouched and unvalidated for any schema_version that is not the number 1, so absent, 0, 3 and the string \"1\" all reach every tool as raw v1-shaped data",
+        "severity": "medium",
+        "category": "validation-coherence",
+        "area": "upcast",
+        "confidence": "certain",
+        "evidence": [
+          "src/schema/upcast.mjs:82 — `if (record.schema_version !== LEGACY_SCHEMA_VERSION) return record;`",
+          "src/schema/upcast.mjs:4 — `const LEGACY_SCHEMA_VERSION = 1;` — a strict number comparison",
+          "src/drivers/local-driver.mjs:143-145 — `readThread` returns exactly that object",
+          "src/schema/thread.schema.mjs:57 — `schema_version: { type: 'integer', const: THREAD_SCHEMA_VERSION },`"
+        ],
+        "verdict": {
+          "verdict": "NARROWED",
+          "reasoning": "Refutation attempted on the enumerated cases and one succeeded: the claim's `1.0` case does not exist, because `1.0 === 1` in JavaScript, so such a record upcasts normally and validates. The remaining cases hold, verified by object identity — for absent, `0`, `3`, `\"1\"` and `null`, the returned object IS the input, still carrying `spine.status` and v1-shaped risks and decisions. So the finding stands minus one hypothetical."
+        }
+      },
+      {
+        "id": "sup-upcast-destroys-criterion-identity-on-every-read",
+        "title": "The upcast renumbers criterion ids positionally and hardcodes kind and struck_by, so one read-modify-write silently breaks the scope references that point at criterion ids and un-strikes struck criteria",
+        "severity": "high",
+        "category": "silent-destruction",
+        "area": "upcast",
+        "confidence": "certain",
+        "evidence": [
+          "src/schema/upcast.mjs:19 — `id: `c${index + 1}`,` — positional, ignoring any stored id",
+          "src/schema/upcast.mjs:22 — `kind: LEGACY_CRITERION_KIND,` with `LEGACY_CRITERION_KIND = 'planned'` at :5",
+          "src/schema/upcast.mjs:23 — `struck_by: null,`",
+          "src/schema/patterns.mjs:22 — `export const SCOPE_PATTERN = '^(c[1-9][0-9]*|thread|legacy)$';` — risk and decision scopes are criterion ids",
+          "src/drivers/local-driver.mjs:147-152 — the rewritten record is what `writeThread` persists"
+        ],
+        "verdict": {
+          "verdict": "NARROWED",
+          "reasoning": "Refutation attempted on whether a true v1 record can carry the fields being overwritten: a canonical v1 criterion has neither `id`, `kind` nor `struck_by`, so for a pure v1 record the hardcoding is correct rather than destructive. The finding is therefore real specifically for hybrid records — a v2-shaped criterion inside a record still labelled `schema_version: 1`, which is exactly what a partial or interrupted migration produces. Since MSP-7 ships a migration, this is the state its own dry-run will create, which is why it belongs in MSP-7's scope."
+        }
+      },
+      {
+        "id": "sup-upcast-legacy-scope-can-never-be-removed",
+        "title": "The upcast stamps scope \"legacy\" on every migrated decision, and every write path refuses that scope, so upcast decisions are immortal and permanently constrain out_of_scope",
+        "severity": "medium",
+        "category": "guard-asymmetry",
+        "area": "upcast",
+        "confidence": "certain",
+        "evidence": [
+          "src/schema/upcast.mjs:57 — `scope: LEGACY_SCOPE,` with `LEGACY_SCOPE = 'legacy'` at src/schema/patterns.mjs:20",
+          "src/tools/spine-input.mjs:13-18 — `if (scope === LEGACY_SCOPE) { throw new ToolError(...refused on every write path); }`",
+          "src/tools/update-thread.mjs:64-68 — `key_decisions: replaceScopedItems(thread.spine.key_decisions, submitted.key_decisions, replaceScopes.key_decisions)` — and :23-25 carries forward every scope not named",
+          "src/tools/update-thread.mjs:70-76 — `assertNoRestatedDecision(spinePatch.out_of_scope, spine.key_decisions, ...)` — the immortal decisions keep constraining a different field"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "Refutation attempted by looking for an exit: naming `legacy` in `replace_scopes.key_decisions` is refused by the same guard; submitting the item under scope `thread` is refused because the ref does not match an existing decision file; and omitting it carries it forward by design. All three exits are closed. MSP-7's migration is the only place this can be resolved, and MSP-7 does not currently mention it."
+        }
+      },
+      {
+        "id": "sup-upcast-caps-consolidation-invalidates-what-the-upcast-produces",
+        "title": "MSP-7's own plan to move SPINE_CAPS into the schema will newly invalidate seven classes of value the upcast manufactures today, and two existing tests assert the current permissive behavior",
+        "severity": "high",
+        "category": "validation-coherence",
+        "area": "upcast",
+        "confidence": "certain",
+        "evidence": [
+          "src/schema/upcast.mjs:56 — decision titles derived from a long v1 slug, against `decisionTitleMaxChars: 120` at src/model/caps.mjs:9",
+          "src/schema/upcast.mjs:69 — `active_goal`, `next_step` and `last_session` passed through untouched, against caps.mjs:2-4 (200 / 500 / 300)",
+          "src/schema/upcast.mjs:20 — criterion text passed through, against `CRITERION_TEXT_MAX_CHARS = 200` at src/schema/patterns.mjs:16",
+          "src/schema/upcast.mjs:44 — `return { text: item, scope: THREAD_SCOPE, refs: [] };` — every v1 risk is forced into one scope, against `openRisksMaxPerScope: 20` at caps.mjs:5",
+          "src/schema/upcast.mjs:73 — `out_of_scope: Array.isArray(spine.out_of_scope) ? [...spine.out_of_scope] : []`, against `outOfScopeMaxItems: 20` at caps.mjs:10",
+          "src/tools/update-thread.mjs:77 — `assertSpineCaps(submitted);` — the patch, not the merged spine, so over-cap upcast values survive every write today",
+          "test/unit/schema/upcast.test.mjs:124-129 — `test('upcastThread never throws on an over-cap legacy scalar', ...)` asserting a 281-character active_goal",
+          "test/unit/schema/upcast.test.mjs:131-137 — `test('an upcast v1 thread whose criterion text predates the 200-char cap still satisfies the v2 schema', ...)` asserting `valid === true` for 251 characters"
+        ],
+        "verdict": {
+          "verdict": "CONFIRMED",
+          "reasoning": "This is a forward-looking finding about MSP-7's own design rather than a defect in shipped behavior, which is why it matters most: refutation was attempted by checking whether `assertSpineCaps` already blocks these values on write, which would make the schema move a no-op. It does not — src/tools/update-thread.mjs:77 passes `submitted`, the patch, so a value the upcast produced and the caller never touched is never cap-checked. Both cited tests were read directly and assert exactly the behavior the consolidation removes."
+        }
+      },
+      {
+        "id": "sup-upcast-listthreads-divergence-is-narrower-than-assumed",
+        "title": "listThreads not upcasting is real, but for a well-formed v1 record the roster entry is byte-identical either way; the genuine hazard is a bare-string criterion, where the list succeeds and the upcast throws",
+        "severity": "low",
+        "category": "validation-coherence",
+        "area": "upcast",
+        "confidence": "high",
+        "evidence": [
+          "src/drivers/local-driver.mjs:160 — `const record = await readJsonOrNull(join(this.ledgerRoot, 'threads', name));` — no upcast, versus :144 which upcasts",
+          "src/model/selection.mjs:9 — `.filter((c) => c && typeof c === 'object' && (c.struck_by ?? null) === null)` — an absent v1 `struck_by` is undefined, which `??` collapses to null, so the criterion is kept",
+          "src/model/selection.mjs:27 — `const planned = live.filter((c) => c.kind !== DETOUR_KIND);` — an absent v1 `kind` counts as planned",
+          "src/index/rebuild-index.mjs:41-44 — the only fields the roster reads from a listed thread beyond id/slug/title/status",
+          "src/schema/upcast.mjs:14-16 — `throw new TypeError(`upcastThread: completion_criteria[${index}] must be an object, ...`)` — the bare-string case",
+          "src/tools/get-resume-brief.mjs:19-27 — the only other consumer, reading only parent_id, slug, status and id"
+        ],
+        "verdict": {
+          "verdict": "NARROWED",
+          "reasoning": "The refutation partly succeeded. Both consumers of `listThreads` were enumerated and each was exercised against a v1 record: the roster entries produced with and without the upcast were compared field by field and were identical for a well-formed v1 record, for absent criteria, for empty criteria, for a missing next_step and for a done thread. `criteriaProgress` is accidentally v1-tolerant. So the SPEC's fix is right but the failure it implies does not exist as stated. What does exist: a v1 `completion_criteria` holding a bare string makes the roster list the thread as resumable while every `readThread` call site throws, and hybrid records carrying `struck_by` or `kind` produce different counts on the two paths."
+        }
+      },
+      {
+        "id": "sup-refuted-ledger-commit-env-cannot-clear-inherited-dates",
+        "title": "REFUTED — the undefined values in ledgerCommitEnv do not fail to clear an inherited GIT_AUTHOR_DATE",
+        "severity": "low",
+        "category": "refuted",
+        "area": "git-ledger",
+        "confidence": "certain",
+        "evidence": [
+          "src/drivers/git-ledger.mjs:19 — `GIT_AUTHOR_DATE: undefined,`",
+          "src/drivers/git-ledger.mjs:22 — `GIT_COMMITTER_DATE: undefined,`",
+          "src/util/git-scope.mjs:100 — `env: env ? { ...scope.env, ...env } : scope.env,` — the undefined-valued keys are spread over the scope env and reach child_process"
+        ],
+        "verdict": {
+          "verdict": "REFUTED",
+          "reasoning": "The candidate finding was that spreading `undefined` values cannot unset an inherited variable, leaving a stale GIT_AUTHOR_DATE in force and making ledger commits non-deterministic. Tested directly: a child process was spawned with `{ ...process.env, GIT_AUTHOR_DATE: 'INHERITED-VALUE', ...ledgerCommitEnv() }` and asked to print both variables. It reported GIT_AUTHOR_NAME as 'Continuity Ledger' and GIT_AUTHOR_DATE as absent. Node omits env keys whose value is undefined, so the clear works exactly as the code intends. Recorded rather than deleted so the adversarial pass is auditable.",
+          "reproduction": "Child process env probe: `{\"N\":\"Continuity Ledger\"}` — the GIT_AUTHOR_DATE key was absent, so the inherited value was cleared."
+        }
+      }
+    ],
+    "measurements": {
+      "why": "Every payload figure in the SPEC was measured on LocalDriver, but the deployed backend is GitRefDriver. SPEC section 10 carries this as a standing risk. Both figures are recorded here.",
+      "harness": "`scratchpad/measure/measure.mjs` and `scratchpad/measure/durability.mjs`, run against throwaway ledgers created under a temp CLAUDE_PLUGIN_DATA with a temp git repository. No real ledger was read or written. The thread used for the payload figures reproduces the shape the original audit describes for finding `write-tools-echo-whole-thread`: 8 criteria, 6 risks with refs, 9 decisions, 12 out_of_scope entries and capped-length scalars. Timings are the median of 5 runs.",
+      "headline": "The SPEC's standing risk that payload sizes differ between backends is DISPROVEN for return payloads: every mutating tool returns the thread record itself (src/tools/update-thread.mjs:125) and bin/ledger-server.mjs:52 stringifies that result, so the figure is driver-independent by construction. The risk is real for durability, not for size — see the last row.",
+      "figures": [
+        {
+          "figure": "update_thread tool result, JSON.stringify bytes",
+          "local_driver": "6,514 B",
+          "git_ref_driver": "6,514 B",
+          "note": "SPEC's 6,269 B verified in magnitude; the 4% delta is the reconstructed thread, not the backend. Driver-independent: src/tools/update-thread.mjs:125 returns the record."
+        },
+        {
+          "figure": "update_thread as it reaches the model, MCP content envelope",
+          "local_driver": "6,963 B",
+          "git_ref_driver": "6,963 B",
+          "note": "bin/ledger-server.mjs:52 — `{ content: [{ type: 'text', text: JSON.stringify(result) }] }`. This, not the raw result, is the figure MSP-6's under-1,200-byte target must beat."
+        },
+        {
+          "figure": "update_thread section breakdown",
+          "local_driver": "criteria 1,140 / risks 1,953 / decisions 1,007 / out_of_scope 1,321",
+          "git_ref_driver": "identical",
+          "note": "5,421 B of 6,514 (83%) is content the caller submitted earlier and did not touch, matching the original audit's 83%."
+        },
+        {
+          "figure": "roster / thread listing, 17 threads",
+          "local_driver": "11,519 B",
+          "git_ref_driver": "11,519 B",
+          "note": "`list_threads` DOES NOT EXIST — MSP-5 introduces it. Measured the closest existing surface: the `resumable` index array that rebuild-index.mjs:45-54 builds and bin/ledger-cli.mjs:22-26 returns. 17 threads matches the real .windful-ocean ledger size the SPEC cites in I2."
+        },
+        {
+          "figure": "roster / thread listing, 1 thread",
+          "local_driver": "248 B",
+          "git_ref_driver": "248 B",
+          "note": "~677 B per entry at scale, dominated by next_step, whose cap is 500 chars (caps.mjs:3). MSP-12's pagination target should assume this per-entry cost."
+        },
+        {
+          "figure": "index rebuild, 17 threads",
+          "local_driver": "1.8 ms",
+          "git_ref_driver": "2.0 ms",
+          "note": "rebuildIndex alone (src/index/rebuild-index.mjs:17)."
+        },
+        {
+          "figure": "index rebuild, 1 thread",
+          "local_driver": "1.1 ms",
+          "git_ref_driver": "1.0 ms",
+          "note": "Rebuild cost is near-flat from 1 to 17 threads."
+        },
+        {
+          "figure": "commitAndReindex, 17 threads — what every mutating tool actually pays",
+          "local_driver": "30.1 ms",
+          "git_ref_driver": "27.3 ms",
+          "note": "src/tools/shared.mjs:19-23. The rebuild is ~7% of this; the git commit is the rest. Both backends pay it, because LocalDriver also drives a git recovery repo (local-driver.mjs:278-301). MSP-12's premise that the per-call index rebuild is the cost driver is not supported by this measurement."
+        },
+        {
+          "figure": "commitAndReindex, 1 thread",
+          "local_driver": "26.9 ms",
+          "git_ref_driver": "27.6 ms",
+          "note": "Near-flat, confirming the cost is per-commit, not per-thread, at this scale."
+        },
+        {
+          "figure": "index files surviving one further process start",
+          "local_driver": "3 of 3 survive",
+          "git_ref_driver": "0 of 3 survive",
+          "note": "drift snapshot, briefing pledge and by-slug map. THIS is where the backends actually diverge, and it is a durability difference, not a size one. See sup-gitref-init-destroys-every-index-file."
+        }
+      ]
+    }
+  }
+}
