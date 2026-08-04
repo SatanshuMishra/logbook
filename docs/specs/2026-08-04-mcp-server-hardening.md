@@ -481,6 +481,12 @@ rather than dropped:
 
 ### MSP-2 — Validate before you write
 
+**Status: shipped** as `7b12b7b` on `fix/msp-2-validate-before-write`, stacked on MSP-1C at
+`a3d4d39` because MSP-1C carries the 0.2.3 bump this MSP's 0.2.4 follows. Every line number this
+section cites was pinned to audit baseline `2c8ef31` and was already stale when the work started:
+MSP-1 (`dfbebf4`) shifted `record-decision.mjs` by +8, `transition-thread.mjs` by +18,
+`archive-thread.mjs` by -2 and `reopen.mjs` by +6. Re-locate by grep, never by the cited number.
+
 **Attacks:** C2 (ordering half). **Closes:** criticals 5 and 11's write-ordering component, plus
 the partial-write ghost-thread defects.
 **Depends:** MSP-1B (for the error shape). **Version:** 0.2.4. Non-breaking.
@@ -495,6 +501,46 @@ the partial-write ghost-thread defects.
   the result instead (`warnings[]`), notably `writeActiveThread`, which throws from
   `src/util/active-thread.mjs:26-27` when `CLAUDE_PLUGIN_DATA` is unset on a non-git project.
 
+**What shipped**
+- `record_decision` now writes the thread record first and the decision file last. `writeThread`
+  validates before it writes, so a record the schema refuses aborts the call with `decisions/`
+  untouched and `nextDecisionNumber` unmoved. Decision-file-last is also the self-healing order: a
+  retry after a failed decision write reuses the same number, because the spine already carries the
+  ref and the dedup check skips re-adding it. Thread-last would mint a duplicate on every retry.
+- The unset-`CLAUDE_PLUGIN_DATA` throw becomes `ActivePointerUnavailable`
+  (`src/util/active-thread.mjs`), and three tolerant wrappers — `writeActiveThreadOrWarn`,
+  `readActiveThreadOrWarn`, `clearActiveThreadOrWarn` — convert **only that class** to
+  `{value, warning}`. Every other pointer failure still throws; the tolerance is not blanket.
+- `withWarnings` (`src/tools/shared.mjs`) attaches `warnings[]` to a result **only when non-empty**,
+  so no success-path result shape changed. This is the deliberately narrow precursor to the
+  `warnings[]` slot in MSP-6's effect report; it is a bare array of strings and builds toward
+  nothing else.
+- The pointer *read* that gates a clear moved ahead of `writeThread` in `transition_thread` and
+  `archive_thread`. It is pure, so hoisting it removes a throwing step from after the durable write
+  at no observable cost.
+
+**Scope resolved during execution.** This section says MSP-2 closes "critical 11's write-ordering
+component" but never says what that component is; critical 11 is a *missing* `isTerminal` guard on
+`record_decision`, which is an absent check rather than an ordering defect, and MSP-3 below assigns
+that guard explicitly. Resolved as: MSP-2 owns ordering only, MSP-3 owns the guard. No terminal
+check was added here, and no ordering aspect of critical 11 distinct from the guard was found.
+
+**Residuals this MSP leaves open**
+- `bind_branch` (`src/tools/bind-branch.mjs`) and `create_successor`
+  (`src/tools/create-successor.mjs`) carry the **identical** defect — `writeBinding` / `writeThread`
+  followed by a throwing `writeActiveThread` — and were left untouched because neither appears in
+  the enumeration above. The tolerant wrappers they need already exist. Until they adopt them, the
+  partial-write class is closed for five tools, not for the server. MSP-3 already edits
+  `bind_branch`; fold it in there, and give `create_successor` its own line.
+- `local-driver.mjs`'s `SLUG_PATTERN` (`^[a-z0-9][a-z0-9-]*$`) is stricter than the schema's
+  `DECISION_REF_PATTERN` (`^[0-9]{4}-[a-z0-9-]+$`), so a leading-dash slug such as `-x` passes
+  thread validation and is then refused by `writeDecision` *after* the thread write, leaving a
+  spine ref to a decision file that will never exist. Unreachable through `callTool`, whose
+  `DECISION_SLUG_PATTERN` matches the driver's; reachable only by invoking the handler directly.
+- Durability is still commit-time on `GitRefDriver`: nothing is durable until `commit()` inside
+  `commitAndReindex`. The reordering above is tool-level call ordering and holds on either backend,
+  but true all-or-nothing durability is MSP-8 and worktree custody is MSP-9.
+
 **Acceptance**
 - A `record_decision` call that fails thread validation leaves **zero** files in `decisions/`.
   Test drives a real `LocalDriver` against a temp ledger and asserts the directory listing.
@@ -502,7 +548,12 @@ the partial-write ghost-thread defects.
 - `open_thread` with `CLAUDE_PLUGIN_DATA` unset either succeeds with a warning or writes nothing.
   It never leaves a thread with no pointer and no error path.
 
-**Verify:** `npm test`.
+**Verify:** `npm test`. Each of the three acceptance tests was run against the parent commit
+`a3d4d39` and watched fail first: the directory listing came back `['0001-adopt-x.md']` against an
+expected `[]`, `nextDecisionNumber` came back `'0002'` against an expected `'0001'`, and
+`open_thread` threw `activeThreadPath: CLAUDE_PLUGIN_DATA is not set for a non-git project` from
+`active-thread.mjs:27` with the thread already on disk. A green suite proves nothing here; six
+consecutive reviews of this server's error surface each found a live defect at 100% pass.
 
 **PR title:** `fix(writes): validate the full record before any durable write`
 
