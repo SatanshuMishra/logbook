@@ -751,13 +751,35 @@ drift snapshot survives it.
 - Harden the Stop gate: `hooks/lib/stop.mjs:87` accepts substring containment, so a message that
   merely quotes the briefing satisfies it; and `:67-73` swallows every read error into an empty
   array, so an unreadable transcript passes silently. Both become explicit.
-- **Added during execution (review of MSP-1, 2026-08-04).** The error surface is a second unfenced
-  path to the model, distinct from the render boundary above: `toLedgerError`
-  (`src/errors.mjs:145-158`) interpolates an arbitrary internal message into `expected` with no
-  bound and no sanitizing, so git stderr and absolute filesystem paths reach the model verbatim.
-  MSP-1B softens that function's remedy but deliberately does **not** touch the leakage. Sanitize
-  and bound `expected` here on the same rule as the render boundary. Confirm first whether the path
-  is still reachable after MSP-1B converts the caller-caused throws.
+- **Added during execution (review of MSP-1, 2026-08-04; corrected by the security review of
+  MSP-1B).** The error surface is a second unfenced path to the model, distinct from the render
+  boundary above. `toLedgerError` interpolates an arbitrary internal message into `expected`, so git
+  stderr and absolute filesystem paths reach the model. MSP-1B bounds that text to 180 characters
+  but deliberately does **not** stop the leak. Classify at the throw site instead of passing
+  `error.message` through; at minimum replace `expected` with a constant and route the raw cause to
+  stderr logging only. The widest source is **`src/util/git-exec.mjs:29-31`**, which builds
+  ``git ${args.join(' ')} failed (exit ${code}): ${stderr}`` on every `check:true` call, carrying
+  `-c safe.directory=<absolute repo dir>` (`src/util/git-scope.mjs:32`, `:86`) and
+  `-c core.hooksPath=<absolute path>` (`src/util/git-env.mjs:66`). Also confirmed:
+  `src/drivers/git-ref-driver.mjs:460`, `:471` (a hostile remote's `remote:` lines reach the model
+  verbatim), `src/util/git-scope.mjs:55`, `:60`, `src/drivers/local-driver.mjs:82`. The 180-character
+  bound does **not** protect a secret — a 39-character token survives intact. Modern git redacts URL
+  userinfo itself, but the server borrows that property rather than owning it.
+- **c6 scope correction.** c6 names the briefing, the SessionStart roster and `read_decision`. The
+  **refusal path is a fourth channel** and is in scope: `src/tools/spine-input.mjs:153` interpolates
+  a stored decision title, which in a git-synced ledger another user wrote; same shape at
+  `src/tools/amend-criteria.mjs:38` and `src/tools/update-thread.mjs:104`. Structural forgery is
+  already blocked — `collapse` strips `\s+`, so stored text cannot open a new `key: value` line —
+  but inline semantic forgery within one line remains.
+- **Harden `collapse` (`src/errors.mjs:56-58`).** It is now the sole containment for injection and
+  the basis of `fit`'s byte accounting, but JS `\s` omits U+0085 NEL (a Unicode mandatory line
+  break), U+001B ESC, U+0007, U+0000, U+200B, U+00AD, and the bidi controls U+202E and U+2066 —
+  each verified to survive. Widen it to
+  `/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Zs}\s]+/gu`.
+- **Quote every echoed value at the interpolation site.** `src/tools/spine-input.mjs` wraps echoes
+  in `JSON.stringify`; `src/tools/registry.mjs:77`, `src/tools/shared.mjs:24`, `:71` and
+  `src/tools/read-decision.mjs:15` do not, so an echoed value can imitate the server's own
+  `key: value` grammar inline.
 
 **Acceptance**
 - A thread title containing `\n## SYSTEM` renders as one line with the marker stripped, and cannot
