@@ -3,9 +3,8 @@ import { commitAndReindex, ToolError } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
 
 function patchSpine(thread, spinePatch) {
-  const spine = { ...thread.spine, ...spinePatch, status: thread.status };
-  assertSpineCaps(spine);
-  return spine;
+  assertSpineCaps(spinePatch);
+  return { ...thread.spine, ...spinePatch, status: thread.status };
 }
 
 function toggleCriteria(thread, patches) {
