@@ -1,5 +1,7 @@
-import { rm, mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { rm, mkdir, open, readFile, stat, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { LocalDriver } from './local-driver.mjs';
 import {
   hostScope,
@@ -27,6 +29,56 @@ const GITATTRIBUTES = 'sessions/**/*.md merge=union\n';
 const GITIGNORE = 'index/\n';
 const SCAFFOLD_MESSAGE = 'chore: scaffold ledger';
 const MERGE_MESSAGE = 'chore: merge ledger';
+
+export const WORKTREE_LOCK_FILE = 'logbook-worktree.lock';
+export const WORKTREE_LOCK_TIMEOUT_MS = 10_000;
+const WORKTREE_LOCK_POLL_MS = 50;
+
+async function worktreeLockIsStale(lockPath) {
+  try {
+    const info = await stat(lockPath);
+    return Date.now() - info.mtimeMs >= WORKTREE_LOCK_TIMEOUT_MS;
+  } catch {
+    return true;
+  }
+}
+
+async function takeWorktreeLock(lockPath, token) {
+  const handle = await open(lockPath, 'wx');
+  try {
+    await handle.writeFile(token);
+  } finally {
+    await handle.close();
+  }
+}
+
+async function acquireWorktreeLock(lockPath, token) {
+  const deadline = Date.now() + WORKTREE_LOCK_TIMEOUT_MS;
+  for (;;) {
+    try {
+      await takeWorktreeLock(lockPath, token);
+      return true;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') return false;
+    }
+    if (Date.now() >= deadline) return false;
+    if (await worktreeLockIsStale(lockPath)) {
+      await rm(lockPath, { force: true });
+    }
+    await delay(WORKTREE_LOCK_POLL_MS);
+  }
+}
+
+async function releaseWorktreeLock(lockPath, token) {
+  let held;
+  try {
+    held = await readFile(lockPath, 'utf8');
+  } catch {
+    return;
+  }
+  if (held !== token) return;
+  await rm(lockPath, { force: true });
+}
 
 async function revParseOrNull(scope, ref) {
   const { code, stdout } = await scopedExec(scope, ['rev-parse', '--verify', '--quiet', ref], { check: false });
@@ -149,7 +201,9 @@ export async function resolveIntegrationBase(repo) {
 export class GitRefDriver extends LocalDriver {
   #repoGitDir = null;
 
-  #worktreeGitDir = null;
+  #repoCommonGitDir = null;
+
+  #uncommittedWrite = false;
 
   constructor({
     repoDir,
@@ -192,11 +246,64 @@ export class GitRefDriver extends LocalDriver {
     return networkScope(this.repoDir, await this.#resolvedRepoGitDir());
   }
 
-  async #worktreeScope() {
-    if (this.#worktreeGitDir === null) {
-      this.#worktreeGitDir = await resolveGitDir(this.worktreeDir);
+  async #resolvedRepoCommonGitDir() {
+    if (this.#repoCommonGitDir === null) {
+      const { code, stdout } = await scopedExec(
+        await this.#repoScope(),
+        ['rev-parse', '--git-common-dir'],
+        { check: false },
+      );
+      const common = code === 0 ? stdout.trim() : '';
+      this.#repoCommonGitDir = common === ''
+        ? await this.#resolvedRepoGitDir()
+        : resolve(this.repoDir, common);
     }
-    return isolatedScope(this.worktreeDir, this.#worktreeGitDir);
+    return this.#repoCommonGitDir;
+  }
+
+  async #worktreeGitDir() {
+    try {
+      return await resolveGitDir(this.worktreeDir);
+    } catch (error) {
+      if (this.#uncommittedWrite) throw error;
+      try {
+        await this.#ensureWorktree();
+        return await resolveGitDir(this.worktreeDir);
+      } catch {
+        throw error;
+      }
+    }
+  }
+
+  async #worktreeScope() {
+    return isolatedScope(this.worktreeDir, await this.#worktreeGitDir());
+  }
+
+  async #writeInWorktree(write) {
+    if (!this.#uncommittedWrite) await this.#worktreeGitDir();
+    const written = await write();
+    this.#uncommittedWrite = true;
+    return written;
+  }
+
+  async writeThread(thread) {
+    return this.#writeInWorktree(() => super.writeThread(thread));
+  }
+
+  async writeBinding(binding) {
+    return this.#writeInWorktree(() => super.writeBinding(binding));
+  }
+
+  async writeDecision(nnnn, slug, markdown) {
+    return this.#writeInWorktree(() => super.writeDecision(nnnn, slug, markdown));
+  }
+
+  async appendSessionEvent(threadId, isoTs, actor, markdown) {
+    return this.#writeInWorktree(() => super.appendSessionEvent(threadId, isoTs, actor, markdown));
+  }
+
+  async writeIndexFile(name, obj) {
+    return this.#writeInWorktree(() => super.writeIndexFile(name, obj));
   }
 
   async init() {
@@ -234,11 +341,21 @@ export class GitRefDriver extends LocalDriver {
   }
 
   async #ensureWorktree() {
+    const lockPath = join(await this.#resolvedRepoCommonGitDir(), WORKTREE_LOCK_FILE);
+    const token = `${process.pid}-${randomUUID()}`;
+    const locked = await acquireWorktreeLock(lockPath, token);
+    try {
+      await this.#provisionWorktree();
+    } finally {
+      if (locked) await releaseWorktreeLock(lockPath, token);
+    }
+  }
+
+  async #provisionWorktree() {
     const scope = await this.#repoScope();
     await rm(this.worktreeDir, { recursive: true, force: true });
     await scopedExec(scope, ['worktree', 'prune']);
     await scopedExec(scope, ['worktree', 'add', '--detach', this.worktreeDir, this.ledgerRef]);
-    this.#worktreeGitDir = null;
   }
 
   async #ensureSubdirs() {
@@ -279,7 +396,11 @@ export class GitRefDriver extends LocalDriver {
 
   async commit(message) {
     assertCommitMessage('GitRefDriver.commit', message);
-    return this.#commitWorktree(message);
+    try {
+      return await this.#commitWorktree(message);
+    } finally {
+      this.#uncommittedWrite = false;
+    }
   }
 
   async sync() {
