@@ -159,13 +159,14 @@ section 8.
 
 ## 7. MSP ladder
 
-Sixteen MSPs. Each is independently shippable: merging it leaves `main` green and the plugin
+Seventeen MSPs. Each is independently shippable: merging it leaves `main` green and the plugin
 working. Later MSPs assume earlier ones only where the Depends column says so.
 
-Two are corrective siblings added during execution rather than at approval. A `B` suffix means the
-parent shipped but its premise or its output did not hold: MSP-0B closes an audit coverage gap
-(decision 0029), and MSP-1B repairs MSP-1's error contract after a review found it defective
-(decision 0034).
+Three are corrective siblings added during execution rather than at approval. A letter suffix means
+the parent shipped but its premise or its output did not hold, and the letter advances with each
+successive correction of the same parent: MSP-0B closes an audit coverage gap (decision 0029),
+MSP-1B repairs MSP-1's error contract after a review found it defective (decision 0034), and MSP-1C
+repairs the one C4 defect MSP-1B's own review left open (decision 0035).
 
 ### Version policy
 
@@ -177,7 +178,8 @@ parent shipped but its premise or its output did not hold: MSP-0B closes an audi
 | MSP-0B | 0.2.0 (unchanged) | no |
 | MSP-1 | 0.2.1 | no |
 | MSP-1B | 0.2.2 | no |
-| MSP-2 | 0.2.3 | no |
+| MSP-1C | 0.2.3 | no |
+| MSP-2 | 0.2.4 | no |
 | MSP-3 | 0.3.0 | input tightening |
 | MSP-4 | 0.4.0 | new tool + FSM change |
 | MSP-5 | 0.5.0 | new tools |
@@ -312,6 +314,8 @@ error read as a schema complaint that a shape-retry could never fix. `retryable:
 
 ### MSP-1B — Repair the refusal contract
 
+**Status: reviewed and open as PR #40 at `48fabab`; its value rendering is corrected by MSP-1C.**
+
 **Attacks:** C4, which MSP-1 did not actually close. **Closes:** five review-confirmed defects in
 MSP-1's own output, plus the missing error-code registry.
 **Depends:** MSP-1. **Version:** 0.2.2. Non-breaking: error content and a bounded record.
@@ -377,11 +381,66 @@ assertions that weak.
 
 ---
 
+### MSP-1C — Make the refusal name the key that was actually sent
+
+**Attacks:** C4, which MSP-1B narrowed but did not close. **Closes:** the invisible-character echo
+defect its own final review found, plus the same defect class at ten further echo sites.
+**Depends:** MSP-1B. **Version:** 0.2.3. Non-breaking: refusal text only.
+**Gates:** nothing. MSP-2, MSP-3, MSP-4 and MSP-5 depend on MSP-1B for the error *shape*, which
+this does not touch.
+
+**Why.** `collapse` (`src/errors.mjs:59`) rewrites every run of
+`[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Zs}\s]` to a single space, and it runs inside both `clip` and
+`requireText`, so every caller value quoted into a refusal lost its invisible characters before the
+agent read it. U+200B, U+0085, U+202E, U+00AD, U+2028, U+2029, U+00A0 and U+FEFF all rendered as
+the identical field `open_thread." "` with remedy `remove " " and re-send`. U+0000 was the sole
+member that worked, and only incidentally: `JSON.stringify` escapes it to an ASCII sequence
+`collapse` cannot touch. Worse than indistinguishable, a mixed name `op<U+202E>en_x` rendered as
+`remove "op en_x" and re-send` — a plausible but wrong key, so an agent removes `op en_x`, re-sends
+the identical failing call, and loops. That is the three-attempt failure this SPEC exists to end,
+reproduced by the very contract written to end it.
+
+**Changes**
+- Export `echo(value, max)` from `src/errors.mjs`: `JSON.stringify` first, then escape each UTF-16
+  code unit of a maximal `[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Zs}]` run to `\uXXXX` unless the run is
+  exactly one U+0020, then bound the result over an atom stream so a cut never splits a `\uXXXX`
+  token, a `\"` pair or a surrogate pair. Stringify-then-escape is the required order: escaping
+  first would double the backslash and echo a literal `\\u200b`.
+- Route every site that quotes caller data through it — `error-projection.mjs:57` and `:83`,
+  `shared.mjs` (`unknownThread`, `unknownCriterion`), `read-decision.mjs`, `registry.mjs`,
+  `spine-input.mjs` (scope, unknown `replace_scopes` keys, risk text, decision ref, restated entry
+  and title) and `amend-criteria.mjs`. `clipEntry` is subsumed and deleted.
+- Extend `sliceWholeCharacters` so the downstream `FIELD_MAX_CHARS`, `REMEDY_MAX_CHARS` and `fit`
+  cuts cannot leave a half-written `\u20` behind.
+
+**Acceptance**
+- Two governing invariants: `collapse(echo(v)) === echo(v)` for every `v` — the echo is a fixed
+  point of the function that destroyed it — and distinct values never collide.
+- Each of U+200B, U+0085, U+202E, U+00AD, U+2028, U+2029, U+00A0, U+FEFF and U+0000 names a
+  distinct, identifiable field.
+- `op<U+202E>en_x` echoes a value that JSON-parses back to the exact key sent, and is not
+  `remove "op en_x" and re-send`.
+- An ordinary spaced value is **not** escaped: `"ship the thing"`, never `"ship the thing"`.
+  Over-escaping is a legibility regression on the common path and fails this MSP as surely as
+  under-escaping.
+- A 26-character ULID still echoes in full.
+- `test/unit/tools/refusals.test.mjs` no longer asserts `open_thread." "` as correct. That
+  assertion pinned the defect and would have certified a broken fix.
+- Each defect assertion is red against `48fabab` and green after. The three regression guards — no
+  over-escaping, no truncation of a legitimate value, the fixed point — are green on the parent by
+  construction and are labelled guards, not detectors.
+
+**Verify:** `npm test`, reporting real counts against the 923/0 baseline on `48fabab`.
+
+**PR title:** `fix(errors): make a refusal name the key that was actually sent`
+
+---
+
 ### MSP-2 — Validate before you write
 
 **Attacks:** C2 (ordering half). **Closes:** criticals 5 and 11's write-ordering component, plus
 the partial-write ghost-thread defects.
-**Depends:** MSP-1B (for the error shape). **Version:** 0.2.3. Non-breaking.
+**Depends:** MSP-1B (for the error shape). **Version:** 0.2.4. Non-breaking.
 
 **Changes**
 - `src/tools/record-decision.mjs`: build the candidate thread and run full record validation
@@ -1015,7 +1074,8 @@ MSP-0 ─┬─> MSP-0B ──────────────────�
        │                                            │
        └─> MSP-1 ─┬─> MSP-10                        │
                   │                                 │
-                  └─> MSP-1B ─┬─> MSP-2 ────────────┤
+                  └─> MSP-1B ─┬─> MSP-1C            │
+                              ├─> MSP-2 ────────────┤
                               ├─> MSP-3 ──┐         │
                               ├─> MSP-4   │         │
                               └─> MSP-5 ──┼─> MSP-6 ┼─> MSP-7 ──> MSP-8 ─┬─> MSP-9 ──> MSP-11
@@ -1025,6 +1085,8 @@ MSP-0 ─┬─> MSP-0B ──────────────────�
 
 **Critical path:** 0 → 1 → 1B → 5 → 6 → 7 → 8 → 9 → 11 → 13.
 **Parallelizable at any time after MSP-1B:** MSP-3, MSP-4.
+**MSP-1C gates nothing** and is off the critical path, but it ships before MSP-2 because it is what
+actually closes C4: MSP-1B fixed the error *shape*, and left the rendered *value* still unreadable.
 **MSP-10 depends only on MSP-1** and is the one unit review cleared to build on the uncorrected
 contract, since it touches the render and hook surfaces rather than the error path.
 **MSP-0B runs concurrently with MSP-1 through MSP-6** and gates only MSP-7, MSP-9 and MSP-11.
