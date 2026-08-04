@@ -1,5 +1,5 @@
 import { canTransition } from '../model/index.mjs';
-import { readActiveThreadOrWarn, clearActiveThreadOrWarn } from '../util/active-thread.mjs';
+import { readActiveThread, clearActiveThreadOrWarn } from '../util/active-thread.mjs';
 import { commitAndReindex, withWarnings, ToolError, unknownThread, illegalTransition } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
 
@@ -21,12 +21,12 @@ async function handler(ctx, args) {
     abandoned_reason: args.reason,
     updated_at: nowIso,
   };
-  const pointer = thread.status === 'active' ? await readActiveThreadOrWarn(ctx) : NO_POINTER;
+  const pointer = thread.status === 'active' ? await readActiveThread(ctx) : null;
   await driver.writeThread(updated);
-  const release = pointer.value === updated.id ? await clearActiveThreadOrWarn(ctx) : NO_POINTER;
+  const release = pointer === updated.id ? await clearActiveThreadOrWarn(ctx) : NO_POINTER;
   await driver.appendSessionEvent(updated.id, nowIso, 'ledger', `Archived (${thread.status} -> abandoned): ${args.reason}`);
   const { recovery_degraded } = await commitAndReindex(driver, `chore(ledger): archive ${updated.slug}`);
-  return withWarnings({ thread: updated, recovery_degraded }, [pointer.warning, release.warning]);
+  return withWarnings({ thread: updated, recovery_degraded }, [release.warning]);
 }
 
 export default {

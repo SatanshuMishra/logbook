@@ -151,7 +151,7 @@ test('a record_decision whose decision write fails carries no spine ref and cons
   });
   await assert.rejects(
     () => callTool('record_decision', decisionArgs(thread, { slug: 'a'.repeat(300) }), ctx),
-    /ENAMETOOLONG|record_decision\.slug/,
+    /ENAMETOOLONG/,
   );
   const after = await ctx.driver.readThread(thread.id);
   assert.deepEqual(after.spine.key_decisions, []);

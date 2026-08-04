@@ -12,7 +12,6 @@ import {
   readActiveThread,
   clearActiveThread,
   writeActiveThreadOrWarn,
-  readActiveThreadOrWarn,
   clearActiveThreadOrWarn,
 } from '../../../src/util/active-thread.mjs';
 
@@ -118,17 +117,25 @@ test('writeActiveThreadOrWarn warns instead of throwing when the pointer dir is 
   assert.match(warning, /debrief/);
 });
 
-test('readActiveThreadOrWarn and clearActiveThreadOrWarn warn on the same condition', async (t) => {
+test('clearActiveThreadOrWarn warns that the stale pointer still arms the gate', async (t) => {
   const ctx = await occupyPointerDir(t);
-  const read = await readActiveThreadOrWarn(ctx);
-  assert.equal(read.value, null);
-  assert.match(read.warning, /ENOTDIR|EEXIST/);
-  const cleared = await clearActiveThreadOrWarn(ctx);
-  assert.match(cleared.warning, /ENOTDIR|EEXIST/);
+  const { warning } = await clearActiveThreadOrWarn(ctx);
+  assert.match(warning, /ENOTDIR|EEXIST/);
+  assert.doesNotMatch(warning, /will not fire|restored/);
+  assert.match(warning, /still names|remove/);
+});
+
+test('a pointer read failure is never tolerated', async (t) => {
+  const ctx = await occupyPointerDir(t);
+  await assert.rejects(() => readActiveThread(ctx), /ENOTDIR|EEXIST/);
 });
 
 test('the tolerant wrappers still propagate a programming error', async (t) => {
   const dir = await initRepo(t);
   await assert.rejects(() => writeActiveThreadOrWarn(gitCtx(dir), 'not-a-ulid'), /ULID/);
-  await assert.rejects(() => readActiveThreadOrWarn({ projectDir: '/abs' }), /isGit/);
+  await assert.rejects(() => writeActiveThreadOrWarn({ projectDir: '/abs' }, newUlid()), /isGit/);
+  await assert.rejects(
+    () => writeActiveThreadOrWarn({ driver: { isGit: () => true }, projectDir: '' }, newUlid()),
+    /projectDir/,
+  );
 });

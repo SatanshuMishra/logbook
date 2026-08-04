@@ -13,15 +13,27 @@ export class ActivePointerUnavailable extends Error {
   }
 }
 
+function isSyscallFailure(error) {
+  return error !== null && typeof error === 'object'
+    && typeof error.code === 'string' && typeof error.syscall === 'string';
+}
+
+function isGitInvocationFailure(error) {
+  return error !== null && typeof error === 'object'
+    && (typeof error.code === 'number' || isSyscallFailure(error));
+}
+
 async function gitLedgerDir(projectDir) {
+  let stdout;
   try {
-    const { stdout } = await gitExec(projectDir, ['rev-parse', '--git-common-dir'], {
+    ({ stdout } = await gitExec(projectDir, ['rev-parse', '--git-common-dir'], {
       env: clearedGitLocationEnv(),
-    });
-    return join(resolve(projectDir, stdout.trim()), 'ledger');
-  } catch {
+    }));
+  } catch (error) {
+    if (!isGitInvocationFailure(error)) throw error;
     throw new ActivePointerUnavailable('the project git directory could not be resolved');
   }
+  return join(resolve(projectDir, stdout.trim()), 'ledger');
 }
 
 export async function activeThreadPath(ctx) {
@@ -74,17 +86,18 @@ export async function clearActiveThread(ctx) {
   return target;
 }
 
-const POINTER_CONSEQUENCE =
-  'the end-of-session debrief gate will not fire for this thread until the pointer is restored';
+const WRITE_CONSEQUENCE =
+  'the end-of-session debrief gate will not fire for this thread until the pointer is written';
+
+const CLEAR_CONSEQUENCE =
+  'the pointer still names this thread, so every session end will keep demanding a debrief for it until the pointer is removed';
 
 function durabilityReason(error) {
   if (error instanceof ActivePointerUnavailable) return error.message;
-  const isSyscallFailure = error !== null && typeof error === 'object'
-    && typeof error.code === 'string' && typeof error.syscall === 'string';
-  return isSyscallFailure ? `the pointer file is unusable (${error.code})` : null;
+  return isSyscallFailure(error) ? `the pointer file is unusable (${error.code})` : null;
 }
 
-async function tolerateUnavailable(action, run) {
+async function tolerateUnavailable(action, consequence, run) {
   try {
     return { value: await run(), warning: null };
   } catch (error) {
@@ -92,19 +105,15 @@ async function tolerateUnavailable(action, run) {
     if (reason === null) throw error;
     return {
       value: null,
-      warning: `active-thread pointer not ${action}: ${reason}; ${POINTER_CONSEQUENCE}`,
+      warning: `active-thread pointer not ${action}: ${reason}; ${consequence}`,
     };
   }
 }
 
 export function writeActiveThreadOrWarn(ctx, threadId) {
-  return tolerateUnavailable('written', () => writeActiveThread(ctx, threadId));
-}
-
-export function readActiveThreadOrWarn(ctx) {
-  return tolerateUnavailable('read', () => readActiveThread(ctx));
+  return tolerateUnavailable('written', WRITE_CONSEQUENCE, () => writeActiveThread(ctx, threadId));
 }
 
 export function clearActiveThreadOrWarn(ctx) {
-  return tolerateUnavailable('cleared', () => clearActiveThread(ctx));
+  return tolerateUnavailable('cleared', CLEAR_CONSEQUENCE, () => clearActiveThread(ctx));
 }
