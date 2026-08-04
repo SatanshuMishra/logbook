@@ -2,13 +2,25 @@ import { execFile } from 'node:child_process';
 
 const MAX_BUFFER = 64 * 1024 * 1024;
 
+const GIT_USAGE_ERROR = Symbol.for('logbook.gitExec.usageError');
+
+export function isGitUsageError(error) {
+  return error !== null && typeof error === 'object' && error[GIT_USAGE_ERROR] === true;
+}
+
+function usageRejection(message) {
+  const error = new Error(message);
+  error[GIT_USAGE_ERROR] = true;
+  return Promise.reject(error);
+}
+
 export function gitExec(repoDir, args, options = {}) {
   const { env, check = true } = options;
   if (typeof repoDir !== 'string' || repoDir.length === 0) {
-    return Promise.reject(new Error('gitExec: repoDir must be a non-empty string'));
+    return usageRejection('gitExec: repoDir must be a non-empty string');
   }
   if (!Array.isArray(args)) {
-    return Promise.reject(new Error('gitExec: args must be an array of strings'));
+    return usageRejection('gitExec: args must be an array of strings');
   }
   const mergedEnv = env ? { ...process.env, ...env } : process.env;
   return new Promise((resolve, reject) => {

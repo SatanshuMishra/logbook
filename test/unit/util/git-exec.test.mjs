@@ -3,7 +3,20 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { gitExec } from '../../../src/util/git-exec.mjs';
+import { gitExec, isGitUsageError } from '../../../src/util/git-exec.mjs';
+
+test('gitExec tags its own usage rejections and nothing else', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'git-exec-usage-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await gitExec(dir, ['init', '-q']);
+  const usage = await gitExec('', ['status']).catch((error) => error);
+  assert.equal(isGitUsageError(usage), true);
+  const badArgs = await gitExec(dir, 'status').catch((error) => error);
+  assert.equal(isGitUsageError(badArgs), true);
+  const exitFailure = await gitExec(dir, ['rev-parse', '--verify', 'refs/heads/nope']).catch((error) => error);
+  assert.equal(isGitUsageError(exitFailure), false);
+  assert.equal(isGitUsageError(new Error('anything else')), false);
+});
 
 async function initRepo(t) {
   const dir = await mkdtemp(join(tmpdir(), 'git-exec-'));

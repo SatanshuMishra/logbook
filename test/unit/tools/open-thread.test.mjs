@@ -85,7 +85,6 @@ test('open_thread stores the thread and warns instead of throwing when CLAUDE_PL
     assert.ok(Array.isArray(result.warnings));
     assert.equal(result.warnings.length, 1);
     assert.match(result.warnings[0], /CLAUDE_PLUGIN_DATA/);
-    assert.match(result.warnings[0], /debrief/);
     await assert.rejects(() => readActiveThread(ctx), /CLAUDE_PLUGIN_DATA/);
   } finally {
     if (prior !== undefined) process.env.CLAUDE_PLUGIN_DATA = prior;

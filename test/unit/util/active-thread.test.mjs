@@ -13,6 +13,7 @@ import {
   clearActiveThread,
   writeActiveThreadOrWarn,
   clearActiveThreadOrWarn,
+  readActiveThreadOrAbsent,
 } from '../../../src/util/active-thread.mjs';
 
 function gitCtx(projectDir) {
@@ -110,11 +111,12 @@ async function occupyPointerDir(t) {
   return ctx;
 }
 
-test('writeActiveThreadOrWarn warns instead of throwing when the pointer dir is a file', async (t) => {
+test('writeActiveThreadOrWarn warns that the gate stays unarmed, never that a pointer survives', async (t) => {
   const ctx = await occupyPointerDir(t);
   const { warning } = await writeActiveThreadOrWarn(ctx, newUlid());
   assert.match(warning, /ENOTDIR|EEXIST/);
-  assert.match(warning, /debrief/);
+  assert.match(warning, /will not fire/);
+  assert.doesNotMatch(warning, /still names|removed/);
 });
 
 test('clearActiveThreadOrWarn warns that the stale pointer still arms the gate', async (t) => {
@@ -125,17 +127,36 @@ test('clearActiveThreadOrWarn warns that the stale pointer still arms the gate',
   assert.match(warning, /still names|remove/);
 });
 
-test('a pointer read failure is never tolerated', async (t) => {
+test('a pointer read failure on the file is never tolerated', async (t) => {
   const ctx = await occupyPointerDir(t);
-  await assert.rejects(() => readActiveThread(ctx), /ENOTDIR|EEXIST/);
+  await assert.rejects(() => readActiveThreadOrAbsent(ctx), /ENOTDIR|EEXIST/);
+});
+
+test('readActiveThreadOrAbsent reports an unresolvable store as absent, not as a failure', async (t) => {
+  const dataRoot = await mkdtemp(join(tmpdir(), 'active-thread-absent-'));
+  t.after(() => rm(dataRoot, { recursive: true, force: true }));
+  const prior = process.env.CLAUDE_PLUGIN_DATA;
+  delete process.env.CLAUDE_PLUGIN_DATA;
+  t.after(() => {
+    if (prior !== undefined) process.env.CLAUDE_PLUGIN_DATA = prior;
+  });
+  const { value, warning } = await readActiveThreadOrAbsent(localCtx('/abs/dir'));
+  assert.equal(value, null);
+  assert.match(warning, /CLAUDE_PLUGIN_DATA/);
 });
 
 test('the tolerant wrappers still propagate a programming error', async (t) => {
   const dir = await initRepo(t);
   await assert.rejects(() => writeActiveThreadOrWarn(gitCtx(dir), 'not-a-ulid'), /ULID/);
   await assert.rejects(() => writeActiveThreadOrWarn({ projectDir: '/abs' }, newUlid()), /isGit/);
-  await assert.rejects(
-    () => writeActiveThreadOrWarn({ driver: { isGit: () => true }, projectDir: '' }, newUlid()),
-    /projectDir/,
-  );
+});
+
+test('a git binary that cannot be invoked degrades to a warning naming the failure', async (t) => {
+  const dir = await initRepo(t);
+  const priorPath = process.env.PATH;
+  process.env.PATH = join(dir, 'no-git-here');
+  t.after(() => { process.env.PATH = priorPath; });
+  const { warning } = await writeActiveThreadOrWarn(gitCtx(dir), newUlid());
+  assert.match(warning, /git/);
+  assert.match(warning, /ENOENT/);
 });

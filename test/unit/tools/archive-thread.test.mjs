@@ -7,6 +7,21 @@ import { readActiveThread, activeThreadPath } from '../../../src/util/active-thr
 import { makeToolCtx } from '../../fixtures/tool-ctx.mjs';
 import { mkdir, rm } from 'node:fs/promises';
 
+test('a thread opened while the pointer store is unresolvable can still be archived', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const prior = process.env.CLAUDE_PLUGIN_DATA;
+  delete process.env.CLAUDE_PLUGIN_DATA;
+  try {
+    const { thread } = await openThread.handler(ctx, { title: 'Stuck', completion_criteria: [{ text: 'ship it' }] });
+    const result = await archiveThread.handler(ctx, { thread_id: thread.id, reason: 'obsolete' });
+    assert.equal(result.thread.status, 'abandoned');
+    assert.equal((await ctx.driver.readThread(thread.id)).status, 'abandoned');
+    assert.match(result.warnings.join('\n'), /CLAUDE_PLUGIN_DATA/);
+  } finally {
+    if (prior !== undefined) process.env.CLAUDE_PLUGIN_DATA = prior;
+  }
+});
+
 test('archive_thread abandons nothing when the pointer cannot be read', async (t) => {
   const ctx = await makeToolCtx(t);
   const { thread } = await openThread.handler(ctx, { title: 'A', completion_criteria: [{ text: 'ship it' }] });
