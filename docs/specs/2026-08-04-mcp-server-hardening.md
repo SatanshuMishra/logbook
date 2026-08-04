@@ -502,19 +502,47 @@ the partial-write ghost-thread defects.
   `src/util/active-thread.mjs:26-27` when `CLAUDE_PLUGIN_DATA` is unset on a non-git project.
 
 **What shipped**
-- `record_decision` now writes the thread record first and the decision file last. `writeThread`
-  validates before it writes, so a record the schema refuses aborts the call with `decisions/`
-  untouched and `nextDecisionNumber` unmoved. Decision-file-last is also the self-healing order: a
-  retry after a failed decision write reuses the same number, because the spine already carries the
-  ref and the dedup check skips re-adding it. Thread-last would mint a duplicate on every retry.
-- The unset-`CLAUDE_PLUGIN_DATA` throw becomes `ActivePointerUnavailable`
-  (`src/util/active-thread.mjs`), and three tolerant wrappers — `writeActiveThreadOrWarn`,
-  `readActiveThreadOrWarn`, `clearActiveThreadOrWarn` — convert **only that class** to
-  `{value, warning}`. Every other pointer failure still throws; the tolerance is not blanket.
+- `record_decision` runs `assertValidThread` and `assertSpineCaps` on the candidate record, with no
+  I/O, **before either write**. A record the schema or the caps refuse aborts with `decisions/`
+  untouched and `nextDecisionNumber` unmoved. The decision file is still written before the thread
+  record, so no spine ref can outlive its backing file.
+- **Corrected after review; the first attempt shipped a worse defect than it closed and the suite
+  was 958/958 green while it did.** That attempt merely swapped the two writes, putting the thread
+  record first. A `writeDecision` failure then left a durable dangling spine ref: because
+  `nextDecisionNumber` derives from a `readdir` of `decisions/` (`local-driver.mjs:189-200`), the
+  number was never consumed, the next thread minted the same `0001`, and `read_decision("0001")`
+  answered the first thread's briefing with the second thread's decision — successfully, with no
+  error, which reads as corroboration. Reachable through `callTool`: `record_decision.slug` carries
+  a `pattern` but no `maxLength`, `decisionItem.ref` has none either, and `SPINE_CAPS` caps a
+  decision `title` but never a `ref`, so a 300-character slug passes every check and reaches
+  `ENAMETOOLONG`. The "a retry reuses the same number" argument for that order was asserted, not
+  sound: it fails if another thread records in between, if the retry carries a different slug (the
+  dedup at `:75` misses and two entries both render as `0001`), or if no retry ever happens.
+  Nothing validates carried spine refs against `decisions/` — `knownDecisionRefs`
+  (`shared.mjs:111`) is consulted only for *submitted* refs. **The lesson is the ordering question
+  was the wrong question: separating validation from the write is what "validate before you write"
+  meant, and picking an order is not a substitute for it.**
+- `ActivePointerUnavailable` (`src/util/active-thread.mjs`) is keyed on the **effect** — the pointer
+  is not durable — not on one construction-time sentinel. Three tolerant wrappers
+  (`writeActiveThreadOrWarn`, `readActiveThreadOrWarn`, `clearActiveThreadOrWarn`) classify a libuv
+  syscall failure (`code` and `syscall` both strings) from the pointer write, read or clear, plus a
+  failure to resolve the git directory, into `{value, warning}`. The ULID guard and every
+  programming error still propagate; the tolerance is not a blanket catch.
+- **Corrected after review.** The first attempt raised the class at exactly one site —
+  `activeThreadPath`'s non-git branch on a falsy `CLAUDE_PLUGIN_DATA`. `selectDriver` computes
+  `ledgerDataRoot` unconditionally (`select.mjs:38`) and throws at `:29`, so a `LocalDriver` cannot
+  exist without that variable; the class could only fire if the variable were deleted *after*
+  context construction, which nothing but the new test does, and on the git backend it never fired
+  at all. Acceptance criterion 3 was therefore not met: a real git project with `.git/ledger`
+  occupied by a plain file gave `EEXIST ... mkdir` with one thread durably on disk and no pointer —
+  verbatim the state the criterion forbids. Same for `EACCES`, `EROFS`, `ENOSPC` and `ENOTDIR`.
 - `withWarnings` (`src/tools/shared.mjs`) attaches `warnings[]` to a result **only when non-empty**,
   so no success-path result shape changed. This is the deliberately narrow precursor to the
   `warnings[]` slot in MSP-6's effect report; it is a bare array of strings and builds toward
-  nothing else.
+  nothing else. Warning text is routed through `escapeFormat` before it leaves — `warnings[]` is a
+  new channel into model context and c6 governs it everywhere it reaches the model — and each
+  warning names its consequence, since the pointer is the sole input to the Stop-hook debrief gate
+  (`hooks/lib/stop.mjs:101-105`).
 - The pointer *read* that gates a clear moved ahead of `writeThread` in `transition_thread` and
   `archive_thread`. It is pure, so hoisting it removes a throwing step from after the durable write
   at no observable cost.
@@ -525,21 +553,52 @@ component" but never says what that component is; critical 11 is a *missing* `is
 that guard explicitly. Resolved as: MSP-2 owns ordering only, MSP-3 owns the guard. No terminal
 check was added here, and no ordering aspect of critical 11 distinct from the guard was found.
 
-**Residuals this MSP leaves open**
-- `bind_branch` (`src/tools/bind-branch.mjs`) and `create_successor`
-  (`src/tools/create-successor.mjs`) carry the **identical** defect — `writeBinding` / `writeThread`
-  followed by a throwing `writeActiveThread` — and were left untouched because neither appears in
-  the enumeration above. The tolerant wrappers they need already exist. Until they adopt them, the
-  partial-write class is closed for five tools, not for the server. MSP-3 already edits
-  `bind_branch`; fold it in there, and give `create_successor` its own line.
-- `local-driver.mjs`'s `SLUG_PATTERN` (`^[a-z0-9][a-z0-9-]*$`) is stricter than the schema's
+**Residuals this MSP leaves open.** An earlier draft of this section claimed the partial-write class
+was "closed for five tools". **That was wrong, and the correction matters more than the claim did:
+no tool in this server is all-or-nothing, including the five this MSP touched.** `open_thread`,
+`reopen`, `transition_thread` and `archive_thread` each still run `appendSessionEvent` and/or
+`commitAndReindex` after their durable write, and both can throw. What MSP-2 actually closed is
+narrower and worth stating exactly: **no durable write now happens before the validation that can
+refuse it, and the active-thread pointer can no longer abort a call that already wrote.** Whole-call
+atomicity was never in scope. The full list, handed to MSP-8 (transactions), which owns it:
+
+| Site | Shape |
+| --- | --- |
+| `bind-branch.mjs:13-14` | `writeBinding` then throwing `writeActiveThread` |
+| `create-successor.mjs:27-28` | `writeThread` then throwing `writeActiveThread` |
+| `append-session-event.mjs:10-11` | durable write then throwing step |
+| `update-thread.mjs:139-140` | durable write then throwing step |
+| `amend-criteria.mjs:147-148` | durable write then throwing step |
+| `drift/reconcile.mjs:45`, `drift/reattach.mjs:94` | `writeBinding` in a loop with no rollback — the worst shape of the set |
+| all five tools MSP-2 touched | `appendSessionEvent` / `commitAndReindex` still follow the record write |
+
+None of these is fixed here; that is MSP-8's scope, not MSP-2's. `bind_branch` and
+`create_successor` are the cheapest of them — the tolerant wrappers they need already exist — and
+MSP-3 already edits `bind_branch`.
+
+Further residuals, each recorded rather than fixed:
+- **MSP-3 (guards):** add `maxLength` to `record_decision.slug` (`record-decision.mjs:98`) and to
+  `decisionItem.ref` (`thread.schema.mjs:28`), and cap `ref` in `SPINE_CAPS` as `title` already is
+  (`caps.mjs:11`). Hoisting the validation closes the exploit path — a too-long slug now fails at
+  `writeDecision` with nothing durable — so this is defense-in-depth, and it is guard work.
+- **MSP-3 (guards):** `local-driver.mjs`'s `SLUG_PATTERN` (`^[a-z0-9][a-z0-9-]*$`) is stricter than
   `DECISION_REF_PATTERN` (`^[0-9]{4}-[a-z0-9-]+$`), so a leading-dash slug such as `-x` passes
-  thread validation and is then refused by `writeDecision` *after* the thread write, leaving a
-  spine ref to a decision file that will never exist. Unreachable through `callTool`, whose
-  `DECISION_SLUG_PATTERN` matches the driver's; reachable only by invoking the handler directly.
+  thread validation and is refused only by the driver. Harmless now that the decision file is
+  written first, but the two patterns should agree.
+- **MSP-4 (Stop gate):** `runActiveThread` (`bin/ledger-cli.mjs:28-31`) calls the bare
+  `readActiveThread`, so the CLI exits 1 and `invokeCliJson` swallows it to `null` — the debrief
+  gate silently fails open rather than closed. MSP-4 owns the Stop gate.
+- **MSP-8:** `clearActiveThread` has no compare-and-swap, so the pointer clear is TOCTOU-racy
+  against a concurrent writer.
+- **MSP-10 (trust boundary):** `src/render/briefing.mjs` applies `truncate` only, and stored
+  `title`, `active_goal`, `next_step`, criterion text and risk text are rendered into a document
+  whose server-authored `##` headings `hooks/lib/stop.mjs:12` compels the model to print verbatim;
+  and `src/tools/read-decision.mjs:33` returns raw stored markdown unfenced. Both are large c6
+  channels. Absolute-path leakage through `toLedgerError` belongs there too — pre-existing, and not
+  worsened here.
 - Durability is still commit-time on `GitRefDriver`: nothing is durable until `commit()` inside
-  `commitAndReindex`. The reordering above is tool-level call ordering and holds on either backend,
-  but true all-or-nothing durability is MSP-8 and worktree custody is MSP-9.
+  `commitAndReindex`. MSP-2's ordering is tool-level call ordering and holds on either backend, but
+  true all-or-nothing durability is MSP-8 and worktree custody is MSP-9.
 
 **Acceptance**
 - A `record_decision` call that fails thread validation leaves **zero** files in `decisions/`.
@@ -548,12 +607,21 @@ check was added here, and no ordering aspect of critical 11 distinct from the gu
 - `open_thread` with `CLAUDE_PLUGIN_DATA` unset either succeeds with a warning or writes nothing.
   It never leaves a thread with no pointer and no error path.
 
-**Verify:** `npm test`. Each of the three acceptance tests was run against the parent commit
-`a3d4d39` and watched fail first: the directory listing came back `['0001-adopt-x.md']` against an
-expected `[]`, `nextDecisionNumber` came back `'0002'` against an expected `'0001'`, and
-`open_thread` threw `activeThreadPath: CLAUDE_PLUGIN_DATA is not set for a non-git project` from
-`active-thread.mjs:27` with the thread already on disk. A green suite proves nothing here; six
-consecutive reviews of this server's error surface each found a live defect at 100% pass.
+**Verify:** `npm test`. Every acceptance test was watched fail before it passed. Against the parent
+`a3d4d39`: the directory listing came back `['0001-adopt-x.md']` against an expected `[]`,
+`nextDecisionNumber` came back `'0002'` against `'0001'`, and `open_thread` threw
+`activeThreadPath: CLAUDE_PLUGIN_DATA is not set for a non-git project` with the thread already on
+disk. Against the first attempt `8076911`, the tests that caught its own regressions: the spine
+carried a durable `{ref: '0001-aaa…', title: 'Adopt X', scope: 'c1'}` against an expected `[]`, and
+the git-backend pointer failure threw `EEXIST: file already exists, mkdir …/.git/ledger` and
+`ENOTDIR: not a directory, open …/.git/ledger/active-thread` rather than warning.
+
+The two `record_decision` acceptance tests were folded into one: `nextDecisionNumber` is a pure
+function of the `decisions/` listing, so asserting `'0001'` after asserting the directory is empty
+restated one fact twice. The test that mattered — `writeDecision` failing *after* `writeThread`
+succeeded, the direction the first attempt created — did not exist, which is exactly why 958/958
+was green over a live defect. **A green suite is not evidence here.** Seven consecutive reviews of
+this server have now each found a real defect at 100% pass.
 
 **PR title:** `fix(writes): validate the full record before any durable write`
 
