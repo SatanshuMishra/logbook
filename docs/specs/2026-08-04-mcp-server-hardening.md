@@ -402,10 +402,28 @@ reproduced by the very contract written to end it.
 
 **Changes**
 - Export `echo(value, max)` from `src/errors.mjs`: `JSON.stringify` first, then escape each UTF-16
-  code unit of a maximal `[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Zs}]` run to `\uXXXX` unless the run is
-  exactly one U+0020, then bound the result over an atom stream so a cut never splits a `\uXXXX`
-  token, a `\"` pair or a surrogate pair. Stringify-then-escape is the required order: escaping
-  first would double the backslash and echo a literal `\\u200b`.
+  code unit of a maximal run of the escaped class to `\uXXXX` unless the run is exactly one U+0020,
+  then bound the result over an atom stream so a cut never splits a `\uXXXX` token, a `\"` pair or
+  a surrogate pair. Stringify-then-escape is the required order: escaping first would double the
+  backslash and echo a literal `\\u200b`.
+- **The escaped class is the UNION of the folded class (`Cc`, `Cf`, `Zl`, `Zp`, `Zs`) and the blank
+  class (`Default_Ignorable_Code_Point` plus U+2800), never one in place of the other** — U+FFF9 is
+  `Cf` but not default-ignorable, so a straight swap opens a hole while closing one. `\p{Mn}` is
+  rejected: it escapes legitimate combining marks and renders a Devanagari, Arabic or Thai title as
+  a wall of `\uXXXX`. `collapse` itself is NOT widened; `b5cd750` exists because widening it erases
+  field names. Decision 0036.
+- `max` is required, not defaulted. Each site derives its budget from the prose it shares its slot
+  with (`echoBetween`), so no echo can be cut by the downstream `FIELD_MAX_CHARS` (120) or
+  `REMEDY_MAX_CHARS` (148) clip. A single shared constant cannot work here: at 128 it exceeded the
+  120-char field slot, truncating the closing quote and leaving an echo no agent can parse, and it
+  let a 131-character hostile value push the server's own instruction out of the message entirely.
+- The truncation marker sits OUTSIDE the closing quote and carries the true length —
+  `"aaaaaaaa"... (40 chars)` — so caller data cannot forge it. General injectivity is impossible
+  under truncation; the guarantee is that an untruncated echo always ends in `"`, a truncated one
+  never does, and values of different true length never collide.
+- Bound the input before the regex work, not after, so the function is O(max) rather than O(N).
+- Apply the escape WITHOUT the quoting to `detail` inside `toLedgerError`. That funnel carries
+  roughly fifteen raw throw sites to the model verbatim and otherwise keeps the pre-fix behaviour.
 - Route every site that quotes caller data through it — `error-projection.mjs:57` and `:83`,
   `shared.mjs` (`unknownThread`, `unknownCriterion`), `read-decision.mjs`, `registry.mjs`,
   `spine-input.mjs` (scope, unknown `replace_scopes` keys, risk text, decision ref, restated entry
@@ -417,7 +435,15 @@ reproduced by the very contract written to end it.
 - Two governing invariants: `collapse(echo(v)) === echo(v)` for every `v` — the echo is a fixed
   point of the function that destroyed it — and distinct values never collide.
 - Each of U+200B, U+0085, U+202E, U+00AD, U+2028, U+2029, U+00A0, U+FEFF and U+0000 names a
-  distinct, identifiable field.
+  distinct, identifiable field, and so does each of U+E0100, U+FE0F, U+034F, U+3164 and U+2800 —
+  the blank class the first shipped attempt missed while escaping the TAG block directly below it.
+- A title carrying real Devanagari, Arabic or Thai combining marks is NOT escaped.
+- A non-string value never renders as a plausible string: `scope: ["c1"]` is refused as
+  `an array of 1`, never as `"c1"`, which is the accepted example the same error carries.
+- A ~120-character property name still yields a `field` whose quoted echo is balanced and
+  `JSON.parse`-able, and a hostile 131-character value still leaves the server's own instruction
+  in the message.
+- An invisible character in a raw thrown message survives `toLedgerError` identifiably.
 - `op<U+202E>en_x` echoes a value that JSON-parses back to the exact key sent, and is not
   `remove "op en_x" and re-send`.
 - An ordinary spaced value is **not** escaped: `"ship the thing"`, never `"ship the thing"`.
@@ -830,6 +856,16 @@ drift snapshot survives it.
 - Harden the Stop gate: `hooks/lib/stop.mjs:87` accepts substring containment, so a message that
   merely quotes the briefing satisfies it; and `:67-73` swallows every read error into an empty
   array, so an unreadable transcript passes silently. Both become explicit.
+- **Added during execution (MSP-1C reviews, 2026-08-04). Three findings MSP-1C deferred here
+  rather than dropping.** (a) The write-path echoes in `src/schema/upcast.mjs:15,41,50,64` and
+  `src/drivers/local-driver.mjs:204,207,239,267` still interpolate stored record content into an
+  `internal_error`; MSP-1C escapes the shared `toLedgerError` funnel, which covers the class in one
+  place, but `local-driver.mjs:239` interpolates `threadId` with no quoting at all. This is
+  attacker-influenceable on a git-native ledger, where `sync` pulls a second writer's commits.
+  (b) `problemsLine` (`src/errors.mjs`) is dropped silently when the message is oversized, so a
+  caller can suppress the agent's visibility into how many parameters were rejected; clip each
+  field inside it so `problems: N` always renders. (c) Absolute-path disclosure is the same leak
+  the next bullet describes, now confirmed reachable through `ENOENT` on the ledger root.
 - **Added during execution (review of MSP-1, 2026-08-04; corrected by the security review of
   MSP-1B).** The error surface is a second unfenced path to the model, distinct from the render
   boundary above. `toLedgerError` interpolates an arbitrary internal message into `expected`, so git
