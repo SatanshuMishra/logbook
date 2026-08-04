@@ -1,5 +1,5 @@
 import { rebuildIndex } from '../index/rebuild-index.mjs';
-import { ALLOWED_TRANSITIONS } from '../model/fsm.mjs';
+import { ALLOWED_TRANSITIONS, THREAD_STATUSES, canTransition } from '../model/fsm.mjs';
 import { liveCriteria } from '../model/selection.mjs';
 
 export {
@@ -21,7 +21,7 @@ export function unknownThread(tool, field, id) {
     expected: 'a thread id this ledger holds',
     example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
     retryable: false,
-    remedy: `no thread is stored under ${id}; thread ids are server-assigned, so re-send with an id this ledger returned`,
+    remedy: `no thread is stored under ${JSON.stringify(String(id))}; thread ids are server-assigned, so re-send with an id this ledger returned`,
   };
 }
 
@@ -35,20 +35,37 @@ export function terminalThread(tool, status) {
   };
 }
 
+const STATUS_PARAMETER = /(^|_)status$/;
+
+function transitionExpectation(field, from, to, targets) {
+  if (STATUS_PARAMETER.test(field)) {
+    return targets.length === 0
+      ? `${from} is terminal and has no outgoing transition`
+      : `one of ${targets.join(', ')}`;
+  }
+  const sources = THREAD_STATUSES.filter((status) => canTransition(status, to));
+  return sources.length === 0
+    ? `a thread that is not ${from}`
+    : `a thread whose status is one of ${sources.join(', ')}`;
+}
+
+function transitionRepair(from, to, targets, hops) {
+  if (targets.length === 0) return 'use create_successor to carry the work forward';
+  if (hops.length === 0) {
+    return `no single transition_thread hop leads from ${from} to ${to}, so carry the work forward with create_successor`;
+  }
+  return `move it to one of ${hops.join(', ')} with transition_thread, then re-send this call unchanged`;
+}
+
 export function illegalTransition(tool, field, from, to) {
   const targets = ALLOWED_TRANSITIONS[from] ?? [];
-  const terminal = targets.length === 0;
-  const repair = terminal
-    ? 'use create_successor to carry the work forward'
-    : `move it to one of ${targets.join(', ')} with transition_thread, then re-send this call unchanged`;
+  const hops = targets.filter((hop) => canTransition(hop, to));
   return {
     code: 'illegal_transition',
     field: `${tool}.${field}`,
-    expected: terminal
-      ? `${from} is terminal and has no outgoing transition`
-      : `one of ${targets.join(', ')}`,
-    retryable: !terminal,
-    remedy: `illegal transition ${from} -> ${to}; ${repair}`,
+    expected: transitionExpectation(field, from, to, targets),
+    retryable: hops.length > 0,
+    remedy: `illegal transition ${from} -> ${to}; ${transitionRepair(from, to, targets, hops)}`,
   };
 }
 
@@ -68,7 +85,7 @@ export function unknownCriterion(thread, field, id) {
     expected: `one of ${liveIds(thread)}`,
     example: 'c1',
     retryable: false,
-    remedy: `this thread has no criterion "${id}"; re-send naming an id the thread actually carries`,
+    remedy: `this thread has no criterion ${JSON.stringify(String(id))}; re-send naming an id the thread actually carries`,
   };
 }
 

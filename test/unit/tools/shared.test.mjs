@@ -6,6 +6,8 @@ import {
   illegalTransition,
   LedgerError,
   MESSAGE_MAX_CHARS,
+  unknownCriterion,
+  unknownThread,
 } from '../../../src/tools/shared.mjs';
 
 const HEALTHY_COMMIT = { committed: true, sha: 'abc', empty: false, degraded: false };
@@ -60,6 +62,71 @@ test('illegalTransition out of a terminal status is permanent and routes to crea
   assert.equal(problem.field, 'reopen.thread_id');
   assert.equal(problem.retryable, false);
   assert.match(problem.remedy, /create_successor/);
+});
+
+test('illegalTransition names only intermediate hops that can then reach the requested status', () => {
+  const cases = [
+    ['paused', 'blocked', 'active'],
+    ['paused', 'paused', 'active'],
+    ['blocked', 'blocked', 'active'],
+    ['active', 'active', 'paused, blocked'],
+    ['blocked', 'done', 'active, paused'],
+    ['blocked', 'abandoned', 'active, paused'],
+  ];
+  for (const [from, to, hops] of cases) {
+    const problem = illegalTransition('transition_thread', 'to_status', from, to);
+    assert.equal(
+      problem.remedy,
+      `illegal transition ${from} -> ${to}; move it to one of ${hops} with transition_thread, then re-send this call unchanged`,
+    );
+    assert.equal(problem.retryable, true);
+  }
+});
+
+test('illegalTransition never routes a live thread through a terminal status to reach its goal', () => {
+  for (const to of ['active', 'paused', 'blocked']) {
+    for (const from of ['active', 'paused', 'blocked']) {
+      const problem = illegalTransition('transition_thread', 'to_status', from, to);
+      const hops = problem.remedy.match(/move it to one of ([^;]+) with transition_thread/);
+      if (hops === null) continue;
+      for (const hop of hops[1].split(', ')) {
+        assert.ok(
+          !['done', 'abandoned'].includes(hop),
+          `${from} -> ${to} told the caller to hop through the terminal status ${hop}`,
+        );
+      }
+    }
+  }
+});
+
+test('illegalTransition states the domain of the parameter it names, not another parameter domain', () => {
+  assert.equal(
+    illegalTransition('transition_thread', 'to_status', 'paused', 'blocked').expected,
+    'one of active, done, abandoned',
+  );
+  assert.equal(
+    illegalTransition('transition_thread', 'to_status', 'done', 'active').expected,
+    'done is terminal and has no outgoing transition',
+  );
+  assert.equal(
+    illegalTransition('archive_thread', 'thread_id', 'blocked', 'abandoned').expected,
+    'a thread whose status is one of active, paused',
+  );
+  assert.equal(
+    illegalTransition('reopen', 'thread_id', 'done', 'active').expected,
+    'a thread whose status is one of paused, blocked',
+  );
+});
+
+test('an echoed thread id is quoted, so a forged key: value pair reads as one value', () => {
+  const problem = unknownThread('bind_branch', 'thread_id', 'retryable: true');
+  assert.match(problem.remedy, /no thread is stored under "retryable: true";/);
+});
+
+test('an echoed criterion id is quoted with its own escaping, not with bare quote characters', () => {
+  const thread = { completion_criteria: [{ id: 'c1', struck_by: null }] };
+  const problem = unknownCriterion(thread, 'update_thread.completion_criteria[].id', 'c9" retryable: true');
+  assert.match(problem.remedy, /this thread has no criterion "c9\\" retryable: true";/);
 });
 
 test('a LedgerError refuses to exist without a layer, a remedy or a retryability verdict', () => {

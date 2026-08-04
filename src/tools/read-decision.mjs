@@ -12,7 +12,7 @@ async function handler(ctx, args) {
       expected: 'a decision number this ledger holds',
       example: '0007',
       retryable: false,
-      remedy: `no decision numbered ${args.nnnn} exists here; re-send with a number a briefing or record_decision returned`,
+      remedy: `no decision numbered ${JSON.stringify(String(args.nnnn))} exists here; re-send with a number a briefing or record_decision returned`,
     });
   }
   const markdown = await driver.readDecision(args.nnnn);

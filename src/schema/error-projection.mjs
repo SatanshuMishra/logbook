@@ -13,6 +13,7 @@ import {
 const RECEIVED_MAX_CHARS = 24;
 const WRAPPER_KEYWORDS = Object.freeze(['if', 'anyOf', 'oneOf', 'allOf', 'not']);
 const BRANCH_KEYWORDS = Object.freeze(['anyOf', 'oneOf']);
+const DISCRIMINATOR_KEYWORDS = Object.freeze(['const', 'enum']);
 
 export const PATTERN_EXAMPLES = Object.freeze({
   [ULID_PATTERN]: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
@@ -164,32 +165,68 @@ function instanceDepth(instancePath) {
     : 0;
 }
 
-function branchOf(error, containerPath) {
-  return error.schemaPath.slice(containerPath.length + 1).split('/')[0];
+function errorReach(error) {
+  return instanceDepth(error.instancePath) + (error.keyword === 'required' ? 1 : 0);
 }
 
-function losingBranchErrors(errors, container) {
-  const containerPath = container.schemaPath;
-  const members = errors.filter(
-    (error) => typeof error.schemaPath === 'string'
-      && error.schemaPath.startsWith(`${containerPath}/`),
+function containerPaths(errors) {
+  return new Set(
+    errors
+      .filter((error) => BRANCH_KEYWORDS.includes(error.keyword) && typeof error.schemaPath === 'string')
+      .map((error) => error.schemaPath),
   );
-  if (members.length === 0) return [];
-  const reach = members.reduce((acc, error) => {
-    const branch = branchOf(error, containerPath);
-    return { ...acc, [branch]: Math.max(acc[branch] ?? 0, instanceDepth(error.instancePath)) };
-  }, {});
-  const best = Math.max(...Object.values(reach));
-  return members.filter((error) => reach[branchOf(error, containerPath)] < best);
+}
+
+function enclosingBranches(schemaPath, containers) {
+  const parts = schemaPath.split('/');
+  const found = [];
+  let path = '';
+  for (let index = 0; index + 1 < parts.length; index += 1) {
+    path = index === 0 ? parts[0] : `${path}/${parts[index]}`;
+    if (containers.has(path)) found.push({ container: path, branch: parts[index + 1] });
+  }
+  return found;
+}
+
+function outranks(candidate, incumbent) {
+  if (candidate.disagrees !== incumbent.disagrees) return incumbent.disagrees;
+  return candidate.reach > incumbent.reach;
+}
+
+function scoreBranches(errors, containers) {
+  const scores = new Map();
+  const memberships = [];
+  for (const error of errors) {
+    if (typeof error.schemaPath !== 'string') continue;
+    for (const { container, branch } of enclosingBranches(error.schemaPath, containers)) {
+      const byBranch = scores.get(container) ?? new Map();
+      const prior = byBranch.get(branch) ?? { reach: 0, disagrees: false };
+      byBranch.set(branch, {
+        reach: Math.max(prior.reach, errorReach(error)),
+        disagrees: prior.disagrees || DISCRIMINATOR_KEYWORDS.includes(error.keyword),
+      });
+      scores.set(container, byBranch);
+      memberships.push({ error, container, branch });
+    }
+  }
+  return { scores, memberships };
 }
 
 function suppressedByBranch(errors) {
-  return errors
-    .filter((error) => BRANCH_KEYWORDS.includes(error.keyword) && typeof error.schemaPath === 'string')
-    .reduce(
-      (dropped, container) => new Set([...dropped, ...losingBranchErrors(errors, container)]),
-      new Set(),
-    );
+  const containers = containerPaths(errors);
+  if (containers.size === 0) return new Set();
+  const { scores, memberships } = scoreBranches(errors, containers);
+  const best = new Map(
+    [...scores].map(([container, byBranch]) => [
+      container,
+      [...byBranch.values()].reduce((winner, score) => (outranks(score, winner) ? score : winner)),
+    ]),
+  );
+  return new Set(
+    memberships
+      .filter(({ container, branch }) => outranks(best.get(container), scores.get(container).get(branch)))
+      .map(({ error }) => error),
+  );
 }
 
 export function projectValidationErrors(errors, options = {}) {

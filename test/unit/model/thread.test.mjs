@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isoNow } from '../../../src/model/clock.mjs';
 import { newThread } from '../../../src/model/thread.mjs';
+import { CapViolationError } from '../../../src/model/caps.mjs';
 import { validateThread } from '../../../src/schema/index.mjs';
 
 const FIXED = '2026-07-15T10:00:00Z';
@@ -91,6 +92,67 @@ test('newThread refuses a thread with no definition of done', () => {
     () => newThread({ title: 'x', completion_criteria: [] }, { now: fixedClock, id: ID }),
     /completion_criteria/,
   );
+});
+
+function refusalOf(build) {
+  try {
+    build();
+  } catch (error) {
+    return error;
+  }
+  return assert.fail('expected the call to be refused');
+}
+
+test('a thread opened with no definition of done names empty_criteria at the tool layer', () => {
+  for (const criteria of [undefined, []]) {
+    const error = refusalOf(() => newThread(
+      { title: 'x', completion_criteria: criteria },
+      { now: fixedClock, id: ID, tool: 'open_thread' },
+    ));
+    assert.equal(error.code, 'empty_criteria');
+    assert.equal(error.layer, 'tool');
+    assert.equal(error.field, 'open_thread.completion_criteria');
+    assert.equal(error.retryable, false);
+  }
+});
+
+test('a title that yields no slug names underivable_slug at the tool layer', () => {
+  const error = refusalOf(() => newThread(
+    { title: '日本語', completion_criteria: DOD },
+    { now: fixedClock, id: ID, tool: 'open_thread' },
+  ));
+  assert.equal(error.code, 'underivable_slug');
+  assert.equal(error.layer, 'tool');
+  assert.equal(error.field, 'open_thread.title');
+});
+
+test('a blank title names blank_parameter at the tool layer', () => {
+  const error = refusalOf(() => newThread(
+    { title: '   ', completion_criteria: DOD },
+    { now: fixedClock, id: ID, tool: 'open_thread' },
+  ));
+  assert.equal(error.code, 'blank_parameter');
+  assert.equal(error.layer, 'tool');
+  assert.equal(error.field, 'open_thread.title');
+});
+
+test('an over-cap criterion is refused as a CapViolationError carrying the field it indexes', () => {
+  let thrown = null;
+  try {
+    newThread(
+      { title: 'x', completion_criteria: [{ text: 'a' }, { text: 'c'.repeat(201) }] },
+      { now: fixedClock, id: ID },
+    );
+  } catch (error) {
+    thrown = error;
+  }
+
+  assert.ok(thrown instanceof CapViolationError, `expected CapViolationError, got ${thrown?.name}`);
+  assert.equal(thrown.name, 'CapViolationError');
+  assert.equal(thrown.code, 'cap_exceeded');
+  assert.equal(thrown.layer, 'cap');
+  assert.deepEqual(thrown.fields, ['completion_criteria[1].text']);
+  assert.equal(thrown.toDetail().error, 'CapViolationError');
 });
 
 test('newThread refuses a criterion text over 200 chars', () => {

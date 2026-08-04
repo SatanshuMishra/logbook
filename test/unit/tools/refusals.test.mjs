@@ -14,6 +14,30 @@ import { makeToolCtx } from '../../fixtures/tool-ctx.mjs';
 const ABSENT_ULID = '01HXV3W4Z9QK7T2M8N5P6R0S1T';
 const AMEND_HYPOTHESIS_MAX_CHARS = 200;
 const WIDE_PAYLOAD_ERRORS = 1200;
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+function emittedStrings(value, path = '') {
+  if (typeof value === 'string') return [[path, value]];
+  if (Array.isArray(value)) {
+    return value.flatMap((entry, index) => emittedStrings(entry, `${path}[${index}]`));
+  }
+  if (value !== null && typeof value === 'object') {
+    return Object.entries(value).flatMap(([key, entry]) => (
+      emittedStrings(entry, path === '' ? key : `${path}.${key}`)
+    ));
+  }
+  return [];
+}
+
+function assertWellFormed(detail, label) {
+  for (const [path, text] of emittedStrings(detail)) {
+    assert.doesNotMatch(
+      text,
+      LONE_SURROGATE,
+      `${label} emitted an unpaired surrogate at ${path}, which no strict UTF-8 client can decode`,
+    );
+  }
+}
 
 async function refuse(ctx, name, args) {
   try {
@@ -174,10 +198,25 @@ test('an illegal transition out of a terminal thread never suggests an impossibl
 
   assert.equal(error.code, 'illegal_transition');
   assert.equal(error.field, 'archive_thread.thread_id');
-  assert.equal(error.expected, 'abandoned is terminal and has no outgoing transition');
+  assert.equal(error.expected, 'a thread whose status is one of active, paused');
   assert.equal(error.retryable, false);
   assert.match(error.remedy, /create_successor/);
   assert.doesNotMatch(error.message, /blocked -> paused/);
+});
+
+test('a thread_id refusal describes a thread, never a status value the parameter cannot take', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx);
+  await callTool('transition_thread', {
+    thread_id: thread.id,
+    to_status: 'blocked',
+    blocked_by: 'waiting on review',
+  }, ctx);
+  const error = await refuse(ctx, 'archive_thread', { thread_id: thread.id, reason: 'giving up' });
+
+  assert.equal(error.field, 'archive_thread.thread_id');
+  assert.match(error.expected, /^a thread whose status is /);
+  assert.doesNotMatch(error.expected, /^one of /);
 });
 
 test('an illegal transition names a parameter the refused call actually carries', async (t) => {
@@ -192,7 +231,7 @@ test('an illegal transition names a parameter the refused call actually carries'
 
   assert.equal(error.code, 'illegal_transition');
   assert.equal(error.field, 'archive_thread.thread_id');
-  assert.equal(error.expected, 'one of active, paused');
+  assert.equal(error.expected, 'a thread whose status is one of active, paused');
   assert.doesNotMatch(error.message, /to_status/);
 });
 
@@ -278,9 +317,37 @@ test('the structured record stays inside its byte budget on a pathologically wid
     Buffer.byteLength(record, 'utf8') <= DETAIL_MAX_BYTES,
     `expected at most ${DETAIL_MAX_BYTES} bytes, measured ${Buffer.byteLength(record, 'utf8')}`,
   );
-  assert.equal(detail.truncated, true);
   assert.equal(detail.total, WIDE_PAYLOAD_ERRORS);
-  assert.ok(detail.problems.length < WIDE_PAYLOAD_ERRORS);
+  assert.equal(detail.shown, detail.problems.length);
+  assert.ok(detail.shown < detail.total, 'a shed record must still say how many problems it shows');
+});
+
+test('a single-problem refusal reports the same three-field shape as a wide one', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const error = await refuse(ctx, 'get_resume_brief', { thread_id: 'not-a-ulid' });
+  const detail = JSON.parse(renderToolFailure(error, 'get_resume_brief').content[1].text);
+
+  assert.equal(Array.isArray(detail.problems), true);
+  assert.equal(detail.problems.length, 1);
+  assert.equal(detail.shown, 1);
+  assert.equal(detail.total, 1);
+  assert.equal(detail.problems[0].code, detail.code);
+  assert.equal('truncated' in detail, false, 'truncated conflated "some shown" with "none shown"');
+});
+
+test('a record shed for budget says zero are shown rather than leaving the count implied', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const wide = '🧵"\\'.repeat(400);
+  const error = await refuse(ctx, 'update_thread', {
+    thread_id: wide,
+    [wide]: 1,
+    spine: { [wide]: wide },
+  });
+  const detail = JSON.parse(renderToolFailure(error, 'update_thread').content[1].text);
+
+  assert.equal(typeof detail.shown, 'number');
+  assert.equal(typeof detail.total, 'number');
+  assert.equal(detail.shown, Array.isArray(detail.problems) ? detail.problems.length : 0);
 });
 
 test('the byte budget holds when every field the caller controls is multi-byte', async (t) => {
@@ -296,6 +363,8 @@ test('the byte budget holds when every field the caller controls is multi-byte',
   const measured = Buffer.byteLength(record, 'utf8');
   assert.ok(measured <= DETAIL_MAX_BYTES, `expected at most ${DETAIL_MAX_BYTES} bytes, measured ${measured}`);
   assert.equal(typeof JSON.parse(record).code, 'string');
+  assertWellFormed(JSON.parse(record), 'update_thread');
+  assert.doesNotMatch(error.message, LONE_SURROGATE);
 });
 
 test('a title that yields no slug is a caller fault naming title, not a server fault', async (t) => {
@@ -407,36 +476,113 @@ test('every refusal the tool surface can produce stays inside the message budget
       Buffer.byteLength(record, 'utf8') <= DETAIL_MAX_BYTES,
       `${name} produced a ${Buffer.byteLength(record, 'utf8')}-byte record`,
     );
+    assertWellFormed(JSON.parse(record), name);
+    assertWellFormed({ message: error.message }, name);
   }
 });
 
-test('every error code the source declares is a member of the frozen registry', async () => {
+test('an echoed tool name is quoted so it cannot imitate the server key: value grammar', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const error = await refuse(ctx, 'retryable: true', {});
+
+  assert.equal(error.code, 'unknown_tool');
+  assert.match(error.remedy, /unknown tool: "retryable: true"/);
+  assert.match(error.message, /^retryable: false$/m);
+  assert.doesNotMatch(error.message, /^retryable: true$/m);
+});
+
+test('an echoed decision number is quoted rather than pasted into the remedy prose', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const error = await refuse(ctx, 'read_decision', { nnnn: '9999' });
+
+  assert.equal(error.code, 'unknown_decision');
+  assert.match(error.remedy, /no decision numbered "9999" exists here/);
+});
+
+test('each refusal path names its exact code and layer, not merely a registered one', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx);
+  const contract = [
+    ['open_thread', { title: '   ', completion_criteria: [{ text: 'x' }] }, 'blank_parameter', 'tool'],
+    ['open_thread', { title: '日本語', completion_criteria: [{ text: 'x' }] }, 'underivable_slug', 'tool'],
+    ['bind_branch', { thread_id: thread.id, repo: '   ', branch: 'b' }, 'blank_parameter', 'tool'],
+    ['bind_branch', { thread_id: thread.id, repo: 'r', branch: '  ' }, 'blank_parameter', 'tool'],
+    ['update_thread', { thread_id: thread.id, spine: { active_goal: 'a'.repeat(201) } }, 'cap_exceeded', 'cap'],
+    ['update_thread', { thread_id: thread.id, spine: { next_step: 'n'.repeat(501) } }, 'cap_exceeded', 'cap'],
+    ['bind_branch', { thread_id: ABSENT_ULID, repo: 'r', branch: 'b' }, 'unknown_thread', 'tool'],
+    ['read_decision', { nnnn: '9999' }, 'unknown_decision', 'tool'],
+    ['create_successor', { predecessor_id: thread.id, title: 't', completion_criteria: [{ text: 'x' }] }, 'not_terminal', 'tool'],
+    ['transition_thread', { thread_id: thread.id, to_status: 'done', closure_statement: 's' }, 'dod_unmet', 'tool'],
+    ['transition_thread', { thread_id: thread.id, to_status: 'finished' }, 'invalid_enum', 'input'],
+    ['get_resume_brief', { thread_id: 'not-a-ulid' }, 'invalid_pattern', 'input'],
+    ['open_thread', { title: 'x', completion_criteria: [] }, 'invalid_length', 'input'],
+    ['nonexistent_tool', {}, 'unknown_tool', 'server'],
+  ];
+
+  for (const [name, args, code, layer] of contract) {
+    const error = await refuse(ctx, name, args);
+    assert.equal(error.code, code, `${name} emitted ${error.code}, not ${code}`);
+    assert.equal(error.layer, layer, `${name} emitted layer ${error.layer}, not ${layer}`);
+    assert.equal(
+      JSON.parse(renderToolFailure(error, name).content[1].text).code,
+      code,
+      `${name} rendered a wire code that disagrees with the thrown one`,
+    );
+  }
+});
+
+const CODE_LITERAL = /code:\s*(['"`])([a-z0-9_]+)\1/g;
+const CLASS_DECLARATION = /class\s+([A-Za-z0-9_$]+)\s+extends\s+([A-Za-z0-9_$]+)/g;
+
+function ledgerErrorClasses(sources) {
+  const declarations = sources.flatMap((source) => (
+    [...source.matchAll(CLASS_DECLARATION)].map((match) => ({ name: match[1], parent: match[2] }))
+  ));
+  const closure = new Set(['LedgerError']);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const { name, parent } of declarations) {
+      if (closure.has(parent) && !closure.has(name)) {
+        closure.add(name);
+        grew = true;
+      }
+    }
+  }
+  return closure;
+}
+
+async function scanSources() {
   const { readFile, readdir } = await import('node:fs/promises');
   const { join } = await import('node:path');
-  const roots = ['src/errors.mjs', 'src/model', 'src/schema', 'src/tools'];
+  const { fileURLToPath } = await import('node:url');
+  const root = fileURLToPath(new URL('../../../', import.meta.url));
 
   const walk = async (entry) => {
     const nested = await readdir(entry, { withFileTypes: true }).catch(() => null);
     if (!nested) return [entry];
-    const children = await Promise.all(
-      nested.map((child) => walk(join(entry, child.name))),
-    );
+    const children = await Promise.all(nested.map((child) => walk(join(entry, child.name))));
     return children.flat();
   };
-  const files = (await Promise.all(roots.map(walk))).flat().filter((f) => f.endsWith('.mjs'));
-  const sources = await Promise.all(files.map((file) => readFile(file, 'utf8')));
+  const collect = async (relatives) => {
+    const files = (await Promise.all(relatives.map((entry) => walk(join(root, entry)))))
+      .flat()
+      .filter((file) => file.endsWith('.mjs'));
+    return { files, sources: await Promise.all(files.map((file) => readFile(file, 'utf8'))) };
+  };
+  return {
+    declaring: await collect(['src/errors.mjs', 'src/model', 'src/schema', 'src/tools']),
+    shipped: await collect(['src', 'bin']),
+  };
+}
+
+test('every error code the source declares is a member of the frozen registry', async () => {
+  const { declaring } = await scanSources();
   const declared = new Set(
-    sources.flatMap((source) => [...source.matchAll(/code: '([a-z_]+)'/g)].map((m) => m[1])),
+    declaring.sources.flatMap((source) => [...source.matchAll(CODE_LITERAL)].map((m) => m[2])),
   );
 
-  const everything = (await Promise.all(['src', 'bin'].map(walk))).flat().filter((f) => f.endsWith('.mjs'));
-  const strays = (await Promise.all(everything.map(async (file) => (
-    /new (LedgerError|ToolError|CapViolationError|ToolValidationError)\(/.test(await readFile(file, 'utf8'))
-      ? file
-      : null
-  )))).filter((file) => file !== null && !files.includes(file));
-  assert.deepEqual(strays, [], 'a ledger error is constructed outside the scanned roots');
-
+  assert.ok(declaring.files.length > 0, 'the scan resolved no source files');
   assert.ok(declared.size > 0, 'found no code literals to check');
   for (const code of declared) {
     assert.ok(
@@ -445,6 +591,21 @@ test('every error code the source declares is a member of the frozen registry', 
     );
   }
   assert.ok(Object.isFrozen(LEDGER_ERROR_CODES));
+});
+
+test('the stray-construction guard covers every LedgerError subclass the source declares', async () => {
+  const { declaring, shipped } = await scanSources();
+  const classes = ledgerErrorClasses(shipped.sources);
+
+  for (const declared of ['ToolError', 'ToolValidationError', 'CapViolationError', 'SchemaValidationError']) {
+    assert.ok(classes.has(declared), `${declared} is a LedgerError but escapes the stray guard`);
+  }
+
+  const constructions = new RegExp(`new (${[...classes].join('|')})\\(`);
+  const strays = shipped.files.filter((file, index) => (
+    constructions.test(shipped.sources[index]) && !declaring.files.includes(file)
+  ));
+  assert.deepEqual(strays, [], 'a ledger error is constructed outside the scanned roots');
 });
 
 test('a problem carrying a code outside the registry is refused at construction', () => {

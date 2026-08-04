@@ -53,14 +53,22 @@ const PROBLEMS_EMITTED_MAX = PROBLEM_FIELDS_SHOWN;
 const BYTES_PER_CHAR_BUDGET = 2;
 const ELLIPSIS = '...';
 
+const INVISIBLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Zs}\s]+/gu;
+const TRAILING_HIGH_SURROGATE = /[\uD800-\uDBFF]$/;
+
 export function collapse(value) {
-  return String(value).replace(/\s+/g, ' ').trim();
+  return String(value).replace(INVISIBLE, ' ').trim();
+}
+
+function sliceWholeCharacters(text, end) {
+  const cut = text.slice(0, Math.max(0, end));
+  return TRAILING_HIGH_SURROGATE.test(cut) ? cut.slice(0, -1) : cut;
 }
 
 export function clip(value, max) {
   const text = collapse(value);
   if (text.length <= max) return text;
-  return `${text.slice(0, Math.max(0, max - ELLIPSIS.length))}${ELLIPSIS}`;
+  return `${sliceWholeCharacters(text, max - ELLIPSIS.length)}${ELLIPSIS}`;
 }
 
 function requireText(value, key) {
@@ -142,11 +150,15 @@ function encodedBytes(text) {
   return Buffer.byteLength(JSON.stringify(text), 'utf8') - 2;
 }
 
+function halve(text) {
+  return `${sliceWholeCharacters(text, Math.floor(text.length / 2) - ELLIPSIS.length)}${ELLIPSIS}`;
+}
+
 function fit(value, maxChars) {
   const text = clip(value, maxChars);
   const budget = maxChars * BYTES_PER_CHAR_BUDGET;
   if (encodedBytes(text) <= budget || text.length <= ELLIPSIS.length + 1) return text;
-  return fit(text.slice(0, Math.floor(text.length / 2)), maxChars);
+  return fit(halve(text), maxChars);
 }
 
 function emitProblem(problem) {
@@ -184,9 +196,9 @@ function withinDetailBudget(record) {
   return Buffer.byteLength(JSON.stringify(record), 'utf8') <= DETAIL_MAX_BYTES;
 }
 
-function shedProblems(record, total) {
+function shedProblems(record) {
   const { problems, ...rest } = record;
-  return problems === undefined ? rest : { ...rest, truncated: true, total };
+  return { ...rest, shown: 0 };
 }
 
 export class LedgerError extends Error {
@@ -205,17 +217,17 @@ export class LedgerError extends Error {
   }
 
   toDetail() {
-    const shown = this.problems.slice(0, PROBLEMS_EMITTED_MAX).map(emitProblem);
-    const cut = this.problems.length - shown.length;
+    const emitted = this.problems.slice(0, PROBLEMS_EMITTED_MAX).map(emitProblem);
     const record = {
       error: this.name,
       message: this.message,
       layer: this.layer,
       ...emitProblem(this),
-      ...(this.problems.length > 1 ? { problems: shown } : {}),
-      ...(cut > 0 ? { truncated: true, total: this.problems.length } : {}),
+      problems: emitted,
+      shown: emitted.length,
+      total: this.problems.length,
     };
-    return withinDetailBudget(record) ? record : shedProblems(record, this.problems.length);
+    return withinDetailBudget(record) ? record : shedProblems(record);
   }
 }
 

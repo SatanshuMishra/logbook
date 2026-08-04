@@ -1,7 +1,8 @@
 import { newUlid } from '../util/ulid.mjs';
-import { LedgerError, ToolError } from '../errors.mjs';
+import { ToolError } from '../errors.mjs';
 import { assertValidThread, THREAD_SCHEMA_VERSION } from '../schema/index.mjs';
 import { CRITERION_TEXT_MAX_CHARS } from '../schema/patterns.mjs';
+import { CapViolationError } from './caps.mjs';
 import { isoNow } from './clock.mjs';
 import { nextCriterionId } from './criteria.mjs';
 
@@ -33,14 +34,11 @@ function normalizeCriteria(input, tool) {
   }
   return input.reduce((acc, item) => {
     if (typeof item?.text === 'string' && item.text.length > CRITERION_TEXT_MAX_CHARS) {
-      throw new LedgerError({
-        code: 'cap_exceeded',
-        layer: 'cap',
+      throw new CapViolationError([{
         field: `${field}[${acc.length}].text`,
         expected: `at most ${CRITERION_TEXT_MAX_CHARS} characters`,
-        retryable: false,
         remedy: `that criterion text is ${item.text.length} characters; shorten it to ${CRITERION_TEXT_MAX_CHARS} or fewer and re-send`,
-      });
+      }]);
     }
     return [...acc, {
       id: nextCriterionId(acc),

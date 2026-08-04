@@ -43,6 +43,20 @@ test('the test script runs node --test and never omits test/e2e when listing pat
     'if explicit paths are listed, both test/unit and test/e2e must be present');
 });
 
+test('package.json, the plugin manifest and the served version never drift apart', async () => {
+  const pkg = await readJson('../../../package.json');
+  const plugin = await readJson('../../../.claude-plugin/plugin.json');
+  const { SERVER_INFO } = await import('../../../bin/ledger-server.mjs');
+
+  assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
+  assert.equal(plugin.version, pkg.version, 'the plugin manifest must ship the packaged version');
+  assert.equal(
+    SERVER_INFO.version,
+    pkg.version,
+    'clients read SERVER_INFO.version at initialize; a stale literal misreports the server',
+  );
+});
+
 test('package-lock.json pins exactly the three root deps at exact versions', async () => {
   const lock = await readJson('../../../package-lock.json');
   assert.equal(lock.lockfileVersion, 3);
