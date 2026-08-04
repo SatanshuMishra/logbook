@@ -1,12 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { callTool } from '../../../src/tools/registry.mjs';
-import { MESSAGE_MAX_CHARS, LEDGER_ERROR_LAYERS, LedgerError } from '../../../src/errors.mjs';
+import {
+  MESSAGE_MAX_CHARS,
+  DETAIL_MAX_BYTES,
+  LEDGER_ERROR_LAYERS,
+  LEDGER_ERROR_CODES,
+  LedgerError,
+} from '../../../src/errors.mjs';
 import { renderToolFailure } from '../../../bin/ledger-server.mjs';
 import { makeToolCtx } from '../../fixtures/tool-ctx.mjs';
 
 const ABSENT_ULID = '01HXV3W4Z9QK7T2M8N5P6R0S1T';
 const AMEND_HYPOTHESIS_MAX_CHARS = 200;
+const WIDE_PAYLOAD_ERRORS = 1200;
 
 async function refuse(ctx, name, args) {
   try {
@@ -166,8 +173,157 @@ test('an illegal transition out of a terminal thread never suggests an impossibl
   const error = await refuse(ctx, 'archive_thread', { thread_id: thread.id, reason: 'again' });
 
   assert.equal(error.code, 'illegal_transition');
+  assert.equal(error.field, 'archive_thread.thread_id');
   assert.equal(error.expected, 'abandoned is terminal and has no outgoing transition');
+  assert.equal(error.retryable, false);
+  assert.match(error.remedy, /create_successor/);
   assert.doesNotMatch(error.message, /blocked -> paused/);
+});
+
+test('an illegal transition names a parameter the refused call actually carries', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx);
+  await callTool('transition_thread', {
+    thread_id: thread.id,
+    to_status: 'blocked',
+    blocked_by: 'waiting on review',
+  }, ctx);
+  const error = await refuse(ctx, 'archive_thread', { thread_id: thread.id, reason: 'giving up' });
+
+  assert.equal(error.code, 'illegal_transition');
+  assert.equal(error.field, 'archive_thread.thread_id');
+  assert.equal(error.expected, 'one of active, paused');
+  assert.doesNotMatch(error.message, /to_status/);
+});
+
+test('an illegal transition a second call can clear is retryable and names the intermediate hop', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx);
+  await callTool('transition_thread', {
+    thread_id: thread.id,
+    to_status: 'blocked',
+    blocked_by: 'waiting on review',
+  }, ctx);
+  const error = await refuse(ctx, 'archive_thread', { thread_id: thread.id, reason: 'giving up' });
+
+  assert.equal(error.retryable, true);
+  assert.match(error.message, /^retryable: true$/m);
+  assert.match(error.remedy, /transition_thread/);
+  assert.match(error.remedy, /active, paused/);
+  assert.match(error.remedy, /re-send this call unchanged/);
+  assert.doesNotMatch(error.remedy, /pick a status the FSM allows/);
+});
+
+test('an illegal transition out of a live thread stays retryable for transition_thread too', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx);
+  await callTool('transition_thread', { thread_id: thread.id, to_status: 'paused' }, ctx);
+  const error = await refuse(ctx, 'transition_thread', { thread_id: thread.id, to_status: 'blocked' });
+
+  assert.equal(error.code, 'illegal_transition');
+  assert.equal(error.field, 'transition_thread.to_status');
+  assert.equal(error.retryable, true);
+});
+
+test('a legal array argument is never told to re-send itself as a string', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx);
+  const error = await refuse(ctx, 'record_decision', {
+    thread_id: thread.id,
+    slug: 'legible-refusals',
+    title: 'Make refusals legible',
+    context: 'the incident',
+    outcome: 'ship MSP-1B',
+    options: [1, 2],
+  });
+
+  const contradictions = error.problems.filter(
+    (problem) => problem.field === 'record_decision.options' && /string/.test(problem.expected),
+  );
+  assert.deepEqual(contradictions, []);
+  assert.deepEqual(
+    error.problems.map((problem) => problem.field),
+    ['record_decision.options[0]', 'record_decision.options[1]'],
+  );
+  assert.doesNotMatch(error.message, /anyOf/);
+});
+
+test('an argument with no valid branch still reports every type the schema accepts', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx);
+  const error = await refuse(ctx, 'record_decision', {
+    thread_id: thread.id,
+    slug: 'legible-refusals',
+    title: 'Make refusals legible',
+    context: 'the incident',
+    outcome: 'ship MSP-1B',
+    options: 5,
+  });
+
+  assert.equal(error.field, 'record_decision.options');
+  assert.equal(error.expected, 'type array or string');
+});
+
+test('the structured record stays inside its byte budget on a pathologically wide payload', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const error = await refuse(ctx, 'open_thread', {
+    title: 'Wide Payload',
+    completion_criteria: Array.from({ length: WIDE_PAYLOAD_ERRORS }, () => ({ text: 5 })),
+  });
+
+  assert.equal(error.problems.length, WIDE_PAYLOAD_ERRORS);
+  const record = renderToolFailure(error, 'open_thread').content[1].text;
+  const detail = JSON.parse(record);
+  assert.ok(
+    Buffer.byteLength(record, 'utf8') <= DETAIL_MAX_BYTES,
+    `expected at most ${DETAIL_MAX_BYTES} bytes, measured ${Buffer.byteLength(record, 'utf8')}`,
+  );
+  assert.equal(detail.truncated, true);
+  assert.equal(detail.total, WIDE_PAYLOAD_ERRORS);
+  assert.ok(detail.problems.length < WIDE_PAYLOAD_ERRORS);
+});
+
+test('the byte budget holds when every field the caller controls is multi-byte', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const wide = '🧵"\\'.repeat(400);
+  const error = await refuse(ctx, 'update_thread', {
+    thread_id: wide,
+    [wide]: 1,
+    spine: { [wide]: wide },
+  });
+
+  const record = renderToolFailure(error, 'update_thread').content[1].text;
+  const measured = Buffer.byteLength(record, 'utf8');
+  assert.ok(measured <= DETAIL_MAX_BYTES, `expected at most ${DETAIL_MAX_BYTES} bytes, measured ${measured}`);
+  assert.equal(typeof JSON.parse(record).code, 'string');
+});
+
+test('a title that yields no slug is a caller fault naming title, not a server fault', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const error = await refuse(ctx, 'open_thread', {
+    title: '日本語',
+    completion_criteria: [{ text: 'ship it' }],
+  });
+
+  assert.notEqual(error.layer, 'server');
+  assert.notEqual(error.code, 'internal_error');
+  assert.equal(error.field, 'open_thread.title');
+  assert.match(error.remedy, /slug/);
+  assert.doesNotMatch(error.remedy, /server-side fault/);
+});
+
+test('a blank-after-trim string is refused as a caller fault naming the parameter', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx);
+  const error = await refuse(ctx, 'bind_branch', {
+    thread_id: thread.id,
+    repo: '   ',
+    branch: 'main',
+  });
+
+  assert.notEqual(error.layer, 'server');
+  assert.equal(error.field, 'bind_branch.repo');
+  assert.equal(error.retryable, false);
 });
 
 test('a cap violation names the spine path the caller can address', async (t) => {
@@ -226,6 +382,8 @@ test('every refusal the tool surface can produce stays inside the message budget
     ['bind_branch', { thread_id: ABSENT_ULID, repo: 'r', branch: 'b' }],
     ['create_successor', { predecessor_id: thread.id, title: 't', completion_criteria: [{ text: 'x' }] }],
     ['reopen', { thread_id: thread.id }],
+    ['open_thread', { title: '日本語', completion_criteria: [{ text: 'x' }] }],
+    ['bind_branch', { thread_id: thread.id, repo: '   ', branch: 'b' }],
   ];
 
   for (const [name, args] of corpus) {
@@ -238,7 +396,66 @@ test('every refusal the tool surface can produce stays inside the message budget
     assert.ok(LEDGER_ERROR_LAYERS.includes(error.layer), `${name} used layer ${error.layer}`);
     assert.equal(typeof error.retryable, 'boolean', `${name} left retryable unset`);
     assert.ok(error.code.length > 0 && error.field.length > 0 && error.remedy.length > 0);
+    for (const problem of error.problems) {
+      assert.ok(
+        LEDGER_ERROR_CODES.includes(problem.code),
+        `${name} used code ${problem.code}, which is absent from LEDGER_ERROR_CODES`,
+      );
+    }
+    const record = renderToolFailure(error, name).content[1].text;
+    assert.ok(
+      Buffer.byteLength(record, 'utf8') <= DETAIL_MAX_BYTES,
+      `${name} produced a ${Buffer.byteLength(record, 'utf8')}-byte record`,
+    );
   }
+});
+
+test('every error code the source declares is a member of the frozen registry', async () => {
+  const { readFile, readdir } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const roots = ['src/errors.mjs', 'src/model', 'src/schema', 'src/tools'];
+
+  const walk = async (entry) => {
+    const nested = await readdir(entry, { withFileTypes: true }).catch(() => null);
+    if (!nested) return [entry];
+    const children = await Promise.all(
+      nested.map((child) => walk(join(entry, child.name))),
+    );
+    return children.flat();
+  };
+  const files = (await Promise.all(roots.map(walk))).flat().filter((f) => f.endsWith('.mjs'));
+  const sources = await Promise.all(files.map((file) => readFile(file, 'utf8')));
+  const declared = new Set(
+    sources.flatMap((source) => [...source.matchAll(/code: '([a-z_]+)'/g)].map((m) => m[1])),
+  );
+
+  const everything = (await Promise.all(['src', 'bin'].map(walk))).flat().filter((f) => f.endsWith('.mjs'));
+  const strays = (await Promise.all(everything.map(async (file) => (
+    /new (LedgerError|ToolError|CapViolationError|ToolValidationError)\(/.test(await readFile(file, 'utf8'))
+      ? file
+      : null
+  )))).filter((file) => file !== null && !files.includes(file));
+  assert.deepEqual(strays, [], 'a ledger error is constructed outside the scanned roots');
+
+  assert.ok(declared.size > 0, 'found no code literals to check');
+  for (const code of declared) {
+    assert.ok(
+      LEDGER_ERROR_CODES.includes(code),
+      `${code} is declared in source but absent from LEDGER_ERROR_CODES`,
+    );
+  }
+  assert.ok(Object.isFrozen(LEDGER_ERROR_CODES));
+});
+
+test('a problem carrying a code outside the registry is refused at construction', () => {
+  assert.throws(() => new LedgerError({
+    code: 'invented_code',
+    layer: 'tool',
+    field: 'open_thread.title',
+    expected: 'a value the schema accepts',
+    retryable: false,
+    remedy: 'correct it and re-send',
+  }), TypeError);
 });
 
 test('the server renders a refusal as an isError result carrying the message then the structured record', () => {

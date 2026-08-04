@@ -63,7 +63,7 @@ test('a thrown LedgerError is returned as an isError result: rendered message, t
     listTools: () => fakeTools,
     buildContext: async () => ({ marker: 'ctx' }),
     callTool: async () => {
-      throw new ToolError(illegalTransition('transition_thread', 'active', 'active'));
+      throw new ToolError(illegalTransition('transition_thread', 'to_status', 'active', 'active'));
     },
     env: {},
   });
@@ -72,13 +72,13 @@ test('a thrown LedgerError is returned as an isError result: rendered message, t
 
   const [head, second] = res.content[0].text.split('\n');
   assert.equal(head, 'illegal_transition: transition_thread.to_status: one of paused, blocked, done, abandoned');
-  assert.equal(second, 'retryable: false');
+  assert.equal(second, 'retryable: true');
 
   const detail = JSON.parse(res.content[1].text);
   assert.equal(detail.error, 'ToolError');
   assert.equal(detail.code, 'illegal_transition');
   assert.equal(detail.layer, 'tool');
-  assert.equal(detail.retryable, false);
+  assert.equal(detail.retryable, true);
   assert.equal(detail.message, res.content[0].text);
 });
 

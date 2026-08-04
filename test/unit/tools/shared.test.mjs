@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ToolError, commitAndReindex, LedgerError, MESSAGE_MAX_CHARS } from '../../../src/tools/shared.mjs';
+import {
+  ToolError,
+  commitAndReindex,
+  illegalTransition,
+  LedgerError,
+  MESSAGE_MAX_CHARS,
+} from '../../../src/tools/shared.mjs';
 
 const HEALTHY_COMMIT = { committed: true, sha: 'abc', empty: false, degraded: false };
 const DEGRADED_COMMIT = { committed: false, sha: null, empty: false, degraded: true };
@@ -33,6 +39,27 @@ test('ToolError is a LedgerError defaulting to the tool layer and populating eve
   assert.equal(err.retryable, false);
   assert.equal(err.message.split('\n')[0], 'unknown_thread: reopen.thread_id: a thread id this ledger holds');
   assert.equal(err.message.split('\n')[1], 'retryable: false');
+});
+
+test('illegalTransition names the field its caller declares, never a foreign parameter', () => {
+  const cases = [
+    ['transition_thread', 'to_status', 'transition_thread.to_status'],
+    ['archive_thread', 'thread_id', 'archive_thread.thread_id'],
+    ['reopen', 'thread_id', 'reopen.thread_id'],
+  ];
+  for (const [tool, field, expected] of cases) {
+    const problem = illegalTransition(tool, field, 'blocked', 'done');
+    assert.equal(problem.field, expected);
+    assert.equal(problem.retryable, true);
+    assert.match(problem.remedy, /transition_thread/);
+  }
+});
+
+test('illegalTransition out of a terminal status is permanent and routes to create_successor', () => {
+  const problem = illegalTransition('reopen', 'thread_id', 'done', 'active');
+  assert.equal(problem.field, 'reopen.thread_id');
+  assert.equal(problem.retryable, false);
+  assert.match(problem.remedy, /create_successor/);
 });
 
 test('a LedgerError refuses to exist without a layer, a remedy or a retryability verdict', () => {

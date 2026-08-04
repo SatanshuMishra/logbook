@@ -99,7 +99,7 @@ test('newThread refuses a criterion text over 200 chars', () => {
       { title: 'x', completion_criteria: [{ text: 'c'.repeat(201) }] },
       { now: fixedClock, id: ID },
     ),
-    /completion_criteria\[0\].text exceeds 200 chars/,
+    /completion_criteria\[0\]\.text: at most 200 characters/,
   );
   const ok = newThread(
     { title: 'x', completion_criteria: [{ text: 'c'.repeat(200) }] },

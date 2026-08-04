@@ -12,6 +12,7 @@ import {
 
 const RECEIVED_MAX_CHARS = 24;
 const WRAPPER_KEYWORDS = Object.freeze(['if', 'anyOf', 'oneOf', 'allOf', 'not']);
+const BRANCH_KEYWORDS = Object.freeze(['anyOf', 'oneOf']);
 
 export const PATTERN_EXAMPLES = Object.freeze({
   [ULID_PATTERN]: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
@@ -157,11 +158,46 @@ function mergeTypeAlternatives(problems) {
   }, []);
 }
 
+function instanceDepth(instancePath) {
+  return typeof instancePath === 'string' && instancePath.length > 0
+    ? instancePath.split('/').length - 1
+    : 0;
+}
+
+function branchOf(error, containerPath) {
+  return error.schemaPath.slice(containerPath.length + 1).split('/')[0];
+}
+
+function losingBranchErrors(errors, container) {
+  const containerPath = container.schemaPath;
+  const members = errors.filter(
+    (error) => typeof error.schemaPath === 'string'
+      && error.schemaPath.startsWith(`${containerPath}/`),
+  );
+  if (members.length === 0) return [];
+  const reach = members.reduce((acc, error) => {
+    const branch = branchOf(error, containerPath);
+    return { ...acc, [branch]: Math.max(acc[branch] ?? 0, instanceDepth(error.instancePath)) };
+  }, {});
+  const best = Math.max(...Object.values(reach));
+  return members.filter((error) => reach[branchOf(error, containerPath)] < best);
+}
+
+function suppressedByBranch(errors) {
+  return errors
+    .filter((error) => BRANCH_KEYWORDS.includes(error.keyword) && typeof error.schemaPath === 'string')
+    .reduce(
+      (dropped, container) => new Set([...dropped, ...losingBranchErrors(errors, container)]),
+      new Set(),
+    );
+}
+
 export function projectValidationErrors(errors, options = {}) {
   const { prefix = '', remedy = null } = options;
-  const list = Array.isArray(errors) ? errors : [];
+  const list = (Array.isArray(errors) ? errors : []).filter((error) => error);
+  const dropped = suppressedByBranch(list);
   const projected = list
-    .filter((error) => error && !WRAPPER_KEYWORDS.includes(error.keyword))
+    .filter((error) => !WRAPPER_KEYWORDS.includes(error.keyword) && !dropped.has(error))
     .map((error) => projectOne(error, prefix))
     .map((problem) => (remedy === null ? problem : { ...problem, remedy }));
   return mergeTypeAlternatives(projected);

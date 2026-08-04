@@ -6,12 +6,51 @@ export const LEDGER_ERROR_LAYERS = Object.freeze([
   'server',
 ]);
 
+export const LEDGER_ERROR_CODES = Object.freeze([
+  'already_active',
+  'blank_parameter',
+  'cap_exceeded',
+  'dod_unmet',
+  'empty_criteria',
+  'empty_options',
+  'empty_scope_replacement',
+  'illegal_transition',
+  'internal_error',
+  'invalid_const',
+  'invalid_enum',
+  'invalid_length',
+  'invalid_pattern',
+  'invalid_risk_text',
+  'invalid_scope',
+  'invalid_type',
+  'invalid_value',
+  'missing_parameter',
+  'not_terminal',
+  'open_detour',
+  'record_invalid',
+  'restated_decision',
+  'struck_criterion',
+  'terminal_thread',
+  'underivable_slug',
+  'unexpected_parameter',
+  'unknown_criterion',
+  'unknown_decision',
+  'unknown_thread',
+  'unknown_tool',
+  'unreadable_decision',
+]);
+
 export const MESSAGE_MAX_CHARS = 400;
+
+export const DETAIL_MAX_BYTES = 8192;
 
 const HEAD_MAX_CHARS = 180;
 const REMEDY_MAX_CHARS = 148;
 const EXAMPLE_MAX_CHARS = 80;
+const FIELD_MAX_CHARS = 120;
 const PROBLEM_FIELDS_SHOWN = 4;
+const PROBLEMS_EMITTED_MAX = PROBLEM_FIELDS_SHOWN;
+const BYTES_PER_CHAR_BUDGET = 2;
 const ELLIPSIS = '...';
 
 export function collapse(value) {
@@ -56,10 +95,20 @@ function requireRetryable(value) {
   return value;
 }
 
+function requireCode(value) {
+  const code = requireText(value, 'code');
+  if (!LEDGER_ERROR_CODES.includes(code)) {
+    throw new TypeError(
+      `LedgerError: code ${code} is not a member of LEDGER_ERROR_CODES`,
+    );
+  }
+  return code;
+}
+
 export function normalizeProblem(problem) {
   const source = problem ?? {};
   return Object.freeze({
-    code: requireText(source.code, 'code'),
+    code: requireCode(source.code),
     field: requireText(source.field, 'field'),
     expected: requireText(source.expected, 'expected'),
     example: optionalText(source.example, 'example'),
@@ -89,6 +138,30 @@ function problemsLine(problems) {
   return `problems: ${problems.length} (${shown.join(', ')}${more})`;
 }
 
+function encodedBytes(text) {
+  return Buffer.byteLength(JSON.stringify(text), 'utf8') - 2;
+}
+
+function fit(value, maxChars) {
+  const text = clip(value, maxChars);
+  const budget = maxChars * BYTES_PER_CHAR_BUDGET;
+  if (encodedBytes(text) <= budget || text.length <= ELLIPSIS.length + 1) return text;
+  return fit(text.slice(0, Math.floor(text.length / 2)), maxChars);
+}
+
+function emitProblem(problem) {
+  return {
+    code: problem.code,
+    field: fit(problem.field, FIELD_MAX_CHARS),
+    expected: fit(problem.expected, HEAD_MAX_CHARS),
+    example: problem.example === null || problem.example === undefined
+      ? null
+      : fit(problem.example, EXAMPLE_MAX_CHARS),
+    retryable: problem.retryable,
+    remedy: fit(problem.remedy, REMEDY_MAX_CHARS),
+  };
+}
+
 export function renderLedgerError(detail) {
   const head = clip(`${detail.code}: ${detail.field}: ${detail.expected}`, HEAD_MAX_CHARS);
   const optional = [
@@ -107,6 +180,15 @@ export function renderLedgerError(detail) {
   return lines.join('\n');
 }
 
+function withinDetailBudget(record) {
+  return Buffer.byteLength(JSON.stringify(record), 'utf8') <= DETAIL_MAX_BYTES;
+}
+
+function shedProblems(record, total) {
+  const { problems, ...rest } = record;
+  return problems === undefined ? rest : { ...rest, truncated: true, total };
+}
+
 export class LedgerError extends Error {
   constructor(detail) {
     const record = normalizeLedgerErrorDetail(detail);
@@ -123,23 +205,29 @@ export class LedgerError extends Error {
   }
 
   toDetail() {
-    return {
+    const shown = this.problems.slice(0, PROBLEMS_EMITTED_MAX).map(emitProblem);
+    const cut = this.problems.length - shown.length;
+    const record = {
       error: this.name,
       message: this.message,
-      code: this.code,
       layer: this.layer,
-      field: this.field,
-      expected: this.expected,
-      example: this.example,
-      retryable: this.retryable,
-      remedy: this.remedy,
-      problems: this.problems.map((problem) => ({ ...problem })),
+      ...emitProblem(this),
+      ...(this.problems.length > 1 ? { problems: shown } : {}),
+      ...(cut > 0 ? { truncated: true, total: this.problems.length } : {}),
     };
+    return withinDetailBudget(record) ? record : shedProblems(record, this.problems.length);
   }
 }
 
 export function isLedgerError(value) {
   return value instanceof LedgerError;
+}
+
+export class ToolError extends LedgerError {
+  constructor(detail) {
+    super({ layer: 'tool', ...detail });
+    this.name = 'ToolError';
+  }
 }
 
 export function toLedgerError(error, field) {
@@ -153,6 +241,6 @@ export function toLedgerError(error, field) {
     field: requireText(field, 'field'),
     expected: `a call the server can complete; it failed with: ${detail}`,
     retryable: false,
-    remedy: 'this is a server-side fault, not a defect in the call; do not re-send the same call until it is resolved',
+    remedy: 'the server could not classify this failure; read the reported cause before deciding whether to re-send',
   });
 }

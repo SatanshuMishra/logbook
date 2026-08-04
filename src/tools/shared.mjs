@@ -1,23 +1,18 @@
 import { rebuildIndex } from '../index/rebuild-index.mjs';
-import { LedgerError } from '../errors.mjs';
 import { ALLOWED_TRANSITIONS } from '../model/fsm.mjs';
 import { liveCriteria } from '../model/selection.mjs';
 
 export {
   LedgerError,
+  ToolError,
   LEDGER_ERROR_LAYERS,
+  LEDGER_ERROR_CODES,
   MESSAGE_MAX_CHARS,
+  DETAIL_MAX_BYTES,
   renderLedgerError,
   isLedgerError,
   toLedgerError,
 } from '../errors.mjs';
-
-export class ToolError extends LedgerError {
-  constructor(detail) {
-    super({ layer: 'tool', ...detail });
-    this.name = 'ToolError';
-  }
-}
 
 export function unknownThread(tool, field, id) {
   return {
@@ -40,17 +35,20 @@ export function terminalThread(tool, status) {
   };
 }
 
-export function illegalTransition(tool, from, to) {
+export function illegalTransition(tool, field, from, to) {
   const targets = ALLOWED_TRANSITIONS[from] ?? [];
-  const reachable = targets.length === 0
-    ? `${from} is terminal and has no outgoing transition`
-    : `one of ${targets.join(', ')}`;
+  const terminal = targets.length === 0;
+  const repair = terminal
+    ? 'use create_successor to carry the work forward'
+    : `move it to one of ${targets.join(', ')} with transition_thread, then re-send this call unchanged`;
   return {
     code: 'illegal_transition',
-    field: `${tool}.to_status`,
-    expected: reachable,
-    retryable: false,
-    remedy: `illegal transition ${from} -> ${to}; ${targets.length === 0 ? 'use create_successor to carry the work forward' : 'pick a status the FSM allows from here'}`,
+    field: `${tool}.${field}`,
+    expected: terminal
+      ? `${from} is terminal and has no outgoing transition`
+      : `one of ${targets.join(', ')}`,
+    retryable: !terminal,
+    remedy: `illegal transition ${from} -> ${to}; ${repair}`,
   };
 }
 

@@ -23,7 +23,7 @@ async function handler(ctx, args) {
     completion_criteria: args.completion_criteria,
     predecessor_id: predecessor.id,
     parent_id: predecessor.parent_id,
-  }, { now });
+  }, { now, tool: 'create_successor' });
   await driver.writeThread(thread);
   await writeActiveThread(ctx, thread.id);
   const { recovery_degraded } = await commitAndReindex(driver, `feat(ledger): successor of ${predecessor.slug}`);

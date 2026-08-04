@@ -10,7 +10,7 @@ async function handler(ctx, args) {
     throw new ToolError(unknownThread('archive_thread', 'thread_id', args.thread_id));
   }
   if (!canTransition(thread.status, 'abandoned')) {
-    throw new ToolError(illegalTransition('archive_thread', thread.status, 'abandoned'));
+    throw new ToolError(illegalTransition('archive_thread', 'thread_id', thread.status, 'abandoned'));
   }
   const nowIso = now();
   const updated = {

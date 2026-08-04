@@ -22,7 +22,7 @@ async function handler(ctx, args) {
     });
   }
   if (!canTransition(thread.status, 'active')) {
-    throw new ToolError(illegalTransition('reopen', thread.status, 'active'));
+    throw new ToolError(illegalTransition('reopen', 'thread_id', thread.status, 'active'));
   }
   const nowIso = now();
   const updated = {
