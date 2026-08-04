@@ -1,6 +1,7 @@
 import { resolveWriteScope } from '../model/index.mjs';
-import { commitAndReindex, ToolError } from './shared.mjs';
+import { commitAndReindex, ToolError, unknownThread } from './shared.mjs';
 import { ULID_PATTERN, WRITABLE_SCOPE_PATTERN } from './schemas.mjs';
+import { DECISION_SLUG_PATTERN } from '../schema/patterns.mjs';
 import { assertWritableScope } from './spine-input.mjs';
 
 const BULLET_MARKER = /^[-*]\s+/;
@@ -43,15 +44,22 @@ async function handler(ctx, args) {
   const { driver, now } = ctx;
   const options = normalizeOptions(args.options);
   if (options.length === 0) {
-    throw new ToolError('record_decision: options must contain at least one option');
+    throw new ToolError({
+      code: 'empty_options',
+      field: 'record_decision.options',
+      expected: 'at least one non-empty option',
+      example: '["keep the current shape", "adopt the discriminated form"]',
+      retryable: false,
+      remedy: 'options arrived empty after normalization; re-send it as a non-empty array or a newline-separated list',
+    });
   }
   const thread = await driver.readThread(args.thread_id);
   if (!thread) {
-    throw new ToolError(`record_decision: thread_id ${args.thread_id} does not reference an existing thread`);
+    throw new ToolError(unknownThread('record_decision', 'thread_id', args.thread_id));
   }
   const scope = assertWritableScope(
     args.scope ?? resolveWriteScope(thread),
-    'record_decision: scope',
+    'record_decision',
   );
   const nnnn = await driver.nextDecisionNumber();
   const markdown = renderDecision({
@@ -87,7 +95,7 @@ export default {
     required: ['thread_id', 'slug', 'title', 'context', 'options', 'outcome'],
     properties: {
       thread_id: { type: 'string', pattern: ULID_PATTERN },
-      slug: { type: 'string', pattern: '^[a-z0-9][a-z0-9-]*$' },
+      slug: { type: 'string', pattern: DECISION_SLUG_PATTERN },
       title: { type: 'string', minLength: 1 },
       context: { type: 'string' },
       options: {

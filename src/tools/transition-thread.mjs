@@ -1,27 +1,37 @@
 import { canTransition, checkDefinitionOfDone } from '../model/index.mjs';
 import { writeActiveThread, readActiveThread, clearActiveThread } from '../util/active-thread.mjs';
-import { commitAndReindex, ToolError } from './shared.mjs';
+import { commitAndReindex, ToolError, unknownThread, illegalTransition } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function companionRequired(field, status) {
+  return {
+    code: 'missing_parameter',
+    field: `transition_thread.${field}`,
+    expected: `a non-blank string whenever to_status is ${status}`,
+    retryable: false,
+    remedy: `${field} is required to enter ${status}; re-emit the call with it filled in`,
+  };
+}
+
 async function handler(ctx, args) {
   const { driver, now } = ctx;
   const thread = await driver.readThread(args.thread_id);
   if (!thread) {
-    throw new ToolError(`transition_thread: thread_id ${args.thread_id} does not reference an existing thread`);
+    throw new ToolError(unknownThread('transition_thread', 'thread_id', args.thread_id));
   }
   const to = args.to_status;
   if (!canTransition(thread.status, to)) {
-    throw new ToolError(`transition_thread: illegal transition ${thread.status} -> ${to}`);
+    throw new ToolError(illegalTransition('transition_thread', thread.status, to));
   }
   if (to === 'blocked' && !nonEmpty(args.blocked_by)) {
-    throw new ToolError('transition_thread: blocked_by is required to enter blocked');
+    throw new ToolError(companionRequired('blocked_by', 'blocked'));
   }
   if (to === 'abandoned' && !nonEmpty(args.abandoned_reason)) {
-    throw new ToolError('transition_thread: abandoned_reason is required to enter abandoned');
+    throw new ToolError(companionRequired('abandoned_reason', 'abandoned'));
   }
   const nowIso = now();
   const candidate = {
@@ -34,7 +44,15 @@ async function handler(ctx, args) {
   };
   if (to === 'done') {
     const dod = checkDefinitionOfDone(candidate);
-    if (!dod.ok) throw new ToolError(`transition_thread: ${dod.reason}`);
+    if (!dod.ok) {
+      throw new ToolError({
+        code: 'dod_unmet',
+        field: 'transition_thread.to_status',
+        expected: dod.reason,
+        retryable: true,
+        remedy: 'the definition of done is not met yet; satisfy it with update_thread, then re-send this call unchanged',
+      });
+    }
   }
   await driver.writeThread(candidate);
   if (to === 'active') {

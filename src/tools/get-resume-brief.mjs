@@ -1,7 +1,7 @@
 import { renderBriefing } from '../render/briefing.mjs';
 import { BRIEFING_INDEX } from '../index/index-files.mjs';
 import { takeDriftSnapshot } from '../drift/index.mjs';
-import { ToolError } from './shared.mjs';
+import { ToolError, unknownThread } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
 
 function byId(a, b) {
@@ -14,7 +14,7 @@ async function handler(ctx, args) {
   const { driver, now } = ctx;
   const thread = await driver.readThread(args.thread_id);
   if (!thread) {
-    throw new ToolError(`get_resume_brief: thread_id ${args.thread_id} does not reference an existing thread`);
+    throw new ToolError(unknownThread('get_resume_brief', 'thread_id', args.thread_id));
   }
   const all = await driver.listThreads();
   const children = all

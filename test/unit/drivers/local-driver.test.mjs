@@ -462,7 +462,7 @@ test('writeThread rejects an invalid record before writing', async (t) => {
   const root = await scratchRoot(t);
   const driver = new LocalDriver(root);
   await driver.init();
-  await assert.rejects(() => driver.writeThread(makeThread({ status: 'bogus' })), /schema validation/);
+  await assert.rejects(() => driver.writeThread(makeThread({ status: 'bogus' })), /Thread\.status/);
 });
 
 test('readThread upcasts a stored v1 record to v2 in memory', async (t) => {
@@ -528,7 +528,7 @@ test('writeBinding rejects an invalid record before writing', async (t) => {
   const root = await scratchRoot(t);
   const driver = new LocalDriver(root);
   await driver.init();
-  await assert.rejects(() => driver.writeBinding(makeBinding({ status: 'nope' })), /schema validation/);
+  await assert.rejects(() => driver.writeBinding(makeBinding({ status: 'nope' })), /BranchBinding\.status/);
 });
 
 test('listBindings returns every stored binding and [] on an empty store', async (t) => {

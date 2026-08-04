@@ -59,7 +59,9 @@ test('active_goal is capped at 200 chars, not the old 500', () => {
     (err) => {
       assert.ok(err instanceof CapViolationError);
       assert.equal(err.name, 'CapViolationError');
-      assert.equal(err.field, 'active_goal');
+      assert.equal(err.field, 'spine.active_goal');
+      assert.equal(err.expected, 'at most 200 characters');
+      assert.equal(err.retryable, false);
       return true;
     },
   );
@@ -87,7 +89,7 @@ test('a single scope group over 20 risks throws, naming the scope', () => {
     () => assertSpineCaps(spine({ open_risks: [...risks(21, 'c2'), ...risks(3, 'thread')] })),
     (err) => {
       assert.ok(err instanceof CapViolationError);
-      assert.equal(err.field, 'open_risks');
+      assert.equal(err.field, 'spine.open_risks');
       assert.match(err.message, /c2/);
       return true;
     },
@@ -98,7 +100,7 @@ test('a risk text over 300 chars throws', () => {
   assert.throws(
     () => assertSpineCaps(spine({ open_risks: [risk({ text: 'a'.repeat(301) })] })),
     (err) => {
-      assert.equal(err.field, 'open_risks[].text');
+      assert.equal(err.field, 'spine.open_risks[].text');
       return true;
     },
   );
@@ -125,7 +127,7 @@ test('a decision title over 120 chars throws while key_decisions stays count-exe
   assert.throws(
     () => assertSpineCaps(spine({ key_decisions: [decision({ title: 'a'.repeat(121) })] })),
     (err) => {
-      assert.equal(err.field, 'key_decisions[].title');
+      assert.equal(err.field, 'spine.key_decisions[].title');
       return true;
     },
   );
@@ -138,14 +140,14 @@ test('out_of_scope keeps a thread-wide count cap of 20 and a 300-char item cap',
   assert.throws(
     () => assertSpineCaps(spine({ out_of_scope: [...twenty, 'one more'] })),
     (err) => {
-      assert.equal(err.field, 'out_of_scope');
+      assert.equal(err.field, 'spine.out_of_scope');
       return true;
     },
   );
   assert.throws(
     () => assertSpineCaps(spine({ out_of_scope: ['a'.repeat(301)] })),
     (err) => {
-      assert.equal(err.field, 'out_of_scope[]');
+      assert.equal(err.field, 'spine.out_of_scope[]');
       return true;
     },
   );
@@ -169,21 +171,24 @@ test('every violation is reported in one error naming each field and the cap it 
     () => assertSpineCaps(s),
     (err) => {
       assert.ok(err instanceof CapViolationError);
-      assert.match(err.message, /spine\.active_goal exceeds 200 chars/);
-      assert.match(err.message, /spine\.next_step exceeds 500 chars/);
-      assert.match(err.message, /spine\.last_session exceeds 300 chars/);
-      assert.match(err.message, /spine\.open_risks exceeds 20 items for scope c1/);
-      assert.match(err.message, /spine\.key_decisions item title exceeds 120 chars/);
-      assert.match(err.message, /spine\.out_of_scope exceeds 20 items/);
-      assert.deepEqual([...err.fields], [
-        'active_goal',
-        'next_step',
-        'last_session',
-        'open_risks',
-        'key_decisions[].title',
-        'out_of_scope',
+      assert.deepEqual(err.problems.map((p) => [p.field, p.expected]), [
+        ['spine.active_goal', 'at most 200 characters'],
+        ['spine.next_step', 'at most 500 characters'],
+        ['spine.last_session', 'at most 300 characters'],
+        ['spine.open_risks', 'at most 20 items per scope'],
+        ['spine.key_decisions[].title', 'at most 120 characters'],
+        ['spine.out_of_scope', 'at most 20 items'],
       ]);
-      assert.equal(err.field, 'active_goal');
+      assert.deepEqual([...err.fields], [
+        'spine.active_goal',
+        'spine.next_step',
+        'spine.last_session',
+        'spine.open_risks',
+        'spine.key_decisions[].title',
+        'spine.out_of_scope',
+      ]);
+      assert.equal(err.field, 'spine.active_goal');
+      assert.match(err.message, /^problems: 6 /m);
       return true;
     },
   );
@@ -193,9 +198,10 @@ test('each over-cap risk scope group is named, not just the first', () => {
   assert.throws(
     () => assertSpineCaps(spine({ open_risks: [...risks(21, 'c1'), ...risks(21, 'thread')] })),
     (err) => {
-      assert.match(err.message, /spine\.open_risks exceeds 20 items for scope c1/);
-      assert.match(err.message, /spine\.open_risks exceeds 20 items for scope thread/);
-      assert.deepEqual([...err.fields], ['open_risks']);
+      assert.deepEqual(err.problems.map((p) => p.field), ['spine.open_risks', 'spine.open_risks']);
+      assert.match(err.problems[0].remedy, /scope c1 carries 21 risks/);
+      assert.match(err.problems[1].remedy, /scope thread carries 21 risks/);
+      assert.deepEqual([...err.fields], ['spine.open_risks']);
       return true;
     },
   );
@@ -206,9 +212,11 @@ test('a field violating two caps at once is named once in fields', () => {
   assert.throws(
     () => assertSpineCaps(spine({ open_risks: [risk({ refs })] })),
     (err) => {
-      assert.match(err.message, /spine\.open_risks\[\]\.refs exceeds 8 items/);
-      assert.match(err.message, /spine\.open_risks\[\]\.refs item exceeds 200 chars/);
-      assert.deepEqual([...err.fields], ['open_risks[].refs']);
+      assert.deepEqual(err.problems.map((p) => p.expected), [
+        'at most 8 items',
+        'at most 200 characters per ref',
+      ]);
+      assert.deepEqual([...err.fields], ['spine.open_risks[].refs']);
       return true;
     },
   );
@@ -219,10 +227,9 @@ test('a repeated per-item violation is reported once, not once per item', () => 
   assert.throws(
     () => assertSpineCaps(spine({ open_risks: over })),
     (err) => {
-      assert.equal(
-        err.message,
-        `spine.open_risks item text exceeds ${SPINE_CAPS.riskTextMaxChars} chars`,
-      );
+      assert.equal(err.problems.length, 1);
+      assert.equal(err.field, 'spine.open_risks[].text');
+      assert.equal(err.expected, `at most ${SPINE_CAPS.riskTextMaxChars} characters`);
       return true;
     },
   );

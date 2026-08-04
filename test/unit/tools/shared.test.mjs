@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ToolError, commitAndReindex } from '../../../src/tools/shared.mjs';
+import { ToolError, commitAndReindex, LedgerError, MESSAGE_MAX_CHARS } from '../../../src/tools/shared.mjs';
 
 const HEALTHY_COMMIT = { committed: true, sha: 'abc', empty: false, degraded: false };
 const DEGRADED_COMMIT = { committed: false, sha: null, empty: false, degraded: true };
@@ -16,11 +16,56 @@ function fakeDriver(commitResult = HEALTHY_COMMIT) {
   };
 }
 
-test('ToolError carries its name', () => {
-  const err = new ToolError('nope');
+test('ToolError is a LedgerError defaulting to the tool layer and populating every field', () => {
+  const err = new ToolError({
+    code: 'unknown_thread',
+    field: 'reopen.thread_id',
+    expected: 'a thread id this ledger holds',
+    retryable: false,
+    remedy: 'no thread is stored under that id; re-send with one the ledger returned',
+  });
   assert.ok(err instanceof Error);
+  assert.ok(err instanceof LedgerError);
   assert.equal(err.name, 'ToolError');
-  assert.equal(err.message, 'nope');
+  assert.equal(err.layer, 'tool');
+  assert.equal(err.code, 'unknown_thread');
+  assert.equal(err.field, 'reopen.thread_id');
+  assert.equal(err.retryable, false);
+  assert.equal(err.message.split('\n')[0], 'unknown_thread: reopen.thread_id: a thread id this ledger holds');
+  assert.equal(err.message.split('\n')[1], 'retryable: false');
+});
+
+test('a LedgerError refuses to exist without a layer, a remedy or a retryability verdict', () => {
+  const complete = {
+    code: 'unknown_thread',
+    layer: 'tool',
+    field: 'reopen.thread_id',
+    expected: 'a thread id this ledger holds',
+    retryable: false,
+    remedy: 'send an id the ledger returned',
+  };
+  assert.doesNotThrow(() => new LedgerError(complete));
+  for (const missing of ['code', 'layer', 'field', 'expected', 'retryable', 'remedy']) {
+    const partial = { ...complete };
+    delete partial[missing];
+    assert.throws(() => new LedgerError(partial), TypeError, `omitting ${missing} should be rejected`);
+  }
+  assert.throws(() => new LedgerError({ ...complete, layer: 'made-up' }), TypeError);
+  assert.throws(() => new LedgerError({ ...complete, retryable: 'false' }), TypeError);
+});
+
+test('a LedgerError message never exceeds the budget, however long its fields are', () => {
+  const err = new LedgerError({
+    code: 'cap_exceeded',
+    layer: 'cap',
+    field: 'f'.repeat(500),
+    expected: 'e'.repeat(500),
+    example: 'x'.repeat(500),
+    retryable: true,
+    remedy: 'r'.repeat(500),
+  });
+  assert.ok(err.message.length <= MESSAGE_MAX_CHARS, `measured ${err.message.length}`);
+  assert.equal(err.message.split('\n')[1], 'retryable: true');
 });
 
 test('commitAndReindex rebuilds the index then commits, returning counts', async () => {

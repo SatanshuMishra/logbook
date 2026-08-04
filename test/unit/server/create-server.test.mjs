@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { createLedgerServer } from '../../../bin/ledger-server.mjs';
+import { ToolError, illegalTransition } from '../../../src/tools/shared.mjs';
 
 const fakeTools = [
   { name: 'open_thread', description: 'o', inputSchema: { type: 'object', additionalProperties: false, properties: {} } },
@@ -57,14 +58,44 @@ test('buildContext receives the env-derived userConfig (never hardcoded {}) and 
   assert.deepEqual(configs[0], { userConfig: { ledger_backend: 'orphan-branch' } });
 });
 
-test('a thrown tool error is returned as an isError result carrying name+message', async (t) => {
+test('a thrown LedgerError is returned as an isError result: rendered message, then structured record', async (t) => {
   const client = await connect(t, {
     listTools: () => fakeTools,
     buildContext: async () => ({ marker: 'ctx' }),
-    callTool: async () => { const e = new Error('illegal transition active -> active'); e.name = 'ToolError'; throw e; },
+    callTool: async () => {
+      throw new ToolError(illegalTransition('transition_thread', 'active', 'active'));
+    },
     env: {},
   });
   const res = await client.callTool({ name: 'open_thread', arguments: {} });
   assert.equal(res.isError, true);
-  assert.deepEqual(JSON.parse(res.content[0].text), { error: 'ToolError', message: 'illegal transition active -> active' });
+
+  const [head, second] = res.content[0].text.split('\n');
+  assert.equal(head, 'illegal_transition: transition_thread.to_status: one of paused, blocked, done, abandoned');
+  assert.equal(second, 'retryable: false');
+
+  const detail = JSON.parse(res.content[1].text);
+  assert.equal(detail.error, 'ToolError');
+  assert.equal(detail.code, 'illegal_transition');
+  assert.equal(detail.layer, 'tool');
+  assert.equal(detail.retryable, false);
+  assert.equal(detail.message, res.content[0].text);
+});
+
+test('a bootstrap fault is attributed to the server layer, not to the caller payload', async (t) => {
+  const client = await connect(t, {
+    listTools: () => fakeTools,
+    buildContext: async () => { throw new Error('selectDriver: CLAUDE_PLUGIN_DATA is not set'); },
+    callTool: async () => ({ ok: true }),
+    env: {},
+  });
+  const res = await client.callTool({ name: 'open_thread', arguments: {} });
+  assert.equal(res.isError, true);
+
+  const detail = JSON.parse(res.content[1].text);
+  assert.equal(detail.code, 'internal_error');
+  assert.equal(detail.layer, 'server');
+  assert.equal(detail.field, 'open_thread');
+  assert.equal(detail.retryable, false);
+  assert.match(res.content[0].text, /CLAUDE_PLUGIN_DATA is not set/);
 });
