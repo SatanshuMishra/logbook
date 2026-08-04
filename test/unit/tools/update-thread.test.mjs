@@ -308,6 +308,80 @@ test('a key_decisions write carries the scopes it does not mention, legacy inclu
   ]);
 });
 
+test('a scope named in replace_scopes is cleared, so its last risk can be retired', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx, [{ text: 'a' }, { text: 'b' }]);
+  await updateThread.handler(ctx, {
+    thread_id: thread.id,
+    spine: {
+      open_risks: [
+        { text: 'hold the c1 fixture — it is shared with the driver suite', scope: 'c1' },
+        { text: WELL_FORMED_RISK, scope: 'thread' },
+      ],
+    },
+  });
+  const { thread: updated } = await updateThread.handler(ctx, {
+    thread_id: thread.id,
+    spine: { open_risks: [] },
+    replace_scopes: { open_risks: ['c1'] },
+  });
+  assert.deepEqual(updated.spine.open_risks, [
+    { text: WELL_FORMED_RISK, scope: 'thread', refs: [] },
+  ]);
+});
+
+test('replace_scopes retires a scope with no spine payload of its own', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx, [{ text: 'a' }, { text: 'b' }]);
+  await recordDecision.handler(ctx, {
+    thread_id: thread.id, slug: 'adopt-x', title: 'Adopt X', context: 'c', options: ['x'], outcome: 'x',
+  });
+  await updateThread.handler(ctx, {
+    thread_id: thread.id,
+    spine: {
+      open_risks: [{ text: WELL_FORMED_RISK, scope: 'thread' }],
+      key_decisions: [{ ref: '0001-adopt-x', title: 'Adopt X', scope: 'c1' }],
+    },
+  });
+  const { thread: updated } = await updateThread.handler(ctx, {
+    thread_id: thread.id,
+    replace_scopes: { open_risks: ['thread'], key_decisions: ['c1'] },
+  });
+  assert.deepEqual(updated.spine.open_risks, []);
+  assert.deepEqual(updated.spine.key_decisions, []);
+});
+
+test('an empty risks array that names no scope is refused rather than silently kept', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx);
+  await updateThread.handler(ctx, {
+    thread_id: thread.id, spine: { open_risks: [{ text: WELL_FORMED_RISK }] },
+  });
+  await assert.rejects(
+    () => updateThread.handler(ctx, { thread_id: thread.id, spine: { open_risks: [] } }),
+    /replace_scopes/,
+  );
+  const stored = await ctx.driver.readThread(thread.id);
+  assert.equal(stored.spine.open_risks.length, 1);
+});
+
+test('update_thread refuses the legacy scope in replace_scopes', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx);
+  await assert.rejects(
+    () => updateThread.handler(ctx, {
+      thread_id: thread.id, replace_scopes: { open_risks: ['legacy'] },
+    }),
+    /legacy/,
+  );
+  await assert.rejects(
+    () => callTool('update_thread', {
+      thread_id: thread.id, replace_scopes: { key_decisions: ['legacy'] },
+    }, ctx),
+    ToolValidationError,
+  );
+});
+
 test('update_thread refuses a key_decisions ref with no decision file behind it', async (t) => {
   const ctx = await makeToolCtx(t);
   const thread = await seedThread(ctx);

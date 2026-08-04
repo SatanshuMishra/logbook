@@ -31,6 +31,20 @@ export const decisionInputItem = {
   },
 };
 
+const scopeList = {
+  type: 'array',
+  items: { type: 'string', pattern: WRITABLE_SCOPE_PATTERN },
+};
+
+export const replaceScopesInput = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    open_risks: scopeList,
+    key_decisions: scopeList,
+  },
+};
+
 export const criteriaCreateItem = {
   type: 'object',
   additionalProperties: false,

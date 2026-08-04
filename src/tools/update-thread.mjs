@@ -1,19 +1,42 @@
 import { isTerminal, assertSpineCaps } from '../model/index.mjs';
 import { commitAndReindex, knownDecisionRefs, ToolError } from './shared.mjs';
-import { ULID_PATTERN, criteriaToggleItem, riskInputItem, decisionInputItem } from './schemas.mjs';
-import { normalizeRisks, normalizeDecisions, assertNoRestatedDecision } from './spine-input.mjs';
+import {
+  ULID_PATTERN,
+  criteriaToggleItem,
+  riskInputItem,
+  decisionInputItem,
+  replaceScopesInput,
+} from './schemas.mjs';
+import {
+  normalizeRisks,
+  normalizeDecisions,
+  normalizeReplaceScopes,
+  assertNoRestatedDecision,
+  SCOPED_SPINE_FIELDS,
+} from './spine-input.mjs';
 
-function replaceSubmittedScopes(stored, submitted) {
+function replaceScopedItems(stored, submitted, authoritative) {
   const existing = Array.isArray(stored) ? stored : [];
-  if (!Array.isArray(submitted)) return existing;
-  const replaced = new Set(submitted.map((item) => item.scope));
+  if (!Array.isArray(submitted) && authoritative.length === 0) return existing;
+  const incoming = Array.isArray(submitted) ? submitted : [];
+  const replaced = new Set([...incoming.map((item) => item.scope), ...authoritative]);
   const carried = existing.filter(
     (item) => !(item && typeof item === 'object' && replaced.has(item.scope)),
   );
-  return [...carried, ...submitted];
+  return [...carried, ...incoming];
 }
 
-async function patchSpine(driver, thread, spinePatch) {
+function assertNamesAScope(field, submitted, authoritative) {
+  if (!Array.isArray(submitted) || submitted.length > 0 || authoritative.length > 0) return;
+  throw new ToolError(
+    `update_thread: spine.${field} is an empty array, which names no scope and so replaces nothing; name each scope to clear in replace_scopes.${field}, or omit the field`,
+  );
+}
+
+async function patchSpine(driver, thread, spinePatch, replaceScopes) {
+  for (const field of SCOPED_SPINE_FIELDS) {
+    assertNamesAScope(field, spinePatch[field], replaceScopes[field]);
+  }
   const submitted = { ...spinePatch };
   if (Array.isArray(spinePatch.open_risks)) {
     submitted.open_risks = normalizeRisks(
@@ -33,8 +56,16 @@ async function patchSpine(driver, thread, spinePatch) {
   const spine = {
     ...thread.spine,
     ...submitted,
-    open_risks: replaceSubmittedScopes(thread.spine.open_risks, submitted.open_risks),
-    key_decisions: replaceSubmittedScopes(thread.spine.key_decisions, submitted.key_decisions),
+    open_risks: replaceScopedItems(
+      thread.spine.open_risks,
+      submitted.open_risks,
+      replaceScopes.open_risks,
+    ),
+    key_decisions: replaceScopedItems(
+      thread.spine.key_decisions,
+      submitted.key_decisions,
+      replaceScopes.key_decisions,
+    ),
   };
   if (Array.isArray(spinePatch.out_of_scope)) {
     assertNoRestatedDecision(
@@ -82,8 +113,11 @@ async function handler(ctx, args) {
     ? toggleCriteria(thread, args.completion_criteria)
     : thread.completion_criteria;
   const toggled = { ...thread, completion_criteria: completionCriteria };
-  const spine = args.spine && typeof args.spine === 'object'
-    ? await patchSpine(driver, toggled, args.spine)
+  const replaceScopes = normalizeReplaceScopes(args.replace_scopes, 'update_thread');
+  const spinePatch = args.spine && typeof args.spine === 'object' ? args.spine : null;
+  const clearsAScope = SCOPED_SPINE_FIELDS.some((field) => replaceScopes[field].length > 0);
+  const spine = spinePatch !== null || clearsAScope
+    ? await patchSpine(driver, toggled, spinePatch ?? {}, replaceScopes)
     : thread.spine;
   const updated = { ...toggled, spine, updated_at: now() };
   await driver.writeThread(updated);
@@ -93,7 +127,7 @@ async function handler(ctx, args) {
 
 export default {
   name: 'update_thread',
-  description: 'Patch spine fields and toggle completion_criteria done by criterion id, refusing a criterion that a decision struck. Risks and decisions are scoped: an omitted scope defaults to the criterion current AFTER this call\'s own completion_criteria toggles, "thread" must be explicit, "legacy" is refused. A risks or decisions array replaces only the scopes it mentions and carries every scope it does not, so submitting the current step\'s items never deletes another step\'s. Caps are enforced on the fields this call submits; terminal-refused.',
+  description: 'Patch spine fields and toggle completion_criteria done by criterion id, refusing a criterion that a decision struck. Risks and decisions are scoped: an omitted scope defaults to the criterion current AFTER this call\'s own completion_criteria toggles, "thread" must be explicit, "legacy" is refused. A risks or decisions array replaces only the scopes it mentions and carries every scope it does not, so submitting the current step\'s items never deletes another step\'s. To retire a scope\'s remaining items, name that scope in replace_scopes.open_risks or replace_scopes.key_decisions: every named scope is replaced by whatever this call submits for it, down to nothing. An empty array that no replace_scopes entry backs is refused, since it would replace nothing. Caps are enforced on the fields this call submits; terminal-refused.',
   inputSchema: {
     type: 'object',
     additionalProperties: false,
@@ -112,6 +146,7 @@ export default {
           out_of_scope: { type: 'array', items: { type: 'string', minLength: 1 } },
         },
       },
+      replace_scopes: replaceScopesInput,
       completion_criteria: { type: 'array', items: criteriaToggleItem },
     },
   },

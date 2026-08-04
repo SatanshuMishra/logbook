@@ -1,10 +1,13 @@
-import { LEGACY_SCOPE } from '../schema/patterns.mjs';
+import { LEGACY_SCOPE, WRITABLE_SCOPE_PATTERN } from '../schema/patterns.mjs';
 import { resolveWriteScope } from '../model/index.mjs';
 import { ToolError } from './shared.mjs';
 
 const RISK_SENTENCE = /^[^\n]+ — [^\n]+$/;
 const RISK_SHAPE = '"<specific constraint or action> — <why, in plain words>": two non-empty clauses on one line, joined by a spaced em dash';
 const DEDUP_MIN_CHARS = 24;
+const WRITABLE_SCOPE = new RegExp(WRITABLE_SCOPE_PATTERN);
+
+export const SCOPED_SPINE_FIELDS = Object.freeze(['open_risks', 'key_decisions']);
 
 export function assertWritableScope(scope, label) {
   if (scope === LEGACY_SCOPE) {
@@ -13,6 +16,43 @@ export function assertWritableScope(scope, label) {
     );
   }
   return scope;
+}
+
+function normalizeScopeList(scopes, label) {
+  if (scopes === undefined || scopes === null) return [];
+  if (!Array.isArray(scopes)) {
+    throw new ToolError(`${label}: expected an array of scopes`);
+  }
+  return scopes.map((scope) => {
+    assertWritableScope(scope, label);
+    if (typeof scope !== 'string' || !WRITABLE_SCOPE.test(scope)) {
+      throw new ToolError(
+        `${label}: scope ${JSON.stringify(scope)} is neither a criterion id nor "thread"`,
+      );
+    }
+    return scope;
+  });
+}
+
+export function normalizeReplaceScopes(value, label) {
+  if (value === undefined || value === null) {
+    return Object.fromEntries(SCOPED_SPINE_FIELDS.map((field) => [field, []]));
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new ToolError(
+      `${label}: replace_scopes must be an object keyed by ${SCOPED_SPINE_FIELDS.join(' and ')}`,
+    );
+  }
+  const unknown = Object.keys(value).filter((key) => !SCOPED_SPINE_FIELDS.includes(key));
+  if (unknown.length > 0) {
+    throw new ToolError(
+      `${label}: replace_scopes does not accept ${unknown.join(', ')}; it names only ${SCOPED_SPINE_FIELDS.join(' and ')} scopes`,
+    );
+  }
+  return Object.fromEntries(SCOPED_SPINE_FIELDS.map((field) => [
+    field,
+    normalizeScopeList(value[field], `${label}: replace_scopes.${field}`),
+  ]));
 }
 
 export function normalizeRisks(risks, thread, label) {

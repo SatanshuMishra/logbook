@@ -29,6 +29,7 @@ Each ledger tool carries two names: `mcp__ledger__<name>` when the server is con
    - `last_session`: one line on what this session actually did.
    - `open_risks`: only what passes all four of ACTIONABLE (it changes what the next session does), SPECIFIC TO THIS WORK (not agent hygiene), STILL TRUE (retire it once it is resolved or moot), and LEGIBLE (plain words, jargon expanded). Shape each one as `<specific constraint or action> — <why, in plain words>`, and put paths, SHAs and commands in `refs` rather than in the prose.
    - `out_of_scope`: the same four-part gate, minus anything whose rationale already lives in a decision record. The record is its single home; do not restate it here.
+   - `replace_scopes`: name every scope whose risks or decisions you are restating in full, including one whose last item you are retiring. A risk or decision you leave out of a scope you do not name is carried forward, not retired.
 
 6. Transition the thread. Call `mcp__ledger__transition_thread` with the `thread_id` and the target status:
    - the normal hand-off parks the thread at `paused`;
