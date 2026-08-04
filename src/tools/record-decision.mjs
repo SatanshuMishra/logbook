@@ -1,4 +1,5 @@
-import { resolveWriteScope } from '../model/index.mjs';
+import { resolveWriteScope, assertSpineCaps } from '../model/index.mjs';
+import { assertValidThread } from '../schema/index.mjs';
 import { commitAndReindex, ToolError, unknownThread } from './shared.mjs';
 import { ULID_PATTERN, WRITABLE_SCOPE_PATTERN } from './schemas.mjs';
 import { DECISION_SLUG_PATTERN } from '../schema/patterns.mjs';
@@ -80,8 +81,10 @@ async function handler(ctx, args) {
     spine: { ...thread.spine, key_decisions: keyDecisions },
     updated_at: now(),
   };
-  await driver.writeThread(updated);
+  assertValidThread(updated);
+  assertSpineCaps(updated.spine);
   const path = await driver.writeDecision(nnnn, args.slug, markdown);
+  await driver.writeThread(updated);
   const { recovery_degraded } = await commitAndReindex(driver, `docs(ledger): decision ${ref}`);
   return { number: nnnn, path, recovery_degraded };
 }

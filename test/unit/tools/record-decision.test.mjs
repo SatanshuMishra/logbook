@@ -130,7 +130,7 @@ test('record_decision still rejects omitted options', async (t) => {
   );
 });
 
-test('record_decision leaves decisions/ empty when the thread record fails validation', async (t) => {
+test('record_decision leaves decisions/ empty and the number unconsumed when the record fails validation', async (t) => {
   const ctx = await makeToolCtx(t);
   const { thread, root } = await openWithUnvalidatableRecord(ctx);
   await assert.rejects(
@@ -138,16 +138,25 @@ test('record_decision leaves decisions/ empty when the thread record fails valid
     /invalid_length: Thread\.spine\.out_of_scope\[0\]/,
   );
   assert.deepEqual(await readdir(join(root, 'decisions')), []);
+  assert.equal(await ctx.driver.nextDecisionNumber(), '0001');
 });
 
-test('a record_decision that fails validation does not advance nextDecisionNumber', async (t) => {
+test('a record_decision whose decision write fails carries no spine ref and consumes no number', async (t) => {
   const ctx = await makeToolCtx(t);
-  const { thread } = await openWithUnvalidatableRecord(ctx);
+  const { thread } = await openThread.handler(ctx, {
+    title: 'Decisions', completion_criteria: [{ text: 'ship it' }],
+  });
+  const { thread: sibling } = await openThread.handler(ctx, {
+    title: 'Sibling', completion_criteria: [{ text: 'ship it too' }],
+  });
   await assert.rejects(
-    () => callTool('record_decision', decisionArgs(thread), ctx),
-    /invalid_length: Thread\.spine\.out_of_scope\[0\]/,
+    () => callTool('record_decision', decisionArgs(thread, { slug: 'a'.repeat(300) }), ctx),
+    /ENAMETOOLONG|record_decision\.slug/,
   );
-  assert.equal(await ctx.driver.nextDecisionNumber(), '0001');
+  const after = await ctx.driver.readThread(thread.id);
+  assert.deepEqual(after.spine.key_decisions, []);
+  const { number } = await record(ctx, sibling);
+  assert.equal(number, '0001');
 });
 
 test('record_decision rejects an unknown thread_id', async (t) => {

@@ -13,6 +13,17 @@ export class ActivePointerUnavailable extends Error {
   }
 }
 
+async function gitLedgerDir(projectDir) {
+  try {
+    const { stdout } = await gitExec(projectDir, ['rev-parse', '--git-common-dir'], {
+      env: clearedGitLocationEnv(),
+    });
+    return join(resolve(projectDir, stdout.trim()), 'ledger');
+  } catch {
+    throw new ActivePointerUnavailable('the project git directory could not be resolved');
+  }
+}
+
 export async function activeThreadPath(ctx) {
   const driver = ctx && ctx.driver;
   if (!driver || typeof driver.isGit !== 'function') {
@@ -23,11 +34,7 @@ export async function activeThreadPath(ctx) {
     throw new Error('activeThreadPath: ctx.projectDir must be a non-empty string');
   }
   if (driver.isGit()) {
-    const { stdout } = await gitExec(projectDir, ['rev-parse', '--git-common-dir'], {
-      env: clearedGitLocationEnv(),
-    });
-    const commonDir = resolve(projectDir, stdout.trim());
-    return join(commonDir, 'ledger', 'active-thread');
+    return join(await gitLedgerDir(projectDir), 'active-thread');
   }
   const dataRoot = process.env.CLAUDE_PLUGIN_DATA;
   if (!dataRoot) {
@@ -67,14 +74,26 @@ export async function clearActiveThread(ctx) {
   return target;
 }
 
+const POINTER_CONSEQUENCE =
+  'the end-of-session debrief gate will not fire for this thread until the pointer is restored';
+
+function durabilityReason(error) {
+  if (error instanceof ActivePointerUnavailable) return error.message;
+  const isSyscallFailure = error !== null && typeof error === 'object'
+    && typeof error.code === 'string' && typeof error.syscall === 'string';
+  return isSyscallFailure ? `the pointer file is unusable (${error.code})` : null;
+}
+
 async function tolerateUnavailable(action, run) {
   try {
     return { value: await run(), warning: null };
   } catch (error) {
-    if (error instanceof ActivePointerUnavailable) {
-      return { value: null, warning: `active-thread pointer not ${action}: ${error.message}` };
-    }
-    throw error;
+    const reason = durabilityReason(error);
+    if (reason === null) throw error;
+    return {
+      value: null,
+      warning: `active-thread pointer not ${action}: ${reason}; ${POINTER_CONSEQUENCE}`,
+    };
   }
 }
 

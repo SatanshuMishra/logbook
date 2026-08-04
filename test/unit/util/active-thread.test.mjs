@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { gitExec } from '../../../src/util/git-exec.mjs';
@@ -11,6 +11,9 @@ import {
   writeActiveThread,
   readActiveThread,
   clearActiveThread,
+  writeActiveThreadOrWarn,
+  readActiveThreadOrWarn,
+  clearActiveThreadOrWarn,
 } from '../../../src/util/active-thread.mjs';
 
 function gitCtx(projectDir) {
@@ -99,4 +102,33 @@ test('non-git activeThreadPath throws when CLAUDE_PLUGIN_DATA is unset', async (
 
 test('activeThreadPath requires a driver with isGit', async () => {
   await assert.rejects(() => activeThreadPath({ projectDir: '/abs' }), /isGit/);
+});
+
+async function occupyPointerDir(t) {
+  const dir = await initRepo(t);
+  const ctx = gitCtx(dir);
+  await writeFile(join(dir, '.git', 'ledger'), 'occupied\n');
+  return ctx;
+}
+
+test('writeActiveThreadOrWarn warns instead of throwing when the pointer dir is a file', async (t) => {
+  const ctx = await occupyPointerDir(t);
+  const { warning } = await writeActiveThreadOrWarn(ctx, newUlid());
+  assert.match(warning, /ENOTDIR|EEXIST/);
+  assert.match(warning, /debrief/);
+});
+
+test('readActiveThreadOrWarn and clearActiveThreadOrWarn warn on the same condition', async (t) => {
+  const ctx = await occupyPointerDir(t);
+  const read = await readActiveThreadOrWarn(ctx);
+  assert.equal(read.value, null);
+  assert.match(read.warning, /ENOTDIR|EEXIST/);
+  const cleared = await clearActiveThreadOrWarn(ctx);
+  assert.match(cleared.warning, /ENOTDIR|EEXIST/);
+});
+
+test('the tolerant wrappers still propagate a programming error', async (t) => {
+  const dir = await initRepo(t);
+  await assert.rejects(() => writeActiveThreadOrWarn(gitCtx(dir), 'not-a-ulid'), /ULID/);
+  await assert.rejects(() => readActiveThreadOrWarn({ projectDir: '/abs' }), /isGit/);
 });

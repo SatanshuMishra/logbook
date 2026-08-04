@@ -1,4 +1,4 @@
-import { echoBetween } from '../errors.mjs';
+import { echoBetween, escapeFormat } from '../errors.mjs';
 import { rebuildIndex } from '../index/rebuild-index.mjs';
 import { ALLOWED_TRANSITIONS, THREAD_STATUSES, canTransition } from '../model/fsm.mjs';
 import { liveCriteria } from '../model/selection.mjs';
@@ -114,7 +114,9 @@ export async function knownDecisionRefs(driver) {
 }
 
 export function withWarnings(result, warnings) {
-  const raised = warnings.filter((warning) => typeof warning === 'string' && warning.length > 0);
+  const raised = warnings
+    .filter((warning) => typeof warning === 'string' && warning.length > 0)
+    .map((warning) => escapeFormat(warning));
   return raised.length === 0 ? result : { ...result, warnings: raised };
 }
 
