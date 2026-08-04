@@ -5,7 +5,7 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { buildContext, listTools, callTool } from '../src/tools/index.mjs';
 
-export const SERVER_INFO = { name: 'ledger', version: '0.1.0' };
+export const SERVER_INFO = { name: 'ledger', version: '0.2.0' };
 
 export const SERVER_ENV_MAP = {
   LEDGER_BACKEND: 'ledger_backend',
