@@ -7,6 +7,10 @@ export const CRITERION_ID_PATTERN = '^c[1-9][0-9]*$';
 
 export const DECISION_REF_PATTERN = '^[0-9]{4}-[a-z0-9-]+$';
 
+export const DECISION_SLUG_PATTERN = '^[a-z0-9][a-z0-9-]*$';
+
+export const DECISION_NUMBER_PATTERN = '^[0-9]{4,}$';
+
 export const PLANNED_KIND = 'planned';
 
 export const DETOUR_KIND = 'detour';
