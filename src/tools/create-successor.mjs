@@ -1,16 +1,22 @@
 import { newThread, isTerminal } from '../model/index.mjs';
 import { writeActiveThread } from '../util/active-thread.mjs';
-import { commitAndReindex, ToolError } from './shared.mjs';
+import { commitAndReindex, ToolError, unknownThread } from './shared.mjs';
 import { ULID_PATTERN, criteriaCreateItem } from './schemas.mjs';
 
 async function handler(ctx, args) {
   const { driver, now } = ctx;
   const predecessor = await driver.readThread(args.predecessor_id);
   if (!predecessor) {
-    throw new ToolError(`create_successor: predecessor_id ${args.predecessor_id} does not reference an existing thread`);
+    throw new ToolError(unknownThread('create_successor', 'predecessor_id', args.predecessor_id));
   }
   if (!isTerminal(predecessor.status)) {
-    throw new ToolError(`create_successor: predecessor must be terminal (done|abandoned), found ${predecessor.status}`);
+    throw new ToolError({
+      code: 'not_terminal',
+      field: 'create_successor.predecessor_id',
+      expected: 'a thread whose status is done or abandoned',
+      retryable: true,
+      remedy: `the predecessor is ${predecessor.status}; close it with transition_thread or archive_thread, then re-send this call unchanged`,
+    });
   }
   const thread = newThread({
     title: args.title,

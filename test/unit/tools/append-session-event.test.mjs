@@ -31,7 +31,7 @@ test('append_session_event rejects an unknown thread_id', async (t) => {
   const ctx = await makeToolCtx(t);
   await assert.rejects(
     () => appendSessionEvent.handler(ctx, { thread_id: '01ARZ3NDEKTSV4RRFFQ69G5FAV', actor: 'human', body: 'x' }),
-    /thread_id .* does not reference an existing thread/,
+    /unknown_thread: append_session_event\.thread_id/,
   );
 });
 

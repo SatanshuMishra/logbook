@@ -55,7 +55,7 @@ test('update_thread rejects an unknown completion_criteria id, naming it', async
   const thread = await seedThread(ctx, [{ text: 'a' }]);
   await assert.rejects(
     () => updateThread.handler(ctx, { thread_id: thread.id, completion_criteria: [{ id: 'c9', done: true }] }),
-    /unknown completion_criteria id "c9"/,
+    /unknown_criterion: update_thread\.completion_criteria/,
   );
 });
 
@@ -104,7 +104,7 @@ test('update_thread refuses a terminal thread', async (t) => {
   await ctx.driver.writeThread({ ...seed, status: 'abandoned', abandoned_reason: 'x' });
   await assert.rejects(
     () => updateThread.handler(ctx, { thread_id: seed.id, spine: { active_goal: 'y' } }),
-    /cannot mutate a terminal/,
+    /terminal_thread: update_thread\.thread_id/,
   );
 });
 
@@ -130,9 +130,11 @@ test('update_thread reports every cap violation in the patch in one rejection', 
       },
     }),
     (err) => {
-      assert.match(err.message, /spine\.active_goal exceeds 200 chars/);
-      assert.match(err.message, /spine\.next_step exceeds 500 chars/);
-      assert.match(err.message, /spine\.out_of_scope exceeds 20 items/);
+      assert.deepEqual(err.problems.map((p) => [p.field, p.expected]), [
+        ['spine.active_goal', 'at most 200 characters'],
+        ['spine.next_step', 'at most 500 characters'],
+        ['spine.out_of_scope', 'at most 20 items'],
+      ]);
       return true;
     },
   );

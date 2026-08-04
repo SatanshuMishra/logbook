@@ -32,6 +32,6 @@ test('bind_branch rejects an unknown thread_id', async (t) => {
   const ctx = await makeToolCtx(t);
   await assert.rejects(
     () => bindBranch.handler(ctx, { thread_id: '01ARZ3NDEKTSV4RRFFQ69G5FAV', repo: 'r', branch: 'b' }),
-    /thread_id .* does not reference an existing thread/,
+    /unknown_thread: bind_branch\.thread_id/,
   );
 });

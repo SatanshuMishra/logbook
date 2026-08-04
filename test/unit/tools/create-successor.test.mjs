@@ -11,7 +11,7 @@ test('create_successor requires a TERMINAL predecessor', async (t) => {
   const { thread } = await openThread.handler(ctx, { title: 'Live', completion_criteria: [{ text: 'ship it' }] });
   await assert.rejects(
     () => createSuccessor.handler(ctx, { predecessor_id: thread.id, title: 'Next', completion_criteria: [{ text: 'go' }] }),
-    /predecessor must be terminal/,
+    /not_terminal: create_successor\.predecessor_id/,
   );
 });
 
@@ -36,6 +36,6 @@ test('create_successor rejects an unknown predecessor_id', async (t) => {
   const ctx = await makeToolCtx(t);
   await assert.rejects(
     () => createSuccessor.handler(ctx, { predecessor_id: '01ARZ3NDEKTSV4RRFFQ69G5FAV', title: 'X', completion_criteria: [{ text: 'a' }] }),
-    /predecessor_id .* does not reference an existing thread/,
+    /unknown_thread: create_successor\.predecessor_id/,
   );
 });

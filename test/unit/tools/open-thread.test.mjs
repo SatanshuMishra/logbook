@@ -64,7 +64,7 @@ test('open_thread rejects an unknown parent_id (referential integrity)', async (
   const ctx = await makeToolCtx(t);
   await assert.rejects(
     () => openThread.handler(ctx, { title: 'X', parent_id: '01ARZ3NDEKTSV4RRFFQ69G5FAV', completion_criteria: DOD }),
-    /parent_id .* does not reference an existing thread/,
+    /unknown_thread: open_thread\.parent_id/,
   );
 });
 

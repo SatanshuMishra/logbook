@@ -1,18 +1,16 @@
 import { canTransition } from '../model/index.mjs';
 import { readActiveThread, clearActiveThread } from '../util/active-thread.mjs';
-import { commitAndReindex, ToolError } from './shared.mjs';
+import { commitAndReindex, ToolError, unknownThread, illegalTransition } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
 
 async function handler(ctx, args) {
   const { driver, now } = ctx;
   const thread = await driver.readThread(args.thread_id);
   if (!thread) {
-    throw new ToolError(`archive_thread: thread_id ${args.thread_id} does not reference an existing thread`);
+    throw new ToolError(unknownThread('archive_thread', 'thread_id', args.thread_id));
   }
   if (!canTransition(thread.status, 'abandoned')) {
-    throw new ToolError(
-      `archive_thread: illegal transition ${thread.status} -> abandoned (a blocked thread must first go blocked -> paused)`,
-    );
+    throw new ToolError(illegalTransition('archive_thread', thread.status, 'abandoned'));
   }
   const nowIso = now();
   const updated = {

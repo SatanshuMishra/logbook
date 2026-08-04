@@ -1,3 +1,5 @@
+import { LedgerError } from '../errors.mjs';
+
 export const SPINE_CAPS = Object.freeze({
   activeGoalMaxChars: 200,
   nextStepMaxChars: 500,
@@ -17,25 +19,36 @@ const SCALAR_CAPS = Object.freeze([
   ['last_session', SPINE_CAPS.lastSessionMaxChars],
 ]);
 
-export class CapViolationError extends Error {
-  constructor(message, fields) {
-    super(message);
+export class CapViolationError extends LedgerError {
+  constructor(violations) {
+    const problems = violations.map((violation) => ({
+      code: 'cap_exceeded',
+      field: violation.field,
+      expected: violation.expected,
+      retryable: false,
+      remedy: violation.remedy,
+    }));
+    super({ layer: 'cap', ...problems[0], problems });
     this.name = 'CapViolationError';
-    this.fields = Object.freeze(Array.isArray(fields) ? [...fields] : [fields]);
-    this.field = this.fields[0];
+    this.fields = Object.freeze([...new Set(problems.map((problem) => problem.field))]);
   }
 }
 
-function broke(condition, field, detail) {
-  return condition ? [{ field, detail }] : [];
+function broke(condition, field, expected, remedy) {
+  return condition ? [{ field, expected, remedy }] : [];
 }
 
 function scalarViolations(spine) {
-  return SCALAR_CAPS.flatMap(([field, max]) => broke(
-    typeof spine[field] === 'string' && spine[field].length > max,
-    field,
-    `spine.${field} exceeds ${max} chars`,
-  ));
+  return SCALAR_CAPS.flatMap(([field, max]) => {
+    const value = spine[field];
+    const length = typeof value === 'string' ? value.length : 0;
+    return broke(
+      length > max,
+      `spine.${field}`,
+      `at most ${max} characters`,
+      `spine.${field} is ${length} characters; shorten it to ${max} or fewer and re-send`,
+    );
+  });
 }
 
 function riskCountViolations(risks) {
@@ -46,9 +59,10 @@ function riskCountViolations(risks) {
   }
   return [...perScope.entries()]
     .filter(([, count]) => count > SPINE_CAPS.openRisksMaxPerScope)
-    .map(([scope]) => ({
-      field: 'open_risks',
-      detail: `spine.open_risks exceeds ${SPINE_CAPS.openRisksMaxPerScope} items for scope ${scope}`,
+    .map(([scope, count]) => ({
+      field: 'spine.open_risks',
+      expected: `at most ${SPINE_CAPS.openRisksMaxPerScope} items per scope`,
+      remedy: `scope ${scope} carries ${count} risks; retire risks in that scope until ${SPINE_CAPS.openRisksMaxPerScope} or fewer remain`,
     }));
 }
 
@@ -58,20 +72,23 @@ function riskItemViolations(risks) {
   return [
     ...broke(
       items.some((r) => typeof r.text === 'string' && r.text.length > SPINE_CAPS.riskTextMaxChars),
-      'open_risks[].text',
-      `spine.open_risks item text exceeds ${SPINE_CAPS.riskTextMaxChars} chars`,
+      'spine.open_risks[].text',
+      `at most ${SPINE_CAPS.riskTextMaxChars} characters`,
+      `at least one risk text is longer than ${SPINE_CAPS.riskTextMaxChars} characters; shorten it and re-send`,
     ),
     ...broke(
       refLists.some((refs) => refs.length > SPINE_CAPS.riskRefsMaxItems),
-      'open_risks[].refs',
-      `spine.open_risks[].refs exceeds ${SPINE_CAPS.riskRefsMaxItems} items`,
+      'spine.open_risks[].refs',
+      `at most ${SPINE_CAPS.riskRefsMaxItems} items`,
+      `at least one risk carries more than ${SPINE_CAPS.riskRefsMaxItems} refs; drop the surplus and re-send`,
     ),
     ...broke(
       refLists.some((refs) => refs.some(
         (ref) => typeof ref === 'string' && ref.length > SPINE_CAPS.riskRefMaxChars,
       )),
-      'open_risks[].refs',
-      `spine.open_risks[].refs item exceeds ${SPINE_CAPS.riskRefMaxChars} chars`,
+      'spine.open_risks[].refs',
+      `at most ${SPINE_CAPS.riskRefMaxChars} characters per ref`,
+      `at least one risk ref is longer than ${SPINE_CAPS.riskRefMaxChars} characters; shorten it and re-send`,
     ),
   ];
 }
@@ -80,8 +97,9 @@ function decisionViolations(decisions) {
   return broke(
     decisions.some((d) => d && typeof d === 'object' && typeof d.title === 'string'
       && d.title.length > SPINE_CAPS.decisionTitleMaxChars),
-    'key_decisions[].title',
-    `spine.key_decisions item title exceeds ${SPINE_CAPS.decisionTitleMaxChars} chars`,
+    'spine.key_decisions[].title',
+    `at most ${SPINE_CAPS.decisionTitleMaxChars} characters`,
+    `at least one decision title is longer than ${SPINE_CAPS.decisionTitleMaxChars} characters; shorten it and re-send`,
   );
 }
 
@@ -89,13 +107,15 @@ function outOfScopeViolations(entries) {
   return [
     ...broke(
       entries.length > SPINE_CAPS.outOfScopeMaxItems,
-      'out_of_scope',
-      `spine.out_of_scope exceeds ${SPINE_CAPS.outOfScopeMaxItems} items`,
+      'spine.out_of_scope',
+      `at most ${SPINE_CAPS.outOfScopeMaxItems} items`,
+      `spine.out_of_scope carries ${entries.length} entries; drop the surplus and re-send`,
     ),
     ...broke(
       entries.some((e) => typeof e === 'string' && e.length > SPINE_CAPS.outOfScopeItemMaxChars),
-      'out_of_scope[]',
-      `spine.out_of_scope item exceeds ${SPINE_CAPS.outOfScopeItemMaxChars} chars`,
+      'spine.out_of_scope[]',
+      `at most ${SPINE_CAPS.outOfScopeItemMaxChars} characters per entry`,
+      `at least one out_of_scope entry is longer than ${SPINE_CAPS.outOfScopeItemMaxChars} characters; shorten it and re-send`,
     ),
   ];
 }
@@ -113,14 +133,15 @@ function collectViolations(spine) {
 
 export function assertSpineCaps(spine) {
   if (!spine || typeof spine !== 'object') {
-    throw new CapViolationError('assertSpineCaps: spine must be an object', 'spine');
+    throw new CapViolationError([{
+      field: 'spine',
+      expected: 'an object carrying the spine fields',
+      remedy: 'send spine as an object keyed by the spine field names and re-send',
+    }]);
   }
   const violations = collectViolations(spine);
   if (violations.length > 0) {
-    throw new CapViolationError(
-      violations.map((v) => v.detail).join('; '),
-      [...new Set(violations.map((v) => v.field))],
-    );
+    throw new CapViolationError(violations);
   }
   return spine;
 }

@@ -1,6 +1,6 @@
 import Ajv from 'ajv';
-import { formatValidationErrors } from '../schema/index.mjs';
-import { ToolError } from './shared.mjs';
+import { projectValidationErrors } from '../schema/index.mjs';
+import { LedgerError, ToolError } from './shared.mjs';
 import openThread from './open-thread.mjs';
 import bindBranch from './bind-branch.mjs';
 import appendSessionEvent from './append-session-event.mjs';
@@ -33,7 +33,7 @@ export const TOOLS = [
   readDecision,
 ];
 
-const ajv = new Ajv({ allErrors: true });
+const ajv = new Ajv({ allErrors: true, verbose: true });
 const byName = new Map();
 const validators = new Map();
 for (const tool of TOOLS) {
@@ -41,9 +41,20 @@ for (const tool of TOOLS) {
   validators.set(tool.name, ajv.compile(tool.inputSchema));
 }
 
-export class ToolValidationError extends Error {
+export class ToolValidationError extends LedgerError {
   constructor(toolName, errors) {
-    super(`${toolName}: invalid input: ${formatValidationErrors(errors)}`);
+    const problems = projectValidationErrors(errors, { prefix: toolName });
+    super({
+      layer: 'input',
+      ...(problems[0] ?? {
+        code: 'invalid_value',
+        field: toolName,
+        expected: 'arguments the tool schema accepts',
+        retryable: false,
+        remedy: `correct the arguments to ${toolName} and re-send`,
+      }),
+      problems,
+    });
     this.name = 'ToolValidationError';
     this.toolName = toolName;
     this.errors = errors;
@@ -57,7 +68,14 @@ export function listTools() {
 export async function callTool(name, args = {}, ctx) {
   const tool = byName.get(name);
   if (!tool) {
-    throw new ToolError(`unknown tool: ${name}`);
+    throw new ToolError({
+      code: 'unknown_tool',
+      layer: 'server',
+      field: 'name',
+      expected: 'a tool name this server declares in tools/list',
+      retryable: false,
+      remedy: `unknown tool: ${name}; re-read tools/list and call a name it returns`,
+    });
   }
   const validate = validators.get(name);
   if (!validate(args)) {

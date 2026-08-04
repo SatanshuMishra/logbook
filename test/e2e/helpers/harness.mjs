@@ -46,5 +46,6 @@ export async function callTool(client, name, args = {}) {
 export async function expectToolError(client, name, args = {}) {
   const res = await client.callTool({ name, arguments: args });
   assert.equal(res.isError, true, `expected tool ${name} to refuse, but it succeeded`);
-  return JSON.parse(res.content[0].text);
+  assert.equal(res.content.length, 2, `tool ${name} refused without a structured record`);
+  return JSON.parse(res.content[1].text);
 }

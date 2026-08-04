@@ -1,26 +1,42 @@
 import { isTerminal, liveCriteria, currentCriterion, nextCriterionId } from '../model/index.mjs';
-import { commitAndReindex, knownDecisionRefs, ToolError } from './shared.mjs';
-import { ULID_PATTERN, criteriaAmendOperation } from './schemas.mjs';
+import {
+  commitAndReindex,
+  knownDecisionRefs,
+  ToolError,
+  unknownThread,
+  terminalThread,
+  unknownCriterion,
+  liveIds,
+} from './shared.mjs';
+import { ULID_PATTERN, criteriaAmendOperation, CRITERIA_AMEND_OPS } from './schemas.mjs';
 
 const DETOUR_KIND = 'detour';
-
-function requireDecision(refs, ref, label) {
+function requireDecision(refs, ref, field) {
   if (!refs.has(ref)) {
-    throw new ToolError(
-      `${label}: decision_ref "${ref}" does not match an existing decision file; record the decision first`,
-    );
+    throw new ToolError({
+      code: 'unknown_decision',
+      field: `${field}.decision_ref`,
+      expected: 'a ref naming a decision file this ledger holds',
+      example: '0007-adopt-the-ledger',
+      retryable: false,
+      remedy: `no decision file matches "${ref}"; call record_decision first, then re-send with the ref it returns`,
+    });
   }
 }
 
-function requireAmendable(thread, id, label) {
+function requireAmendable(thread, id, field) {
   const target = thread.completion_criteria.find((c) => c.id === id);
   if (!target) {
-    throw new ToolError(`${label}: unknown completion_criteria id "${id}"`);
+    throw new ToolError(unknownCriterion(thread, `${field}.id`, id));
   }
   if ((target.struck_by ?? null) !== null) {
-    throw new ToolError(
-      `${label}: criterion "${id}" was struck by decision ${target.struck_by} and is retained as history, not amended`,
-    );
+    throw new ToolError({
+      code: 'struck_criterion',
+      field: `${field}.id`,
+      expected: `one of ${liveIds(thread)}`,
+      retryable: false,
+      remedy: `criterion "${id}" was struck by decision ${target.struck_by} and is kept as history; amend a live criterion instead`,
+    });
   }
   return target;
 }
@@ -32,12 +48,12 @@ function replaceCriterion(thread, id, next) {
   };
 }
 
-function insertPosition(thread, operation, label) {
+function insertPosition(thread, operation, field) {
   const criteria = thread.completion_criteria;
   if (typeof operation.before === 'string') {
     const at = criteria.findIndex((c) => c.id === operation.before);
     if (at === -1) {
-      throw new ToolError(`${label}: before names unknown completion_criteria id "${operation.before}"`);
+      throw new ToolError(unknownCriterion(thread, `${field}.before`, operation.before));
     }
     return at;
   }
@@ -46,17 +62,21 @@ function insertPosition(thread, operation, label) {
   return current === null ? criteria.length : criteria.findIndex((c) => c.id === current.id);
 }
 
-function applyInsert(thread, operation, { label }) {
+function applyInsert(thread, operation, { field }) {
   if (operation.kind === DETOUR_KIND) {
     const open = liveCriteria(thread).find((c) => c.kind === DETOUR_KIND && c.done !== true);
     if (open) {
-      throw new ToolError(
-        `${label}: criterion "${open.id}" is an open detour and detours do not nest; open a child thread for work that needs its own criteria`,
-      );
+      throw new ToolError({
+        code: 'open_detour',
+        field: `${field}.kind`,
+        expected: 'a detour only while no other detour is open',
+        retryable: true,
+        remedy: `criterion "${open.id}" is an open detour and detours do not nest; close it, or open a child thread for work that needs its own criteria`,
+      });
     }
   }
   const criteria = thread.completion_criteria;
-  const at = insertPosition(thread, operation, label);
+  const at = insertPosition(thread, operation, field);
   const entry = {
     id: nextCriterionId(criteria),
     text: operation.text,
@@ -70,15 +90,15 @@ function applyInsert(thread, operation, { label }) {
   };
 }
 
-function applyRewrite(thread, operation, { refs, label }) {
-  requireDecision(refs, operation.decision_ref, label);
-  const target = requireAmendable(thread, operation.id, label);
+function applyRewrite(thread, operation, { refs, field }) {
+  requireDecision(refs, operation.decision_ref, field);
+  const target = requireAmendable(thread, operation.id, field);
   return replaceCriterion(thread, target.id, { ...target, text: operation.text });
 }
 
-function applyStrike(thread, operation, { refs, label }) {
-  requireDecision(refs, operation.decision_ref, label);
-  const target = requireAmendable(thread, operation.id, label);
+function applyStrike(thread, operation, { refs, field }) {
+  requireDecision(refs, operation.decision_ref, field);
+  const target = requireAmendable(thread, operation.id, field);
   return replaceCriterion(thread, target.id, { ...target, struck_by: operation.decision_ref });
 }
 
@@ -89,22 +109,29 @@ const OPERATIONS = {
 };
 
 function applyOperation(thread, operation, refs, index) {
-  const label = `amend_criteria: operations[${index}] op "${operation.op}"`;
+  const field = `amend_criteria.operations[${index}]`;
   const apply = OPERATIONS[operation.op];
   if (!apply) {
-    throw new ToolError(`${label} is not a supported operation`);
+    throw new ToolError({
+      code: 'invalid_enum',
+      field: `${field}.op`,
+      expected: `one of ${CRITERIA_AMEND_OPS.map((op) => JSON.stringify(op)).join(', ')}`,
+      example: CRITERIA_AMEND_OPS[0],
+      retryable: false,
+      remedy: `op was ${JSON.stringify(operation.op)}; re-send with one of the accepted values`,
+    });
   }
-  return apply(thread, operation, { refs, label });
+  return apply(thread, operation, { refs, field });
 }
 
 async function handler(ctx, args) {
   const { driver, now } = ctx;
   const thread = await driver.readThread(args.thread_id);
   if (!thread) {
-    throw new ToolError(`amend_criteria: thread_id ${args.thread_id} does not reference an existing thread`);
+    throw new ToolError(unknownThread('amend_criteria', 'thread_id', args.thread_id));
   }
   if (isTerminal(thread.status)) {
-    throw new ToolError(`amend_criteria: cannot mutate a terminal (${thread.status}) thread`);
+    throw new ToolError(terminalThread('amend_criteria', thread.status));
   }
   const refs = await knownDecisionRefs(driver);
   const amended = args.operations.reduce(

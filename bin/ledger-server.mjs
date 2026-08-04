@@ -4,8 +4,9 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprot
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { buildContext, listTools, callTool } from '../src/tools/index.mjs';
+import { toLedgerError } from '../src/errors.mjs';
 
-export const SERVER_INFO = { name: 'ledger', version: '0.2.0' };
+export const SERVER_INFO = { name: 'ledger', version: '0.2.1' };
 
 export const SERVER_ENV_MAP = {
   LEDGER_BACKEND: 'ledger_backend',
@@ -21,6 +22,17 @@ export function envToUserConfig(env = process.env) {
     }
   }
   return userConfig;
+}
+
+export function renderToolFailure(error, toolName) {
+  const ledgerError = toLedgerError(error, toolName);
+  return {
+    content: [
+      { type: 'text', text: ledgerError.message },
+      { type: 'text', text: JSON.stringify(ledgerError.toDetail()) },
+    ],
+    isError: true,
+  };
 }
 
 export function createLedgerServer({
@@ -53,10 +65,7 @@ export function createLedgerServer({
       const result = await call(name, args, ctx);
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     } catch (error) {
-      return {
-        content: [{ type: 'text', text: JSON.stringify({ error: error.name, message: error.message }) }],
-        isError: true,
-      };
+      return renderToolFailure(error, name);
     }
   });
 
