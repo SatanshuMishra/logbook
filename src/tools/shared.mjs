@@ -1,23 +1,18 @@
 import { rebuildIndex } from '../index/rebuild-index.mjs';
-import { LedgerError } from '../errors.mjs';
-import { ALLOWED_TRANSITIONS } from '../model/fsm.mjs';
+import { ALLOWED_TRANSITIONS, THREAD_STATUSES, canTransition } from '../model/fsm.mjs';
 import { liveCriteria } from '../model/selection.mjs';
 
 export {
   LedgerError,
+  ToolError,
   LEDGER_ERROR_LAYERS,
+  LEDGER_ERROR_CODES,
   MESSAGE_MAX_CHARS,
+  DETAIL_MAX_BYTES,
   renderLedgerError,
   isLedgerError,
   toLedgerError,
 } from '../errors.mjs';
-
-export class ToolError extends LedgerError {
-  constructor(detail) {
-    super({ layer: 'tool', ...detail });
-    this.name = 'ToolError';
-  }
-}
 
 export function unknownThread(tool, field, id) {
   return {
@@ -26,7 +21,7 @@ export function unknownThread(tool, field, id) {
     expected: 'a thread id this ledger holds',
     example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
     retryable: false,
-    remedy: `no thread is stored under ${id}; thread ids are server-assigned, so re-send with an id this ledger returned`,
+    remedy: `no thread is stored under ${JSON.stringify(String(id))}; thread ids are server-assigned, so re-send with an id this ledger returned`,
   };
 }
 
@@ -40,17 +35,47 @@ export function terminalThread(tool, status) {
   };
 }
 
-export function illegalTransition(tool, from, to) {
+export const TRANSITION_SUBJECTS = Object.freeze(['status', 'thread']);
+
+function requireSubject(value) {
+  if (!TRANSITION_SUBJECTS.includes(value)) {
+    throw new TypeError(
+      `illegalTransition: subject must be one of ${TRANSITION_SUBJECTS.join(', ')}`,
+    );
+  }
+  return value;
+}
+
+function transitionExpectation(subject, from, to, targets) {
+  if (subject === 'status') {
+    return targets.length === 0
+      ? `${from} is terminal and has no outgoing transition`
+      : `one of ${targets.join(', ')}`;
+  }
+  const sources = THREAD_STATUSES.filter((status) => canTransition(status, to));
+  return sources.length === 0
+    ? `a thread that is not ${from}`
+    : `a thread whose status is one of ${sources.join(', ')}`;
+}
+
+function transitionRepair(from, to, targets, hops) {
+  if (targets.length === 0) return 'use create_successor to carry the work forward';
+  if (hops.length === 0) {
+    return `no single transition_thread hop leads from ${from} to ${to}, so carry the work forward with create_successor`;
+  }
+  return `move it to one of ${hops.join(', ')} with transition_thread, then re-send this call unchanged`;
+}
+
+export function illegalTransition(tool, field, from, to, subject) {
+  const domain = requireSubject(subject);
   const targets = ALLOWED_TRANSITIONS[from] ?? [];
-  const reachable = targets.length === 0
-    ? `${from} is terminal and has no outgoing transition`
-    : `one of ${targets.join(', ')}`;
+  const hops = targets.filter((hop) => canTransition(hop, to));
   return {
     code: 'illegal_transition',
-    field: `${tool}.to_status`,
-    expected: reachable,
-    retryable: false,
-    remedy: `illegal transition ${from} -> ${to}; ${targets.length === 0 ? 'use create_successor to carry the work forward' : 'pick a status the FSM allows from here'}`,
+    field: `${tool}.${field}`,
+    expected: transitionExpectation(domain, from, to, targets),
+    retryable: hops.length > 0,
+    remedy: `illegal transition ${from} -> ${to}; ${transitionRepair(from, to, targets, hops)}`,
   };
 }
 
@@ -70,7 +95,7 @@ export function unknownCriterion(thread, field, id) {
     expected: `one of ${liveIds(thread)}`,
     example: 'c1',
     retryable: false,
-    remedy: `this thread has no criterion "${id}"; re-send naming an id the thread actually carries`,
+    remedy: `this thread has no criterion ${JSON.stringify(String(id))}; re-send naming an id the thread actually carries`,
   };
 }
 

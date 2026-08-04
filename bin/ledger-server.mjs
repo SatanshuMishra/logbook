@@ -1,12 +1,30 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { buildContext, listTools, callTool } from '../src/tools/index.mjs';
 import { toLedgerError } from '../src/errors.mjs';
 
-export const SERVER_INFO = { name: 'ledger', version: '0.2.1' };
+const PACKAGE_MANIFEST = new URL('../package.json', import.meta.url);
+const SEMVER = /^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/;
+
+function packagedVersion() {
+  try {
+    const { version } = JSON.parse(readFileSync(PACKAGE_MANIFEST, 'utf8'));
+    if (typeof version !== 'string' || !SEMVER.test(version)) {
+      throw new TypeError(`version must be semver, read ${JSON.stringify(version)}`);
+    }
+    return version;
+  } catch (error) {
+    throw new Error(
+      `ledger-server: no server version could be read from ${fileURLToPath(PACKAGE_MANIFEST)}: ${error.message}`,
+      { cause: error },
+    );
+  }
+}
+
+export const SERVER_INFO = Object.freeze({ name: 'ledger', version: packagedVersion() });
 
 export const SERVER_ENV_MAP = {
   LEDGER_BACKEND: 'ledger_backend',

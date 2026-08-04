@@ -12,6 +12,8 @@ import {
 
 const RECEIVED_MAX_CHARS = 24;
 const WRAPPER_KEYWORDS = Object.freeze(['if', 'anyOf', 'oneOf', 'allOf', 'not']);
+const BRANCH_KEYWORDS = Object.freeze(['anyOf', 'oneOf']);
+const DISCRIMINATOR_KEYWORDS = Object.freeze(['const', 'enum']);
 
 export const PATTERN_EXAMPLES = Object.freeze({
   [ULID_PATTERN]: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
@@ -77,14 +79,16 @@ function projectOne(error, prefix) {
         retryable: false,
         remedy: `the parameter did not arrive; re-emit the call with ${params.missingProperty} included`,
       };
-    case 'additionalProperties':
+    case 'additionalProperties': {
+      const named = JSON.stringify(String(params.additionalProperty));
       return {
         code: 'unexpected_parameter',
-        field: qualify(prefix, joinField(path, params.additionalProperty)),
+        field: qualify(prefix, joinField(path, named)),
         expected: 'not accepted by this call',
         retryable: false,
-        remedy: `remove ${params.additionalProperty} and re-send`,
+        remedy: `remove ${named} and re-send`,
       };
+    }
     case 'enum':
       return {
         code: 'invalid_enum',
@@ -157,11 +161,78 @@ function mergeTypeAlternatives(problems) {
   }, []);
 }
 
+function instanceDepth(instancePath) {
+  return typeof instancePath === 'string' && instancePath.length > 0
+    ? instancePath.split('/').length - 1
+    : 0;
+}
+
+function containerPaths(errors) {
+  return new Set(
+    errors
+      .filter((error) => BRANCH_KEYWORDS.includes(error.keyword) && typeof error.schemaPath === 'string')
+      .map((error) => error.schemaPath),
+  );
+}
+
+function enclosingBranches(schemaPath, containers) {
+  const parts = schemaPath.split('/');
+  const found = [];
+  let path = '';
+  for (let index = 0; index + 1 < parts.length; index += 1) {
+    path = index === 0 ? parts[0] : `${path}/${parts[index]}`;
+    if (containers.has(path)) found.push({ container: path, branch: parts[index + 1] });
+  }
+  return found;
+}
+
+function outranks(candidate, incumbent) {
+  if (candidate.disagrees !== incumbent.disagrees) return incumbent.disagrees;
+  return candidate.reach > incumbent.reach;
+}
+
+function scoreBranches(errors, containers) {
+  const scores = new Map();
+  const memberships = [];
+  for (const error of errors) {
+    if (typeof error.schemaPath !== 'string') continue;
+    for (const { container, branch } of enclosingBranches(error.schemaPath, containers)) {
+      const byBranch = scores.get(container) ?? new Map();
+      const prior = byBranch.get(branch) ?? { reach: 0, disagrees: false };
+      byBranch.set(branch, {
+        reach: Math.max(prior.reach, instanceDepth(error.instancePath)),
+        disagrees: prior.disagrees || DISCRIMINATOR_KEYWORDS.includes(error.keyword),
+      });
+      scores.set(container, byBranch);
+      memberships.push({ error, container, branch });
+    }
+  }
+  return { scores, memberships };
+}
+
+function suppressedByBranch(errors) {
+  const containers = containerPaths(errors);
+  if (containers.size === 0) return new Set();
+  const { scores, memberships } = scoreBranches(errors, containers);
+  const best = new Map(
+    [...scores].map(([container, byBranch]) => [
+      container,
+      [...byBranch.values()].reduce((winner, score) => (outranks(score, winner) ? score : winner)),
+    ]),
+  );
+  return new Set(
+    memberships
+      .filter(({ container, branch }) => outranks(best.get(container), scores.get(container).get(branch)))
+      .map(({ error }) => error),
+  );
+}
+
 export function projectValidationErrors(errors, options = {}) {
   const { prefix = '', remedy = null } = options;
-  const list = Array.isArray(errors) ? errors : [];
+  const list = (Array.isArray(errors) ? errors : []).filter((error) => error);
+  const dropped = suppressedByBranch(list);
   const projected = list
-    .filter((error) => error && !WRAPPER_KEYWORDS.includes(error.keyword))
+    .filter((error) => !WRAPPER_KEYWORDS.includes(error.keyword) && !dropped.has(error))
     .map((error) => projectOne(error, prefix))
     .map((problem) => (remedy === null ? problem : { ...problem, remedy }));
   return mergeTypeAlternatives(projected);

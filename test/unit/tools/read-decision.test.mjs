@@ -48,6 +48,6 @@ test('read_decision rejects a number no decision file carries', async (t) => {
   const ctx = await makeToolCtx(t);
   await assert.rejects(
     () => readDecision.handler(ctx, { nnnn: '0042' }),
-    /no decision numbered 0042 exists here/,
+    /no decision numbered "0042" exists here/,
   );
 });

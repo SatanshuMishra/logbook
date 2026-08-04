@@ -159,8 +159,13 @@ section 8.
 
 ## 7. MSP ladder
 
-Thirteen MSPs. Each is independently shippable: merging it leaves `main` green and the plugin
+Sixteen MSPs. Each is independently shippable: merging it leaves `main` green and the plugin
 working. Later MSPs assume earlier ones only where the Depends column says so.
+
+Two are corrective siblings added during execution rather than at approval. A `B` suffix means the
+parent shipped but its premise or its output did not hold: MSP-0B closes an audit coverage gap
+(decision 0029), and MSP-1B repairs MSP-1's error contract after a review found it defective
+(decision 0034).
 
 ### Version policy
 
@@ -171,7 +176,8 @@ working. Later MSPs assume earlier ones only where the Depends column says so.
 | MSP-0 | 0.2.0 (unchanged) | no |
 | MSP-0B | 0.2.0 (unchanged) | no |
 | MSP-1 | 0.2.1 | no |
-| MSP-2 | 0.2.2 | no |
+| MSP-1B | 0.2.2 | no |
+| MSP-2 | 0.2.3 | no |
 | MSP-3 | 0.3.0 | input tightening |
 | MSP-4 | 0.4.0 | new tool + FSM change |
 | MSP-5 | 0.5.0 | new tools |
@@ -263,6 +269,11 @@ its counts are asserted.
 
 ### MSP-1 — Legible refusals
 
+**Status: shipped, and corrected by MSP-1B.** PR #37, squash-merged to `main` as `dfbebf4` on
+2026-08-04. A code review of the merged diff found the contract it introduced defective on five
+counts; it does **not** close C4 as written. MSP-1B below carries the repair. Read that section
+before building on anything in this one.
+
 **Attacks:** C4. **Closes:** the 17 error-attribution defects, including the incident's root cause.
 **Depends:** MSP-0.
 **Version:** 0.2.1. Non-breaking: only error *content* changes.
@@ -299,11 +310,78 @@ error read as a schema complaint that a shape-retry could never fix. `retryable:
 
 ---
 
+### MSP-1B — Repair the refusal contract
+
+**Attacks:** C4, which MSP-1 did not actually close. **Closes:** five review-confirmed defects in
+MSP-1's own output, plus the missing error-code registry.
+**Depends:** MSP-1. **Version:** 0.2.2. Non-breaking: error content and a bounded record.
+**Gates:** MSP-2, MSP-3, MSP-4 and MSP-5, each of which declares `Depends: MSP-1 (for the error
+shape)`. **MSP-10 is not gated** — it touches `src/render/briefing.mjs` and `hooks/lib/*`, neither
+of which consumes the error contract.
+
+**Why.** A code-reviewer pass on `dfbebf4` returned a BLOCK verdict. Three findings were
+independently re-verified against the code before this section was written; two were reported and
+are recorded as such rather than as established fact. The governing failure is that the suite
+passed 879/879 with both the field and the retryability wrong: `test/unit/tools/refusals.test.mjs:162-171`
+asserts `expected` and never `field`, and the corpus loop at `:231-241` asserts that `retryable` is
+a boolean rather than that it is correct. A contract four later MSPs inherit cannot rest on
+assertions that weak.
+
+**Changes**
+- **Verified.** `src/tools/shared.mjs:43-55` hardcodes ``field: `${tool}.to_status` ``, but
+  `archive_thread` (`src/tools/archive-thread.mjs:13`, schema `{thread_id, reason}`) and `reopen`
+  (`src/tools/reopen.mjs:25`, schema `{thread_id}`) have no such parameter. Take the field as an
+  argument: `illegalTransition(tool, field, from, to)`.
+- **Verified.** Same function, `:52` pins `retryable: false` even when `ALLOWED_TRANSITIONS` leaves
+  outgoing targets, so a `blocked` thread is told no retry can succeed when one
+  `transition_thread(blocked -> paused)` makes the identical payload work. Set
+  `retryable: targets.length > 0` and give the concrete two-hop repair as the remedy. Its siblings
+  `not_terminal` (`src/tools/create-successor.mjs:13-19`) and `dod_unmet`
+  (`src/tools/transition-thread.mjs:47-54`) already classify this shape correctly.
+- **Verified.** `src/errors.mjs:145-158` renders every non-`LedgerError` throw as `layer: server`,
+  `retryable: false`, remedy "do not re-send the same call" — including caller-caused faults such as
+  `src/model/thread.mjs:58`, where a title yielding no slug is answered by telling the agent to stop
+  rather than to pass an explicit `slug`. Convert the reachable caller-caused throws in
+  `src/model/thread.mjs` and `src/model/binding.mjs` into `ToolError`s; keep `toLedgerError` as the
+  last resort and soften its blanket remedy.
+- **Reported, not re-verified here.** Failed `anyOf`/`oneOf` sibling branches survive
+  `WRAPPER_KEYWORDS` (`src/schema/error-projection.mjs:14`, `:164`), so `record_decision` with
+  `options: [1, 2]` is told to re-send its legal array as a string. Filter on ajv's `schemaPath`.
+- **Reported, not re-verified here.** The `content[1]` record is unbounded:
+  `MESSAGE_MAX_CHARS` bounds only `message`, while `toDetail()` (`src/errors.mjs:125-138`) emits one
+  entry per ajv error. Reported as 277,981 bytes on a 1,200-error payload against 82,140 pre-MSP-1.
+  Cap `problems` and carry the counts. **Amended during execution:** this originally said to carry
+  `truncated` and to drop the duplicate serialization of `problems[0]`. The shipped shape instead
+  carries `shown` and `total` and always emits `problems`, so a single-problem refusal does
+  serialize `problems[0]` twice. `truncated: true` was ambiguous — it meant both "4 of 1200 shown"
+  and "0 of 1200 shown", separable only by key presence — and an explicit `shown` count says which.
+  Uniform shape beat de-duplication because MSP-6's typed results must model one record shape, not
+  three. The contract MSP-6 inherits is `{problems, shown, total}` on every refusal.
+- Export a frozen `LEDGER_ERROR_CODES` beside `LEDGER_ERROR_LAYERS` (`src/errors.mjs:1-7`), validate
+  `code` in `normalizeProblem`, and assert membership. Roughly 28 code literals exist across 11
+  files with no enum; without this, MSP-2, 3, 4, 5 and 10 each mint codes independently.
+
+**Acceptance**
+- `archive_thread` and `reopen` refused on a `blocked` thread name `thread_id`, not `to_status`.
+- That same refusal carries `retryable: true` and a remedy naming the intermediate transition.
+- `record_decision` with `options: [1, 2]` emits no problem claiming `options` expects a string.
+- The rendered refusal record is bounded by a named constant on a 1,200-error payload.
+- A title that yields no slug is not reported as `layer: server`.
+- Every `code` a refusal can carry is a member of `LEDGER_ERROR_CODES`.
+- Each of the six lands with an assertion that is **red against `dfbebf4`** and green after. This
+  is the acceptance criterion that matters: the defects shipped green once already.
+
+**Verify:** `npm test`, reporting real counts against the 879/879 baseline on `8228c94`.
+
+**PR title:** `fix(errors): repair the refusal contract before the ladder builds on it`
+
+---
+
 ### MSP-2 — Validate before you write
 
 **Attacks:** C2 (ordering half). **Closes:** criticals 5 and 11's write-ordering component, plus
 the partial-write ghost-thread defects.
-**Depends:** MSP-1 (for the error shape). **Version:** 0.2.2. Non-breaking.
+**Depends:** MSP-1B (for the error shape). **Version:** 0.2.3. Non-breaking.
 
 **Changes**
 - `src/tools/record-decision.mjs`: build the candidate thread and run full record validation
@@ -331,7 +409,7 @@ the partial-write ghost-thread defects.
 ### MSP-3 — Close the guard asymmetries
 
 **Attacks:** C1 (spot fixes). **Closes:** criticals 7, 11, 12 and nine verifier-found guard gaps.
-**Depends:** MSP-1. **Version:** 0.3.0 — tightens accepted input, so minor per policy.
+**Depends:** MSP-1B. **Version:** 0.3.0 — tightens accepted input, so minor per policy.
 
 **Changes**
 - `record_decision`: import and apply `isTerminal` as its two sibling spine writers do
@@ -343,11 +421,26 @@ the partial-write ghost-thread defects.
   `:30`; reject `closure_statement` on a non-`done` target rather than silently dropping it.
 - `open_thread`: constrain `slug` with the same pattern already enforced for decision slugs
   (`local-driver.mjs:206`), replacing the free-text `minLength: 1` at `open-thread.mjs:33`.
+- **Added during execution (MSP-1B final review, 2026-08-04). Read this before adding any union.**
+  `disagrees` in `src/schema/error-projection.mjs:204` demotes a branch on **any** `const`/`enum`
+  error anywhere in its subtree, not only on a discriminator. It is inert today because the one
+  shipped `anyOf` (`record_decision.options`) has `array`/`string` branches with no enum, and
+  `amend_criteria` uses `if`/`then`, which forms no branch container. The first union with an
+  enum-bearing branch trips it silently: a caller sending the *correct* branch with a bad enum value
+  has that branch demoted and is guided into the wrong one, with the real problem suppressed. Gate
+  it on the const/enum error's `instancePath` matching the branch container's own instance depth.
 - **Scope validity (critical 7).** Validate `scope` against the thread's actual criterion ids, not
   only `WRITABLE_SCOPE_PATTERN`. Refuse an unknown scope with a `retryable:false` error listing
   the valid ids.
 - `archive_thread`: make its description match its code, or its code match its description
   (`archive-thread.mjs:25` vs `:35`); reject a whitespace-only reason.
+- **Added during execution (probe run against MSP-1B, 2026-08-04).** `minLength: 1` counts raw
+  string length, so a value made entirely of invisible characters is accepted while rendering as
+  nothing. Verified: `open_thread` with a criterion whose text is only U+202E succeeds, storing a
+  criterion that displays as empty. Every `minLength: 1` field must be validated on its *collapsed*
+  length, using the same widened class MSP-1B gave `collapse`
+  (`/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Zs}\s]+/gu`). This is the storage-side half of MSP-10's bidi
+  concern: MSP-10 stops a hostile value from rendering deceptively, this stops it being stored.
 
 **Acceptance**
 - Writing a risk scoped to `c99` on a three-criterion thread is refused, and the error lists
@@ -369,7 +462,7 @@ reporting how many stored records would now be refused on write.
 
 **Attacks:** instruction drift. **Closes:** critical 8, the `paused -> paused` incident, and the
 ten skill/server divergences.
-**Depends:** MSP-1. **Version:** 0.4.0.
+**Depends:** MSP-1B. **Version:** 0.4.0.
 
 **Changes**
 - `src/tools/transition-thread.mjs:17-18`: a transition to the **current** status is an idempotent
@@ -401,7 +494,7 @@ ten skill/server divergences.
 ### MSP-5 — The missing read surface
 
 **Attacks:** C3 (cause). **Closes:** the 8 identifier-invisibility defects.
-**Depends:** MSP-1. **Version:** 0.5.0. Additive.
+**Depends:** MSP-1B. **Version:** 0.5.0. Additive.
 
 **Changes**
 - New `list_threads` (`src/tools/list-threads.mjs`): no required arguments, optional
@@ -678,6 +771,35 @@ drift snapshot survives it.
 - Harden the Stop gate: `hooks/lib/stop.mjs:87` accepts substring containment, so a message that
   merely quotes the briefing satisfies it; and `:67-73` swallows every read error into an empty
   array, so an unreadable transcript passes silently. Both become explicit.
+- **Added during execution (review of MSP-1, 2026-08-04; corrected by the security review of
+  MSP-1B).** The error surface is a second unfenced path to the model, distinct from the render
+  boundary above. `toLedgerError` interpolates an arbitrary internal message into `expected`, so git
+  stderr and absolute filesystem paths reach the model. MSP-1B bounds that text to 180 characters
+  but deliberately does **not** stop the leak. Classify at the throw site instead of passing
+  `error.message` through; at minimum replace `expected` with a constant and route the raw cause to
+  stderr logging only. The widest source is **`src/util/git-exec.mjs:29-31`**, which builds
+  ``git ${args.join(' ')} failed (exit ${code}): ${stderr}`` on every `check:true` call, carrying
+  `-c safe.directory=<absolute repo dir>` (`src/util/git-scope.mjs:32`, `:86`) and
+  `-c core.hooksPath=<absolute path>` (`src/util/git-env.mjs:66`). Also confirmed:
+  `src/drivers/git-ref-driver.mjs:460`, `:471` (a hostile remote's `remote:` lines reach the model
+  verbatim), `src/util/git-scope.mjs:55`, `:60`, `src/drivers/local-driver.mjs:82`. The 180-character
+  bound does **not** protect a secret — a 39-character token survives intact. Modern git redacts URL
+  userinfo itself, but the server borrows that property rather than owning it.
+- **c6 scope correction.** c6 names the briefing, the SessionStart roster and `read_decision`. The
+  **refusal path is a fourth channel** and is in scope: `src/tools/spine-input.mjs:153` interpolates
+  a stored decision title, which in a git-synced ledger another user wrote; same shape at
+  `src/tools/amend-criteria.mjs:38` and `src/tools/update-thread.mjs:104`. Structural forgery is
+  already blocked — `collapse` strips `\s+`, so stored text cannot open a new `key: value` line —
+  but inline semantic forgery within one line remains.
+- **Harden `collapse` (`src/errors.mjs:56-58`).** It is now the sole containment for injection and
+  the basis of `fit`'s byte accounting, but JS `\s` omits U+0085 NEL (a Unicode mandatory line
+  break), U+001B ESC, U+0007, U+0000, U+200B, U+00AD, and the bidi controls U+202E and U+2066 —
+  each verified to survive. Widen it to
+  `/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Zs}\s]+/gu`.
+- **Quote every echoed value at the interpolation site.** `src/tools/spine-input.mjs` wraps echoes
+  in `JSON.stringify`; `src/tools/registry.mjs:77`, `src/tools/shared.mjs:24`, `:71` and
+  `src/tools/read-decision.mjs:15` do not, so an echoed value can imitate the server's own
+  `key: value` grammar inline.
 
 **Acceptance**
 - A thread title containing `\n## SYSTEM` renders as one line with the marker stripped, and cannot
@@ -685,6 +807,7 @@ drift snapshot survives it.
 - The drift block truncates.
 - A test asserts no interpolation site in `briefing.mjs` or `roster.mjs` bypasses `field()`.
 - An unreadable transcript fails the Stop gate rather than passing it.
+- A refusal carrying an internal failure does not expose an absolute filesystem path.
 
 **Verify:** `npm test`, including an injection corpus of hostile field values.
 
@@ -888,23 +1011,28 @@ max 16 characters, no trailing period. The PR title becomes the squash commit su
 ## 9. Sequencing
 
 ```
-MSP-0 ─┬─> MSP-0B ──────────────────────────┐  (gates 7, 9, 11 only)
-       │                                    │
-       └─> MSP-1 ─┬─> MSP-2 ────────────────┤
-                  ├─> MSP-3 ──┐             │
-                  ├─> MSP-4   │             │
-                  ├─> MSP-5 ──┼─> MSP-6 ────┼─> MSP-7 ──> MSP-8 ─┬─> MSP-9 ──> MSP-11
-                  └─> MSP-10  │             │                    │
-                              └─> MSP-12 ───┴────────────────────┴─> MSP-13
+MSP-0 ─┬─> MSP-0B ──────────────────────────────────┐  (gates 7, 9, 11 only)
+       │                                            │
+       └─> MSP-1 ─┬─> MSP-10                        │
+                  │                                 │
+                  └─> MSP-1B ─┬─> MSP-2 ────────────┤
+                              ├─> MSP-3 ──┐         │
+                              ├─> MSP-4   │         │
+                              └─> MSP-5 ──┼─> MSP-6 ┼─> MSP-7 ──> MSP-8 ─┬─> MSP-9 ──> MSP-11
+                                          │         │                    │
+                                          └─> MSP-12┴────────────────────┴─> MSP-13
 ```
 
-**Critical path:** 0 → 1 → 5 → 6 → 7 → 8 → 9 → 11 → 13.
-**Parallelizable at any time after MSP-1:** MSP-3, MSP-4, MSP-10.
+**Critical path:** 0 → 1 → 1B → 5 → 6 → 7 → 8 → 9 → 11 → 13.
+**Parallelizable at any time after MSP-1B:** MSP-3, MSP-4.
+**MSP-10 depends only on MSP-1** and is the one unit review cleared to build on the uncorrected
+contract, since it touches the render and hook surfaces rather than the error path.
 **MSP-0B runs concurrently with MSP-1 through MSP-6** and gates only MSP-7, MSP-9 and MSP-11.
 It ships no production code, so it never blocks the branch.
 
 MSP-1 comes first because it is non-breaking, closes the incident's root cause, and every later
-MSP's error surface depends on its shape.
+MSP's error surface depends on its shape. That dependency is exactly why MSP-1B interposes: review
+found MSP-1's shape defective after it merged, and four MSPs would otherwise have inherited it.
 
 ---
 
@@ -920,6 +1048,8 @@ MSP's error surface depends on its shape.
 | MSP-7, MSP-9 and MSP-11 are specified from partial knowledge of `drift`, `upcast` and `GitRefDriver` | **Realized, and larger than assumed.** MSP-0B read all three areas in full and returned 29 findings — 5 critical, 9 high. MSP-7 assumed two upcast defects; there are at least seven, plus seven more its own cap consolidation manufactures. MSP-9's blast radius includes the whole `src/drift` feature and the verbatim gate, both non-functional today on the deployed backend. MSP-11's merge-driver surface is narrower than stated (bindings, not drift entries) while its reconcile surface is wider (reconcile does not survive an absent bound repo). All three sections are amended above. |
 | ~~Payload sizes were measured on `LocalDriver`, but the deployed backend is `GitRefDriver`~~ **Retired by MSP-0B: measured on both, and the sizes are identical.** Every mutating tool returns the record itself (`update-thread.mjs:125`) and `bin/ledger-server.mjs:52` stringifies it, so the figure is driver-independent by construction. The SPEC's 6,269 B is verified in magnitude (6,514 B on a reconstructed thread, on both backends; 6,963 B once wrapped in the MCP content envelope, which is the number MSP-6's 1,200 B target must beat). | The real divergence is durability, not size: 3 of 3 index files survive a further process start on `LocalDriver`, 0 of 3 on `GitRefDriver`. That risk is now carried by MSP-9. |
 | An implementing agent restates a defect instead of reading it | The evidence law in section 2 is binding; a PR body without `file:line` citations is rejected in review. |
+| A merged MSP is assumed correct because its suite is green | **Realized on MSP-1.** It merged at 879/879 with both the refusal's `field` and its `retryable` wrong, because the tests asserted that those keys were present rather than that they were right. Acceptance for every remaining MSP requires at least one assertion proven red against the parent commit before it goes green. |
+| A merged MSP ships unreviewed | **Realized on MSP-0, MSP-0B, MSP-1 and the SPEC commit** — four PRs merged with no review pass, and the first review run found a BLOCK. Every remaining MSP gets a `code-reviewer` pass before merge, not after. |
 
 ---
 

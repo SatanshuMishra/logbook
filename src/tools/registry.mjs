@@ -74,7 +74,7 @@ export async function callTool(name, args = {}, ctx) {
       field: 'name',
       expected: 'a tool name this server declares in tools/list',
       retryable: false,
-      remedy: `unknown tool: ${name}; re-read tools/list and call a name it returns`,
+      remedy: `unknown tool: ${JSON.stringify(String(name))}; re-read tools/list and call a name it returns`,
     });
   }
   const validate = validators.get(name);

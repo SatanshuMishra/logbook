@@ -9,7 +9,7 @@ async function handler(ctx, args) {
   if (!thread) {
     throw new ToolError(unknownThread('bind_branch', 'thread_id', args.thread_id));
   }
-  const binding = newBinding(args, { now });
+  const binding = newBinding(args, { now, tool: 'bind_branch' });
   await driver.writeBinding(binding);
   await writeActiveThread(ctx, thread.id);
   const { recovery_degraded } = await commitAndReindex(driver, `feat(ledger): bind ${args.branch} to ${thread.slug}`);
