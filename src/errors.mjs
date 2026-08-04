@@ -72,10 +72,11 @@ export function clip(value, max) {
 }
 
 function requireText(value, key) {
-  if (typeof value !== 'string' || value.trim().length === 0) {
+  const text = typeof value === 'string' ? collapse(value) : '';
+  if (text.length === 0) {
     throw new TypeError(`LedgerError: ${key} must be a non-empty string`);
   }
-  return collapse(value);
+  return text;
 }
 
 function optionalText(value, key) {
@@ -196,7 +197,7 @@ function withinDetailBudget(record) {
   return Buffer.byteLength(JSON.stringify(record), 'utf8') <= DETAIL_MAX_BYTES;
 }
 
-function shedProblems(record) {
+export function shedProblems(record) {
   const { problems, ...rest } = record;
   return { ...rest, shown: 0 };
 }

@@ -63,7 +63,7 @@ test('a thrown LedgerError is returned as an isError result: rendered message, t
     listTools: () => fakeTools,
     buildContext: async () => ({ marker: 'ctx' }),
     callTool: async () => {
-      throw new ToolError(illegalTransition('transition_thread', 'to_status', 'active', 'active'));
+      throw new ToolError(illegalTransition('transition_thread', 'to_status', 'active', 'active', 'status'));
     },
     env: {},
   });

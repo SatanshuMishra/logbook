@@ -25,7 +25,7 @@ async function handler(ctx, args) {
   }
   const to = args.to_status;
   if (!canTransition(thread.status, to)) {
-    throw new ToolError(illegalTransition('transition_thread', 'to_status', thread.status, to));
+    throw new ToolError(illegalTransition('transition_thread', 'to_status', thread.status, to, 'status'));
   }
   if (to === 'blocked' && !nonEmpty(args.blocked_by)) {
     throw new ToolError(companionRequired('blocked_by', 'blocked'));

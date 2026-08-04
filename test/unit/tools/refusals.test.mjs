@@ -7,6 +7,7 @@ import {
   LEDGER_ERROR_LAYERS,
   LEDGER_ERROR_CODES,
   LedgerError,
+  shedProblems,
 } from '../../../src/errors.mjs';
 import { renderToolFailure } from '../../../bin/ledger-server.mjs';
 import { makeToolCtx } from '../../fixtures/tool-ctx.mjs';
@@ -14,6 +15,9 @@ import { makeToolCtx } from '../../fixtures/tool-ctx.mjs';
 const ABSENT_ULID = '01HXV3W4Z9QK7T2M8N5P6R0S1T';
 const AMEND_HYPOTHESIS_MAX_CHARS = 200;
 const WIDE_PAYLOAD_ERRORS = 1200;
+const INVISIBLE_NAME = '\u200B';
+const ASTRAL_RUN = '\u{1F9F5}"\\'.repeat(400);
+const ASTRAL_NAME = '\u{1F9F5}'.repeat(200);
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 function emittedStrings(value, path = '') {
@@ -133,8 +137,21 @@ test('an unexpected property is named, so the caller learns which one to drop', 
   });
 
   assert.equal(error.code, 'unexpected_parameter');
-  assert.equal(error.field, 'amend_criteria.operations[0].text');
-  assert.match(error.message, /remove text and re-send/);
+  assert.equal(error.field, 'amend_criteria.operations[0]."text"');
+  assert.match(error.message, /remove "text" and re-send/);
+});
+
+test('an unexpected property named only with invisible characters is still named identifiably', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const error = await refuse(ctx, 'open_thread', {
+    title: 'Legible Refusals',
+    completion_criteria: [{ text: 'ship it' }],
+    [INVISIBLE_NAME]: 1,
+  });
+
+  assert.equal(error.code, 'unexpected_parameter');
+  assert.equal(error.field, 'open_thread." "');
+  assert.equal(error.remedy, 'remove " " and re-send');
 });
 
 test('a pattern rejection states the regex and one conforming example', async (t) => {
@@ -335,28 +352,31 @@ test('a single-problem refusal reports the same three-field shape as a wide one'
   assert.equal('truncated' in detail, false, 'truncated conflated "some shown" with "none shown"');
 });
 
-test('a record shed for budget says zero are shown rather than leaving the count implied', async (t) => {
-  const ctx = await makeToolCtx(t);
-  const wide = '🧵"\\'.repeat(400);
-  const error = await refuse(ctx, 'update_thread', {
-    thread_id: wide,
-    [wide]: 1,
-    spine: { [wide]: wide },
+test('the budget backstop drops the problem list outright rather than implying a count it did not emit', () => {
+  const shed = shedProblems({
+    error: 'LedgerError',
+    message: 'unexpected_parameter: update_thread.bogus: not accepted by this call',
+    layer: 'input',
+    code: 'unexpected_parameter',
+    field: 'update_thread.bogus',
+    problems: [{ code: 'unexpected_parameter' }, { code: 'invalid_pattern' }],
+    shown: 2,
+    total: 7,
   });
-  const detail = JSON.parse(renderToolFailure(error, 'update_thread').content[1].text);
 
-  assert.equal(typeof detail.shown, 'number');
-  assert.equal(typeof detail.total, 'number');
-  assert.equal(detail.shown, Array.isArray(detail.problems) ? detail.problems.length : 0);
+  assert.equal('problems' in shed, false);
+  assert.equal(shed.shown, 0);
+  assert.equal(shed.total, 7);
+  assert.equal(shed.code, 'unexpected_parameter');
+  assert.equal(shed.layer, 'input');
 });
 
 test('the byte budget holds when every field the caller controls is multi-byte', async (t) => {
   const ctx = await makeToolCtx(t);
-  const wide = '🧵"\\'.repeat(400);
   const error = await refuse(ctx, 'update_thread', {
-    thread_id: wide,
-    [wide]: 1,
-    spine: { [wide]: wide },
+    thread_id: ASTRAL_RUN,
+    [ASTRAL_RUN]: 1,
+    spine: { [ASTRAL_RUN]: ASTRAL_RUN },
   });
 
   const record = renderToolFailure(error, 'update_thread').content[1].text;
@@ -453,6 +473,8 @@ test('every refusal the tool surface can produce stays inside the message budget
     ['reopen', { thread_id: thread.id }],
     ['open_thread', { title: '日本語', completion_criteria: [{ text: 'x' }] }],
     ['bind_branch', { thread_id: thread.id, repo: '   ', branch: 'b' }],
+    ['update_thread', { thread_id: thread.id, [ASTRAL_NAME]: 1 }],
+    ['amend_criteria', { thread_id: thread.id, operations: [{ op: 'insert', text: 'x', [ASTRAL_NAME]: 1 }] }],
   ];
 
   for (const [name, args] of corpus) {

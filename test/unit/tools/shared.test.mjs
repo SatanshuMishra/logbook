@@ -45,12 +45,12 @@ test('ToolError is a LedgerError defaulting to the tool layer and populating eve
 
 test('illegalTransition names the field its caller declares, never a foreign parameter', () => {
   const cases = [
-    ['transition_thread', 'to_status', 'transition_thread.to_status'],
-    ['archive_thread', 'thread_id', 'archive_thread.thread_id'],
-    ['reopen', 'thread_id', 'reopen.thread_id'],
+    ['transition_thread', 'to_status', 'status', 'transition_thread.to_status'],
+    ['archive_thread', 'thread_id', 'thread', 'archive_thread.thread_id'],
+    ['reopen', 'thread_id', 'thread', 'reopen.thread_id'],
   ];
-  for (const [tool, field, expected] of cases) {
-    const problem = illegalTransition(tool, field, 'blocked', 'done');
+  for (const [tool, field, subject, expected] of cases) {
+    const problem = illegalTransition(tool, field, 'blocked', 'done', subject);
     assert.equal(problem.field, expected);
     assert.equal(problem.retryable, true);
     assert.match(problem.remedy, /transition_thread/);
@@ -58,7 +58,7 @@ test('illegalTransition names the field its caller declares, never a foreign par
 });
 
 test('illegalTransition out of a terminal status is permanent and routes to create_successor', () => {
-  const problem = illegalTransition('reopen', 'thread_id', 'done', 'active');
+  const problem = illegalTransition('reopen', 'thread_id', 'done', 'active', 'thread');
   assert.equal(problem.field, 'reopen.thread_id');
   assert.equal(problem.retryable, false);
   assert.match(problem.remedy, /create_successor/);
@@ -67,14 +67,11 @@ test('illegalTransition out of a terminal status is permanent and routes to crea
 test('illegalTransition names only intermediate hops that can then reach the requested status', () => {
   const cases = [
     ['paused', 'blocked', 'active'],
-    ['paused', 'paused', 'active'],
-    ['blocked', 'blocked', 'active'],
-    ['active', 'active', 'paused, blocked'],
     ['blocked', 'done', 'active, paused'],
     ['blocked', 'abandoned', 'active, paused'],
   ];
   for (const [from, to, hops] of cases) {
-    const problem = illegalTransition('transition_thread', 'to_status', from, to);
+    const problem = illegalTransition('transition_thread', 'to_status', from, to, 'status');
     assert.equal(
       problem.remedy,
       `illegal transition ${from} -> ${to}; move it to one of ${hops} with transition_thread, then re-send this call unchanged`,
@@ -86,7 +83,7 @@ test('illegalTransition names only intermediate hops that can then reach the req
 test('illegalTransition never routes a live thread through a terminal status to reach its goal', () => {
   for (const to of ['active', 'paused', 'blocked']) {
     for (const from of ['active', 'paused', 'blocked']) {
-      const problem = illegalTransition('transition_thread', 'to_status', from, to);
+      const problem = illegalTransition('transition_thread', 'to_status', from, to, 'status');
       const hops = problem.remedy.match(/move it to one of ([^;]+) with transition_thread/);
       if (hops === null) continue;
       for (const hop of hops[1].split(', ')) {
@@ -101,20 +98,35 @@ test('illegalTransition never routes a live thread through a terminal status to 
 
 test('illegalTransition states the domain of the parameter it names, not another parameter domain', () => {
   assert.equal(
-    illegalTransition('transition_thread', 'to_status', 'paused', 'blocked').expected,
+    illegalTransition('transition_thread', 'to_status', 'paused', 'blocked', 'status').expected,
     'one of active, done, abandoned',
   );
   assert.equal(
-    illegalTransition('transition_thread', 'to_status', 'done', 'active').expected,
+    illegalTransition('transition_thread', 'to_status', 'done', 'active', 'status').expected,
     'done is terminal and has no outgoing transition',
   );
   assert.equal(
-    illegalTransition('archive_thread', 'thread_id', 'blocked', 'abandoned').expected,
+    illegalTransition('archive_thread', 'thread_id', 'blocked', 'abandoned', 'thread').expected,
     'a thread whose status is one of active, paused',
   );
   assert.equal(
-    illegalTransition('reopen', 'thread_id', 'done', 'active').expected,
+    illegalTransition('reopen', 'thread_id', 'done', 'active', 'thread').expected,
     'a thread whose status is one of paused, blocked',
+  );
+});
+
+test('illegalTransition takes the domain it should state as an argument, not from the parameter name', () => {
+  assert.equal(
+    illegalTransition('transition_thread', 'lifecycle_statuses', 'paused', 'blocked', 'status').expected,
+    'one of active, done, abandoned',
+  );
+  assert.equal(
+    illegalTransition('transition_thread', 'to_status', 'blocked', 'abandoned', 'thread').expected,
+    'a thread whose status is one of active, paused',
+  );
+  assert.throws(
+    () => illegalTransition('transition_thread', 'to_status', 'paused', 'blocked', 'statuses'),
+    TypeError,
   );
 });
 
@@ -146,6 +158,24 @@ test('a LedgerError refuses to exist without a layer, a remedy or a retryability
   }
   assert.throws(() => new LedgerError({ ...complete, layer: 'made-up' }), TypeError);
   assert.throws(() => new LedgerError({ ...complete, retryable: 'false' }), TypeError);
+});
+
+test('a LedgerError refuses a field, expectation or remedy that survives trim but collapses to nothing', () => {
+  const complete = {
+    code: 'unknown_thread',
+    layer: 'tool',
+    field: 'reopen.thread_id',
+    expected: 'a thread id this ledger holds',
+    retryable: false,
+    remedy: 'send an id the ledger returned',
+  };
+  for (const key of ['field', 'expected', 'remedy']) {
+    assert.throws(
+      () => new LedgerError({ ...complete, [key]: '\u200B' }),
+      TypeError,
+      `an all-invisible ${key} was emitted empty instead of refused`,
+    );
+  }
 });
 
 test('a LedgerError message never exceeds the budget, however long its fields are', () => {

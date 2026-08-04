@@ -34,6 +34,29 @@ const UNDISCRIMINATED_UNION = {
   },
 };
 
+const NESTED_UNION = {
+  type: 'object',
+  properties: {
+    value: {
+      anyOf: [
+        {
+          type: 'object',
+          required: ['inner'],
+          properties: {
+            inner: {
+              anyOf: [
+                { type: 'object', properties: { leaf: { type: 'string' } }, required: ['leaf'] },
+                { type: 'object', required: ['other'] },
+              ],
+            },
+          },
+        },
+        { type: 'string' },
+      ],
+    },
+  },
+};
+
 function errorsFor(schema, data) {
   const validate = ajv.compile(schema);
   assert.equal(validate(data), false, 'the fixture payload must fail validation');
@@ -68,11 +91,17 @@ test('a branch that fails only on a missing property outranks nothing it should 
   const errors = errorsFor(UNDISCRIMINATED_UNION, { value: {} });
   const problems = projectValidationErrors(errors, { prefix: 'call' });
 
-  assert.equal(
-    problems.some((problem) => problem.field === 'call.value.nested'),
-    true,
-    'the object branch names the property the caller omitted',
+  assert.deepEqual(
+    problems.map((problem) => problem.field),
+    ['call.value.nested', 'call.value'],
   );
+});
+
+test('a nested union suppresses the losing inner branch instead of guiding one value two ways', () => {
+  const errors = errorsFor(NESTED_UNION, { value: { inner: { leaf: 5 } } });
+  const problems = projectValidationErrors(errors, { prefix: 'call' });
+
+  assert.deepEqual(problems.map((problem) => problem.field), ['call.value.inner.leaf']);
 });
 
 test('branch suppression scales linearly enough to stay off the stdio thread budget', () => {

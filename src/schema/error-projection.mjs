@@ -79,14 +79,16 @@ function projectOne(error, prefix) {
         retryable: false,
         remedy: `the parameter did not arrive; re-emit the call with ${params.missingProperty} included`,
       };
-    case 'additionalProperties':
+    case 'additionalProperties': {
+      const named = JSON.stringify(String(params.additionalProperty));
       return {
         code: 'unexpected_parameter',
-        field: qualify(prefix, joinField(path, params.additionalProperty)),
+        field: qualify(prefix, joinField(path, named)),
         expected: 'not accepted by this call',
         retryable: false,
-        remedy: `remove ${params.additionalProperty} and re-send`,
+        remedy: `remove ${named} and re-send`,
       };
+    }
     case 'enum':
       return {
         code: 'invalid_enum',
@@ -165,10 +167,6 @@ function instanceDepth(instancePath) {
     : 0;
 }
 
-function errorReach(error) {
-  return instanceDepth(error.instancePath) + (error.keyword === 'required' ? 1 : 0);
-}
-
 function containerPaths(errors) {
   return new Set(
     errors
@@ -202,7 +200,7 @@ function scoreBranches(errors, containers) {
       const byBranch = scores.get(container) ?? new Map();
       const prior = byBranch.get(branch) ?? { reach: 0, disagrees: false };
       byBranch.set(branch, {
-        reach: Math.max(prior.reach, errorReach(error)),
+        reach: Math.max(prior.reach, instanceDepth(error.instancePath)),
         disagrees: prior.disagrees || DISCRIMINATOR_KEYWORDS.includes(error.keyword),
       });
       scores.set(container, byBranch);

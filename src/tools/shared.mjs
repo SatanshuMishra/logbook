@@ -35,10 +35,19 @@ export function terminalThread(tool, status) {
   };
 }
 
-const STATUS_PARAMETER = /(^|_)status$/;
+export const TRANSITION_SUBJECTS = Object.freeze(['status', 'thread']);
 
-function transitionExpectation(field, from, to, targets) {
-  if (STATUS_PARAMETER.test(field)) {
+function requireSubject(value) {
+  if (!TRANSITION_SUBJECTS.includes(value)) {
+    throw new TypeError(
+      `illegalTransition: subject must be one of ${TRANSITION_SUBJECTS.join(', ')}`,
+    );
+  }
+  return value;
+}
+
+function transitionExpectation(subject, from, to, targets) {
+  if (subject === 'status') {
     return targets.length === 0
       ? `${from} is terminal and has no outgoing transition`
       : `one of ${targets.join(', ')}`;
@@ -57,13 +66,14 @@ function transitionRepair(from, to, targets, hops) {
   return `move it to one of ${hops.join(', ')} with transition_thread, then re-send this call unchanged`;
 }
 
-export function illegalTransition(tool, field, from, to) {
+export function illegalTransition(tool, field, from, to, subject) {
+  const domain = requireSubject(subject);
   const targets = ALLOWED_TRANSITIONS[from] ?? [];
   const hops = targets.filter((hop) => canTransition(hop, to));
   return {
     code: 'illegal_transition',
     field: `${tool}.${field}`,
-    expected: transitionExpectation(field, from, to, targets),
+    expected: transitionExpectation(domain, from, to, targets),
     retryable: hops.length > 0,
     remedy: `illegal transition ${from} -> ${to}; ${transitionRepair(from, to, targets, hops)}`,
   };
