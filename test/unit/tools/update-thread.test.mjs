@@ -403,6 +403,29 @@ test('an empty risks array that names no scope is refused rather than silently k
   assert.equal(stored.spine.open_risks.length, 1);
 });
 
+test('a non-string replace_scopes entry is described by type, never quoted as a plausible id', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx);
+
+  for (const [scope, described] of [[['c1'], 'an array of 1'], [5, '5'], [{ id: 'c1' }, 'an object'], [null, 'null']]) {
+    const error = await updateThread.handler(ctx, {
+      thread_id: thread.id, replace_scopes: { open_risks: [scope] },
+    }).then(() => null, (thrown) => thrown);
+
+    assert.notEqual(error, null, `a ${described} scope was accepted`);
+    assert.equal(error.code, 'invalid_scope');
+    assert.equal(
+      error.remedy,
+      `scope ${described} is neither a criterion id nor "thread"; re-send with an accepted scope`,
+    );
+    assert.notEqual(
+      error.remedy,
+      'scope "c1" is neither a criterion id nor "thread"; re-send with an accepted scope',
+      'a non-string scope was rendered as the very id the error offers as its example',
+    );
+  }
+});
+
 test('update_thread refuses the legacy scope in replace_scopes', async (t) => {
   const ctx = await makeToolCtx(t);
   const thread = await seedThread(ctx);

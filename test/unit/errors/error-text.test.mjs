@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import {
   clip,
   collapse,
+  echo,
   LedgerError,
   DETAIL_MAX_BYTES,
+  toLedgerError,
 } from '../../../src/errors.mjs';
 
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
@@ -93,6 +95,41 @@ test('a refusal built from astral text emits no unpaired surrogate in any string
   for (const [key, value] of emittedStrings(detail)) {
     assert.doesNotMatch(value, LONE_SURROGATE, `${key} carries an unpaired surrogate`);
   }
+});
+
+test('clip refuses to leave half of an escape token behind when it cuts', () => {
+  const escaped = echo(`ok${String.fromCodePoint(0x202e)}xy`, 48);
+
+  for (let max = 6; max <= escaped.length + 4; max += 1) {
+    const clipped = clip(`field ${escaped}`, max);
+    assert.doesNotMatch(
+      clipped,
+      /\\+u[0-9a-fA-F]{0,3}$/,
+      `clip at ${max} left a half-written escape: ${JSON.stringify(clipped)}`,
+    );
+  }
+});
+
+test('clip drops a cut escape token but keeps an escaped backslash pair, which is data', () => {
+  assert.equal(clip('abc\\udefg', 8), 'abc...');
+  assert.equal(clip('abc\\\\udefg', 9), 'abc\\\\u...');
+  assert.equal(clip('abc\\\\udefg', 8), 'abc\\\\...');
+  assert.equal(clip('x\\u0041yzab', 10), 'x\\u0041...');
+});
+
+test('the escape guard shortens ordinary prose that happens to end mid backslash-u', () => {
+  assert.equal(clip('regex \\uFFFF matches nothing at all', 12), 'regex ...');
+  assert.equal(clip('regex xFFFF matches nothing at all', 12), 'regex xFF...');
+});
+
+test('a server-layer fault escapes the invisible characters in the message it quotes', () => {
+  const rlo = String.fromCodePoint(0x202e);
+  const error = toLedgerError(new Error(`driver failed on op${rlo}en_x`), 'open_thread');
+
+  assert.equal(error.code, 'internal_error');
+  assert.match(error.expected, /it failed with: driver failed on op\\u202een_x$/);
+  assert.doesNotMatch(error.expected, /op en_x/);
+  assert.equal(collapse(error.expected), error.expected);
 });
 
 test('a halved multi-byte value keeps the marker that says it was truncated', () => {

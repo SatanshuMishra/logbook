@@ -1,4 +1,10 @@
-import { clip, collapse } from '../errors.mjs';
+import {
+  collapse,
+  echo,
+  echoBetween,
+  FIELD_MAX_CHARS,
+  REMEDY_MAX_CHARS,
+} from '../errors.mjs';
 import {
   ULID_PATTERN,
   ISO_TIMESTAMP_PATTERN,
@@ -10,7 +16,10 @@ import {
   WRITABLE_SCOPE_PATTERN,
 } from './patterns.mjs';
 
-const RECEIVED_MAX_CHARS = 24;
+const RECEIVED_MAX_CHARS = 26;
+const REMOVE_BEFORE = 'remove ';
+const REMOVE_AFTER = ' and re-send';
+const FIELD_SCAFFOLD_PROBE = ' ';
 const WRAPPER_KEYWORDS = Object.freeze(['if', 'anyOf', 'oneOf', 'allOf', 'not']);
 const BRANCH_KEYWORDS = Object.freeze(['anyOf', 'oneOf']);
 const DISCRIMINATOR_KEYWORDS = Object.freeze(['const', 'enum']);
@@ -52,12 +61,15 @@ function quoteList(values) {
 }
 
 function describeReceived(value) {
-  if (value === undefined) return 'absent';
-  if (value === null) return 'null';
-  if (typeof value === 'string') return JSON.stringify(clip(value, RECEIVED_MAX_CHARS));
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value)) return `an array of ${value.length}`;
-  return 'an object';
+  return echo(value, RECEIVED_MAX_CHARS);
+}
+
+function namedProperty(prefix, path, property) {
+  const scaffold = qualify(prefix, joinField(path, FIELD_SCAFFOLD_PROBE)).length - 1;
+  return echo(property, Math.min(
+    FIELD_MAX_CHARS - scaffold,
+    REMEDY_MAX_CHARS - REMOVE_BEFORE.length - REMOVE_AFTER.length,
+  ));
 }
 
 function lengthExpectation(keyword, limit) {
@@ -80,13 +92,13 @@ function projectOne(error, prefix) {
         remedy: `the parameter did not arrive; re-emit the call with ${params.missingProperty} included`,
       };
     case 'additionalProperties': {
-      const named = JSON.stringify(String(params.additionalProperty));
+      const named = namedProperty(prefix, path, params.additionalProperty);
       return {
         code: 'unexpected_parameter',
         field: qualify(prefix, joinField(path, named)),
         expected: 'not accepted by this call',
         retryable: false,
-        remedy: `remove ${named} and re-send`,
+        remedy: `${REMOVE_BEFORE}${named}${REMOVE_AFTER}`,
       };
     }
     case 'enum':

@@ -1,15 +1,37 @@
 import { LEGACY_SCOPE, WRITABLE_SCOPE_PATTERN } from '../schema/patterns.mjs';
 import { resolveWriteScope } from '../model/index.mjs';
 import { ToolError } from './shared.mjs';
+import { echo, echoBetween, REMEDY_MAX_CHARS } from '../errors.mjs';
 
 const RISK_SENTENCE = /^[^\n]+ — [^\n]+$/;
 const RISK_EXAMPLE = 'hold the ledger lock — the writer is not reentrant';
 const RISK_SHAPE = 'two non-empty clauses on one line, joined by a spaced em dash';
 const DEDUP_MIN_CHARS = 24;
-const ECHO_MAX_CHARS = 48;
 const WRITABLE_SCOPE = new RegExp(WRITABLE_SCOPE_PATTERN);
 
+const UNKNOWN_KEYS_SHOWN = 3;
+const KEY_SEPARATOR = ', ';
+const SCOPES_BEFORE = 'replace_scopes does not accept ';
+const SCOPES_AFTER = '; remove those keys and re-send';
+const RESTATES_JOIN = ' restates the decision ';
+const RESTATES_AFTER = '; the decision record is its single home, so drop the entry';
+const RESTATES_SHARE = 2;
+
 export const SCOPED_SPINE_FIELDS = Object.freeze(['open_risks', 'key_decisions']);
+
+function restatedShare() {
+  const room = REMEDY_MAX_CHARS - RESTATES_JOIN.length - RESTATES_AFTER.length;
+  return Math.floor(room / RESTATES_SHARE);
+}
+
+function unknownKeyList(unknown) {
+  const shown = unknown.slice(0, UNKNOWN_KEYS_SHOWN);
+  const hidden = unknown.length - shown.length;
+  const more = hidden > 0 ? `${KEY_SEPARATOR}+${hidden} more` : '';
+  const room = REMEDY_MAX_CHARS - SCOPES_BEFORE.length - SCOPES_AFTER.length - more.length;
+  const share = Math.floor(room / shown.length) - KEY_SEPARATOR.length;
+  return `${shown.map((key) => echo(key, share)).join(KEY_SEPARATOR)}${more}`;
+}
 
 export function assertWritableScope(scope, field) {
   if (scope === LEGACY_SCOPE) {
@@ -45,7 +67,11 @@ function normalizeScopeList(scopes, field) {
         expected: 'a criterion id such as c1, or "thread"',
         example: 'c1',
         retryable: false,
-        remedy: `scope ${JSON.stringify(scope)} is neither a criterion id nor "thread"; re-send with an accepted scope`,
+        remedy: echoBetween(
+          'scope ',
+          ' is neither a criterion id nor "thread"; re-send with an accepted scope',
+          scope,
+        ),
       });
     }
     return scope;
@@ -72,7 +98,7 @@ export function normalizeReplaceScopes(value, tool) {
       field: `${tool}.replace_scopes.${unknown[0]}`,
       expected: `only the keys ${SCOPED_SPINE_FIELDS.join(' and ')}`,
       retryable: false,
-      remedy: `replace_scopes does not accept ${unknown.join(', ')}; remove those keys and re-send`,
+      remedy: `${SCOPES_BEFORE}${unknownKeyList(unknown)}${SCOPES_AFTER}`,
     });
   }
   return Object.fromEntries(SCOPED_SPINE_FIELDS.map((field) => [
@@ -90,7 +116,11 @@ export function normalizeRisks(risks, thread, field) {
         expected: RISK_SHAPE,
         example: RISK_EXAMPLE,
         retryable: false,
-        remedy: `risk text ${JSON.stringify(clipEntry(risk.text))} is not <specific constraint or action> — <why, in plain words>; re-send it in that shape`,
+        remedy: echoBetween(
+          'risk text ',
+          ' is not <specific constraint or action> — <why, in plain words>; re-send it in that shape',
+          risk.text,
+        ),
       });
     }
     const scope = assertWritableScope(risk.scope ?? resolveWriteScope(thread), field);
@@ -111,17 +141,16 @@ export function normalizeDecisions(decisions, thread, knownRefs, field) {
         expected: 'a ref naming a decision file this ledger holds',
         example: '0007-adopt-the-ledger',
         retryable: false,
-        remedy: `no decision file matches "${decision.ref}"; call record_decision first, then re-send with the ref it returns`,
+        remedy: echoBetween(
+          'no decision file matches ',
+          '; call record_decision first, then re-send with the ref it returns',
+          decision.ref,
+        ),
       });
     }
     const scope = assertWritableScope(decision.scope ?? resolveWriteScope(thread), field);
     return { ref: decision.ref, title: decision.title, scope };
   });
-}
-
-function clipEntry(value) {
-  const text = String(value);
-  return text.length <= ECHO_MAX_CHARS ? text : `${text.slice(0, ECHO_MAX_CHARS - 3)}...`;
 }
 
 function normalizeForDedup(value) {
@@ -150,7 +179,7 @@ export function assertNoRestatedDecision(entries, decisions, field) {
           field: `${field}[]`,
           expected: 'an entry that does not restate a recorded decision title',
           retryable: false,
-          remedy: `${JSON.stringify(clipEntry(entry))} restates the decision ${JSON.stringify(clipEntry(candidate.title))}; the decision record is its single home, so drop the entry`,
+          remedy: `${echo(entry, restatedShare())}${RESTATES_JOIN}${echo(candidate.title, restatedShare())}${RESTATES_AFTER}`,
         });
       }
     }
