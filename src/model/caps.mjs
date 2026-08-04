@@ -18,102 +18,109 @@ const SCALAR_CAPS = Object.freeze([
 ]);
 
 export class CapViolationError extends Error {
-  constructor(message, field) {
+  constructor(message, fields) {
     super(message);
     this.name = 'CapViolationError';
-    this.field = field;
+    this.fields = Object.freeze(Array.isArray(fields) ? [...fields] : [fields]);
+    this.field = this.fields[0];
   }
 }
 
-function assertScalars(spine) {
-  for (const [field, max] of SCALAR_CAPS) {
-    const value = spine[field];
-    if (typeof value === 'string' && value.length > max) {
-      throw new CapViolationError(`spine.${field} exceeds ${max} chars`, field);
-    }
-  }
+function broke(condition, field, detail) {
+  return condition ? [{ field, detail }] : [];
 }
 
-function assertRiskCounts(risks) {
+function scalarViolations(spine) {
+  return SCALAR_CAPS.flatMap(([field, max]) => broke(
+    typeof spine[field] === 'string' && spine[field].length > max,
+    field,
+    `spine.${field} exceeds ${max} chars`,
+  ));
+}
+
+function riskCountViolations(risks) {
   const perScope = new Map();
   for (const risk of risks) {
     const scope = risk && typeof risk.scope === 'string' ? risk.scope : 'unscoped';
-    const next = (perScope.get(scope) ?? 0) + 1;
-    if (next > SPINE_CAPS.openRisksMaxPerScope) {
-      throw new CapViolationError(
-        `spine.open_risks exceeds ${SPINE_CAPS.openRisksMaxPerScope} items for scope ${scope}`,
-        'open_risks',
-      );
-    }
-    perScope.set(scope, next);
+    perScope.set(scope, (perScope.get(scope) ?? 0) + 1);
   }
+  return [...perScope.entries()]
+    .filter(([, count]) => count > SPINE_CAPS.openRisksMaxPerScope)
+    .map(([scope]) => ({
+      field: 'open_risks',
+      detail: `spine.open_risks exceeds ${SPINE_CAPS.openRisksMaxPerScope} items for scope ${scope}`,
+    }));
 }
 
-function assertRiskItems(risks) {
-  for (const risk of risks) {
-    if (!risk || typeof risk !== 'object') continue;
-    if (typeof risk.text === 'string' && risk.text.length > SPINE_CAPS.riskTextMaxChars) {
-      throw new CapViolationError(
-        `spine.open_risks item text exceeds ${SPINE_CAPS.riskTextMaxChars} chars`,
-        'open_risks[].text',
-      );
-    }
-    if (!Array.isArray(risk.refs)) continue;
-    if (risk.refs.length > SPINE_CAPS.riskRefsMaxItems) {
-      throw new CapViolationError(
-        `spine.open_risks[].refs exceeds ${SPINE_CAPS.riskRefsMaxItems} items`,
-        'open_risks[].refs',
-      );
-    }
-    for (const ref of risk.refs) {
-      if (typeof ref === 'string' && ref.length > SPINE_CAPS.riskRefMaxChars) {
-        throw new CapViolationError(
-          `spine.open_risks[].refs item exceeds ${SPINE_CAPS.riskRefMaxChars} chars`,
-          'open_risks[].refs',
-        );
-      }
-    }
-  }
+function riskItemViolations(risks) {
+  const items = risks.filter((risk) => risk && typeof risk === 'object');
+  const refLists = items.map((risk) => risk.refs).filter(Array.isArray);
+  return [
+    ...broke(
+      items.some((r) => typeof r.text === 'string' && r.text.length > SPINE_CAPS.riskTextMaxChars),
+      'open_risks[].text',
+      `spine.open_risks item text exceeds ${SPINE_CAPS.riskTextMaxChars} chars`,
+    ),
+    ...broke(
+      refLists.some((refs) => refs.length > SPINE_CAPS.riskRefsMaxItems),
+      'open_risks[].refs',
+      `spine.open_risks[].refs exceeds ${SPINE_CAPS.riskRefsMaxItems} items`,
+    ),
+    ...broke(
+      refLists.some((refs) => refs.some(
+        (ref) => typeof ref === 'string' && ref.length > SPINE_CAPS.riskRefMaxChars,
+      )),
+      'open_risks[].refs',
+      `spine.open_risks[].refs item exceeds ${SPINE_CAPS.riskRefMaxChars} chars`,
+    ),
+  ];
 }
 
-function assertDecisions(decisions) {
-  for (const decision of decisions) {
-    if (!decision || typeof decision !== 'object') continue;
-    if (typeof decision.title === 'string' && decision.title.length > SPINE_CAPS.decisionTitleMaxChars) {
-      throw new CapViolationError(
-        `spine.key_decisions item title exceeds ${SPINE_CAPS.decisionTitleMaxChars} chars`,
-        'key_decisions[].title',
-      );
-    }
-  }
+function decisionViolations(decisions) {
+  return broke(
+    decisions.some((d) => d && typeof d === 'object' && typeof d.title === 'string'
+      && d.title.length > SPINE_CAPS.decisionTitleMaxChars),
+    'key_decisions[].title',
+    `spine.key_decisions item title exceeds ${SPINE_CAPS.decisionTitleMaxChars} chars`,
+  );
 }
 
-function assertOutOfScope(entries) {
-  if (entries.length > SPINE_CAPS.outOfScopeMaxItems) {
-    throw new CapViolationError(
-      `spine.out_of_scope exceeds ${SPINE_CAPS.outOfScopeMaxItems} items`,
+function outOfScopeViolations(entries) {
+  return [
+    ...broke(
+      entries.length > SPINE_CAPS.outOfScopeMaxItems,
       'out_of_scope',
-    );
-  }
-  for (const entry of entries) {
-    if (typeof entry === 'string' && entry.length > SPINE_CAPS.outOfScopeItemMaxChars) {
-      throw new CapViolationError(
-        `spine.out_of_scope item exceeds ${SPINE_CAPS.outOfScopeItemMaxChars} chars`,
-        'out_of_scope[]',
-      );
-    }
-  }
+      `spine.out_of_scope exceeds ${SPINE_CAPS.outOfScopeMaxItems} items`,
+    ),
+    ...broke(
+      entries.some((e) => typeof e === 'string' && e.length > SPINE_CAPS.outOfScopeItemMaxChars),
+      'out_of_scope[]',
+      `spine.out_of_scope item exceeds ${SPINE_CAPS.outOfScopeItemMaxChars} chars`,
+    ),
+  ];
+}
+
+function collectViolations(spine) {
+  const risks = Array.isArray(spine.open_risks) ? spine.open_risks : [];
+  return [
+    ...scalarViolations(spine),
+    ...riskCountViolations(risks),
+    ...riskItemViolations(risks),
+    ...decisionViolations(Array.isArray(spine.key_decisions) ? spine.key_decisions : []),
+    ...outOfScopeViolations(Array.isArray(spine.out_of_scope) ? spine.out_of_scope : []),
+  ];
 }
 
 export function assertSpineCaps(spine) {
   if (!spine || typeof spine !== 'object') {
     throw new CapViolationError('assertSpineCaps: spine must be an object', 'spine');
   }
-  assertScalars(spine);
-  const risks = Array.isArray(spine.open_risks) ? spine.open_risks : [];
-  assertRiskCounts(risks);
-  assertRiskItems(risks);
-  assertDecisions(Array.isArray(spine.key_decisions) ? spine.key_decisions : []);
-  assertOutOfScope(Array.isArray(spine.out_of_scope) ? spine.out_of_scope : []);
+  const violations = collectViolations(spine);
+  if (violations.length > 0) {
+    throw new CapViolationError(
+      violations.map((v) => v.detail).join('; '),
+      [...new Set(violations.map((v) => v.field))],
+    );
+  }
   return spine;
 }

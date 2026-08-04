@@ -155,3 +155,75 @@ test('a non-object spine throws CapViolationError', () => {
   assert.throws(() => assertSpineCaps(null), CapViolationError);
   assert.throws(() => assertSpineCaps('nope'), CapViolationError);
 });
+
+test('every violation is reported in one error naming each field and the cap it broke', () => {
+  const s = spine({
+    active_goal: 'a'.repeat(201),
+    next_step: 'b'.repeat(501),
+    last_session: 'c'.repeat(301),
+    open_risks: risks(21, 'c1'),
+    key_decisions: [decision({ title: 'd'.repeat(121) })],
+    out_of_scope: Array.from({ length: 21 }, (_, i) => `entry ${i}`),
+  });
+  assert.throws(
+    () => assertSpineCaps(s),
+    (err) => {
+      assert.ok(err instanceof CapViolationError);
+      assert.match(err.message, /spine\.active_goal exceeds 200 chars/);
+      assert.match(err.message, /spine\.next_step exceeds 500 chars/);
+      assert.match(err.message, /spine\.last_session exceeds 300 chars/);
+      assert.match(err.message, /spine\.open_risks exceeds 20 items for scope c1/);
+      assert.match(err.message, /spine\.key_decisions item title exceeds 120 chars/);
+      assert.match(err.message, /spine\.out_of_scope exceeds 20 items/);
+      assert.deepEqual([...err.fields], [
+        'active_goal',
+        'next_step',
+        'last_session',
+        'open_risks',
+        'key_decisions[].title',
+        'out_of_scope',
+      ]);
+      assert.equal(err.field, 'active_goal');
+      return true;
+    },
+  );
+});
+
+test('each over-cap risk scope group is named, not just the first', () => {
+  assert.throws(
+    () => assertSpineCaps(spine({ open_risks: [...risks(21, 'c1'), ...risks(21, 'thread')] })),
+    (err) => {
+      assert.match(err.message, /spine\.open_risks exceeds 20 items for scope c1/);
+      assert.match(err.message, /spine\.open_risks exceeds 20 items for scope thread/);
+      assert.deepEqual([...err.fields], ['open_risks']);
+      return true;
+    },
+  );
+});
+
+test('a field violating two caps at once is named once in fields', () => {
+  const refs = Array.from({ length: 9 }, () => 'a'.repeat(201));
+  assert.throws(
+    () => assertSpineCaps(spine({ open_risks: [risk({ refs })] })),
+    (err) => {
+      assert.match(err.message, /spine\.open_risks\[\]\.refs exceeds 8 items/);
+      assert.match(err.message, /spine\.open_risks\[\]\.refs item exceeds 200 chars/);
+      assert.deepEqual([...err.fields], ['open_risks[].refs']);
+      return true;
+    },
+  );
+});
+
+test('a repeated per-item violation is reported once, not once per item', () => {
+  const over = Array.from({ length: 3 }, (_, i) => risk({ text: `${'a'.repeat(301)} — why ${i}` }));
+  assert.throws(
+    () => assertSpineCaps(spine({ open_risks: over })),
+    (err) => {
+      assert.equal(
+        err.message,
+        `spine.open_risks item text exceeds ${SPINE_CAPS.riskTextMaxChars} chars`,
+      );
+      return true;
+    },
+  );
+});

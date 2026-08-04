@@ -96,6 +96,12 @@ completion_criteria: [
 `minItems: 1` — a thread may no longer be opened without a definition of done (audit finding 4;
 `open-thread.mjs:36` currently permits it, and the redesign cannot render PROGRESS without criteria).
 
+`minItems: 1` and the 200-char `text` cap are gates on what a caller SUBMITS — the `open_thread`,
+`create_successor` and `amend_criteria` input schemas plus `newThread` — never on the stored record,
+for the same reason 4.3 gives for risks: a legacy criterion written before the cap must stay writable.
+Enforcing either on the record wedges such a thread for every write, including writes that never touch
+`completion_criteria`.
+
 Id allocation: at insert, `N = max(existing numeric suffixes) + 1`. Ids are never reused and never
 positional. Struck criteria are RETAINED in the array, so the maximum is monotonic.
 

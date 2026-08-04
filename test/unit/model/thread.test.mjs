@@ -93,6 +93,21 @@ test('newThread refuses a thread with no definition of done', () => {
   );
 });
 
+test('newThread refuses a criterion text over 200 chars', () => {
+  assert.throws(
+    () => newThread(
+      { title: 'x', completion_criteria: [{ text: 'c'.repeat(201) }] },
+      { now: fixedClock, id: ID },
+    ),
+    /completion_criteria\[0\].text exceeds 200 chars/,
+  );
+  const ok = newThread(
+    { title: 'x', completion_criteria: [{ text: 'c'.repeat(200) }] },
+    { now: fixedClock, id: ID },
+  );
+  assert.equal(ok.completion_criteria[0].text.length, 200);
+});
+
 test('newThread passes through parent_id, predecessor_id, vcs_ref and external_refs', () => {
   const refs = [{ system: 'linear', id: 'ABC-1', url: 'https://x/ABC-1' }];
   const t = newThread(

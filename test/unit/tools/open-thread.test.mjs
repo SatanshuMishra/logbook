@@ -48,6 +48,18 @@ test('open_thread requires at least one completion_criteria entry', async (t) =>
   );
 });
 
+test('open_thread refuses a submitted criterion text over 200 chars', async (t) => {
+  const ctx = await makeToolCtx(t);
+  await assert.rejects(
+    () => callTool('open_thread', { title: 'Wordy', completion_criteria: [{ text: 'c'.repeat(201) }] }, ctx),
+    ToolValidationError,
+  );
+  await assert.rejects(
+    () => openThread.handler(ctx, { title: 'Wordy', completion_criteria: [{ text: 'c'.repeat(201) }] }),
+    /completion_criteria/,
+  );
+});
+
 test('open_thread rejects an unknown parent_id (referential integrity)', async (t) => {
   const ctx = await makeToolCtx(t);
   await assert.rejects(

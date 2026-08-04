@@ -128,6 +128,14 @@ test('upcastThread never throws on an over-cap legacy scalar', () => {
   assert.equal(upcastThread(overCap).spine.active_goal.length, 281);
 });
 
+test('an upcast v1 thread whose criterion text predates the 200-char cap still satisfies the v2 schema', () => {
+  const overCap = makeV1Thread({
+    completion_criteria: [{ text: 'c'.repeat(251), done: false }],
+  });
+  const { valid, errors } = validateThread(upcastThread(overCap));
+  assert.equal(valid, true, JSON.stringify(errors));
+});
+
 test('upcastThread returns null for an absent record', () => {
   assert.equal(upcastThread(null), null);
   assert.equal(upcastThread(undefined), null);

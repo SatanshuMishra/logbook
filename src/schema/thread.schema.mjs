@@ -3,7 +3,6 @@ import {
   ISO_TIMESTAMP_PATTERN,
   CRITERION_ID_PATTERN,
   CRITERION_KINDS,
-  CRITERION_TEXT_MAX_CHARS,
   DECISION_REF_PATTERN,
   SCOPE_PATTERN,
 } from './patterns.mjs';
@@ -70,7 +69,7 @@ export const threadSchema = {
         required: ['id', 'text', 'done', 'kind', 'struck_by'],
         properties: {
           id: { type: 'string', pattern: CRITERION_ID_PATTERN },
-          text: { type: 'string', minLength: 1, maxLength: CRITERION_TEXT_MAX_CHARS },
+          text: { type: 'string', minLength: 1 },
           done: { type: 'boolean' },
           kind: { type: 'string', enum: [...CRITERION_KINDS] },
           struck_by: { type: ['string', 'null'], pattern: DECISION_REF_PATTERN },

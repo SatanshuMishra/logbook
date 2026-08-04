@@ -112,6 +112,26 @@ test('rewrite and strike are refused without a decision_ref', async (t) => {
   );
 });
 
+test('insert and rewrite refuse a criterion text over 200 chars', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx);
+  const ref = await seedDecision(ctx, thread.id);
+  await assert.rejects(
+    () => callTool('amend_criteria', {
+      thread_id: thread.id,
+      operations: [{ op: 'insert', text: 'c'.repeat(201), kind: 'detour' }],
+    }, ctx),
+    ToolValidationError,
+  );
+  await assert.rejects(
+    () => callTool('amend_criteria', {
+      thread_id: thread.id,
+      operations: [{ op: 'rewrite', id: 'c1', text: 'c'.repeat(201), decision_ref: ref }],
+    }, ctx),
+    ToolValidationError,
+  );
+});
+
 test('a decision_ref with no decision file behind it is refused, naming the ref', async (t) => {
   const ctx = await makeToolCtx(t);
   const thread = await seedThread(ctx);

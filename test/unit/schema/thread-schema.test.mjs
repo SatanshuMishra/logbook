@@ -194,10 +194,16 @@ test('each completion_criteria item is closed and requires id, text, done, kind 
     validateThread({ ...base, completion_criteria: [{ ...criterion, text: '' }] }).valid,
     false,
   );
-  assert.equal(
-    validateThread({ ...base, completion_criteria: [{ ...criterion, text: 'x'.repeat(201) }] }).valid,
-    false,
-  );
+});
+
+test('the stored record accepts a criterion text longer than the submission cap', () => {
+  const base = makeValidThread();
+  const criterion = base.completion_criteria[0];
+  const { valid, errors } = validateThread({
+    ...base,
+    completion_criteria: [{ ...criterion, text: 'x'.repeat(251) }],
+  });
+  assert.equal(valid, true, JSON.stringify(errors));
 });
 
 test('a completion_criteria id must match ^c[1-9][0-9]*$', () => {

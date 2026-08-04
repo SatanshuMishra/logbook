@@ -1,5 +1,6 @@
 import { newUlid } from '../util/ulid.mjs';
 import { assertValidThread, THREAD_SCHEMA_VERSION } from '../schema/index.mjs';
+import { CRITERION_TEXT_MAX_CHARS } from '../schema/patterns.mjs';
 import { isoNow } from './clock.mjs';
 import { nextCriterionId } from './criteria.mjs';
 
@@ -17,13 +18,20 @@ function normalizeCriteria(input) {
   if (!Array.isArray(input) || input.length === 0) {
     throw new TypeError('newThread: completion_criteria must list at least one criterion');
   }
-  return input.reduce((acc, item) => [...acc, {
-    id: nextCriterionId(acc),
-    text: item.text,
-    done: item.done === true,
-    kind: item.kind ?? DEFAULT_CRITERION_KIND,
-    struck_by: null,
-  }], []);
+  return input.reduce((acc, item) => {
+    if (typeof item?.text === 'string' && item.text.length > CRITERION_TEXT_MAX_CHARS) {
+      throw new TypeError(
+        `newThread: completion_criteria[${acc.length}].text exceeds ${CRITERION_TEXT_MAX_CHARS} chars`,
+      );
+    }
+    return [...acc, {
+      id: nextCriterionId(acc),
+      text: item.text,
+      done: item.done === true,
+      kind: item.kind ?? DEFAULT_CRITERION_KIND,
+      struck_by: null,
+    }];
+  }, []);
 }
 
 function emptySpine() {

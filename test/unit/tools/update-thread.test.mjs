@@ -117,6 +117,27 @@ test('update_thread enforces the 200-char active_goal cap', async (t) => {
   );
 });
 
+test('update_thread reports every cap violation in the patch in one rejection', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx);
+  await assert.rejects(
+    () => updateThread.handler(ctx, {
+      thread_id: thread.id,
+      spine: {
+        active_goal: 'a'.repeat(201),
+        next_step: 'b'.repeat(501),
+        out_of_scope: Array.from({ length: 21 }, (_, i) => `entry ${i}`),
+      },
+    }),
+    (err) => {
+      assert.match(err.message, /spine\.active_goal exceeds 200 chars/);
+      assert.match(err.message, /spine\.next_step exceeds 500 chars/);
+      assert.match(err.message, /spine\.out_of_scope exceeds 20 items/);
+      return true;
+    },
+  );
+});
+
 test('an untouched over-cap legacy scalar never blocks an unrelated patch', async (t) => {
   const ctx = await makeToolCtx(t);
   const legacyGoal = 'a'.repeat(231);
@@ -131,6 +152,21 @@ test('an untouched over-cap legacy scalar never blocks an unrelated patch', asyn
     () => updateThread.handler(ctx, { thread_id: seed.id, spine: { active_goal: legacyGoal } }),
     /active_goal/,
   );
+});
+
+test('an over-cap stored completion_criteria text never blocks an unrelated patch', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const legacyText = 'c'.repeat(251);
+  const seed = newThread({ title: 'Legacy', completion_criteria: DOD }, { now: fixedClock });
+  await ctx.driver.writeThread({
+    ...seed,
+    completion_criteria: [{ ...seed.completion_criteria[0], text: legacyText }],
+  });
+  const { thread: updated } = await updateThread.handler(ctx, {
+    thread_id: seed.id, spine: { next_step: 'carry on' },
+  });
+  assert.equal(updated.spine.next_step, 'carry on');
+  assert.equal(updated.completion_criteria[0].text, legacyText);
 });
 
 test('update_thread accepts a well-formed two-clause risk', async (t) => {
