@@ -1,6 +1,16 @@
 import { commitAndReindex, ToolError } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
 
+const BULLET_MARKER = /^[-*]\s+/;
+
+function normalizeOptions(options) {
+  if (Array.isArray(options)) return options;
+  return options
+    .split('\n')
+    .map((line) => line.trim().replace(BULLET_MARKER, '').trim())
+    .filter((line) => line.length > 0);
+}
+
 function renderDecision({ nnnn, title, context, options, outcome, threadId, date }) {
   const optionLines = options.map((o) => `- ${o}`).join('\n');
   return [
@@ -29,6 +39,10 @@ function renderDecision({ nnnn, title, context, options, outcome, threadId, date
 
 async function handler(ctx, args) {
   const { driver, now } = ctx;
+  const options = normalizeOptions(args.options);
+  if (options.length === 0) {
+    throw new ToolError('record_decision: options must contain at least one option');
+  }
   const thread = await driver.readThread(args.thread_id);
   if (!thread) {
     throw new ToolError(`record_decision: thread_id ${args.thread_id} does not reference an existing thread`);
@@ -38,7 +52,7 @@ async function handler(ctx, args) {
     nnnn,
     title: args.title,
     context: args.context,
-    options: args.options,
+    options,
     outcome: args.outcome,
     threadId: args.thread_id,
     date: now(),
@@ -70,7 +84,12 @@ export default {
       slug: { type: 'string', pattern: '^[a-z0-9][a-z0-9-]*$' },
       title: { type: 'string', minLength: 1 },
       context: { type: 'string' },
-      options: { type: 'array', items: { type: 'string' } },
+      options: {
+        anyOf: [
+          { type: 'array', items: { type: 'string' } },
+          { type: 'string' },
+        ],
+      },
       outcome: { type: 'string' },
     },
   },
