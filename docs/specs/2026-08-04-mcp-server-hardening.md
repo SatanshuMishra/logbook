@@ -350,8 +350,13 @@ assertions that weak.
 - **Reported, not re-verified here.** The `content[1]` record is unbounded:
   `MESSAGE_MAX_CHARS` bounds only `message`, while `toDetail()` (`src/errors.mjs:125-138`) emits one
   entry per ajv error. Reported as 277,981 bytes on a 1,200-error payload against 82,140 pre-MSP-1.
-  Cap `problems`, carry `truncated` and `total`, and drop the duplicate serialization of
-  `problems[0]`.
+  Cap `problems` and carry the counts. **Amended during execution:** this originally said to carry
+  `truncated` and to drop the duplicate serialization of `problems[0]`. The shipped shape instead
+  carries `shown` and `total` and always emits `problems`, so a single-problem refusal does
+  serialize `problems[0]` twice. `truncated: true` was ambiguous — it meant both "4 of 1200 shown"
+  and "0 of 1200 shown", separable only by key presence — and an explicit `shown` count says which.
+  Uniform shape beat de-duplication because MSP-6's typed results must model one record shape, not
+  three. The contract MSP-6 inherits is `{problems, shown, total}` on every refusal.
 - Export a frozen `LEDGER_ERROR_CODES` beside `LEDGER_ERROR_LAYERS` (`src/errors.mjs:1-7`), validate
   `code` in `normalizeProblem`, and assert membership. Roughly 28 code literals exist across 11
   files with no enum; without this, MSP-2, 3, 4, 5 and 10 each mint codes independently.
@@ -421,6 +426,13 @@ the partial-write ghost-thread defects.
   the valid ids.
 - `archive_thread`: make its description match its code, or its code match its description
   (`archive-thread.mjs:25` vs `:35`); reject a whitespace-only reason.
+- **Added during execution (probe run against MSP-1B, 2026-08-04).** `minLength: 1` counts raw
+  string length, so a value made entirely of invisible characters is accepted while rendering as
+  nothing. Verified: `open_thread` with a criterion whose text is only U+202E succeeds, storing a
+  criterion that displays as empty. Every `minLength: 1` field must be validated on its *collapsed*
+  length, using the same widened class MSP-1B gave `collapse`
+  (`/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Zs}\s]+/gu`). This is the storage-side half of MSP-10's bidi
+  concern: MSP-10 stops a hostile value from rendering deceptively, this stops it being stored.
 
 **Acceptance**
 - Writing a risk scoped to `c99` on a three-criterion thread is refused, and the error lists
