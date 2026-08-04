@@ -2,13 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { rebuildIndex } from '../../../src/index/rebuild-index.mjs';
 
-function fakeDriver(threads, bindings) {
-  const written = {};
+function fakeDriver(threads, bindings, seed = {}) {
+  const written = { ...seed };
+  const writtenNames = [];
   return {
     written,
+    writtenNames,
     async listThreads() { return threads; },
     async listBindings() { return bindings; },
-    async writeIndexFile(name, obj) { written[name] = obj; },
+    async writeIndexFile(name, obj) { writtenNames.push(name); written[name] = obj; },
   };
 }
 
@@ -20,6 +22,12 @@ function thread(overrides) {
     ...overrides,
   };
 }
+
+function criterion(id, done, kind = 'planned', struckBy = null) {
+  return { id, text: id, done, kind, struck_by: struckBy };
+}
+
+const NO_PROGRESS = { done: 0, total: 0, detours_open: 0 };
 
 test('by-slug keeps the earliest-created thread on a slug collision', async () => {
   const early = thread({ id: '01AAAAAAAAAAAAAAAAAAAAAAAA', slug: 'dup', created_at: '2026-01-01T00:00:00Z' });
@@ -63,11 +71,41 @@ test('resumable includes only active/paused/blocked threads with spine next_step
   const driver = fakeDriver(threads, []);
   const counts = await rebuildIndex(driver);
   assert.deepEqual(driver.written['resumable'], [
-    { id: '01A', slug: 'a', title: 't', status: 'active', next_step: 'do-a' },
-    { id: '01P', slug: 'p', title: 't', status: 'paused', next_step: 'do-p' },
-    { id: '01B', slug: 'b', title: 't', status: 'blocked', next_step: 'do-b' },
+    { id: '01A', slug: 'a', title: 't', status: 'active', next_step: 'do-a', ...NO_PROGRESS },
+    { id: '01P', slug: 'p', title: 't', status: 'paused', next_step: 'do-p', ...NO_PROGRESS },
+    { id: '01B', slug: 'b', title: 't', status: 'blocked', next_step: 'do-b', ...NO_PROGRESS },
   ]);
   assert.equal(counts.resumable, 3);
+});
+
+test('resumable entries carry the planned-criteria fraction and the open-detour count', async () => {
+  const subject = thread({
+    id: '01A',
+    slug: 'a',
+    completion_criteria: [
+      criterion('c1', true),
+      criterion('c2', true),
+      criterion('c3', false, 'detour'),
+      criterion('c4', false),
+      criterion('c5', false, 'planned', '0021-dropped'),
+    ],
+  });
+  const driver = fakeDriver([subject], []);
+  await rebuildIndex(driver);
+  assert.deepEqual(driver.written['resumable'], [
+    { id: '01A', slug: 'a', title: 't', status: 'active', next_step: 'step', done: 2, total: 3, detours_open: 1 },
+  ]);
+});
+
+test('rebuildIndex leaves the drift and briefing index files untouched', async () => {
+  const driver = fakeDriver([thread({ id: '01A', slug: 'a' })], [], {
+    drift: { '01A': [{ thread_id: '01A' }] },
+    briefing: { thread_id: '01A', rendered: 'text' },
+  });
+  await rebuildIndex(driver);
+  assert.deepEqual(driver.writtenNames.sort(), ['by-branch', 'by-slug', 'children', 'resumable']);
+  assert.deepEqual(driver.written['drift'], { '01A': [{ thread_id: '01A' }] });
+  assert.deepEqual(driver.written['briefing'], { thread_id: '01A', rendered: 'text' });
 });
 
 test('rebuildIndex returns integer counts for every index', async () => {

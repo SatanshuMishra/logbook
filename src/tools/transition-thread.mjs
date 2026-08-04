@@ -30,7 +30,6 @@ async function handler(ctx, args) {
     blocked_by: to === 'blocked' ? args.blocked_by : null,
     abandoned_reason: to === 'abandoned' ? args.abandoned_reason : null,
     closure_statement: to === 'done' ? (args.closure_statement ?? null) : thread.closure_statement,
-    spine: { ...thread.spine, status: to },
     updated_at: nowIso,
   };
   if (to === 'done') {

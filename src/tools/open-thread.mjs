@@ -23,17 +23,17 @@ async function handler(ctx, args) {
 
 export default {
   name: 'open_thread',
-  description: 'Create a new thread (enters active) and write the active-thread pointer.',
+  description: 'Create a new thread with at least one completion criterion (enters active) and write the active-thread pointer.',
   inputSchema: {
     type: 'object',
     additionalProperties: false,
-    required: ['title'],
+    required: ['title', 'completion_criteria'],
     properties: {
       title: { type: 'string', minLength: 1 },
       slug: { type: 'string', minLength: 1 },
       parent_id: { type: ['string', 'null'], pattern: ULID_PATTERN },
       predecessor_id: { type: ['string', 'null'], pattern: ULID_PATTERN },
-      completion_criteria: { type: 'array', items: criteriaCreateItem },
+      completion_criteria: { type: 'array', minItems: 1, items: criteriaCreateItem },
       vcs_ref: { type: ['string', 'null'] },
       external_refs: { type: 'array', items: externalRefInputItem },
     },

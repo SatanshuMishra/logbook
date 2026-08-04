@@ -23,7 +23,6 @@ async function handler(ctx, args) {
     ...thread,
     status: 'active',
     blocked_by: null,
-    spine: { ...thread.spine, status: 'active' },
     updated_at: nowIso,
   };
   await driver.writeThread(updated);

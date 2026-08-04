@@ -8,7 +8,7 @@ import { makeToolCtx } from '../../fixtures/tool-ctx.mjs';
 
 test('append_session_event writes an append-only log and returns its path', async (t) => {
   const ctx = await makeToolCtx(t);
-  const { thread } = await openThread.handler(ctx, { title: 'Log' });
+  const { thread } = await openThread.handler(ctx, { title: 'Log', completion_criteria: [{ text: 'ship it' }] });
   const { path } = await appendSessionEvent.handler(ctx, { thread_id: thread.id, actor: 'human', body: 'did work' });
   assert.equal(typeof path, 'string');
   assert.equal(await readFile(path, 'utf8'), 'did work');
@@ -16,7 +16,7 @@ test('append_session_event writes an append-only log and returns its path', asyn
 
 test('append_session_event commits directly without a reindex', async (t) => {
   const ctx = await makeToolCtx(t);
-  const { thread } = await openThread.handler(ctx, { title: 'Log' });
+  const { thread } = await openThread.handler(ctx, { title: 'Log', completion_criteria: [{ text: 'ship it' }] });
   let commits = 0;
   let indexWrites = 0;
   ctx.driver.commit = async () => { commits += 1; return { committed: false }; };
@@ -37,7 +37,7 @@ test('append_session_event rejects an unknown thread_id', async (t) => {
 
 test('append_session_event reports recovery_degraded when the recovery repo is gone', async (t) => {
   const ctx = await makeToolCtx(t);
-  const { thread } = await openThread.handler(ctx, { title: 'Log' });
+  const { thread } = await openThread.handler(ctx, { title: 'Log', completion_criteria: [{ text: 'ship it' }] });
   const healthy = await appendSessionEvent.handler(ctx, { thread_id: thread.id, actor: 'human', body: 'ok' });
   assert.equal(healthy.recovery_degraded, false);
   await rm(join(await ctx.driver.root(), '.git'), { recursive: true, force: true });

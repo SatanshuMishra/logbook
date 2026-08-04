@@ -34,7 +34,7 @@ test('record-sha sets first_commit once and never overwrites it', async (t) => {
   await initGitRepo(projectDir);
 
   const ctx = await buildContext({});
-  const { thread } = await callTool('open_thread', { title: 'Anchor Me' }, ctx);
+  const { thread } = await callTool('open_thread', { title: 'Anchor Me', completion_criteria: [{ text: 'ship it' }] }, ctx);
   const { binding } = await callTool(
     'bind_branch',
     { thread_id: thread.id, repo: projectDir, branch: 'feat/anchor' },
@@ -62,7 +62,7 @@ test('record-sha surfaces a degraded recovery repo', async (t) => {
   useEnv(t, { CLAUDE_PROJECT_DIR: projectDir, CLAUDE_PLUGIN_DATA: dataDir });
 
   const ctx = await buildContext({});
-  const { thread } = await callTool('open_thread', { title: 'Anchor Me' }, ctx);
+  const { thread } = await callTool('open_thread', { title: 'Anchor Me', completion_criteria: [{ text: 'ship it' }] }, ctx);
   await callTool('bind_branch', { thread_id: thread.id, repo: projectDir, branch: 'feat/anchor' }, ctx);
 
   const root = await ctx.driver.root();

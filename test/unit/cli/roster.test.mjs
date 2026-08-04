@@ -22,7 +22,7 @@ test('roster lists an active thread after open_thread', async (t) => {
   useEnv(t, { CLAUDE_PROJECT_DIR: projectDir, CLAUDE_PLUGIN_DATA: dataDir });
 
   const ctx = await buildContext({});
-  const { thread } = await callTool('open_thread', { title: 'Roster Me' }, ctx);
+  const { thread } = await callTool('open_thread', { title: 'Roster Me', completion_criteria: [{ text: 'ship it' }] }, ctx);
 
   const result = await runCli(['roster']);
   assert.equal(result.length, 1);

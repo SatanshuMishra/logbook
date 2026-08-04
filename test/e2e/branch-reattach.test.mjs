@@ -10,11 +10,11 @@ test('reconcile re-attaches by trailer and by slug and leaves an unmatched branc
   const client = await startLedger({ projectDir: repo, dataDir, extraEnv: { LEDGER_BASE_REF: 'main' } });
   t.after(() => stopLedger(client));
 
-  const seedThread = (await callTool(client, 'open_thread', { title: 'Seed Keepalive' })).thread;
+  const seedThread = (await callTool(client, 'open_thread', { title: 'Seed Keepalive', completion_criteria: [{ text: 'ship it' }] })).thread;
   await callTool(client, 'bind_branch', { thread_id: seedThread.id, repo, branch: 'main' });
 
-  const trailerThread = (await callTool(client, 'open_thread', { title: 'Trailer Thread' })).thread;
-  const slugThread = (await callTool(client, 'open_thread', { title: 'Slug Thread', slug: 'fix-signup-bug' })).thread;
+  const trailerThread = (await callTool(client, 'open_thread', { title: 'Trailer Thread', completion_criteria: [{ text: 'ship it' }] })).thread;
+  const slugThread = (await callTool(client, 'open_thread', { title: 'Slug Thread', slug: 'fix-signup-bug', completion_criteria: [{ text: 'ship it' }] })).thread;
 
   await git(repo, ['checkout', '-q', '-b', 'feat/trailer']);
   await git(repo, [
@@ -51,6 +51,8 @@ test('reconcile re-attaches by trailer and by slug and leaves an unmatched branc
   );
 
   await git(repo, ['branch', '-q', '-D', 'feat/trailer']);
-  const { brief } = await callTool(client, 'get_resume_brief', { thread_id: trailerThread.id });
-  assert.equal(brief.thread_id, trailerThread.id);
+  const { thread_id, briefing } = await callTool(client, 'get_resume_brief', { thread_id: trailerThread.id });
+  assert.equal(thread_id, trailerThread.id);
+  assert.ok(briefing.startsWith('# PREFLIGHT BRIEFING — Trailer Thread\n'));
+  assert.ok(briefing.includes('- [>] c1 — ship it'));
 });

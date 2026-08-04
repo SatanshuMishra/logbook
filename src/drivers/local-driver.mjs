@@ -1,6 +1,7 @@
-import { lstat, mkdir, readFile, readdir } from 'node:fs/promises';
+import { lstat, mkdir, readFile, readdir, unlink } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { StorageDriver } from './storage-driver.mjs';
+import { INDEX_NAME_PATTERN } from '../index/index-files.mjs';
 import { serializeRecord } from './layout.mjs';
 import { DEFAULT_LEDGER_BRANCH, assertCommitMessage, ledgerCommitEnv } from './git-ledger.mjs';
 import { atomicWrite } from '../util/atomic-write.mjs';
@@ -8,6 +9,7 @@ import { gitExec } from '../util/git-exec.mjs';
 import { clearedGitLocationEnv, isolatedGitArgs, isolatedGitConfigEnv } from '../util/git-env.mjs';
 import { isUlid } from '../util/ulid.mjs';
 import { assertValidThread, assertValidBinding } from '../schema/validators.mjs';
+import { upcastThread } from '../schema/upcast.mjs';
 
 const SUBDIRS = ['threads', 'bindings', 'decisions', 'sessions', 'index'];
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
@@ -139,7 +141,7 @@ export class LocalDriver extends StorageDriver {
   }
 
   async readThread(id) {
-    return readJsonOrNull(join(this.ledgerRoot, 'threads', `${id}.json`));
+    return upcastThread(await readJsonOrNull(join(this.ledgerRoot, 'threads', `${id}.json`)));
   }
 
   async writeThread(thread) {
@@ -258,6 +260,19 @@ export class LocalDriver extends StorageDriver {
       join(this.ledgerRoot, 'index', `${name}.json`),
       serializeRecord(obj),
     );
+  }
+
+  async deleteIndexFile(name) {
+    if (typeof name !== 'string' || !INDEX_NAME_PATTERN.test(name)) {
+      throw new Error(`deleteIndexFile: invalid index name ${JSON.stringify(name)}`);
+    }
+    try {
+      await unlink(join(this.ledgerRoot, 'index', `${name}.json`));
+      return true;
+    } catch (error) {
+      if (error && error.code === 'ENOENT') return false;
+      throw error;
+    }
   }
 
   async commit(message) {
