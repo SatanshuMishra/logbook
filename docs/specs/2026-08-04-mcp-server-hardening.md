@@ -593,6 +593,10 @@ against a live ledger by an agent.
   `readIndexFile`/`writeIndexFile`/`deleteIndexFile` (`local-driver.mjs:252-276`) there for both
   drivers. The derived index and the briefing pledge are per-machine and already gitignored; they
   must not live somewhere a `rm -rf` destroys them with nothing to rebuild from.
+  **Priority note from MSP-0B:** of the six index files, four — `by-slug`, `by-branch`, `children`,
+  `resumable` — are recomputable by `rebuildIndex` (`rebuild-index.mjs:64-67`), which every mutating
+  tool already calls. Only the **drift snapshot** and the **briefing pledge** have no rebuild path
+  and are lost outright. If this MSP has to be cut down, those two are the whole point.
 - Fix the lock. **Amended by MSP-0B: it is worse than "wraps only the deletion".** It gates
   *nothing*. `#ensureWorktree` calls `#provisionWorktree()` inside the `try` unconditionally
   (`git-ref-driver.mjs:346-351`); `locked` is consulted only at `:350` to decide whether to
@@ -613,7 +617,10 @@ against a live ledger by an agent.
     drift snapshot the `reconcile` process just wrote. Verified with the real binary: after
     `ledger-cli roster`, the index directory held only the four files `rebuildIndex` had written;
     `drift.json` was gone. So `get_resume_brief`'s `takeDriftSnapshot` can never see hook-produced
-    drift, and MSP-6's fix to critical 1 is invisible until this MSP lands.
+    drift, and MSP-6's fix to critical 1 is invisible until this MSP lands. **Reordering the hook
+    does not fix it:** `bin/ledger-server.mjs:34-45` builds its context lazily on the first tool
+    call, so the server's own `init()` runs after the hook and would delete the snapshot anyway. The
+    state has to move out of the worktree.
   - **The verbatim gate can never fire.** `get_resume_brief` writes the pledge as an index file
     (`get-resume-brief.mjs:30`, `index-files.mjs:1`); `hooks/lib/stop.mjs:61` reads it through a
     separate CLI process whose own `init()` has already deleted it. Verified: `ledger-cli

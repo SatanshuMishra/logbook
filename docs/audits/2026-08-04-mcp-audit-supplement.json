@@ -59,7 +59,7 @@
     "findings": [
       {
         "id": "sup-gitref-init-destroys-every-index-file",
-        "title": "GitRefDriver.init() rm -rf's the worktree on every process start, and because index/ is gitignored and lives inside it, every derived index file is destroyed with nothing to rebuild it from",
+        "title": "GitRefDriver.init() rm -rf's the worktree on every process start, and because index/ is gitignored and lives inside it every index file dies with it — the drift snapshot and the briefing pledge permanently, since neither has a rebuild path",
         "severity": "critical",
         "category": "storage-custody",
         "area": "git-ref",
@@ -73,9 +73,9 @@
           "src/tools/context.mjs:10 — `await driver.init();` on every `buildContext`"
         ],
         "verdict": {
-          "verdict": "CONFIRMED",
-          "reasoning": "Refutation attempted three ways and all three failed. (1) Searched for a guard on the rm: `#provisionWorktree` has no early return and `#ensureWorktree` does not condition the call on the lock or on worktree health. (2) Searched for an override of `readIndexFile`/`writeIndexFile` that would move index state outside the worktree: `GitRefDriver` overrides `writeIndexFile` only to wrap it in `#writeInWorktree` (:305-307) and does not change the path. (3) Reproduced it: with CLAUDE_PLUGIN_DATA set to a temp dir and a temp git repo, one context wrote index files `drift`, `briefing` and `by-slug`; a second `buildContext` on the same project returned `drift_entries_after: 0`, `briefing_pledge_survived: false`, `by_slug_survived: false`, while the identical experiment on LocalDriver returned all three surviving. The empirical result matches the reading exactly.",
-          "reproduction": "scratchpad/measure/durability.mjs — LocalDriver: drift 1 entry before and after. GitRefDriver: 1 entry before, 0 after; index/drift.json present before, absent after."
+          "verdict": "NARROWED",
+          "reasoning": "The destruction is confirmed; the blast radius is narrower than this finding first claimed, and the correction is recorded here rather than quietly restated. Refutation attempted four ways. (1) A guard on the rm: none — `#provisionWorktree` has no early return and `#ensureWorktree` does not condition the call on lock or health. (2) An override moving index state outside the worktree: `GitRefDriver` overrides `writeIndexFile` only, to wrap it in `#writeInWorktree` (:305-307), and does not change the path; `readIndexFile` and `deleteIndexFile` are not overridden at all. (3) A force-add that would track index/ regardless of the ignore: no `add -f` exists anywhere; the only stagers are :385 and local-driver.mjs:286. Corroborated by a live tree listing in which an untracked sentinel file at the worktree root WAS committed while index/*.json was not, isolating the ignore as the sole reason. (4) Whether the loss is permanent — and here the refutation partly succeeded. The four derived files (by-slug, by-branch, children, resumable) are recomputable by `rebuildIndex` (rebuild-index.mjs:64-67), which every mutating tool already calls (shared.mjs:20). Only `drift` (drift/snapshot.mjs:76) and `briefing` (get-resume-brief.mjs:30) have NO rebuild path and are lost outright. The title is corrected accordingly. Severity stays critical because those two are the ones that carry state nothing else can reconstruct. Reproduced: a second `buildContext` returned `drift_entries_after: 0`, `briefing_pledge_survived: false`, `by_slug_survived: false`, against all three surviving on LocalDriver.",
+          "reproduction": "scripts/audit/durability.mjs — LocalDriver: drift 1 entry before and after, pledge and by-slug survive. GitRefDriver: 1 entry before, 0 after; pledge and by-slug gone."
         }
       },
       {
@@ -95,7 +95,8 @@
         "verdict": {
           "verdict": "CONFIRMED",
           "reasoning": "Refutation attempted by looking for any persistence outside the worktree, any caching across CLI invocations, and any ordering that would let a consumer read between `reconcile` and `roster`. None exists: `invokeCli` spawns a fresh process every time (hooks/lib/cli.mjs:17), and `roster` is the very next call. Then reproduced with the REAL CLI binary rather than an in-process model: process 1 wrote index/drift.json and index/briefing.json; `node bin/ledger-cli.mjs roster` was then run as its own process, and afterwards the index directory contained only by-branch.json, by-slug.json, children.json and resumable.json — the four files `rebuildIndex` had just written. drift.json and briefing.json were gone.",
-          "reproduction": "Real-CLI subprocess sequence against a temp git repo; index dir before: briefing.json, drift.json. After `ledger-cli briefing-pledge` and `ledger-cli roster`: by-branch.json, by-slug.json, children.json, resumable.json only."
+          "reproduction": "Real-CLI subprocess sequence against a temp git repo; index dir before: briefing.json, drift.json. After `ledger-cli briefing-pledge` and `ledger-cli roster`: by-branch.json, by-slug.json, children.json, resumable.json only. Independently reproduced a second time with a real deleted bound branch, including the positive control: after `reconcile`, drift.json held a WARNING entry; after `roster`, drift.json was ENOENT and `get_resume_brief` rendered no SINCE YOU LEFT section, while the same reconcile and brief in ONE process rendered `## SINCE YOU LEFT / - WARNING feature/gone — branch-gone: deleted`. The renderer works; the drift was destroyed, not ignored.",
+          "over_determined_by": "Removing the `roster` call would not fix this. `bin/ledger-server.mjs:34-45` builds its context lazily on the first tool call, so the MCP server's own `init()` runs after the hook and would delete the hook's drift anyway. Any fix must move the state out of the worktree, not reorder the hook."
         }
       },
       {
@@ -152,7 +153,8 @@
         ],
         "verdict": {
           "verdict": "CONFIRMED",
-          "reasoning": "MSP-9 already states the lock 'wraps only the deletion and gives up silently after ten seconds'. Refutation attempted by re-reading whether `locked` gates anything other than the release: it does not; the only other use is at :350. The claim is therefore stronger than the SPEC's wording — the lock does not even gate the deletion. The equal timeout and staleness constants make the ten-second give-up worse than a give-up: the waiter deletes a live holder's lock and proceeds concurrently."
+          "reasoning": "MSP-9 already states the lock 'wraps only the deletion and gives up silently after ten seconds'. Refutation attempted by re-reading whether `locked` gates anything other than the release: it does not; the only other use is at :350. The claim is therefore stronger than the SPEC's wording — the lock does not even gate the deletion. Reproduced under genuine contention: with the lock file held by a foreign token and a fresh mtime, `init()` waited the full budget (elapsed 10,152 ms), the foreign lock was still held afterwards, and the index directory went from holding drift.json to empty. The process waited ten seconds and then destroyed the data anyway. The equal timeout and staleness constants make the give-up worse than a give-up: a waiter deletes a live holder's lock at :66 and proceeds concurrently.",
+          "incidental": "`rm(lockPath, { force: true })` at :66 omits `recursive: true`, so a directory sitting at the lock path raises an unhandled ERR_FS_EISDIR out of provisioning instead of being treated as a stale lock."
         }
       },
       {
@@ -170,7 +172,8 @@
         ],
         "verdict": {
           "verdict": "CONFIRMED",
-          "reasoning": "Refutation attempted by testing whether `#commitWorktree` can actually throw. It can: `git commit` at :390 runs without `check: false`, unlike the `diff --cached --quiet` probe at :386 which is explicitly `check: false`. A failing commit (locked index, gpg failure, exhausted disk) therefore propagates, and the finally has already lied about the worktree being clean. The window is narrow, which is why this is medium rather than high, but the consequence is the destructive repair path running over live data."
+          "reasoning": "Refutation attempted by testing whether `#commitWorktree` can actually throw. It can, at every one of its five git calls — :384, :385, :390, :391 and :393 all run with the default `check: true` (util/git-exec.mjs:6 and :26-34), unlike the `diff --cached --quiet` probe at :386 which is explicitly `check: false`. `#uncommittedWrite` is written in exactly two places, :285 (true) and :402 (false). Then reproduced with a control: in the control run, with no `commit()` call, a pointer break left the uncommitted decision file intact (`0002-uncommitted.md` still present after a later write); in the test run, `commit()` threw first and the same later write destroyed it (`0002` gone, only `0003` present). The guard works precisely because `#writeInWorktree:283` skips the gitdir probe while dirty; the `finally` removes that protection. Raised from a narrow-window concern by the reproduction, though kept at medium because the loss requires a subsequent write. Worth noting for MSP-9: `test/unit/drivers/git-ref-driver-heal.test.mjs:124-135` asserts the in-flight file survives the rejected commit and stops there, so the suite currently certifies a guarantee that holds for exactly one call.",
+          "reproduction": "Control (no commit call): decisions before break `[0002-uncommitted.md]` -> after `[0002-uncommitted.md, 0003-after.md]`. Test (commit threw first): before `[0002-uncommitted.md]` -> after `[0003-after.md]`."
         }
       },
       {
@@ -190,7 +193,8 @@
         ],
         "verdict": {
           "verdict": "CONFIRMED",
-          "reasoning": "Refutation attempted by checking whether `init()` always precedes reads. It does on every entry path examined (bin/ledger-server.mjs:37 resolves the context lazily but through `buildContext`, and every bin/ledger-cli.mjs subcommand calls `buildContext`), which narrows WHEN the state is reachable — but does not refute the claim, because `init()` itself is what deletes the tree, and any concurrent process can delete it after this process's init. The reproduction under sup-gitref-second-process-destroys-uncommitted-writes exhibits exactly this: after B's init, A's `readThread` returned null and `listThreads()` returned 0 rather than raising. A caller cannot distinguish a destroyed ledger from an empty one."
+          "reasoning": "Refutation attempted by checking whether `init()` always precedes reads. Every bin/ledger-cli.mjs subcommand calls `buildContext` (:23, :53, :61, :66, :75), so the CLI is safe on its own; and bin/ledger-server.mjs:34-45 caches `contextPromise`, so the server runs `init()` exactly ONCE per process, at the first tool call, and every later tool call reuses the driver with no re-init and no repair. That narrows when the state is reachable but does not refute it, because `init()` is itself the thing that deletes the tree and any concurrent process can delete it afterwards. Measured: during one concurrent `ledger-cli roster`, the `threads/` directory was absent for 23 ms — and every hook invocation opens one such window. Reproduced directly on a driver whose worktree vanished underneath it: `readThread` -> null, `listThreads` -> [], `readIndexFile('resumable')` -> [], `readIndexFile('drift')` -> {}. Nothing raised. Worse, the tool layer then converts the silent emptiness into a confidently WRONG diagnosis: `get_resume_brief` reports `thread_id ... does not reference an existing thread` (src/tools/get-resume-brief.mjs:17) when the actual fault is missing storage.",
+          "reproduction": "Concurrent-roster probe: threads/ absent for 23 ms, one episode per invocation. Vanished-worktree probe: all four read surfaces returned empty, and get_resume_brief blamed the thread id."
         }
       },
       {
@@ -681,7 +685,7 @@
           "figure": "index files surviving one further process start",
           "local_driver": "3 of 3 survive",
           "git_ref_driver": "0 of 3 survive",
-          "note": "drift snapshot, briefing pledge and by-slug map. THIS is where the backends actually diverge, and it is a durability difference, not a size one. See sup-gitref-init-destroys-every-index-file."
+        "note": "drift snapshot, briefing pledge and by-slug map. THIS is where the backends actually diverge, and it is a durability difference, not a size one. by-slug is recomputable by rebuildIndex; drift and briefing are not, and are lost outright. See sup-gitref-init-destroys-every-index-file."
         }
       ]
     }
