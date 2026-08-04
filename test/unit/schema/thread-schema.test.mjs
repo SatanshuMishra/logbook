@@ -277,7 +277,7 @@ test('assertValidThread throws SchemaValidationError on failure', () => {
       assert.ok(err instanceof SchemaValidationError);
       assert.equal(err.recordKind, 'Thread');
       assert.ok(Array.isArray(err.errors) && err.errors.length > 0);
-      assert.match(err.message, /Thread failed schema validation/);
+      assert.match(err.message, /^record_invalid: Thread\.|^\w+: Thread\./);
       return true;
     },
   );

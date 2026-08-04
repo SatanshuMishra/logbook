@@ -219,6 +219,6 @@ test('amend_criteria refuses a terminal thread', async (t) => {
     () => amendCriteria.handler(ctx, {
       thread_id: seed.id, operations: [{ op: 'insert', text: 'too late', kind: 'planned' }],
     }),
-    /cannot mutate a terminal/,
+    /terminal_thread: amend_criteria\.thread_id/,
   );
 });

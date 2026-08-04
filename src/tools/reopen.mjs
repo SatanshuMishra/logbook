@@ -1,22 +1,28 @@
 import { isTerminal, canTransition } from '../model/index.mjs';
 import { writeActiveThread } from '../util/active-thread.mjs';
-import { commitAndReindex, ToolError } from './shared.mjs';
+import { commitAndReindex, ToolError, unknownThread, terminalThread, illegalTransition } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
 
 async function handler(ctx, args) {
   const { driver, now } = ctx;
   const thread = await driver.readThread(args.thread_id);
   if (!thread) {
-    throw new ToolError(`reopen: thread_id ${args.thread_id} does not reference an existing thread`);
+    throw new ToolError(unknownThread('reopen', 'thread_id', args.thread_id));
   }
   if (isTerminal(thread.status)) {
-    throw new ToolError(`reopen: cannot reopen a terminal (${thread.status}) thread; use create_successor`);
+    throw new ToolError(terminalThread('reopen', thread.status));
   }
   if (thread.status === 'active') {
-    throw new ToolError('reopen: thread is already active');
+    throw new ToolError({
+      code: 'already_active',
+      field: 'reopen.thread_id',
+      expected: 'a thread whose status is paused or blocked',
+      retryable: false,
+      remedy: 'this thread is already active; no reopen is needed, so continue without re-sending',
+    });
   }
   if (!canTransition(thread.status, 'active')) {
-    throw new ToolError(`reopen: illegal transition ${thread.status} -> active`);
+    throw new ToolError(illegalTransition('reopen', thread.status, 'active'));
   }
   const nowIso = now();
   const updated = {

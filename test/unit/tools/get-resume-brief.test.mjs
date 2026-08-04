@@ -170,6 +170,6 @@ test('get_resume_brief rejects an unknown thread_id', async (t) => {
   const ctx = await makeToolCtx(t);
   await assert.rejects(
     () => getResumeBrief.handler(ctx, { thread_id: '01ARZ3NDEKTSV4RRFFQ69G5FAV' }),
-    /thread_id .* does not reference an existing thread/,
+    /unknown_thread: get_resume_brief\.thread_id/,
   );
 });

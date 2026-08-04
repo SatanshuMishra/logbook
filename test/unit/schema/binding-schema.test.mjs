@@ -79,7 +79,7 @@ test('assertValidBinding throws SchemaValidationError with recordKind BranchBind
     (err) => {
       assert.ok(err instanceof SchemaValidationError);
       assert.equal(err.recordKind, 'BranchBinding');
-      assert.match(err.message, /BranchBinding failed schema validation/);
+      assert.match(err.message, /^\w+: BranchBinding\./);
       return true;
     },
   );

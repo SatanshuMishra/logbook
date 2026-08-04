@@ -21,6 +21,8 @@ test('the server refuses a transition absent from the FSM matrix', async (t) => 
   const err = await expectToolError(client, 'transition_thread', { thread_id: thread.id, to_status: 'blocked' });
   assert.equal(err.error, 'ToolError');
   assert.match(err.message, /illegal transition paused -> blocked/);
+  assert.equal(err.code, 'illegal_transition');
+  assert.equal(err.retryable, false);
 });
 
 test('the server refuses opening a thread without a definition of done', async (t) => {

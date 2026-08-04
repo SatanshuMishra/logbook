@@ -95,7 +95,7 @@ test('record_decision rejects an options string that carries no options and writ
   const { thread } = await openThread.handler(ctx, { title: 'Decisions', completion_criteria: [{ text: 'ship it' }] });
   await assert.rejects(
     () => callTool('record_decision', decisionArgs(thread, { options: '\n  \n' }), ctx),
-    /options must contain at least one option/,
+    /empty_options: record_decision\.options/,
   );
   assert.equal(await ctx.driver.nextDecisionNumber(), '0001');
 });
@@ -106,7 +106,7 @@ test('record_decision still rejects omitted options', async (t) => {
   const { options, ...withoutOptions } = decisionArgs(thread);
   await assert.rejects(
     () => callTool('record_decision', withoutOptions, ctx),
-    /must have required property 'options'/,
+    /missing_parameter: record_decision\.options/,
   );
 });
 
@@ -116,6 +116,6 @@ test('record_decision rejects an unknown thread_id', async (t) => {
     () => recordDecision.handler(ctx, {
       thread_id: '01ARZ3NDEKTSV4RRFFQ69G5FAV', slug: 's', title: 't', context: 'c', options: ['a'], outcome: 'o',
     }),
-    /thread_id .* does not reference an existing thread/,
+    /unknown_thread: record_decision\.thread_id/,
   );
 });

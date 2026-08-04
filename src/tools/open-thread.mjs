@@ -1,12 +1,12 @@
 import { newThread } from '../model/index.mjs';
 import { writeActiveThread } from '../util/active-thread.mjs';
-import { commitAndReindex, ToolError } from './shared.mjs';
+import { commitAndReindex, ToolError, unknownThread } from './shared.mjs';
 import { ULID_PATTERN, criteriaCreateItem, externalRefInputItem } from './schemas.mjs';
 
 async function requireThread(driver, field, id) {
   const existing = await driver.readThread(id);
   if (!existing) {
-    throw new ToolError(`open_thread: ${field} ${id} does not reference an existing thread`);
+    throw new ToolError(unknownThread('open_thread', field, id));
   }
 }
 

@@ -1,5 +1,13 @@
 import { isTerminal, assertSpineCaps } from '../model/index.mjs';
-import { commitAndReindex, knownDecisionRefs, ToolError } from './shared.mjs';
+import {
+  commitAndReindex,
+  knownDecisionRefs,
+  ToolError,
+  unknownThread,
+  terminalThread,
+  unknownCriterion,
+  liveIds,
+} from './shared.mjs';
 import {
   ULID_PATTERN,
   criteriaToggleItem,
@@ -28,9 +36,13 @@ function replaceScopedItems(stored, submitted, authoritative) {
 
 function assertNamesAScope(field, submitted, authoritative) {
   if (!Array.isArray(submitted) || submitted.length > 0 || authoritative.length > 0) return;
-  throw new ToolError(
-    `update_thread: spine.${field} is an empty array, which names no scope and so replaces nothing; name each scope to clear in replace_scopes.${field}, or omit the field`,
-  );
+  throw new ToolError({
+    code: 'empty_scope_replacement',
+    field: `update_thread.spine.${field}`,
+    expected: 'a non-empty array, or an empty one backed by replace_scopes',
+    retryable: false,
+    remedy: `an empty spine.${field} names no scope and so replaces nothing; name each scope to clear in replace_scopes.${field}, or omit the field`,
+  });
 }
 
 async function patchSpine(driver, thread, spinePatch, replaceScopes) {
@@ -42,7 +54,7 @@ async function patchSpine(driver, thread, spinePatch, replaceScopes) {
     submitted.open_risks = normalizeRisks(
       spinePatch.open_risks,
       thread,
-      'update_thread: spine.open_risks',
+      'update_thread.spine.open_risks',
     );
   }
   if (Array.isArray(spinePatch.key_decisions)) {
@@ -50,7 +62,7 @@ async function patchSpine(driver, thread, spinePatch, replaceScopes) {
       spinePatch.key_decisions,
       thread,
       await knownDecisionRefs(driver),
-      'update_thread: spine.key_decisions',
+      'update_thread.spine.key_decisions',
     );
   }
   const spine = {
@@ -71,7 +83,7 @@ async function patchSpine(driver, thread, spinePatch, replaceScopes) {
     assertNoRestatedDecision(
       spinePatch.out_of_scope,
       spine.key_decisions,
-      'update_thread: spine.out_of_scope',
+      'update_thread.spine.out_of_scope',
     );
   }
   assertSpineCaps(submitted);
@@ -81,12 +93,16 @@ async function patchSpine(driver, thread, spinePatch, replaceScopes) {
 function requireTogglable(thread, id) {
   const target = thread.completion_criteria.find((c) => c.id === id);
   if (!target) {
-    throw new ToolError(`update_thread: unknown completion_criteria id "${id}"`);
+    throw new ToolError(unknownCriterion(thread, 'update_thread.completion_criteria[].id', id));
   }
   if ((target.struck_by ?? null) !== null) {
-    throw new ToolError(
-      `update_thread: criterion "${id}" was struck by decision ${target.struck_by} and is retained as history, not toggled`,
-    );
+    throw new ToolError({
+      code: 'struck_criterion',
+      field: 'update_thread.completion_criteria[].id',
+      expected: `one of ${liveIds(thread)}`,
+      retryable: false,
+      remedy: `criterion "${id}" was struck by decision ${target.struck_by} and is kept as history; toggle a live criterion instead`,
+    });
   }
 }
 
@@ -104,10 +120,10 @@ async function handler(ctx, args) {
   const { driver, now } = ctx;
   const thread = await driver.readThread(args.thread_id);
   if (!thread) {
-    throw new ToolError(`update_thread: thread_id ${args.thread_id} does not reference an existing thread`);
+    throw new ToolError(unknownThread('update_thread', 'thread_id', args.thread_id));
   }
   if (isTerminal(thread.status)) {
-    throw new ToolError(`update_thread: cannot mutate a terminal (${thread.status}) thread`);
+    throw new ToolError(terminalThread('update_thread', thread.status));
   }
   const completionCriteria = Array.isArray(args.completion_criteria)
     ? toggleCriteria(thread, args.completion_criteria)

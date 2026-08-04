@@ -1,13 +1,13 @@
 import { newBinding } from '../model/index.mjs';
 import { writeActiveThread } from '../util/active-thread.mjs';
-import { commitAndReindex, ToolError } from './shared.mjs';
+import { commitAndReindex, ToolError, unknownThread } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
 
 async function handler(ctx, args) {
   const { driver, now } = ctx;
   const thread = await driver.readThread(args.thread_id);
   if (!thread) {
-    throw new ToolError(`bind_branch: thread_id ${args.thread_id} does not reference an existing thread`);
+    throw new ToolError(unknownThread('bind_branch', 'thread_id', args.thread_id));
   }
   const binding = newBinding(args, { now });
   await driver.writeBinding(binding);
