@@ -238,8 +238,13 @@ script names two `upcast.mjs` defects and assumes there are no others; MSP-9 and
   `src/schema/upcast.mjs` and the full v1 to v2 path; `src/drivers/{git-ref-driver,git-ledger,select,layout}.mjs`.
 - Re-measure every byte-size figure in this SPEC against `GitRefDriver`, since the deployed
   backend is the git one and all current numbers came from `LocalDriver`.
-- Append results to `docs/audits/2026-08-04-mcp-audit.json` under a `supplement` key. Do not
-  rewrite the original.
+- Write results to `docs/audits/2026-08-04-mcp-audit-supplement.json`, a NEW sibling artifact.
+  **Amended during execution, on orchestrator direction.** This bullet originally said to append a
+  `supplement` key into `docs/audits/2026-08-04-mcp-audit.json`. That file is byte-frozen: section 2
+  records its sha256 `56deb0a7…` as proof the committed copy is byte-identical to the original
+  workflow output, and re-serializing it to add a key destroys exactly that provenance. The sibling
+  file mirrors the original's `.result` shape so both are queryable the same way, and every
+  supplement id carries a `sup-` prefix so it can never collide with the 121 existing ids.
 - Amend MSP-7, MSP-9, MSP-11 in this SPEC with whatever the supplement finds. If it finds nothing,
   record that as a decision so the gap is closed by evidence rather than by silence.
 
@@ -472,8 +477,52 @@ the same PR. No on-disk change.
   `quarantined` with the violation list, not thrown. A teammate's bad record degrades one thread,
   never the session.
 - `listThreads` upcasts like `readThread` does (`local-driver.mjs:155-164` vs `:143-145`).
-- Fix the upcast defects: v1 empty-string risks and out-of-scope entries; `RISK_SENTENCE`
-  violations manufactured by the upcast.
+  MSP-0B narrowed the reason: for a well-formed v1 record the roster entry `rebuild-index.mjs:45-54`
+  builds is **byte-identical** either way, because `criteriaProgress` is accidentally v1-tolerant
+  (`selection.mjs:9` collapses an absent `struck_by` through `??`, and `:27` counts an absent `kind`
+  as planned). The divergence is real only for a v1 `completion_criteria` holding a bare string —
+  where `listThreads` lists the thread as resumable while `upcastThread` **throws**
+  (`upcast.mjs:14-16`) in all eleven `readThread` call sites — and for hybrid records carrying
+  `struck_by` or `kind`, which the upcast discards.
+- Fix the upcast defects. **Amended by MSP-0B: this MSP assumed two. There are at least seven, and
+  this MSP's own schema consolidation manufactures seven more.** See
+  `docs/audits/2026-08-04-mcp-audit-supplement.json`, ids `sup-upcast-*`. The full list:
+  - `upcastDecision` copies the v1 string verbatim into `ref` (`upcast.mjs:55`) while the regex at
+    `:6` gates only the *title*, so any v1 `key_decisions` entry that is free text, uppercase, or
+    not `NNNN-lower-kebab` upcasts into a record `DECISION_REF_PATTERN` refuses
+    (`thread.schema.mjs:28`). The thread still reads; it can never be written again.
+  - `unkebab('')` returns `''` (`upcast.mjs:34-35`), so an empty-string v1 decision also violates
+    `decisionItem.title minLength: 1` (`thread.schema.mjs:29`).
+  - `upcastSpine` spreads `...rest` (`upcast.mjs:69`), carrying every unknown v1 spine key past
+    `additionalProperties: false` (`thread.schema.mjs:98`); and it defaults only `last_session`,
+    `open_risks`, `key_decisions`, `out_of_scope` (`:70-73`), never the equally required
+    `active_goal` and `next_step` (`thread.schema.mjs:99`).
+  - `upcastThread` spreads `...record` at `:84` against the root's own
+    `additionalProperties: false` (`thread.schema.mjs:37`).
+  - `upcastCriterion` copies `item.text` with no guard (`upcast.mjs:20`), and `upcastCriteria`
+    returns `[]` for a non-array (`:28`), silently and permanently discarding every criterion.
+  - `upcastThread` returns the record raw and unvalidated whenever `schema_version !== 1`
+    (`:82`) — absent, `0`, `3` and the string `"1"` all pass straight through `readThread`
+    (`local-driver.mjs:143-145`) to every tool.
+  - The upcast hardcodes `id` positionally, `kind: 'planned'` and `struck_by: null`
+    (`upcast.mjs:19,22,23`), so one read-modify-write silently renumbers criterion ids that
+    `risk.scope` and `decision.scope` point at (`patterns.mjs:22`) and un-strikes struck criteria.
+- **Cap consolidation manufactures new upcast violations.** Moving `SPINE_CAPS` into the schema
+  newly invalidates values the upcast produces today: decision titles from long v1 slugs
+  (`upcast.mjs:56`) exceed `decisionTitleMaxChars: 120` (`caps.mjs:9`); passthrough `active_goal`,
+  `next_step` and `last_session` exceed their caps; criterion text exceeds
+  `CRITERION_TEXT_MAX_CHARS` (`patterns.mjs:16`); and because `upcastRisk` forces every v1 risk to
+  `scope: 'thread'` (`upcast.mjs:44`) a v1 thread with more than 20 risks breaks
+  `openRisksMaxPerScope` (`caps.mjs:5`). Two existing tests assert the current permissive behavior
+  and must change in this PR: `test/unit/schema/upcast.test.mjs:124-129` and `:131-137`.
+- **`assertSpineCaps` is checked against the patch, not the merged spine** (`update-thread.mjs:77`
+  passes `submitted`), so an over-cap value the upcast produced survives every write today. The
+  single choke point this MSP builds must validate the merged record.
+- **`scope: 'legacy'` is unremovable.** `upcastDecision` sets it (`upcast.mjs:57`) and
+  `assertWritableScope` refuses it on every write path (`spine-input.mjs:12-19`), while
+  `replaceScopedItems` carries every unnamed scope forward (`update-thread.mjs:64-68`). Upcast
+  decisions are immortal and permanently constrain `out_of_scope` through
+  `assertNoRestatedDecision` (`update-thread.mjs:70-76`). The migration must provide the exit.
 
 **Migration (mandatory, in this PR):** `scripts/migrate-ledger.mjs` — dry-run by default, reports
 every stored record that would newly fail, and normalizes what it can (whitespace, missing anchors)
@@ -483,6 +532,9 @@ against a live ledger by an agent.
 **Acceptance**
 - A single test enumerates every constraint constant and asserts it is reachable from
   `thread.schema.mjs`. A cap that exists only in a handler fails this test.
+- **Round-trip (added by MSP-0B).** For every v1 shape in the corpus, `writeThread(upcastThread(r))`
+  succeeds. A record that reads but cannot be written back is the defect class this MSP closes, and
+  it is the one the first audit did not measure.
 - A deliberately corrupt thread file reads back `quarantined` and the session continues.
 - The migration dry-run against a copy of the real ledger reports zero unresolvable records, or
   the SPEC's owner ratifies each exception.
@@ -541,14 +593,58 @@ against a live ledger by an agent.
   `readIndexFile`/`writeIndexFile`/`deleteIndexFile` (`local-driver.mjs:252-276`) there for both
   drivers. The derived index and the briefing pledge are per-machine and already gitignored; they
   must not live somewhere a `rm -rf` destroys them with nothing to rebuild from.
-- Fix the lock: it currently wraps only the deletion and gives up silently after ten seconds.
+- Fix the lock. **Amended by MSP-0B: it is worse than "wraps only the deletion".** It gates
+  *nothing*. `#ensureWorktree` calls `#provisionWorktree()` inside the `try` unconditionally
+  (`git-ref-driver.mjs:346-351`); `locked` is consulted only at `:350` to decide whether to
+  release. A failed or timed-out acquisition (`:62`, `:64`) still runs the `rm -rf`. Worse, the
+  acquisition deadline and the staleness threshold are the same constant (`:34`, used at `:40` and
+  `:56`), so a waiter force-removes a lock its holder is still using (`:66`) and then proceeds
+  concurrently. The fix must make provisioning conditional on holding the lock, and must separate
+  the two timeouts.
+- **Added by MSP-0B: raise this MSP's priority.** The measured blast radius is larger than
+  "critical 4 plus 9 related defects". Reproduced against temp ledgers
+  (`docs/audits/2026-08-04-mcp-audit-supplement.json`, ids `sup-gitref-*`):
+  - A second process's `init()` destroys the first's uncommitted writes outright. Process A wrote a
+    thread and read it back; after B's `buildContext`, A could no longer read its own thread and
+    `listThreads()` returned 0.
+  - **The entire `src/drift` feature is non-functional end to end on the deployed backend.**
+    `hooks/lib/session-start.mjs:98-100` runs `sync`, `reconcile` and `roster` as three separate
+    processes (`hooks/lib/cli.mjs:17`), each calling `init()`. The `roster` process deletes the
+    drift snapshot the `reconcile` process just wrote. Verified with the real binary: after
+    `ledger-cli roster`, the index directory held only the four files `rebuildIndex` had written;
+    `drift.json` was gone. So `get_resume_brief`'s `takeDriftSnapshot` can never see hook-produced
+    drift, and MSP-6's fix to critical 1 is invisible until this MSP lands.
+  - **The verbatim gate can never fire.** `get_resume_brief` writes the pledge as an index file
+    (`get-resume-brief.mjs:30`, `index-files.mjs:1`); `hooks/lib/stop.mjs:61` reads it through a
+    separate CLI process whose own `init()` has already deleted it. Verified: `ledger-cli
+    briefing-pledge` printed `null` immediately after a pledge was written. A null pledge silently
+    passes the gate (`stop.mjs:80-81`). This is additive to critical 8, not the same defect — the
+    active-thread pointer itself *does* survive, because `activeThreadPath` resolves to
+    `<git-common-dir>/ledger/active-thread` (`util/active-thread.mjs:19-23`), outside the worktree.
+  - Read paths cannot repair. Only `#writeInWorktree` (`:282-287`) can trigger provisioning; no read
+    method is overridden, so `readJsonOrNull` returns null on ENOENT (`local-driver.mjs:60`) and
+    `listDir` returns `[]` (`:69`). A destroyed ledger is indistinguishable from an empty one.
+- **Added by MSP-0B: fixing custody exposes a masked defect.** `mergeDriftSnapshot`
+  (`drift/snapshot.mjs:34-41`) never prunes: a resolved drift is carried forward forever because a
+  clean branch produces no entry to replace it (`classification.mjs:90-92`). Today the `rm -rf`
+  deletes the snapshot before it can go stale. Once the state store makes it durable, stale drift
+  becomes permanently visible. Ship the pruning in this MSP, not after it.
 
 **Acceptance**
 - Starting a second server process while the first has uncommitted writes destroys nothing.
+  **Falsifiable form (MSP-0B):** process A writes a thread without committing; process B runs
+  `buildContext`; A's `readThread` still returns the thread and B's `listThreads()` returns 1.
 - The by-slug index survives a process restart on the git backend, so slug reattachment works.
-- The verbatim-gate pledge survives a process restart.
+- The verbatim-gate pledge survives a process restart. **Falsifiable form (MSP-0B):** after
+  `get_resume_brief`, `ledger-cli briefing-pledge` run as a separate process returns the pledge, not
+  `null`.
+- **Added by MSP-0B:** after the SessionStart sequence `sync; reconcile; roster` run as three
+  separate processes, the drift snapshot written by `reconcile` is still readable.
+- **Added by MSP-0B:** a drift entry whose branch no longer drifts is absent from the next snapshot.
 
-**Verify:** `npm test`; a two-process test asserting the first process's writes survive.
+**Verify:** `npm test`; a two-process test asserting the first process's writes survive; a
+three-process test replaying the SessionStart `sync; reconcile; roster` sequence and asserting the
+drift snapshot survives it.
 
 **PR title:** `fix(storage): verify and repair the worktree instead of recreating it`
 
@@ -601,20 +697,85 @@ against a live ledger by an agent.
   scalars resolved by `updated_at`. When it genuinely cannot decide, it writes both sides and marks
   the record conflicted, surfacing through MSP-7's quarantine channel. **Never silently drop a
   local hunk.**
+- **Amended by MSP-0B: the merge strategy is the whole defect; the push is not.** Critical 3 reads
+  "merges `-X theirs` then force-pushes". The push at `:466` is
+  `--force-with-lease=<ref>:<expectedRemoteSha>` against the exact sha the merge was computed from,
+  and a remote that moved is rejected and retried (`:439`, `:470`), not overwritten. Replacing the
+  push is unnecessary work; replacing `:490` is sufficient. Scope this MSP accordingly.
+- **Amended by MSP-0B: the merge driver's surface is narrower than stated.** This MSP assumes the
+  driver "must handle records `src/drift/*` produces". Only *bindings* qualify. Verified by
+  `git ls-tree -r --name-only refs/heads/_ledger` on a temp ledger: `threads/`, `bindings/` and
+  `decisions/` are tracked; `index/` is not, because `GITIGNORE = 'index/\n'`
+  (`git-ref-driver.mjs:29`). Drift snapshots, the briefing pledge and the derived index never
+  participate in a merge at all. Build the driver for `threads/*.json` and `bindings/*.json` only.
 - Surface the merge. `sync()` already returns `{merged: true}` (`:440`) and both call sites discard
   it — `hooks/lib/session-start.mjs:98` and `hooks/lib/stop.mjs:106`. Report it.
 - Binding portability: stop storing absolute repository paths that exist only on the authoring
-  machine.
+  machine. **MSP-0B confirmed these paths really are shared**, not machine-local state:
+  `newBinding` stores `repo` verbatim (`model/binding.mjs:19`) and `bindings/` is tracked in the
+  ledger ref, so one machine's absolute paths are pushed to every collaborator.
 - `reconcile`: stop rewriting other users' bindings from observations made against whatever
   repository sits at `binding.repo` on **this** machine (`src/drift/reconcile.mjs:53-63`); stop
   auto-creating bindings matched by branch **name** across arbitrary repos.
+- **Added by MSP-0B: reconcile does not survive an absent bound repository at all.** A single
+  binding whose `repo` path is missing on this machine aborts the whole operation — `observeBranch`
+  (`reconcile.mjs:35`) and `listRepoBranches` (`:54`) have no error handling and
+  `scopedExec` runs without `check: false` (`git-ref-driver.mjs:574`). Reproduced: two bindings, one
+  naming an absent path, produced `Error: spawn git ENOENT`, an empty drift snapshot, and the
+  offending binding still `active`. All drift computed before the throw is discarded, because
+  `writeDriftSnapshot` runs only after the loop returns (`tools/reconcile.mjs:6-7`). The failure is
+  then invisible: `invokeCli` never rejects (`hooks/lib/cli.mjs:16-26`) and
+  `hooks/lib/session-start.mjs:99` discards the exit code and stderr. Note `:51` derives the repo
+  list from bindings of *any* status, so a long-closed binding still drives a git invocation. The
+  error text is itself misattributing — it reads as "git is not installed".
+- **Added by MSP-0B, and the most serious thing this audit found in the reattach path: branch
+  identity collapses to the repository root commit.** `resolveIntegrationBase` returns `null` when
+  `LEDGER_BASE_REF` is unset and no `refs/remotes/origin/*` resolves (`git-ref-driver.mjs:198`);
+  `firstCommitOf` then skips the range at `:146` and falls through to
+  `rev-list --max-parents=0` at `:153-156`. So in any repository without an `origin` remote **every
+  branch reports the same `first_commit`** — and `tryFirstCommit` (`reattach.mjs:31-37`) matches on
+  that value alone, with no repo filter, no status filter, and first-match-wins over an unsorted
+  `listBindings` (`local-driver.mjs:178-187`). Reproduced through `runReconcile`: one binding whose
+  `first_commit` was the root captured three separate unbound branches, `main` among them, each
+  reported as `method: 'first-commit'`. A binding already closed as `merged` matched too, and
+  reversing the binding order flipped which branch was misattached. The trailer does not save this
+  case: the trailer is read off the root commit (`:568`), which carries none — measured
+  `thread_id_trailer: null`. Reattachment needs a real identity (repo + branch + a first commit that
+  is actually unique), not a sha that every branch shares.
+- **Added by MSP-0B: a closed binding blocks reattachment permanently.** `boundKeys`
+  (`reconcile.mjs:50`) is built from all bindings regardless of status, while the drift loop skips
+  non-active ones (`:32`). A branch that is deleted, orphaned, then recreated is skipped by both
+  loops forever. Reproduced across three reconciles: present → no drift; deleted → `mark-orphaned`;
+  recreated → zero drift, zero dispositions, binding still `orphaned`.
+- **Added by MSP-0B: three of the eight drift signal codes are dead.** `#observeLive` and
+  `#observeDeleted` hardcode `force_push_detected: false`, `key_files_deleted: []` and
+  `key_files_modified: []` (`git-ref-driver.mjs:529-532`, `:551-554`), and `observeBranch` is
+  implemented only there. So `force-push` (CRITICAL), `key-file-deleted` (CRITICAL) and
+  `key-file-modified` (`classification.mjs:63-77`) can never fire. Do not design merge or reporting
+  behavior around signals the system does not produce; either implement the observations or delete
+  the branches.
+- **Added by MSP-0B: two smaller multi-user gaps in the same files.** `disposeBinding` treats a
+  thread that does not exist as non-terminal and recommends `complete` for it
+  (`disposition.mjs:21`, `:33`). And a `Thread-Id` commit trailer is an unauthenticated attach
+  primitive: `reattach` checks only that the named thread exists (`reattach.mjs:20-22`), then writes
+  a binding during a hook with no user action (`:94`), so a teammate's commit can attach their
+  branch to a thread they do not own.
 
 **Acceptance**
 - A concurrent edit by two users to different fields of one thread merges without loss.
 - A conflicting edit surfaces as conflicted, never as a silent overwrite.
 - `reconcile` on a machine that does not host a bound repository leaves that binding untouched.
+  **Falsifiable form (MSP-0B):** with one healthy binding and one naming an absent path, `reconcile`
+  returns successfully, writes drift for the healthy binding, and reports the unreachable one rather
+  than throwing.
+- **Added by MSP-0B:** a branch that was orphaned and later recreated is re-attached.
+- **Added by MSP-0B:** in a repository with no `origin` remote, two unrelated unbound branches do
+  not both re-attach to the same thread.
+- **Added by MSP-0B:** a reconcile failure is reported to the user rather than swallowed by
+  `hooks/lib/session-start.mjs:99`.
 
-**Verify:** `npm test`, including a two-clone merge test.
+**Verify:** `npm test`, including a two-clone merge test; a reconcile test with a binding naming a
+path absent from the test machine.
 
 **PR title:** `fix(sync): merge ledger records field-wise instead of taking theirs`
 
@@ -627,7 +788,13 @@ against a live ledger by an agent.
 
 **Changes**
 - Stop rebuilding the whole index on every write. Make it incremental, or debounce it to the
-  operations that need it.
+  operations that need it. **Measured by MSP-0B, and it does not support this premise.** At 17
+  threads `rebuildIndex` takes 1.8 ms (LocalDriver) / 2.0 ms (GitRefDriver), while the
+  `commitAndReindex` every mutating tool actually pays (`tools/shared.mjs:19-23`) takes 30.1 / 27.3
+  ms. The rebuild is roughly 7% of it; the git commit is the rest, on **both** backends, because
+  `LocalDriver` also drives a git recovery repo (`local-driver.mjs:278-301`). Cost is per-commit,
+  not per-thread, at this scale: 1 thread costs 26.9 / 27.6 ms. Re-target this bullet at the commit
+  or re-justify it with a measurement at 500 threads before spending the work.
 - Bound every return. Adopt MCP cursor pagination for `list_threads` and any listing that can grow.
   Claude Code warns above 10,000 tokens of tool output and hard-caps at 25,000.
 - Bring every tool description under the 2KB Claude Code truncation limit, with the load-bearing
@@ -743,8 +910,8 @@ MSP's error surface depends on its shape.
 | MSP-8's transaction refactor touches every handler | It depends on MSP-7's single schema so there is one validation choke point to call. Ship it alone; do not bundle. |
 | A stacked tower grows past review capacity | Depth cap of four, then stop and report. |
 | The audit artifact is in a temp directory and may vanish | MSP-0 commits it before anything else. |
-| MSP-7, MSP-9 and MSP-11 are specified from partial knowledge of `drift`, `upcast` and `GitRefDriver` | MSP-0B audits exactly those three areas and gates those three MSPs. It ships no code, so MSP-1 through MSP-6 proceed in parallel. |
-| Payload sizes were measured on `LocalDriver`, but the deployed backend is `GitRefDriver` | MSP-0B re-measures on both; MSP-6 and MSP-12 acceptance criteria must be met on the git backend. |
+| MSP-7, MSP-9 and MSP-11 are specified from partial knowledge of `drift`, `upcast` and `GitRefDriver` | **Realized, and larger than assumed.** MSP-0B read all three areas in full and returned 29 findings — 5 critical, 9 high. MSP-7 assumed two upcast defects; there are at least seven, plus seven more its own cap consolidation manufactures. MSP-9's blast radius includes the whole `src/drift` feature and the verbatim gate, both non-functional today on the deployed backend. MSP-11's merge-driver surface is narrower than stated (bindings, not drift entries) while its reconcile surface is wider (reconcile does not survive an absent bound repo). All three sections are amended above. |
+| ~~Payload sizes were measured on `LocalDriver`, but the deployed backend is `GitRefDriver`~~ **Retired by MSP-0B: measured on both, and the sizes are identical.** Every mutating tool returns the record itself (`update-thread.mjs:125`) and `bin/ledger-server.mjs:52` stringifies it, so the figure is driver-independent by construction. The SPEC's 6,269 B is verified in magnitude (6,514 B on a reconstructed thread, on both backends; 6,963 B once wrapped in the MCP content envelope, which is the number MSP-6's 1,200 B target must beat). | The real divergence is durability, not size: 3 of 3 index files survive a further process start on `LocalDriver`, 0 of 3 on `GitRefDriver`. That risk is now carried by MSP-9. |
 | An implementing agent restates a defect instead of reading it | The evidence law in section 2 is binding; a PR body without `file:line` citations is rejected in review. |
 
 ---

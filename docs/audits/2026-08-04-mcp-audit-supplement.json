@@ -212,8 +212,8 @@
         }
       },
       {
-        "id": "sup-gitref-upstream-hardcodes-origin",
-        "title": "Ahead/behind and divergence detection hardcode refs/remotes/origin, ignoring the driver's configured remote, so both drift WARNING signals silently never fire on a repository whose remote is not named origin",
+        "id": "sup-gitref-upstream-signals-silently-neutral",
+        "title": "Both upstream drift WARNINGs return a neutral value instead of \"unknown\" whenever refs/remotes/origin/<branch> does not resolve, which includes every branch that has never been pushed",
         "severity": "medium",
         "category": "silent-success",
         "area": "git-ref",
@@ -221,33 +221,36 @@
         "evidence": [
           "src/drivers/git-ref-driver.mjs:106 — `const upstream = `refs/remotes/origin/${branch}`;` in `aheadBehind`",
           "src/drivers/git-ref-driver.mjs:121 — `const upstream = `refs/remotes/origin/${branch}`;` in `divergedFromUpstream`",
-          "src/drivers/git-ref-driver.mjs:223 — `this.remote = remote;` — the configured remote, never consulted by either function",
           "src/drivers/git-ref-driver.mjs:107-108 — `if ((await revParseOrNull(scope, upstream)) === null || headSha === null) { return { ahead: 0, behind: 0 }; }` — an absent upstream returns the neutral value rather than reporting that it could not tell",
+          "src/drivers/git-ref-driver.mjs:123 — `if (up === null || headSha === null) return false;` — the same neutral return in `divergedFromUpstream`",
           "src/drift/classification.mjs:72-74 — the `divergence` WARNING fires only on `o.ahead > 0 || o.behind > 0`",
-          "src/drift/classification.mjs:69-71 — the `not-ancestor` WARNING fires only on `o.diverged_from_upstream`"
+          "src/drift/classification.mjs:69-71 — the `not-ancestor` WARNING fires only on `o.diverged_from_upstream`",
+          "src/drivers/git-ref-driver.mjs:224 — `this.remote = remote;` — the configured remote, which these module-level functions have no `this` to read"
         ],
         "verdict": {
           "verdict": "NARROWED",
-          "reasoning": "Refutation attempted on reachability: `DEFAULT_REMOTE = 'origin'` (src/drivers/git-ledger.mjs:12) and src/drivers/select.mjs:45 passes `remote: DEFAULT_REMOTE` with no user override, so today `this.remote` is always 'origin' and the two values agree. The defect is therefore latent rather than active: it is a correctness trap that fires the moment a remote name becomes configurable, plus an unconditional silent-neutral return for any repository with no `origin` remote at all — which includes every local-only clone. In that case both signals are silently suppressed rather than reported as unknown, which is live today."
+          "reasoning": "This finding was first written as 'the functions hardcode origin and ignore this.remote'. The refutation killed that causal claim and it is corrected here rather than quietly restated: `select.mjs:45` passes `remote: DEFAULT_REMOTE`, `git-ledger.mjs:12` defines it as 'origin', and `bin/ledger-server.mjs:9-12` exposes no remote override, so `this.remote` is unconditionally 'origin' and substituting it would change nothing. `aheadBehind` and `divergedFromUpstream` are module-level functions taking a scope (`:105`, `:120`) and have no `this` at all. What survives is the silent-neutral return: both signals report 'no drift' when the truthful answer is 'cannot tell'. A/B reproduced on one repo with the same objects, changing only the remote's name — with the remote named `upstream`, a branch one commit ahead reported `{ahead:0, behind:0, diverged_from_upstream:false}` and no signal fired; after `git remote rename upstream origin` and a fetch, the same branch reported `{ahead:1}` and the divergence WARNING fired. The live everyday case is a branch that has never been pushed, which has no remote-tracking ref and is therefore reported as clean. A citation in the first draft was also wrong: `this.remote` is at `:224`, not `:223`."
         }
       },
       {
         "id": "sup-gitref-first-commit-falls-back-to-repo-root",
-        "title": "firstCommitOf falls back to the repository root commit whenever a branch has no commits beyond the integration base, so unrelated branches collide on one identifier and reattachment can bind a branch to the wrong thread",
-        "severity": "high",
+        "title": "firstCommitOf falls back to the repository root commit, so in a repo with no origin remote EVERY branch reports the same first_commit and a single binding silently captures every unbound branch, main included",
+        "severity": "critical",
         "category": "silent-destruction",
         "area": "git-ref",
-        "confidence": "high",
+        "confidence": "certain",
         "evidence": [
-          "src/drivers/git-ref-driver.mjs:147-151 — the `base..ref` range is tried first and only used `if (first)`",
-          "src/drivers/git-ref-driver.mjs:153-156 — `const root = await scopedExec(scope, ['rev-list', '--max-parents=0', ref], ...); return roots[roots.length - 1] || null;` — the fallback, and for a multi-root repository it picks the last root arbitrarily",
+          "src/drivers/git-ref-driver.mjs:146-151 — `if (base) { ... }` — when `base` is null the range is skipped entirely and control falls straight through to the root fallback",
+          "src/drivers/git-ref-driver.mjs:153-156 — `const root = await scopedExec(scope, ['rev-list', '--max-parents=0', ref], ...); return roots[roots.length - 1] || null;` — and for a multi-root repository it picks the last root arbitrarily",
+          "src/drivers/git-ref-driver.mjs:198 — `return null;` — `resolveIntegrationBase` yields null whenever LEDGER_BASE_REF is unset and no refs/remotes/origin/* resolves",
           "src/drivers/git-ref-driver.mjs:567 — `const firstCommit = await firstCommitOf(scope, ref, base);` in `observeNewBranch`",
           "src/drift/reattach.mjs:89 — `first_commit: observation.first_commit ?? null,` — persisted into the binding",
-          "src/drift/reattach.mjs:31-37 — `for (const b of bindings) { if (b.first_commit === target) { ... return { thread_id: b.thread_id, ... } } }` — first match in listing order wins, with no repo filter and no binding-status filter"
+          "src/drift/reattach.mjs:31-37 — `for (const b of bindings) { if (b.first_commit === target) { ... return { thread_id: b.thread_id, ... } } }` — first match in listing order wins, with neither a repo filter nor a binding-status filter",
+          "src/drivers/local-driver.mjs:178-187 — `listBindings` is readdir-then-push with no sort, unlike src/index/rebuild-index.mjs:28, so the winner is filesystem order"
         ],
         "verdict": {
           "verdict": "CONFIRMED",
-          "reasoning": "Refutation attempted on three fronts. (1) Whether `tryTrailer` always shadows `tryFirstCommit`: it does not — src/drift/reattach.mjs:63-66 falls through whenever `thread_id_trailer` is null, which is every branch whose first commit carries no Thread-Id trailer, including every branch created before the hook was installed and every branch when LEDGER_DISABLE_TRAILER is set (hooks/lib/session-start.mjs:24). (2) Whether a status or repo filter narrows the candidate set: src/drift/reattach.mjs:30-31 iterates the full `listBindings()` with neither. (3) Whether the fallback is unreachable: it is the documented-by-code path for any branch fully contained in base, which is precisely the state of every branch awaiting cleanup after a merge. Severity is high rather than critical because the collision requires two bindings in that state simultaneously."
+          "reasoning": "Refutation attempted on four fronts, and the attempt made the finding worse rather than weaker. (1) Whether `tryTrailer` shadows `tryFirstCommit`: it does not — reattach.mjs:63-66 falls through whenever the trailer is null, and in exactly the collision scenario the trailer is read off the ROOT commit (git-ref-driver.mjs:568), which carries none. Measured `{\"thread_id_trailer\":null}`. (2) Whether a repo, status or uniqueness filter narrows the candidates: none exists at reattach.mjs:32, and a binding already closed as `merged` still matched in the reproduction. (3) Whether the fallback needs merged branches: it does not. With no `origin` remote, `resolveIntegrationBase` returns null (`:198`), `:146` skips the range, and every branch — merged or not — reports the root sha. Reproduced in a plain local repo: `observeNewBranch` returned the identical root sha for two unmerged feature branches and for `main`. (4) Whether the winner is deterministic: it is filesystem order, and reversing the binding array flipped which branch was misattached. Full production-path reproduction through `runReconcile` with one binding whose `first_commit` is the root: three separate unbound branches, including `main`, all reattached to that one thread by method `first-commit`. Raised from high to critical on this evidence: it silently records an association that is untrue, pervasively, and the resulting bindings then drive dispositions that close them."
         }
       },
       {
@@ -288,7 +291,7 @@
         ],
         "verdict": {
           "verdict": "CONFIRMED",
-          "reasoning": "Refutation attempted by searching for any other reattachment entry point: `reattach` is exported from src/drift/index.mjs:4 but the only call site outside the module is src/drift/reconcile.mjs:59, and nothing anywhere deletes or reopens a closed binding. Then reproduced across three reconciles against a temp git repo: with the branch present, no drift; after deleting the branch, one `mark-orphaned` disposition and the binding closed as `orphaned`/`deleted`; after recreating the same branch, `drift entries: 0 | dispositions: []` and the binding still `orphaned`. The thread is permanently detached from a branch that exists.",
+          "reasoning": "Refutation attempted by searching for any other reattachment entry point and any path that clears a closed binding. `reattach` has exactly one call site in shipped code, src/drift/reconcile.mjs:59. No binding is ever deleted: the only unlink in the codebase is src/drivers/local-driver.mjs:270, scoped to index files. `reopen` sets `status: 'active'` on a THREAD, not a binding (src/tools/reopen.mjs:24 with `writeThread` at :28). None of the four `writeBinding` call sites clears status. Reproduced across three reconciles against a temp git repo: branch present -> no drift; branch deleted -> one `mark-orphaned` disposition and the binding closed as `orphaned`/`deleted`; branch recreated -> `drift entries: 0 | dispositions: []`, binding still `orphaned`. A control run with the binding's branch renamed so its key was unbound produced the expected `{kind:'reattach', method:'trailer'}`, isolating `boundKeys` as the cause. One narrowing: `bind_branch` (src/tools/bind-branch.mjs:12-13) can mint a fresh active binding for the same repo/branch by explicit user or model action, so the state is escapable by hand. The automatic path is permanently dead, which is what the finding asserts.",
           "reproduction": "Three-pass reconcile: present -> none; deleted -> mark-orphaned; recreated -> zero drift, zero dispositions, binding still orphaned."
         }
       },
@@ -326,7 +329,7 @@
         ],
         "verdict": {
           "verdict": "CONFIRMED",
-          "reasoning": "Refutation attempted by searching the module for any expiry, pruning or invalidation: `writeDriftSnapshot` (:73-78) and `takeDriftSnapshot` (:80-93) are the only writers of the index, and only the latter removes anything. On LocalDriver a resolved drift is therefore reported as current until some `get_resume_brief` consumes it. On the git backend this defect is masked by sup-gitref-init-destroys-every-index-file, which deletes the snapshot before it can go stale — one defect concealing another, which is precisely why fixing MSP-9's custody problem will expose this one."
+          "reasoning": "Refutation attempted by enumerating every read and write of the drift index and checking `rebuildIndex` and `deleteIndexFile` for an invalidation path. The index is written only at snapshot.mjs:76 and :91 and read only at :75 and :85; `rebuildIndex` writes four other names and never touches drift (rebuild-index.mjs:64-67); `deleteIndexFile` has one call site, bin/ledger-cli.mjs:55, which passes the briefing index. Exercised directly: merging a stale `divergence` entry against an empty incoming batch — the exact shape of a resolved drift — returned the stale entry unchanged. A loose end found while refuting: `DRIFT_INDEX` at src/index/index-files.mjs:3 is exported and referenced nowhere; the module uses its own `DRIFT_INDEX_NAME` (snapshot.mjs:1). On LocalDriver a resolved drift is reported as current until some `get_resume_brief` consumes it. On the git backend this defect is masked by sup-gitref-init-destroys-every-index-file, which deletes the snapshot before it can go stale — one defect concealing another, which is precisely why fixing MSP-9's custody problem will expose this one."
         }
       },
       {
@@ -346,7 +349,7 @@
         ],
         "verdict": {
           "verdict": "CONFIRMED",
-          "reasoning": "Refutation attempted by searching for another observation producer that could supply non-default values. `observeBranch` is implemented once, in GitRefDriver, and both of its return sites hardcode the three fields. The classification code that consumes them is therefore dead in production. It is not harmless dead code: two of the three are the CRITICAL tier, so the drift feature advertises detection it does not perform, and MSP-11's merge design must not assume these signals exist."
+          "reasoning": "Refutation attempted by sweeping the whole repository for another producer of the three fields, another `observeBranch` implementation, and any mutation of the observation between producer and consumer. `observeBranch` is implemented once, in GitRefDriver; the base throws (storage-driver.mjs:78-80) and LocalDriver does not override it; `selectDriver` returns only those two classes (select.mjs:40, :48); and reconcile.mjs:35-36 passes the observation to the classifier unmodified. The only other files supplying non-default values are four test files, and only test/unit/drift/classification.test.mjs:56,81,116 exercises the three codes — so they are green in CI and statically false in production. It is not harmless dead code: two of the three are the CRITICAL tier, so the drift feature advertises detection it does not perform, and MSP-11's merge design must not assume these signals exist."
         }
       },
       {
