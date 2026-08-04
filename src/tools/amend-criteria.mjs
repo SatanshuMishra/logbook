@@ -7,6 +7,7 @@ import {
   terminalThread,
   unknownCriterion,
   liveIds,
+  echo,
 } from './shared.mjs';
 import { ULID_PATTERN, criteriaAmendOperation, CRITERIA_AMEND_OPS } from './schemas.mjs';
 
@@ -118,7 +119,7 @@ function applyOperation(thread, operation, refs, index) {
       expected: `one of ${CRITERIA_AMEND_OPS.map((op) => JSON.stringify(op)).join(', ')}`,
       example: CRITERIA_AMEND_OPS[0],
       retryable: false,
-      remedy: `op was ${JSON.stringify(operation.op)}; re-send with one of the accepted values`,
+      remedy: `op was ${echo(operation.op)}; re-send with one of the accepted values`,
     });
   }
   return apply(thread, operation, { refs, field });

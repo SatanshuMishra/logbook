@@ -1,4 +1,4 @@
-import { clip, collapse } from '../errors.mjs';
+import { collapse, echo } from '../errors.mjs';
 import {
   ULID_PATTERN,
   ISO_TIMESTAMP_PATTERN,
@@ -54,7 +54,7 @@ function quoteList(values) {
 function describeReceived(value) {
   if (value === undefined) return 'absent';
   if (value === null) return 'null';
-  if (typeof value === 'string') return JSON.stringify(clip(value, RECEIVED_MAX_CHARS));
+  if (typeof value === 'string') return echo(value, RECEIVED_MAX_CHARS);
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (Array.isArray(value)) return `an array of ${value.length}`;
   return 'an object';
@@ -80,7 +80,7 @@ function projectOne(error, prefix) {
         remedy: `the parameter did not arrive; re-emit the call with ${params.missingProperty} included`,
       };
     case 'additionalProperties': {
-      const named = JSON.stringify(String(params.additionalProperty));
+      const named = echo(params.additionalProperty);
       return {
         code: 'unexpected_parameter',
         field: qualify(prefix, joinField(path, named)),

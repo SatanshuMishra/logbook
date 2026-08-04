@@ -1,3 +1,4 @@
+import { echo } from '../errors.mjs';
 import { rebuildIndex } from '../index/rebuild-index.mjs';
 import { ALLOWED_TRANSITIONS, THREAD_STATUSES, canTransition } from '../model/fsm.mjs';
 import { liveCriteria } from '../model/selection.mjs';
@@ -9,6 +10,8 @@ export {
   LEDGER_ERROR_CODES,
   MESSAGE_MAX_CHARS,
   DETAIL_MAX_BYTES,
+  ECHO_MAX_CHARS,
+  echo,
   renderLedgerError,
   isLedgerError,
   toLedgerError,
@@ -21,7 +24,7 @@ export function unknownThread(tool, field, id) {
     expected: 'a thread id this ledger holds',
     example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
     retryable: false,
-    remedy: `no thread is stored under ${JSON.stringify(String(id))}; thread ids are server-assigned, so re-send with an id this ledger returned`,
+    remedy: `no thread is stored under ${echo(id)}; thread ids are server-assigned, so re-send with an id this ledger returned`,
   };
 }
 
@@ -95,7 +98,7 @@ export function unknownCriterion(thread, field, id) {
     expected: `one of ${liveIds(thread)}`,
     example: 'c1',
     retryable: false,
-    remedy: `this thread has no criterion ${JSON.stringify(String(id))}; re-send naming an id the thread actually carries`,
+    remedy: `this thread has no criterion ${echo(id)}; re-send naming an id the thread actually carries`,
   };
 }
 

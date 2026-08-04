@@ -53,16 +53,60 @@ const PROBLEMS_EMITTED_MAX = PROBLEM_FIELDS_SHOWN;
 const BYTES_PER_CHAR_BUDGET = 2;
 const ELLIPSIS = '...';
 
+export const ECHO_MAX_CHARS = 128;
+
+const PLAIN_SPACE = ' ';
+const ESCAPE_RADIX = 16;
+const ESCAPE_DIGITS = 4;
 const INVISIBLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Zs}\s]+/gu;
+const FORMAT_RUN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Zs}]+/gu;
+const ECHO_ATOM = /\\u[0-9a-fA-F]{4}|\\[\s\S]|[\s\S]/gu;
 const TRAILING_HIGH_SURROGATE = /[\uD800-\uDBFF]$/;
+const TRAILING_PARTIAL_ESCAPE = /(\\*)(u[0-9a-fA-F]{0,3})?$/;
 
 export function collapse(value) {
   return String(value).replace(INVISIBLE, ' ').trim();
 }
 
+function trimPartialEscape(text) {
+  const match = TRAILING_PARTIAL_ESCAPE.exec(text);
+  const slashes = match === null ? '' : match[1];
+  if (slashes.length % 2 === 0) return text;
+  const digits = (match[2] ?? '').length;
+  return text.slice(0, text.length - 1 - digits);
+}
+
 function sliceWholeCharacters(text, end) {
   const cut = text.slice(0, Math.max(0, end));
-  return TRAILING_HIGH_SURROGATE.test(cut) ? cut.slice(0, -1) : cut;
+  const paired = TRAILING_HIGH_SURROGATE.test(cut) ? cut.slice(0, -1) : cut;
+  return trimPartialEscape(paired);
+}
+
+function escapeUnit(unit) {
+  return `\\u${unit.charCodeAt(0).toString(ESCAPE_RADIX).padStart(ESCAPE_DIGITS, '0')}`;
+}
+
+function escapeFormatRun(run) {
+  return run === PLAIN_SPACE ? run : run.split('').map(escapeUnit).join('');
+}
+
+function boundAtoms(body, max) {
+  if (body.length <= max) return body;
+  const budget = Math.max(0, max - ELLIPSIS.length);
+  const atoms = body.match(ECHO_ATOM) ?? [];
+  const taken = atoms.reduce(
+    (acc, atom) => (acc.full || acc.used + atom.length > budget
+      ? { ...acc, full: true }
+      : { used: acc.used + atom.length, kept: acc.kept + 1, full: false }),
+    { used: 0, kept: 0, full: false },
+  );
+  return `${atoms.slice(0, taken.kept).join('')}${ELLIPSIS}`;
+}
+
+export function echo(value, max = ECHO_MAX_CHARS) {
+  const quoted = JSON.stringify(String(value));
+  const body = quoted.slice(1, -1).replace(FORMAT_RUN, escapeFormatRun);
+  return `"${boundAtoms(body, max)}"`;
 }
 
 export function clip(value, max) {

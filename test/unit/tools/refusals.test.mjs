@@ -7,6 +7,7 @@ import {
   LEDGER_ERROR_LAYERS,
   LEDGER_ERROR_CODES,
   LedgerError,
+  collapse,
   shedProblems,
 } from '../../../src/errors.mjs';
 import { renderToolFailure } from '../../../bin/ledger-server.mjs';
@@ -16,9 +17,19 @@ const ABSENT_ULID = '01HXV3W4Z9QK7T2M8N5P6R0S1T';
 const AMEND_HYPOTHESIS_MAX_CHARS = 200;
 const WIDE_PAYLOAD_ERRORS = 1200;
 const INVISIBLE_NAME = '\u200B';
+const MIXED_NAME = 'op\u202Een_x';
+const INVISIBLE_POINTS = Object.freeze([
+  0x0000, 0x0085, 0x00a0, 0x00ad, 0x200b, 0x2028, 0x2029, 0x202e, 0xfeff,
+]);
 const ASTRAL_RUN = '\u{1F9F5}"\\'.repeat(400);
 const ASTRAL_NAME = '\u{1F9F5}'.repeat(200);
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+const QUOTED = /"(?:[^"\\]|\\.)*"/;
+
+function quotedIn(text) {
+  const match = QUOTED.exec(text);
+  return match === null ? null : JSON.parse(match[0]);
+}
 
 function emittedStrings(value, path = '') {
   if (typeof value === 'string') return [[path, value]];
@@ -150,8 +161,95 @@ test('an unexpected property named only with invisible characters is still named
   });
 
   assert.equal(error.code, 'unexpected_parameter');
-  assert.equal(error.field, 'open_thread." "');
-  assert.equal(error.remedy, 'remove " " and re-send');
+  assert.equal(error.field, 'open_thread."\\u200b"');
+  assert.equal(error.remedy, 'remove "\\u200b" and re-send');
+  assert.equal(quotedIn(error.remedy), INVISIBLE_NAME);
+});
+
+test('each invisible property name is named distinctly, never folded into one shared space', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const remedies = [];
+  for (const point of INVISIBLE_POINTS) {
+    const error = await refuse(ctx, 'open_thread', {
+      title: 'Legible Refusals',
+      completion_criteria: [{ text: 'ship it' }],
+      [String.fromCodePoint(point)]: 1,
+    });
+    assert.equal(error.code, 'unexpected_parameter');
+    assert.equal(
+      quotedIn(error.remedy),
+      String.fromCodePoint(point),
+      `U+${point.toString(16)} was not echoed as the key that was sent: ${error.remedy}`,
+    );
+    remedies.push(error.remedy);
+  }
+
+  assert.equal(
+    new Set(remedies).size,
+    INVISIBLE_POINTS.length,
+    `distinct invisible names shared one refusal: ${JSON.stringify(remedies)}`,
+  );
+});
+
+test('a property mixing visible and invisible characters is never renamed to a plausible wrong key', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const error = await refuse(ctx, 'open_thread', {
+    title: 'Legible Refusals',
+    completion_criteria: [{ text: 'ship it' }],
+    [MIXED_NAME]: 1,
+  });
+
+  assert.equal(error.code, 'unexpected_parameter');
+  assert.equal(error.field, 'open_thread."op\\u202een_x"');
+  assert.equal(error.remedy, 'remove "op\\u202een_x" and re-send');
+  assert.notEqual(error.remedy, 'remove "op en_x" and re-send');
+  assert.equal(quotedIn(error.remedy), MIXED_NAME);
+});
+
+test('an ordinary spaced value is echoed with its plain spaces, never escaped into noise', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const error = await refuse(ctx, 'get_resume_brief', { thread_id: 'ship the thing' });
+
+  assert.equal(error.code, 'invalid_pattern');
+  assert.equal(
+    error.remedy,
+    'thread_id was "ship the thing"; re-send a value matching that pattern',
+  );
+});
+
+test('an echoed value the caller can re-send is never truncated by the new escaping', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const error = await refuse(ctx, 'bind_branch', { thread_id: ABSENT_ULID, repo: 'r', branch: 'b' });
+
+  assert.equal(error.code, 'unknown_thread');
+  assert.equal(
+    error.remedy,
+    `no thread is stored under "${ABSENT_ULID}"; thread ids are server-assigned, so re-send with an id this ledger returned`,
+  );
+});
+
+test('every quoted echo the tool surface emits survives the collapse that normalizes refusals', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const thread = await seedThread(ctx);
+  const corpus = [
+    ['open_thread', { title: 'x', completion_criteria: [{ text: 'x' }], [INVISIBLE_NAME]: 1 }],
+    ['open_thread', { title: 'x', completion_criteria: [{ text: 'x' }], [MIXED_NAME]: 1 }],
+    ['get_resume_brief', { thread_id: `a${INVISIBLE_NAME}b` }],
+    ['read_decision', { nnnn: '9999' }],
+    ['bind_branch', { thread_id: ABSENT_ULID, repo: 'r', branch: 'b' }],
+    ['update_thread', { thread_id: thread.id, completion_criteria: [{ id: 'c99', done: true }] }],
+    ['update_thread', { thread_id: thread.id, replace_scopes: { open_risks: ['legacy'] } }],
+    ['amend_criteria', { thread_id: thread.id, operations: [{ op: 'strike', id: `c${INVISIBLE_NAME}1` }] }],
+    [`retryable:${INVISIBLE_NAME}true`, {}],
+  ];
+
+  for (const [name, args] of corpus) {
+    const error = await refuse(ctx, name, args);
+    for (const text of [error.field, error.expected, error.remedy]) {
+      assert.equal(collapse(text), text, `${name} emitted a collapsible echo: ${JSON.stringify(text)}`);
+    }
+    assert.doesNotMatch(error.message, /^retryable: true$/m);
+  }
 });
 
 test('a pattern rejection states the regex and one conforming example', async (t) => {
