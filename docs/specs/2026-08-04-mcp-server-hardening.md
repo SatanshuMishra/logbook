@@ -525,9 +525,21 @@ the partial-write ghost-thread defects.
 - `ActivePointerUnavailable` (`src/util/active-thread.mjs`) is keyed on the **effect** — the pointer
   is not durable — not on one construction-time sentinel. Three tolerant wrappers
   (`writeActiveThreadOrWarn`, `readActiveThreadOrWarn`, `clearActiveThreadOrWarn`) classify a libuv
-  syscall failure (`code` and `syscall` both strings) from the pointer write, read or clear, plus a
+  syscall failure (`code` and `syscall` both strings) from the pointer **write or clear**, plus a
   failure to resolve the git directory, into `{value, warning}`. The ULID guard and every
   programming error still propagate; the tolerance is not a blanket catch.
+- **The pointer READ is deliberately NOT tolerated, and that is load-bearing.** A tolerated read
+  returns `null`, `null` never equals the thread id, so the clear is skipped and the thread is
+  durably terminal while the pointer still names it — `hooks/lib/stop.mjs:101-105` then returns
+  `exitCode: 2` and every later session end blocks demanding a debrief for an abandoned thread. The
+  read is hoisted ahead of `writeThread`, so propagating its failure costs nothing: the call aborts
+  with nothing durable. Clearing unconditionally on leaving `active` is worse still — it clobbers a
+  pointer naming a different thread.
+- Each tolerated action names its **own** consequence. A failed write means the gate will not fire
+  until the pointer is written; a failed clear means the pointer survives and the gate will keep
+  firing until it is removed. One shared string had been appended to both, which stated the exact
+  inverse of the truth for the clear and prescribed the opposite remedy — on a channel whose whole
+  purpose is to tell the model what happened.
 - **Corrected after review.** The first attempt raised the class at exactly one site —
   `activeThreadPath`'s non-git branch on a falsy `CLAUDE_PLUGIN_DATA`. `selectDriver` computes
   `ledgerDataRoot` unconditionally (`select.mjs:38`) and throws at `:29`, so a `LocalDriver` cannot
@@ -571,6 +583,7 @@ atomicity was never in scope. The full list, handed to MSP-8 (transactions), whi
 | `amend-criteria.mjs:147-148` | durable write then throwing step |
 | `drift/reconcile.mjs:45`, `drift/reattach.mjs:94` | `writeBinding` in a loop with no rollback — the worst shape of the set |
 | all five tools MSP-2 touched | `appendSessionEvent` / `commitAndReindex` still follow the record write |
+| `record-decision.mjs:86-87` | the hoist is one-directional: `writeDecision` succeeding and `writeThread`'s `atomicWrite` then failing (`ENOSPC`, `EIO`, `EACCES`) leaves an orphan decision file with the number consumed and no spine ref. Inert — the fail-open direction, a file no ref names — but real, and only a transaction closes it |
 
 None of these is fixed here; that is MSP-8's scope, not MSP-2's. `bind_branch` and
 `create_successor` are the cheapest of them — the tolerant wrappers they need already exist — and
@@ -620,8 +633,19 @@ The two `record_decision` acceptance tests were folded into one: `nextDecisionNu
 function of the `decisions/` listing, so asserting `'0001'` after asserting the directory is empty
 restated one fact twice. The test that mattered — `writeDecision` failing *after* `writeThread`
 succeeded, the direction the first attempt created — did not exist, which is exactly why 958/958
-was green over a live defect. **A green suite is not evidence here.** Seven consecutive reviews of
-this server have now each found a real defect at 100% pass.
+was green over a live defect.
+
+Round 8 then found two more, both introduced by the round-7 fix itself, both green at 961/961:
+`archive_thread` resolved instead of rejecting when the pointer read failed, leaving the thread
+`abandoned` where `active` was expected; and the clear warning read `active-thread pointer not
+cleared: the pointer file is unusable (ENOTDIR); the end-of-session debrief gate will not fire for
+this thread until the pointer is restored` — the precise inverse of the truth.
+
+**A green suite is not evidence here.** Eight consecutive reviews of this server have now each
+found a real defect at 100% pass, and three of those defects were introduced by the fix for the
+one before it. The pattern is specific: each was a *widening* — of an order, of a tolerated error
+class, of a shared string — that looked like generalization and was actually a loss of a
+distinction the narrow version had been carrying.
 
 **PR title:** `fix(writes): validate the full record before any durable write`
 
