@@ -45,41 +45,33 @@ export const MESSAGE_MAX_CHARS = 400;
 export const DETAIL_MAX_BYTES = 8192;
 
 const HEAD_MAX_CHARS = 180;
-const REMEDY_MAX_CHARS = 148;
+export const REMEDY_MAX_CHARS = 148;
 const EXAMPLE_MAX_CHARS = 80;
-const FIELD_MAX_CHARS = 120;
+export const FIELD_MAX_CHARS = 120;
 const PROBLEM_FIELDS_SHOWN = 4;
 const PROBLEMS_EMITTED_MAX = PROBLEM_FIELDS_SHOWN;
 const BYTES_PER_CHAR_BUDGET = 2;
 const ELLIPSIS = '...';
 
-export const ECHO_MAX_CHARS = 128;
+export const ECHO_MIN_CHARS = 24;
 
+const QUOTE_CHARS = 2;
 const PLAIN_SPACE = ' ';
 const ESCAPE_RADIX = 16;
 const ESCAPE_DIGITS = 4;
-const INVISIBLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Zs}\s]+/gu;
-const FORMAT_RUN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Zs}]+/gu;
+const NOTE_OPEN = `${ELLIPSIS} (`;
+const NOTE_CLOSE = ' chars)';
+
+const FOLDED_CLASS = '\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}\\p{Zs}';
+const BLANK_CLASS = '\\p{Default_Ignorable_Code_Point}\\u2800';
+const INVISIBLE = new RegExp(`[${FOLDED_CLASS}\\s]+`, 'gu');
+const FORMAT_RUN = new RegExp(`[${FOLDED_CLASS}${BLANK_CLASS}]+`, 'gu');
 const ECHO_ATOM = /\\u[0-9a-fA-F]{4}|\\[\s\S]|[\s\S]/gu;
 const TRAILING_HIGH_SURROGATE = /[\uD800-\uDBFF]$/;
 const TRAILING_PARTIAL_ESCAPE = /(\\*)(u[0-9a-fA-F]{0,3})?$/;
 
 export function collapse(value) {
   return String(value).replace(INVISIBLE, ' ').trim();
-}
-
-function trimPartialEscape(text) {
-  const match = TRAILING_PARTIAL_ESCAPE.exec(text);
-  const slashes = match === null ? '' : match[1];
-  if (slashes.length % 2 === 0) return text;
-  const digits = (match[2] ?? '').length;
-  return text.slice(0, text.length - 1 - digits);
-}
-
-function sliceWholeCharacters(text, end) {
-  const cut = text.slice(0, Math.max(0, end));
-  const paired = TRAILING_HIGH_SURROGATE.test(cut) ? cut.slice(0, -1) : cut;
-  return trimPartialEscape(paired);
 }
 
 function escapeUnit(unit) {
@@ -90,9 +82,29 @@ function escapeFormatRun(run) {
   return run === PLAIN_SPACE ? run : run.split('').map(escapeUnit).join('');
 }
 
-function boundAtoms(body, max) {
-  if (body.length <= max) return body;
-  const budget = Math.max(0, max - ELLIPSIS.length);
+export function escapeFormat(value) {
+  return String(value).replace(FORMAT_RUN, escapeFormatRun);
+}
+
+function trimPartialEscape(text) {
+  const match = TRAILING_PARTIAL_ESCAPE.exec(text);
+  const slashes = match === null ? '' : match[1];
+  if (slashes.length % 2 === 0) return text;
+  const escapeTail = match[2] ?? '';
+  return text.slice(0, text.length - 1 - escapeTail.length);
+}
+
+function slicePairedUnits(text, end) {
+  if (text.length <= end) return text;
+  const cut = text.slice(0, Math.max(0, end));
+  return TRAILING_HIGH_SURROGATE.test(cut) ? cut.slice(0, -1) : cut;
+}
+
+function sliceWholeCharacters(text, end) {
+  return trimPartialEscape(slicePairedUnits(text, Math.max(0, end)));
+}
+
+function takeAtoms(body, budget) {
   const atoms = body.match(ECHO_ATOM) ?? [];
   const taken = atoms.reduce(
     (acc, atom) => (acc.full || acc.used + atom.length > budget
@@ -100,13 +112,32 @@ function boundAtoms(body, max) {
       : { used: acc.used + atom.length, kept: acc.kept + 1, full: false }),
     { used: 0, kept: 0, full: false },
   );
-  return `${atoms.slice(0, taken.kept).join('')}${ELLIPSIS}`;
+  return atoms.slice(0, taken.kept).join('');
 }
 
-export function echo(value, max = ECHO_MAX_CHARS) {
-  const quoted = JSON.stringify(String(value));
-  const body = quoted.slice(1, -1).replace(FORMAT_RUN, escapeFormatRun);
-  return `"${boundAtoms(body, max)}"`;
+function describeValue(value) {
+  if (value === undefined) return 'absent';
+  if (value === null) return 'null';
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return `an array of ${value.length}`;
+  return 'an object';
+}
+
+export function echo(value, max) {
+  if (typeof value !== 'string') return describeValue(value);
+  const bound = Number.isFinite(max) ? Math.max(max, ECHO_MIN_CHARS) : ECHO_MIN_CHARS;
+  const head = slicePairedUnits(value, bound);
+  const body = escapeFormat(JSON.stringify(head).slice(1, -1));
+  if (head.length === value.length && body.length + QUOTE_CHARS <= bound) {
+    return `"${body}"`;
+  }
+  const note = `${NOTE_OPEN}${value.length}${NOTE_CLOSE}`;
+  const budget = Math.max(0, bound - QUOTE_CHARS - note.length);
+  return `"${takeAtoms(body, budget)}"${note}`;
+}
+
+export function echoBetween(before, after, value, slot = REMEDY_MAX_CHARS) {
+  return `${before}${echo(value, slot - before.length - after.length)}${after}`;
 }
 
 export function clip(value, max) {
@@ -289,9 +320,10 @@ export class ToolError extends LedgerError {
 
 export function toLedgerError(error, field) {
   if (isLedgerError(error)) return error;
-  const detail = error && typeof error.message === 'string' && error.message.trim().length > 0
+  const raw = error && typeof error.message === 'string' && error.message.trim().length > 0
     ? error.message
     : String(error);
+  const detail = escapeFormat(raw);
   return new LedgerError({
     code: 'internal_error',
     layer: 'server',

@@ -1,6 +1,7 @@
 import Ajv from 'ajv';
 import { projectValidationErrors } from '../schema/index.mjs';
-import { LedgerError, ToolError, echo } from './shared.mjs';
+import { LedgerError, ToolError } from './shared.mjs';
+import { echoBetween } from '../errors.mjs';
 import openThread from './open-thread.mjs';
 import bindBranch from './bind-branch.mjs';
 import appendSessionEvent from './append-session-event.mjs';
@@ -74,7 +75,11 @@ export async function callTool(name, args = {}, ctx) {
       field: 'name',
       expected: 'a tool name this server declares in tools/list',
       retryable: false,
-      remedy: `unknown tool: ${echo(name)}; re-read tools/list and call a name it returns`,
+      remedy: echoBetween(
+        'unknown tool: ',
+        '; re-read tools/list and call a name it returns',
+        name,
+      ),
     });
   }
   const validate = validators.get(name);

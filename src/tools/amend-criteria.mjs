@@ -7,8 +7,8 @@ import {
   terminalThread,
   unknownCriterion,
   liveIds,
-  echo,
 } from './shared.mjs';
+import { echoBetween } from '../errors.mjs';
 import { ULID_PATTERN, criteriaAmendOperation, CRITERIA_AMEND_OPS } from './schemas.mjs';
 
 const DETOUR_KIND = 'detour';
@@ -119,7 +119,11 @@ function applyOperation(thread, operation, refs, index) {
       expected: `one of ${CRITERIA_AMEND_OPS.map((op) => JSON.stringify(op)).join(', ')}`,
       example: CRITERIA_AMEND_OPS[0],
       retryable: false,
-      remedy: `op was ${echo(operation.op)}; re-send with one of the accepted values`,
+      remedy: echoBetween(
+        'op was ',
+        '; re-send with one of the accepted values',
+        operation.op,
+      ),
     });
   }
   return apply(thread, operation, { refs, field });
