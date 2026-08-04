@@ -192,8 +192,12 @@ function supplementLines(supplement, takenIds) {
   lines.push('');
   lines.push('| Population | JSON path | Count |');
   lines.push('| --- | --- | --- |');
+  const fullReads = coverage.files.filter((file) => file.read === 'full');
+  const coveredLines = coverage.files.reduce((total, file) => total + (Number(file.lines) || 0), 0);
   lines.push(`| Supplement findings | \`.result.findings\` | ${findings.length} |`);
-  lines.push(`| Files read in full | \`.result.coverage.files\` | ${coverage.files.length} |`);
+  lines.push(`| Files covered | \`.result.coverage.files\` | ${coverage.files.length} |`);
+  lines.push(`| Of those, read in full | \`.result.coverage.files[].read === 'full'\` | ${fullReads.length} |`);
+  lines.push(`| Lines under coverage | sum of \`.lines\` | ${coveredLines} |`);
   lines.push('');
   lines.push(`- severity: ${tallyLine(severityTally)}`);
   lines.push(`- verdict: ${tallyLine(verdictTally)}`);
