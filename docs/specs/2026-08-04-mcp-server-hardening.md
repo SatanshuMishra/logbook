@@ -456,6 +456,23 @@ reproduced by the very contract written to end it.
   over-escaping, no truncation of a legitimate value, the fixed point — are green on the parent by
   construction and are labelled guards, not detectors.
 
+**Deferred from MSP-1C (both reviews APPROVE, 2026-08-04).** Three residuals ship open, named here
+rather than dropped:
+- The `... (N chars)` note is not atomic under `clip`. At an `instancePath` around twenty levels
+  deep, a 4096-character name renders `... (40`, which is well-formed, confidently readable and
+  false by two orders of magnitude — the plausible-but-wrong-value class this MSP exists to kill.
+  Unreachable with the shipped schemas, whose deepest real path is `operations[0].text`, and the
+  true length survives intact in the `remedy` slot. Make the note atomic, or budget `namedProperty`
+  so it never enters the `field` slot when the clamp fires.
+- `escapeFormat` does not double backslashes, so on the unquoted `toLedgerError` path a caller
+  sending the six literal characters `‮` renders identically to one sending a real U+202E.
+  `echo` is unaffected — `JSON.stringify` doubles first. It must stay backslash-neutral for `echo`,
+  so the unquoted path needs its own transform or a non-backslash sentinel.
+- The `ECHO_MIN_CHARS` clamp can silently resurrect the cap finding: if a template's fixed prose
+  ever exceeds `REMEDY_MAX_CHARS - 24`, `echoBetween` returns a string longer than its slot and
+  `clip` erases the instruction again. Latent, not live — the worst current site has 49 characters
+  of slack. Make `echoBetween` fail loudly on that condition so a future prose edit cannot reopen it.
+
 **Verify:** `npm test`, reporting real counts against the 923/0 baseline on `48fabab`.
 
 **PR title:** `fix(errors): make a refusal name the key that was actually sent`
