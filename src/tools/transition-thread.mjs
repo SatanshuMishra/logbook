@@ -1,5 +1,5 @@
 import { canTransition, checkDefinitionOfDone } from '../model/index.mjs';
-import { writeActiveThreadOrWarn, readActiveThreadOrAbsent, clearActiveThreadOrWarn } from '../util/active-thread.mjs';
+import { writeActiveThreadOrWarn, readActiveThreadOrWarn, clearActiveThreadOrWarn } from '../util/active-thread.mjs';
 import { commitAndReindex, withWarnings, ToolError, unknownThread, illegalTransition } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
 
@@ -63,7 +63,7 @@ async function handler(ctx, args) {
     }
   }
   const pointer = to !== 'active' && thread.status === 'active'
-    ? await readActiveThreadOrAbsent(ctx)
+    ? await readActiveThreadOrWarn(ctx)
     : NO_POINTER;
   await driver.writeThread(candidate);
   const synced = await syncPointer(ctx, candidate, to, pointer);

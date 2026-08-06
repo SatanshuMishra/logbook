@@ -1,6 +1,6 @@
 import { join, resolve } from 'node:path';
 import { readFile, rm } from 'node:fs/promises';
-import { gitExec, isGitUsageError } from './git-exec.mjs';
+import { gitExec } from './git-exec.mjs';
 import { clearedGitLocationEnv } from './git-env.mjs';
 import { atomicWrite } from './atomic-write.mjs';
 import { projectKey } from './project-key.mjs';
@@ -13,32 +13,15 @@ export class ActivePointerUnavailable extends Error {
   }
 }
 
-function isSyscallFailure(error) {
-  return error !== null && typeof error === 'object'
-    && typeof error.code === 'string' && typeof error.syscall === 'string';
-}
-
-function gitFailureLabel(error) {
-  const code = error === null || typeof error !== 'object' ? undefined : error.code;
-  if (typeof code === 'string') return code;
-  if (typeof code === 'number') return `exit ${code}`;
-  const signal = error !== null && typeof error === 'object' ? error.signal : undefined;
-  return typeof signal === 'string' ? signal : 'no diagnosis';
-}
-
 async function gitLedgerDir(projectDir) {
-  let stdout;
   try {
-    ({ stdout } = await gitExec(projectDir, ['rev-parse', '--git-common-dir'], {
+    const { stdout } = await gitExec(projectDir, ['rev-parse', '--git-common-dir'], {
       env: clearedGitLocationEnv(),
-    }));
-  } catch (error) {
-    if (isGitUsageError(error)) throw error;
-    throw new ActivePointerUnavailable(
-      `the project git directory could not be resolved (${gitFailureLabel(error)})`,
-    );
+    });
+    return join(resolve(projectDir, stdout.trim()), 'ledger');
+  } catch {
+    throw new ActivePointerUnavailable('the project git directory could not be resolved');
   }
-  return join(resolve(projectDir, stdout.trim()), 'ledger');
 }
 
 export async function activeThreadPath(ctx) {
@@ -91,18 +74,17 @@ export async function clearActiveThread(ctx) {
   return target;
 }
 
-const WRITE_CONSEQUENCE =
-  'the end-of-session debrief gate will not fire for this thread until the pointer is written';
-
-const CLEAR_CONSEQUENCE =
-  'the pointer still names this thread, so every session end will keep demanding a debrief for it until the pointer is removed';
+const POINTER_CONSEQUENCE =
+  'the end-of-session debrief gate will not fire for this thread until the pointer is restored';
 
 function durabilityReason(error) {
   if (error instanceof ActivePointerUnavailable) return error.message;
-  return isSyscallFailure(error) ? `the pointer file is unusable (${error.code})` : null;
+  const isSyscallFailure = error !== null && typeof error === 'object'
+    && typeof error.code === 'string' && typeof error.syscall === 'string';
+  return isSyscallFailure ? `the pointer file is unusable (${error.code})` : null;
 }
 
-async function tolerateUnavailable(action, consequence, run) {
+async function tolerateUnavailable(action, run) {
   try {
     return { value: await run(), warning: null };
   } catch (error) {
@@ -110,30 +92,19 @@ async function tolerateUnavailable(action, consequence, run) {
     if (reason === null) throw error;
     return {
       value: null,
-      warning: `active-thread pointer not ${action}: ${reason}; ${consequence}`,
+      warning: `active-thread pointer not ${action}: ${reason}; ${POINTER_CONSEQUENCE}`,
     };
   }
 }
 
 export function writeActiveThreadOrWarn(ctx, threadId) {
-  return tolerateUnavailable('written', WRITE_CONSEQUENCE, () => writeActiveThread(ctx, threadId));
+  return tolerateUnavailable('written', () => writeActiveThread(ctx, threadId));
+}
+
+export function readActiveThreadOrWarn(ctx) {
+  return tolerateUnavailable('read', () => readActiveThread(ctx));
 }
 
 export function clearActiveThreadOrWarn(ctx) {
-  return tolerateUnavailable('cleared', CLEAR_CONSEQUENCE, () => clearActiveThread(ctx));
-}
-
-const ABSENT_CONSEQUENCE =
-  'no pointer can name this thread, so the end-of-session debrief gate will not fire for it';
-
-export async function readActiveThreadOrAbsent(ctx) {
-  try {
-    return { value: await readActiveThread(ctx), warning: null };
-  } catch (error) {
-    if (!(error instanceof ActivePointerUnavailable)) throw error;
-    return {
-      value: null,
-      warning: `active-thread pointer store unreachable: ${error.message}; ${ABSENT_CONSEQUENCE}`,
-    };
-  }
+  return tolerateUnavailable('cleared', () => clearActiveThread(ctx));
 }

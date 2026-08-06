@@ -85,10 +85,11 @@ test('open_thread stores the thread and warns instead of throwing when CLAUDE_PL
     assert.ok(Array.isArray(result.warnings));
     assert.equal(result.warnings.length, 1);
     assert.match(result.warnings[0], /CLAUDE_PLUGIN_DATA/);
-    await assert.rejects(() => readActiveThread(ctx), /CLAUDE_PLUGIN_DATA/);
+    assert.match(result.warnings[0], /debrief/);
   } finally {
     if (prior !== undefined) process.env.CLAUDE_PLUGIN_DATA = prior;
   }
+  assert.equal(await readActiveThread(ctx), null);
 });
 
 test('open_thread reports recovery_degraded:false while the recovery repo is healthy', async (t) => {
