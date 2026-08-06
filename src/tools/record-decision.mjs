@@ -73,16 +73,19 @@ async function handler(ctx, args) {
     date: now(),
   });
   const ref = `${nnnn}-${args.slug}`;
+  const entry = { ref, title: args.title, scope };
   const keyDecisions = thread.spine.key_decisions.some((d) => d.ref === ref)
     ? thread.spine.key_decisions
-    : [...thread.spine.key_decisions, { ref, title: args.title, scope }];
+    : [...thread.spine.key_decisions, entry];
   const updated = {
     ...thread,
     spine: { ...thread.spine, key_decisions: keyDecisions },
     updated_at: now(),
   };
   assertValidThread(updated);
-  assertSpineCaps({ key_decisions: [{ ref, title: args.title, scope }] });
+  assertSpineCaps({
+    key_decisions: keyDecisions === thread.spine.key_decisions ? [] : [entry],
+  });
   const path = await driver.writeDecision(nnnn, args.slug, markdown);
   await driver.writeThread(updated);
   const { recovery_degraded } = await commitAndReindex(driver, `docs(ledger): decision ${ref}`);

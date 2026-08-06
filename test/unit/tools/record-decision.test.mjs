@@ -214,6 +214,16 @@ test('record_decision refuses an over-cap title this call submits, writing nothi
   assert.equal(await ctx.driver.nextDecisionNumber(), '0001');
 });
 
+test('the dedup path never refuses an over-cap title it would not store', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const stored = { ref: '0001-adopt-x', title: 'Adopt X', scope: 'thread' };
+  const seed = await storeLegacyThread(ctx, { key_decisions: [stored] });
+  const { number } = await record(ctx, seed, { title: 'a'.repeat(121) });
+  assert.equal(number, '0001');
+  const after = await ctx.driver.readThread(seed.id);
+  assert.deepEqual(after.spine.key_decisions, [stored]);
+});
+
 test('record_decision rejects an unknown thread_id', async (t) => {
   const ctx = await makeToolCtx(t);
   await assert.rejects(
