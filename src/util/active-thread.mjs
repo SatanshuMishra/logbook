@@ -74,8 +74,20 @@ export async function clearActiveThread(ctx) {
   return target;
 }
 
-const POINTER_CONSEQUENCE =
-  'the end-of-session debrief gate will not fire for this thread until the pointer is restored';
+const POINTER_OUTCOMES = Object.freeze({
+  write: Object.freeze({
+    verb: 'written',
+    consequence: 'the pointer is absent, so the end-of-session debrief gate will not fire for this thread until the pointer is restored',
+  }),
+  read: Object.freeze({
+    verb: 'read',
+    consequence: 'the pointer state is unknown, so whether the end-of-session debrief gate still owes this thread a debrief cannot be told from here',
+  }),
+  clear: Object.freeze({
+    verb: 'cleared',
+    consequence: 'the pointer survives, so the end-of-session debrief gate will keep firing for this thread until the pointer is removed',
+  }),
+});
 
 function durabilityReason(error) {
   if (error instanceof ActivePointerUnavailable) return error.message;
@@ -85,6 +97,10 @@ function durabilityReason(error) {
 }
 
 async function tolerateUnavailable(action, run) {
+  const outcome = POINTER_OUTCOMES[action];
+  if (outcome === undefined) {
+    throw new Error(`tolerateUnavailable: action must be one of ${Object.keys(POINTER_OUTCOMES).join(', ')}, received ${action}`);
+  }
   try {
     return { value: await run(), warning: null };
   } catch (error) {
@@ -92,13 +108,13 @@ async function tolerateUnavailable(action, run) {
     if (reason === null) throw error;
     return {
       value: null,
-      warning: `active-thread pointer not ${action}: ${reason}; ${POINTER_CONSEQUENCE}`,
+      warning: `active-thread pointer not ${outcome.verb}: ${reason}; ${outcome.consequence}`,
     };
   }
 }
 
 export function writeActiveThreadOrWarn(ctx, threadId) {
-  return tolerateUnavailable('written', () => writeActiveThread(ctx, threadId));
+  return tolerateUnavailable('write', () => writeActiveThread(ctx, threadId));
 }
 
 export function readActiveThreadOrWarn(ctx) {
@@ -106,5 +122,5 @@ export function readActiveThreadOrWarn(ctx) {
 }
 
 export function clearActiveThreadOrWarn(ctx) {
-  return tolerateUnavailable('cleared', () => clearActiveThread(ctx));
+  return tolerateUnavailable('clear', () => clearActiveThread(ctx));
 }

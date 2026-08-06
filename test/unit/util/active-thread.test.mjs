@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { gitExec } from '../../../src/util/git-exec.mjs';
@@ -111,20 +111,56 @@ async function occupyPointerDir(t) {
   return ctx;
 }
 
-test('writeActiveThreadOrWarn warns instead of throwing when the pointer dir is a file', async (t) => {
-  const ctx = await occupyPointerDir(t);
-  const { warning } = await writeActiveThreadOrWarn(ctx, newUlid());
-  assert.match(warning, /ENOTDIR|EEXIST/);
-  assert.match(warning, /debrief/);
+async function lockPointerDir(t) {
+  const dir = await mkdtemp(join(tmpdir(), 'active-thread-locked-'));
+  await gitExec(dir, ['init', '-q']);
+  const ctx = gitCtx(dir);
+  const id = newUlid();
+  const target = await writeActiveThread(ctx, id);
+  const ledgerDir = join(dir, '.git', 'ledger');
+  await chmod(ledgerDir, 0o500);
+  t.after(async () => {
+    await chmod(ledgerDir, 0o700);
+    await rm(dir, { recursive: true, force: true });
+  });
+  return { ctx, target, id };
+}
+
+test('writeActiveThreadOrWarn warns that the pointer is absent and the gate will not fire', async (t) => {
+  const dir = await initRepo(t);
+  await writeFile(join(dir, '.git', 'ledger'), 'occupied\n');
+  const { value, warning } = await writeActiveThreadOrWarn(gitCtx(dir), newUlid());
+  assert.equal(value, null);
+  assert.match(warning, /pointer not written/);
+  assert.match(warning, /the pointer file is unusable \(EEXIST\)/);
+  assert.match(warning, /pointer is absent/);
+  assert.match(warning, /debrief gate will not fire/);
+  assert.match(warning, /restored/);
 });
 
-test('readActiveThreadOrWarn and clearActiveThreadOrWarn warn on the same condition', async (t) => {
+test('clearActiveThreadOrWarn warns that the pointer survives and the gate keeps firing', async (t) => {
+  const { ctx, target, id } = await lockPointerDir(t);
+  const { value, warning } = await clearActiveThreadOrWarn(ctx);
+  assert.equal(value, null);
+  assert.equal((await readFile(target, 'utf8')).trim(), id);
+  assert.match(warning, /pointer not cleared/);
+  assert.match(warning, /EACCES/);
+  assert.match(warning, /pointer survives/);
+  assert.match(warning, /debrief gate will keep firing/);
+  assert.match(warning, /removed/);
+  assert.doesNotMatch(warning, /restored/);
+  assert.doesNotMatch(warning, /will not fire/);
+});
+
+test('readActiveThreadOrWarn warns that the pointer state is unknown, claiming no gate direction', async (t) => {
   const ctx = await occupyPointerDir(t);
-  const read = await readActiveThreadOrWarn(ctx);
-  assert.equal(read.value, null);
-  assert.match(read.warning, /ENOTDIR|EEXIST/);
-  const cleared = await clearActiveThreadOrWarn(ctx);
-  assert.match(cleared.warning, /ENOTDIR|EEXIST/);
+  const { value, warning } = await readActiveThreadOrWarn(ctx);
+  assert.equal(value, null);
+  assert.match(warning, /pointer not read/);
+  assert.match(warning, /ENOTDIR/);
+  assert.match(warning, /pointer state is unknown/);
+  assert.doesNotMatch(warning, /will not fire|will keep firing/);
+  assert.doesNotMatch(warning, /restored|removed/);
 });
 
 test('the tolerant wrappers still propagate a programming error', async (t) => {
