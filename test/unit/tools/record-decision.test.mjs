@@ -6,7 +6,8 @@ import recordDecision from '../../../src/tools/record-decision.mjs';
 import openThread from '../../../src/tools/open-thread.mjs';
 import updateThread from '../../../src/tools/update-thread.mjs';
 import { callTool } from '../../../src/tools/registry.mjs';
-import { makeToolCtx } from '../../fixtures/tool-ctx.mjs';
+import { newThread } from '../../../src/model/index.mjs';
+import { makeToolCtx, fixedClock } from '../../fixtures/tool-ctx.mjs';
 
 function decisionArgs(thread, over = {}) {
   return {
@@ -38,6 +39,12 @@ async function storeUnvalidatableThread(ctx, thread) {
     `${JSON.stringify(corrupted, null, 2)}\n`,
   );
   return root;
+}
+
+async function storeLegacyThread(ctx, spinePatch) {
+  const seed = newThread({ title: 'Legacy', completion_criteria: [{ text: 'ship it' }] }, { now: fixedClock });
+  await ctx.driver.writeThread({ ...seed, spine: { ...seed.spine, ...spinePatch } });
+  return seed;
 }
 
 async function openWithUnvalidatableRecord(ctx) {
@@ -151,12 +158,60 @@ test('a record_decision whose decision write fails carries no spine ref and cons
   });
   await assert.rejects(
     () => callTool('record_decision', decisionArgs(thread, { slug: 'a'.repeat(300) }), ctx),
-    /ENAMETOOLONG|record_decision\.slug/,
+    (err) => {
+      assert.equal(err.code, 'ENAMETOOLONG');
+      assert.match(err.path, /\/decisions\/0001-a+\.md/);
+      return true;
+    },
   );
   const after = await ctx.driver.readThread(thread.id);
   assert.deepEqual(after.spine.key_decisions, []);
   const { number } = await record(ctx, sibling);
   assert.equal(number, '0001');
+});
+
+test('a stored over-cap decision title never blocks a record_decision that submits a short one', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const legacyTitle = 'a'.repeat(121);
+  const seed = await storeLegacyThread(ctx, {
+    key_decisions: [{ ref: '0009-legacy-ruling', title: legacyTitle, scope: 'thread' }],
+  });
+  const { number, path } = await record(ctx, seed);
+  assert.equal(number, '0001');
+  assert.match(path, /0001-adopt-x\.md$/);
+  const after = await ctx.driver.readThread(seed.id);
+  assert.deepEqual(after.spine.key_decisions, [
+    { ref: '0009-legacy-ruling', title: legacyTitle, scope: 'thread' },
+    { ref: '0001-adopt-x', title: 'Adopt X', scope: 'c1' },
+  ]);
+});
+
+test('a stored over-cap active_goal never blocks a record_decision that cannot even submit it', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const legacyGoal = 'a'.repeat(231);
+  const seed = await storeLegacyThread(ctx, { active_goal: legacyGoal });
+  const { number, path } = await record(ctx, seed);
+  assert.equal(number, '0001');
+  assert.match(path, /0001-adopt-x\.md$/);
+  const after = await ctx.driver.readThread(seed.id);
+  assert.equal(after.spine.active_goal, legacyGoal);
+  assert.deepEqual(after.spine.key_decisions, [
+    { ref: '0001-adopt-x', title: 'Adopt X', scope: 'c1' },
+  ]);
+});
+
+test('record_decision refuses an over-cap title this call submits, writing nothing', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const { thread } = await openThread.handler(ctx, {
+    title: 'Decisions', completion_criteria: [{ text: 'ship it' }],
+  });
+  const root = await ctx.driver.root();
+  await assert.rejects(
+    () => callTool('record_decision', decisionArgs(thread, { title: 'a'.repeat(121) }), ctx),
+    /cap_exceeded: spine\.key_decisions\[\]\.title/,
+  );
+  assert.deepEqual(await readdir(join(root, 'decisions')), []);
+  assert.equal(await ctx.driver.nextDecisionNumber(), '0001');
 });
 
 test('record_decision rejects an unknown thread_id', async (t) => {
