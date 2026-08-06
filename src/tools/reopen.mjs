@@ -40,7 +40,7 @@ async function handler(ctx, args) {
 
 export default {
   name: 'reopen',
-  description: 'Return a paused/blocked thread to active (refuses terminal and already-active); writes the pointer.',
+  description: 'Return a paused/blocked thread to active (refuses terminal and already-active); writes the pointer, which is best-effort: a failure to write it leaves the thread active and surfaces in warnings[].',
   inputSchema: {
     type: 'object',
     additionalProperties: false,

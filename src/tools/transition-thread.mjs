@@ -74,7 +74,7 @@ async function handler(ctx, args) {
 
 export default {
   name: 'transition_thread',
-  description: 'Move a thread through the lifecycle FSM (DoD-gated for done); manage the active-thread pointer.',
+  description: 'Move a thread through the lifecycle FSM (DoD-gated for done); manage the active-thread pointer, which is best-effort: a failure to write or clear it leaves the transition stored and surfaces in warnings[].',
   inputSchema: {
     type: 'object',
     additionalProperties: false,

@@ -23,7 +23,7 @@ async function handler(ctx, args) {
 
 export default {
   name: 'open_thread',
-  description: 'Create a new thread with at least one completion criterion (enters active) and write the active-thread pointer.',
+  description: 'Create a new thread with at least one completion criterion (enters active) and write the active-thread pointer, which is best-effort: a failure to write it leaves the thread stored and surfaces in warnings[].',
   inputSchema: {
     type: 'object',
     additionalProperties: false,

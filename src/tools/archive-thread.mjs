@@ -31,7 +31,7 @@ async function handler(ctx, args) {
 
 export default {
   name: 'archive_thread',
-  description: 'Archive a thread via the FSM (abandoned); refuses a blocked thread; clears the active pointer.',
+  description: 'Archive a thread via the FSM (abandoned); refuses a blocked thread; clears the active pointer, which is best-effort: a failure to clear it leaves the thread abandoned and surfaces in warnings[].',
   inputSchema: {
     type: 'object',
     additionalProperties: false,
