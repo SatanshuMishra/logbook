@@ -606,8 +606,14 @@ no tool in this server is all-or-nothing, including the five this MSP touched.**
 `reopen`, `transition_thread` and `archive_thread` each still run `appendSessionEvent` and/or
 `commitAndReindex` after their durable write, and both can throw. What MSP-2 actually closed is
 narrower and worth stating exactly: **no durable write now happens before the validation that can
-refuse it, and the active-thread pointer can no longer abort a call that already wrote.** Whole-call
-atomicity was never in scope. The full list, handed to MSP-8 (transactions), which owns it:
+refuse it, and — in the five tools this MSP touched — the active-thread pointer can no longer abort a
+call that already wrote.** The five-tool qualifier is load-bearing and an earlier draft omitted it,
+asserting the pointer clause universally while the residual table three rows below already
+contradicted it: `bind-branch.mjs:13-14` and `create-successor.mjs:27-28` still call the bare
+`writeActiveThread`, so on a git project whose `.git/ledger` is occupied by a plain file
+`create_successor` throws `ENOTDIR` with the successor already durable and `commitAndReindex` never
+run. The tolerant wrappers they need already exist; wrapping them is MSP-8's, and MSP-3 already
+edits `bind_branch`. Whole-call atomicity was never in scope. The full list, handed to MSP-8 (transactions), which owns it:
 
 | Site | Shape |
 | --- | --- |
