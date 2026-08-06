@@ -159,14 +159,17 @@ section 8.
 
 ## 7. MSP ladder
 
-Seventeen MSPs. Each is independently shippable: merging it leaves `main` green and the plugin
+Eighteen MSPs. Each is independently shippable: merging it leaves `main` green and the plugin
 working. Later MSPs assume earlier ones only where the Depends column says so.
 
-Three are corrective siblings added during execution rather than at approval. A letter suffix means
+Four are corrective siblings added during execution rather than at approval. A letter suffix means
 the parent shipped but its premise or its output did not hold, and the letter advances with each
 successive correction of the same parent: MSP-0B closes an audit coverage gap (decision 0029),
-MSP-1B repairs MSP-1's error contract after a review found it defective (decision 0034), and MSP-1C
-repairs the one C4 defect MSP-1B's own review left open (decision 0035).
+MSP-1B repairs MSP-1's error contract after a review found it defective (decision 0034), MSP-1C
+repairs the one C4 defect MSP-1B's own review left open (decision 0035), and MSP-2B carries the
+active-thread pointer redesign after two in-branch attempts were rejected (decisions 0041, 0043,
+0044). MSP-2B is the one corrective that splits work *out* of its parent rather than repairing what
+the parent shipped: MSP-2 never merged with the pointer work in it.
 
 ### Version policy
 
@@ -180,6 +183,7 @@ repairs the one C4 defect MSP-1B's own review left open (decision 0035).
 | MSP-1B | 0.2.2 | no |
 | MSP-1C | 0.2.3 | no |
 | MSP-2 | 0.2.4 | no |
+| MSP-2B | 0.2.5 | no |
 | MSP-3 | 0.3.0 | input tightening |
 | MSP-4 | 0.4.0 | new tool + FSM change |
 | MSP-5 | 0.5.0 | new tools |
@@ -481,11 +485,27 @@ rather than dropped:
 
 ### MSP-2 — Validate before you write
 
-**Status: shipped** as `7b12b7b` on `fix/msp-2-validate-before-write`, stacked on MSP-1C at
-`a3d4d39` because MSP-1C carries the 0.2.3 bump this MSP's 0.2.4 follows. Every line number this
-section cites was pinned to audit baseline `2c8ef31` and was already stale when the work started:
-MSP-1 (`dfbebf4`) shifted `record-decision.mjs` by +8, `transition-thread.mjs` by +18,
-`archive-thread.mjs` by -2 and `reopen.mjs` by +6. Re-locate by grep, never by the cited number.
+**Status: ready for review** on `fix/msp-2-validate-before-write`. MSP-1C squash-merged as
+`7a7414f`, so this branch now sits directly on `main` and stacks on nothing; MSP-1C carried the
+0.2.3 bump this MSP's 0.2.4 follows. An earlier draft of this line claimed **shipped** as `7b12b7b`.
+That was wrong twice: nothing had merged, and `7b12b7b` is an orphaned earlier attempt that is an
+ancestor of neither this branch nor `main`. The record-validation core ships as `7b02456` and
+`9ce86d0`.
+
+**The pointer work is not in this MSP.** Two successive attempts to fix the active-thread pointer
+were made on this branch and both were rejected: round 9 (`48319d2`) refused every unreadable
+pointer and stranded threads in `active` forever, round 10 (`5343c06`) split the refusal and
+re-opened the dangling-pointer critical in a form no tool can repair (decision 0041). Both commits
+are reverted. The redesign that replaces them — the driver owns its pointer, ownership is decided by
+identity, an unevaluable precondition refuses the write (decision 0043) — is a different unit of
+work touching a driver layer this section never claimed, so it ships as corrective **MSP-2B** below,
+against `main` (decision 0044). The pointer bullets that follow describe the **tolerant-wrapper**
+state that survives the revert. They are not MSP-2B's design.
+
+Every line number this section cites was pinned to audit baseline `2c8ef31` and was already stale
+when the work started: MSP-1 (`dfbebf4`) shifted `record-decision.mjs` by +8,
+`transition-thread.mjs` by +18, `archive-thread.mjs` by -2 and `reopen.mjs` by +6. Re-locate by
+grep, never by the cited number.
 
 **Attacks:** C2 (ordering half). **Closes:** criticals 5 and 11's write-ordering component, plus
 the partial-write ghost-thread defects.
@@ -525,31 +545,36 @@ the partial-write ghost-thread defects.
 - `ActivePointerUnavailable` (`src/util/active-thread.mjs`) is keyed on the **effect** — the pointer
   is not durable — not on one construction-time sentinel. Three tolerant wrappers
   (`writeActiveThreadOrWarn`, `readActiveThreadOrWarn`, `clearActiveThreadOrWarn`) classify a libuv
-  syscall failure (`code` and `syscall` both strings) from the pointer **write or clear**, plus a
+  syscall failure (`code` and `syscall` both strings) from the pointer write, read or clear, plus a
   failure to resolve the git directory, into `{value, warning}`. The ULID guard and every
   programming error still propagate; the tolerance is not a blanket catch.
-- **The pointer read splits on one distinction: can a pointer name this thread at all?**
-  `readActiveThreadOrAbsent` tolerates *only* `ActivePointerUnavailable` — the pointer **store** is
-  unreachable, so no pointer names anything, nothing can dangle, and the condition is reported as a
-  warning. A syscall failure on the pointer **file** still propagates: that file may exist and may
-  name this thread, and the read is hoisted ahead of `writeThread`, so aborting costs nothing and
-  the call leaves nothing durable.
-- Both halves of that distinction were shipped wrong, in opposite directions, on consecutive
-  rounds. Tolerating everything (round 7) returned `null`, `null` never equals the thread id, the
-  clear was skipped, and the thread went durably terminal while the pointer still named it —
-  `hooks/lib/stop.mjs:101-105` then returns `exitCode: 2` and every later session end blocks
-  demanding a debrief for an abandoned thread. Tolerating nothing (round 8) meant a thread opened
-  while the store was unreachable could never afterwards be paused, finished or abandoned by any
-  tool: `open_thread` warned and continued while `transition_thread` and `archive_thread` threw on
-  the identical condition, stranding the record permanently. The abort protected nothing there —
-  `hooks/lib/cli.mjs:31` returns `null` on a non-zero CLI exit, so the gate never fires for a
-  thread whose store cannot be resolved. Clearing unconditionally on leaving `active` is worse than
-  either: it clobbers a pointer naming a different thread. Decision 0040.
-- Each tolerated action names its **own** consequence. A failed write means the gate will not fire
-  until the pointer is written; a failed clear means the pointer survives and the gate will keep
-  firing until it is removed. One shared string had been appended to both, which stated the exact
-  inverse of the truth for the clear and prescribed the opposite remedy — on a channel whose whole
-  purpose is to tell the model what happened.
+- **What this leaves unfixed, deliberately.** A tolerated read returns `null`, `null` never equals
+  the thread id, so the clear is skipped and the thread goes durably terminal while the pointer
+  still names it — `hooks/lib/stop.mjs:101-105` then returns `exitCode: 2` and every later session
+  end blocks demanding a debrief for an abandoned thread. `main` reaches the identical durable state
+  by the other route: it calls the bare `readActiveThread` **after** `writeThread`, so the read
+  throws once the record is already written. The reverted branch is therefore no worse than `main`
+  on this axis and is better on one — the read is hoisted ahead of the write and the condition
+  surfaces as a warning rather than an unexplained throw. Closing it for real is MSP-2B.
+- **A second known defect rides along, recorded rather than hidden.** `tolerateUnavailable`
+  (`src/util/active-thread.mjs:87`) appends one shared `POINTER_CONSEQUENCE` string to all three
+  actions. For a failed **clear** that string is the exact inverse of the truth: it says the gate
+  will not fire until the pointer is restored, when in fact the pointer survives and the gate will
+  keep firing until it is removed — the opposite remedy, on a channel whose whole purpose is to tell
+  the model what happened. Round 9 fixed this by giving each action its own consequence; that fix
+  was reverted with the rest of `48319d2` because it was entangled with the rejected refusal. **It
+  is MSP-2B's, and it is the cheapest thing in MSP-2B.**
+- Rounds 7 through 10 shipped this area wrong four consecutive times, in alternating directions, and
+  the log is kept because the pattern is the lesson. Tolerating everything (round 7) produced the
+  dangling pointer above. Tolerating nothing (round 9) meant a thread opened while the store was
+  unreachable could never afterwards be paused, finished or abandoned by any tool: `open_thread`
+  warned and continued while `transition_thread` and `archive_thread` threw on the identical
+  condition, stranding the record permanently. The abort protected nothing there —
+  `hooks/lib/cli.mjs:31` returns `null` on a non-zero CLI exit, so the gate never fires for a thread
+  whose store cannot be resolved. Splitting the two (round 10) treated every unreachable **store** as
+  proof that no pointer exists, which is false on the git backend where the pointer is a real file.
+  Clearing unconditionally on leaving `active` is worse than any of them: it clobbers a pointer
+  naming a different thread. Decisions 0040, 0041, 0043.
 - **Corrected after review.** The first attempt raised the class at exactly one site —
   `activeThreadPath`'s non-git branch on a falsy `CLAUDE_PLUGIN_DATA`. `selectDriver` computes
   `ledgerDataRoot` unconditionally (`select.mjs:38`) and throws at `:29`, so a `LocalDriver` cannot
@@ -655,22 +680,108 @@ Round 9 found one more, again introduced by the previous round's fix, again gree
 thread opened while the pointer store was unreachable threw `ActivePointerUnavailable` from both
 `transition_thread` and `archive_thread` and stayed `active` forever.
 
-**A green suite is not evidence here.** Nine consecutive reviews of this server have now each found
-a real defect at 100% pass, and four of those were introduced by the fix for the one before it.
-Three were *widenings* — of the write order, of the tolerated error class, of one consequence
-string across three actions — and the fourth was a *narrowing*. So the rule is **not** "prefer
-narrow": it is **preserve the distinction**. Every one of the four collapsed two conditions that
-needed to stay apart. State, before committing, which distinction a change preserves and which it
-collapses; that question would have caught all four, and "is this narrow enough?" caught none.
+Round 11 reviewed the round-10 fix in three roles at 969/969 and two reviewers independently
+reproduced the same critical: `readActiveThreadOrAbsent` read every unreachable **store** as proof
+that no pointer exists, which holds only where a pointer could never have been written. On the git
+backend the pointer is a real file under the git common dir, and `active-thread.mjs` resolved that
+dir with a bare `gitExec` while every driver call prepends `-c safe.directory`, so the driver
+committed normally while only the pointer resolution failed. The thread went durably terminal with
+the pointer still naming it, and the FSM refuses the remedy the Stop hook prints. Decision 0041
+blocked the branch; decisions 0043 and 0044 reverted both pointer commits and moved the redesign to
+MSP-2B, returning the suite to **961/961**.
 
-Classification by error *shape* was a symptom of the same thing: `isGitInvocationFailure` enumerated
-`typeof code === 'number' || (code && syscall)`, which a signal-killed git (`code: null,
-signal: 'SIGKILL'`) and a stdio overflow both slipped past, letting `writeActiveThreadOrWarn` throw
-*after* the record was durable. Classification by **origin** — `gitExec` tags its own argument
-rejections, everything else from it is an invocation failure — cannot be outrun by an error shape
-nobody has seen yet.
+**A green suite is not evidence here.** Eleven consecutive reviews of this server have now each
+found a real defect at 100% pass, and five of those were introduced by the fix for the one before
+it. Three were *widenings* — of the write order, of the tolerated error class, of one consequence
+string across three actions — and two were *narrowings*. So the rule is **not** "prefer narrow" and
+not "prefer wide": it is **preserve the distinction**. Every one of the five collapsed two
+conditions that needed to stay apart. State, before committing, which distinction a change preserves
+and which it collapses; that question would have caught all five, and "is this narrow enough?"
+caught none.
+
+**And the deeper failure was fixing at the wrong layer.** Rounds 7 through 10 all argued about how
+tolerant the pointer read should be. None asked why the pointer resolved the git directory a second
+time, less robustly, when the driver had already resolved and cached it. The state four rounds
+fought over was manufactured, not intrinsic. Decision 0043 dissolves it instead of classifying it,
+which is why MSP-2B is a redesign and not a sixth attempt.
 
 **PR title:** `fix(writes): validate the full record before any durable write`
+
+---
+
+### MSP-2B — The driver owns the active pointer
+
+**Status: not started.** Bases on `main`, after MSP-2 merges. Created by decision 0044 after
+decision 0041 rejected two in-branch attempts and decision 0042 mandated a research pass before any
+further code. Design is decision 0043.
+
+**Attacks:** C2 (the pointer half MSP-2 could not close). **Closes:** the round-11 critical
+(unreachable store read as absent pointer) plus the three HIGH defects decision 0041 found
+independent of it, and the inverted clear-consequence string round 9 had fixed before the revert.
+**Depends:** MSP-2 (merge). **Version:** 0.2.5. Non-breaking — every deletion is internal module
+surface, no MCP tool schema or result shape changes.
+
+**The premise.** Four rounds argued about how tolerant the pointer read should be. The state they
+fought over is manufactured: `active-thread.mjs` runs its own bare `git rev-parse --git-common-dir`
+while every driver call prepends `-c safe.directory` (`git-scope.mjs:30`, `:49`, `:81`), and
+`GitRefDriver` has already resolved and cached that same directory (`git-ref-driver.mjs:249-262`).
+The pointer resolves a fact the driver owns, a second time, less robustly — which is exactly why a
+dubious-ownership repo breaks the pointer while the store commits normally. Dissolve it rather than
+classify it.
+
+**Changes**
+- The driver owns its pointer location. `gitLedgerDir` is **deleted**, not repaired. `LocalDriver`'s
+  `ledgerRoot` and the non-git pointer are already siblings under one base the driver owns
+  (`select.mjs:48`, `active-thread.mjs:62`).
+- Every state-changing tool reads its thread record through the driver before consulting the
+  pointer, so resolution is a cached success by then and store-unreachable stops being reachable
+  rather than being tolerated.
+- `ActivePointerUnavailable` loses both throw sites and the class goes with them, taking the dead
+  `isGitUsageError` guard along. `selectDriver` calls `ledgerDataRoot` unconditionally and throws at
+  `select.mjs:29` before any driver is constructed, so the class was already unreachable in
+  production. `readActiveThreadOrAbsent` then tolerates nothing and collapses into
+  `readActiveThread`.
+- **Ownership is decided by thread identity, never by status.** The status gates at
+  `transition-thread.mjs:65` and `archive-thread.mjs:24` are deleted, which closes `bind_branch`'s
+  any-status pointer write from the read side and demotes MSP-3's write-side gate from load-bearing
+  fix to additional tightening.
+- The only surviving failure is a pointer file that exists and cannot be read. That is a failed
+  precondition of a durable status write, so under MSP-2's own theme the call **refuses before
+  anything durable happens**, naming the pointer path, the errno, and that retry succeeds once the
+  file is removed — the c4 contract. The pointer is never auto-cleared while unreadable; that
+  follows the durable-state precedent (git `index.lock`, `pg_resetwal`, SQLite recovery) rather than
+  destroying evidence that could not be read.
+- **The clear is reordered ahead of the durable status write in both handlers.** This closes a
+  second entrance round 11 did not name: `transition-thread.mjs` writes the terminal record at `:68`
+  before clearing at `:69` and `archive-thread.mjs` writes at `:25` before clearing at `:26`, so a
+  tolerated clear failure leaves the record terminal with the pointer still naming it — needing no
+  `safe.directory` bug at all, and surviving any fix aimed only at the read. After the reorder a
+  failure costs a missed session-end reminder rather than an unrepairable ledger.
+- Each tolerated action names its **own** consequence, replacing the single shared
+  `POINTER_CONSEQUENCE` string that states the inverse of the truth for a failed clear.
+- **Failure direction is asymmetric by consequence.** The pointer stays advisory on the read path,
+  so the Stop hook's existing fail-open via `cli.mjs:29` is correct and unchanged; pointer *writes*
+  stay tolerated with a loud warning, because a missed reminder is the benign direction.
+
+**Evidence bar — stricter than the ladder's default, and non-negotiable.** No evidence is accepted
+from the suite as it stands: `test/fixtures/tool-ctx.mjs:10` always builds a **non-git** temp dir, so
+no tool-level test has ever reached the git pointer path where the critical lives. A green suite has
+been wrong about this exact area four times. Required: a **git-backed tool context**, and at least
+one assertion **proven red at the parent commit** before any fix is believed.
+
+**Acceptance**
+- With the pointer file present and unreadable, a `transition_thread` to a terminal state refuses,
+  names the path and errno, says retry succeeds after removal, and leaves the thread record
+  unchanged on disk.
+- On a git-backed context with dubious ownership, the driver commits and the pointer resolves
+  through the same cached directory — the round-11 critical cannot be reproduced.
+- A failed pointer clear leaves a thread that is still repairable by an ordinary tool call.
+- A failed clear's warning names the *surviving* pointer and the *continuing* gate, asserted on the
+  warning string itself.
+
+**Verify:** `npm test`, plus the red-at-parent assertion above recorded in the PR body.
+
+**PR title:** `fix(writes): give the driver custody of the active pointer`
 
 ---
 
@@ -1294,7 +1405,7 @@ MSP-0 ─┬─> MSP-0B ──────────────────�
        └─> MSP-1 ─┬─> MSP-10                        │
                   │                                 │
                   └─> MSP-1B ─┬─> MSP-1C            │
-                              ├─> MSP-2 ────────────┤
+                              ├─> MSP-2 ──> MSP-2B ─┤
                               ├─> MSP-3 ──┐         │
                               ├─> MSP-4   │         │
                               └─> MSP-5 ──┼─> MSP-6 ┼─> MSP-7 ──> MSP-8 ─┬─> MSP-9 ──> MSP-11
@@ -1306,6 +1417,11 @@ MSP-0 ─┬─> MSP-0B ──────────────────�
 **Parallelizable at any time after MSP-1B:** MSP-3, MSP-4.
 **MSP-1C gates nothing** and is off the critical path, but it ships before MSP-2 because it is what
 actually closes C4: MSP-1B fixed the error *shape*, and left the rendered *value* still unreadable.
+**MSP-2B gates nothing and does not gate MSP-3.** Serialize MSP-3 behind **MSP-2's** merge, not
+behind MSP-2B: MSP-3's overlap with MSP-2 is four handler files, while MSP-2B owns the driver and
+pointer layer that MSP-3 never touches, so the two correctives do not conflict and may run
+concurrently. MSP-2B does gate the pointer residuals that MSP-4's Stop gate and MSP-8's
+compare-and-swap assume, so it ships before either.
 **MSP-10 depends only on MSP-1** and is the one unit review cleared to build on the uncorrected
 contract, since it touches the render and hook surfaces rather than the error path.
 **MSP-0B runs concurrently with MSP-1 through MSP-6** and gates only MSP-7, MSP-9 and MSP-11.
@@ -1330,6 +1446,7 @@ found MSP-1's shape defective after it merged, and four MSPs would otherwise hav
 | ~~Payload sizes were measured on `LocalDriver`, but the deployed backend is `GitRefDriver`~~ **Retired by MSP-0B: measured on both, and the sizes are identical.** Every mutating tool returns the record itself (`update-thread.mjs:125`) and `bin/ledger-server.mjs:52` stringifies it, so the figure is driver-independent by construction. The SPEC's 6,269 B is verified in magnitude (6,514 B on a reconstructed thread, on both backends; 6,963 B once wrapped in the MCP content envelope, which is the number MSP-6's 1,200 B target must beat). | The real divergence is durability, not size: 3 of 3 index files survive a further process start on `LocalDriver`, 0 of 3 on `GitRefDriver`. That risk is now carried by MSP-9. |
 | An implementing agent restates a defect instead of reading it | The evidence law in section 2 is binding; a PR body without `file:line` citations is rejected in review. |
 | A merged MSP is assumed correct because its suite is green | **Realized on MSP-1.** It merged at 879/879 with both the refusal's `field` and its `retryable` wrong, because the tests asserted that those keys were present rather than that they were right. Acceptance for every remaining MSP requires at least one assertion proven red against the parent commit before it goes green. |
+| A pointer defect hides because no test reaches the git pointer path | **Realized across four rounds.** `test/fixtures/tool-ctx.mjs:10` always builds a non-git temp dir, so no tool-level test has ever exercised the git backend's pointer. Four successive fixes shipped green over live defects there. MSP-2B must add a git-backed tool context before any pointer assertion is believed. |
 | A merged MSP ships unreviewed | **Realized on MSP-0, MSP-0B, MSP-1 and the SPEC commit** — four PRs merged with no review pass, and the first review run found a BLOCK. Every remaining MSP gets a `code-reviewer` pass before merge, not after. |
 
 ---
