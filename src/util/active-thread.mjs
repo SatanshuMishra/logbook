@@ -83,7 +83,7 @@ const POINTER_VERBS = Object.freeze({
 const POINTER_CONSEQUENCES = Object.freeze({
   unreadable: 'the pointer could not be read back, so whether the end-of-session debrief gate is armed cannot be told from here',
   absent: 'the pointer is absent, so the end-of-session debrief gate will not fire until a pointer is written',
-  unrecognised: 'the pointer holds a value that is not a thread id, so the end-of-session debrief gate is armed for that value and neither transition_thread nor archive_thread will release it; replace the pointer by entering active on a real thread, or remove it',
+  unrecognised: 'the pointer holds a value that is not a thread id, so the end-of-session debrief gate is armed for that value and neither transition_thread nor archive_thread will release it',
 });
 
 const UNREADABLE_POINTER = Object.freeze({ known: false, value: null });
@@ -108,7 +108,7 @@ async function observePointer(ctx, tolerated, notice) {
     if (durabilityReason(error) !== null) return UNREADABLE_POINTER;
     throw new AggregateError(
       [error, tolerated],
-      `${notice}; the pointer could not be read back: ${describeError(error)}`,
+      `the pointer could not be read back: ${describeError(error)}; ${notice}`,
     );
   }
 }

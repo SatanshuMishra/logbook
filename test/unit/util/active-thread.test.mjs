@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile, writeFile, chmod } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, readFile, writeFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { gitExec } from '../../../src/util/git-exec.mjs';
+import { toLedgerError } from '../../../src/errors.mjs';
 import { newUlid } from '../../../src/util/ulid.mjs';
 import { projectKey } from '../../../src/util/project-key.mjs';
 import {
@@ -127,6 +128,19 @@ async function lockPointerDir(t, contents) {
   return { ctx, target, id };
 }
 
+async function lockEmptyPointerDir(t) {
+  const dir = await mkdtemp(join(tmpdir(), 'active-thread-empty-'));
+  await gitExec(dir, ['init', '-q']);
+  const ledgerDir = join(dir, '.git', 'ledger');
+  await mkdir(ledgerDir, { recursive: true });
+  await chmod(ledgerDir, 0o500);
+  t.after(async () => {
+    await chmod(ledgerDir, 0o700);
+    await rm(dir, { recursive: true, force: true });
+  });
+  return gitCtx(dir);
+}
+
 test('writeActiveThreadOrWarn names the pointer that survived the failed write', async (t) => {
   const { ctx, target, id } = await lockPointerDir(t);
   const attempted = newUlid();
@@ -202,6 +216,18 @@ test('a surviving pointer that is not a thread id is reported as an armed gate t
   assert.doesNotMatch(warning, new RegExp(forged));
   assert.doesNotMatch(warning, /the pointer names/);
   assert.doesNotMatch(warning, /absent|will not fire|will keep firing/);
+  assert.doesNotMatch(warning, /replace the pointer|remove it/);
+});
+
+test('writeActiveThreadOrWarn reports an absent pointer when the failed write left nothing behind', async (t) => {
+  const ctx = await lockEmptyPointerDir(t);
+  const { value, warning } = await writeActiveThreadOrWarn(ctx, newUlid());
+  assert.equal(value, null);
+  assert.match(warning, /pointer not written/);
+  assert.match(warning, /the pointer file is unusable \(EACCES\)/);
+  assert.match(warning, /the pointer is absent, so the end-of-session debrief gate will not fire until a pointer is written/);
+  assert.doesNotMatch(warning, /cannot be told from here/);
+  assert.doesNotMatch(warning, /the pointer names|not a thread id/);
 });
 
 test('the tolerant wrappers still propagate a programming error', async (t) => {
@@ -233,6 +259,8 @@ test('a programming error raised while reading the pointer back is not swallowed
         carried.some((each) => each instanceof Error && /EACCES/.test(each.message)),
         'the tolerated write failure must travel with the read-back failure',
       );
+      const [head] = toLedgerError(error, 'transition_thread').message.split('\n');
+      assert.match(head, /driver exploded during read-back/);
       return true;
     },
   );
