@@ -31,7 +31,7 @@ async function handler(ctx, args) {
 
 export default {
   name: 'archive_thread',
-  description: 'Archive a thread via the FSM (abandoned); refuses a blocked thread; releases the active pointer only when this thread owns it, and that release is best-effort: a failure to release it leaves the thread abandoned and surfaces in warnings[].',
+  description: 'Archive a thread via the FSM (abandoned); refuses a blocked thread; releases the active-thread pointer only when the thread being archived is currently active and the pointer names it, and that release is best-effort: a failure to release it leaves the thread abandoned and surfaces in warnings[]. Archiving a non-active thread never touches the pointer and raises no warning if one still names it.',
   inputSchema: {
     type: 'object',
     additionalProperties: false,
