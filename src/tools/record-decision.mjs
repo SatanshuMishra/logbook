@@ -83,9 +83,7 @@ async function handler(ctx, args) {
     updated_at: now(),
   };
   assertValidThread(updated);
-  assertSpineCaps({
-    key_decisions: keyDecisions === thread.spine.key_decisions ? [] : [entry],
-  });
+  assertSpineCaps({ key_decisions: [entry] });
   const path = await driver.writeDecision(nnnn, args.slug, markdown);
   await driver.writeThread(updated);
   const { recovery_degraded } = await commitAndReindex(driver, `docs(ledger): decision ${ref}`);
