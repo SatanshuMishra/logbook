@@ -502,10 +502,13 @@ work touching a driver layer this section never claimed, so it ships as correcti
 against `main` (decision 0044). The pointer bullets that follow describe the **tolerant-wrapper**
 state that survives the revert. They are not MSP-2B's design.
 
-Every line number this section cites was pinned to audit baseline `2c8ef31` and was already stale
-when the work started: MSP-1 (`dfbebf4`) shifted `record-decision.mjs` by +8,
-`transition-thread.mjs` by +18, `archive-thread.mjs` by -2 and `reopen.mjs` by +6. Re-locate by
-grep, never by the cited number.
+Line numbers in this section carry two different pins. The **Changes** bullets keep the
+audit-baseline `2c8ef31` numbering they were written against, which was already stale when the work
+started: MSP-1 (`dfbebf4`) shifted `record-decision.mjs` by +8, `transition-thread.mjs` by +18,
+`archive-thread.mjs` by -2 and `reopen.mjs` by +6. Everything from **What shipped** onward — the
+residual table and the deferral list included — is pinned to the branch tip `aa20dc9`, as is the
+`active-thread.mjs` citation in the last **Changes** bullet, a file this MSP rewrote outright.
+Re-locate by grep, never by the cited number.
 
 **Attacks:** C2 (ordering half). **Closes:** criticals 5 and 11's write-ordering component, plus
 the partial-write ghost-thread defects.
@@ -519,7 +522,7 @@ the partial-write ghost-thread defects.
   vs `:28`, `reopen.mjs:28` vs `:29-30`.
 - Any side effect that cannot move before the record write becomes non-throwing and is reported in
   the result instead (`warnings[]`), notably `writeActiveThread`, which throws from
-  `src/util/active-thread.mjs:26-27` when `CLAUDE_PLUGIN_DATA` is unset on a non-git project.
+  `src/util/active-thread.mjs:41-44` when `CLAUDE_PLUGIN_DATA` is unset on a non-git project.
 
 **What shipped**
 - `record_decision` runs `assertValidThread` on the candidate record and `assertSpineCaps` on the
@@ -677,10 +680,21 @@ Further residuals, each recorded rather than fixed:
 - **MSP-10 (trust boundary), forward-looking constraint.** `truncate`
   (`src/render/briefing.mjs:9-12`) cuts unconditionally at `max - 1` and knows nothing of escape
   sequences or surrogate pairs, unlike `sliceWholeCharacters` and `trimPartialEscape`
-  (`src/errors.mjs:89-105`), which already do. Not a defect today — nothing escapes on that path
-  yet — but c6 introduces escaping there, and a cut through a `\uXXXX` token breaks the fence that
-  escaping exists to build. c6 truncates **then** escapes, or reuses the atom-aware slicing that
-  already exists; it does not add a third slicer.
+  (`src/errors.mjs:89-105`), which already do. c6 does not repair it: MSP-10 replaces `truncate`
+  with `field(value, max)` (its first **Changes** bullet), which collapses control characters to a
+  single space, strips leading markdown markers, and truncates **last**. `field` emits no `\uXXXX`
+  token, so no cut can land inside one, and the only constraint left is that c6 add no third slicer
+  beside `field`, `hooks/lib/roster.mjs:33` and `src/errors.mjs:89-105`. **An earlier draft of this
+  bullet prescribed "truncate then escape". That is wrong twice.** `escapeFormat`
+  (`src/errors.mjs:85-87`) folds only the `FORMAT_RUN` classes (`:68`), so it turns `\n## SYSTEM`
+  into one line with the `##` intact, where MSP-10's acceptance criterion asks for the marker
+  *stripped* — that is `field`'s job, not escaping's. And escaping inflates: `FORMAT_RUN` covers
+  ordinary blank runs, not just exotic code points, and every escaped UTF-16 unit becomes six
+  characters, so 500 spaces render 3000 characters, 500 zero-width spaces (U+200B) likewise, where
+  500 letters render 500. **If escaping ever does enter the render path, the cap is enforced on the
+  post-escape string**, or a value at its cap (`active_goal` is 200 characters,
+  `src/model/caps.mjs:4`) reaches the model six times over, per field, inside a briefing
+  `hooks/lib/stop.mjs:12` compels the model to reprint verbatim.
 - Durability is still commit-time on `GitRefDriver`: nothing is durable until `commit()` inside
   `commitAndReindex`. MSP-2's ordering is tool-level call ordering and holds on either backend, but
   true all-or-nothing durability is MSP-8 and worktree custody is MSP-9.
@@ -821,13 +835,26 @@ classify it.
 - Every state-changing tool reads its thread record through the driver before consulting the
   pointer, so resolution is a cached success by then and store-unreachable stops being reachable
   rather than being tolerated.
-- `ActivePointerUnavailable` loses both throw sites and the class goes with them. `selectDriver`
-  calls `ledgerDataRoot` unconditionally and throws at `select.mjs:29` before any driver is
-  constructed, so the class was already unreachable in production. The tolerant trio
-  (`writeActiveThreadOrWarn`, `readActiveThreadOrWarn`, `clearActiveThreadOrWarn`) then has one
-  fewer error class to classify and `durabilityReason` loses its `ActivePointerUnavailable` branch;
-  the libuv-syscall branch stays. The `isGitUsageError` guard and `readActiveThreadOrAbsent` this
-  bullet named are both gone already — reverted with the rest of `48319d2` by decision 0044 — so
+- `ActivePointerUnavailable` loses both throw sites and the class goes with them. **Only one of the
+  two is already dead.** The `CLAUDE_PLUGIN_DATA` throw (`active-thread.mjs:41-44`) cannot fire in
+  production because `selectDriver` calls `ledgerDataRoot` unconditionally (`select.mjs:38`) and
+  throws at `:29` before any driver is constructed. The other throw site is **live on the git
+  backend**: `gitLedgerDir`'s bare catch (`active-thread.mjs:22-24`) converts any failing
+  `git rev-parse --git-common-dir` into the class, and it runs *after* driver selection, on every
+  pointer call — the server caches one context for the whole process lifetime
+  (`bin/ledger-server.mjs:64-75`), so a repo moved, removed or reconfigured mid-session lands there.
+  Decision 0044 records that second resolution as a real pre-existing defect, which is why
+  `gitLedgerDir` is deleted above rather than repaired.
+- **The `durabilityReason` deletion is conditional on that order, and the order is load-bearing.**
+  Once no throw site remains, the tolerant trio (`writeActiveThreadOrWarn`,
+  `readActiveThreadOrWarn`, `clearActiveThreadOrWarn`) has one fewer error class to classify and
+  `durabilityReason` (`active-thread.mjs:91-96`) loses its `ActivePointerUnavailable` branch, keeping
+  the libuv-syscall branch. Drop that branch while **any** git-resolution throw survives and
+  `tolerateUnavailable` re-throws on `reason === null` (`:128`), so a tolerated warning becomes an
+  unclassified `internal_error` (`src/errors.mjs:321-335`) — the regression rounds 7 through 10 kept
+  re-entering. Remove the throw sites first; drop the branch last, in the same change.
+- The `isGitUsageError` guard and `readActiveThreadOrAbsent` an earlier draft of these
+  bullets named are both gone already — reverted with the rest of `48319d2` by decision 0044 — so
   there is nothing here to delete; grep before assuming either exists.
 - **Ownership is decided by thread identity, never by status.** The status gates at
   `transition-thread.mjs:65` and `archive-thread.mjs:24` are deleted, which closes `bind_branch`'s
