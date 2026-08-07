@@ -65,7 +65,7 @@ test('record_decision writes a numbered MADR file with Thread-Id frontmatter', a
   assert.match(md, /- X/);
 });
 
-test('record_decision links a scoped decision object into the thread spine (dedup by ref)', async (t) => {
+test('record_decision links each recorded decision into the thread spine under its own number', async (t) => {
   const ctx = await makeToolCtx(t);
   const { thread } = await openThread.handler(ctx, { title: 'Decisions', completion_criteria: [{ text: 'ship it' }] });
   await record(ctx, thread);
@@ -225,6 +225,18 @@ test('the dedup path refuses an over-cap title, leaving decisions/ empty and the
   );
   assert.deepEqual(await readdir(join(root, 'decisions')), []);
   assert.equal(await ctx.driver.nextDecisionNumber(), '0001');
+  const after = await ctx.driver.readThread(seed.id);
+  assert.deepEqual(after.spine.key_decisions, [stored]);
+});
+
+test('the dedup path backs a ref the spine already carries without linking it twice', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const stored = { ref: '0001-adopt-x', title: 'Adopt X', scope: 'thread' };
+  const seed = await storeLegacyThread(ctx, { key_decisions: [stored] });
+  const root = await ctx.driver.root();
+  const { number } = await record(ctx, seed, { title: 'Adopt X once more' });
+  assert.equal(number, '0001');
+  assert.deepEqual(await readdir(join(root, 'decisions')), ['0001-adopt-x.md']);
   const after = await ctx.driver.readThread(seed.id);
   assert.deepEqual(after.spine.key_decisions, [stored]);
 });
