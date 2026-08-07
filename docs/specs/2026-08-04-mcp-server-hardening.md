@@ -831,15 +831,26 @@ classify it.
 **Changes**
 - The driver owns its pointer location. `gitLedgerDir` is **deleted**, not repaired. `LocalDriver`'s
   `ledgerRoot` and the non-git pointer are already siblings under one base the driver owns
-  (`select.mjs:48`, `active-thread.mjs:45`).
+  (`select.mjs:48`, `active-thread.mjs:45`). `GitRefDriver` must **override** rather than inherit
+  that accessor: it extends `LocalDriver` via `super(worktreeDir)`, so `dirname(this.ledgerRoot)` is
+  the worktree's parent, not the git common dir. One consequence to expect in the git pointer path
+  string: the driver's `resolveGitDir` uses `rev-parse --absolute-git-dir`, which canonicalises
+  symlinks, so the pointer path is now the realpath'd one the driver already uses for its worktree
+  lock (`git-ref-driver.mjs:350`) rather than the caller's spelling of `projectDir`. Same file, one
+  spelling; a test comparing the two spellings as strings must compare canonically.
 - Every state-changing tool reads its thread record through the driver before consulting the
   pointer, so resolution is a cached success by then and store-unreachable stops being reachable
   rather than being tolerated.
-- `ActivePointerUnavailable` loses both throw sites and the class goes with them. **Only one of the
-  two is already dead.** The `CLAUDE_PLUGIN_DATA` throw (`active-thread.mjs:41-44`) cannot fire in
-  production because `selectDriver` calls `ledgerDataRoot` unconditionally (`select.mjs:38`) and
-  throws at `:29` before any driver is constructed. The other throw site is **live on the git
-  backend**: `gitLedgerDir`'s bare catch (`active-thread.mjs:22-24`) converts any failing
+- `ActivePointerUnavailable` loses both throw sites and the class goes with them. **Corrected during
+  implementation: neither throw site was dead.** This bullet claimed the `CLAUDE_PLUGIN_DATA` throw
+  (`active-thread.mjs:41-44`) could not fire because `selectDriver` calls `ledgerDataRoot`
+  unconditionally (`select.mjs:38`) and throws at `:29` first. That only covers driver
+  *construction*. `activeThreadPath` re-read `process.env.CLAUDE_PLUGIN_DATA` on **every** call, so
+  unsetting it after the context exists reached the throw — the same cached-context argument this
+  bullet already makes for the git branch. `open-thread.test.mjs:78` asserted exactly that tolerated
+  warning at the parent commit and had to be rewritten here: the pointer now survives the unset,
+  because `LocalDriver` derives it from `ledgerRoot`, fixed at construction. The other throw site is
+  **live on the git backend**: `gitLedgerDir`'s bare catch (`active-thread.mjs:22-24`) converts any failing
   `git rev-parse --git-common-dir` into the class, and it runs *after* driver selection, on every
   pointer call — the server caches one context for the whole process lifetime
   (`bin/ledger-server.mjs:64-75`), so a repo moved, removed or reconfigured mid-session lands there.
@@ -865,13 +876,66 @@ classify it.
   anything durable happens**, naming the pointer path, the errno, and that retry succeeds once the
   file is removed — the c4 contract. The pointer is never auto-cleared while unreadable; that
   follows the durable-state precedent (git `index.lock`, `pg_resetwal`, SQLite recovery) rather than
-  destroying evidence that could not be read.
-- **The clear is reordered ahead of the durable status write in both handlers.** This closes a
-  second entrance round 11 did not name: `transition-thread.mjs` writes the terminal record at `:68`
-  before clearing at `:69` and `archive-thread.mjs` writes at `:25` before clearing at `:26`, so a
-  tolerated clear failure leaves the record terminal with the pointer still naming it — needing no
-  `safe.directory` bug at all, and surviving any fix aimed only at the read. After the reorder a
-  failure costs a missed session-end reminder rather than an unrepairable ledger.
+  destroying evidence that could not be read. **Landed during implementation** as the registry code
+  `pointer_unreadable`, built by `pointerUnreadable` and raised by `readPointerOrRefuse` in
+  `src/tools/shared.mjs`, which both handlers now call instead of `readActiveThreadOrWarn`. Only a
+  libuv syscall failure is classified; anything else still propagates, so a programming error is not
+  laundered into a retryable refusal. That test is `pointerSyscallErrno` in `active-thread.mjs`,
+  extracted out of `durabilityReason` and shared rather than copied, so the refusal and the tolerated
+  warning can never drift apart. **"Exists and cannot be read" is enforced, not assumed.** A path
+  shape that proves no pointer *file* is there reads as no pointer, exactly like `ENOENT`:
+  `ENOTDIR` (a regular file occupies `<gitcommondir>/ledger`, the shape
+  `occupyPointerDir` in `test/unit/util/active-thread.test.mjs` models) and `EISDIR` (a directory
+  sits at the pointer path). Both were classified as unreadable in the first cut, so an absent
+  pointer permanently refused every exit from `active`, with a remedy naming
+  `<gitcommondir>/ledger/active-thread` while the offending entry was its parent. That list is
+  `ABSENT_POINTER_ERRNOS` in `src/tools/shared.mjs`; `EACCES` and friends still refuse.
+  **The errno rides in `expected`; no filesystem path rides anywhere.** The claim that `remedy` is
+  "the one field whose 148-char cap holds a whole path" is arithmetically false: `REMEDY_MAX_CHARS`
+  is 148 and `LedgerError.toDetail()` runs `fit` over it (`src/errors.mjs:250`), so any pointer path
+  past ~109 chars — routine for a non-git project, whose `projectKey` encodes the whole absolute
+  project path — is emitted truncated. A `retryable: true` refusal that instructs deletion of a
+  truncated path is worse than one that names no path: the nearest existing ancestor of that
+  truncation is the shared `CLAUDE_PLUGIN_DATA` root. The remedy now names the pointer by its
+  constant filename and the access to restore, which also keeps the server's absolute paths (and the
+  OS username they carry) out of the caller's context. **The refusal is gated on being escapable.**
+  Widening the read to every exit made the refusal total: the entrances tolerate a failed pointer
+  write and only warn, so a pointer whose *directory* is unwritable let threads be opened that no
+  `transition_thread` or `archive_thread` could ever close, with `retryable: true` inviting a retry
+  loop against a state no tool call can change. The rescue those declines assumed — an entrance tool
+  renaming over the pointer — needs the directory writable, not just the file replaceable. So
+  `readPointerOrRefuse` now asks `pointerOverwritable` whether an ordinary tool call could still
+  replace the pointer (`W_OK | X_OK` on its directory). Only then does it refuse; otherwise the
+  pointer can be neither read nor replaced by anyone — the Stop hook's `active-thread` read fails on
+  the same `EACCES` — so it arms nothing, and the call degrades to `readActiveThreadOrWarn`'s
+  tolerated warning rather than bricking the ledger. **Existence is observed, not assumed.** `EACCES`
+  is equally what an unsearchable parent raises, where no pointer file need exist, so the remedy
+  claiming the file "exists but cannot be read" asserted an unobserved fact — the round-16 `ENOTDIR`
+  class again. `pointerExists` stats the pointer first: the observed branch keeps the original
+  wording, and the unobserved branch (a symlink into an unreadable directory, `ELOOP`, `EIO`) says
+  only that the pointer could not be read.
+- **The release is a compare-and-swap, not a read-then-delete.** `clearActiveThread` is
+  `rm(target, { force: true })`, and both handlers read the pointer, then run `driver.writeThread` —
+  which for `GitRefDriver` spawns git through `#writeInWorktree` — and only then delete. Across that
+  multi-hundred-millisecond window a second session's `open_thread` can take the pointer, and the
+  unconditional `rm` then destroys it: that session's Stop hook reads no pointer, does not block, and
+  its thread is handed off with no debrief and no warning on either side. Widening the read to every
+  exit widened that window from "the thread being changed is itself active" to every call. Both
+  handlers now call `releaseActiveThreadOrWarn(ctx, id)`, which re-reads the pointer immediately
+  before the unlink and deletes only while it still names the caller's thread. A pointer that moved
+  on is left alone and reported through the same observed-state consequence as every other tolerated
+  pointer failure (decision 0049).
+- ~~The clear is reordered ahead of the durable status write in both handlers.~~ **Reverted during
+  implementation; the parent commit's order was right.** `driver.writeThread` is the only place
+  `assertValidThread` runs (`src/drivers/local-driver.mjs:152`) and the only place `GitRefDriver`
+  provisions its worktree, so putting the pointer mutation first means a *refused* call has already
+  mutated durable state — the regression `0a0aaa1` ("validate the full record before any durable
+  write") exists to prevent, and silent, because the throw discards the whole result including
+  `warnings[]`. The hazard the reorder aimed at is the reverse and it is self-announcing: a tolerated
+  clear failure re-reads the pointer and reports the surviving thread id (decision 0049), and the
+  Stop hook keeps nagging until an entrance tool overwrites it. `readPointerOrRefuse` still runs
+  ahead of both, which is what satisfies "refuses before anything is stored" — the mutating call's
+  order buys nothing.
 - ~~Each tolerated action names its own consequence.~~ **Done in MSP-2, not here.** MSP-2 split the
   one shared string per action and then, on decision 0049, replaced prediction with observation
   outright: after a tolerated failure the pointer is re-read and the warning reports the state it
@@ -889,8 +953,19 @@ one assertion **proven red at the parent commit** before any fix is believed.
 
 **Acceptance**
 - With the pointer file present and unreadable, a `transition_thread` to a terminal state refuses,
-  names the path and errno, says retry succeeds after removal, and leaves the thread record
-  unchanged on disk.
+  names the errno, says retry succeeds after the file is made readable or removed, and leaves the
+  thread record unchanged on disk. **"Names the path" is struck**: no field on `LedgerError` is
+  uncapped, so a whole pointer path cannot be emitted intact — see the c4 bullet above. The
+  substitute assertion is that the *emitted* remedy (`toDetail().remedy`, what
+  `bin/ledger-server.mjs:50` returns) survives `fit` unclipped and carries no path.
+- A pointer path a file or a directory blocks reads as no pointer: `transition_thread` and
+  `archive_thread` complete, release nothing, and raise no warning.
+- A `driver.writeThread` failure leaves the pointer exactly as it was, on both handlers.
+- With the pointer unreadable *and* its directory unwritable, neither handler refuses: both store the
+  transition, release nothing, and name the unreadable pointer in `warnings[]`, so a thread opened
+  into that ledger can still be closed.
+- With the pointer readable but replaced by a second session between the read and the release, the
+  replacement survives and the caller is told the pointer no longer names its thread.
 - On a git-backed context with dubious ownership, the driver commits and the pointer resolves
   through the same cached directory — the round-11 critical cannot be reproduced.
 - A failed pointer clear leaves a thread that is still repairable by an ordinary tool call.
