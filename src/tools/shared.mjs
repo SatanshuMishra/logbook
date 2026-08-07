@@ -1,7 +1,14 @@
-import { echoBetween, escapeFormat } from '../errors.mjs';
+import { ToolError, echoBetween, escapeFormat } from '../errors.mjs';
 import { rebuildIndex } from '../index/rebuild-index.mjs';
 import { ALLOWED_TRANSITIONS, THREAD_STATUSES, canTransition } from '../model/fsm.mjs';
 import { liveCriteria } from '../model/selection.mjs';
+import {
+  pointerExists,
+  pointerOverwritable,
+  pointerSyscallErrno,
+  readActiveThread,
+  readActiveThreadOrWarn,
+} from '../util/active-thread.mjs';
 
 export {
   LedgerError,
@@ -38,6 +45,38 @@ export function terminalThread(tool, status) {
     retryable: false,
     remedy: `this thread is ${status}; terminal threads never mutate again, so open a successor with create_successor instead`,
   };
+}
+
+const ABSENT_POINTER_ERRNOS = Object.freeze(['ENOTDIR', 'EISDIR']);
+
+export const NO_POINTER = Object.freeze({ value: null, warning: null });
+
+const POINTER_REMEDIES = Object.freeze({
+  observed: 'this ledger\'s active-thread pointer file exists but cannot be read; restore read access to it or remove it, then re-send this call unchanged',
+  unobserved: 'this ledger\'s active-thread pointer file could not be read; restore access to it and to the directory holding it, then re-send this call unchanged',
+});
+
+function pointerUnreadable(tool, errno, remedy) {
+  return {
+    code: 'pointer_unreadable',
+    field: `${tool}.active_thread_pointer`,
+    expected: `an active-thread pointer this call can read; the read failed with ${errno}`,
+    retryable: true,
+    remedy,
+  };
+}
+
+export async function readPointerOrRefuse(ctx, tool) {
+  try {
+    return { value: await readActiveThread(ctx), warning: null };
+  } catch (error) {
+    const errno = pointerSyscallErrno(error);
+    if (errno === null) throw error;
+    if (ABSENT_POINTER_ERRNOS.includes(errno)) return NO_POINTER;
+    if (!(await pointerOverwritable(ctx))) return readActiveThreadOrWarn(ctx);
+    const remedy = (await pointerExists(ctx)) ? POINTER_REMEDIES.observed : POINTER_REMEDIES.unobserved;
+    throw new ToolError(pointerUnreadable(tool, errno, remedy));
+  }
 }
 
 export const TRANSITION_SUBJECTS = Object.freeze(['status', 'thread']);

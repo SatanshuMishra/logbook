@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rm } from 'node:fs/promises';
+import { chmod, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import openThread from '../../../src/tools/open-thread.mjs';
+import archiveThread from '../../../src/tools/archive-thread.mjs';
 import { callTool, ToolValidationError } from '../../../src/tools/registry.mjs';
-import { readActiveThread } from '../../../src/util/active-thread.mjs';
-import { makeToolCtx, FIXED } from '../../fixtures/tool-ctx.mjs';
+import { activeThreadPath, readActiveThread } from '../../../src/util/active-thread.mjs';
+import { makeGitToolCtx, makeToolCtx, FIXED } from '../../fixtures/tool-ctx.mjs';
 
 const DOD = [{ text: 'ship it' }];
 
@@ -23,6 +24,25 @@ test('open_thread creates an active thread, writes the pointer, and returns {thr
   assert.equal(thread.created_at, FIXED);
   assert.equal(await readActiveThread(ctx), thread.id);
   assert.deepEqual(await ctx.driver.readThread(thread.id), thread);
+});
+
+test('open_thread overwrites an unreadable pointer, so the exit tools stop refusing', async (t) => {
+  const ctx = await makeGitToolCtx(t);
+  const { thread: first } = await openThread.handler(ctx, { title: 'First', completion_criteria: DOD });
+  const pointer = await activeThreadPath(ctx);
+  await chmod(pointer, 0o000);
+  await assert.rejects(
+    () => archiveThread.handler(ctx, { thread_id: first.id, reason: 'obsolete' }),
+    (error) => error.code === 'pointer_unreadable',
+  );
+
+  const opened = await openThread.handler(ctx, { title: 'Second', completion_criteria: DOD });
+  assert.equal('warnings' in opened, false);
+  assert.equal(await readActiveThread(ctx), opened.thread.id);
+
+  const archived = await archiveThread.handler(ctx, { thread_id: first.id, reason: 'obsolete' });
+  assert.equal(archived.thread.status, 'abandoned');
+  assert.equal(await readActiveThread(ctx), opened.thread.id);
 });
 
 test('open_thread allocates c1..cN ids, defaults kind to planned and struck_by to null', async (t) => {

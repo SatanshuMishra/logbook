@@ -1,9 +1,15 @@
 import { canTransition } from '../model/index.mjs';
-import { readActiveThreadOrWarn, clearActiveThreadOrWarn } from '../util/active-thread.mjs';
-import { commitAndReindex, withWarnings, ToolError, unknownThread, illegalTransition } from './shared.mjs';
+import { releaseActiveThreadOrWarn } from '../util/active-thread.mjs';
+import {
+  commitAndReindex,
+  withWarnings,
+  ToolError,
+  unknownThread,
+  illegalTransition,
+  readPointerOrRefuse,
+  NO_POINTER,
+} from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
-
-const NO_POINTER = Object.freeze({ value: null, warning: null });
 
 async function handler(ctx, args) {
   const { driver, now } = ctx;
@@ -21,9 +27,11 @@ async function handler(ctx, args) {
     abandoned_reason: args.reason,
     updated_at: nowIso,
   };
-  const pointer = thread.status === 'active' ? await readActiveThreadOrWarn(ctx) : NO_POINTER;
+  const pointer = await readPointerOrRefuse(ctx, 'archive_thread');
   await driver.writeThread(updated);
-  const release = pointer.value === updated.id ? await clearActiveThreadOrWarn(ctx) : NO_POINTER;
+  const release = pointer.value === updated.id
+    ? await releaseActiveThreadOrWarn(ctx, updated.id)
+    : NO_POINTER;
   await driver.appendSessionEvent(updated.id, nowIso, 'ledger', `Archived (${thread.status} -> abandoned): ${args.reason}`);
   const { recovery_degraded } = await commitAndReindex(driver, `chore(ledger): archive ${updated.slug}`);
   return withWarnings({ thread: updated, recovery_degraded }, [pointer.warning, release.warning]);
@@ -31,7 +39,7 @@ async function handler(ctx, args) {
 
 export default {
   name: 'archive_thread',
-  description: 'Archive a thread via the FSM (abandoned); refuses a blocked thread; releases the active-thread pointer only when the thread being archived is currently active and the pointer names it, and that release is best-effort: a failure to release it leaves the thread abandoned and surfaces in warnings[]. Archiving a non-active thread never touches the pointer and raises no warning if one still names it.',
+  description: 'Archive a thread via the FSM (abandoned); refuses a blocked thread; refuses before anything is stored when an active-thread pointer cannot be read and an ordinary tool call could still overwrite it, and reports it in warnings[] instead when no tool call could, since a pointer no tool can read or replace arms nothing; releases that pointer whenever it still names the thread being archived at release time, whatever that thread\'s status was, and that release is best-effort: a failed release, or a pointer another session moved on to a different thread meanwhile, leaves the thread abandoned and surfaces in warnings[]. A pointer naming a different thread is never touched.',
   inputSchema: {
     type: 'object',
     additionalProperties: false,

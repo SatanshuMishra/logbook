@@ -1,4 +1,5 @@
-import { readFile, rm } from 'node:fs/promises';
+import { access, constants, readFile, rm, stat } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { atomicWrite } from './atomic-write.mjs';
 import { isUlid } from './ulid.mjs';
 
@@ -37,6 +38,26 @@ export async function clearActiveThread(ctx) {
   const target = await activeThreadPath(ctx);
   await rm(target, { force: true });
   return target;
+}
+
+export async function pointerOverwritable(ctx) {
+  const holder = dirname(await activeThreadPath(ctx));
+  try {
+    await access(holder, constants.W_OK | constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function pointerExists(ctx) {
+  const target = await activeThreadPath(ctx);
+  try {
+    await stat(target);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const POINTER_VERBS = Object.freeze({
@@ -111,4 +132,30 @@ export function readActiveThreadOrWarn(ctx) {
 
 export function clearActiveThreadOrWarn(ctx) {
   return tolerateUnavailable(ctx, POINTER_VERBS.clear, () => clearActiveThread(ctx));
+}
+
+async function releaseIfStillNamed(ctx, expectedId) {
+  const held = await readActiveThread(ctx);
+  if (held !== expectedId) return Object.freeze({ released: false, held });
+  await clearActiveThread(ctx);
+  return Object.freeze({ released: true, held: null });
+}
+
+function pointerMoved(held) {
+  const consequence = pointerConsequence(Object.freeze({ known: true, value: held }));
+  return `active-thread pointer not cleared: it no longer names this thread; ${consequence}`;
+}
+
+export async function releaseActiveThreadOrWarn(ctx, expectedId) {
+  if (!isUlid(expectedId)) {
+    throw new Error(`releaseActiveThreadOrWarn: expectedId must be a ULID, received ${expectedId}`);
+  }
+  const outcome = await tolerateUnavailable(
+    ctx,
+    POINTER_VERBS.clear,
+    () => releaseIfStillNamed(ctx, expectedId),
+  );
+  if (outcome.warning !== null) return outcome;
+  if (outcome.value.released || outcome.value.held === null) return { value: outcome.value, warning: null };
+  return { value: outcome.value, warning: pointerMoved(outcome.value.held) };
 }

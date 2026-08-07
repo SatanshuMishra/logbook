@@ -27,6 +27,7 @@ export const LEDGER_ERROR_CODES = Object.freeze([
   'missing_parameter',
   'not_terminal',
   'open_detour',
+  'pointer_unreadable',
   'record_invalid',
   'restated_decision',
   'struck_criterion',
