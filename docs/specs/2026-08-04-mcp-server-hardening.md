@@ -556,14 +556,21 @@ the partial-write ghost-thread defects.
   throws once the record is already written. The reverted branch is therefore no worse than `main`
   on this axis and is better on one — the read is hoisted ahead of the write and the condition
   surfaces as a warning rather than an unexplained throw. Closing it for real is MSP-2B.
-- **A second known defect rides along, recorded rather than hidden.** `tolerateUnavailable`
-  (`src/util/active-thread.mjs:87`) appends one shared `POINTER_CONSEQUENCE` string to all three
-  actions. For a failed **clear** that string is the exact inverse of the truth: it says the gate
-  will not fire until the pointer is restored, when in fact the pointer survives and the gate will
-  keep firing until it is removed — the opposite remedy, on a channel whose whole purpose is to tell
-  the model what happened. Round 9 fixed this by giving each action its own consequence; that fix
-  was reverted with the rest of `48319d2` because it was entangled with the rejected refusal. **It
-  is MSP-2B's, and it is the cheapest thing in MSP-2B.**
+- **The warning's consequence clause was closed here, in two passes, and the second pass is the
+  lesson.** The shipped state at the start of this section was one shared consequence string across
+  all three actions; for a failed **clear** it stated the exact inverse of the truth. The first pass
+  gave each action its own string. Round 14 rejected that as one over-general string replaced by
+  three: the consequence is a function of action **and** failure reason, and only the hedging `read`
+  case was honest. Reproduced both ways — a failed **write** claimed "the pointer is absent" while a
+  pre-existing pointer naming a *different* thread survived intact, so `hooks/lib/stop.mjs:101-105`
+  fires for the wrong thread while the operator is told no gate is armed; a failed **clear** claimed
+  "the pointer survives" where `.git/ledger` was occupied by a regular file, `rm` threw `ENOTDIR`,
+  and no pointer existed anywhere. The second pass stops predicting: after a tolerated failure the
+  helper **re-reads the pointer and reports the state it observes** — names the thread the pointer
+  actually holds, says absent when it is absent, and hedges when the read-back itself fails. The
+  action now supplies only the verb. Decision 0049. This is the same collapse-a-distinction failure
+  the round log below names, committed one more time by the fix for it: **splitting on the right
+  axis is not the same as splitting on every axis that matters.**
 - Rounds 7 through 10 shipped this area wrong four consecutive times, in alternating directions, and
   the log is kept because the pattern is the lesson. Tolerating everything (round 7) produced the
   dangling pointer above. Tolerating nothing (round 9) meant a thread opened while the store was
@@ -635,10 +642,16 @@ Further residuals, each recorded rather than fixed:
   `decisionItem.ref` (`thread.schema.mjs:28`), and cap `ref` in `SPINE_CAPS` as `title` already is
   (`caps.mjs:11`). Hoisting the validation closes the exploit path — a too-long slug now fails at
   `writeDecision` with nothing durable — so this is defense-in-depth, and it is guard work.
-- **MSP-3 (guards):** `local-driver.mjs`'s `SLUG_PATTERN` (`^[a-z0-9][a-z0-9-]*$`) is stricter than
-  `DECISION_REF_PATTERN` (`^[0-9]{4}-[a-z0-9-]+$`), so a leading-dash slug such as `-x` passes
-  thread validation and is refused only by the driver. Harmless now that the decision file is
-  written first, but the two patterns should agree.
+- **MSP-3 (guards):** `local-driver.mjs`'s private `SLUG_PATTERN` (`local-driver.mjs:15`) and the
+  exported `DECISION_SLUG_PATTERN` (`schema/patterns.mjs:10`) are byte-identical
+  (`^[a-z0-9][a-z0-9-]*$`) — one rule kept in two places. The driver copy is not a stricter last
+  line of defence: `record_decision.slug` already carries the exported pattern, and
+  `writeDecision` has exactly one caller (`record-decision.mjs`), so a leading-dash slug such as
+  `-x` is refused at the schema boundary and never reaches the driver. The separate
+  `DECISION_REF_PATTERN` (`^[0-9]{4}-[a-z0-9-]+$`) would admit `0001--x` as a *submitted* ref, but
+  `knownDecisionRefs` (`shared.mjs:111`) refuses any submitted ref without a file behind it, and
+  only `record_decision` can mint one. Collapse the driver copy onto the exported constant; do not
+  reason about it as a defence in depth it is not.
 - **MSP-4 (Stop gate):** `runActiveThread` (`bin/ledger-cli.mjs:28-31`) calls the bare
   `readActiveThread`, so the CLI exits 1 and `invokeCliJson` swallows it to `null` — the debrief
   gate silently fails open rather than closed. MSP-4 owns the Stop gate.
@@ -742,11 +755,14 @@ classify it.
 - Every state-changing tool reads its thread record through the driver before consulting the
   pointer, so resolution is a cached success by then and store-unreachable stops being reachable
   rather than being tolerated.
-- `ActivePointerUnavailable` loses both throw sites and the class goes with them, taking the dead
-  `isGitUsageError` guard along. `selectDriver` calls `ledgerDataRoot` unconditionally and throws at
-  `select.mjs:29` before any driver is constructed, so the class was already unreachable in
-  production. `readActiveThreadOrAbsent` then tolerates nothing and collapses into
-  `readActiveThread`.
+- `ActivePointerUnavailable` loses both throw sites and the class goes with them. `selectDriver`
+  calls `ledgerDataRoot` unconditionally and throws at `select.mjs:29` before any driver is
+  constructed, so the class was already unreachable in production. The tolerant trio
+  (`writeActiveThreadOrWarn`, `readActiveThreadOrWarn`, `clearActiveThreadOrWarn`) then has one
+  fewer error class to classify and `durabilityReason` loses its `ActivePointerUnavailable` branch;
+  the libuv-syscall branch stays. The `isGitUsageError` guard and `readActiveThreadOrAbsent` this
+  bullet named are both gone already — reverted with the rest of `48319d2` by decision 0044 — so
+  there is nothing here to delete; grep before assuming either exists.
 - **Ownership is decided by thread identity, never by status.** The status gates at
   `transition-thread.mjs:65` and `archive-thread.mjs:24` are deleted, which closes `bind_branch`'s
   any-status pointer write from the read side and demotes MSP-3's write-side gate from load-bearing
@@ -763,8 +779,11 @@ classify it.
   tolerated clear failure leaves the record terminal with the pointer still naming it — needing no
   `safe.directory` bug at all, and surviving any fix aimed only at the read. After the reorder a
   failure costs a missed session-end reminder rather than an unrepairable ledger.
-- Each tolerated action names its **own** consequence, replacing the single shared
-  `POINTER_CONSEQUENCE` string that states the inverse of the truth for a failed clear.
+- ~~Each tolerated action names its own consequence.~~ **Done in MSP-2, not here.** MSP-2 split the
+  one shared string per action and then, on decision 0049, replaced prediction with observation
+  outright: after a tolerated failure the pointer is re-read and the warning reports the state it
+  observes, hedging when it cannot observe one. MSP-2B inherits that helper and must not re-derive a
+  consequence from the action alone.
 - **Failure direction is asymmetric by consequence.** The pointer stays advisory on the read path,
   so the Stop hook's existing fail-open via `cli.mjs:29` is correct and unchanged; pointer *writes*
   stay tolerated with a loud warning, because a missed reminder is the benign direction.
@@ -798,8 +817,12 @@ one assertion **proven red at the parent commit** before any fix is believed.
 
 **Changes**
 - `record_decision`: import and apply `isTerminal` as its two sibling spine writers do
-  (`update-thread.mjs:109`); call `assertSpineCaps`; add `maxLength: 120` to `title` to match
-  `SPINE_CAPS.decisionTitleMaxChars`.
+  (`update-thread.mjs:109`); add `maxLength: 120` to `title` to match
+  `SPINE_CAPS.decisionTitleMaxChars`. **Do not add or re-aim an `assertSpineCaps` call here.** MSP-2
+  ships one, aimed at the entry this call submits rather than at the merged spine (decision 0046),
+  and asserted on both the fresh and the deduplicated path because `renderDecision` writes
+  `args.title` into the decision file either way (decision 0049). Rounds 13 and 14 each got that aim
+  wrong; the `maxLength` above is the schema-layer twin of a check that already exists.
 - `bind_branch`: set the active pointer only for a thread whose status is `active`; add a clear
   path for a pointer whose thread is not active, so session end cannot deadlock.
 - `transition_thread`: preserve `blocked_by` on `blocked -> paused` rather than nulling it at
