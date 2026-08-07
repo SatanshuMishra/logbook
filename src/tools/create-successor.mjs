@@ -1,6 +1,6 @@
 import { newThread, isTerminal } from '../model/index.mjs';
-import { writeActiveThread } from '../util/active-thread.mjs';
-import { commitAndReindex, ToolError, unknownThread } from './shared.mjs';
+import { writeActiveThreadOrWarn } from '../util/active-thread.mjs';
+import { commitAndReindex, withWarnings, ToolError, unknownThread } from './shared.mjs';
 import { ULID_PATTERN, criteriaCreateItem } from './schemas.mjs';
 
 async function handler(ctx, args) {
@@ -25,14 +25,14 @@ async function handler(ctx, args) {
     parent_id: predecessor.parent_id,
   }, { now, tool: 'create_successor' });
   await driver.writeThread(thread);
-  await writeActiveThread(ctx, thread.id);
+  const pointer = await writeActiveThreadOrWarn(ctx, thread.id);
   const { recovery_degraded } = await commitAndReindex(driver, `feat(ledger): successor of ${predecessor.slug}`);
-  return { thread, recovery_degraded };
+  return withWarnings({ thread, recovery_degraded }, [pointer.warning]);
 }
 
 export default {
   name: 'create_successor',
-  description: 'Open a successor thread to a terminal predecessor (inherits parent_id); enters active.',
+  description: 'Open a successor thread to a terminal predecessor (inherits parent_id); enters active and writes the active-thread pointer, which is best-effort: a failure to write it leaves the successor stored and surfaces in warnings[].',
   inputSchema: {
     type: 'object',
     additionalProperties: false,
