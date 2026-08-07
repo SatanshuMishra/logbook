@@ -522,10 +522,13 @@ the partial-write ghost-thread defects.
   `src/util/active-thread.mjs:26-27` when `CLAUDE_PLUGIN_DATA` is unset on a non-git project.
 
 **What shipped**
-- `record_decision` runs `assertValidThread` and `assertSpineCaps` on the candidate record, with no
-  I/O, **before either write**. A record the schema or the caps refuse aborts with `decisions/`
-  untouched and `nextDecisionNumber` unmoved. The decision file is still written before the thread
-  record, so no spine ref can outlive its backing file.
+- `record_decision` runs `assertValidThread` on the candidate record and `assertSpineCaps` on the
+  entry this call submits — **not** on the merged spine (`record-decision.mjs:85-86`, decision
+  0046) — with no I/O, **before either write**, and unconditionally, on the deduplicated path as
+  well as the fresh one, because `renderDecision` writes `args.title` into the decision file either
+  way (decision 0049). A record the schema or the caps refuse aborts with `decisions/` untouched and
+  `nextDecisionNumber` unmoved. The decision file is still written before the thread record, so no
+  spine ref can outlive its backing file.
 - **Corrected after review; the first attempt shipped a worse defect than it closed and the suite
   was 958/958 green while it did.** That attempt merely swapped the two writes, putting the thread
   record first. A `writeDecision` failure then left a durable dangling spine ref: because
@@ -537,7 +540,7 @@ the partial-write ghost-thread defects.
   decision `title` but never a `ref`, so a 300-character slug passes every check and reaches
   `ENAMETOOLONG`. The "a retry reuses the same number" argument for that order was asserted, not
   sound: it fails if another thread records in between, if the retry carries a different slug (the
-  dedup at `:75` misses and two entries both render as `0001`), or if no retry ever happens.
+  dedup at `:77` misses and two entries both render as `0001`), or if no retry ever happens.
   Nothing validates carried spine refs against `decisions/` — `knownDecisionRefs`
   (`shared.mjs:111`) is consulted only for *submitted* refs. **The lesson is the ordering question
   was the wrong question: separating validation from the write is what "validate before you write"
@@ -631,14 +634,14 @@ edits `bind_branch`. Whole-call atomicity was never in scope. The full list, han
 | `amend-criteria.mjs:147-148` | durable write then throwing step |
 | `drift/reconcile.mjs:45`, `drift/reattach.mjs:94` | `writeBinding` in a loop with no rollback — the worst shape of the set |
 | all five tools MSP-2 touched | `appendSessionEvent` / `commitAndReindex` still follow the record write |
-| `record-decision.mjs:86-87` | the hoist is one-directional: `writeDecision` succeeding and `writeThread`'s `atomicWrite` then failing (`ENOSPC`, `EIO`, `EACCES`) leaves an orphan decision file with the number consumed and no spine ref. Inert — the fail-open direction, a file no ref names — but real, and only a transaction closes it |
+| `record-decision.mjs:87-88` | the hoist is one-directional: `writeDecision` succeeding and `writeThread`'s `atomicWrite` then failing (`ENOSPC`, `EIO`, `EACCES`) leaves an orphan decision file with the number consumed and no spine ref. Inert — the fail-open direction, a file no ref names — but real, and only a transaction closes it |
 
 None of these is fixed here; that is MSP-8's scope, not MSP-2's. `bind_branch` and
 `create_successor` are the cheapest of them — the tolerant wrappers they need already exist — and
 MSP-3 already edits `bind_branch`.
 
 Further residuals, each recorded rather than fixed:
-- **MSP-3 (guards):** add `maxLength` to `record_decision.slug` (`record-decision.mjs:98`) and to
+- **MSP-3 (guards):** add `maxLength` to `record_decision.slug` (`record-decision.mjs:102`) and to
   `decisionItem.ref` (`thread.schema.mjs:28`), and cap `ref` in `SPINE_CAPS` as `title` already is
   (`caps.mjs:11`). Hoisting the validation closes the exploit path — a too-long slug now fails at
   `writeDecision` with nothing durable — so this is defense-in-depth, and it is guard work.
@@ -663,6 +666,21 @@ Further residuals, each recorded rather than fixed:
   and `src/tools/read-decision.mjs:33` returns raw stored markdown unfenced. Both are large c6
   channels. Absolute-path leakage through `toLedgerError` belongs there too — pre-existing, and not
   worsened here.
+- **MSP-10 (trust boundary), inherited.** `hooks/lib/stop.mjs:8` interpolates the stored
+  active-thread id into a model-facing blocking directive on stderr, and `:102` takes any non-empty
+  string as that id — no ULID check, no `escapeFormat` — from `bin/ledger-cli.mjs:30`. A further c6
+  channel beside the three decision 0048 named, and round 15's two reviewers reached it
+  independently. It sits directly against this diff: the same pointer bytes are treated as untrusted
+  in `warnings[]` and pinned that way by this branch's own test, so two channels carry one value
+  under opposite trust. Inherited, not introduced by MSP-2, so it defers with the rest of c6 rather
+  than being fixed here.
+- **MSP-10 (trust boundary), forward-looking constraint.** `truncate`
+  (`src/render/briefing.mjs:9-12`) cuts unconditionally at `max - 1` and knows nothing of escape
+  sequences or surrogate pairs, unlike `sliceWholeCharacters` and `trimPartialEscape`
+  (`src/errors.mjs:89-105`), which already do. Not a defect today — nothing escapes on that path
+  yet — but c6 introduces escaping there, and a cut through a `\uXXXX` token breaks the fence that
+  escaping exists to build. c6 truncates **then** escapes, or reuses the atom-aware slicing that
+  already exists; it does not add a third slicer.
 - Durability is still commit-time on `GitRefDriver`: nothing is durable until `commit()` inside
   `commitAndReindex`. MSP-2's ordering is tool-level call ordering and holds on either backend, but
   true all-or-nothing durability is MSP-8 and worktree custody is MSP-9.
@@ -709,14 +727,62 @@ the pointer still naming it, and the FSM refuses the remedy the Stop hook prints
 blocked the branch; decisions 0043 and 0044 reverted both pointer commits and moved the redesign to
 MSP-2B, returning the suite to **961/961**.
 
-**A green suite is not evidence here.** Eleven consecutive reviews of this server have now each
-found a real defect at 100% pass, and five of those were introduced by the fix for the one before
-it. Three were *widenings* — of the write order, of the tolerated error class, of one consequence
-string across three actions — and two were *narrowings*. So the rule is **not** "prefer narrow" and
-not "prefer wide": it is **preserve the distinction**. Every one of the five collapsed two
-conditions that needed to stay apart. State, before committing, which distinction a change preserves
-and which it collapses; that question would have caught all five, and "is this narrow enough?"
-caught none.
+Round 12 opened PR #42 on the post-revert branch at 961/961 and split its two reviewers: security
+approved, code review blocked. `record-decision.mjs` asserted `assertSpineCaps` on the **merged**
+record while its only pre-existing caller `update-thread.mjs` deliberately passes the caller's own
+patch, and no spine field carries a `maxLength` anywhere, so a title already stored over the cap
+refuses every later submission — `decisionViolations` scans every carried entry, so re-sending can
+never clear it, and only `update_thread` with `replace_scopes.key_decisions` can. Not hypothetical:
+a live thread in this repository's own ledger stores a 231-character `active_goal`, which on 0.2.4
+would have disabled `record_decision` on that thread outright, with a refusal naming a parameter the
+tool does not accept. Decision 0045 blocked the merge and deliberately left the remedy open until
+the blast radius was mapped; decision 0046 then chose it — assert the entry this call contributes,
+which is the convention `update_thread` already documents and three of its tests already pin.
+
+Round 13 blocked at `f872408` at 964/964 on two reproductions. The one shared consequence string
+covering all three pointer actions stated the exact inverse of the truth for a failed clear, and
+`ALLOWED_TRANSITIONS.abandoned` is empty (`src/model/fsm.mjs:16`), so no tool could act on the
+instruction it gave — a defect this section had deferred to MSP-2B, un-deferred because MSP-2 is the
+release that introduces the string. And decision 0046's own remedy reintroduced the
+collapse it had just fixed, one level down: the assertion was aimed at a re-constructed object
+literal rather than at the entry the merge uses, so on the dedup path it checked a value never
+stored. Decision 0047 drew the line at authorship — MSP-2 fixes what it introduces, defers what it
+inherits — and corrected the SPEC's routing of `create_successor` and `bind_branch` from MSP-8 to
+MSP-2B. The round-13 security pass approved `43bdb8f` at 967/967 and turned three reproduced
+injections into c6's evidence base rather than MSP-2 blockers (decision 0048).
+
+Round 14 reviewed the three round-13 fix commits at `43bdb8f` — the tip that security pass measured
+at 967/967 — and blocked on two reproductions, again both introduced by the previous round's fix.
+The per-action consequence map replaced one over-general string with three over-general ones: a
+failed **write** asserted "the pointer is absent" while a pointer naming a *different* thread
+survived intact, and a failed **clear** asserted "the pointer survives" where no pointer existed
+anywhere. Only the hedging read case was correct, and each rewritten test had been moved onto the
+one errno per action where its clause happens to hold, using fixtures already in the file that
+falsify it. Separately, round 13's grounds for asserting nothing on the dedup path were false:
+`renderDecision` writes `args.title` into the markdown either way, so an over-cap title lands on
+disk while the spine keeps the old one. Decision 0049 accepted both in full; decision 0050 deferred
+the underlying dedup divergence — file and spine disagreeing while the call reports success — to
+MSP-3 with its remedy deliberately open.
+
+Round 15 reviewed the full range `43bdb8f..12f2a95` at 971/971: correctness BLOCK with 1 HIGH, 5
+MEDIUM and 4 LOW; security APPROVE with 1 inherited LOW. The HIGH is in `12f2a95` itself, the commit
+meant to close round 14. The `archive_thread` description promised the pointer is released whenever
+the thread owns it and that any non-release surfaces in `warnings[]`, while the handler reads the
+pointer only when the thread is already `active`: archiving a `paused` thread `bind_branch` had
+pointed at leaves the pointer naming an `abandoned` thread, silently, and the Stop hook then blocks
+every session end with a remedy the FSM refuses. The round also found PR #42 still pointing at
+`43bdb8f` — the five round-14 fix commits were never pushed, so its green CI described the
+pre-round-14 state. Decision 0051 blocked the merge, kept the status gate itself deferred to MSP-2B,
+and assigned the four other defects the range introduced to MSP-2 under decision 0047's rule.
+
+**A green suite is not evidence here.** Fifteen consecutive reviews of this server have now each
+found a real defect at 100% pass, and nine of those were introduced by the fix for the one before
+it. Of the five in rounds 7 through 11, three were *widenings* — of the write order, of the
+tolerated error class, of one consequence string across three actions — and two were *narrowings*.
+So the rule is **not** "prefer narrow" and not "prefer wide": it is **preserve the distinction**.
+Every one of the nine collapsed two conditions that needed to stay apart. State, before committing,
+which distinction a change preserves and which it collapses; that question would have caught all
+nine, and "is this narrow enough?" caught none.
 
 **And the deeper failure was fixing at the wrong layer.** Rounds 7 through 10 all argued about how
 tolerant the pointer read should be. None asked why the pointer resolved the git directory a second
@@ -817,7 +883,7 @@ one assertion **proven red at the parent commit** before any fix is believed.
 
 **Changes**
 - `record_decision`: import and apply `isTerminal` as its two sibling spine writers do
-  (`update-thread.mjs:109`); add `maxLength: 120` to `title` to match
+  (`update-thread.mjs:125`); add `maxLength: 120` to `title` to match
   `SPINE_CAPS.decisionTitleMaxChars`. **Do not add or re-aim an `assertSpineCaps` call here.** MSP-2
   ships one, aimed at the entry this call submits rather than at the merged spine (decision 0046),
   and asserted on both the fresh and the deduplicated path because `renderDecision` writes
