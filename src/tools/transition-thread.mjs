@@ -74,7 +74,7 @@ async function handler(ctx, args) {
 
 export default {
   name: 'transition_thread',
-  description: 'Move a thread through the lifecycle FSM (DoD-gated for done); entering active always writes the active-thread pointer, while leaving active releases it only when the pointer names this thread, and both are best-effort: a failure to write or release it leaves the transition stored and surfaces in warnings[].',
+  description: 'Move a thread through the lifecycle FSM (DoD-gated for done); entering active always writes the active-thread pointer, while leaving active (the thread is currently active and to_status is not) releases it only when the pointer names this thread, and both are best-effort: a failure to write or release it leaves the transition stored and surfaces in warnings[]. A transition that does not leave active never touches the pointer and raises no warning if one still names it.',
   inputSchema: {
     type: 'object',
     additionalProperties: false,
