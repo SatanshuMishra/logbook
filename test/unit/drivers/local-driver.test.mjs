@@ -126,6 +126,11 @@ test('LocalDriver.root returns the absolute ledger root', async (t) => {
   assert.equal(await driver.root(), root);
 });
 
+test('LocalDriver.activeThreadPointerPath is the sibling of the ledger root, outside it', async () => {
+  const driver = new LocalDriver('/abs/base/ledger');
+  assert.equal(await driver.activeThreadPointerPath(), '/abs/base/active-thread');
+});
+
 test('LocalDriver.commit degrades when the ledger root has no recovery repo', async () => {
   const driver = new LocalDriver('/abs/ledger');
   assert.deepEqual(await driver.commit('msg'), { committed: false, sha: null, empty: false, degraded: true });

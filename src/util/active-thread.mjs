@@ -1,48 +1,13 @@
-import { join, resolve } from 'node:path';
 import { readFile, rm } from 'node:fs/promises';
-import { gitExec } from './git-exec.mjs';
-import { clearedGitLocationEnv } from './git-env.mjs';
 import { atomicWrite } from './atomic-write.mjs';
-import { projectKey } from './project-key.mjs';
 import { isUlid } from './ulid.mjs';
-
-export class ActivePointerUnavailable extends Error {
-  constructor(reason) {
-    super(reason);
-    this.name = 'ActivePointerUnavailable';
-  }
-}
-
-async function gitLedgerDir(projectDir) {
-  try {
-    const { stdout } = await gitExec(projectDir, ['rev-parse', '--git-common-dir'], {
-      env: clearedGitLocationEnv(),
-    });
-    return join(resolve(projectDir, stdout.trim()), 'ledger');
-  } catch {
-    throw new ActivePointerUnavailable('the project git directory could not be resolved');
-  }
-}
 
 export async function activeThreadPath(ctx) {
   const driver = ctx && ctx.driver;
-  if (!driver || typeof driver.isGit !== 'function') {
-    throw new Error('activeThreadPath: ctx.driver with isGit() is required');
+  if (!driver || typeof driver.activeThreadPointerPath !== 'function') {
+    throw new Error('activeThreadPath: ctx.driver with activeThreadPointerPath() is required');
   }
-  const projectDir = ctx.projectDir;
-  if (typeof projectDir !== 'string' || projectDir.length === 0) {
-    throw new Error('activeThreadPath: ctx.projectDir must be a non-empty string');
-  }
-  if (driver.isGit()) {
-    return join(await gitLedgerDir(projectDir), 'active-thread');
-  }
-  const dataRoot = process.env.CLAUDE_PLUGIN_DATA;
-  if (!dataRoot) {
-    throw new ActivePointerUnavailable(
-      'CLAUDE_PLUGIN_DATA is not set, so a non-git project has nowhere to keep the pointer',
-    );
-  }
-  return join(dataRoot, projectKey(projectDir), 'active-thread');
+  return driver.activeThreadPointerPath();
 }
 
 export async function writeActiveThread(ctx, threadId) {
@@ -88,11 +53,15 @@ const POINTER_CONSEQUENCES = Object.freeze({
 
 const UNREADABLE_POINTER = Object.freeze({ known: false, value: null });
 
-function durabilityReason(error) {
-  if (error instanceof ActivePointerUnavailable) return error.message;
+export function pointerSyscallErrno(error) {
   const isSyscallFailure = error !== null && typeof error === 'object'
     && typeof error.code === 'string' && typeof error.syscall === 'string';
-  return isSyscallFailure ? `the pointer file is unusable (${error.code})` : null;
+  return isSyscallFailure ? error.code : null;
+}
+
+function durabilityReason(error) {
+  const errno = pointerSyscallErrno(error);
+  return errno === null ? null : `the pointer file is unusable (${errno})`;
 }
 
 function describeError(error) {

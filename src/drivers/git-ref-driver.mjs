@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { LocalDriver } from './local-driver.mjs';
+import { ACTIVE_THREAD_POINTER } from './storage-driver.mjs';
 import {
   hostScope,
   isolatedScope,
@@ -25,6 +26,7 @@ import {
 } from './git-ledger.mjs';
 
 const SUBDIRS = ['threads', 'bindings', 'decisions', 'sessions', 'index'];
+const POINTER_DIR = 'ledger';
 const GITATTRIBUTES = 'sessions/**/*.md merge=union\n';
 const GITIGNORE = 'index/\n';
 const SCAFFOLD_MESSAGE = 'chore: scaffold ledger';
@@ -229,6 +231,10 @@ export class GitRefDriver extends LocalDriver {
 
   isGit() {
     return true;
+  }
+
+  async activeThreadPointerPath() {
+    return join(await this.#resolvedRepoCommonGitDir(), POINTER_DIR, ACTIVE_THREAD_POINTER);
   }
 
   async #resolvedRepoGitDir() {

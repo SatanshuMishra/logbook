@@ -1,6 +1,6 @@
 import { lstat, mkdir, readFile, readdir, unlink } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
-import { StorageDriver } from './storage-driver.mjs';
+import { dirname, isAbsolute, join } from 'node:path';
+import { ACTIVE_THREAD_POINTER, StorageDriver } from './storage-driver.mjs';
 import { INDEX_NAME_PATTERN } from '../index/index-files.mjs';
 import { serializeRecord } from './layout.mjs';
 import { DEFAULT_LEDGER_BRANCH, assertCommitMessage, ledgerCommitEnv } from './git-ledger.mjs';
@@ -138,6 +138,10 @@ export class LocalDriver extends StorageDriver {
 
   async root() {
     return this.ledgerRoot;
+  }
+
+  async activeThreadPointerPath() {
+    return join(dirname(this.ledgerRoot), ACTIVE_THREAD_POINTER);
   }
 
   async readThread(id) {

@@ -2,11 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, readFile, writeFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { gitExec } from '../../../src/util/git-exec.mjs';
+import { join } from 'node:path';
 import { toLedgerError } from '../../../src/errors.mjs';
 import { newUlid } from '../../../src/util/ulid.mjs';
-import { projectKey } from '../../../src/util/project-key.mjs';
 import {
   activeThreadPath,
   writeActiveThread,
@@ -17,50 +15,43 @@ import {
   clearActiveThreadOrWarn,
 } from '../../../src/util/active-thread.mjs';
 
-function gitCtx(projectDir) {
-  return { driver: { isGit: () => true }, projectDir, userConfig: {}, now: () => '2026-07-14T00:00:00Z' };
+function pointerCtx(pointerPath) {
+  return {
+    driver: { activeThreadPointerPath: async () => pointerPath },
+    projectDir: '/abs/project',
+    userConfig: {},
+    now: () => '2026-07-14T00:00:00Z',
+  };
 }
 
-function localCtx(projectDir) {
-  return { driver: { isGit: () => false }, projectDir, userConfig: {}, now: () => '2026-07-14T00:00:00Z' };
-}
-
-async function initRepo(t) {
-  const dir = await mkdtemp(join(tmpdir(), 'active-thread-git-'));
+async function pointerDir(t, prefix) {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  await gitExec(dir, ['init', '-q']);
   return dir;
 }
 
-test('git activeThreadPath resolves under the git-common-dir', async (t) => {
-  const dir = await initRepo(t);
-  const path = await activeThreadPath(gitCtx(dir));
-  assert.equal(path, resolve(dir, '.git', 'ledger', 'active-thread'));
+test('activeThreadPath returns the path the driver names and resolves nothing itself', async () => {
+  assert.equal(
+    await activeThreadPath(pointerCtx('/sentinel/active-thread')),
+    '/sentinel/active-thread',
+  );
 });
 
-test('git activeThreadPath resolves the project repo despite an ambient GIT_DIR', async (t) => {
-  const dir = await initRepo(t);
-  const foreign = await initRepo(t);
-  const priorDir = process.env.GIT_DIR;
-  const priorWorkTree = process.env.GIT_WORK_TREE;
-  process.env.GIT_DIR = join(foreign, '.git');
-  process.env.GIT_WORK_TREE = foreign;
-  t.after(() => {
-    if (priorDir === undefined) delete process.env.GIT_DIR;
-    else process.env.GIT_DIR = priorDir;
-    if (priorWorkTree === undefined) delete process.env.GIT_WORK_TREE;
-    else process.env.GIT_WORK_TREE = priorWorkTree;
-  });
-  const path = await activeThreadPath(gitCtx(dir));
-  assert.equal(path, resolve(dir, '.git', 'ledger', 'active-thread'));
+test('activeThreadPath requires a driver that can name the pointer', async () => {
+  await assert.rejects(() => activeThreadPath({ projectDir: '/abs' }), /activeThreadPointerPath/);
+  await assert.rejects(
+    () => activeThreadPath({ driver: { isGit: () => true }, projectDir: '/abs' }),
+    /activeThreadPointerPath/,
+  );
 });
 
-test('git write/read/clear round-trip', async (t) => {
-  const dir = await initRepo(t);
-  const ctx = gitCtx(dir);
+test('write/read/clear round-trip at the path the driver names', async (t) => {
+  const dir = await pointerDir(t, 'active-thread-');
+  const ctx = pointerCtx(join(dir, 'ledger', 'active-thread'));
   const id = newUlid();
   assert.equal(await readActiveThread(ctx), null);
   const target = await writeActiveThread(ctx, id);
+  assert.equal(target, join(dir, 'ledger', 'active-thread'));
   assert.equal((await readFile(target, 'utf8')), `${id}\n`);
   assert.equal(await readActiveThread(ctx), id);
   await clearActiveThread(ctx);
@@ -68,58 +59,26 @@ test('git write/read/clear round-trip', async (t) => {
 });
 
 test('writeActiveThread rejects a non-ULID threadId', async (t) => {
-  const dir = await initRepo(t);
-  await assert.rejects(() => writeActiveThread(gitCtx(dir), 'not-a-ulid'), /ULID/);
-});
-
-test('non-git activeThreadPath uses CLAUDE_PLUGIN_DATA and project-key', async (t) => {
-  const dataRoot = await mkdtemp(join(tmpdir(), 'active-thread-data-'));
-  t.after(() => rm(dataRoot, { recursive: true, force: true }));
-  const prior = process.env.CLAUDE_PLUGIN_DATA;
-  process.env.CLAUDE_PLUGIN_DATA = dataRoot;
-  t.after(() => {
-    if (prior === undefined) delete process.env.CLAUDE_PLUGIN_DATA;
-    else process.env.CLAUDE_PLUGIN_DATA = prior;
-  });
-  const projectDir = '/Users/someone/projects/demo';
-  const ctx = localCtx(projectDir);
-  const path = await activeThreadPath(ctx);
-  assert.equal(path, join(dataRoot, projectKey(projectDir), 'active-thread'));
-  const id = newUlid();
-  await writeActiveThread(ctx, id);
-  assert.equal(await readActiveThread(ctx), id);
-  await clearActiveThread(ctx);
-  assert.equal(await readActiveThread(ctx), null);
-});
-
-test('non-git activeThreadPath throws when CLAUDE_PLUGIN_DATA is unset', async (t) => {
-  const prior = process.env.CLAUDE_PLUGIN_DATA;
-  delete process.env.CLAUDE_PLUGIN_DATA;
-  t.after(() => {
-    if (prior !== undefined) process.env.CLAUDE_PLUGIN_DATA = prior;
-  });
-  await assert.rejects(() => activeThreadPath(localCtx('/abs/dir')), /CLAUDE_PLUGIN_DATA/);
-});
-
-test('activeThreadPath requires a driver with isGit', async () => {
-  await assert.rejects(() => activeThreadPath({ projectDir: '/abs' }), /isGit/);
+  const dir = await pointerDir(t, 'active-thread-ulid-');
+  await assert.rejects(
+    () => writeActiveThread(pointerCtx(join(dir, 'ledger', 'active-thread')), 'not-a-ulid'),
+    /ULID/,
+  );
 });
 
 async function occupyPointerDir(t) {
-  const dir = await initRepo(t);
-  const ctx = gitCtx(dir);
-  await writeFile(join(dir, '.git', 'ledger'), 'occupied\n');
-  return ctx;
+  const dir = await pointerDir(t, 'active-thread-occupied-');
+  await writeFile(join(dir, 'ledger'), 'occupied\n');
+  return pointerCtx(join(dir, 'ledger', 'active-thread'));
 }
 
 async function lockPointerDir(t, contents) {
   const dir = await mkdtemp(join(tmpdir(), 'active-thread-locked-'));
-  await gitExec(dir, ['init', '-q']);
-  const ctx = gitCtx(dir);
+  const ledgerDir = join(dir, 'ledger');
+  const ctx = pointerCtx(join(ledgerDir, 'active-thread'));
   const id = newUlid();
   const target = await writeActiveThread(ctx, id);
   if (contents !== undefined) await writeFile(target, contents, 'utf8');
-  const ledgerDir = join(dir, '.git', 'ledger');
   await chmod(ledgerDir, 0o500);
   t.after(async () => {
     await chmod(ledgerDir, 0o700);
@@ -130,15 +89,14 @@ async function lockPointerDir(t, contents) {
 
 async function lockEmptyPointerDir(t) {
   const dir = await mkdtemp(join(tmpdir(), 'active-thread-empty-'));
-  await gitExec(dir, ['init', '-q']);
-  const ledgerDir = join(dir, '.git', 'ledger');
+  const ledgerDir = join(dir, 'ledger');
   await mkdir(ledgerDir, { recursive: true });
   await chmod(ledgerDir, 0o500);
   t.after(async () => {
     await chmod(ledgerDir, 0o700);
     await rm(dir, { recursive: true, force: true });
   });
-  return gitCtx(dir);
+  return pointerCtx(join(ledgerDir, 'active-thread'));
 }
 
 test('writeActiveThreadOrWarn names the pointer that survived the failed write', async (t) => {
@@ -231,9 +189,29 @@ test('writeActiveThreadOrWarn reports an absent pointer when the failed write le
 });
 
 test('the tolerant wrappers still propagate a programming error', async (t) => {
-  const dir = await initRepo(t);
-  await assert.rejects(() => writeActiveThreadOrWarn(gitCtx(dir), 'not-a-ulid'), /ULID/);
-  await assert.rejects(() => readActiveThreadOrWarn({ projectDir: '/abs' }), /isGit/);
+  const dir = await pointerDir(t, 'active-thread-programming-');
+  const ctx = pointerCtx(join(dir, 'ledger', 'active-thread'));
+  await assert.rejects(() => writeActiveThreadOrWarn(ctx, 'not-a-ulid'), /ULID/);
+  await assert.rejects(
+    () => readActiveThreadOrWarn({ projectDir: '/abs' }),
+    /activeThreadPointerPath/,
+  );
+});
+
+test('a driver that cannot name the pointer is a programming error, not a tolerated failure', async (t) => {
+  const dir = await pointerDir(t, 'active-thread-driver-throws-');
+  const ctx = {
+    ...pointerCtx(join(dir, 'ledger', 'active-thread')),
+    driver: {
+      activeThreadPointerPath: async () => {
+        throw new Error('driver could not name the pointer');
+      },
+    },
+  };
+  await assert.rejects(
+    () => writeActiveThreadOrWarn(ctx, newUlid()),
+    /driver could not name the pointer/,
+  );
 });
 
 test('a programming error raised while reading the pointer back is not swallowed and keeps the tolerated failure', async (t) => {
@@ -242,10 +220,10 @@ test('a programming error raised while reading the pointer back is not swallowed
   const failsOnReadBack = {
     ...ctx,
     driver: {
-      isGit: () => {
+      activeThreadPointerPath: async () => {
         calls += 1;
         if (calls > 1) throw new Error('driver exploded during read-back');
-        return true;
+        return ctx.driver.activeThreadPointerPath();
       },
     },
   };

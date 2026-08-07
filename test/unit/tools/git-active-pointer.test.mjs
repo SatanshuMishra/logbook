@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, readFile } from 'node:fs/promises';
+import { access, readFile, realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import openThread from '../../../src/tools/open-thread.mjs';
 import { activeThreadPath, readActiveThread } from '../../../src/util/active-thread.mjs';
@@ -21,7 +21,7 @@ test('a git-backed tool context routes the active pointer through the repo git c
   const { stdout } = await gitExec(ctx.projectDir, ['rev-parse', '--git-common-dir'], {
     env: clearedGitLocationEnv(),
   });
-  const commonDir = resolve(ctx.projectDir, stdout.trim());
+  const commonDir = await realpath(resolve(ctx.projectDir, stdout.trim()));
 
   const pointer = await activeThreadPath(ctx);
   assert.equal(pointer, join(commonDir, 'ledger', 'active-thread'));
@@ -34,4 +34,11 @@ test('a git-backed tool context routes the active pointer through the repo git c
     'active-thread',
   );
   await assert.rejects(() => access(nonGitPointer), { code: 'ENOENT' });
+});
+
+test('activeThreadPath asks the git driver for the pointer path instead of resolving git a second time', async (t) => {
+  const ctx = await makeGitToolCtx(t);
+  const sentinel = '/sentinel/active-thread';
+  ctx.driver.activeThreadPointerPath = async () => sentinel;
+  assert.equal(await activeThreadPath(ctx), sentinel);
 });
