@@ -1,4 +1,4 @@
-import { echoBetween } from '../errors.mjs';
+import { echoBetween, escapeFormat } from '../errors.mjs';
 import { rebuildIndex } from '../index/rebuild-index.mjs';
 import { ALLOWED_TRANSITIONS, THREAD_STATUSES, canTransition } from '../model/fsm.mjs';
 import { liveCriteria } from '../model/selection.mjs';
@@ -111,6 +111,13 @@ export function unknownCriterion(thread, field, id) {
 export async function knownDecisionRefs(driver) {
   const decisions = await driver.listDecisions();
   return new Set(decisions.map((d) => `${d.nnnn}-${d.slug}`));
+}
+
+export function withWarnings(result, warnings) {
+  const raised = warnings
+    .filter((warning) => typeof warning === 'string' && warning.length > 0)
+    .map((warning) => escapeFormat(warning));
+  return raised.length === 0 ? result : { ...result, warnings: raised };
 }
 
 export function isRecoveryDegraded(commitResult) {

@@ -1,10 +1,18 @@
 import { canTransition, checkDefinitionOfDone } from '../model/index.mjs';
-import { writeActiveThread, readActiveThread, clearActiveThread } from '../util/active-thread.mjs';
-import { commitAndReindex, ToolError, unknownThread, illegalTransition } from './shared.mjs';
+import { writeActiveThreadOrWarn, readActiveThreadOrWarn, clearActiveThreadOrWarn } from '../util/active-thread.mjs';
+import { commitAndReindex, withWarnings, ToolError, unknownThread, illegalTransition } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
+
+const NO_POINTER = Object.freeze({ value: null, warning: null });
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+async function syncPointer(ctx, candidate, to, pointer) {
+  if (to === 'active') return writeActiveThreadOrWarn(ctx, candidate.id);
+  if (pointer.value === candidate.id) return clearActiveThreadOrWarn(ctx);
+  return NO_POINTER;
 }
 
 function companionRequired(field, status) {
@@ -54,20 +62,19 @@ async function handler(ctx, args) {
       });
     }
   }
+  const pointer = to !== 'active' && thread.status === 'active'
+    ? await readActiveThreadOrWarn(ctx)
+    : NO_POINTER;
   await driver.writeThread(candidate);
-  if (to === 'active') {
-    await writeActiveThread(ctx, candidate.id);
-  } else if (thread.status === 'active' && (await readActiveThread(ctx)) === candidate.id) {
-    await clearActiveThread(ctx);
-  }
+  const synced = await syncPointer(ctx, candidate, to, pointer);
   await driver.appendSessionEvent(candidate.id, nowIso, 'ledger', `Transition ${thread.status} -> ${to}`);
   const { recovery_degraded } = await commitAndReindex(driver, `chore(ledger): transition ${candidate.slug} ${thread.status} -> ${to}`);
-  return { thread: candidate, recovery_degraded };
+  return withWarnings({ thread: candidate, recovery_degraded }, [pointer.warning, synced.warning]);
 }
 
 export default {
   name: 'transition_thread',
-  description: 'Move a thread through the lifecycle FSM (DoD-gated for done); manage the active-thread pointer.',
+  description: 'Move a thread through the lifecycle FSM (DoD-gated for done); entering active always writes the active-thread pointer, while leaving active (the thread is currently active and to_status is not) releases it only when the pointer names this thread, and both are best-effort: a failure to write or release it leaves the transition stored and surfaces in warnings[]. A transition that does not leave active never touches the pointer and raises no warning if one still names it.',
   inputSchema: {
     type: 'object',
     additionalProperties: false,

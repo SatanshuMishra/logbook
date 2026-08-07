@@ -1,6 +1,6 @@
 import { isTerminal, canTransition } from '../model/index.mjs';
-import { writeActiveThread } from '../util/active-thread.mjs';
-import { commitAndReindex, ToolError, unknownThread, terminalThread, illegalTransition } from './shared.mjs';
+import { writeActiveThreadOrWarn } from '../util/active-thread.mjs';
+import { commitAndReindex, withWarnings, ToolError, unknownThread, terminalThread, illegalTransition } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
 
 async function handler(ctx, args) {
@@ -32,15 +32,15 @@ async function handler(ctx, args) {
     updated_at: nowIso,
   };
   await driver.writeThread(updated);
-  await writeActiveThread(ctx, updated.id);
+  const pointer = await writeActiveThreadOrWarn(ctx, updated.id);
   await driver.appendSessionEvent(updated.id, nowIso, 'ledger', `Reopened ${thread.status} -> active`);
   const { recovery_degraded } = await commitAndReindex(driver, `chore(ledger): reopen ${updated.slug}`);
-  return { thread: updated, recovery_degraded };
+  return withWarnings({ thread: updated, recovery_degraded }, [pointer.warning]);
 }
 
 export default {
   name: 'reopen',
-  description: 'Return a paused/blocked thread to active (refuses terminal and already-active); writes the pointer.',
+  description: 'Return a paused/blocked thread to active (refuses terminal and already-active); writes the pointer, which is best-effort: a failure to write it leaves the thread active and surfaces in warnings[].',
   inputSchema: {
     type: 'object',
     additionalProperties: false,

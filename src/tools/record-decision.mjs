@@ -1,4 +1,5 @@
-import { resolveWriteScope } from '../model/index.mjs';
+import { resolveWriteScope, assertSpineCaps } from '../model/index.mjs';
+import { assertValidThread } from '../schema/index.mjs';
 import { commitAndReindex, ToolError, unknownThread } from './shared.mjs';
 import { ULID_PATTERN, WRITABLE_SCOPE_PATTERN } from './schemas.mjs';
 import { DECISION_SLUG_PATTERN } from '../schema/patterns.mjs';
@@ -71,16 +72,19 @@ async function handler(ctx, args) {
     threadId: args.thread_id,
     date: now(),
   });
-  const path = await driver.writeDecision(nnnn, args.slug, markdown);
   const ref = `${nnnn}-${args.slug}`;
+  const entry = { ref, title: args.title, scope };
   const keyDecisions = thread.spine.key_decisions.some((d) => d.ref === ref)
     ? thread.spine.key_decisions
-    : [...thread.spine.key_decisions, { ref, title: args.title, scope }];
+    : [...thread.spine.key_decisions, entry];
   const updated = {
     ...thread,
     spine: { ...thread.spine, key_decisions: keyDecisions },
     updated_at: now(),
   };
+  assertValidThread(updated);
+  assertSpineCaps({ key_decisions: [entry] });
+  const path = await driver.writeDecision(nnnn, args.slug, markdown);
   await driver.writeThread(updated);
   const { recovery_degraded } = await commitAndReindex(driver, `docs(ledger): decision ${ref}`);
   return { number: nnnn, path, recovery_degraded };

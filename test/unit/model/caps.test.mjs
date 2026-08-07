@@ -153,6 +153,21 @@ test('out_of_scope keeps a thread-wide count cap of 20 and a 300-char item cap',
   );
 });
 
+test('a partial object carrying only key_decisions treats every absent field as compliant', () => {
+  const partial = { key_decisions: [decision()] };
+  assert.equal(assertSpineCaps(partial), partial);
+  const empty = { key_decisions: [] };
+  assert.equal(assertSpineCaps(empty), empty);
+  assert.throws(
+    () => assertSpineCaps({ key_decisions: [decision({ title: 'a'.repeat(121) })] }),
+    (err) => {
+      assert.ok(err instanceof CapViolationError);
+      assert.deepEqual(err.problems.map((p) => p.field), ['spine.key_decisions[].title']);
+      return true;
+    },
+  );
+});
+
 test('a non-object spine throws CapViolationError', () => {
   assert.throws(() => assertSpineCaps(null), CapViolationError);
   assert.throws(() => assertSpineCaps('nope'), CapViolationError);

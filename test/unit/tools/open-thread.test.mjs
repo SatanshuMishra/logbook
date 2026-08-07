@@ -75,6 +75,23 @@ test('open_thread links an EXISTING parent_id', async (t) => {
   assert.equal(child.parent_id, parent.id);
 });
 
+test('open_thread stores the thread and warns instead of throwing when CLAUDE_PLUGIN_DATA is unset', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const prior = process.env.CLAUDE_PLUGIN_DATA;
+  delete process.env.CLAUDE_PLUGIN_DATA;
+  try {
+    const result = await callTool('open_thread', { title: 'Pointerless', completion_criteria: DOD }, ctx);
+    assert.deepEqual(await ctx.driver.readThread(result.thread.id), result.thread);
+    assert.ok(Array.isArray(result.warnings));
+    assert.equal(result.warnings.length, 1);
+    assert.match(result.warnings[0], /CLAUDE_PLUGIN_DATA/);
+    assert.match(result.warnings[0], /debrief/);
+  } finally {
+    if (prior !== undefined) process.env.CLAUDE_PLUGIN_DATA = prior;
+  }
+  assert.equal(await readActiveThread(ctx), null);
+});
+
 test('open_thread reports recovery_degraded:false while the recovery repo is healthy', async (t) => {
   const ctx = await makeToolCtx(t);
   const result = await openThread.handler(ctx, { title: 'Healthy', completion_criteria: DOD });

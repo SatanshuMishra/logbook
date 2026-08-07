@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import archiveThread from '../../../src/tools/archive-thread.mjs';
 import openThread from '../../../src/tools/open-thread.mjs';
+import bindBranch from '../../../src/tools/bind-branch.mjs';
 import transitionThread from '../../../src/tools/transition-thread.mjs';
 import { readActiveThread } from '../../../src/util/active-thread.mjs';
 import { makeToolCtx } from '../../fixtures/tool-ctx.mjs';
@@ -14,6 +15,18 @@ test('archive_thread abandons an active thread and clears the pointer', async (t
   assert.equal(archived.abandoned_reason, 'obsolete');
   assert.equal('status' in archived.spine, false);
   assert.equal(await readActiveThread(ctx), null);
+});
+
+test('archive_thread leaves a pointer naming a non-active thread untouched and silent', async (t) => {
+  const ctx = await makeToolCtx(t);
+  const { thread } = await openThread.handler(ctx, { title: 'A', completion_criteria: [{ text: 'ship it' }] });
+  await transitionThread.handler(ctx, { thread_id: thread.id, to_status: 'paused' });
+  await bindBranch.handler(ctx, { thread_id: thread.id, repo: 'acme/app', branch: 'feat/x' });
+  assert.equal(await readActiveThread(ctx), thread.id);
+  const result = await archiveThread.handler(ctx, { thread_id: thread.id, reason: 'obsolete' });
+  assert.equal(result.thread.status, 'abandoned');
+  assert.equal(await readActiveThread(ctx), thread.id);
+  assert.equal('warnings' in result, false);
 });
 
 test('archive_thread refuses a blocked thread (no blocked -> abandoned edge)', async (t) => {

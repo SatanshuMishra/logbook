@@ -1,6 +1,6 @@
 import { newThread } from '../model/index.mjs';
-import { writeActiveThread } from '../util/active-thread.mjs';
-import { commitAndReindex, ToolError, unknownThread } from './shared.mjs';
+import { writeActiveThreadOrWarn } from '../util/active-thread.mjs';
+import { commitAndReindex, withWarnings, ToolError, unknownThread } from './shared.mjs';
 import { ULID_PATTERN, criteriaCreateItem, externalRefInputItem } from './schemas.mjs';
 
 async function requireThread(driver, field, id) {
@@ -16,14 +16,14 @@ async function handler(ctx, args) {
   if (args.predecessor_id != null) await requireThread(driver, 'predecessor_id', args.predecessor_id);
   const thread = newThread(args, { now, tool: 'open_thread' });
   await driver.writeThread(thread);
-  await writeActiveThread(ctx, thread.id);
+  const pointer = await writeActiveThreadOrWarn(ctx, thread.id);
   const { recovery_degraded } = await commitAndReindex(driver, `feat(ledger): open thread ${thread.slug}`);
-  return { thread, recovery_degraded };
+  return withWarnings({ thread, recovery_degraded }, [pointer.warning]);
 }
 
 export default {
   name: 'open_thread',
-  description: 'Create a new thread with at least one completion criterion (enters active) and write the active-thread pointer.',
+  description: 'Create a new thread with at least one completion criterion (enters active) and write the active-thread pointer, which is best-effort: a failure to write it leaves the thread stored and surfaces in warnings[].',
   inputSchema: {
     type: 'object',
     additionalProperties: false,
