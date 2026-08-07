@@ -831,7 +831,7 @@ classify it.
 **Changes**
 - The driver owns its pointer location. `gitLedgerDir` is **deleted**, not repaired. `LocalDriver`'s
   `ledgerRoot` and the non-git pointer are already siblings under one base the driver owns
-  (`select.mjs:48`, `active-thread.mjs:62`).
+  (`select.mjs:48`, `active-thread.mjs:45`).
 - Every state-changing tool reads its thread record through the driver before consulting the
   pointer, so resolution is a cached success by then and store-unreachable stops being reachable
   rather than being tolerated.
