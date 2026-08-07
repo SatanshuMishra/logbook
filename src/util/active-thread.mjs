@@ -74,20 +74,19 @@ export async function clearActiveThread(ctx) {
   return target;
 }
 
-const POINTER_OUTCOMES = Object.freeze({
-  write: Object.freeze({
-    verb: 'written',
-    consequence: 'the pointer is absent, so the end-of-session debrief gate will not fire for this thread until the pointer is restored',
-  }),
-  read: Object.freeze({
-    verb: 'read',
-    consequence: 'the pointer state is unknown, so whether the end-of-session debrief gate still owes this thread a debrief cannot be told from here',
-  }),
-  clear: Object.freeze({
-    verb: 'cleared',
-    consequence: 'the pointer survives, so the end-of-session debrief gate will keep firing for this thread until the pointer is removed',
-  }),
+const POINTER_VERBS = Object.freeze({
+  write: 'written',
+  read: 'read',
+  clear: 'cleared',
 });
+
+const POINTER_CONSEQUENCES = Object.freeze({
+  unreadable: 'the pointer could not be read back, so whether the end-of-session debrief gate is armed cannot be told from here',
+  absent: 'the pointer is absent, so the end-of-session debrief gate will not fire until a pointer is written',
+  unrecognised: 'the pointer holds a value that is not a thread id, so which thread the end-of-session debrief gate will fire for cannot be told from here',
+});
+
+const UNREADABLE_POINTER = Object.freeze({ known: false, value: null });
 
 function durabilityReason(error) {
   if (error instanceof ActivePointerUnavailable) return error.message;
@@ -96,31 +95,47 @@ function durabilityReason(error) {
   return isSyscallFailure ? `the pointer file is unusable (${error.code})` : null;
 }
 
-async function tolerateUnavailable(action, run) {
-  const outcome = POINTER_OUTCOMES[action];
-  if (outcome === undefined) {
-    throw new Error(`tolerateUnavailable: action must be one of ${Object.keys(POINTER_OUTCOMES).join(', ')}, received ${action}`);
+async function observePointer(ctx) {
+  try {
+    return Object.freeze({ known: true, value: await readActiveThread(ctx) });
+  } catch (error) {
+    if (durabilityReason(error) === null) throw error;
+    return UNREADABLE_POINTER;
+  }
+}
+
+function pointerConsequence(observed) {
+  if (!observed.known) return POINTER_CONSEQUENCES.unreadable;
+  if (observed.value === null) return POINTER_CONSEQUENCES.absent;
+  if (!isUlid(observed.value)) return POINTER_CONSEQUENCES.unrecognised;
+  return `the pointer names ${observed.value}, so the end-of-session debrief gate will fire for that thread`;
+}
+
+export async function tolerateUnavailable(ctx, action, run) {
+  if (!Object.hasOwn(POINTER_VERBS, action)) {
+    throw new Error(`tolerateUnavailable: action must be one of ${Object.keys(POINTER_VERBS).join(', ')}, received ${String(action)}`);
   }
   try {
     return { value: await run(), warning: null };
   } catch (error) {
     const reason = durabilityReason(error);
     if (reason === null) throw error;
+    const consequence = pointerConsequence(await observePointer(ctx));
     return {
       value: null,
-      warning: `active-thread pointer not ${outcome.verb}: ${reason}; ${outcome.consequence}`,
+      warning: `active-thread pointer not ${POINTER_VERBS[action]}: ${reason}; ${consequence}`,
     };
   }
 }
 
 export function writeActiveThreadOrWarn(ctx, threadId) {
-  return tolerateUnavailable('write', () => writeActiveThread(ctx, threadId));
+  return tolerateUnavailable(ctx, 'write', () => writeActiveThread(ctx, threadId));
 }
 
 export function readActiveThreadOrWarn(ctx) {
-  return tolerateUnavailable('read', () => readActiveThread(ctx));
+  return tolerateUnavailable(ctx, 'read', () => readActiveThread(ctx));
 }
 
 export function clearActiveThreadOrWarn(ctx) {
-  return tolerateUnavailable('clear', () => clearActiveThread(ctx));
+  return tolerateUnavailable(ctx, 'clear', () => clearActiveThread(ctx));
 }
