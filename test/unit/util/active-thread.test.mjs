@@ -15,7 +15,6 @@ import {
   readActiveThreadOrWarn,
   clearActiveThreadOrWarn,
 } from '../../../src/util/active-thread.mjs';
-import * as activeThread from '../../../src/util/active-thread.mjs';
 
 function gitCtx(projectDir) {
   return { driver: { isGit: () => true }, projectDir, userConfig: {}, now: () => '2026-07-14T00:00:00Z' };
@@ -226,16 +225,4 @@ test('a programming error raised while reading the pointer back is not swallowed
     () => writeActiveThreadOrWarn(failsOnReadBack, newUlid()),
     /driver exploded during read-back/,
   );
-});
-
-test('tolerateUnavailable rejects an action inherited from Object.prototype', async () => {
-  let ran = false;
-  await assert.rejects(
-    () => activeThread.tolerateUnavailable(gitCtx('/abs/dir'), 'constructor', async () => {
-      ran = true;
-      return null;
-    }),
-    /action must be one of write, read, clear, received constructor/,
-  );
-  assert.equal(ran, false);
 });

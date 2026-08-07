@@ -111,7 +111,7 @@ function pointerConsequence(observed) {
   return `the pointer names ${observed.value}, so the end-of-session debrief gate will fire for that thread`;
 }
 
-export async function tolerateUnavailable(ctx, action, run) {
+async function tolerateUnavailable(ctx, action, run) {
   if (!Object.hasOwn(POINTER_VERBS, action)) {
     throw new Error(`tolerateUnavailable: action must be one of ${Object.keys(POINTER_VERBS).join(', ')}, received ${String(action)}`);
   }
