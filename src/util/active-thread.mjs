@@ -83,7 +83,7 @@ const POINTER_VERBS = Object.freeze({
 const POINTER_CONSEQUENCES = Object.freeze({
   unreadable: 'the pointer could not be read back, so whether the end-of-session debrief gate is armed cannot be told from here',
   absent: 'the pointer is absent, so the end-of-session debrief gate will not fire until a pointer is written',
-  unrecognised: 'the pointer holds a value that is not a thread id, so which thread the end-of-session debrief gate will fire for cannot be told from here',
+  unrecognised: 'the pointer holds a value that is not a thread id, so the end-of-session debrief gate is armed for that value and neither transition_thread nor archive_thread will release it; replace the pointer by entering active on a real thread, or remove it',
 });
 
 const UNREADABLE_POINTER = Object.freeze({ known: false, value: null });
@@ -95,12 +95,21 @@ function durabilityReason(error) {
   return isSyscallFailure ? `the pointer file is unusable (${error.code})` : null;
 }
 
-async function observePointer(ctx) {
+function describeError(error) {
+  return error !== null && typeof error === 'object' && typeof error.message === 'string' && error.message.length > 0
+    ? error.message
+    : String(error);
+}
+
+async function observePointer(ctx, tolerated, notice) {
   try {
     return Object.freeze({ known: true, value: await readActiveThread(ctx) });
   } catch (error) {
-    if (durabilityReason(error) === null) throw error;
-    return UNREADABLE_POINTER;
+    if (durabilityReason(error) !== null) return UNREADABLE_POINTER;
+    throw new AggregateError(
+      [error, tolerated],
+      `${notice}; the pointer could not be read back: ${describeError(error)}`,
+    );
   }
 }
 
@@ -111,31 +120,26 @@ function pointerConsequence(observed) {
   return `the pointer names ${observed.value}, so the end-of-session debrief gate will fire for that thread`;
 }
 
-async function tolerateUnavailable(ctx, action, run) {
-  if (!Object.hasOwn(POINTER_VERBS, action)) {
-    throw new Error(`tolerateUnavailable: action must be one of ${Object.keys(POINTER_VERBS).join(', ')}, received ${String(action)}`);
-  }
+async function tolerateUnavailable(ctx, verb, run) {
   try {
     return { value: await run(), warning: null };
   } catch (error) {
     const reason = durabilityReason(error);
     if (reason === null) throw error;
-    const consequence = pointerConsequence(await observePointer(ctx));
-    return {
-      value: null,
-      warning: `active-thread pointer not ${POINTER_VERBS[action]}: ${reason}; ${consequence}`,
-    };
+    const notice = `active-thread pointer not ${verb}: ${reason}`;
+    const consequence = pointerConsequence(await observePointer(ctx, error, notice));
+    return { value: null, warning: `${notice}; ${consequence}` };
   }
 }
 
 export function writeActiveThreadOrWarn(ctx, threadId) {
-  return tolerateUnavailable(ctx, 'write', () => writeActiveThread(ctx, threadId));
+  return tolerateUnavailable(ctx, POINTER_VERBS.write, () => writeActiveThread(ctx, threadId));
 }
 
 export function readActiveThreadOrWarn(ctx) {
-  return tolerateUnavailable(ctx, 'read', () => readActiveThread(ctx));
+  return tolerateUnavailable(ctx, POINTER_VERBS.read, () => readActiveThread(ctx));
 }
 
 export function clearActiveThreadOrWarn(ctx) {
-  return tolerateUnavailable(ctx, 'clear', () => clearActiveThread(ctx));
+  return tolerateUnavailable(ctx, POINTER_VERBS.clear, () => clearActiveThread(ctx));
 }
