@@ -106,7 +106,7 @@ test('writeActiveThreadOrWarn names the pointer that survived the failed write',
   assert.equal(value, null);
   assert.equal((await readFile(target, 'utf8')).trim(), id);
   assert.match(warning, /pointer not written/);
-  assert.match(warning, /the pointer file is unusable \(EACCES\)/);
+  assert.match(warning, /the filesystem call failed \(EACCES\)/);
   assert.match(warning, new RegExp(`the pointer names ${id}, so the end-of-session debrief gate will fire for that thread`));
   assert.doesNotMatch(warning, new RegExp(attempted));
   assert.doesNotMatch(warning, /absent/);
@@ -118,7 +118,7 @@ test('writeActiveThreadOrWarn hedges when the pointer cannot be read back after 
   const { value, warning } = await writeActiveThreadOrWarn(ctx, newUlid());
   assert.equal(value, null);
   assert.match(warning, /pointer not written/);
-  assert.match(warning, /the pointer file is unusable \(EEXIST\)/);
+  assert.match(warning, /the filesystem call failed \(EEXIST\)/);
   assert.match(warning, /the pointer could not be read back/);
   assert.match(warning, /whether the end-of-session debrief gate is armed cannot be told from here/);
   assert.doesNotMatch(warning, /absent/);
@@ -130,7 +130,7 @@ test('clearActiveThreadOrWarn hedges when the pointer cannot be read back after 
   const { value, warning } = await clearActiveThreadOrWarn(ctx);
   assert.equal(value, null);
   assert.match(warning, /pointer not cleared/);
-  assert.match(warning, /the pointer file is unusable \(ENOTDIR\)/);
+  assert.match(warning, /the filesystem call failed \(ENOTDIR\)/);
   assert.match(warning, /the pointer could not be read back/);
   assert.match(warning, /whether the end-of-session debrief gate is armed cannot be told from here/);
   assert.doesNotMatch(warning, /pointer survives/);
@@ -143,7 +143,7 @@ test('clearActiveThreadOrWarn names the pointer that survived the failed clear',
   assert.equal(value, null);
   assert.equal((await readFile(target, 'utf8')).trim(), id);
   assert.match(warning, /pointer not cleared/);
-  assert.match(warning, /the pointer file is unusable \(EACCES\)/);
+  assert.match(warning, /the filesystem call failed \(EACCES\)/);
   assert.match(warning, new RegExp(`the pointer names ${id}, so the end-of-session debrief gate will fire for that thread`));
   assert.doesNotMatch(warning, /could not be read back/);
   assert.doesNotMatch(warning, /absent/);
@@ -154,7 +154,7 @@ test('readActiveThreadOrWarn hedges when the pointer cannot be read back', async
   const { value, warning } = await readActiveThreadOrWarn(ctx);
   assert.equal(value, null);
   assert.match(warning, /pointer not read/);
-  assert.match(warning, /the pointer file is unusable \(ENOTDIR\)/);
+  assert.match(warning, /the filesystem call failed \(ENOTDIR\)/);
   assert.match(warning, /the pointer could not be read back/);
   assert.match(warning, /whether the end-of-session debrief gate is armed cannot be told from here/);
   assert.doesNotMatch(warning, /will not fire|will keep firing/);
@@ -182,7 +182,7 @@ test('writeActiveThreadOrWarn reports an absent pointer when the failed write le
   const { value, warning } = await writeActiveThreadOrWarn(ctx, newUlid());
   assert.equal(value, null);
   assert.match(warning, /pointer not written/);
-  assert.match(warning, /the pointer file is unusable \(EACCES\)/);
+  assert.match(warning, /the filesystem call failed \(EACCES\)/);
   assert.match(warning, /the pointer is absent, so the end-of-session debrief gate will not fire until a pointer is written/);
   assert.doesNotMatch(warning, /cannot be told from here/);
   assert.doesNotMatch(warning, /the pointer names|not a thread id/);
@@ -231,7 +231,7 @@ test('a programming error raised while reading the pointer back is not swallowed
     () => writeActiveThreadOrWarn(failsOnReadBack, newUlid()),
     (error) => {
       assert.match(String(error), /driver exploded during read-back/);
-      assert.match(String(error), /pointer not written: the pointer file is unusable \(EACCES\)/);
+      assert.match(String(error), /pointer not written: the filesystem call failed \(EACCES\)/);
       const carried = Array.isArray(error.errors) ? error.errors : [];
       assert.ok(
         carried.some((each) => each instanceof Error && /EACCES/.test(each.message)),

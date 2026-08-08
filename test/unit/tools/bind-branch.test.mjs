@@ -63,7 +63,7 @@ test('bind_branch commits and indexes the binding when the pointer write fails',
   assert.equal(result.binding.thread_id, bound.id);
   assert.equal(result.warnings.length, 1);
   assert.match(result.warnings[0], /active-thread pointer not written/);
-  assert.match(result.warnings[0], /the pointer file is unusable \(EACCES\)/);
+  assert.match(result.warnings[0], /the filesystem call failed \(EACCES\)/);
   assert.match(result.warnings[0], new RegExp(`the pointer names ${later.id}, so the end-of-session debrief gate will fire for that thread`));
   assert.doesNotMatch(result.warnings[0], new RegExp(bound.id));
   assert.deepEqual(await ctx.driver.readBinding(result.binding.id), result.binding);

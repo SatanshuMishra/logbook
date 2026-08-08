@@ -67,7 +67,7 @@ test('create_successor commits and indexes the successor when the pointer write 
   assert.equal(result.thread.predecessor_id, pred.id);
   assert.equal(result.warnings.length, 1);
   assert.match(result.warnings[0], /active-thread pointer not written/);
-  assert.match(result.warnings[0], /the pointer file is unusable \(EACCES\)/);
+  assert.match(result.warnings[0], /the filesystem call failed \(EACCES\)/);
   assert.match(result.warnings[0], /the pointer is absent, so the end-of-session debrief gate will not fire/);
   assert.deepEqual(await ctx.driver.readThread(result.thread.id), result.thread);
   assert.ok((await ctx.driver.listThreads()).some((each) => each.id === result.thread.id));

@@ -6,7 +6,7 @@ import {
   ToolError,
   unknownThread,
   illegalTransition,
-  readPointerOrRefuse,
+  readPointerOrWarn,
   NO_POINTER,
 } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
@@ -68,7 +68,7 @@ async function handler(ctx, args) {
       });
     }
   }
-  const pointer = to !== 'active' ? await readPointerOrRefuse(ctx, 'transition_thread') : NO_POINTER;
+  const pointer = to !== 'active' ? await readPointerOrWarn(ctx) : NO_POINTER;
   await driver.writeThread(candidate);
   const synced = await syncPointer(ctx, candidate, to, pointer);
   await driver.appendSessionEvent(candidate.id, nowIso, 'ledger', `Transition ${thread.status} -> ${to}`);
@@ -78,7 +78,7 @@ async function handler(ctx, args) {
 
 export default {
   name: 'transition_thread',
-  description: 'Move a thread through the lifecycle FSM (DoD-gated for done); entering active always writes the active-thread pointer, while any other to_status refuses before anything is stored if a pointer cannot be read and an ordinary tool call could still overwrite it, reports it in warnings[] instead when no tool call could, since a pointer no tool can read or replace arms nothing, and otherwise releases it whenever it still names this thread at release time, whatever that thread\'s status was; the write and the release are both best-effort: a failure to write or release the pointer, or a pointer another session moved on to a different thread meanwhile, leaves the transition stored and surfaces in warnings[]. A pointer naming a different thread is never touched.',
+  description: 'Move a thread through the lifecycle FSM (DoD-gated for done); entering active always writes the active-thread pointer, while any other to_status releases that pointer whenever it still names this thread at release time, whatever that thread\'s status was. The write and the release are both best-effort: a failed write or release, a pointer another session moved on to a different thread meanwhile, and a pointer this call could not read all leave the transition stored and surface in warnings[] rather than blocking it. A pointer naming a different thread is never touched, so a pointer can survive naming a thread this tool has closed.',
   inputSchema: {
     type: 'object',
     additionalProperties: false,

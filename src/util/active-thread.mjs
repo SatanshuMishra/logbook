@@ -1,5 +1,4 @@
-import { access, constants, readFile, rm, stat } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { readFile, rm } from 'node:fs/promises';
 import { atomicWrite } from './atomic-write.mjs';
 import { isUlid } from './ulid.mjs';
 
@@ -40,26 +39,6 @@ export async function clearActiveThread(ctx) {
   return target;
 }
 
-export async function pointerOverwritable(ctx) {
-  const holder = dirname(await activeThreadPath(ctx));
-  try {
-    await access(holder, constants.W_OK | constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export async function pointerExists(ctx) {
-  const target = await activeThreadPath(ctx);
-  try {
-    await stat(target);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 const POINTER_VERBS = Object.freeze({
   write: 'written',
   read: 'read',
@@ -82,7 +61,7 @@ export function pointerSyscallErrno(error) {
 
 function durabilityReason(error) {
   const errno = pointerSyscallErrno(error);
-  return errno === null ? null : `the pointer file is unusable (${errno})`;
+  return errno === null ? null : `the filesystem call failed (${errno})`;
 }
 
 function describeError(error) {

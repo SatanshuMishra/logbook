@@ -1,10 +1,8 @@
-import { ToolError, echoBetween, escapeFormat } from '../errors.mjs';
+import { echoBetween, escapeFormat } from '../errors.mjs';
 import { rebuildIndex } from '../index/rebuild-index.mjs';
 import { ALLOWED_TRANSITIONS, THREAD_STATUSES, canTransition } from '../model/fsm.mjs';
 import { liveCriteria } from '../model/selection.mjs';
 import {
-  pointerExists,
-  pointerOverwritable,
   pointerSyscallErrno,
   readActiveThread,
   readActiveThreadOrWarn,
@@ -51,31 +49,18 @@ const ABSENT_POINTER_ERRNOS = Object.freeze(['ENOTDIR', 'EISDIR']);
 
 export const NO_POINTER = Object.freeze({ value: null, warning: null });
 
-const POINTER_REMEDIES = Object.freeze({
-  observed: 'this ledger\'s active-thread pointer file exists but cannot be read; restore read access to it or remove it, then re-send this call unchanged',
-  unobserved: 'this ledger\'s active-thread pointer file could not be read; restore access to it and to the directory holding it, then re-send this call unchanged',
-});
+const RELEASE_SKIPPED = 'no pointer was released, so whatever it holds survives this call';
 
-function pointerUnreadable(tool, errno, remedy) {
-  return {
-    code: 'pointer_unreadable',
-    field: `${tool}.active_thread_pointer`,
-    expected: `an active-thread pointer this call can read; the read failed with ${errno}`,
-    retryable: true,
-    remedy,
-  };
-}
-
-export async function readPointerOrRefuse(ctx, tool) {
+export async function readPointerOrWarn(ctx) {
   try {
     return { value: await readActiveThread(ctx), warning: null };
   } catch (error) {
     const errno = pointerSyscallErrno(error);
     if (errno === null) throw error;
     if (ABSENT_POINTER_ERRNOS.includes(errno)) return NO_POINTER;
-    if (!(await pointerOverwritable(ctx))) return readActiveThreadOrWarn(ctx);
-    const remedy = (await pointerExists(ctx)) ? POINTER_REMEDIES.observed : POINTER_REMEDIES.unobserved;
-    throw new ToolError(pointerUnreadable(tool, errno, remedy));
+    const tolerated = await readActiveThreadOrWarn(ctx);
+    if (tolerated.warning === null) return tolerated;
+    return { value: tolerated.value, warning: `${tolerated.warning}; ${RELEASE_SKIPPED}` };
   }
 }
 

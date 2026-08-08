@@ -6,7 +6,7 @@ import {
   ToolError,
   unknownThread,
   illegalTransition,
-  readPointerOrRefuse,
+  readPointerOrWarn,
   NO_POINTER,
 } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
@@ -27,7 +27,7 @@ async function handler(ctx, args) {
     abandoned_reason: args.reason,
     updated_at: nowIso,
   };
-  const pointer = await readPointerOrRefuse(ctx, 'archive_thread');
+  const pointer = await readPointerOrWarn(ctx);
   await driver.writeThread(updated);
   const release = pointer.value === updated.id
     ? await releaseActiveThreadOrWarn(ctx, updated.id)
@@ -39,7 +39,7 @@ async function handler(ctx, args) {
 
 export default {
   name: 'archive_thread',
-  description: 'Archive a thread via the FSM (abandoned); refuses a blocked thread; refuses before anything is stored when an active-thread pointer cannot be read and an ordinary tool call could still overwrite it, and reports it in warnings[] instead when no tool call could, since a pointer no tool can read or replace arms nothing; releases that pointer whenever it still names the thread being archived at release time, whatever that thread\'s status was, and that release is best-effort: a failed release, or a pointer another session moved on to a different thread meanwhile, leaves the thread abandoned and surfaces in warnings[]. A pointer naming a different thread is never touched.',
+  description: 'Archive a thread via the FSM (abandoned); refuses a blocked thread; releases the active-thread pointer whenever it still names the thread being archived at release time, whatever that thread\'s status was. That release is best-effort: a failed release, a pointer another session moved on to a different thread meanwhile, and a pointer this call could not read all leave the thread abandoned and surface in warnings[] rather than blocking the archive. A pointer naming a different thread is never touched, so a pointer can survive naming a thread this tool has closed.',
   inputSchema: {
     type: 'object',
     additionalProperties: false,

@@ -26,15 +26,11 @@ test('open_thread creates an active thread, writes the pointer, and returns {thr
   assert.deepEqual(await ctx.driver.readThread(thread.id), thread);
 });
 
-test('open_thread overwrites an unreadable pointer, so the exit tools stop refusing', async (t) => {
+test('open_thread overwrites an unreadable pointer, so a later release can match it again', async (t) => {
   const ctx = await makeGitToolCtx(t);
   const { thread: first } = await openThread.handler(ctx, { title: 'First', completion_criteria: DOD });
   const pointer = await activeThreadPath(ctx);
   await chmod(pointer, 0o000);
-  await assert.rejects(
-    () => archiveThread.handler(ctx, { thread_id: first.id, reason: 'obsolete' }),
-    (error) => error.code === 'pointer_unreadable',
-  );
 
   const opened = await openThread.handler(ctx, { title: 'Second', completion_criteria: DOD });
   assert.equal('warnings' in opened, false);
