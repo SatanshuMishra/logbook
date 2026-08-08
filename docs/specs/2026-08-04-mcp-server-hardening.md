@@ -871,49 +871,56 @@ classify it.
   `transition-thread.mjs:65` and `archive-thread.mjs:24` are deleted, which closes `bind_branch`'s
   any-status pointer write from the read side and demotes MSP-3's write-side gate from load-bearing
   fix to additional tightening.
-- The only surviving failure is a pointer file that exists and cannot be read. That is a failed
+- ~~The only surviving failure is a pointer file that exists and cannot be read. That is a failed
   precondition of a durable status write, so under MSP-2's own theme the call **refuses before
   anything durable happens**, naming the pointer path, the errno, and that retry succeeds once the
-  file is removed — the c4 contract. The pointer is never auto-cleared while unreadable; that
-  follows the durable-state precedent (git `index.lock`, `pg_resetwal`, SQLite recovery) rather than
-  destroying evidence that could not be read. **Landed during implementation** as the registry code
-  `pointer_unreadable`, built by `pointerUnreadable` and raised by `readPointerOrRefuse` in
-  `src/tools/shared.mjs`, which both handlers now call instead of `readActiveThreadOrWarn`. Only a
-  libuv syscall failure is classified; anything else still propagates, so a programming error is not
-  laundered into a retryable refusal. That test is `pointerSyscallErrno` in `active-thread.mjs`,
-  extracted out of `durabilityReason` and shared rather than copied, so the refusal and the tolerated
-  warning can never drift apart. **"Exists and cannot be read" is enforced, not assumed.** A path
-  shape that proves no pointer *file* is there reads as no pointer, exactly like `ENOENT`:
-  `ENOTDIR` (a regular file occupies `<gitcommondir>/ledger`, the shape
+  file is removed — the c4 contract.~~ **Struck after implementation; the refusal degrades to a
+  tolerated warning.** It shipped as the registry code `pointer_unreadable`, built by
+  `pointerUnreadable` and raised by `readPointerOrRefuse` in `src/tools/shared.mjs`, and it was a
+  regression rather than a guard: with the pointer unreadable, every thread refused to reach
+  `paused`, `blocked`, `done` or `abandoned` and refused to be archived — round 9's stranded record,
+  re-entered through a narrower door. It also bought no safety, because an unreadable pointer already
+  fails the Stop hook **open**: `active-thread.mjs:28-33` rethrows anything but `ENOENT`,
+  `bin/ledger-cli.mjs:226-228` turns that into exit 1, `hooks/lib/cli.mjs:31-33` returns `null` on a
+  non-zero exit, and `hooks/lib/stop.mjs:102-104` does not block without a thread id. The pointer is
+  advisory and its read gates a best-effort side effect, never the durable status write the refusal
+  claimed to be protecting. `readPointerOrWarn` replaces it: same classification, same absent-pointer
+  shortcut, and every other errno degrades to `readActiveThreadOrWarn`. `pointer_unreadable`,
+  `pointerUnreadable`, `POINTER_REMEDIES`, `pointerOverwritable` and `pointerExists` are deleted with
+  it, as is the `pointerOverwritable` escapability gate that split unreadable pointers into a
+  refusing class and a warning class — one class remains, so there is nothing left to split on.
+  The pointer is still never auto-cleared while unreadable: the release is **skipped**, not forced,
+  which keeps the durable-state precedent (git `index.lock`, `pg_resetwal`, SQLite recovery) the
+  refusal cited. **What survives, and why it is still load-bearing.** Only a libuv syscall failure is
+  classified; anything else still propagates, so a programming error is not laundered into a
+  tolerated warning. That test is `pointerSyscallErrno` in `active-thread.mjs`, extracted out of
+  `durabilityReason` and shared rather than copied, so the classification and the tolerated warning
+  can never drift apart. A path shape that proves no pointer *file* is there reads as no pointer,
+  exactly like `ENOENT`: `ENOTDIR` (a regular file occupies `<gitcommondir>/ledger`, the shape
   `occupyPointerDir` in `test/unit/util/active-thread.test.mjs` models) and `EISDIR` (a directory
-  sits at the pointer path). Both were classified as unreadable in the first cut, so an absent
-  pointer permanently refused every exit from `active`, with a remedy naming
-  `<gitcommondir>/ledger/active-thread` while the offending entry was its parent. That list is
-  `ABSENT_POINTER_ERRNOS` in `src/tools/shared.mjs`; `EACCES` and friends still refuse.
-  **The errno rides in `expected`; no filesystem path rides anywhere.** The claim that `remedy` is
-  "the one field whose 148-char cap holds a whole path" is arithmetically false: `REMEDY_MAX_CHARS`
-  is 148 and `LedgerError.toDetail()` runs `fit` over it (`src/errors.mjs:250`), so any pointer path
-  past ~109 chars — routine for a non-git project, whose `projectKey` encodes the whole absolute
-  project path — is emitted truncated. A `retryable: true` refusal that instructs deletion of a
-  truncated path is worse than one that names no path: the nearest existing ancestor of that
-  truncation is the shared `CLAUDE_PLUGIN_DATA` root. The remedy now names the pointer by its
-  constant filename and the access to restore, which also keeps the server's absolute paths (and the
-  OS username they carry) out of the caller's context. **The refusal is gated on being escapable.**
-  Widening the read to every exit made the refusal total: the entrances tolerate a failed pointer
-  write and only warn, so a pointer whose *directory* is unwritable let threads be opened that no
-  `transition_thread` or `archive_thread` could ever close, with `retryable: true` inviting a retry
-  loop against a state no tool call can change. The rescue those declines assumed — an entrance tool
-  renaming over the pointer — needs the directory writable, not just the file replaceable. So
-  `readPointerOrRefuse` now asks `pointerOverwritable` whether an ordinary tool call could still
-  replace the pointer (`W_OK | X_OK` on its directory). Only then does it refuse; otherwise the
-  pointer can be neither read nor replaced by anyone — the Stop hook's `active-thread` read fails on
-  the same `EACCES` — so it arms nothing, and the call degrades to `readActiveThreadOrWarn`'s
-  tolerated warning rather than bricking the ledger. **Existence is observed, not assumed.** `EACCES`
-  is equally what an unsearchable parent raises, where no pointer file need exist, so the remedy
-  claiming the file "exists but cannot be read" asserted an unobserved fact — the round-16 `ENOTDIR`
-  class again. `pointerExists` stats the pointer first: the observed branch keeps the original
-  wording, and the unobserved branch (a symlink into an unreadable directory, `ELOOP`, `EIO`) says
-  only that the pointer could not be read.
+  sits at the pointer path). That list is `ABSENT_POINTER_ERRNOS` in `src/tools/shared.mjs`, and it
+  must stay **ahead** of the tolerant read for a new reason: `readActiveThreadOrWarn` warns on
+  `ENOTDIR` and `EISDIR` too, so swapping the throw for the tolerant read without keeping the
+  shortcut first turns an absent pointer back into a warned-about one.
+  **No filesystem path rides anywhere — now on the warning, not on a remedy.** The refusal's remedy
+  named the pointer by its constant filename because `REMEDY_MAX_CHARS` is 148 and
+  `LedgerError.toDetail()` runs `fit` over it (`src/errors.mjs:250`), so any pointer path past ~109
+  chars — routine for a non-git project, whose `projectKey` encodes the whole absolute project path —
+  was emitted truncated, and a `retryable: true` refusal instructing deletion of a truncated path is
+  worse than one naming no path. The surviving warning inherits the property: it carries the errno
+  and no path, keeping the server's absolute paths (and the OS username they carry) out of the
+  caller's context. **Existence is observed, not assumed.** `EACCES` is equally what an unsearchable
+  parent raises, where no pointer file need exist, so wording claiming the file "exists but cannot be
+  read" asserted an unobserved fact — the round-16 `ENOTDIR` class again. The refusal answered that
+  with a `pointerExists` stat and two remedies; the warning answers it by not asserting a file at
+  all: `durabilityReason` reads `the filesystem call failed (<errno>)`, where it previously read
+  `the pointer file is unusable (<errno>)`. That reword travels to the write and clear warnings too,
+  which is the whole point — one string, no drift.
+  **The skipped release is stated, not left to inference.** Under decision 0049 a pointer consequence
+  is a function of action **and** observed reason, and reports what is observed. An unread pointer
+  cannot be matched against the caller's thread, so no release is attempted; the warning says so
+  outright and still refuses to predict the gate, since `POINTER_CONSEQUENCES.unreadable` already
+  says whether it is armed cannot be told from here.
 - **The release is a compare-and-swap, not a read-then-delete.** `clearActiveThread` is
   `rm(target, { force: true })`, and both handlers read the pointer, then run `driver.writeThread` —
   which for `GitRefDriver` spawns git through `#writeInWorktree` — and only then delete. Across that
@@ -933,9 +940,9 @@ classify it.
   write") exists to prevent, and silent, because the throw discards the whole result including
   `warnings[]`. The hazard the reorder aimed at is the reverse and it is self-announcing: a tolerated
   clear failure re-reads the pointer and reports the surviving thread id (decision 0049), and the
-  Stop hook keeps nagging until an entrance tool overwrites it. `readPointerOrRefuse` still runs
-  ahead of both, which is what satisfies "refuses before anything is stored" — the mutating call's
-  order buys nothing.
+  Stop hook keeps nagging until an entrance tool overwrites it. `readPointerOrWarn` still runs ahead
+  of both, but it no longer refuses anything, so the clause it satisfied — "refuses before anything
+  is stored" — retires with the refusal; the mutating call's order still buys nothing.
 - ~~Each tolerated action names its own consequence.~~ **Done in MSP-2, not here.** MSP-2 split the
   one shared string per action and then, on decision 0049, replaced prediction with observation
   outright: after a tolerated failure the pointer is re-read and the warning reports the state it
@@ -952,18 +959,25 @@ been wrong about this exact area four times. Required: a **git-backed tool conte
 one assertion **proven red at the parent commit** before any fix is believed.
 
 **Acceptance**
-- With the pointer file present and unreadable, a `transition_thread` to a terminal state refuses,
+- ~~With the pointer file present and unreadable, a `transition_thread` to a terminal state refuses,
   names the errno, says retry succeeds after the file is made readable or removed, and leaves the
-  thread record unchanged on disk. **"Names the path" is struck**: no field on `LedgerError` is
-  uncapped, so a whole pointer path cannot be emitted intact — see the c4 bullet above. The
-  substitute assertion is that the *emitted* remedy (`toDetail().remedy`, what
-  `bin/ledger-server.mjs:50` returns) survives `fit` unclipped and carries no path.
+  thread record unchanged on disk.~~ **Struck with the refusal it asserted; see the c4 bullet above.**
+  The replacement: with the pointer file present and unreadable, `transition_thread` and
+  `archive_thread` both **complete** — the record reaches `paused` and `abandoned` on disk — release
+  nothing, leave the pointer byte-identical, and name in `warnings[]` the unread pointer, the errno,
+  that the gate state cannot be told from here, and that no release happened. The warning asserts no
+  pointer *file* and carries no filesystem path, asserted against a symlink into an unreadable
+  directory, where there is no readable pointer file to observe.
 - A pointer path a file or a directory blocks reads as no pointer: `transition_thread` and
   `archive_thread` complete, release nothing, and raise no warning.
 - A `driver.writeThread` failure leaves the pointer exactly as it was, on both handlers.
-- With the pointer unreadable *and* its directory unwritable, neither handler refuses: both store the
-  transition, release nothing, and name the unreadable pointer in `warnings[]`, so a thread opened
-  into that ledger can still be closed.
+- ~~With the pointer unreadable *and* its directory unwritable, neither handler refuses: both store
+  the transition, release nothing, and name the unreadable pointer in `warnings[]`, so a thread
+  opened into that ledger can still be closed.~~ **Struck; folded into the criterion above.** The
+  directory's writability chose between refusing and warning, and no refusing branch survives, so
+  the two fixtures now drive one path and asserting both twice restates one fact.
+  `open-thread.test.mjs` keeps the rescue half: an entrance tool overwrites an unreadable pointer,
+  and a later release matches it again.
 - With the pointer readable but replaced by a second session between the read and the release, the
   replacement survives and the caller is told the pointer no longer names its thread.
 - On a git-backed context with dubious ownership, the driver commits and the pointer resolves
