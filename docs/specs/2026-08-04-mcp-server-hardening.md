@@ -952,6 +952,80 @@ classify it.
   so the Stop hook's existing fail-open via `cli.mjs:29` is correct and unchanged; pointer *writes*
   stay tolerated with a loud warning, because a missed reminder is the benign direction.
 
+**A correctness review and a security review of the branch tip `aeb41e7` — the commits `5524d2a`,
+`ae30454` and `4e29dca` among them — returned four correctness findings and one security finding
+against this section, plus one security confirmation of what this section already closed. None of
+the five findings is corrected by the bullets above. Citations below are pinned to that tip; later
+commits on this branch may already have moved or renamed the sites named. Re-locate by grep, not by
+the cited line number, the same discipline MSP-2 already asks for.**
+
+- **The pointer-rescue sentence `5524d2a` shipped was true in one of the four shapes it claimed to
+  cover.** `POINTER_RESCUE` told the caller that `open_thread`, `bind_branch`, `reopen` and
+  `create_successor` each replace the pointer without reading it first, so any of them puts the
+  ledger back on a pointer that can be released. Verified true only where the pointer *file* itself
+  is unreadable and its directory is intact (`EACCES` on the file): a second `open_thread`
+  overwrites it cleanly and a later `archive_thread` releases with no warning
+  (`test/unit/tools/open-thread.test.mjs:29-43`). Verified false in the other three reachable
+  shapes, because the write itself cannot land: the ledger directory unwritable (`EACCES` on the
+  directory, `test/unit/util/active-thread.test.mjs:102-114`), the ledger directory's position
+  occupied by a file (`EEXIST` from `mkdir`, `test/unit/util/active-thread.test.mjs:116-126`), and a
+  directory sitting at the pointer file's own position (`EISDIR` from `rename`,
+  `src/util/atomic-write.mjs:16`). `open_thread` and `bind_branch` already ran
+  `driver.writeThread`/`driver.writeBinding` and committed before attempting the pointer write
+  (`open-thread.mjs:18-20`, `bind-branch.mjs:13-15`), so a model that trusted the rescue sentence in
+  one of the three failing shapes would create and commit a new thread or binding on every retry
+  without ever clearing the obstruction — an unbounded loop that pollutes the ledger once per
+  attempt.
+- **`POINTER_CONSEQUENCES.unrecognised` stated the inverse of what `4e29dca` shipped.** It read that
+  a pointer holding a value that is not a thread id leaves the end-of-session debrief gate armed for
+  that value, releasable by neither `transition_thread` nor `archive_thread`. `4e29dca` gated both
+  ends of that same gate on the value being a ULID: `hooks/lib/stop.mjs` never blocked on a pointer
+  that failed the ULID check, and `bin/ledger-cli.mjs` never reported one as the active thread
+  either — so the gate was permanently *disarmed* for exactly the value the warning claimed armed
+  it, and the session ended with no gate and no notice telling anyone why.
+  `test/unit/util/active-thread.test.mjs:164-178` asserted the inverted wording as correct, which is
+  why it shipped unnoticed.
+- **`ae30454` deleted the typed pointer-unavailable boundary and left an untyped leak and a
+  hard-fail where a warning was intended.** `GitRefDriver#activeThreadPointerPath`
+  (`git-ref-driver.mjs:236-238`) resolves the git common directory through `resolveGitDir`
+  (`git-scope.mjs:45-64`), which on failure throws a plain `Error` carrying the absolute repository
+  directory and git's raw stderr (`:58-61`), not a `LedgerError`. `readPointerOrWarn`
+  (`shared.mjs:64-75`) classified only libuv syscall failures and rethrew anything else; both call
+  sites — `transition-thread.mjs:71` and `archive-thread.mjs:30` — call it *before* their durable
+  write, so the rethrow aborted the whole call. `toLedgerError` (`errors.mjs:321-335`) then rendered
+  it as `internal_error` with the path and stderr embedded in `expected` (`:331`), reaching the
+  model verbatim instead of the call completing with a warning the way every other pointer failure
+  does. The review reports both as regressions: against `origin/main`, and against `0398879`'s own
+  stated intent of tolerating an unreadable pointer instead of refusing every exit.
+- **`EISDIR` and `ENOTDIR` shared one wording on the read path, repeating the round-16 mistake this
+  section already names.** The shared occupied-pointer wording rendered "the pointer path is
+  occupied by something that is not a readable file" for both errnos — a file blocking the ledger
+  directory (`ENOTDIR`) and a directory blocking the pointer file (`EISDIR`) are two different facts
+  about what occupies the path, collapsed into text that named neither.
+
+The same review's security pass, over the same tip, returned one finding and one confirmation.
+
+- **c6 is still open on all three surfaces it names; none of the three are regressions from this
+  branch.** `src/render/briefing.mjs` interpolates stored `title` with no sanitizer at all (`:45`),
+  and only truncates — no newline ban, no marker strip — `active_goal`, `next_step`, `last_session`
+  and criterion text through `truncate` (`:9-12`), so stored text can still forge a server-authored
+  `##` heading that reprints on every future resume of that thread. `hooks/lib/roster.mjs:33` places
+  untruncated, unescaped `title` into the SessionStart `additionalContext`.
+  `src/tools/read-decision.mjs:33` returns stored markdown verbatim, unfenced. All three are the c6
+  gap section 7's MSP-10 ("Trust boundary") already owns; this branch's changes never touch
+  `src/render/`, `hooks/lib/roster.mjs` or `read-decision.mjs`, so c6 stays unchecked until MSP-10
+  lands, not because of anything in this section.
+- **The good news: this branch closes a raw-pointer leak on `origin/main`, and with it an
+  arbitrary-file-read via a symlinked pointer.** On `origin/main`, the Stop hook passed the raw
+  pointer string straight into its block reason and returned it as stderr at exit code 2 — stored
+  text inside a server-authored blocking directive, with no ULID check and no escaping. This branch
+  gates that value on being a valid thread id before it ever reaches the block reason, so a value
+  that fails the check is treated as no active thread rather than interpolated. The same gate
+  incidentally closes the arbitrary-file-read: `readActiveThread` follows a symlinked pointer like
+  any other file (`active-thread.mjs`), so a pointer symlinked to an arbitrary path used to have that
+  file's content interpolated into the blocking directive; now anything that is not a thread id is
+  ignored before it reaches the message.
+
 **Evidence bar — stricter than the ladder's default, and non-negotiable.** No evidence is accepted
 from the suite as it stands: `test/fixtures/tool-ctx.mjs:10` always builds a **non-git** temp dir, so
 no tool-level test has ever reached the git pointer path where the critical lives. A green suite has
@@ -968,8 +1042,24 @@ one assertion **proven red at the parent commit** before any fix is believed.
   that the gate state cannot be told from here, and that no release happened. The warning asserts no
   pointer *file* and carries no filesystem path, asserted against a symlink into an unreadable
   directory, where there is no readable pointer file to observe.
-- A pointer path a file or a directory blocks reads as no pointer: `transition_thread` and
-  `archive_thread` complete, release nothing, and raise no warning.
+- ~~A pointer path a file or a directory blocks reads as no pointer: `transition_thread` and
+  `archive_thread` complete, release nothing, and raise no warning.~~ **Struck by the owner's
+  ruling, 2026-08-13; the silence was the defect, not a property worth keeping.** `5524d2a` had
+  already reversed this in code — `ENOTDIR` and `EISDIR` now raise a warning — but shipped with no
+  spec amendment, and it deleted the two `assert.equal('warnings' in result, false)` assertions
+  that had encoded this criterion. The reversal stands, for three reasons. Silence leaves a broken
+  pointer invisible on every surface a caller could act on. The `ENOENT`-as-absent-pointer analogy
+  this criterion was built on does not transfer to an occupied path: `ENOENT` self-heals on the very
+  next pointer write, while a directory or a blocking file sitting at the pointer path survives
+  every subsequent write attempt, so the two conditions are alike on the write that fails and unlike
+  on every write after it. And a separate finding from the same review shows the identical blind
+  spot elsewhere in this same code: a *readable* pointer holding a value that is not a thread id is
+  silent on every surface too — `readPointerOrWarn` (`src/tools/shared.mjs:64-75`) returns no
+  warning when the read itself succeeds, so `transition_thread`'s and `archive_thread`'s
+  pointer-match comparison (`transition-thread.mjs:20`, `archive-thread.mjs:32`) falls through to
+  `NO_POINTER` and no tool ever clears it. **The replacement criterion:** with the pointer path
+  occupied by a file or a directory, `transition_thread` and `archive_thread` both complete, release
+  nothing, and raise a warning naming the observed fact — the errno and that no release happened.
 - A `driver.writeThread` failure leaves the pointer exactly as it was, on both handlers.
 - ~~With the pointer unreadable *and* its directory unwritable, neither handler refuses: both store
   the transition, release nothing, and name the unreadable pointer in `warnings[]`, so a thread
