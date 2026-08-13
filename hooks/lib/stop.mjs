@@ -3,6 +3,12 @@ import { readFile, stat } from 'node:fs/promises';
 const PLEDGE_ARGS = ['briefing-pledge'];
 const CLEAR_PLEDGE_ARGS = ['briefing-pledge', '--clear'];
 const MAX_TRANSCRIPT_BYTES = 32 * 1024 * 1024;
+const THREAD_ID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+
+function namedThread(active) {
+  const held = active && typeof active.thread_id === 'string' ? active.thread_id : null;
+  return held !== null && THREAD_ID_PATTERN.test(held) ? held : null;
+}
 
 function blockReason(threadId) {
   return `Logbook: thread ${threadId} is still active. Run the debrief skill to hand it off (which pauses the thread and clears the active-thread pointer) before ending the session.\n`;
@@ -98,8 +104,7 @@ export async function handleStop(ctx) {
   if (owed !== null) {
     return owed;
   }
-  const active = await ctx.invokeCliJson(['active-thread']);
-  const threadId = active && typeof active.thread_id === 'string' ? active.thread_id : null;
+  const threadId = namedThread(await ctx.invokeCliJson(['active-thread']));
   if (threadId && !stopHookActive) {
     return { stderr: blockReason(threadId), exitCode: 2 };
   }
