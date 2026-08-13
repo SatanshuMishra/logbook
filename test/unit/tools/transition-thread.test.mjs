@@ -134,7 +134,10 @@ test('transition_thread stores the transition and reports a pointer it could not
     assert.match(raised, /pointer not read/);
     assert.match(raised, /the filesystem call failed \(EACCES\)/);
     assert.match(raised, /whether the end-of-session debrief gate is armed cannot be told from here/);
-    assert.match(raised, /no pointer was released, so whatever it holds survives this call/);
+    assert.match(raised, /no pointer was released/);
+    assert.doesNotMatch(raised, /survives this call/, `the warning guessed at what the pointer holds: ${raised}`);
+    assert.match(raised, /open_thread, bind_branch, reopen and create_successor each replace the pointer/);
+    assert.doesNotMatch(raised, /\//, `the warning echoed a server path: ${raised}`);
   } finally {
     await chmod(pointer, 0o600);
   }
@@ -151,8 +154,18 @@ test('transition_thread reads a pointer path blocked by a file as no pointer, no
 
   const result = await transitionThread.handler(ctx, { thread_id: thread.id, to_status: 'paused' });
   assert.equal(result.thread.status, 'paused');
-  assert.equal('warnings' in result, false);
   assert.equal((await ctx.driver.readThread(thread.id)).status, 'paused');
+  const raised = (result.warnings ?? []).join('\n');
+  assert.match(raised, /the pointer path is occupied by something that is not a readable file \(ENOTDIR\)/);
+  assert.match(raised, /nothing can be read or released from it/);
+  assert.match(raised, /no pointer was released/);
+  assert.doesNotMatch(
+    raised,
+    /whether the end-of-session debrief gate is armed cannot be told from here/,
+    `the occupied path was classified as an unreadable pointer: ${raised}`,
+  );
+  assert.match(raised, /open_thread, bind_branch, reopen and create_successor each replace the pointer/);
+  assert.doesNotMatch(raised, /\//, `the warning echoed a server path: ${raised}`);
 });
 
 test('transition_thread leaves the pointer intact when the record write fails', async (t) => {
@@ -180,4 +193,15 @@ test('transition_thread of a DIFFERENT thread leaves another thread pointer inta
   assert.equal(await readActiveThread(ctx), b.id);
   await transitionThread.handler(ctx, { thread_id: a.id, to_status: 'abandoned', abandoned_reason: 'drop A' });
   assert.equal(await readActiveThread(ctx), b.id);
+});
+
+test('transition_thread attributes a pointer that outlives a thread it closed to the paths that cause it', () => {
+  const text = transitionThread.description;
+  assert.doesNotMatch(
+    text,
+    /never touched, so a pointer can survive/,
+    `the description blames the different-thread rule for a state it cannot produce: ${text}`,
+  );
+  assert.match(text, /A pointer naming a different thread is never touched\./);
+  assert.match(text, /A pointer this call could not read, and a release that failed, each leave the pointer naming a thread this tool has closed/);
 });

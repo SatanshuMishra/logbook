@@ -28,7 +28,7 @@ test('open_thread creates an active thread, writes the pointer, and returns {thr
 
 test('open_thread overwrites an unreadable pointer, so a later release can match it again', async (t) => {
   const ctx = await makeGitToolCtx(t);
-  const { thread: first } = await openThread.handler(ctx, { title: 'First', completion_criteria: DOD });
+  await openThread.handler(ctx, { title: 'First', completion_criteria: DOD });
   const pointer = await activeThreadPath(ctx);
   await chmod(pointer, 0o000);
 
@@ -36,9 +36,10 @@ test('open_thread overwrites an unreadable pointer, so a later release can match
   assert.equal('warnings' in opened, false);
   assert.equal(await readActiveThread(ctx), opened.thread.id);
 
-  const archived = await archiveThread.handler(ctx, { thread_id: first.id, reason: 'obsolete' });
+  const archived = await archiveThread.handler(ctx, { thread_id: opened.thread.id, reason: 'obsolete' });
   assert.equal(archived.thread.status, 'abandoned');
-  assert.equal(await readActiveThread(ctx), opened.thread.id);
+  assert.equal('warnings' in archived, false);
+  assert.equal(await readActiveThread(ctx), null);
 });
 
 test('open_thread allocates c1..cN ids, defaults kind to planned and struck_by to null', async (t) => {

@@ -78,7 +78,7 @@ async function handler(ctx, args) {
 
 export default {
   name: 'transition_thread',
-  description: 'Move a thread through the lifecycle FSM (DoD-gated for done); entering active always writes the active-thread pointer, while any other to_status releases that pointer whenever it still names this thread at release time, whatever that thread\'s status was. The write and the release are both best-effort: a failed write or release, a pointer another session moved on to a different thread meanwhile, and a pointer this call could not read all leave the transition stored and surface in warnings[] rather than blocking it. A pointer naming a different thread is never touched, so a pointer can survive naming a thread this tool has closed.',
+  description: 'Move a thread through the lifecycle FSM (DoD-gated for done); entering active always writes the active-thread pointer, while any other to_status releases that pointer whenever it still names this thread at release time, whatever that thread\'s status was. The write and the release are both best-effort: a failed write or release, a pointer another session moved on to a different thread meanwhile, and a pointer this call could not read all leave the transition stored and surface in warnings[] rather than blocking it. A pointer naming a different thread is never touched. A pointer this call could not read, and a release that failed, each leave the pointer naming a thread this tool has closed.',
   inputSchema: {
     type: 'object',
     additionalProperties: false,

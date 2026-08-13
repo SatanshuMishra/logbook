@@ -39,7 +39,7 @@ async function handler(ctx, args) {
 
 export default {
   name: 'archive_thread',
-  description: 'Archive a thread via the FSM (abandoned); refuses a blocked thread; releases the active-thread pointer whenever it still names the thread being archived at release time, whatever that thread\'s status was. That release is best-effort: a failed release, a pointer another session moved on to a different thread meanwhile, and a pointer this call could not read all leave the thread abandoned and surface in warnings[] rather than blocking the archive. A pointer naming a different thread is never touched, so a pointer can survive naming a thread this tool has closed.',
+  description: 'Archive a thread via the FSM (abandoned); refuses a blocked thread; releases the active-thread pointer whenever it still names the thread being archived at release time, whatever that thread\'s status was. That release is best-effort: a failed release, a pointer another session moved on to a different thread meanwhile, and a pointer this call could not read all leave the thread abandoned and surface in warnings[] rather than blocking the archive. A pointer naming a different thread is never touched. A pointer this call could not read, and a release that failed, each leave the pointer naming a thread this tool has closed.',
   inputSchema: {
     type: 'object',
     additionalProperties: false,

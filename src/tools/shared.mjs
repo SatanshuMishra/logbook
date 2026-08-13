@@ -49,7 +49,17 @@ const ABSENT_POINTER_ERRNOS = Object.freeze(['ENOTDIR', 'EISDIR']);
 
 export const NO_POINTER = Object.freeze({ value: null, warning: null });
 
-const RELEASE_SKIPPED = 'no pointer was released, so whatever it holds survives this call';
+const RELEASE_SKIPPED = 'no pointer was released';
+
+const POINTER_RESCUE = 'open_thread, bind_branch, reopen and create_successor each replace the pointer without reading it first, so any of them puts this ledger back on a pointer that can be released';
+
+function occupiedPointer(errno) {
+  return `active-thread pointer not read: the pointer path is occupied by something that is not a readable file (${errno}), so nothing can be read or released from it`;
+}
+
+function raise(value, notice) {
+  return { value, warning: `${notice}; ${RELEASE_SKIPPED}; ${POINTER_RESCUE}` };
+}
 
 export async function readPointerOrWarn(ctx) {
   try {
@@ -57,10 +67,10 @@ export async function readPointerOrWarn(ctx) {
   } catch (error) {
     const errno = pointerSyscallErrno(error);
     if (errno === null) throw error;
-    if (ABSENT_POINTER_ERRNOS.includes(errno)) return NO_POINTER;
+    if (ABSENT_POINTER_ERRNOS.includes(errno)) return raise(null, occupiedPointer(errno));
     const tolerated = await readActiveThreadOrWarn(ctx);
     if (tolerated.warning === null) return tolerated;
-    return { value: tolerated.value, warning: `${tolerated.warning}; ${RELEASE_SKIPPED}` };
+    return raise(tolerated.value, tolerated.warning);
   }
 }
 
