@@ -1,11 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rm } from 'node:fs/promises';
+import { chmod, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import openThread from '../../../src/tools/open-thread.mjs';
+import archiveThread from '../../../src/tools/archive-thread.mjs';
 import { callTool, ToolValidationError } from '../../../src/tools/registry.mjs';
-import { readActiveThread } from '../../../src/util/active-thread.mjs';
-import { makeToolCtx, FIXED } from '../../fixtures/tool-ctx.mjs';
+import {
+  ActivePointerUnavailable,
+  activeThreadPath,
+  readActiveThread,
+} from '../../../src/util/active-thread.mjs';
+import { makeGitToolCtx, makeToolCtx, FIXED } from '../../fixtures/tool-ctx.mjs';
+import { assertHidesPointerLocation } from '../../fixtures/pointer-warning.mjs';
 
 const DOD = [{ text: 'ship it' }];
 
@@ -23,6 +29,40 @@ test('open_thread creates an active thread, writes the pointer, and returns {thr
   assert.equal(thread.created_at, FIXED);
   assert.equal(await readActiveThread(ctx), thread.id);
   assert.deepEqual(await ctx.driver.readThread(thread.id), thread);
+});
+
+test('open_thread overwrites an unreadable pointer, so a later release can match it again', async (t) => {
+  const ctx = await makeGitToolCtx(t);
+  await openThread.handler(ctx, { title: 'First', completion_criteria: DOD });
+  const pointer = await activeThreadPath(ctx);
+  await chmod(pointer, 0o000);
+
+  const opened = await openThread.handler(ctx, { title: 'Second', completion_criteria: DOD });
+  assert.equal('warnings' in opened, false);
+  assert.equal(await readActiveThread(ctx), opened.thread.id);
+
+  const archived = await archiveThread.handler(ctx, { thread_id: opened.thread.id, reason: 'obsolete' });
+  assert.equal(archived.thread.status, 'abandoned');
+  assert.equal('warnings' in archived, false);
+  assert.equal(await readActiveThread(ctx), null);
+});
+
+test('open_thread stores the thread when the pointer location cannot be resolved at all', async (t) => {
+  const ctx = await makeGitToolCtx(t);
+  await openThread.handler(ctx, { title: 'First', completion_criteria: DOD });
+  const pointer = await activeThreadPath(ctx);
+  ctx.driver.activeThreadPointerPath = async () => {
+    throw new ActivePointerUnavailable('the project git directory could not be resolved');
+  };
+
+  const result = await openThread.handler(ctx, { title: 'Second', completion_criteria: DOD });
+  delete ctx.driver.activeThreadPointerPath;
+
+  assert.equal(result.thread.status, 'active');
+  assert.deepEqual(await ctx.driver.readThread(result.thread.id), result.thread);
+  const raised = (result.warnings ?? []).join('\n');
+  assert.match(raised, /pointer not written: the project git directory could not be resolved/);
+  assertHidesPointerLocation(raised, ctx, pointer);
 });
 
 test('open_thread allocates c1..cN ids, defaults kind to planned and struck_by to null', async (t) => {
@@ -75,21 +115,18 @@ test('open_thread links an EXISTING parent_id', async (t) => {
   assert.equal(child.parent_id, parent.id);
 });
 
-test('open_thread stores the thread and warns instead of throwing when CLAUDE_PLUGIN_DATA is unset', async (t) => {
+test('open_thread still writes the pointer when CLAUDE_PLUGIN_DATA is unset after the context is built', async (t) => {
   const ctx = await makeToolCtx(t);
   const prior = process.env.CLAUDE_PLUGIN_DATA;
   delete process.env.CLAUDE_PLUGIN_DATA;
   try {
     const result = await callTool('open_thread', { title: 'Pointerless', completion_criteria: DOD }, ctx);
     assert.deepEqual(await ctx.driver.readThread(result.thread.id), result.thread);
-    assert.ok(Array.isArray(result.warnings));
-    assert.equal(result.warnings.length, 1);
-    assert.match(result.warnings[0], /CLAUDE_PLUGIN_DATA/);
-    assert.match(result.warnings[0], /debrief/);
+    assert.equal(result.warnings, undefined);
+    assert.equal(await readActiveThread(ctx), result.thread.id);
   } finally {
     if (prior !== undefined) process.env.CLAUDE_PLUGIN_DATA = prior;
   }
-  assert.equal(await readActiveThread(ctx), null);
 });
 
 test('open_thread reports recovery_degraded:false while the recovery repo is healthy', async (t) => {

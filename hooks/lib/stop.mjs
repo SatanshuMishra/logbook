@@ -1,8 +1,20 @@
 import { readFile, stat } from 'node:fs/promises';
+import { isUlid } from '../../src/util/ulid.mjs';
 
 const PLEDGE_ARGS = ['briefing-pledge'];
 const CLEAR_PLEDGE_ARGS = ['briefing-pledge', '--clear'];
 const MAX_TRANSCRIPT_BYTES = 32 * 1024 * 1024;
+const UNRECOGNISED_POINTER = 'unrecognised';
+const UNRECOGNISED_POINTER_NOTICE = 'Logbook: the active-thread pointer holds a value that is not a thread id, so the end-of-session debrief gate will not fire for it and no Logbook tool will release it. open_thread, bind_branch, reopen and create_successor each write the pointer without reading it first; whichever one runs next reports whether that write landed.';
+
+function namedThread(active) {
+  const held = active && typeof active.thread_id === 'string' ? active.thread_id : null;
+  return isUlid(held) ? held : null;
+}
+
+function unrecognisedPointer(active) {
+  return Boolean(active) && active.pointer_state === UNRECOGNISED_POINTER;
+}
 
 function blockReason(threadId) {
   return `Logbook: thread ${threadId} is still active. Run the debrief skill to hand it off (which pauses the thread and clears the active-thread pointer) before ending the session.\n`;
@@ -99,10 +111,10 @@ export async function handleStop(ctx) {
     return owed;
   }
   const active = await ctx.invokeCliJson(['active-thread']);
-  const threadId = active && typeof active.thread_id === 'string' ? active.thread_id : null;
+  const threadId = namedThread(active);
   if (threadId && !stopHookActive) {
     return { stderr: blockReason(threadId), exitCode: 2 };
   }
   await ctx.invokeCli(['sync']);
-  return {};
+  return unrecognisedPointer(active) ? { json: { systemMessage: UNRECOGNISED_POINTER_NOTICE } } : {};
 }

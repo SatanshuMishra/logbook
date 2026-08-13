@@ -1,3 +1,5 @@
+export const ACTIVE_THREAD_POINTER = 'active-thread';
+
 export class StorageDriver {
   isGit() {
     throw new Error('StorageDriver.isGit not implemented');
@@ -9,6 +11,10 @@ export class StorageDriver {
 
   async root() {
     throw new Error('StorageDriver.root not implemented');
+  }
+
+  async activeThreadPointerPath() {
+    throw new Error('StorageDriver.activeThreadPointerPath not implemented');
   }
 
   async readThread(id) {

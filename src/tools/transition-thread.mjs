@@ -1,9 +1,15 @@
 import { canTransition, checkDefinitionOfDone } from '../model/index.mjs';
-import { writeActiveThreadOrWarn, readActiveThreadOrWarn, clearActiveThreadOrWarn } from '../util/active-thread.mjs';
-import { commitAndReindex, withWarnings, ToolError, unknownThread, illegalTransition } from './shared.mjs';
+import { writeActiveThreadOrWarn, releaseActiveThreadOrWarn } from '../util/active-thread.mjs';
+import {
+  commitAndReindex,
+  withWarnings,
+  ToolError,
+  unknownThread,
+  illegalTransition,
+  readPointerOrWarn,
+  NO_POINTER,
+} from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
-
-const NO_POINTER = Object.freeze({ value: null, warning: null });
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -11,7 +17,7 @@ function nonEmpty(value) {
 
 async function syncPointer(ctx, candidate, to, pointer) {
   if (to === 'active') return writeActiveThreadOrWarn(ctx, candidate.id);
-  if (pointer.value === candidate.id) return clearActiveThreadOrWarn(ctx);
+  if (pointer.value === candidate.id) return releaseActiveThreadOrWarn(ctx, candidate.id);
   return NO_POINTER;
 }
 
@@ -62,9 +68,7 @@ async function handler(ctx, args) {
       });
     }
   }
-  const pointer = to !== 'active' && thread.status === 'active'
-    ? await readActiveThreadOrWarn(ctx)
-    : NO_POINTER;
+  const pointer = to !== 'active' ? await readPointerOrWarn(ctx) : NO_POINTER;
   await driver.writeThread(candidate);
   const synced = await syncPointer(ctx, candidate, to, pointer);
   await driver.appendSessionEvent(candidate.id, nowIso, 'ledger', `Transition ${thread.status} -> ${to}`);
@@ -74,7 +78,7 @@ async function handler(ctx, args) {
 
 export default {
   name: 'transition_thread',
-  description: 'Move a thread through the lifecycle FSM (DoD-gated for done); entering active always writes the active-thread pointer, while leaving active (the thread is currently active and to_status is not) releases it only when the pointer names this thread, and both are best-effort: a failure to write or release it leaves the transition stored and surfaces in warnings[]. A transition that does not leave active never touches the pointer and raises no warning if one still names it.',
+  description: 'Move a thread through the lifecycle FSM (DoD-gated for done); entering active always writes the active-thread pointer, while any other to_status releases that pointer whenever it still names this thread at release time, whatever that thread\'s status was. The write and the release are both best-effort: a failed write or release, a pointer another session moved on to a different thread meanwhile, and a pointer this call could not read all leave the transition stored and surface in warnings[] rather than blocking it. A pointer naming a different thread is never touched. A pointer this call could not read, and a release that failed, each leave the pointer naming a thread this tool has closed.',
   inputSchema: {
     type: 'object',
     additionalProperties: false,

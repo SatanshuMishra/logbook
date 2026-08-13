@@ -6,6 +6,7 @@ import { buildContext, callTool, commitAndReindex } from '../src/tools/index.mjs
 import { rebuildIndex } from '../src/index/rebuild-index.mjs';
 import { BRIEFING_INDEX } from '../src/index/index-files.mjs';
 import { readActiveThread } from '../src/util/active-thread.mjs';
+import { isUlid } from '../src/util/ulid.mjs';
 import { gitExec } from '../src/util/git-exec.mjs';
 import { clearedGitLocationEnv } from '../src/util/git-env.mjs';
 import { atomicWrite } from '../src/util/atomic-write.mjs';
@@ -25,9 +26,21 @@ async function runRoster() {
   return ctx.driver.readIndexFile('resumable');
 }
 
+async function namedThread(ctx) {
+  const held = await readActiveThread(ctx);
+  return isUlid(held) ? held : null;
+}
+
+function activePointer(held) {
+  if (held === null) return { thread_id: null, pointer_state: 'absent' };
+  return isUlid(held)
+    ? { thread_id: held, pointer_state: 'named' }
+    : { thread_id: null, pointer_state: 'unrecognised' };
+}
+
 async function runActiveThread() {
   const ctx = await buildContext({});
-  return { thread_id: await readActiveThread(ctx) };
+  return activePointer(await readActiveThread(ctx));
 }
 
 function parseBriefingPledgeArgs(rest) {
@@ -73,7 +86,7 @@ async function runRecordSha(rest) {
     throw new Error(`record-sha: <sha> must be a git object name, received ${sha ?? '(none)'}`);
   }
   const ctx = await buildContext({});
-  const threadId = await readActiveThread(ctx);
+  const threadId = await namedThread(ctx);
   if (!threadId) {
     return {};
   }

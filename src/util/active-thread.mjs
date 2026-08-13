@@ -1,48 +1,20 @@
-import { join, resolve } from 'node:path';
 import { readFile, rm } from 'node:fs/promises';
-import { gitExec } from './git-exec.mjs';
-import { clearedGitLocationEnv } from './git-env.mjs';
 import { atomicWrite } from './atomic-write.mjs';
-import { projectKey } from './project-key.mjs';
 import { isUlid } from './ulid.mjs';
 
 export class ActivePointerUnavailable extends Error {
-  constructor(reason) {
-    super(reason);
+  constructor(reason, options) {
+    super(reason, options);
     this.name = 'ActivePointerUnavailable';
-  }
-}
-
-async function gitLedgerDir(projectDir) {
-  try {
-    const { stdout } = await gitExec(projectDir, ['rev-parse', '--git-common-dir'], {
-      env: clearedGitLocationEnv(),
-    });
-    return join(resolve(projectDir, stdout.trim()), 'ledger');
-  } catch {
-    throw new ActivePointerUnavailable('the project git directory could not be resolved');
   }
 }
 
 export async function activeThreadPath(ctx) {
   const driver = ctx && ctx.driver;
-  if (!driver || typeof driver.isGit !== 'function') {
-    throw new Error('activeThreadPath: ctx.driver with isGit() is required');
+  if (!driver || typeof driver.activeThreadPointerPath !== 'function') {
+    throw new Error('activeThreadPath: ctx.driver with activeThreadPointerPath() is required');
   }
-  const projectDir = ctx.projectDir;
-  if (typeof projectDir !== 'string' || projectDir.length === 0) {
-    throw new Error('activeThreadPath: ctx.projectDir must be a non-empty string');
-  }
-  if (driver.isGit()) {
-    return join(await gitLedgerDir(projectDir), 'active-thread');
-  }
-  const dataRoot = process.env.CLAUDE_PLUGIN_DATA;
-  if (!dataRoot) {
-    throw new ActivePointerUnavailable(
-      'CLAUDE_PLUGIN_DATA is not set, so a non-git project has nowhere to keep the pointer',
-    );
-  }
-  return join(dataRoot, projectKey(projectDir), 'active-thread');
+  return driver.activeThreadPointerPath();
 }
 
 export async function writeActiveThread(ctx, threadId) {
@@ -74,25 +46,35 @@ export async function clearActiveThread(ctx) {
   return target;
 }
 
-const POINTER_VERBS = Object.freeze({
+export const POINTER_VERBS = Object.freeze({
   write: 'written',
   read: 'read',
   clear: 'cleared',
+  recognise: 'recognised',
 });
 
-const POINTER_CONSEQUENCES = Object.freeze({
+export const POINTER_CONSEQUENCES = Object.freeze({
   unreadable: 'the pointer could not be read back, so whether the end-of-session debrief gate is armed cannot be told from here',
   absent: 'the pointer is absent, so the end-of-session debrief gate will not fire until a pointer is written',
-  unrecognised: 'the pointer holds a value that is not a thread id, so the end-of-session debrief gate is armed for that value and neither transition_thread nor archive_thread will release it',
+  unrecognised: 'the pointer holds a value that is not a thread id, so the end-of-session debrief gate will not fire and no tool will release it',
 });
+
+export function pointerNotice(verb, reason) {
+  return `active-thread pointer not ${verb}: ${reason}`;
+}
 
 const UNREADABLE_POINTER = Object.freeze({ known: false, value: null });
 
-function durabilityReason(error) {
-  if (error instanceof ActivePointerUnavailable) return error.message;
+export function pointerSyscallErrno(error) {
   const isSyscallFailure = error !== null && typeof error === 'object'
     && typeof error.code === 'string' && typeof error.syscall === 'string';
-  return isSyscallFailure ? `the pointer file is unusable (${error.code})` : null;
+  return isSyscallFailure ? error.code : null;
+}
+
+function durabilityReason(error) {
+  if (error instanceof ActivePointerUnavailable) return error.message;
+  const errno = pointerSyscallErrno(error);
+  return errno === null ? null : `the filesystem call failed (${errno})`;
 }
 
 function describeError(error) {
@@ -126,7 +108,7 @@ async function tolerateUnavailable(ctx, verb, run) {
   } catch (error) {
     const reason = durabilityReason(error);
     if (reason === null) throw error;
-    const notice = `active-thread pointer not ${verb}: ${reason}`;
+    const notice = pointerNotice(verb, reason);
     const consequence = pointerConsequence(await observePointer(ctx, error, notice));
     return { value: null, warning: `${notice}; ${consequence}` };
   }
@@ -142,4 +124,30 @@ export function readActiveThreadOrWarn(ctx) {
 
 export function clearActiveThreadOrWarn(ctx) {
   return tolerateUnavailable(ctx, POINTER_VERBS.clear, () => clearActiveThread(ctx));
+}
+
+async function releaseIfStillNamed(ctx, expectedId) {
+  const held = await readActiveThread(ctx);
+  if (held !== expectedId) return Object.freeze({ released: false, held });
+  await clearActiveThread(ctx);
+  return Object.freeze({ released: true, held: null });
+}
+
+function pointerMoved(held) {
+  const consequence = pointerConsequence(Object.freeze({ known: true, value: held }));
+  return `active-thread pointer not cleared: it no longer names this thread; ${consequence}`;
+}
+
+export async function releaseActiveThreadOrWarn(ctx, expectedId) {
+  if (!isUlid(expectedId)) {
+    throw new Error(`releaseActiveThreadOrWarn: expectedId must be a ULID, received ${expectedId}`);
+  }
+  const outcome = await tolerateUnavailable(
+    ctx,
+    POINTER_VERBS.clear,
+    () => releaseIfStillNamed(ctx, expectedId),
+  );
+  if (outcome.warning !== null) return outcome;
+  if (outcome.value.released || outcome.value.held === null) return { value: outcome.value, warning: null };
+  return { value: outcome.value, warning: pointerMoved(outcome.value.held) };
 }

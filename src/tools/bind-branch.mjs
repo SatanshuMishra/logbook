@@ -1,6 +1,6 @@
 import { newBinding } from '../model/index.mjs';
-import { writeActiveThread } from '../util/active-thread.mjs';
-import { commitAndReindex, ToolError, unknownThread } from './shared.mjs';
+import { writeActiveThreadOrWarn } from '../util/active-thread.mjs';
+import { commitAndReindex, withWarnings, ToolError, unknownThread } from './shared.mjs';
 import { ULID_PATTERN } from './schemas.mjs';
 
 async function handler(ctx, args) {
@@ -11,14 +11,14 @@ async function handler(ctx, args) {
   }
   const binding = newBinding(args, { now, tool: 'bind_branch' });
   await driver.writeBinding(binding);
-  await writeActiveThread(ctx, thread.id);
+  const pointer = await writeActiveThreadOrWarn(ctx, thread.id);
   const { recovery_degraded } = await commitAndReindex(driver, `feat(ledger): bind ${args.branch} to ${thread.slug}`);
-  return { binding, recovery_degraded };
+  return withWarnings({ binding, recovery_degraded }, [pointer.warning]);
 }
 
 export default {
   name: 'bind_branch',
-  description: 'Bind an existing thread to a repo/branch and write the active-thread pointer.',
+  description: 'Bind an existing thread to a repo/branch and write the active-thread pointer, which is best-effort: a failure to write it leaves the binding stored and surfaces in warnings[].',
   inputSchema: {
     type: 'object',
     additionalProperties: false,

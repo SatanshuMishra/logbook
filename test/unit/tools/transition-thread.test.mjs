@@ -1,10 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { chmod, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import transitionThread from '../../../src/tools/transition-thread.mjs';
 import openThread from '../../../src/tools/open-thread.mjs';
 import updateThread from '../../../src/tools/update-thread.mjs';
-import { readActiveThread } from '../../../src/util/active-thread.mjs';
-import { makeToolCtx } from '../../fixtures/tool-ctx.mjs';
+import bindBranch from '../../../src/tools/bind-branch.mjs';
+import {
+  ActivePointerUnavailable,
+  activeThreadPath,
+  readActiveThread,
+  writeActiveThread,
+} from '../../../src/util/active-thread.mjs';
+import { makeGitToolCtx, makeToolCtx } from '../../fixtures/tool-ctx.mjs';
+import { assertHidesPointerLocation } from '../../fixtures/pointer-warning.mjs';
 
 test('transition_thread active->paused clears the pointer (identity-matched)', async (t) => {
   const ctx = await makeToolCtx(t);
@@ -57,6 +66,181 @@ test('transition_thread reaches done when criteria are all done and a closure_st
   assert.equal(await readActiveThread(ctx), null);
 });
 
+test('transition_thread releases a pointer naming the thread even when that thread is not active', async (t) => {
+  const ctx = await makeGitToolCtx(t);
+  const { thread } = await openThread.handler(ctx, { title: 'T', completion_criteria: [{ text: 'ship it' }] });
+  await transitionThread.handler(ctx, { thread_id: thread.id, to_status: 'paused' });
+  await bindBranch.handler(ctx, { thread_id: thread.id, repo: 'acme/app', branch: 'feat/x' });
+  assert.equal(await readActiveThread(ctx), thread.id);
+  const result = await transitionThread.handler(ctx, {
+    thread_id: thread.id, to_status: 'abandoned', abandoned_reason: 'drop it',
+  });
+  assert.equal(result.thread.status, 'abandoned');
+  assert.equal(await readActiveThread(ctx), null);
+  assert.equal('warnings' in result, false);
+});
+
+test('transition_thread claims no pointer file it could not observe', async (t) => {
+  const ctx = await makeGitToolCtx(t);
+  const { thread } = await openThread.handler(ctx, { title: 'T', completion_criteria: [{ text: 'ship it' }] });
+  const pointer = await activeThreadPath(ctx);
+  const vault = join(ctx.projectDir, 'vault');
+  await mkdir(vault);
+  await writeFile(join(vault, 'active-thread'), `${thread.id}\n`);
+  await rm(pointer, { force: true });
+  await symlink(join(vault, 'active-thread'), pointer);
+  await chmod(vault, 0o000);
+
+  try {
+    const result = await transitionThread.handler(ctx, { thread_id: thread.id, to_status: 'paused' });
+    const raised = (result.warnings ?? []).join('\n');
+    assert.match(raised, /pointer not read/);
+    assert.doesNotMatch(raised, /pointer file/, `the warning asserted a pointer file: ${raised}`);
+    assert.doesNotMatch(raised, /exists/, `the warning asserted a pointer file: ${raised}`);
+    assertHidesPointerLocation(raised, ctx, pointer);
+    assert.equal((await ctx.driver.readThread(thread.id)).status, 'paused');
+  } finally {
+    await chmod(vault, 0o700);
+  }
+});
+
+test('transition_thread leaves a pointer another session moved on to a different thread', async (t) => {
+  const ctx = await makeGitToolCtx(t);
+  const { thread: b } = await openThread.handler(ctx, { title: 'B', completion_criteria: [{ text: 'ship it' }] });
+  const { thread: a } = await openThread.handler(ctx, { title: 'A', completion_criteria: [{ text: 'ship it' }] });
+  assert.equal(await readActiveThread(ctx), a.id);
+  const storeThread = ctx.driver.writeThread.bind(ctx.driver);
+  ctx.driver.writeThread = async (record) => {
+    const stored = await storeThread(record);
+    await writeActiveThread(ctx, b.id);
+    return stored;
+  };
+
+  const result = await transitionThread.handler(ctx, { thread_id: a.id, to_status: 'paused' });
+  delete ctx.driver.writeThread;
+
+  assert.equal(await readActiveThread(ctx), b.id);
+  assert.equal(result.thread.status, 'paused');
+  const raised = (result.warnings ?? []).join('\n');
+  assert.match(raised, /pointer not cleared: it no longer names this thread/);
+  assert.match(raised, new RegExp(`the pointer names ${b.id}, so the end-of-session debrief gate will fire for that thread`));
+});
+
+test('transition_thread stores the transition and reports a pointer it could not read', async (t) => {
+  const ctx = await makeGitToolCtx(t);
+  const { thread } = await openThread.handler(ctx, { title: 'T', completion_criteria: [{ text: 'ship it' }] });
+  const pointer = await activeThreadPath(ctx);
+  await chmod(pointer, 0o000);
+
+  try {
+    const result = await transitionThread.handler(ctx, { thread_id: thread.id, to_status: 'paused' });
+    assert.equal(result.thread.status, 'paused');
+    assert.equal((await ctx.driver.readThread(thread.id)).status, 'paused');
+    const raised = (result.warnings ?? []).join('\n');
+    assert.match(raised, /pointer not read/);
+    assert.match(raised, /the filesystem call failed \(EACCES\)/);
+    assert.match(raised, /whether the end-of-session debrief gate is armed cannot be told from here/);
+    assert.match(raised, /no pointer was released/);
+    assert.doesNotMatch(raised, /survives this call/, `the warning guessed at what the pointer holds: ${raised}`);
+    assert.match(raised, /open_thread, bind_branch, reopen and create_successor each replace the pointer/);
+    assertHidesPointerLocation(raised, ctx, pointer);
+  } finally {
+    await chmod(pointer, 0o600);
+  }
+
+  assert.equal(await readActiveThread(ctx), thread.id);
+});
+
+test('transition_thread reports a file occupying the pointer holding directory and names no tool that could clear it', async (t) => {
+  const ctx = await makeGitToolCtx(t);
+  const { thread } = await openThread.handler(ctx, { title: 'T', completion_criteria: [{ text: 'ship it' }] });
+  const pointer = await activeThreadPath(ctx);
+  const pointerDir = dirname(pointer);
+  await rm(pointerDir, { recursive: true, force: true });
+  await writeFile(pointerDir, 'occupied\n');
+
+  const result = await transitionThread.handler(ctx, { thread_id: thread.id, to_status: 'paused' });
+  assert.equal(result.thread.status, 'paused');
+  assert.equal((await ctx.driver.readThread(thread.id)).status, 'paused');
+  const raised = (result.warnings ?? []).join('\n');
+  assert.match(raised, /the directory that holds the pointer is occupied by a file \(ENOTDIR\)/);
+  assert.match(raised, /no pointer path exists to read or release/);
+  assert.match(raised, /no pointer was released/);
+  assert.match(raised, /the file occupying that directory path has to be removed or replaced on disk/);
+  assert.doesNotMatch(
+    raised,
+    /whether the end-of-session debrief gate is armed cannot be told from here/,
+    `the occupied path was classified as an unreadable pointer: ${raised}`,
+  );
+  assert.doesNotMatch(
+    raised,
+    /a directory sits at the pointer path/,
+    `an occupied holding directory was reported as a directory at the pointer path: ${raised}`,
+  );
+  assert.doesNotMatch(
+    raised,
+    /open_thread|bind_branch|reopen|create_successor/,
+    `the warning promised a tool rescue that cannot land without a pointer directory: ${raised}`,
+  );
+  assertHidesPointerLocation(raised, ctx, pointer);
+});
+
+test('transition_thread stores the transition when the pointer location cannot be resolved at all', async (t) => {
+  const ctx = await makeGitToolCtx(t);
+  const { thread } = await openThread.handler(ctx, { title: 'T', completion_criteria: [{ text: 'ship it' }] });
+  const pointer = await activeThreadPath(ctx);
+  ctx.driver.activeThreadPointerPath = async () => {
+    throw new ActivePointerUnavailable('the project git directory could not be resolved');
+  };
+
+  const result = await transitionThread.handler(ctx, { thread_id: thread.id, to_status: 'paused' });
+  delete ctx.driver.activeThreadPointerPath;
+
+  assert.equal(result.thread.status, 'paused');
+  assert.equal((await ctx.driver.readThread(thread.id)).status, 'paused');
+  const raised = (result.warnings ?? []).join('\n');
+  assert.match(raised, /pointer not read: the project git directory could not be resolved/);
+  assert.match(raised, /no pointer was released/);
+  assertHidesPointerLocation(raised, ctx, pointer);
+});
+
+test('transition_thread into active stores the transition when the pointer location cannot be resolved at all', async (t) => {
+  const ctx = await makeGitToolCtx(t);
+  const { thread } = await openThread.handler(ctx, { title: 'T', completion_criteria: [{ text: 'ship it' }] });
+  await transitionThread.handler(ctx, { thread_id: thread.id, to_status: 'paused' });
+  const pointer = await activeThreadPath(ctx);
+  ctx.driver.activeThreadPointerPath = async () => {
+    throw new ActivePointerUnavailable('the project git directory could not be resolved');
+  };
+
+  const result = await transitionThread.handler(ctx, { thread_id: thread.id, to_status: 'active' });
+  delete ctx.driver.activeThreadPointerPath;
+
+  assert.equal(result.thread.status, 'active');
+  assert.equal((await ctx.driver.readThread(thread.id)).status, 'active');
+  const raised = (result.warnings ?? []).join('\n');
+  assert.match(raised, /pointer not written: the project git directory could not be resolved/);
+  assertHidesPointerLocation(raised, ctx, pointer);
+});
+
+test('transition_thread leaves the pointer intact when the record write fails', async (t) => {
+  const ctx = await makeGitToolCtx(t);
+  const { thread } = await openThread.handler(ctx, { title: 'T', completion_criteria: [{ text: 'ship it' }] });
+  assert.equal(await readActiveThread(ctx), thread.id);
+  ctx.driver.writeThread = async () => {
+    throw new Error('ENOSPC: no space left on device, write');
+  };
+
+  await assert.rejects(
+    () => transitionThread.handler(ctx, { thread_id: thread.id, to_status: 'paused' }),
+    /ENOSPC/,
+  );
+
+  delete ctx.driver.writeThread;
+  assert.equal(await readActiveThread(ctx), thread.id);
+  assert.equal((await ctx.driver.readThread(thread.id)).status, 'active');
+});
+
 test('transition_thread of a DIFFERENT thread leaves another thread pointer intact', async (t) => {
   const ctx = await makeToolCtx(t);
   const { thread: a } = await openThread.handler(ctx, { title: 'A', completion_criteria: [{ text: 'ship it' }] });
@@ -64,4 +248,15 @@ test('transition_thread of a DIFFERENT thread leaves another thread pointer inta
   assert.equal(await readActiveThread(ctx), b.id);
   await transitionThread.handler(ctx, { thread_id: a.id, to_status: 'abandoned', abandoned_reason: 'drop A' });
   assert.equal(await readActiveThread(ctx), b.id);
+});
+
+test('transition_thread attributes a pointer that outlives a thread it closed to the paths that cause it', () => {
+  const text = transitionThread.description;
+  assert.doesNotMatch(
+    text,
+    /never touched, so a pointer can survive/,
+    `the description blames the different-thread rule for a state it cannot produce: ${text}`,
+  );
+  assert.match(text, /A pointer naming a different thread is never touched\./);
+  assert.match(text, /A pointer this call could not read, and a release that failed, each leave the pointer naming a thread this tool has closed/);
 });

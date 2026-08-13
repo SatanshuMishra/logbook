@@ -69,6 +69,10 @@ test('selectDriver returns a LocalDriver for a non-git project', async (t) => {
   assert.ok(driver instanceof LocalDriver);
   assert.equal(driver.isGit(), false);
   assert.equal(await driver.root(), join(dataDir, projectKey(plain), 'ledger'));
+  assert.equal(
+    await driver.activeThreadPointerPath(),
+    join(dataDir, projectKey(plain), 'active-thread'),
+  );
 });
 
 test('selectDriver throws when CLAUDE_PLUGIN_DATA is unset', async (t) => {

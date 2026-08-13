@@ -15,7 +15,7 @@ import {
   extTransportParametersEnv,
 } from '../../fixtures/git-repos.mjs';
 import { readFile, stat, writeFile, mkdir, realpath } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { gitExec } from '../../../src/util/git-exec.mjs';
 import { mintLedgerRoot } from '../../../src/drivers/git-ledger.mjs';
 
@@ -84,6 +84,54 @@ test('GitRefDriver.root returns the worktree directory', async (t) => {
   const repo = await initGitRepo(t);
   const driver = await makeGitDriver(t, repo);
   assert.equal(await driver.root(), driver.worktreeDir);
+});
+
+test('GitRefDriver.activeThreadPointerPath overrides the inherited ledger-root sibling', async (t) => {
+  const repo = await initGitRepo(t);
+  const driver = await makeGitDriver(t, repo);
+  await driver.init();
+  const pointer = await driver.activeThreadPointerPath();
+  assert.equal(pointer, join(await realpath(join(repo, '.git')), 'ledger', 'active-thread'));
+  assert.notEqual(pointer, join(dirname(driver.ledgerRoot), 'active-thread'));
+  assert.equal(driver.ledgerRoot, driver.worktreeDir);
+});
+
+test('GitRefDriver.activeThreadPointerPath resolves the project repo despite an ambient GIT_DIR', async (t) => {
+  const repo = await initGitRepo(t);
+  const foreign = await initGitRepo(t);
+  const driver = await makeGitDriver(t, repo);
+  const hijacked = await withGitEnv(
+    { GIT_DIR: join(foreign, '.git'), GIT_WORK_TREE: foreign },
+    () => driver.activeThreadPointerPath(),
+  );
+  assert.equal(hijacked, join(await realpath(join(repo, '.git')), 'ledger', 'active-thread'));
+});
+
+test('GitRefDriver.activeThreadPointerPath raises a typed failure that names no path when the repo git dir will not resolve', async (t) => {
+  const notARepo = await makeTempDir(t, 'git-driver-not-a-repo-');
+  const driver = new GitRefDriver({
+    repoDir: notARepo,
+    worktreeDir: await makeTempDir(t, 'git-driver-orphan-wt-'),
+  });
+
+  await assert.rejects(
+    () => driver.activeThreadPointerPath(),
+    (error) => {
+      assert.equal(error.name, 'ActivePointerUnavailable');
+      assert.equal(
+        error.message.includes(notARepo),
+        false,
+        `the failure echoed the repo path: ${error.message}`,
+      );
+      assert.equal(
+        /fatal|rev-parse|exit \d/.test(error.message),
+        false,
+        `the failure echoed raw git output: ${error.message}`,
+      );
+      assert.ok(error.cause instanceof Error, 'the underlying failure must travel as the cause');
+      return true;
+    },
+  );
 });
 
 test('init mints the deterministic orphan root on the ledger ref', async (t) => {
