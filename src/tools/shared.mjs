@@ -1,12 +1,20 @@
+import { access, constants } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { echoBetween, escapeFormat } from '../errors.mjs';
 import { rebuildIndex } from '../index/rebuild-index.mjs';
 import { ALLOWED_TRANSITIONS, THREAD_STATUSES, canTransition } from '../model/fsm.mjs';
 import { liveCriteria } from '../model/selection.mjs';
 import {
+  ActivePointerUnavailable,
+  POINTER_CONSEQUENCES,
+  POINTER_VERBS,
+  activeThreadPath,
+  pointerNotice,
   pointerSyscallErrno,
   readActiveThread,
   readActiveThreadOrWarn,
 } from '../util/active-thread.mjs';
+import { isUlid } from '../util/ulid.mjs';
 
 export {
   LedgerError,
@@ -45,33 +53,76 @@ export function terminalThread(tool, status) {
   };
 }
 
-const ABSENT_POINTER_ERRNOS = Object.freeze(['ENOTDIR', 'EISDIR']);
-
 export const NO_POINTER = Object.freeze({ value: null, warning: null });
 
 const RELEASE_SKIPPED = 'no pointer was released';
 
-const POINTER_RESCUE = 'open_thread, bind_branch, reopen and create_successor each replace the pointer without reading it first, so any of them puts this ledger back on a pointer that can be released';
+const OCCUPIED_POINTERS = Object.freeze({
+  EISDIR: Object.freeze({
+    observed: 'a directory sits at the pointer path (EISDIR), so nothing can be read or released from it',
+    remedy: 'the directory at the pointer path has to be removed or replaced on disk, and no tool here can do that',
+  }),
+  ENOTDIR: Object.freeze({
+    observed: 'the directory that holds the pointer is occupied by a file (ENOTDIR), so no pointer path exists to read or release',
+    remedy: 'the file occupying that directory path has to be removed or replaced on disk, and no tool here can do that',
+  }),
+});
 
-function occupiedPointer(errno) {
-  return `active-thread pointer not read: the pointer path is occupied by something that is not a readable file (${errno}), so nothing can be read or released from it`;
+const REPLACEABILITY = Object.freeze({
+  writable: 'open_thread, bind_branch, reopen and create_successor each replace the pointer without reading it first, so any of them puts this ledger back on a pointer that can be released',
+  unwritable: 'the directory holding the pointer is not writable, so no tool can replace the pointer; it has to be made writable on disk',
+  unknown: 'whether any tool can replace the pointer could not be observed',
+});
+
+const UNWRITABLE_ERRNOS = Object.freeze(['EACCES', 'EPERM', 'EROFS']);
+
+function raise(notice, remedy) {
+  return { value: null, warning: `${notice}; ${RELEASE_SKIPPED}; ${remedy}` };
 }
 
-function raise(value, notice) {
-  return { value, warning: `${notice}; ${RELEASE_SKIPPED}; ${POINTER_RESCUE}` };
+async function pointerReplaceability(ctx) {
+  try {
+    await access(dirname(await activeThreadPath(ctx)), constants.W_OK);
+    return REPLACEABILITY.writable;
+  } catch (error) {
+    const errno = pointerSyscallErrno(error);
+    return UNWRITABLE_ERRNOS.includes(errno) ? REPLACEABILITY.unwritable : REPLACEABILITY.unknown;
+  }
+}
+
+async function classifyPointer(ctx, value) {
+  if (value === null || isUlid(value)) return { value, warning: null };
+  return raise(
+    pointerNotice(POINTER_VERBS.recognise, POINTER_CONSEQUENCES.unrecognised),
+    await pointerReplaceability(ctx),
+  );
+}
+
+async function tolerateReadFailure(ctx, error) {
+  const errno = pointerSyscallErrno(error);
+  const occupied = errno !== null && Object.hasOwn(OCCUPIED_POINTERS, errno)
+    ? OCCUPIED_POINTERS[errno]
+    : undefined;
+  if (occupied !== undefined) {
+    return raise(pointerNotice(POINTER_VERBS.read, occupied.observed), occupied.remedy);
+  }
+  if (errno === null && !(error instanceof ActivePointerUnavailable)) throw error;
+  const tolerated = await readActiveThreadOrWarn(ctx);
+  if (tolerated.warning === null) return classifyPointer(ctx, tolerated.value);
+  return raise(tolerated.warning, await pointerReplaceability(ctx));
+}
+
+async function attemptRead(ctx) {
+  try {
+    return { ok: true, value: await readActiveThread(ctx) };
+  } catch (error) {
+    return { ok: false, error };
+  }
 }
 
 export async function readPointerOrWarn(ctx) {
-  try {
-    return { value: await readActiveThread(ctx), warning: null };
-  } catch (error) {
-    const errno = pointerSyscallErrno(error);
-    if (errno === null) throw error;
-    if (ABSENT_POINTER_ERRNOS.includes(errno)) return raise(null, occupiedPointer(errno));
-    const tolerated = await readActiveThreadOrWarn(ctx);
-    if (tolerated.warning === null) return tolerated;
-    return raise(tolerated.value, tolerated.warning);
-  }
+  const read = await attemptRead(ctx);
+  return read.ok ? classifyPointer(ctx, read.value) : tolerateReadFailure(ctx, read.error);
 }
 
 export const TRANSITION_SUBJECTS = Object.freeze(['status', 'thread']);

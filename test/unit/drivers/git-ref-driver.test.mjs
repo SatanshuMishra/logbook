@@ -107,6 +107,33 @@ test('GitRefDriver.activeThreadPointerPath resolves the project repo despite an 
   assert.equal(hijacked, join(await realpath(join(repo, '.git')), 'ledger', 'active-thread'));
 });
 
+test('GitRefDriver.activeThreadPointerPath raises a typed failure that names no path when the repo git dir will not resolve', async (t) => {
+  const notARepo = await makeTempDir(t, 'git-driver-not-a-repo-');
+  const driver = new GitRefDriver({
+    repoDir: notARepo,
+    worktreeDir: await makeTempDir(t, 'git-driver-orphan-wt-'),
+  });
+
+  await assert.rejects(
+    () => driver.activeThreadPointerPath(),
+    (error) => {
+      assert.equal(error.name, 'ActivePointerUnavailable');
+      assert.equal(
+        error.message.includes(notARepo),
+        false,
+        `the failure echoed the repo path: ${error.message}`,
+      );
+      assert.equal(
+        /fatal|rev-parse|exit \d/.test(error.message),
+        false,
+        `the failure echoed raw git output: ${error.message}`,
+      );
+      assert.ok(error.cause instanceof Error, 'the underlying failure must travel as the cause');
+      return true;
+    },
+  );
+});
+
 test('init mints the deterministic orphan root on the ledger ref', async (t) => {
   const repo = await initGitRepo(t);
   const driver = await makeGitDriver(t, repo);

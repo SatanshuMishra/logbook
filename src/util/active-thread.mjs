@@ -2,6 +2,13 @@ import { readFile, rm } from 'node:fs/promises';
 import { atomicWrite } from './atomic-write.mjs';
 import { isUlid } from './ulid.mjs';
 
+export class ActivePointerUnavailable extends Error {
+  constructor(reason, options) {
+    super(reason, options);
+    this.name = 'ActivePointerUnavailable';
+  }
+}
+
 export async function activeThreadPath(ctx) {
   const driver = ctx && ctx.driver;
   if (!driver || typeof driver.activeThreadPointerPath !== 'function') {
@@ -39,17 +46,22 @@ export async function clearActiveThread(ctx) {
   return target;
 }
 
-const POINTER_VERBS = Object.freeze({
+export const POINTER_VERBS = Object.freeze({
   write: 'written',
   read: 'read',
   clear: 'cleared',
+  recognise: 'recognised',
 });
 
-const POINTER_CONSEQUENCES = Object.freeze({
+export const POINTER_CONSEQUENCES = Object.freeze({
   unreadable: 'the pointer could not be read back, so whether the end-of-session debrief gate is armed cannot be told from here',
   absent: 'the pointer is absent, so the end-of-session debrief gate will not fire until a pointer is written',
-  unrecognised: 'the pointer holds a value that is not a thread id, so the end-of-session debrief gate is armed for that value and neither transition_thread nor archive_thread will release it',
+  unrecognised: 'the pointer holds a value that is not a thread id, so the end-of-session debrief gate will not fire and no tool will release it',
 });
+
+export function pointerNotice(verb, reason) {
+  return `active-thread pointer not ${verb}: ${reason}`;
+}
 
 const UNREADABLE_POINTER = Object.freeze({ known: false, value: null });
 
@@ -60,6 +72,7 @@ export function pointerSyscallErrno(error) {
 }
 
 function durabilityReason(error) {
+  if (error instanceof ActivePointerUnavailable) return error.message;
   const errno = pointerSyscallErrno(error);
   return errno === null ? null : `the filesystem call failed (${errno})`;
 }
@@ -95,7 +108,7 @@ async function tolerateUnavailable(ctx, verb, run) {
   } catch (error) {
     const reason = durabilityReason(error);
     if (reason === null) throw error;
-    const notice = `active-thread pointer not ${verb}: ${reason}`;
+    const notice = pointerNotice(verb, reason);
     const consequence = pointerConsequence(await observePointer(ctx, error, notice));
     return { value: null, warning: `${notice}; ${consequence}` };
   }

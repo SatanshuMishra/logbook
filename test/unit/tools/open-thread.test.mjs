@@ -5,8 +5,13 @@ import { join } from 'node:path';
 import openThread from '../../../src/tools/open-thread.mjs';
 import archiveThread from '../../../src/tools/archive-thread.mjs';
 import { callTool, ToolValidationError } from '../../../src/tools/registry.mjs';
-import { activeThreadPath, readActiveThread } from '../../../src/util/active-thread.mjs';
+import {
+  ActivePointerUnavailable,
+  activeThreadPath,
+  readActiveThread,
+} from '../../../src/util/active-thread.mjs';
 import { makeGitToolCtx, makeToolCtx, FIXED } from '../../fixtures/tool-ctx.mjs';
+import { assertHidesPointerLocation } from '../../fixtures/pointer-warning.mjs';
 
 const DOD = [{ text: 'ship it' }];
 
@@ -40,6 +45,24 @@ test('open_thread overwrites an unreadable pointer, so a later release can match
   assert.equal(archived.thread.status, 'abandoned');
   assert.equal('warnings' in archived, false);
   assert.equal(await readActiveThread(ctx), null);
+});
+
+test('open_thread stores the thread when the pointer location cannot be resolved at all', async (t) => {
+  const ctx = await makeGitToolCtx(t);
+  await openThread.handler(ctx, { title: 'First', completion_criteria: DOD });
+  const pointer = await activeThreadPath(ctx);
+  ctx.driver.activeThreadPointerPath = async () => {
+    throw new ActivePointerUnavailable('the project git directory could not be resolved');
+  };
+
+  const result = await openThread.handler(ctx, { title: 'Second', completion_criteria: DOD });
+  delete ctx.driver.activeThreadPointerPath;
+
+  assert.equal(result.thread.status, 'active');
+  assert.deepEqual(await ctx.driver.readThread(result.thread.id), result.thread);
+  const raised = (result.warnings ?? []).join('\n');
+  assert.match(raised, /pointer not written: the project git directory could not be resolved/);
+  assertHidesPointerLocation(raised, ctx, pointer);
 });
 
 test('open_thread allocates c1..cN ids, defaults kind to planned and struck_by to null', async (t) => {

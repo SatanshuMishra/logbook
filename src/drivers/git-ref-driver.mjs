@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { LocalDriver } from './local-driver.mjs';
 import { ACTIVE_THREAD_POINTER } from './storage-driver.mjs';
+import { ActivePointerUnavailable } from '../util/active-thread.mjs';
 import {
   hostScope,
   isolatedScope,
@@ -27,6 +28,7 @@ import {
 
 const SUBDIRS = ['threads', 'bindings', 'decisions', 'sessions', 'index'];
 const POINTER_DIR = 'ledger';
+const UNRESOLVED_GIT_DIR = 'the project git directory could not be resolved';
 const GITATTRIBUTES = 'sessions/**/*.md merge=union\n';
 const GITIGNORE = 'index/\n';
 const SCAFFOLD_MESSAGE = 'chore: scaffold ledger';
@@ -234,7 +236,11 @@ export class GitRefDriver extends LocalDriver {
   }
 
   async activeThreadPointerPath() {
-    return join(await this.#resolvedRepoCommonGitDir(), POINTER_DIR, ACTIVE_THREAD_POINTER);
+    try {
+      return join(await this.#resolvedRepoCommonGitDir(), POINTER_DIR, ACTIVE_THREAD_POINTER);
+    } catch (error) {
+      throw new ActivePointerUnavailable(UNRESOLVED_GIT_DIR, { cause: error });
+    }
   }
 
   async #resolvedRepoGitDir() {

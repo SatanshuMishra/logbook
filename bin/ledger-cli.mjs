@@ -31,9 +31,16 @@ async function namedThread(ctx) {
   return isUlid(held) ? held : null;
 }
 
+function activePointer(held) {
+  if (held === null) return { thread_id: null, pointer_state: 'absent' };
+  return isUlid(held)
+    ? { thread_id: held, pointer_state: 'named' }
+    : { thread_id: null, pointer_state: 'unrecognised' };
+}
+
 async function runActiveThread() {
   const ctx = await buildContext({});
-  return { thread_id: await namedThread(ctx) };
+  return activePointer(await readActiveThread(ctx));
 }
 
 function parseBriefingPledgeArgs(rest) {
