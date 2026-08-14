@@ -8,7 +8,33 @@ const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 const LEDGER_TOOL = /^mcp__(?:plugin_logbook_)?ledger__(.+)$/;
 const TOOL_REGISTRY = '../../src/tools/registry.mjs';
 const MAX_COMMAND_BYTES = 16384;
-const CONSTANT_TRIGGERS = Object.freeze([DEFAULT_LEDGER_BRANCH, 'refs/ledger/', 'CLAUDE_PLUGIN_DATA']);
+const REF_TRIGGERS = Object.freeze([DEFAULT_LEDGER_BRANCH, 'refs/ledger/']);
+const CONSTANT_TRIGGERS = Object.freeze([...REF_TRIGGERS, 'CLAUDE_PLUGIN_DATA']);
+const GIT_READ_SUBCOMMANDS = Object.freeze(
+  new Set([
+    'blame',
+    'cat-file',
+    'describe',
+    'diff',
+    'for-each-ref',
+    'log',
+    'ls-files',
+    'ls-tree',
+    'rev-list',
+    'rev-parse',
+    'shortlog',
+    'show',
+    'show-ref',
+    'status',
+  ]),
+);
+const GIT_VALUE_OPTIONS = Object.freeze(
+  new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path']),
+);
+const SEGMENT_SPLIT = /\|\||&&|[|;\n\r]/;
+const PATH_SEPARATOR = /[\\/]/;
+const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+const REGEXP_META = /[.*+?^${}()|[\]\\]/g;
 const HOME_PREFIXES = Object.freeze(['~', '$HOME', '${HOME}']);
 const TRAILING_SEP = /[\\/]+$/;
 const DENY_SUFFIX =
@@ -86,8 +112,60 @@ function isOversized(command) {
   return Buffer.byteLength(command, 'utf8') > MAX_COMMAND_BYTES;
 }
 
+function escapeRegExp(value) {
+  return value.replace(REGEXP_META, '\\$&');
+}
+
+function triggerMatches(text, trigger) {
+  if (PATH_SEPARATOR.test(trigger)) {
+    return text.includes(trigger);
+  }
+  return new RegExp(`(?<![A-Za-z0-9_-])${escapeRegExp(trigger)}(?![A-Za-z0-9_-])`).test(text);
+}
+
+function matchedTriggers(command, roots, projectDir, env) {
+  return ledgerTriggers(roots, projectDir, env).filter((trigger) => triggerMatches(command, trigger));
+}
+
 function matchedTrigger(command, roots, projectDir, env) {
-  return ledgerTriggers(roots, projectDir, env).find((trigger) => command.includes(trigger)) ?? null;
+  return matchedTriggers(command, roots, projectDir, env)[0] ?? null;
+}
+
+function gitSubcommand(segment) {
+  const tokens = segment.trim().split(/\s+/).filter(Boolean);
+  let index = 0;
+  while (index < tokens.length && ENV_ASSIGNMENT.test(tokens[index])) {
+    index += 1;
+  }
+  if (tokens[index] !== 'git') {
+    return null;
+  }
+  index += 1;
+  while (index < tokens.length && tokens[index].startsWith('-')) {
+    const option = tokens[index];
+    index += 1;
+    if (GIT_VALUE_OPTIONS.has(option)) {
+      index += 1;
+    }
+  }
+  return tokens[index] ?? null;
+}
+
+function isGitRead(segment) {
+  const subcommand = gitSubcommand(segment);
+  return subcommand !== null && GIT_READ_SUBCOMMANDS.has(subcommand);
+}
+
+function isLedgerRead(command, triggers) {
+  if (!triggers.every((trigger) => REF_TRIGGERS.includes(trigger))) {
+    return false;
+  }
+  return command
+    .split(SEGMENT_SPLIT)
+    .every(
+      (segment) =>
+        !triggers.some((trigger) => triggerMatches(segment, trigger)) || isGitRead(segment),
+    );
 }
 
 export function classifyBashCommand(command, roots, projectDir, env = process.env) {
@@ -97,11 +175,15 @@ export function classifyBashCommand(command, roots, projectDir, env = process.en
   if (typeof command !== 'string') {
     return 'ask';
   }
-  const trigger = matchedTrigger(command, roots, projectDir, env);
+  const triggers = matchedTriggers(command, roots, projectDir, env);
+  const trigger = triggers[0] ?? null;
   if (isOversized(command)) {
     return trigger === null ? 'ask' : 'deny';
   }
-  return trigger === null ? null : 'ask';
+  if (trigger === null) {
+    return null;
+  }
+  return isLedgerRead(command, triggers) ? null : 'ask';
 }
 
 function bashReason(verdict, command, roots, projectDir, env) {

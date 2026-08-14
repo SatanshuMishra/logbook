@@ -491,3 +491,63 @@ test('handlePreToolUse denies a real ledger-root write end to end', async (t) =>
   const result = await handlePreToolUse(ctx);
   assert.equal(result.json.hookSpecificOutput.permissionDecision, 'deny');
 });
+
+test('classifyBashCommand stays silent for read-only git commands that name the ledger ref', () => {
+  assert.equal(
+    classifyBashCommand('git show _ledger:decisions/0074-stage-new-tests.md', ROOTS, PROJECT_DIR),
+    null,
+  );
+  assert.equal(
+    classifyBashCommand('git log --oneline _ledger -- decisions/ | grep -oE "007[0-9]" | sort -u', ROOTS, PROJECT_DIR),
+    null,
+  );
+  assert.equal(
+    classifyBashCommand('git show _ledger --stat 2>/dev/null | head -1', ROOTS, PROJECT_DIR),
+    null,
+  );
+  assert.equal(
+    classifyBashCommand('git ls-tree -r _ledger --name-only -- decisions/ | sort', ROOTS, PROJECT_DIR),
+    null,
+  );
+  assert.equal(classifyBashCommand('git -C /repo show _ledger:threads/a.md', ROOTS, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand('git rev-parse _ledger', ROOTS, PROJECT_DIR), null);
+});
+
+test('classifyBashCommand still asks about writes that name the ledger ref', () => {
+  assert.equal(classifyBashCommand('git push origin :_ledger', ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('git branch -D _ledger', ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('git update-ref -d refs/heads/_ledger', ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('git checkout _ledger', ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('git worktree add /tmp/w _ledger', ROOTS, PROJECT_DIR), 'ask');
+});
+
+test('classifyBashCommand asks when any segment of a ledger read is not a read', () => {
+  assert.equal(
+    classifyBashCommand('git show _ledger:a && git push origin :_ledger', ROOTS, PROJECT_DIR),
+    'ask',
+  );
+  assert.equal(
+    classifyBashCommand('git show _ledger:a | tee /tmp/x; git branch -D _ledger', ROOTS, PROJECT_DIR),
+    'ask',
+  );
+});
+
+test('classifyBashCommand asks when a git read also names the ledger store path', () => {
+  assert.equal(
+    classifyBashCommand('git show _ledger:a > /data/-proj/ledger/leak', ROOTS, PROJECT_DIR),
+    'ask',
+  );
+  assert.equal(classifyBashCommand('git show refs/ledger/notes', ROOTS, PROJECT_DIR), null);
+});
+
+test('classifyBashCommand ignores identifiers that merely contain a bare trigger', () => {
+  assert.equal(classifyBashCommand('cat docs/my_ledger.md', ROOTS, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand('cat docs/_ledgering.md', ROOTS, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand('rm -rf build/CLAUDE_PLUGIN_DATA_CACHE', ROOTS, PROJECT_DIR), null);
+});
+
+test('classifyBashCommand keeps matching every real spelling of a bare trigger', () => {
+  assert.equal(classifyBashCommand('rm -rf "$CLAUDE_PLUGIN_DATA"', ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('git push origin :_ledger', ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('git update-ref -d refs/heads/_ledger', ROOTS, PROJECT_DIR), 'ask');
+});
