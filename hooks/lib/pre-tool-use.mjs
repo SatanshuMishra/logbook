@@ -7,7 +7,6 @@ import { DEFAULT_LEDGER_BRANCH } from '../../src/drivers/git-ledger.mjs';
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 const LEDGER_TOOL = /^mcp__(?:plugin_logbook_)?ledger__(.+)$/;
 const TOOL_REGISTRY = '../../src/tools/registry.mjs';
-const MAX_COMMAND_BYTES = 16384;
 const REF_TRIGGERS = Object.freeze([DEFAULT_LEDGER_BRANCH, 'refs/ledger/']);
 const CONSTANT_TRIGGERS = Object.freeze([...REF_TRIGGERS, 'CLAUDE_PLUGIN_DATA']);
 const GIT_READ_SUBCOMMANDS = Object.freeze(
@@ -40,11 +39,8 @@ const TRAILING_SEP = /[\\/]+$/;
 const DENY_SUFFIX =
   'use the ledger MCP tools (mcp__ledger__* when the server is configured directly, mcp__plugin_logbook_ledger__* when installed as a plugin)';
 const GUARDRAIL_NOTE = 'this guard prompts for confirmation and is not a security boundary';
-const BASH_REASONS = Object.freeze({
-  deny: `this Bash command is larger than the Logbook guard reads and names the ledger store; ${DENY_SUFFIX}`,
-  ask: `this Bash command is larger than the Logbook guard reads; ${GUARDRAIL_NOTE}; to write the ledger store, ${DENY_SUFFIX}`,
-});
 const UNREADABLE_COMMAND_REASON = `the Logbook guard could not read this Bash command as a string and refused to judge it; ${GUARDRAIL_NOTE}; to write the ledger store, ${DENY_SUFFIX}`;
+const SILENT = Object.freeze({ verdict: null, reason: null });
 
 function decision(permissionDecision, reason) {
   return {
@@ -108,10 +104,6 @@ function ledgerTriggers(roots, projectDir, env) {
     .filter((trigger) => typeof trigger === 'string' && trigger.length > 0);
 }
 
-function isOversized(command) {
-  return Buffer.byteLength(command, 'utf8') > MAX_COMMAND_BYTES;
-}
-
 function escapeRegExp(value) {
   return value.replace(REGEXP_META, '\\$&');
 }
@@ -125,10 +117,6 @@ function triggerMatches(text, trigger) {
 
 function matchedTriggers(command, roots, projectDir, env) {
   return ledgerTriggers(roots, projectDir, env).filter((trigger) => triggerMatches(command, trigger));
-}
-
-function matchedTrigger(command, roots, projectDir, env) {
-  return matchedTriggers(command, roots, projectDir, env)[0] ?? null;
 }
 
 function gitSubcommand(segment) {
@@ -168,35 +156,26 @@ function isLedgerRead(command, triggers) {
     );
 }
 
-export function classifyBashCommand(command, roots, projectDir, env = process.env) {
-  if (!Array.isArray(roots) || roots.length === 0) {
-    return null;
-  }
-  if (typeof command !== 'string') {
-    return 'ask';
-  }
-  const triggers = matchedTriggers(command, roots, projectDir, env);
-  const trigger = triggers[0] ?? null;
-  if (isOversized(command)) {
-    return trigger === null ? 'ask' : 'deny';
-  }
-  if (trigger === null) {
-    return null;
-  }
-  return isLedgerRead(command, triggers) ? null : 'ask';
+function triggerReason(trigger) {
+  return `this Bash command contains "${trigger}", which names the Logbook ledger store; ${GUARDRAIL_NOTE}; to write the store, ${DENY_SUFFIX}`;
 }
 
-function bashReason(verdict, command, roots, projectDir, env) {
+function bashJudgment(command, roots, projectDir, env) {
+  if (!Array.isArray(roots) || roots.length === 0) {
+    return SILENT;
+  }
   if (typeof command !== 'string') {
-    return UNREADABLE_COMMAND_REASON;
+    return { verdict: 'ask', reason: UNREADABLE_COMMAND_REASON };
   }
-  if (isOversized(command)) {
-    return BASH_REASONS[verdict];
+  const triggers = matchedTriggers(command, roots, projectDir, env);
+  if (triggers.length === 0 || isLedgerRead(command, triggers)) {
+    return SILENT;
   }
-  const trigger = matchedTrigger(command, roots, projectDir, env);
-  return trigger === null
-    ? BASH_REASONS.ask
-    : `this Bash command contains "${trigger}", which names the Logbook ledger store; ${GUARDRAIL_NOTE}; to write the store, ${DENY_SUFFIX}`;
+  return { verdict: 'ask', reason: triggerReason(triggers[0]) };
+}
+
+export function classifyBashCommand(command, roots, projectDir, env = process.env) {
+  return bashJudgment(command, roots, projectDir, env).verdict;
 }
 
 function targetPath(input) {
@@ -215,8 +194,8 @@ export function classifyPreToolUse(input, roots, baseDir, projectDir, env = proc
   }
   if (toolName === 'Bash') {
     const command = input && input.tool_input ? input.tool_input.command : undefined;
-    const verdict = classifyBashCommand(command, roots, projectDir, env);
-    return verdict ? decision(verdict, bashReason(verdict, command, roots, projectDir, env)) : null;
+    const { verdict, reason } = bashJudgment(command, roots, projectDir, env);
+    return verdict ? decision(verdict, reason) : null;
   }
   return null;
 }

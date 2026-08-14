@@ -24,6 +24,7 @@ const HOME_BRACED = '${HOME}';
 const GIT_ROOTS = [join(PROJECT_DIR, '.git', 'ledger')];
 const ROOT_READ = 'cat /data/-proj/ledger/f ';
 const OUTSIDE_READ = 'cat /tmp/f ';
+const LARGE_BYTES = 20 * 1024;
 
 function padTo(head, length) {
   return head + 'x'.repeat(length - head.length);
@@ -99,11 +100,11 @@ test('classifyBashCommand stays silent for every spelling of the filesystem root
   }
 });
 
-test('classifyBashCommand never denies on a filesystem-root plugin data root', () => {
-  const over = padTo(OUTSIDE_READ, 16385);
+test('classifyBashCommand stays silent on a filesystem-root plugin data root at any size', () => {
+  const large = padTo(OUTSIDE_READ, LARGE_BYTES);
   for (const spelling of ROOT_SPELLINGS) {
     const env = { CLAUDE_PLUGIN_DATA: spelling };
-    assert.equal(classifyBashCommand(over, ROOTS, PROJECT_DIR, env), 'ask', spelling);
+    assert.equal(classifyBashCommand(large, ROOTS, PROJECT_DIR, env), null, spelling);
   }
 });
 
@@ -114,7 +115,7 @@ test('classifyBashCommand ignores a data root that canonicalizes to the filesyst
   await symlink(sep, link, 'dir');
   const env = { CLAUDE_PLUGIN_DATA: link };
   assert.equal(classifyBashCommand('ls /etc', ROOTS, PROJECT_DIR, env), null);
-  assert.equal(classifyBashCommand(padTo(OUTSIDE_READ, 16385), ROOTS, PROJECT_DIR, env), 'ask');
+  assert.equal(classifyBashCommand(padTo(OUTSIDE_READ, LARGE_BYTES), ROOTS, PROJECT_DIR, env), null);
   assert.equal(classifyBashCommand(`rm -rf ${link}`, ROOTS, PROJECT_DIR, env), 'ask');
 });
 
@@ -230,75 +231,49 @@ test('classifyBashCommand keeps the read-only noise corpus silent with the data 
   }
 });
 
-test('classifyBashCommand denies an oversized command that names a ledger root', () => {
-  const under = padTo(ROOT_READ, 16383);
-  const atCap = padTo(ROOT_READ, 16384);
-  const over = padTo(ROOT_READ, 16385);
-  assert.equal(under.length, 16383);
-  assert.equal(atCap.length, 16384);
-  assert.equal(over.length, 16385);
-  assert.equal(classifyBashCommand(under, ROOTS, PROJECT_DIR), 'ask');
-  assert.equal(classifyBashCommand(atCap, ROOTS, PROJECT_DIR), 'ask');
-  assert.equal(classifyBashCommand(over, ROOTS, PROJECT_DIR), 'deny');
+test('classifyBashCommand stays silent on a large command that names nothing ledger', () => {
+  const large = padTo(OUTSIDE_READ, LARGE_BYTES);
+  assert.equal(Buffer.byteLength(large, 'utf8'), LARGE_BYTES);
+  assert.equal(classifyBashCommand(large, ROOTS, PROJECT_DIR), null);
 });
 
-test('classifyBashCommand asks about an oversized command that never names a ledger root', () => {
-  const under = padTo(OUTSIDE_READ, 16383);
-  const atCap = padTo(OUTSIDE_READ, 16384);
-  const over = padTo(OUTSIDE_READ, 16385);
-  assert.equal(under.length, 16383);
-  assert.equal(atCap.length, 16384);
-  assert.equal(over.length, 16385);
-  assert.equal(classifyBashCommand(under, ROOTS, PROJECT_DIR), null);
-  assert.equal(classifyBashCommand(atCap, ROOTS, PROJECT_DIR), null);
-  assert.equal(classifyBashCommand(over, ROOTS, PROJECT_DIR), 'ask');
+test('classifyBashCommand stays silent on a large read-only git command naming the ledger ref', () => {
+  const large = padTo('git show _ledger:threads/a.md ', LARGE_BYTES);
+  assert.equal(Buffer.byteLength(large, 'utf8'), LARGE_BYTES);
+  assert.equal(classifyBashCommand(large, ROOTS, PROJECT_DIR), null);
 });
 
-test('classifyBashCommand measures the size cap in UTF-8 bytes, not code units', () => {
-  const wide = 'é'.repeat(8179);
-  const atCap = `${ROOT_READ}${wide}x`;
-  const over = `${ROOT_READ}${wide}xx`;
-  assert.equal(Buffer.byteLength(atCap, 'utf8'), 16384);
-  assert.equal(Buffer.byteLength(over, 'utf8'), 16385);
-  assert.equal(over.length < 16384, true);
-  assert.equal(classifyBashCommand(atCap, ROOTS, PROJECT_DIR), 'ask');
-  assert.equal(classifyBashCommand(over, ROOTS, PROJECT_DIR), 'deny');
+test('classifyBashCommand asks about a large write that names the ledger ref', () => {
+  const large = padTo('git push origin :_ledger ', LARGE_BYTES);
+  assert.equal(Buffer.byteLength(large, 'utf8'), LARGE_BYTES);
+  assert.equal(classifyBashCommand(large, ROOTS, PROJECT_DIR), 'ask');
 });
 
-test('classifyBashCommand asks about a multibyte oversized command with no trigger', () => {
-  const over = `${OUTSIDE_READ}${'é'.repeat(8187)}`;
-  assert.equal(Buffer.byteLength(over, 'utf8'), 16385);
-  assert.equal(over.length < 16384, true);
-  assert.equal(classifyBashCommand(over, ROOTS, PROJECT_DIR), 'ask');
+test('classifyBashCommand asks about a large command that names any ledger spelling', () => {
+  assert.equal(classifyBashCommand(padTo(`cat ~${HOME_TAIL}/f `, LARGE_BYTES), HOME_ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(padTo('git update-ref -d refs/heads/_ledger ', LARGE_BYTES), ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(padTo(ROOT_READ, LARGE_BYTES), ROOTS, PROJECT_DIR), 'ask');
 });
 
-test('classifyPreToolUse reports the size reason for a multibyte oversized command', () => {
+test('classifyBashCommand judges a multibyte command by its triggers, never its byte length', () => {
+  const wide = 'é'.repeat(9000);
+  const quiet = `${OUTSIDE_READ}${wide}`;
+  const named = `${ROOT_READ}${wide}`;
+  assert.equal(Buffer.byteLength(quiet, 'utf8') > quiet.length, true);
+  assert.equal(classifyBashCommand(quiet, ROOTS, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand(named, ROOTS, PROJECT_DIR), 'ask');
+});
+
+test('classifyPreToolUse names the trigger on a large command instead of reporting a size', () => {
   const d = classifyPreToolUse(
-    { tool_name: 'Bash', tool_input: { command: `${ROOT_READ}${'é'.repeat(8180)}` } },
+    { tool_name: 'Bash', tool_input: { command: padTo('git branch -D _ledger ', LARGE_BYTES) } },
     ROOTS,
     PROJECT_DIR,
   );
-  assert.equal(d.hookSpecificOutput.permissionDecision, 'deny');
-  assert.equal(
-    d.hookSpecificOutput.permissionDecisionReason.includes('larger than the Logbook guard reads'),
-    true,
-  );
-});
-
-test('classifyBashCommand denies an oversized command that names any ledger spelling', () => {
-  assert.equal(classifyBashCommand(padTo(`cat ~${HOME_TAIL}/f `, 16385), HOME_ROOTS, PROJECT_DIR), 'deny');
-  assert.equal(classifyBashCommand(padTo('git update-ref -d refs/heads/_ledger ', 16385), ROOTS, PROJECT_DIR), 'deny');
-});
-
-test('classifyPreToolUse reports the size reason for an oversized command that names a trigger', () => {
-  const d = classifyPreToolUse(
-    { tool_name: 'Bash', tool_input: { command: padTo('git branch -D _ledger ', 16385) } },
-    ROOTS,
-    PROJECT_DIR,
-  );
-  assert.equal(d.hookSpecificOutput.permissionDecision, 'deny');
+  assert.equal(d.hookSpecificOutput.permissionDecision, 'ask');
   const reason = d.hookSpecificOutput.permissionDecisionReason;
-  assert.equal(reason.includes('larger than the Logbook guard reads'), true);
+  assert.equal(reason.includes('"_ledger"'), true);
+  assert.equal(reason.includes('larger than the Logbook guard reads'), false);
 });
 
 test('classifyPreToolUse names the matched trigger and disclaims a security boundary', () => {
