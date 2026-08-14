@@ -30,6 +30,20 @@ const GIT_READ_SUBCOMMANDS = Object.freeze(
 const GIT_VALUE_OPTIONS = Object.freeze(
   new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path']),
 );
+const GIT_REJECTED_PRE_OPTIONS = Object.freeze([
+  '-c',
+  '--exec-path',
+  '--git-dir',
+  '--namespace',
+  '--work-tree',
+]);
+const GIT_REJECTED_OPTIONS = Object.freeze([
+  '-O',
+  '--ext-diff',
+  '--open-files-in-pager',
+  '--output',
+  '--textconv',
+]);
 const SEGMENT_SPLIT = /\|\||&&|[|;\n\r]/;
 const PATH_SEPARATOR = /[\\/]/;
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
@@ -124,7 +138,7 @@ function matchedTriggers(command, roots, projectDir, env) {
   return ledgerTriggers(roots, projectDir, env).filter((trigger) => triggerMatches(command, trigger));
 }
 
-function gitSubcommand(segment) {
+function parseGitSegment(segment) {
   const tokens = segment.trim().split(/\s+/).filter(Boolean);
   let index = 0;
   while (index < tokens.length && ENV_ASSIGNMENT.test(tokens[index])) {
@@ -133,20 +147,39 @@ function gitSubcommand(segment) {
   if (tokens[index] !== 'git') {
     return null;
   }
+  const assignments = index;
   index += 1;
+  const preOptions = [];
   while (index < tokens.length && tokens[index].startsWith('-')) {
     const option = tokens[index];
+    preOptions.push(option);
     index += 1;
     if (GIT_VALUE_OPTIONS.has(option)) {
       index += 1;
     }
   }
-  return tokens[index] ?? null;
+  return { assignments, preOptions, subcommand: tokens[index] ?? null, tokens };
+}
+
+function isRejectedPreOption(option) {
+  return GIT_REJECTED_PRE_OPTIONS.some(
+    (rejected) => option === rejected || option.startsWith(`${rejected}=`),
+  );
+}
+
+function isRejectedOption(token) {
+  return GIT_REJECTED_OPTIONS.some((rejected) => token.startsWith(rejected));
 }
 
 function isGitRead(segment) {
-  const subcommand = gitSubcommand(segment);
-  return subcommand !== null && GIT_READ_SUBCOMMANDS.has(subcommand);
+  const parsed = parseGitSegment(segment);
+  if (parsed === null || !GIT_READ_SUBCOMMANDS.has(parsed.subcommand)) {
+    return false;
+  }
+  if (parsed.assignments > 0 || parsed.preOptions.some(isRejectedPreOption)) {
+    return false;
+  }
+  return !parsed.tokens.some(isRejectedOption);
 }
 
 function isLedgerRead(command, triggers) {

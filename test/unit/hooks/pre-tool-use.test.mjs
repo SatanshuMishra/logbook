@@ -515,6 +515,75 @@ test('classifyBashCommand asks when a git read also names the ledger store path'
   assert.equal(classifyBashCommand('git show refs/ledger/notes', ROOTS, PROJECT_DIR), null);
 });
 
+const GIT_READ_BYPASSES = [
+  'GIT_EXTERNAL_DIFF=/tmp/evil.sh git log _ledger --ext-diff -p -1',
+  'git diff _ledger main --output=.git/hooks/post-checkout',
+  'git blame --output=/tmp/important _ledger',
+  'git -c core.pager=/tmp/evil.sh -p log _ledger -1',
+];
+
+test('classifyBashCommand asks about a ledger read carrying a leading environment assignment', () => {
+  assert.equal(classifyBashCommand(GIT_READ_BYPASSES[0], ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('GIT_PAGER=/tmp/evil.sh git log _ledger -1', ROOTS, PROJECT_DIR), 'ask');
+});
+
+test('classifyBashCommand asks about a ledger read that writes a file through an output option', () => {
+  assert.equal(classifyBashCommand(GIT_READ_BYPASSES[1], ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(GIT_READ_BYPASSES[2], ROOTS, PROJECT_DIR), 'ask');
+});
+
+test('classifyBashCommand asks about a ledger read that injects git config before the subcommand', () => {
+  assert.equal(classifyBashCommand(GIT_READ_BYPASSES[3], ROOTS, PROJECT_DIR), 'ask');
+});
+
+test('classifyBashCommand asks about every spelling of a write-capable pre-subcommand option', () => {
+  const rejected = [
+    'git -c core.pager=/tmp/evil.sh log _ledger',
+    'git --git-dir=/x log _ledger',
+    'git --git-dir /x log _ledger',
+    'git --work-tree=/x status _ledger',
+    'git --work-tree /x status _ledger',
+    'git --namespace=x show-ref _ledger',
+    'git --namespace x show-ref _ledger',
+    'git --exec-path=/tmp/evil log _ledger',
+    'git --exec-path /tmp/evil log _ledger',
+  ];
+  for (const command of rejected) {
+    assert.equal(classifyBashCommand(command, ROOTS, PROJECT_DIR), 'ask', command);
+  }
+});
+
+test('classifyBashCommand asks about every spelling of a write-capable or executing option', () => {
+  const rejected = [
+    'git diff _ledger main --output=/tmp/x',
+    'git diff _ledger main --output /tmp/x',
+    'git blame --output=/tmp/x _ledger',
+    'git blame --output /tmp/x _ledger',
+    'git log _ledger --ext-diff -p',
+    'git log _ledger --textconv -p',
+    'git diff _ledger main -O/tmp/orderfile',
+    'git diff _ledger main -O /tmp/orderfile',
+    'git grep --open-files-in-pager pattern _ledger',
+  ];
+  for (const command of rejected) {
+    assert.equal(classifyBashCommand(command, ROOTS, PROJECT_DIR), 'ask', command);
+  }
+});
+
+test('classifyBashCommand keeps a post-subcommand -c a legitimate read flag', () => {
+  assert.equal(classifyBashCommand('git log -c _ledger -1', ROOTS, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand('git show -c _ledger', ROOTS, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand('git diff -c _ledger main', ROOTS, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand('git -C /repo log -c _ledger -1', ROOTS, PROJECT_DIR), null);
+});
+
+test('classifyBashCommand stays silent on every ledger read bypass when the guard is disabled', () => {
+  const env = { LEDGER_DISABLE_BASH_GUARD: 'true' };
+  for (const command of GIT_READ_BYPASSES) {
+    assert.equal(classifyBashCommand(command, ROOTS, PROJECT_DIR, env), null, command);
+  }
+});
+
 test('classifyBashCommand ignores identifiers that merely contain a bare trigger', () => {
   assert.equal(classifyBashCommand('cat docs/my_ledger.md', ROOTS, PROJECT_DIR), null);
   assert.equal(classifyBashCommand('cat docs/_ledgering.md', ROOTS, PROJECT_DIR), null);
