@@ -316,6 +316,9 @@ export async function handlePreToolUse(ctx) {
   if (await isRegisteredLedgerTool(toolName)) {
     return { json: decision('allow', 'logbook ledger tool auto-approved') };
   }
+  if (toolName === 'Bash' && isBashGuardDisabled(ctx.env)) {
+    return {};
+  }
   const roots = await resolveLedgerRoots(ctx.projectDir, ctx.env);
   if (roots.length === 0) {
     return {};

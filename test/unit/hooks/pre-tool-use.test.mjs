@@ -802,6 +802,36 @@ test('handlePreToolUse leaves a ledger-naming Bash command alone when the guard 
   }
 });
 
+function throwingRootEnv(key) {
+  return {
+    [key]: 'true',
+    get CLAUDE_PLUGIN_DATA() {
+      throw new Error('ledger root resolution failed');
+    },
+  };
+}
+
+test('handlePreToolUse honours the disabled Bash guard before it resolves ledger roots', async () => {
+  for (const key of DISABLE_KEYS) {
+    const result = await handlePreToolUse({
+      input: { tool_name: 'Bash', tool_input: { command: 'rm -rf /data/-proj/ledger' } },
+      env: throwingRootEnv(key),
+      projectDir: PROJECT_DIR,
+    });
+    assert.deepEqual(result, {}, key);
+  }
+});
+
+test('handlePreToolUse still fails closed on a write tool when ledger root resolution throws', async () => {
+  await assert.rejects(() =>
+    handlePreToolUse({
+      input: { tool_name: 'Write', tool_input: { file_path: '/data/-proj/ledger/threads/a.json' } },
+      env: throwingRootEnv('LEDGER_DISABLE_BASH_GUARD'),
+      projectDir: PROJECT_DIR,
+    }),
+  );
+});
+
 test('handlePreToolUse still denies a ledger-root Write when the Bash guard is disabled', async (t) => {
   const projectDir = await tempDir('hooks-disabled-write-proj-');
   const dataRoot = await tempDir('hooks-disabled-write-data-');
