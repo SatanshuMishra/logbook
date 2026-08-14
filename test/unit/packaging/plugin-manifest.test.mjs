@@ -19,9 +19,12 @@ test('plugin.json parses and carries the exact metadata contract', async () => {
   assert.deepEqual(m.keywords, ['logbook', 'ledger', 'mcp', 'handoff', 'resume', 'drift']);
 });
 
-test('userConfig declares EXACTLY the three keys and never ledger_remote', async () => {
+test('userConfig declares EXACTLY the four keys and never ledger_remote', async () => {
   const m = await readManifest();
-  assert.deepEqual(Object.keys(m.userConfig).sort(), ['disable_trailer', 'ledger_backend', 'ledger_branch']);
+  assert.deepEqual(
+    Object.keys(m.userConfig).sort(),
+    ['disable_bash_guard', 'disable_trailer', 'ledger_backend', 'ledger_branch'],
+  );
   assert.equal('ledger_remote' in m.userConfig, false);
 });
 
@@ -42,4 +45,9 @@ test('each userConfig key declares type, title, description and the exact defaul
   assert.equal(trailer.type, 'boolean');
   assert.equal(trailer.default, false);
   assert.ok(trailer.title && trailer.description);
+
+  const bashGuard = m.userConfig.disable_bash_guard;
+  assert.equal(bashGuard.type, 'boolean');
+  assert.equal(bashGuard.default, false);
+  assert.ok(bashGuard.title && bashGuard.description);
 });

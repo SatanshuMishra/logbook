@@ -1,6 +1,6 @@
 {
   "name": "logbook",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "displayName": "Logbook",
   "description": "Git-native, multi-user, drift-aware session continuity for Claude Code.",
   "author": { "name": "Logbook Plugin" },
@@ -23,6 +23,12 @@
       "type": "boolean",
       "title": "Disable commit trailer",
       "description": "When enabled, the managed commit-msg hook does not append the Thread-Id trailer to commit messages.",
+      "default": false
+    },
+    "disable_bash_guard": {
+      "type": "boolean",
+      "title": "Disable Bash guard prompts",
+      "description": "When enabled, the PreToolUse guard never prompts about a Bash command that names the ledger store. Writes into a ledger root through Write/Edit/MultiEdit/NotebookEdit stay denied regardless of this setting.",
       "default": false
     }
   }
