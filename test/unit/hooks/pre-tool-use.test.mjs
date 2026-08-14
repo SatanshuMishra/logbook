@@ -1,20 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { realpathSync } from 'node:fs';
-import { mkdir, symlink } from 'node:fs/promises';
+import { mkdir, readFile, symlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, sep } from 'node:path';
 import {
   classifyPreToolUse,
   classifyBashCommand,
   handlePreToolUse,
+  GIT_READ_SUBCOMMANDS,
 } from '../../../hooks/lib/pre-tool-use.mjs';
 import { resolveLedgerRoots } from '../../../hooks/lib/ledger-roots.mjs';
 import { hookContext } from '../../../hooks/lib/hook-io.mjs';
 import { projectKey } from '../../../src/util/project-key.mjs';
 import { DEFAULT_LEDGER_BRANCH } from '../../../src/drivers/git-ledger.mjs';
 import { TOOLS } from '../../../src/tools/registry.mjs';
-import { tempDir, cleanup, useEnv, initGitRepo } from './fixtures.mjs';
+import { tempDir, cleanup, useEnv, initGitRepo, REPO_ROOT } from './fixtures.mjs';
 
 const PROJECT_DIR = '/proj';
 const ROOTS = ['/data/-proj/ledger'];
@@ -646,25 +647,54 @@ test('classifyBashCommand keeps a post-subcommand -c a legitimate read flag', ()
 });
 
 test('classifyBashCommand asks about git help, which spawns a pager or a browser', () => {
+  assert.equal(GIT_READ_SUBCOMMANDS.has('help'), false);
   assert.equal(classifyBashCommand('git help _ledger', ROOTS, PROJECT_DIR), 'ask');
   assert.equal(classifyBashCommand('git help -w _ledger', ROOTS, PROJECT_DIR), 'ask');
 });
 
-test('classifyBashCommand stays silent for the verified read-only git verbs naming the ledger ref', () => {
-  const quiet = [
-    'git merge-base _ledger main',
-    'git name-rev _ledger',
-    'git show-branch _ledger',
-    'git verify-commit _ledger',
-    'git cherry main _ledger',
-    'git grep pattern _ledger',
-    'git patch-id _ledger',
-    'git check-ignore --no-index _ledger',
-    'git count-objects -v _ledger',
-    'git column _ledger',
-  ];
-  for (const command of quiet) {
-    assert.equal(classifyBashCommand(command, ROOTS, PROJECT_DIR), null, command);
+const READ_SUBCOMMAND_SAMPLES = Object.freeze({
+  blame: 'git blame _ledger -- README.md',
+  'cat-file': 'git cat-file -p _ledger',
+  'check-attr': 'git check-attr diff _ledger',
+  'check-ignore': 'git check-ignore --no-index _ledger',
+  'check-ref-format': 'git check-ref-format refs/heads/_ledger',
+  cherry: 'git cherry main _ledger',
+  column: 'git column _ledger',
+  'count-objects': 'git count-objects -v _ledger',
+  describe: 'git describe _ledger',
+  diff: 'git diff _ledger main',
+  'for-each-ref': 'git for-each-ref refs/heads/_ledger',
+  'get-tar-commit-id': 'git get-tar-commit-id _ledger',
+  grep: 'git grep pattern _ledger',
+  log: 'git log --oneline _ledger',
+  'ls-files': 'git ls-files _ledger',
+  'ls-tree': 'git ls-tree -r _ledger --name-only',
+  'merge-base': 'git merge-base _ledger main',
+  'name-rev': 'git name-rev _ledger',
+  'patch-id': 'git patch-id _ledger',
+  'rev-list': 'git rev-list -1 _ledger',
+  'rev-parse': 'git rev-parse _ledger',
+  shortlog: 'git shortlog _ledger',
+  show: 'git show _ledger:threads/a.md',
+  'show-branch': 'git show-branch _ledger',
+  'show-ref': 'git show-ref _ledger',
+  status: 'git status --short _ledger',
+  stripspace: 'git stripspace _ledger',
+  var: 'git var GIT_COMMITTER_IDENT _ledger',
+  'verify-commit': 'git verify-commit _ledger',
+  'verify-pack': 'git verify-pack -v _ledger',
+  'verify-tag': 'git verify-tag _ledger',
+  version: 'git version _ledger',
+});
+
+test('every git verb in the read census classifies a ledger-naming invocation as silent', () => {
+  assert.deepEqual(
+    new Set(Object.keys(READ_SUBCOMMAND_SAMPLES)),
+    new Set(GIT_READ_SUBCOMMANDS),
+    'every census verb needs a sample invocation, and every sample needs a census verb',
+  );
+  for (const [subcommand, command] of Object.entries(READ_SUBCOMMAND_SAMPLES)) {
+    assert.equal(classifyBashCommand(command, ROOTS, PROJECT_DIR), null, subcommand);
   }
 });
 
@@ -710,6 +740,16 @@ test('classifyBashCommand stops asking about an unreadable command when the guar
     assert.equal(classifyBashCommand(undefined, ROOTS, PROJECT_DIR, { [key]: 'true' }), null, key);
     assert.equal(classifyBashCommand(7, ROOTS, PROJECT_DIR, { [key]: 'true' }), null, key);
   }
+});
+
+test('the Bash guard disable key stays derived from the plugin manifest option', async () => {
+  const raw = await readFile(join(REPO_ROOT, '.claude-plugin', 'plugin.json'), 'utf8');
+  const userConfig = JSON.parse(raw).userConfig ?? {};
+  const optionKey = Object.keys(userConfig).find((key) => key.includes('bash_guard'));
+  assert.ok(optionKey, 'plugin.json userConfig must declare a bash-guard option');
+  const derived = `CLAUDE_PLUGIN_OPTION_${optionKey.replace(/[^A-Za-z0-9_]/g, '_').toUpperCase()}`;
+  assert.equal(DISABLE_KEYS.includes(derived), true, derived);
+  assert.equal(classifyBashCommand(LEDGER_WRITE, ROOTS, PROJECT_DIR, { [derived]: 'true' }), null);
 });
 
 test('classifyBashCommand ignores a disable flag reached only through the prototype chain', () => {
