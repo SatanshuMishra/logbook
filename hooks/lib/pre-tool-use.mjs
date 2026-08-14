@@ -41,6 +41,11 @@ const DENY_SUFFIX =
 const GUARDRAIL_NOTE = 'this guard prompts for confirmation and is not a security boundary';
 const UNREADABLE_COMMAND_REASON = `the Logbook guard could not read this Bash command as a string and refused to judge it; ${GUARDRAIL_NOTE}; to write the ledger store, ${DENY_SUFFIX}`;
 const SILENT = Object.freeze({ verdict: null, reason: null });
+const BASH_GUARD_DISABLE_KEYS = Object.freeze([
+  'LEDGER_DISABLE_BASH_GUARD',
+  'CLAUDE_PLUGIN_OPTION_DISABLE_BASH_GUARD',
+]);
+const DISABLED = 'true';
 
 function decision(permissionDecision, reason) {
   return {
@@ -160,7 +165,15 @@ function triggerReason(trigger) {
   return `this Bash command contains "${trigger}", which names the Logbook ledger store; ${GUARDRAIL_NOTE}; to write the store, ${DENY_SUFFIX}`;
 }
 
+function isBashGuardDisabled(env) {
+  const source = env && typeof env === 'object' ? env : {};
+  return BASH_GUARD_DISABLE_KEYS.some((key) => source[key] === DISABLED);
+}
+
 function bashJudgment(command, roots, projectDir, env) {
+  if (isBashGuardDisabled(env)) {
+    return SILENT;
+  }
   if (!Array.isArray(roots) || roots.length === 0) {
     return SILENT;
   }

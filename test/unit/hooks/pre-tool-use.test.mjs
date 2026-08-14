@@ -526,3 +526,123 @@ test('classifyBashCommand keeps matching every real spelling of a bare trigger',
   assert.equal(classifyBashCommand('git push origin :_ledger', ROOTS, PROJECT_DIR), 'ask');
   assert.equal(classifyBashCommand('git update-ref -d refs/heads/_ledger', ROOTS, PROJECT_DIR), 'ask');
 });
+
+const DISABLE_KEYS = ['LEDGER_DISABLE_BASH_GUARD', 'CLAUDE_PLUGIN_OPTION_DISABLE_BASH_GUARD'];
+const LEDGER_WRITE = 'git push origin :_ledger';
+
+test('classifyBashCommand stays silent on ledger writes when either disable key is exactly true', () => {
+  for (const key of DISABLE_KEYS) {
+    const env = { [key]: 'true' };
+    assert.equal(classifyBashCommand(LEDGER_WRITE, ROOTS, PROJECT_DIR, env), null, key);
+    assert.equal(classifyBashCommand('rm -rf /data/-proj/ledger', ROOTS, PROJECT_DIR, env), null, key);
+    assert.equal(classifyBashCommand(padTo(LEDGER_WRITE, LARGE_BYTES), ROOTS, PROJECT_DIR, env), null, key);
+  }
+});
+
+test('classifyBashCommand stops asking about an unreadable command when the guard is disabled', () => {
+  for (const key of DISABLE_KEYS) {
+    assert.equal(classifyBashCommand(undefined, ROOTS, PROJECT_DIR, { [key]: 'true' }), null, key);
+    assert.equal(classifyBashCommand(7, ROOTS, PROJECT_DIR, { [key]: 'true' }), null, key);
+  }
+});
+
+test('classifyBashCommand reads the disable flag from process.env when no env is passed', (t) => {
+  useEnv(t, { LEDGER_DISABLE_BASH_GUARD: 'true' });
+  assert.equal(classifyBashCommand(LEDGER_WRITE, ROOTS, PROJECT_DIR), null);
+});
+
+test('classifyBashCommand reads the plugin-option key from process.env when no env is passed', (t) => {
+  useEnv(t, { CLAUDE_PLUGIN_OPTION_DISABLE_BASH_GUARD: 'true' });
+  assert.equal(classifyBashCommand(LEDGER_WRITE, ROOTS, PROJECT_DIR), null);
+});
+
+const NOT_DISABLED = [
+  '',
+  'false',
+  'TRUE',
+  'True',
+  'off',
+  '1',
+  'yes',
+  ' true',
+  'true ',
+  '${user_config.disable_bash_guard}',
+  true,
+  1,
+  null,
+  undefined,
+];
+
+test('classifyBashCommand keeps the guard enabled for every resolution that is not exactly true', () => {
+  for (const key of DISABLE_KEYS) {
+    for (const value of NOT_DISABLED) {
+      const label = `${key}=${String(value)}`;
+      assert.equal(classifyBashCommand(LEDGER_WRITE, ROOTS, PROJECT_DIR, { [key]: value }), 'ask', label);
+    }
+    assert.equal(classifyBashCommand(LEDGER_WRITE, ROOTS, PROJECT_DIR, {}), 'ask', `${key} absent`);
+  }
+  assert.equal(classifyBashCommand(LEDGER_WRITE, ROOTS, PROJECT_DIR, null), 'ask');
+  assert.equal(classifyBashCommand(LEDGER_WRITE, ROOTS, PROJECT_DIR, 'true'), 'ask');
+});
+
+test('classifyBashCommand keeps the guard enabled when the flag is absent from process.env', (t) => {
+  useEnv(t, {
+    LEDGER_DISABLE_BASH_GUARD: undefined,
+    CLAUDE_PLUGIN_OPTION_DISABLE_BASH_GUARD: undefined,
+  });
+  assert.equal(classifyBashCommand(LEDGER_WRITE, ROOTS, PROJECT_DIR), 'ask');
+});
+
+test('classifyPreToolUse still denies a ledger-root write when the Bash guard is disabled', () => {
+  for (const key of DISABLE_KEYS) {
+    for (const tool of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit']) {
+      const d = classifyPreToolUse(
+        { tool_name: tool, tool_input: { file_path: '/data/-proj/ledger/threads/a.json' } },
+        ROOTS,
+        PROJECT_DIR,
+        PROJECT_DIR,
+        { [key]: 'true' },
+      );
+      assert.equal(d.hookSpecificOutput.permissionDecision, 'deny', `${key} ${tool}`);
+    }
+  }
+});
+
+test('handlePreToolUse still auto-approves a ledger MCP tool when the Bash guard is disabled', async () => {
+  for (const key of DISABLE_KEYS) {
+    const result = await handlePreToolUse({
+      input: { tool_name: 'mcp__plugin_logbook_ledger__update_thread' },
+      env: { [key]: 'true' },
+      projectDir: PROJECT_DIR,
+    });
+    assert.equal(result.json.hookSpecificOutput.permissionDecision, 'allow', key);
+  }
+});
+
+test('handlePreToolUse leaves a ledger-naming Bash command alone when the guard is disabled', async (t) => {
+  const projectDir = await tempDir('hooks-disabled-proj-');
+  const dataRoot = await tempDir('hooks-disabled-data-');
+  cleanup(t, projectDir, dataRoot);
+  const root = join(dataRoot, projectKey(projectDir));
+  for (const key of DISABLE_KEYS) {
+    const result = await handlePreToolUse({
+      input: { tool_name: 'Bash', tool_input: { command: `rm -rf ${root}` } },
+      env: { CLAUDE_PLUGIN_DATA: dataRoot, [key]: 'true' },
+      projectDir,
+    });
+    assert.deepEqual(result, {}, key);
+  }
+});
+
+test('handlePreToolUse still denies a ledger-root Write when the Bash guard is disabled', async (t) => {
+  const projectDir = await tempDir('hooks-disabled-write-proj-');
+  const dataRoot = await tempDir('hooks-disabled-write-data-');
+  cleanup(t, projectDir, dataRoot);
+  const target = join(dataRoot, projectKey(projectDir), 'ledger', 'threads', 'a.json');
+  const result = await handlePreToolUse({
+    input: { tool_name: 'Write', tool_input: { file_path: target } },
+    env: { CLAUDE_PLUGIN_DATA: dataRoot, LEDGER_DISABLE_BASH_GUARD: 'true' },
+    projectDir,
+  });
+  assert.equal(result.json.hookSpecificOutput.permissionDecision, 'deny');
+});
