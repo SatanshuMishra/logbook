@@ -577,6 +577,24 @@ test('classifyBashCommand keeps a post-subcommand -c a legitimate read flag', ()
   assert.equal(classifyBashCommand('git -C /repo log -c _ledger -1', ROOTS, PROJECT_DIR), null);
 });
 
+test('classifyBashCommand stays silent for the verified read-only git verbs naming the ledger ref', () => {
+  const quiet = [
+    'git merge-base _ledger main',
+    'git name-rev _ledger',
+    'git show-branch _ledger',
+    'git verify-commit _ledger',
+    'git cherry main _ledger',
+    'git grep pattern _ledger',
+    'git patch-id _ledger',
+    'git check-ignore --no-index _ledger',
+    'git count-objects -v _ledger',
+    'git column _ledger',
+  ];
+  for (const command of quiet) {
+    assert.equal(classifyBashCommand(command, ROOTS, PROJECT_DIR), null, command);
+  }
+});
+
 test('classifyBashCommand stays silent on every ledger read bypass when the guard is disabled', () => {
   const env = { LEDGER_DISABLE_BASH_GUARD: 'true' };
   for (const command of GIT_READ_BYPASSES) {
