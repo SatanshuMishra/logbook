@@ -515,25 +515,93 @@ test('classifyBashCommand asks when a git read also names the ledger store path'
   assert.equal(classifyBashCommand('git show refs/ledger/notes', ROOTS, PROJECT_DIR), null);
 });
 
-const GIT_READ_BYPASSES = [
-  'GIT_EXTERNAL_DIFF=/tmp/evil.sh git log _ledger --ext-diff -p -1',
-  'git diff _ledger main --output=.git/hooks/post-checkout',
-  'git blame --output=/tmp/important _ledger',
-  'git -c core.pager=/tmp/evil.sh -p log _ledger -1',
-];
+const GIT_READ_BYPASSES = Object.freeze({
+  envAssignment: 'GIT_PAGER=/tmp/evil.sh git log _ledger -1',
+  externalDiffEnv: 'GIT_EXTERNAL_DIFF=/tmp/evil.sh git log _ledger --ext-diff -p -1',
+  outputOption: 'git diff _ledger main --output=.git/hooks/post-checkout',
+  outputBlame: 'git blame --output=/tmp/important _ledger',
+  configPager: 'git -c core.pager=/tmp/evil.sh -p log _ledger -1',
+  configEnvDiff: 'git --config-env=diff.external=EV diff _ledger',
+  configEnvFsmonitor: 'git --config-env=core.fsmonitor=EV status --short _ledger',
+  optionAbbreviation: 'git grep --op=/tmp/evil.sh _ledger',
+  longerAbbreviation: 'git grep --open=/tmp/evil.sh _ledger',
+  backgroundSegment: 'git log -1 --oneline _ledger & git tag ledger_proof _ledger',
+  backgroundRefKill: 'git log _ledger & git update-ref -d refs/heads/_ledger',
+  refRedirect: 'git rev-parse main > .git/refs/heads/_ledger',
+  commandSubstitution: 'git log -1 _ledger `git branch -D _ledger`',
+  dollarSubstitution: 'git log -1 --format=$(git push origin _ledger) _ledger',
+});
 
 test('classifyBashCommand asks about a ledger read carrying a leading environment assignment', () => {
-  assert.equal(classifyBashCommand(GIT_READ_BYPASSES[0], ROOTS, PROJECT_DIR), 'ask');
-  assert.equal(classifyBashCommand('GIT_PAGER=/tmp/evil.sh git log _ledger -1', ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(GIT_READ_BYPASSES.envAssignment, ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('LC_ALL=C git log _ledger -1', ROOTS, PROJECT_DIR), 'ask');
 });
 
 test('classifyBashCommand asks about a ledger read that writes a file through an output option', () => {
-  assert.equal(classifyBashCommand(GIT_READ_BYPASSES[1], ROOTS, PROJECT_DIR), 'ask');
-  assert.equal(classifyBashCommand(GIT_READ_BYPASSES[2], ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(GIT_READ_BYPASSES.outputOption, ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(GIT_READ_BYPASSES.outputBlame, ROOTS, PROJECT_DIR), 'ask');
 });
 
 test('classifyBashCommand asks about a ledger read that injects git config before the subcommand', () => {
-  assert.equal(classifyBashCommand(GIT_READ_BYPASSES[3], ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(GIT_READ_BYPASSES.configPager, ROOTS, PROJECT_DIR), 'ask');
+});
+
+test('classifyBashCommand asks about config injection through the --config-env spelling', () => {
+  assert.equal(classifyBashCommand(GIT_READ_BYPASSES.configEnvDiff, ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(GIT_READ_BYPASSES.configEnvFsmonitor, ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('git --config-env diff.external=EV diff _ledger', ROOTS, PROJECT_DIR), 'ask');
+});
+
+test('classifyBashCommand asks about an abbreviated spelling of a rejected option', () => {
+  const rejected = [
+    'git grep --op=/tmp/evil.sh _ledger',
+    'git grep --open=/tmp/evil.sh _ledger',
+    'git grep --open-files-in-pager=/tmp/evil.sh _ledger',
+    'git diff _ledger main --outp=/tmp/x',
+    'git diff _ledger main --output=/tmp/x',
+    'git log _ledger --textc -p',
+    'git log _ledger --ext -p',
+  ];
+  for (const command of rejected) {
+    assert.equal(classifyBashCommand(command, ROOTS, PROJECT_DIR), 'ask', command);
+  }
+});
+
+test('classifyBashCommand stays silent for read-only options that merely extend a rejected name', () => {
+  const quiet = [
+    'git diff _ledger main --output-indicator-new=x',
+    'git diff _ledger main --output-indicator-old=Z',
+    'git diff _ledger main --output-indicator-frag=F',
+  ];
+  for (const command of quiet) {
+    assert.equal(classifyBashCommand(command, ROOTS, PROJECT_DIR), null, command);
+  }
+});
+
+test('classifyBashCommand asks when a background segment follows a ledger read', () => {
+  assert.equal(classifyBashCommand(GIT_READ_BYPASSES.backgroundSegment, ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(GIT_READ_BYPASSES.backgroundRefKill, ROOTS, PROJECT_DIR), 'ask');
+});
+
+test('classifyBashCommand asks when a ledger read carries a command substitution', () => {
+  assert.equal(classifyBashCommand(GIT_READ_BYPASSES.commandSubstitution, ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand(GIT_READ_BYPASSES.dollarSubstitution, ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('git log -1 _ledger --format=${IFS}', ROOTS, PROJECT_DIR), 'ask');
+});
+
+test('classifyBashCommand asks when a ledger read redirects into a real file', () => {
+  assert.equal(classifyBashCommand(GIT_READ_BYPASSES.refRedirect, ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('git log -1 _ledger > /tmp/anything', ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('git log -1 _ledger >> /tmp/anything', ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('git rev-parse main >.git/refs/heads/_ledger', ROOTS, PROJECT_DIR), 'ask');
+});
+
+test('classifyBashCommand keeps a discarded or duplicated stream a silent ledger read', () => {
+  assert.equal(classifyBashCommand('git show _ledger --stat 2>/dev/null | head -1', ROOTS, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand('git log _ledger >/dev/null', ROOTS, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand('git log _ledger > /dev/null', ROOTS, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand('git log _ledger 2>&1 | head -1', ROOTS, PROJECT_DIR), null);
+  assert.equal(classifyBashCommand('git show _ledger 2>/dev/null >/dev/null', ROOTS, PROJECT_DIR), null);
 });
 
 test('classifyBashCommand asks about every spelling of a write-capable pre-subcommand option', () => {
@@ -597,8 +665,14 @@ test('classifyBashCommand stays silent for the verified read-only git verbs nami
 
 test('classifyBashCommand stays silent on every ledger read bypass when the guard is disabled', () => {
   const env = { LEDGER_DISABLE_BASH_GUARD: 'true' };
-  for (const command of GIT_READ_BYPASSES) {
-    assert.equal(classifyBashCommand(command, ROOTS, PROJECT_DIR, env), null, command);
+  for (const [name, command] of Object.entries(GIT_READ_BYPASSES)) {
+    assert.equal(classifyBashCommand(command, ROOTS, PROJECT_DIR, env), null, name);
+  }
+});
+
+test('classifyBashCommand asks about every ledger read bypass while the guard is enabled', () => {
+  for (const [name, command] of Object.entries(GIT_READ_BYPASSES)) {
+    assert.equal(classifyBashCommand(command, ROOTS, PROJECT_DIR, {}), 'ask', name);
   }
 });
 
@@ -630,6 +704,13 @@ test('classifyBashCommand stops asking about an unreadable command when the guar
   for (const key of DISABLE_KEYS) {
     assert.equal(classifyBashCommand(undefined, ROOTS, PROJECT_DIR, { [key]: 'true' }), null, key);
     assert.equal(classifyBashCommand(7, ROOTS, PROJECT_DIR, { [key]: 'true' }), null, key);
+  }
+});
+
+test('classifyBashCommand ignores a disable flag reached only through the prototype chain', () => {
+  for (const key of DISABLE_KEYS) {
+    const inherited = Object.create({ [key]: 'true' });
+    assert.equal(classifyBashCommand(LEDGER_WRITE, ROOTS, PROJECT_DIR, inherited), 'ask', key);
   }
 });
 

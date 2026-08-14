@@ -51,19 +51,25 @@ const GIT_VALUE_OPTIONS = Object.freeze(
 );
 const GIT_REJECTED_PRE_OPTIONS = Object.freeze([
   '-c',
+  '--config-env',
   '--exec-path',
   '--git-dir',
   '--namespace',
   '--work-tree',
 ]);
 const GIT_REJECTED_OPTIONS = Object.freeze([
-  '-O',
   '--ext-diff',
   '--open-files-in-pager',
   '--output',
   '--textconv',
 ]);
-const SEGMENT_SPLIT = /\|\||&&|[|;\n\r]/;
+const GIT_REJECTED_BUNDLED_OPTION = '-O';
+const OPTION_VALUE_SPLIT = '=';
+const MIN_OPTION_ABBREVIATION = 3;
+const SEGMENT_SPLIT = /\|\||&&|[|;&\n\r]/;
+const SHELL_SUBSTITUTION = /`|\$\(|\$\{/;
+const REDIRECTION = /\d*(?:>>|>|<)\s*(&\d+|[^\s;|&<>]*)/g;
+const INERT_REDIRECT_TARGETS = Object.freeze(new Set(['', '/dev/null', '&1', '&2']));
 const PATH_SEPARATOR = /[\\/]/;
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const REGEXP_META = /[.*+?^${}()|[\]\\]/g;
@@ -78,7 +84,7 @@ const BASH_GUARD_DISABLE_KEYS = Object.freeze([
   'LEDGER_DISABLE_BASH_GUARD',
   'CLAUDE_PLUGIN_OPTION_DISABLE_BASH_GUARD',
 ]);
-const DISABLED = 'true';
+const DISABLE_FLAG_VALUE = 'true';
 
 function decision(permissionDecision, reason) {
   return {
@@ -166,7 +172,7 @@ function parseGitSegment(segment) {
   if (tokens[index] !== 'git') {
     return null;
   }
-  const assignments = index;
+  const hasEnvAssignments = index > 0;
   index += 1;
   const preOptions = [];
   while (index < tokens.length && tokens[index].startsWith('-')) {
@@ -177,17 +183,38 @@ function parseGitSegment(segment) {
       index += 1;
     }
   }
-  return { assignments, preOptions, subcommand: tokens[index] ?? null, tokens };
+  return { hasEnvAssignments, preOptions, subcommand: tokens[index] ?? null, tokens };
 }
 
-function isRejectedPreOption(option) {
+function isConfigInjectingPreOption(option) {
   return GIT_REJECTED_PRE_OPTIONS.some(
-    (rejected) => option === rejected || option.startsWith(`${rejected}=`),
+    (rejected) => option === rejected || option.startsWith(`${rejected}${OPTION_VALUE_SPLIT}`),
   );
 }
 
-function isRejectedOption(token) {
-  return GIT_REJECTED_OPTIONS.some((rejected) => token.startsWith(rejected));
+function isExecutingOrWritingOption(token) {
+  if (token.startsWith(GIT_REJECTED_BUNDLED_OPTION)) {
+    return true;
+  }
+  const name = token.split(OPTION_VALUE_SPLIT, 1)[0];
+  return GIT_REJECTED_OPTIONS.some(
+    (rejected) =>
+      name === rejected ||
+      (name.length >= MIN_OPTION_ABBREVIATION && rejected.startsWith(name)),
+  );
+}
+
+function hasOnlyInertRedirection(segment) {
+  for (const match of segment.matchAll(REDIRECTION)) {
+    if (!INERT_REDIRECT_TARGETS.has(match[1])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isInertSegment(segment) {
+  return !SHELL_SUBSTITUTION.test(segment) && hasOnlyInertRedirection(segment);
 }
 
 function isGitRead(segment) {
@@ -195,10 +222,13 @@ function isGitRead(segment) {
   if (parsed === null || !GIT_READ_SUBCOMMANDS.has(parsed.subcommand)) {
     return false;
   }
-  if (parsed.assignments > 0 || parsed.preOptions.some(isRejectedPreOption)) {
+  if (parsed.hasEnvAssignments || parsed.preOptions.some(isConfigInjectingPreOption)) {
     return false;
   }
-  return !parsed.tokens.some(isRejectedOption);
+  if (parsed.tokens.some(isExecutingOrWritingOption)) {
+    return false;
+  }
+  return isInertSegment(segment);
 }
 
 function isLedgerRead(command, triggers) {
@@ -219,7 +249,9 @@ function triggerReason(trigger) {
 
 function isBashGuardDisabled(env) {
   const source = env && typeof env === 'object' ? env : {};
-  return BASH_GUARD_DISABLE_KEYS.some((key) => source[key] === DISABLED);
+  return BASH_GUARD_DISABLE_KEYS.some(
+    (key) => Object.hasOwn(source, key) && source[key] === DISABLE_FLAG_VALUE,
+  );
 }
 
 function bashJudgment(command, roots, projectDir, env) {
