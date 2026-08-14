@@ -9,7 +9,7 @@ const LEDGER_TOOL = /^mcp__(?:plugin_logbook_)?ledger__(.+)$/;
 const TOOL_REGISTRY = '../../src/tools/registry.mjs';
 const REF_TRIGGERS = Object.freeze([DEFAULT_LEDGER_BRANCH, 'refs/ledger/']);
 const CONSTANT_TRIGGERS = Object.freeze([...REF_TRIGGERS, 'CLAUDE_PLUGIN_DATA']);
-const GIT_READ_SUBCOMMANDS = Object.freeze(
+export const GIT_READ_SUBCOMMANDS = Object.freeze(
   new Set([
     'blame',
     'cat-file',
@@ -24,7 +24,6 @@ const GIT_READ_SUBCOMMANDS = Object.freeze(
     'for-each-ref',
     'get-tar-commit-id',
     'grep',
-    'help',
     'log',
     'ls-files',
     'ls-tree',
@@ -46,9 +45,6 @@ const GIT_READ_SUBCOMMANDS = Object.freeze(
     'version',
   ]),
 );
-const GIT_VALUE_OPTIONS = Object.freeze(
-  new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path']),
-);
 const GIT_REJECTED_PRE_OPTIONS = Object.freeze([
   '-c',
   '--config-env',
@@ -57,6 +53,16 @@ const GIT_REJECTED_PRE_OPTIONS = Object.freeze([
   '--namespace',
   '--work-tree',
 ]);
+const GIT_ATTACHED_VALUE_PRE_OPTIONS = Object.freeze(['--exec-path']);
+const GIT_REPO_PRE_OPTION = '-C';
+const GIT_VALUE_OPTIONS = Object.freeze(
+  new Set([
+    GIT_REPO_PRE_OPTION,
+    ...GIT_REJECTED_PRE_OPTIONS.filter(
+      (option) => !GIT_ATTACHED_VALUE_PRE_OPTIONS.includes(option),
+    ),
+  ]),
+);
 const GIT_REJECTED_OPTIONS = Object.freeze([
   '--ext-diff',
   '--open-files-in-pager',

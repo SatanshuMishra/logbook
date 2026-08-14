@@ -645,6 +645,11 @@ test('classifyBashCommand keeps a post-subcommand -c a legitimate read flag', ()
   assert.equal(classifyBashCommand('git -C /repo log -c _ledger -1', ROOTS, PROJECT_DIR), null);
 });
 
+test('classifyBashCommand asks about git help, which spawns a pager or a browser', () => {
+  assert.equal(classifyBashCommand('git help _ledger', ROOTS, PROJECT_DIR), 'ask');
+  assert.equal(classifyBashCommand('git help -w _ledger', ROOTS, PROJECT_DIR), 'ask');
+});
+
 test('classifyBashCommand stays silent for the verified read-only git verbs naming the ledger ref', () => {
   const quiet = [
     'git merge-base _ledger main',
