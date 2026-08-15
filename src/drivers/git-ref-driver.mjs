@@ -510,11 +510,10 @@ export class GitRefDriver extends LocalDriver {
 
   async observeBranch(binding) {
     assertBinding(binding);
-    const repo = binding.repo;
     const branch = binding.branch;
     const firstCommit = binding.first_commit ?? null;
-    const base = await resolveIntegrationBase(repo);
-    const scope = hostScope(repo);
+    const base = await resolveIntegrationBase(this.repoDir);
+    const scope = hostScope(this.repoDir);
     const headSha = await revParseOrNull(scope, `refs/heads/${branch}`);
     if (headSha === null) {
       return this.#observeDeleted(scope, firstCommit, base);
@@ -569,13 +568,13 @@ export class GitRefDriver extends LocalDriver {
 
   async observeNewBranch(repo, branch) {
     assertRepoBranch('observeNewBranch', repo, branch);
-    const scope = hostScope(repo);
+    const scope = hostScope(this.repoDir);
     const ref = `refs/heads/${branch}`;
     const headSha = await revParseOrNull(scope, ref);
     if (headSha === null) {
       return { thread_id_trailer: null, first_commit: null };
     }
-    const base = await resolveIntegrationBase(repo);
+    const base = await resolveIntegrationBase(this.repoDir);
     const firstCommit = await firstCommitOf(scope, ref, base);
     const trailer = firstCommit ? await threadIdTrailer(scope, firstCommit) : null;
     return { thread_id_trailer: trailer, first_commit: firstCommit };
@@ -584,7 +583,7 @@ export class GitRefDriver extends LocalDriver {
   async listRepoBranches(repo) {
     assertRepo('listRepoBranches', repo);
     const { stdout } = await scopedExec(
-      hostScope(repo),
+      hostScope(this.repoDir),
       ['for-each-ref', '--format=%(refname:short)', 'refs/heads/'],
     );
     return stdout.split('\n').map((s) => s.trim()).filter(Boolean);
