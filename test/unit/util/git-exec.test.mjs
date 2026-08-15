@@ -56,3 +56,30 @@ test('gitExec resolves with the exit code when check:false', async (t) => {
 test('gitExec rejects a non-array args', async () => {
   await assert.rejects(() => gitExec('/tmp', 'status'), /array/);
 });
+
+test('gitExec names the working directory that does not exist instead of reporting ENOENT', async (t) => {
+  const dir = await initRepo(t);
+  const absent = join(dir, 'gone');
+  await assert.rejects(
+    () => gitExec(absent, ['status']),
+    (error) => {
+      assert.equal(error.message.includes(absent), true, `the failure hid the missing directory: ${error.message}`);
+      assert.doesNotMatch(error.message, /spawn git ENOENT/);
+      assert.equal(error.cause.code, 'ENOENT');
+      return true;
+    },
+  );
+});
+
+test('gitExec leaves a spawn failure that is not a missing directory as it arrived', async (t) => {
+  const dir = await initRepo(t);
+  const emptyPath = { ...process.env, PATH: join(dir, 'no-binaries-here') };
+  await assert.rejects(
+    () => gitExec(dir, ['status'], { env: emptyPath }),
+    (error) => {
+      assert.equal(error.code, 'ENOENT');
+      assert.equal(error.syscall, 'spawn git');
+      return true;
+    },
+  );
+});
