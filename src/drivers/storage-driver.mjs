@@ -92,4 +92,8 @@ export class StorageDriver {
   async listRepoBranches(repo) {
     throw new Error('listRepoBranches: git drivers only');
   }
+
+  async repoIdentity() {
+    throw new Error('repoIdentity: git drivers only');
+  }
 }

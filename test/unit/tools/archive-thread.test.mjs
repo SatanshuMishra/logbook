@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { basename, dirname } from 'node:path';
 import archiveThread from '../../../src/tools/archive-thread.mjs';
 import openThread from '../../../src/tools/open-thread.mjs';
 import bindBranch from '../../../src/tools/bind-branch.mjs';
@@ -31,7 +31,7 @@ test('archive_thread releases a pointer naming the archived thread even when tha
   const ctx = await makeGitToolCtx(t);
   const { thread } = await openThread.handler(ctx, { title: 'A', completion_criteria: [{ text: 'ship it' }] });
   await transitionThread.handler(ctx, { thread_id: thread.id, to_status: 'paused' });
-  await bindBranch.handler(ctx, { thread_id: thread.id, repo: 'acme/app', branch: 'feat/x' });
+  await bindBranch.handler(ctx, { thread_id: thread.id, repo: basename(ctx.projectDir), branch: 'feat/x' });
   assert.equal(await readActiveThread(ctx), thread.id);
   const result = await archiveThread.handler(ctx, { thread_id: thread.id, reason: 'obsolete' });
   assert.equal(result.thread.status, 'abandoned');

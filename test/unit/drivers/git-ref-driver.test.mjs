@@ -15,7 +15,7 @@ import {
   extTransportParametersEnv,
 } from '../../fixtures/git-repos.mjs';
 import { readFile, stat, writeFile, mkdir, realpath } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { gitExec } from '../../../src/util/git-exec.mjs';
 import { mintLedgerRoot } from '../../../src/drivers/git-ledger.mjs';
 
@@ -494,6 +494,64 @@ test('listRepoBranches validates repo at the boundary', async (t) => {
   const repo = await initGitRepo(t);
   const driver = await makeGitDriver(t, repo);
   await assert.rejects(() => driver.listRepoBranches(''), /repo must be a non-empty string/);
+});
+
+test('listRepoBranches reads the branches of its own checkout, never of the repo label', async (t) => {
+  const repo = await initGitRepo(t);
+  await commitFile(repo, 'base.txt', 'base\n', 'chore: base');
+  await gitExec(repo, ['branch', 'feature-x']);
+  const driver = await makeGitDriver(t, repo);
+  const branches = (await driver.listRepoBranches('acme/app')).sort();
+  assert.deepEqual(branches, ['feature-x', 'main']);
+});
+
+test('observeBranch observes its own checkout when the binding repo is an identifier', async (t) => {
+  const { repo, featureHead } = await featureRepoMergedInto(t);
+  process.env.LEDGER_BASE_REF = 'main';
+  t.after(() => { delete process.env.LEDGER_BASE_REF; });
+  const driver = await makeGitDriver(t, repo);
+  const obs = await driver.observeBranch({ repo: 'acme/app', branch: 'feature', first_commit: null });
+  assert.equal(obs.branch_exists, true);
+  assert.equal(obs.head_sha, featureHead);
+  assert.equal(obs.merged, true);
+});
+
+test('observeNewBranch observes its own checkout when the repo is an identifier', async (t) => {
+  const repo = await initGitRepo(t);
+  await commitFile(repo, 'base.txt', 'base\n', 'chore: base');
+  await gitExec(repo, ['checkout', '-q', '-b', 'feature']);
+  await commitFile(repo, 'feat.txt', 'feat\n', 'feat: work');
+  process.env.LEDGER_BASE_REF = 'main';
+  t.after(() => { delete process.env.LEDGER_BASE_REF; });
+  const driver = await makeGitDriver(t, repo);
+  const obs = await driver.observeNewBranch('acme/app', 'feature');
+  assert.match(obs.first_commit, /^[0-9a-f]{40}$/);
+});
+
+test('repoIdentity names the origin owner/name and accepts the directory aliases', async (t) => {
+  const repo = await initGitRepo(t);
+  await gitExec(repo, ['remote', 'add', 'origin', 'git@github.com:acme/app.git']);
+  const driver = await makeGitDriver(t, repo);
+  const identity = await driver.repoIdentity();
+  assert.equal(identity.canonical, 'acme/app');
+  assert.equal(identity.accepted.includes('acme/app'), true);
+  assert.equal(identity.accepted.includes(basename(repo)), true);
+  assert.equal(identity.accepted.includes(repo), true);
+});
+
+test('repoIdentity reads an https origin url down to its owner/name', async (t) => {
+  const repo = await initGitRepo(t);
+  await gitExec(repo, ['remote', 'add', 'origin', 'https://github.com/acme/app.git']);
+  const driver = await makeGitDriver(t, repo);
+  assert.equal((await driver.repoIdentity()).canonical, 'acme/app');
+});
+
+test('repoIdentity falls back to the work-tree directory name without an origin remote', async (t) => {
+  const repo = await initGitRepo(t);
+  const driver = await makeGitDriver(t, repo);
+  const identity = await driver.repoIdentity();
+  assert.equal(identity.canonical, basename(repo));
+  assert.equal(identity.accepted.includes(repo), true);
 });
 
 test('sync is a no-op with attempts:0 when there is no remote', async (t) => {

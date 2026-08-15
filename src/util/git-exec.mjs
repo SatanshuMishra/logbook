@@ -1,6 +1,24 @@
 import { execFile } from 'node:child_process';
+import { stat } from 'node:fs/promises';
 
 const MAX_BUFFER = 64 * 1024 * 1024;
+
+async function missingWorkingDirectory(repoDir) {
+  try {
+    return !(await stat(repoDir)).isDirectory();
+  } catch {
+    return true;
+  }
+}
+
+async function spawnFailure(repoDir, error) {
+  if (error?.code !== 'ENOENT') return error;
+  if (!(await missingWorkingDirectory(repoDir))) return error;
+  return new Error(
+    `gitExec: git could not start because its working directory ${repoDir} is not a directory`,
+    { cause: error },
+  );
+}
 
 export function gitExec(repoDir, args, options = {}) {
   const { env, check = true } = options;
@@ -18,7 +36,7 @@ export function gitExec(repoDir, args, options = {}) {
       { cwd: repoDir, env: mergedEnv, maxBuffer: MAX_BUFFER, encoding: 'utf8' },
       (error, stdout, stderr) => {
         if (error && typeof error.code !== 'number') {
-          reject(error);
+          spawnFailure(repoDir, error).then(reject, reject);
           return;
         }
         const code = error ? error.code : 0;

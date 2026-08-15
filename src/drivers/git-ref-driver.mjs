@@ -1,5 +1,5 @@
 import { rm, mkdir, open, readFile, stat, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { LocalDriver } from './local-driver.mjs';
@@ -169,6 +169,20 @@ async function threadIdTrailer(scope, commit) {
   if (code !== 0) return null;
   const first = stdout.split('\n').map((s) => s.trim()).find((s) => s.length > 0);
   return first || null;
+}
+
+function remoteSlug(url) {
+  if (typeof url !== 'string') return null;
+  const trimmed = url.trim().replace(/\/+$/, '').replace(/\.git$/, '');
+  if (trimmed === '') return null;
+  const afterScheme = trimmed.includes('://')
+    ? trimmed.slice(trimmed.indexOf('://') + '://'.length)
+    : trimmed;
+  const afterHost = afterScheme.includes(':')
+    ? afterScheme.slice(afterScheme.lastIndexOf(':') + 1)
+    : afterScheme;
+  const segments = afterHost.split('/').filter(Boolean);
+  return segments.length >= 2 ? segments.slice(-2).join('/') : null;
 }
 
 function assertRepo(fn, repo) {
@@ -510,11 +524,10 @@ export class GitRefDriver extends LocalDriver {
 
   async observeBranch(binding) {
     assertBinding(binding);
-    const repo = binding.repo;
     const branch = binding.branch;
     const firstCommit = binding.first_commit ?? null;
-    const base = await resolveIntegrationBase(repo);
-    const scope = hostScope(repo);
+    const base = await resolveIntegrationBase(this.repoDir);
+    const scope = hostScope(this.repoDir);
     const headSha = await revParseOrNull(scope, `refs/heads/${branch}`);
     if (headSha === null) {
       return this.#observeDeleted(scope, firstCommit, base);
@@ -569,13 +582,13 @@ export class GitRefDriver extends LocalDriver {
 
   async observeNewBranch(repo, branch) {
     assertRepoBranch('observeNewBranch', repo, branch);
-    const scope = hostScope(repo);
+    const scope = hostScope(this.repoDir);
     const ref = `refs/heads/${branch}`;
     const headSha = await revParseOrNull(scope, ref);
     if (headSha === null) {
       return { thread_id_trailer: null, first_commit: null };
     }
-    const base = await resolveIntegrationBase(repo);
+    const base = await resolveIntegrationBase(this.repoDir);
     const firstCommit = await firstCommitOf(scope, ref, base);
     const trailer = firstCommit ? await threadIdTrailer(scope, firstCommit) : null;
     return { thread_id_trailer: trailer, first_commit: firstCommit };
@@ -584,9 +597,24 @@ export class GitRefDriver extends LocalDriver {
   async listRepoBranches(repo) {
     assertRepo('listRepoBranches', repo);
     const { stdout } = await scopedExec(
-      hostScope(repo),
+      hostScope(this.repoDir),
       ['for-each-ref', '--format=%(refname:short)', 'refs/heads/'],
     );
     return stdout.split('\n').map((s) => s.trim()).filter(Boolean);
+  }
+
+  async repoIdentity() {
+    const { code, stdout } = await scopedExec(
+      hostScope(this.repoDir),
+      ['remote', 'get-url', this.remote],
+      { check: false },
+    );
+    const slug = code === 0 ? remoteSlug(stdout) : null;
+    const accepted = [slug, basename(this.repoDir), this.repoDir, resolve(this.repoDir)]
+      .filter((label) => typeof label === 'string' && label.length > 0);
+    return Object.freeze({
+      canonical: accepted[0],
+      accepted: Object.freeze([...new Set(accepted)]),
+    });
   }
 }
