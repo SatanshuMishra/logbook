@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chmod, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import transitionThread from '../../../src/tools/transition-thread.mjs';
 import openThread from '../../../src/tools/open-thread.mjs';
 import updateThread from '../../../src/tools/update-thread.mjs';
@@ -70,7 +70,7 @@ test('transition_thread releases a pointer naming the thread even when that thre
   const ctx = await makeGitToolCtx(t);
   const { thread } = await openThread.handler(ctx, { title: 'T', completion_criteria: [{ text: 'ship it' }] });
   await transitionThread.handler(ctx, { thread_id: thread.id, to_status: 'paused' });
-  await bindBranch.handler(ctx, { thread_id: thread.id, repo: 'acme/app', branch: 'feat/x' });
+  await bindBranch.handler(ctx, { thread_id: thread.id, repo: basename(ctx.projectDir), branch: 'feat/x' });
   assert.equal(await readActiveThread(ctx), thread.id);
   const result = await transitionThread.handler(ctx, {
     thread_id: thread.id, to_status: 'abandoned', abandoned_reason: 'drop it',

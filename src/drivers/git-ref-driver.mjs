@@ -1,5 +1,5 @@
 import { rm, mkdir, open, readFile, stat, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { LocalDriver } from './local-driver.mjs';
@@ -169,6 +169,20 @@ async function threadIdTrailer(scope, commit) {
   if (code !== 0) return null;
   const first = stdout.split('\n').map((s) => s.trim()).find((s) => s.length > 0);
   return first || null;
+}
+
+function remoteSlug(url) {
+  if (typeof url !== 'string') return null;
+  const trimmed = url.trim().replace(/\/+$/, '').replace(/\.git$/, '');
+  if (trimmed === '') return null;
+  const afterScheme = trimmed.includes('://')
+    ? trimmed.slice(trimmed.indexOf('://') + '://'.length)
+    : trimmed;
+  const afterHost = afterScheme.includes(':')
+    ? afterScheme.slice(afterScheme.lastIndexOf(':') + 1)
+    : afterScheme;
+  const segments = afterHost.split('/').filter(Boolean);
+  return segments.length >= 2 ? segments.slice(-2).join('/') : null;
 }
 
 function assertRepo(fn, repo) {
@@ -587,5 +601,20 @@ export class GitRefDriver extends LocalDriver {
       ['for-each-ref', '--format=%(refname:short)', 'refs/heads/'],
     );
     return stdout.split('\n').map((s) => s.trim()).filter(Boolean);
+  }
+
+  async repoIdentity() {
+    const { code, stdout } = await scopedExec(
+      hostScope(this.repoDir),
+      ['remote', 'get-url', this.remote],
+      { check: false },
+    );
+    const slug = code === 0 ? remoteSlug(stdout) : null;
+    const accepted = [slug, basename(this.repoDir), this.repoDir, resolve(this.repoDir)]
+      .filter((label) => typeof label === 'string' && label.length > 0);
+    return Object.freeze({
+      canonical: accepted[0],
+      accepted: Object.freeze([...new Set(accepted)]),
+    });
   }
 }

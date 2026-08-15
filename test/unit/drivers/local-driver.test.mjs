@@ -443,6 +443,11 @@ test('LocalDriver.listRepoBranches throws git-drivers-only', async () => {
   await assert.rejects(() => driver.listRepoBranches('repo'), /listRepoBranches: git drivers only/);
 });
 
+test('LocalDriver.repoIdentity throws git-drivers-only', async () => {
+  const driver = new LocalDriver('/abs/ledger');
+  await assert.rejects(() => driver.repoIdentity(), /repoIdentity: git drivers only/);
+});
+
 test('writeThread validates, atomic-writes, and round-trips via readThread', async (t) => {
   const root = await scratchRoot(t);
   const driver = new LocalDriver(root);

@@ -43,6 +43,21 @@ export function unknownThread(tool, field, id) {
   };
 }
 
+export function foreignRepo(tool, field, repo, expected) {
+  return {
+    code: 'invalid_value',
+    field: `${tool}.${field}`,
+    expected: `${expected}, the repository this ledger observes`,
+    example: expected,
+    retryable: true,
+    remedy: echoBetween(
+      'this ledger cannot observe ',
+      `; re-send with ${expected}`,
+      repo,
+    ),
+  };
+}
+
 export function terminalThread(tool, status) {
   return {
     code: 'terminal_thread',
