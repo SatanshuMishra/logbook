@@ -3,7 +3,6 @@ import assert from 'node:assert/strict'
 import { z } from 'zod'
 import { declare } from '../../src/schema/declare.ts'
 import type { Declared } from '../../src/schema/declare.ts'
-import { resolveNode } from '../../src/schema/example.ts'
 import { ThreadRecord } from '../../src/schema/thread.ts'
 import type { Thread } from '../../src/schema/thread.ts'
 import { DecisionRecord } from '../../src/schema/decision.ts'
@@ -33,11 +32,11 @@ test('schema.refusal-is-generated', () => {
   assert.equal(r.retryable, true)
 })
 
-type JsonSchemaNode = Record<string, unknown>
 type PathSegment = string | number
 type MutationCandidate = { path: PathSegment[]; cap: number | null }
+type ZodAny = z.ZodType<unknown>
 
-const isNode = (value: unknown): value is JsonSchemaNode => typeof value === 'object' && value !== null
+const isNode = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
 
 const mulberry32 = (seed: number): (() => number) => {
   let state = seed
@@ -107,34 +106,109 @@ const setAtDottedPath = (record: Record<string, unknown>, dotted: string, value:
   return clone
 }
 
-const nodeAtDottedPath = (root: JsonSchemaNode, dotted: string): JsonSchemaNode => {
-  if (dotted === '(root)') {
-    return root
+const zodDefType = (schema: ZodAny): string => (schema as unknown as { def: { type: string } }).def.type
+
+const zodUnwrap = (schema: ZodAny): ZodAny => {
+  const type = zodDefType(schema)
+  if (type === 'nullable' || type === 'optional' || type === 'default') {
+    return zodUnwrap((schema as unknown as { unwrap: () => ZodAny }).unwrap())
   }
-  let cursor: JsonSchemaNode = root
+  return schema
+}
+
+const zodShape = (schema: ZodAny): Record<string, ZodAny> =>
+  (schema as unknown as { shape: Record<string, ZodAny> }).shape
+
+const zodElement = (schema: ZodAny): ZodAny => (schema as unknown as { element: ZodAny }).element
+
+const zodMaxLength = (schema: ZodAny): number | null => {
+  const value = (schema as unknown as { maxLength: number | null }).maxLength
+  return typeof value === 'number' ? value : null
+}
+
+const zodEnumOptions = (schema: ZodAny): unknown[] => (schema as unknown as { options: unknown[] }).options
+
+const isStringLikeZodType = (schema: ZodAny): boolean => {
+  const type = zodDefType(schema)
+  if (type === 'string') {
+    return true
+  }
+  if (type === 'enum') {
+    const options = zodEnumOptions(schema)
+    return Array.isArray(options) && options.length > 0 && options.every((value) => typeof value === 'string')
+  }
+  return false
+}
+
+const zodTypeAtDottedPath = (schema: ZodAny, dotted: string): ZodAny => {
+  if (dotted === '(root)') {
+    return zodUnwrap(schema)
+  }
+  let cursor = zodUnwrap(schema)
   for (const segment of dotted.split('.')) {
-    const resolved = resolveNode(root, cursor)
     if (/^\d+$/.test(segment)) {
-      cursor = isNode(resolved.items) ? resolved.items : resolved
+      cursor = zodUnwrap(zodElement(cursor))
       continue
     }
-    const properties = resolved.properties
-    if (isNode(properties) && segment in properties) {
-      const next = (properties as Record<string, unknown>)[segment]
-      cursor = isNode(next) ? next : resolved
-      continue
+    const shape = zodShape(cursor)
+    const next = shape[segment]
+    if (next === undefined) {
+      throw new Error(`zodTypeAtDottedPath found no field named "${segment}" while resolving "${dotted}"`)
     }
-    cursor = resolved
+    cursor = zodUnwrap(next)
   }
   return cursor
+}
+
+const deriveCandidates = (schema: ZodAny, sample: unknown, path: PathSegment[]): MutationCandidate[] => {
+  const unwrapped = zodUnwrap(schema)
+  const type = zodDefType(unwrapped)
+
+  if (type === 'object') {
+    const shape = zodShape(unwrapped)
+    const record = isNode(sample) ? sample : {}
+    return Object.keys(shape).flatMap((key) => {
+      const fieldSchema = shape[key]
+      if (fieldSchema === undefined) {
+        return []
+      }
+      const fieldPath = [...path, key]
+      const fieldUnwrapped = zodUnwrap(fieldSchema)
+      const leaf: MutationCandidate = {
+        path: fieldPath,
+        cap: isStringLikeZodType(fieldUnwrapped) ? zodMaxLength(fieldUnwrapped) : null
+      }
+      return [leaf, ...deriveCandidates(fieldSchema, record[key], fieldPath)]
+    })
+  }
+
+  if (type === 'array') {
+    const element = zodElement(unwrapped)
+    const elementUnwrapped = zodUnwrap(element)
+    if (zodDefType(elementUnwrapped) !== 'object') {
+      return []
+    }
+    const items = Array.isArray(sample) ? sample : []
+    const first: unknown = items[0]
+    if (first === undefined) {
+      throw new Error(
+        `deriveCandidates needs a populated sample array at "${path.join('.')}" to reach its array-of-object branch`
+      )
+    }
+    return deriveCandidates(element, first, [...path, 0])
+  }
+
+  return []
 }
 
 const runRefusalExampleProperty = <T extends Record<string, unknown>>(
   declaration: Declared<T>,
   validRecord: T,
-  candidates: readonly MutationCandidate[],
   seed: number
 ): void => {
+  const candidates = deriveCandidates(declaration.schema, validRecord, [])
+  assert.ok(candidates.length > 0, `no mutation candidates were derived for ${declaration.name}`)
+
   const random = mulberry32(seed)
   for (let i = 0; i < 200; i += 1) {
     const candidate = pickAt(candidates, Math.floor(random() * candidates.length))
@@ -150,9 +224,8 @@ const runRefusalExampleProperty = <T extends Record<string, unknown>>(
       continue
     }
 
-    const targetNode = nodeAtDottedPath(declaration.jsonSchema, result.field)
-    const resolvedTarget = resolveNode(declaration.jsonSchema, targetNode)
-    const repairedValue = resolvedTarget.type === 'string' ? result.example : JSON.parse(result.example)
+    const targetType = zodTypeAtDottedPath(declaration.schema, result.field)
+    const repairedValue = isStringLikeZodType(targetType) ? result.example : JSON.parse(result.example)
     const repaired = setAtDottedPath(validRecord, result.field, repairedValue)
 
     const repairedResult = declaration.parse(repaired)
@@ -171,14 +244,16 @@ test('schema.refusal-example-always-revalidates', () => {
     title: 'a',
     status: 'open',
     blocked_by: null,
-    completion_criteria: [],
+    completion_criteria: [
+      { id: '0'.repeat(26), ordinal: 1, text: 'a', done: false, kind: 'planned', struck_by: null }
+    ],
     spine: {
       active_goal: 'a',
       next_step: 'a',
       last_session: 'a',
-      open_risks: [],
-      key_decisions: [],
-      out_of_scope: []
+      open_risks: [{ id: '0'.repeat(26), scope: 'a', text: 'a', refs: ['a'] }],
+      key_decisions: [{ id: '0'.repeat(26), decision_id: '0'.repeat(26), title: 'a', scope: 'a' }],
+      out_of_scope: [{ id: '0'.repeat(26), text: 'a' }]
     },
     created_at: '2024-01-01T00:00:00.000Z',
     updated_at: '2024-01-01T00:00:00.000Z'
@@ -189,10 +264,10 @@ test('schema.refusal-example-always-revalidates', () => {
     thread_id: '0'.repeat(26),
     title: 'a',
     context: 'a',
-    options: [],
+    options: ['a'],
     outcome: 'a',
     commit: null,
-    supersedes: [],
+    supersedes: ['0'.repeat(26)],
     created_at: '2024-01-01T00:00:00.000Z'
   }
 
@@ -204,53 +279,48 @@ test('schema.refusal-example-always-revalidates', () => {
     created_at: '2024-01-01T00:00:00.000Z'
   }
 
-  runRefusalExampleProperty(
-    ThreadRecord,
-    validThread,
-    [
-      { path: ['id'], cap: null },
-      { path: ['slug'], cap: 64 },
-      { path: ['title'], cap: 200 },
-      { path: ['status'], cap: null },
-      { path: ['blocked_by'], cap: 500 },
-      { path: ['completion_criteria'], cap: null },
-      { path: ['spine'], cap: null },
-      { path: ['spine', 'active_goal'], cap: 500 },
-      { path: ['spine', 'next_step'], cap: 500 },
-      { path: ['spine', 'last_session'], cap: 500 },
-      { path: ['created_at'], cap: null },
-      { path: ['updated_at'], cap: null }
+  runRefusalExampleProperty(ThreadRecord, validThread, 1)
+  runRefusalExampleProperty(DecisionRecord, validDecision, 2)
+  runRefusalExampleProperty(SessionRecord, validSession, 3)
+})
+
+test('schema.refusal-example-property.candidates-reach-nested-and-array-branches', () => {
+  const validThread: Thread = {
+    id: '0'.repeat(26),
+    slug: 'a',
+    title: 'a',
+    status: 'open',
+    blocked_by: null,
+    completion_criteria: [
+      { id: '0'.repeat(26), ordinal: 1, text: 'a', done: false, kind: 'planned', struck_by: null }
     ],
-    1
+    spine: {
+      active_goal: 'a',
+      next_step: 'a',
+      last_session: 'a',
+      open_risks: [{ id: '0'.repeat(26), scope: 'a', text: 'a', refs: ['a'] }],
+      key_decisions: [{ id: '0'.repeat(26), decision_id: '0'.repeat(26), title: 'a', scope: 'a' }],
+      out_of_scope: [{ id: '0'.repeat(26), text: 'a' }]
+    },
+    created_at: '2024-01-01T00:00:00.000Z',
+    updated_at: '2024-01-01T00:00:00.000Z'
+  }
+
+  const candidatePaths = deriveCandidates(ThreadRecord.schema, validThread, []).map((candidate) =>
+    candidate.path.join('.')
   )
 
-  runRefusalExampleProperty(
-    DecisionRecord,
-    validDecision,
-    [
-      { path: ['id'], cap: null },
-      { path: ['thread_id'], cap: null },
-      { path: ['title'], cap: 200 },
-      { path: ['context'], cap: 4000 },
-      { path: ['options'], cap: null },
-      { path: ['outcome'], cap: 4000 },
-      { path: ['commit'], cap: null },
-      { path: ['supersedes'], cap: null },
-      { path: ['created_at'], cap: null }
-    ],
-    2
-  )
-
-  runRefusalExampleProperty(
-    SessionRecord,
-    validSession,
-    [
-      { path: ['id'], cap: null },
-      { path: ['thread_id'], cap: null },
-      { path: ['actor'], cap: 100 },
-      { path: ['body'], cap: 8000 },
-      { path: ['created_at'], cap: null }
-    ],
-    3
-  )
+  for (const expected of [
+    'spine.open_risks',
+    'spine.open_risks.0.text',
+    'spine.open_risks.0.refs',
+    'spine.key_decisions',
+    'spine.key_decisions.0.title',
+    'spine.out_of_scope',
+    'spine.out_of_scope.0.text',
+    'completion_criteria.0.text',
+    'completion_criteria.0.struck_by'
+  ]) {
+    assert.ok(candidatePaths.includes(expected), `expected a derived candidate at "${expected}"`)
+  }
 })
