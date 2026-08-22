@@ -9,7 +9,7 @@
   "scripts": {
     "test": "node --test",
     "rebuild:typecheck": "tsc -p rebuild/tsconfig.json --noEmit",
-    "rebuild:test": "node --test rebuild/test/unit/**/*.test.ts rebuild/test/store/**/*.test.ts rebuild/test/contract/**/*.test.ts",
+    "rebuild:test": "node --test \"rebuild/test/unit/**/*.test.ts\" \"rebuild/test/store/**/*.test.ts\" \"rebuild/test/contract/**/*.test.ts\"",
     "rebuild:build": "tsc -p rebuild/tsconfig.json && chmod +x rebuild/dist/bin/*.js"
   },
   "dependencies": {
