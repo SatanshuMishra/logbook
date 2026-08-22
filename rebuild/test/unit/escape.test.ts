@@ -1,24 +1,47 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { escapeStored, clipGraphemes } from '../../src/render/escape.ts'
+import { census } from '../support/census.ts'
+
+const MAX_CODE_POINT = 0x10ffff
+const SURROGATE_LOW = 0xd800
+const SURROGATE_HIGH = 0xdfff
+const ORDINARY_SPACE = 0x20
+const LINE_SEPARATOR = 0x2028
+const PARAGRAPH_SEPARATOR = 0x2029
+const FORMAT_CLASS = /\p{Cf}/u
+const CONTROL_CLASS = /\p{Cc}/u
+const SEPARATOR_CLASS = /\p{Zs}/u
+
+const isInEscapableUnion = (codePoint: number): boolean => {
+  if (codePoint === LINE_SEPARATOR || codePoint === PARAGRAPH_SEPARATOR) return true
+  const char = String.fromCodePoint(codePoint)
+  if (CONTROL_CLASS.test(char)) return true
+  if (SEPARATOR_CLASS.test(char)) return codePoint !== ORDINARY_SPACE
+  return FORMAT_CLASS.test(char)
+}
+
+const collectEscapableUnion = (): number[] => {
+  const collected: number[] = []
+  for (let codePoint = 0; codePoint <= MAX_CODE_POINT; codePoint += 1) {
+    if (codePoint >= SURROGATE_LOW && codePoint <= SURROGATE_HIGH) continue
+    if (isInEscapableUnion(codePoint)) collected.push(codePoint)
+  }
+  return collected
+}
+
+const expectedEscapedForm = (codePoint: number): string =>
+  `U+${codePoint.toString(16).toUpperCase().padStart(4, '0')}`
 
 test('escape.covers-both-classes', () => {
-  const cases: Array<[string, string]> = [
-    ['\u200B', 'U+200B'],
-    ['\u200E', 'U+200E'],
-    ['\u2028', 'U+2028'],
-    ['\u2029', 'U+2029'],
-    ['\r', 'U+000D'],
-    ['\n', 'U+000A'],
-    ['\t', 'U+0009'],
-    ['\u0000', 'U+0000']
-  ]
-  const input = cases.map(([char]) => char).join('x')
-  const escaped = escapeStored(input)
-  for (const [char, hex] of cases) {
-    assert.ok(escaped.includes(hex), `missing ${hex} for ${JSON.stringify(char)}`)
-    assert.ok(!escaped.includes(char), `raw character survived for ${hex}`)
-  }
+  const union = collectEscapableUnion()
+  assert.ok(union.length > 0)
+  census(union, (codePoint) => {
+    const char = String.fromCodePoint(codePoint)
+    const escaped = escapeStored(char)
+    if (escaped.includes(char)) return 'unclassifiable'
+    return escaped === expectedEscapedForm(codePoint) ? 'allowed' : 'forbidden'
+  })
 })
 
 test('escape.title-cannot-forge-heading', () => {
