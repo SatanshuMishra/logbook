@@ -1,0 +1,33 @@
+export const THREAD_TITLE_MAX = 200
+export const THREAD_SLUG_MAX = 64
+export const THREAD_BLOCKED_BY_MAX = 500
+
+export const SPINE_ACTIVE_GOAL_MAX = 500
+export const SPINE_NEXT_STEP_MAX = 500
+export const SPINE_LAST_SESSION_MAX = 500
+
+export const CRITERIA_MAX_ELEMENTS = 40
+export const CRITERION_TEXT_MAX = 500
+
+export const OPEN_RISKS_MAX_ELEMENTS = 40
+export const RISK_TEXT_MAX = 500
+export const RISK_REFS_MAX_ELEMENTS = 10
+export const RISK_REF_MAX = 200
+
+export const KEY_DECISIONS_MAX_ELEMENTS = 200
+export const KEY_DECISION_TITLE_MAX = 200
+
+export const OUT_OF_SCOPE_MAX_ELEMENTS = 40
+export const OUT_OF_SCOPE_TEXT_MAX = 300
+
+export const DECISION_TITLE_MAX = 200
+export const DECISION_CONTEXT_MAX = 4000
+export const DECISION_OUTCOME_MAX = 4000
+export const DECISION_OPTIONS_MAX_ELEMENTS = 20
+export const DECISION_OPTION_MAX = 500
+export const DECISION_SUPERSEDES_MAX_ELEMENTS = 20
+
+export const SESSION_ACTOR_MAX = 100
+export const SESSION_BODY_MAX = 8000
+
+export const THREAD_RECORD_SERIALISED_MAX_BYTES = 65536
