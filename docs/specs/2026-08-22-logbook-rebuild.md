@@ -136,7 +136,7 @@ Non-git support (0067). The natural shape is a git repository initialised inside
 
 ## 4. The firewall: recommendations that are now void
 
-Nineteen recommendations carried forward from earlier documents are deleted by decisions 0064–0067. They are listed so that a reader who finds them in an older artifact knows they are dead.
+Eighteen recommendations carried forward from earlier documents are deleted by decisions 0064–0067. They are listed so that a reader who finds them in an older artifact knows they are dead.
 
 ### 4.1 Voided by 0064 (clean break, empty store)
 
@@ -385,6 +385,8 @@ Three stored states. Two derived facts.
 
 **Crash detection is unchanged and still trivial:** a pointer naming a thread at session start means a previous session ended without parking.
 
+**The pointer is machine-local and is never committed.** It lives in `state/` (§5.1), outside the ledger ref, so "being worked right now" is a fact about one checkout on one machine and nothing else. Two consequences follow, and both are deliberate. Crash detection is per-machine: a session killed on one laptop is detected on that laptop, not by a teammate. And **Logbook does not lock a thread across teammates** — two people can resume the same thread simultaneously and neither is told. That is a coordination problem, not a storage problem, and a committed lock would be worse: it would need a network round trip to acquire, would strand the thread when a machine died holding it, and would fail exactly when the network is unavailable, which is the offline case team sync exists to serve. What protects the work is not a lock but the merge in §5.6: two people editing one thread produce a field-level merge, and a genuine conflict refuses rather than picking a side. See §14 item 9.
+
 **Blockage renders or it does not exist.** Because `blocked_by` is a field rather than a state, the roster and the briefing can only show that a thread is blocked by rendering its reason. This structurally repairs the current defect where the roster announces `blocked` and never says why — capture-and-hide, which is worse than either showing or not capturing.
 
 ### 6.5 The done gate
@@ -455,7 +457,7 @@ Three consequences:
 
 ### 7.3 The tools
 
-Eleven tools. Two of them exist specifically to collapse the multi-call chains that produced §1.2's first failure.
+Twelve tools. Two of them exist specifically to collapse the multi-call chains that produced §1.2's first failure.
 
 | Tool | Read-only | Destructive | Idempotent | What it does |
 |---|---|---|---|---|
@@ -573,7 +575,7 @@ The compaction nudge is either removed or latched once per session. Its conditio
 
 The plugin half is currently 1,878 lines, of which only about 19% is genuinely constrained by being a Claude Code plugin. The rest is ledger logic that belongs in the server.
 
-Target: **about 350 lines.** Each hook becomes: read stdin, make one call, translate the answer into a hook verdict.
+Target: **under 400 lines**, which is the gate M8 is held to. Each hook becomes: read stdin, make one call, translate the answer into a hook verdict.
 
 What moves to the server: roster rendering, resume-intent detection, ledger-root derivation, ledger-path matching for the guard predicate, and the git-hook installer. What stays in the plugin: the guard *decision*, and transcript parsing — the transcript path is given only to hooks.
 
@@ -656,7 +658,7 @@ The problem is not 101 files. It is where the weight sits.
 
 | Measurement | Value |
 |---|---|
-| Individual tests | 1,044 |
+| Individual tests | 1,044 (a later run under a scrubbed environment reports 1,059; the suite is not stable across environments, which is itself defect §11.8) |
 | Tests that drive the **real server** | **16 (1.5%)** |
 | Tests that call module functions with a hand-built context | **1,028 (98.5%)** |
 | Tools declaring an output schema | **0** |
@@ -668,7 +670,7 @@ Two findings settle the argument:
 
 **The suite is structurally blind.** The tool-level fixture always creates a **non-git** temporary directory, so no tool test anywhere has ever exercised the git-backed path — which is where the critical defects live. This is worse than a weak assertion: the fixture quietly builds a *different system* than production. With the rebuild git-only (0067), that fixture defect would be fatal.
 
-**Proof that assertions can be inert:** deleting three lines of production code left the suite at 971 of 971 passing.
+**Proof that assertions can be inert:** deleting three lines of production code left the suite fully passing at the count measured that day (971). The three totals in this section — 971, 1,044 and 1,059 — are separate measurements on different days and under different environments; none is reconciled, and that is the point of §11.8.
 
 ### 11.3 Anti-patterns, and what replaces each
 
@@ -696,7 +698,7 @@ Two findings settle the argument:
 | Mutation testing | That the assertions assert | That the right behaviours were chosen | diff-scoped | blocking |
 | End-to-end in a real session | The harness loads the plugin and the tools fire | Determinism | ~5 | nightly, non-blocking |
 
-About 500 tests replacing 1,044, with roughly **sixty times** the real-transport coverage.
+About 500 tests replacing 1,044. Real-transport coverage goes from **16 tests to about 60** — from 1.5% of the suite to about 12%, so roughly four times the count and eight times the proportion.
 
 **Why real-spawn is not the expensive top layer here.** For a stdio server it is the only honest in-band entry point. The in-memory linked transport speaks an older protocol era than the server ships against, and the in-process handler entry belongs to the HTTP path, which this server does not have.
 
@@ -895,7 +897,7 @@ Structured single-line records to **stderr**, never stdout. This is what the spe
 
 ### 13.1 Shape
 
-Twelve units. Each is independently shippable and merges green, which is free before cutover because nothing the installed plugin loads is touched until M12 (0066).
+Twelve units. Each is independently shippable and merges green. That is free before cutover because the rebuild grows as a **parallel tree** alongside the existing one (0066), so nothing the installed plugin loads is touched until M12. This is what reconciles §2.8 — this repository IS the running plugin — with the claim that intermediate units are safe to merge: they are safe precisely because the running plugin cannot see them.
 
 **Every unit, without exception:**
 
@@ -955,6 +957,7 @@ Stated rather than resolved. None blocks the work.
 | 5 | Real forge behaviour versus a local bare remote | Authentication, rate limits and branch protection untested |
 | 6 | Whether branch bindings and drift detection are worth their weight | Genuinely open. 0061 withdrew the recommendation to cut them because drift detection is inherently multi-user. `bind_branch` ships; drift signals are deferred until a second user exists |
 | 7 | How the client renders structured content to the model | Unverified. Does not block: the human-readable block is authored by hand regardless |
+| 9 | Two teammates can work one thread at the same time without either being told, because the active pointer is machine-local by design (§6.4) | Accepted. A committed lock needs a network round trip, strands a thread when a machine dies holding it, and fails in the offline case team sync exists for. The field-level merge is the protection instead |
 | 8 | The current SPEC's own untracked report | The 3.6 MB open-questions report is untracked and exists on one machine only |
 
 ---
