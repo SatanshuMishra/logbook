@@ -41,6 +41,12 @@ const withPluginData = <T>(fn: (pluginData: string) => T): T => {
   }
 }
 
+const sharedIndexSnapshot = (): Set<string> =>
+  new Set(readdirSync(tmpdir()).filter((name) => name.startsWith('logbook-write-index-')))
+
+const newSharedIndexFiles = (before: Set<string>): string[] =>
+  [...sharedIndexSnapshot()].filter((name) => !before.has(name))
+
 const makeThread = (rt: Runtime, slug: string): RecordChange => ({
   kind: 'thread',
   record: {
@@ -194,6 +200,45 @@ test('write.no-orphan-record', () => {
       const threadsDir = join(layout.records, 'threads')
       const remaining = existsSync(threadsDir) ? readdirSync(threadsDir) : []
       assert.deepEqual(remaining, [])
+    })
+  })
+})
+
+test('write.leaves-no-temporary-index-on-success', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const layout = layoutIn(rt, repo)
+      const before = sharedIndexSnapshot()
+
+      const change = makeThread(rt, 'index-cleanup-success')
+      const result = writeRecords(rt, layout, [change], 'record with cleanup check')
+      assert.equal(result.ok, true)
+
+      assert.deepEqual(newSharedIndexFiles(before), [])
+    })
+  })
+})
+
+test('write.leaves-no-temporary-index-on-failure', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const layout = layoutIn(rt, repo)
+      const before = sharedIndexSnapshot()
+
+      const failingGit: typeof git = (callRt, callRepo, args, opts) => {
+        if (args[0] === 'write-tree') {
+          return { ok: false, code: 1, stderr: 'injected write-tree failure' }
+        }
+        return git(callRt, callRepo, args, opts)
+      }
+
+      const change = makeThread(rt, 'index-cleanup-failure')
+      const result = writeRecords(rt, layout, [change], 'should fail', { git: failingGit })
+      assert.equal(result.ok, false)
+
+      assert.deepEqual(newSharedIndexFiles(before), [])
     })
   })
 })

@@ -37,6 +37,74 @@ const contentFor = (change: RecordChange): string => JSON.stringify(change.recor
 
 const freshIndexPath = (): string => path.join(tmpdir(), `logbook-write-index-${randomUUID()}`)
 
+const removeSharedIndex = (indexFile: string): void => {
+  try {
+    unlinkSync(indexFile)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error
+    }
+  }
+}
+
+const withSharedIndex = <T>(fn: (indexFile: string) => T): T => {
+  const indexFile = freshIndexPath()
+  try {
+    return fn(indexFile)
+  } finally {
+    removeSharedIndex(indexFile)
+  }
+}
+
+type TreeResult = { ok: true; tree: string } | { ok: false; detail: string }
+
+type Target = { change: RecordChange; relPath: string; target: string }
+
+const buildTree = (
+  rt: Runtime,
+  layout: StoreLayout,
+  runGit: typeof git,
+  oldRef: string | null,
+  targets: Target[]
+): TreeResult =>
+  withSharedIndex((indexFile) => {
+    if (oldRef !== null) {
+      const readTree = runGit(rt, layout.projectRoot, ['read-tree', oldRef], { indexFile })
+      if (!readTree.ok) {
+        return { ok: false, detail: `read-tree: ${readTree.stderr}` }
+      }
+    }
+
+    const blobs: { relPath: string; blobId: string }[] = []
+    for (const { change, relPath } of targets) {
+      const hashResult = runGit(rt, layout.projectRoot, ['hash-object', '-w', '--stdin'], {
+        stdin: contentFor(change)
+      })
+      if (!hashResult.ok) {
+        return { ok: false, detail: `hash-object: ${hashResult.stderr}` }
+      }
+      blobs.push({ relPath, blobId: hashResult.stdout.trim() })
+    }
+
+    for (const { relPath, blobId } of blobs) {
+      const addEntry = runGit(
+        rt,
+        layout.projectRoot,
+        ['update-index', '--add', '--cacheinfo', `100644,${blobId},${relPath}`],
+        { indexFile }
+      )
+      if (!addEntry.ok) {
+        return { ok: false, detail: `update-index: ${addEntry.stderr}` }
+      }
+    }
+
+    const writeTree = runGit(rt, layout.projectRoot, ['write-tree'], { indexFile })
+    if (!writeTree.ok) {
+      return { ok: false, detail: `write-tree: ${writeTree.stderr}` }
+    }
+    return { ok: true, tree: writeTree.stdout.trim() }
+  })
+
 type Backup = { target: string; existed: boolean; content: string }
 
 const captureBackup = (target: string): Backup => {
@@ -107,47 +175,12 @@ export const writeRecords = (
       durableWrite(target, contentFor(change), { log: rt.log })
     }
 
-    const indexFile = freshIndexPath()
-
-    if (oldRef !== null) {
-      const readTree = runGit(rt, layout.projectRoot, ['read-tree', oldRef], { indexFile })
-      if (!readTree.ok) {
-        rollback()
-        return { ok: false, reason: 'io', detail: `read-tree: ${readTree.stderr}` }
-      }
-    }
-
-    const blobs: { relPath: string; blobId: string }[] = []
-    for (const { change, relPath } of targets) {
-      const hashResult = runGit(rt, layout.projectRoot, ['hash-object', '-w', '--stdin'], {
-        stdin: contentFor(change)
-      })
-      if (!hashResult.ok) {
-        rollback()
-        return { ok: false, reason: 'io', detail: `hash-object: ${hashResult.stderr}` }
-      }
-      blobs.push({ relPath, blobId: hashResult.stdout.trim() })
-    }
-
-    for (const { relPath, blobId } of blobs) {
-      const addEntry = runGit(
-        rt,
-        layout.projectRoot,
-        ['update-index', '--add', '--cacheinfo', `100644,${blobId},${relPath}`],
-        { indexFile }
-      )
-      if (!addEntry.ok) {
-        rollback()
-        return { ok: false, reason: 'io', detail: `update-index: ${addEntry.stderr}` }
-      }
-    }
-
-    const writeTree = runGit(rt, layout.projectRoot, ['write-tree'], { indexFile })
-    if (!writeTree.ok) {
+    const treeResult = buildTree(rt, layout, runGit, oldRef, targets)
+    if (!treeResult.ok) {
       rollback()
-      return { ok: false, reason: 'io', detail: `write-tree: ${writeTree.stderr}` }
+      return { ok: false, reason: 'io', detail: treeResult.detail }
     }
-    const tree = writeTree.stdout.trim()
+    const tree = treeResult.tree
 
     const commitArgs: string[] =
       oldRef === null
