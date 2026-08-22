@@ -182,3 +182,63 @@ test('write.write-is-injectable', () => {
     assert.strictEqual(readFileSync(target, 'utf8'), 'original contents')
   })
 })
+
+test('write.preserves-original-error-when-tmp-close-fails', () => {
+  withTempDir((dir) => {
+    const target = join(dir, 'thread.json')
+    writeFileSync(target, 'original contents')
+
+    assert.throws(
+      () => {
+        durableWrite(target, 'new contents', {
+          log: () => {},
+          fsync: () => {
+            throw new Error('original fsync failure')
+          },
+          close: () => {
+            throw new Error('close failure that must not mask the original')
+          }
+        })
+      },
+      /original fsync failure/
+    )
+  })
+})
+
+test('write.preserves-original-error-when-dir-close-fails', () => {
+  withTempDir((dir) => {
+    const target = join(dir, 'thread.json')
+    writeFileSync(target, 'original contents')
+
+    const fdLabels = new Map<number, 'tmp' | 'dir'>()
+
+    assert.throws(
+      () => {
+        durableWrite(target, 'new contents', {
+          log: () => {},
+          open: (path, flags) => {
+            const label: 'tmp' | 'dir' = path === dir ? 'dir' : 'tmp'
+            const fd = openSync(path, flags)
+            fdLabels.set(fd, label)
+            return fd
+          },
+          fsync: (fd) => {
+            if (fdLabels.get(fd) === 'dir') {
+              const original = new Error('original directory fsync failure') as NodeJS.ErrnoException
+              original.code = 'EACCES'
+              throw original
+            }
+            fsyncSync(fd)
+          },
+          close: (fd) => {
+            if (fdLabels.get(fd) === 'dir') {
+              throw new Error('close failure that must not mask the original')
+            }
+            closeSync(fd)
+          }
+        })
+      },
+      /original directory fsync failure/
+    )
+  })
+})

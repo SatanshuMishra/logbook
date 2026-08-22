@@ -50,6 +50,13 @@ const removeIfPresent = (path: string): void => {
   }
 }
 
+const swallowCloseError = (close: (fd: number) => void, fd: number): void => {
+  try {
+    close(fd)
+  } catch {
+  }
+}
+
 export const durableWrite = (target: string, contents: string, ops: DurableWriteInput): void => {
   const resolved: DurableWriteOps = { ...defaultFsOps, ...ops }
   const dir = dirname(target)
@@ -60,7 +67,7 @@ export const durableWrite = (target: string, contents: string, ops: DurableWrite
     resolved.write(tmpFd, contents)
     resolved.fsync(tmpFd)
   } catch (error) {
-    resolved.close(tmpFd)
+    swallowCloseError(resolved.close, tmpFd)
     removeIfPresent(tmpPath)
     throw error
   }
@@ -78,6 +85,7 @@ export const durableWrite = (target: string, contents: string, ops: DurableWrite
     resolved.fsync(dirFd)
   } catch (error) {
     if (!isDirectoryFsyncShortfall(error)) {
+      swallowCloseError(resolved.close, dirFd)
       throw error
     }
     resolved.log({
@@ -86,7 +94,8 @@ export const durableWrite = (target: string, contents: string, ops: DurableWrite
       directory: dir,
       code: (error as NodeJS.ErrnoException).code
     })
-  } finally {
     resolved.close(dirFd)
+    return
   }
+  resolved.close(dirFd)
 }
