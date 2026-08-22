@@ -957,8 +957,8 @@ Stated rather than resolved. None blocks the work.
 | 5 | Real forge behaviour versus a local bare remote | Authentication, rate limits and branch protection untested |
 | 6 | Whether branch bindings and drift detection are worth their weight | Genuinely open. 0061 withdrew the recommendation to cut them because drift detection is inherently multi-user. `bind_branch` ships; drift signals are deferred until a second user exists |
 | 7 | How the client renders structured content to the model | Unverified. Does not block: the human-readable block is authored by hand regardless |
-| 9 | Two teammates can work one thread at the same time without either being told, because the active pointer is machine-local by design (§6.4) | Accepted. A committed lock needs a network round trip, strands a thread when a machine dies holding it, and fails in the offline case team sync exists for. The field-level merge is the protection instead |
 | 8 | The current SPEC's own untracked report | The 3.6 MB open-questions report is untracked and exists on one machine only |
+| 9 | Two teammates can work one thread at the same time without either being told, because the active pointer is machine-local by design (§6.4) | Accepted. A committed lock needs a network round trip, strands a thread when a machine dies holding it, and fails in the offline case team sync exists for. The field-level merge is the protection instead |
 
 ---
 
