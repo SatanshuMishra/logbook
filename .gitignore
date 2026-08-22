@@ -1,3 +1,13 @@
 .mitosis/
 .DS_Store
 *.tmp-*
+.evidence/
+.playwright-mcp/
+graphify-out/
+.claude/settings.local.json
+.claude/worktrees/
+.claude/reports/
+/check-s4.png
+/dark-top.png
+/fig1.png
+/wide-light.png
