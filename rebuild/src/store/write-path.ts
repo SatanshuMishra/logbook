@@ -169,7 +169,7 @@ export const writeRecords = (
       return { ok: true, ref: LEDGER_REF, before: oldRef, after: newCommit }
     }
 
-    if (cas.field === 'ref-moved') {
+    if (cas.cause === 'ref-moved') {
       oldRef = readCurrentRef()
       continue
     }
