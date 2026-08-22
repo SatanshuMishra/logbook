@@ -5,9 +5,16 @@ import { join } from 'node:path'
 
 export type RawGitResult = { status: number; stdout: string; stderr: string }
 
+const FIXTURE_ENV: Record<string, string | undefined> = {
+  PATH: process.env.PATH,
+  GIT_CONFIG_NOSYSTEM: '1',
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_TERMINAL_PROMPT: '0'
+}
+
 export const rawGit = (repo: string, args: string[]): RawGitResult => {
   const result = spawnSync('git', ['-C', repo, ...args], {
-    env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' },
+    env: FIXTURE_ENV,
     encoding: 'utf8'
   })
   return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr }
@@ -29,6 +36,16 @@ export const withRepo = <T>(fn: (repo: string) => T): T => {
     writeFileSync(join(repo, 'README.md'), 'logbook fixture repository\n')
     runSetupStep(repo, ['add', 'README.md'])
     runSetupStep(repo, ['commit', '-m', 'fixture: initial commit'])
+    return fn(repo)
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+}
+
+export const withRepoNoIdentity = <T>(fn: (repo: string) => T): T => {
+  const repo = mkdtempSync(join(tmpdir(), 'logbook-git-fixture-no-identity-'))
+  try {
+    runSetupStep(repo, ['init', '--initial-branch=main'])
     return fn(repo)
   } finally {
     rmSync(repo, { recursive: true, force: true })
