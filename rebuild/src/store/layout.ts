@@ -13,26 +13,52 @@ export type StoreLayout = {
 
 const CLAUDE_PLUGIN_DATA = 'CLAUDE_PLUGIN_DATA'
 
-const canonicalise = (projectRoot: string): { ok: true; value: string } | { ok: false; detail: string } => {
+const errnoCode = (error: unknown): string => {
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const code = (error as { code?: unknown }).code
+    if (typeof code === 'string' && code.length > 0) return code
+  }
+  return 'unknown'
+}
+
+const withDetail = <R extends Refusal>(refusal: R, detail: string): R => {
+  Object.defineProperty(refusal, 'detail', {
+    value: detail,
+    enumerable: false,
+    writable: false,
+    configurable: false
+  })
+  return refusal
+}
+
+const canonicalise = (
+  projectRoot: string
+): { ok: true; value: string } | { ok: false; code: string; detail: string } => {
   try {
     return { ok: true, value: realpathSync.native(projectRoot) }
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    return { ok: false, detail }
+    return {
+      ok: false,
+      code: errnoCode(error),
+      detail: error instanceof Error ? error.message : String(error)
+    }
   }
 }
 
 export const layoutFor = (rt: Runtime, projectRoot: string): Ok<StoreLayout> | Refusal => {
   const canonical = canonicalise(projectRoot)
   if (!canonical.ok) {
-    return {
-      ok: false,
-      field: 'projectRoot',
-      accepted: 'an absolute path to an existing, readable directory',
-      example: '/Users/example/project',
-      retryable: true,
-      message: `projectRoot could not be canonicalised: ${canonical.detail}`
-    }
+    return withDetail(
+      {
+        ok: false,
+        field: 'projectRoot',
+        accepted: 'an absolute path to an existing, readable directory',
+        example: '/Users/example/project',
+        retryable: true,
+        message: `projectRoot could not be canonicalised: ${canonical.code}`
+      },
+      canonical.detail
+    )
   }
   const canonicalProjectRoot = canonical.value
 
@@ -52,13 +78,15 @@ export const layoutFor = (rt: Runtime, projectRoot: string): Ok<StoreLayout> | R
   const root = path.join(pluginData, key)
   const records = path.join(root, 'records')
   const state = path.join(root, 'state')
-  const originPath = path.join(state, 'origin.json')
-
-  mkdirSync(records, { recursive: true })
-  mkdirSync(state, { recursive: true })
-  if (!existsSync(originPath)) {
-    writeFileSync(originPath, JSON.stringify({ project_root: canonicalProjectRoot }), 'utf8')
-  }
 
   return { ok: true, value: { root, records, state, projectRoot: canonicalProjectRoot } }
+}
+
+export const createStoreDirectories = (layout: StoreLayout): void => {
+  mkdirSync(layout.records, { recursive: true })
+  mkdirSync(layout.state, { recursive: true })
+  const originPath = path.join(layout.state, 'origin.json')
+  if (!existsSync(originPath)) {
+    writeFileSync(originPath, JSON.stringify({ project_root: layout.projectRoot }), 'utf8')
+  }
 }

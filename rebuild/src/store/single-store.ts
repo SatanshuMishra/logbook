@@ -6,6 +6,24 @@ import type { StoreLayout } from './layout.ts'
 
 type OriginFile = { project_root?: unknown }
 
+const errnoCode = (error: unknown): string => {
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const code = (error as { code?: unknown }).code
+    if (typeof code === 'string' && code.length > 0) return code
+  }
+  return 'unknown'
+}
+
+const withDetail = <R extends Refusal>(refusal: R, detail: string): R => {
+  Object.defineProperty(refusal, 'detail', {
+    value: detail,
+    enumerable: false,
+    writable: false,
+    configurable: false
+  })
+  return refusal
+}
+
 const readOriginProjectRoot = (pluginDataRoot: string, key: string): string | null => {
   const originPath = path.join(pluginDataRoot, key, 'state', 'origin.json')
   try {
@@ -29,15 +47,21 @@ export const ensureSingleStore = (rt: Runtime, layout: StoreLayout): Ok<StoreLay
       .map((entry) => entry.name)
       .filter((name) => name !== ownKey)
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    return {
-      ok: false,
-      field: 'pluginData',
-      accepted: 'a readable plugin-data directory',
-      example: 'CLAUDE_PLUGIN_DATA=/Users/example/.claude/plugin-data',
-      retryable: true,
-      message: `plugin-data directory could not be listed: ${detail}`
+    if (errnoCode(error) === 'ENOENT') {
+      return { ok: true, value: layout }
     }
+    const detail = error instanceof Error ? error.message : String(error)
+    return withDetail(
+      {
+        ok: false,
+        field: 'pluginData',
+        accepted: 'a readable plugin-data directory',
+        example: 'CLAUDE_PLUGIN_DATA=/Users/example/.claude/plugin-data',
+        retryable: true,
+        message: `plugin-data directory could not be listed: ${errnoCode(error)}`
+      },
+      detail
+    )
   }
 
   const conflictingKeys = siblingKeys.filter(

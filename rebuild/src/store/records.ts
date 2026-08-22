@@ -5,7 +5,7 @@ import { DecisionRecord, type Decision } from '../schema/decision.ts'
 import { SessionRecord, type SessionEntry } from '../schema/session.ts'
 import { ThreadRecord, type Thread, type Ulid } from '../schema/thread.ts'
 import type { Runtime } from '../runtime/runtime.ts'
-import { layoutFor, type StoreLayout } from './layout.ts'
+import { createStoreDirectories, layoutFor, type StoreLayout } from './layout.ts'
 import { markSynced, readAllRecordFiles, readRecordFile, syncWorkingCopy } from './read-path.ts'
 import { ensureSingleStore } from './single-store.ts'
 import { writeRecords } from './write-path.ts'
@@ -56,6 +56,8 @@ export const openStore = (rt: Runtime, projectRoot: string): Ok<Store> | Refusal
 
   const ensured = ensureSingleStore(rt, layout.value)
   if (!ensured.ok) return ensured
+
+  createStoreDirectories(ensured.value)
 
   const storeLayout = ensured.value
 

@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { layoutFor } from '../../src/store/layout.ts'
+import { createStoreDirectories, layoutFor } from '../../src/store/layout.ts'
 import type { StoreLayout } from '../../src/store/layout.ts'
 import { ensureSingleStore } from '../../src/store/single-store.ts'
+import { openStore } from '../../src/store/records.ts'
 import { testRuntime } from '../support/runtime.ts'
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -98,12 +99,68 @@ test('layout.refuses-on-canonicalisation-failure', () => {
     }
     assert.equal(result.field, 'projectRoot')
     assert.equal(result.retryable, true)
+    assert.match(result.message, /ENOENT/)
+    assert.doesNotMatch(result.message, new RegExp(escapeRegExp(missingPath)))
+    assert.doesNotMatch(result.message, new RegExp(escapeRegExp(pluginDataRoot)))
   } finally {
     rmSync(pluginDataRoot, { recursive: true, force: true })
   }
 })
 
-test('layout.creates-records-and-state-directories', () => {
+test('store.plugin-data-listing-failure-is-path-free', () => {
+  const pluginDataParent = mkdtempSync(path.join(tmpdir(), 'logbook-plugin-data-'))
+  const notADirectory = path.join(pluginDataParent, 'not-a-directory')
+  writeFileSync(notADirectory, 'not a directory', 'utf8')
+  try {
+    const layout: StoreLayout = {
+      root: path.join(notADirectory, 'store-key'),
+      records: path.join(notADirectory, 'store-key', 'records'),
+      state: path.join(notADirectory, 'store-key', 'state'),
+      projectRoot: '/tmp/some/project'
+    }
+
+    const rt = testRuntime()
+    const result = ensureSingleStore(rt, layout)
+
+    assert.equal(result.ok, false)
+    if (result.ok) {
+      throw new Error('expected a refusal')
+    }
+    assert.equal(result.retryable, true)
+    assert.match(result.message, /ENOTDIR/)
+    assert.doesNotMatch(result.message, new RegExp(escapeRegExp(notADirectory)))
+  } finally {
+    rmSync(pluginDataParent, { recursive: true, force: true })
+  }
+})
+
+test('store.refusal-leaves-no-new-directory', () => {
+  const pluginDataRoot = mkdtempSync(path.join(tmpdir(), 'logbook-single-store-'))
+  const projectDir = mkdtempSync(path.join(tmpdir(), 'logbook-project-'))
+  try {
+    const canonicalProjectRoot = realpathSync.native(projectDir)
+    writeOrigin(pluginDataRoot, 'store-key-existing', canonicalProjectRoot)
+
+    const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: pluginDataRoot } })
+    const before = readdirSync(pluginDataRoot).sort()
+
+    const result = openStore(rt, projectDir)
+
+    assert.equal(result.ok, false)
+    if (result.ok) {
+      throw new Error('expected a refusal')
+    }
+
+    const after = readdirSync(pluginDataRoot).sort()
+    assert.deepEqual(after, before)
+    assert.deepEqual(after, ['store-key-existing'])
+  } finally {
+    rmSync(pluginDataRoot, { recursive: true, force: true })
+    rmSync(projectDir, { recursive: true, force: true })
+  }
+})
+
+test('layout.computes-paths-without-creating-directories', () => {
   const projectDir = mkdtempSync(path.join(tmpdir(), 'logbook-project-'))
   const pluginDataRoot = mkdtempSync(path.join(tmpdir(), 'logbook-plugin-data-'))
   try {
@@ -114,6 +171,29 @@ test('layout.creates-records-and-state-directories', () => {
     if (!result.ok) {
       throw new Error('expected success')
     }
+    assert.equal(existsSync(result.value.root), false)
+    assert.equal(existsSync(result.value.records), false)
+    assert.equal(existsSync(result.value.state), false)
+  } finally {
+    rmSync(projectDir, { recursive: true, force: true })
+    rmSync(pluginDataRoot, { recursive: true, force: true })
+  }
+})
+
+test('layout.createStoreDirectories-materialises-the-layout', () => {
+  const projectDir = mkdtempSync(path.join(tmpdir(), 'logbook-project-'))
+  const pluginDataRoot = mkdtempSync(path.join(tmpdir(), 'logbook-plugin-data-'))
+  try {
+    const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: pluginDataRoot } })
+    const result = layoutFor(rt, projectDir)
+
+    assert.equal(result.ok, true)
+    if (!result.ok) {
+      throw new Error('expected success')
+    }
+
+    createStoreDirectories(result.value)
+
     assert.equal(existsSync(result.value.records), true)
     assert.equal(existsSync(result.value.state), true)
     const originPath = path.join(result.value.state, 'origin.json')
