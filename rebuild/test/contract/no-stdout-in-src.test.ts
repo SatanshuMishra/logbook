@@ -33,6 +33,8 @@ const walkTsFiles = (root: string): string[] => {
   })
 }
 
+const MISSING_ROOT = fileURLToPath(new URL('../../src-does-not-exist', import.meta.url))
+
 const findHits = (root: string): Hit[] => {
   const hits: Hit[] = []
   for (const file of walkTsFiles(root)) {
@@ -52,9 +54,16 @@ const classifyHit = (hit: Hit): Classified<Hit>['verdict'] | 'unclassifiable' =>
 }
 
 test('contract.no-stdout-in-src', () => {
+  const scanned = walkTsFiles(REBUILD_SRC)
+  assert.ok(scanned.length > 0, `expected the walk to find .ts files under ${REBUILD_SRC}`)
+
   const hits = findHits(REBUILD_SRC)
   assert.doesNotThrow(() => census(hits, classifyHit))
 
   const synthetic: Hit[] = [{ file: 'store/git.ts', kind: 'console.log' }]
   assert.throws(() => census(synthetic, classifyHit))
+})
+
+test('contract.no-stdout-in-src.walk-finds-nothing-at-a-missing-root', () => {
+  assert.equal(walkTsFiles(MISSING_ROOT).length, 0)
 })
