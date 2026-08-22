@@ -4,6 +4,8 @@ import { ULID_PATTERN, ISO_PATTERN } from './ids.ts'
 import * as caps from './caps.ts'
 import type { Ulid, Iso8601 } from './thread.ts'
 
+export type { Ulid, Iso8601 } from './thread.ts'
+
 export type SessionEntry = {
   id: Ulid
   thread_id: Ulid
