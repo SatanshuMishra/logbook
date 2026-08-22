@@ -5,17 +5,22 @@ import { basename, dirname, join } from 'node:path'
 export type DurableWriteOps = {
   open: (path: string, flags: string) => number
   fsync: (fd: number) => void
+  write: (fd: number, contents: string) => void
   rename: (from: string, to: string) => void
   close: (fd: number) => void
   log: (record: Record<string, unknown>) => void
 }
 
-const defaultOps: DurableWriteOps = {
+export type DurableWriteInput = Partial<Omit<DurableWriteOps, 'log'>> & Pick<DurableWriteOps, 'log'>
+
+const defaultFsOps: Omit<DurableWriteOps, 'log'> = {
   open: (path, flags) => openSync(path, flags),
   fsync: (fd) => fsyncSync(fd),
+  write: (fd, contents) => {
+    writeSync(fd, contents)
+  },
   rename: (from, to) => renameSync(from, to),
-  close: (fd) => closeSync(fd),
-  log: () => {}
+  close: (fd) => closeSync(fd)
 }
 
 const TMP_INFIX = '.durable-write-'
@@ -45,18 +50,14 @@ const removeIfPresent = (path: string): void => {
   }
 }
 
-export const durableWrite = (
-  target: string,
-  contents: string,
-  ops: Partial<DurableWriteOps> = {}
-): void => {
-  const resolved: DurableWriteOps = { ...defaultOps, ...ops }
+export const durableWrite = (target: string, contents: string, ops: DurableWriteInput): void => {
+  const resolved: DurableWriteOps = { ...defaultFsOps, ...ops }
   const dir = dirname(target)
   const tmpPath = tmpPathFor(target)
 
   const tmpFd = resolved.open(tmpPath, 'w')
   try {
-    writeSync(tmpFd, contents)
+    resolved.write(tmpFd, contents)
     resolved.fsync(tmpFd)
   } catch (error) {
     resolved.close(tmpFd)

@@ -60,6 +60,7 @@ test('write.atomic-on-failure', () => {
 
     assert.throws(() => {
       durableWrite(target, 'new contents', {
+        log: () => {},
         rename: () => {
           throw new Error('injected rename failure')
         }
@@ -83,6 +84,7 @@ test('write.fsyncs-directory-last', () => {
     const fdLabels = new Map<number, 'tmp' | 'dir'>()
 
     const recordingOps = {
+      log: (): void => {},
       open: (path: string, flags: string): number => {
         const label: 'tmp' | 'dir' = path === dir ? 'dir' : 'tmp'
         order.push(`open(${label})`)
@@ -107,5 +109,76 @@ test('write.fsyncs-directory-last', () => {
 
     assert.deepStrictEqual(order, ['open(tmp)', 'fsync(tmp)', 'rename', 'open(dir)', 'fsync(dir)'])
     assert.strictEqual(readFileSync(target, 'utf8'), 'new contents')
+  })
+})
+
+test('write.log-is-required-by-type', () => {
+  const callWithoutLog = (): void => {
+    // @ts-expect-error log has no default; an ops bag that omits it must not type-check
+    durableWrite(join(tmpdir(), 'unused-durable-write-target.json'), 'contents', {})
+  }
+  assert.equal(typeof callWithoutLog, 'function')
+})
+
+test('write.logs-directory-fsync-shortfall', () => {
+  withTempDir((dir) => {
+    const target = join(dir, 'thread.json')
+    writeFileSync(target, 'original contents')
+
+    const logs: Record<string, unknown>[] = []
+    const fdLabels = new Map<number, 'tmp' | 'dir'>()
+
+    durableWrite(target, 'new contents', {
+      log: (record) => {
+        logs.push(record)
+      },
+      open: (path, flags) => {
+        const label: 'tmp' | 'dir' = path === dir ? 'dir' : 'tmp'
+        const fd = openSync(path, flags)
+        fdLabels.set(fd, label)
+        return fd
+      },
+      fsync: (fd) => {
+        if (fdLabels.get(fd) === 'dir') {
+          const shortfall = new Error('simulated directory fsync shortfall') as NodeJS.ErrnoException
+          shortfall.code = 'EINVAL'
+          throw shortfall
+        }
+        fsyncSync(fd)
+      }
+    })
+
+    assert.strictEqual(readFileSync(target, 'utf8'), 'new contents')
+    assert.strictEqual(logs.length, 1)
+    assert.strictEqual(logs[0]?.level, 'warn')
+    assert.strictEqual(logs[0]?.event, 'durable-write.directory-fsync-unavailable')
+    assert.strictEqual(logs[0]?.code, 'EINVAL')
+  })
+})
+
+test('write.write-is-injectable', () => {
+  withTempDir((dir) => {
+    const target = join(dir, 'thread.json')
+    writeFileSync(target, 'original contents')
+
+    const writes: { fd: number; contents: string }[] = []
+    const closes: number[] = []
+
+    durableWrite(target, 'captured contents', {
+      log: () => {},
+      open: () => 7,
+      write: (fd, contents) => {
+        writes.push({ fd, contents })
+      },
+      fsync: () => {},
+      rename: () => {},
+      close: (fd) => {
+        closes.push(fd)
+      }
+    })
+
+    assert.deepStrictEqual(writes, [{ fd: 7, contents: 'captured contents' }])
+    assert.deepStrictEqual(closes, [7, 7])
+    assert.strictEqual(readFileSync(target, 'utf8'), 'original contents')
   })
 })
