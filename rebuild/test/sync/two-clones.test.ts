@@ -27,6 +27,8 @@ const ANA_ROUND2_ULID_PREFIX = '01ANADEC02'
 const BEN_ROUND2_ULID_PREFIX = '01BENDEC02'
 const ANA_RACE_ULID_PREFIX = '01ANARACE1'
 const BEN_RACE_ULID_PREFIX = '01BENRACE1'
+const ANA_DIVERGE_ULID_PREFIX = '01ANADIVR1'
+const BEN_DIVERGE_ULID_PREFIX = '01BENDIVR1'
 const CONFLICT_MARKERS = ['<<<<<<<', '=======', '>>>>>>>']
 
 const layoutIn = (teammate: Teammate): StoreLayout => {
@@ -36,7 +38,7 @@ const layoutIn = (teammate: Teammate): StoreLayout => {
   return result.value
 }
 
-const makeThread = (rt: Runtime, slug: string): RecordChange => ({
+const makeThread = (rt: Runtime, slug: string): Extract<RecordChange, { kind: 'thread' }> => ({
   kind: 'thread',
   record: {
     id: rt.ulid(),
@@ -293,12 +295,25 @@ const runOfflineMergeScenario = (pusherFirst: 'ana' | 'ben'): void => {
     const firstSeesSecond = first.store.readDecision(secondDecisionId)
     assert.ok(firstSeesSecond !== null && !firstSeesSecond.quarantined)
 
+    assertRecordsAreClean(firstLayout)
+
     const firstActorName = pusherFirst
     const secondActorName: 'ana' | 'ben' = pusherFirst === 'ana' ? 'ben' : 'ana'
     const secondRound2Prefix = secondActorName === 'ana' ? ANA_ROUND2_ULID_PREFIX : BEN_ROUND2_ULID_PREFIX
     const firstRacePrefix = firstActorName === 'ana' ? ANA_RACE_ULID_PREFIX : BEN_RACE_ULID_PREFIX
+    const firstDivergePrefix = firstActorName === 'ana' ? ANA_DIVERGE_ULID_PREFIX : BEN_DIVERGE_ULID_PREFIX
 
-    recordDecisionInSeparateProcess(
+    const firstDivergeDecisionId = recordDecisionInSeparateProcess(
+      first,
+      sharedThread.record.id,
+      firstActorName,
+      firstDivergePrefix,
+      `${firstActorName} pushes a decision second has not fetched yet`
+    )
+    const firstDivergeSync = sync(first.rt, first.store, firstLayout)
+    assert.equal(firstDivergeSync.ok, true)
+
+    const secondRound2DecisionId = recordDecisionInSeparateProcess(
       second,
       sharedThread.record.id,
       secondActorName,
@@ -327,6 +342,8 @@ const runOfflineMergeScenario = (pusherFirst: 'ana' | 'ben'): void => {
       throw new Error('the race hook never fired; the merge write was never reached')
     }
     assert.equal(decisionReachableOnRemote(second.rt, remote, raceDecisionId), true)
+    assert.equal(decisionReachableOnRemote(second.rt, remote, secondRound2DecisionId), true)
+    assert.equal(decisionReachableOnRemote(second.rt, remote, firstDivergeDecisionId), true)
   })
 }
 

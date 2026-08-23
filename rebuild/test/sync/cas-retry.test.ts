@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -20,7 +19,7 @@ const layoutIn = (teammate: Teammate): StoreLayout => {
   return result.value
 }
 
-const makeThread = (rt: Runtime, slug: string): RecordChange => ({
+const makeThread = (rt: Runtime, slug: string): Extract<RecordChange, { kind: 'thread' }> => ({
   kind: 'thread',
   record: {
     id: rt.ulid(),
@@ -101,67 +100,55 @@ test('sync.cas-retry', () => {
       created_at: ana.rt.now(),
       updated_at: ana.rt.now()
     })
-
-    const coordDir = mkdtempSync(join(tmpdir(), 'logbook-sync-coord-'))
-    const goFile = join(coordDir, 'go')
-    const doneFile = join(coordDir, 'done')
     const recordPath = `threads/${threadDId}.json`
 
-    const childScript = `
-      const { spawnSync } = require('node:child_process');
-      const fs = require('node:fs');
-      const repo = ${JSON.stringify(ana.repo)};
-      const goFile = ${JSON.stringify(goFile)};
-      const doneFile = ${JSON.stringify(doneFile)};
-      const recordPath = ${JSON.stringify(recordPath)};
-      const beforeRace = ${JSON.stringify(beforeRace)};
-      const content = ${JSON.stringify(threadDContent)};
-      const deadline = Date.now() + 5000;
-      while (!fs.existsSync(goFile)) {
-        if (Date.now() > deadline) { process.exit(1); }
-      }
-      const runGit = (args, opts) => spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', ...opts });
-      runGit(['read-tree', beforeRace]);
-      const hash = runGit(['hash-object', '-w', '--stdin'], { input: content });
-      const blob = hash.stdout.trim();
-      runGit(['update-index', '--add', '--cacheinfo', '100644,' + blob + ',' + recordPath]);
-      const writeTree = runGit(['write-tree']);
-      const tree = writeTree.stdout.trim();
-      const commit = runGit(['commit-tree', tree, '-p', beforeRace, '-m', 'child races the local ledger ref']);
-      const sha = commit.stdout.trim();
-      runGit(['update-ref', 'refs/logbook/ledger', sha, beforeRace]);
-      fs.writeFileSync(doneFile, '');
-    `
+    const racerIndexDir = mkdtempSync(join(tmpdir(), 'logbook-racer-index-'))
+    const racerIndexFile = join(racerIndexDir, 'index')
 
-    const child = spawn(process.execPath, ['-e', childScript], { stdio: 'ignore' })
-
-    let ledgerRevParseCount = 0
-    const countingGit: typeof git = (callRt, callRepo, args, opts) => {
-      if (args[0] === 'rev-parse' && args[1] === LEDGER_REF) {
-        ledgerRevParseCount += 1
-      }
-      return git(callRt, callRepo, args, opts)
-    }
+    let racerUpdateRefSucceeded = false
 
     const beforeCas = (): void => {
-      writeFileSync(goFile, '')
-      const deadline = Date.now() + 5000
-      while (!existsSync(doneFile)) {
-        if (Date.now() > deadline) {
-          throw new Error('timed out waiting for the racing process to move the ledger ref')
-        }
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
-      }
+      const readTree = git(ana.rt, ana.repo, ['read-tree', beforeRace], { indexFile: racerIndexFile })
+      assert.equal(readTree.ok, true, 'racer read-tree failed to seed the racing index')
+      if (!readTree.ok) return
+
+      const hash = git(ana.rt, ana.repo, ['hash-object', '-w', '--stdin'], { stdin: threadDContent })
+      assert.equal(hash.ok, true, 'racer hash-object failed to write the racing blob')
+      if (!hash.ok) return
+      const blob = hash.stdout.trim()
+
+      const addEntry = git(
+        ana.rt,
+        ana.repo,
+        ['update-index', '--add', '--cacheinfo', `100644,${blob},${recordPath}`],
+        { indexFile: racerIndexFile }
+      )
+      assert.equal(addEntry.ok, true, 'racer update-index failed to stage the racing entry')
+      if (!addEntry.ok) return
+
+      const writeTree = git(ana.rt, ana.repo, ['write-tree'], { indexFile: racerIndexFile })
+      assert.equal(writeTree.ok, true, 'racer write-tree failed to build the racing tree')
+      if (!writeTree.ok) return
+      const tree = writeTree.stdout.trim()
+
+      const commit = git(ana.rt, ana.repo, ['commit-tree', tree, '-p', beforeRace, '-m', 'racer moves the local ledger ref'])
+      assert.equal(commit.ok, true, 'racer commit-tree failed to build the racing commit')
+      if (!commit.ok) return
+      const sha = commit.stdout.trim()
+
+      const updateRef = git(ana.rt, ana.repo, ['update-ref', LEDGER_REF, sha, beforeRace])
+      assert.equal(updateRef.ok, true, 'racer update-ref failed to move the local ledger ref underneath the writer')
+      racerUpdateRefSucceeded = updateRef.ok
     }
 
     try {
-      const mergeResult = sync(ana.rt, ana.store, anaLayout, { git: countingGit, beforeCas })
+      const mergeResult = sync(ana.rt, ana.store, anaLayout, { beforeCas })
 
       assert.equal(mergeResult.ok, true)
       if (!mergeResult.ok) return
       assert.equal(mergeResult.action, 'merged')
 
-      assert.equal(ledgerRevParseCount, 3)
+      assert.equal(racerUpdateRefSucceeded, true)
 
       assert.equal(threadIsReachable(ana.rt, ana.repo, threadA.record.id), true)
       assert.equal(threadIsReachable(ana.rt, ana.repo, threadB.record.id), true)
@@ -173,8 +160,7 @@ test('sync.cas-retry', () => {
       assert.equal(threadIsReachable(ben.rt, remote, threadC.record.id), true)
       assert.equal(threadIsReachable(ben.rt, remote, threadDId), true)
     } finally {
-      child.kill()
-      rmSync(coordDir, { recursive: true, force: true })
+      rmSync(racerIndexDir, { recursive: true, force: true })
     }
   })
 })
