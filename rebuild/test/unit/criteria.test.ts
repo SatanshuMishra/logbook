@@ -116,6 +116,81 @@ test('criteria.strike-retains', () => {
   assert.equal(rereadFound?.text, target.text)
 })
 
+test('criteria.text-cap-refusal-is-complete', () => {
+  const rt = testRuntime()
+  const decisionId = rt.ulid()
+  const resolve = resolverFor(decisionId)
+  const existing = makeCriterion(rt, 1, 'the existing criterion')
+  const thread = makeThread(rt, [existing])
+
+  const oversizedText = 'x'.repeat(CRITERION_TEXT_MAX + 1)
+  const result = insertCriterion(rt, thread, { text: oversizedText, kind: 'planned', decisionId }, resolve)
+
+  assert.equal(result.ok, false)
+  if (result.ok) {
+    throw new Error('expected a refusal')
+  }
+  assert.equal(result.field, 'criteria.insert.text')
+  assert.equal(result.retryable, true)
+  assert.ok(result.accepted.length > 0)
+  assert.ok(result.example.length > 0)
+  assert.match(result.message, new RegExp(`cap of ${CRITERION_TEXT_MAX}`))
+  assert.match(result.message, /observed \d+/)
+  assert.match(result.message, /remedy:/)
+})
+
+test('criteria.capacity-refusal-is-complete', () => {
+  const rt = testRuntime()
+  const decisionId = rt.ulid()
+  const resolve = resolverFor(decisionId)
+  const criteria = Array.from({ length: CRITERIA_MAX_ELEMENTS }, (_, i) => makeCriterion(rt, i + 1, `criterion ${i}`))
+  const thread = makeThread(rt, criteria)
+
+  const result = insertCriterion(rt, thread, { text: 'one more', kind: 'planned', decisionId }, resolve)
+
+  assert.equal(result.ok, false)
+  if (result.ok) {
+    throw new Error('expected a refusal')
+  }
+  assert.equal(result.field, 'criteria.insert.completion_criteria')
+  assert.equal(result.retryable, true)
+  assert.ok(result.accepted.length > 0)
+  assert.ok(result.example.length > 0)
+  assert.match(result.message, new RegExp(`cap of ${CRITERIA_MAX_ELEMENTS}`))
+  assert.match(result.message, /observed \d+/)
+  assert.match(result.message, /remedy:/)
+})
+
+test('criteria.strike-frees-capacity', () => {
+  const rt = testRuntime()
+  const decisionId = rt.ulid()
+  const resolve = resolverFor(decisionId)
+  const criteria = Array.from({ length: CRITERIA_MAX_ELEMENTS }, (_, i) => makeCriterion(rt, i + 1, `criterion ${i}`))
+  const thread = makeThread(rt, criteria)
+
+  const atCap = insertCriterion(rt, thread, { text: 'over the cap', kind: 'planned', decisionId }, resolve)
+  assert.equal(atCap.ok, false)
+
+  const firstCriterion = criteria[0]
+  if (firstCriterion === undefined) {
+    throw new Error('expected at least one seeded criterion')
+  }
+  const struckResult = strikeCriterion(rt, thread, { criterionId: firstCriterion.id, decisionId }, resolve)
+  assert.equal(struckResult.ok, true)
+  if (!struckResult.ok) {
+    throw new Error('expected the strike to succeed')
+  }
+  const struckThread = struckResult.value
+
+  const afterStrike = insertCriterion(
+    rt,
+    struckThread,
+    { text: 'now there is room', kind: 'planned', decisionId },
+    resolve
+  )
+  assert.equal(afterStrike.ok, true)
+})
+
 test('criteria.ordinals-recompute', () => {
   const rt = testRuntime()
   const decisionId = rt.ulid()

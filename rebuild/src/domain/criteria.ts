@@ -53,22 +53,22 @@ const criterionNotFoundRefusal = (field: string, criterionId: string): Refusal =
   message: `${field} does not match any criterion on this thread; received ${criterionId}.`
 })
 
-const textCapRefusal = (field: string, observed: number, limit: number): Refusal => ({
+const textCapRefusal = (field: string, observed: number, limit: number, remedy: string): Refusal => ({
   ok: false,
   field,
   accepted: `at most ${limit} characters after escaping`,
   example: 'ship the health check before closing this thread',
   retryable: true,
-  message: `${field} exceeds its cap of ${limit} characters after escaping; observed ${observed}.`
+  message: `${field} exceeds its cap of ${limit} characters after escaping; observed ${observed}; remedy: ${remedy}.`
 })
 
-const capacityRefusal = (field: string, limit: number): Refusal => ({
+const capacityRefusal = (field: string, limit: number, observed: number, remedy: string): Refusal => ({
   ok: false,
   field,
   accepted: `at most ${limit} completion criteria`,
   example: 'strike an existing criterion before inserting another',
   retryable: true,
-  message: `${field} is already at its cap of ${limit} completion criteria.`
+  message: `${field} is already at its cap of ${limit} completion criteria; observed ${observed}; remedy: ${remedy}.`
 })
 
 const positionRefusal = (field: string, length: number): Refusal => ({
@@ -105,8 +105,14 @@ export const insertCriterion = (
   }
 
   const existing = thread.completion_criteria
-  if (existing.length >= caps.CRITERIA_MAX_ELEMENTS) {
-    return capacityRefusal('criteria.insert.completion_criteria', caps.CRITERIA_MAX_ELEMENTS)
+  const unstruckCount = existing.filter((criterion) => criterion.struck_by === null).length
+  if (unstruckCount >= caps.CRITERIA_MAX_ELEMENTS) {
+    return capacityRefusal(
+      'criteria.insert.completion_criteria',
+      caps.CRITERIA_MAX_ELEMENTS,
+      unstruckCount,
+      'strike an existing criterion before inserting another'
+    )
   }
 
   const position = input.position ?? existing.length
@@ -116,7 +122,12 @@ export const insertCriterion = (
 
   const escapedText = escapeStored(input.text)
   if (escapedText.length > caps.CRITERION_TEXT_MAX) {
-    return textCapRefusal('criteria.insert.text', escapedText.length, caps.CRITERION_TEXT_MAX)
+    return textCapRefusal(
+      'criteria.insert.text',
+      escapedText.length,
+      caps.CRITERION_TEXT_MAX,
+      'shorten the criterion text and retry'
+    )
   }
 
   const inserted: Criterion = {
@@ -154,7 +165,12 @@ export const rewriteCriterion = (
 
   const escapedText = escapeStored(input.text)
   if (escapedText.length > caps.CRITERION_TEXT_MAX) {
-    return textCapRefusal('criteria.rewrite.text', escapedText.length, caps.CRITERION_TEXT_MAX)
+    return textCapRefusal(
+      'criteria.rewrite.text',
+      escapedText.length,
+      caps.CRITERION_TEXT_MAX,
+      'shorten the criterion text and retry'
+    )
   }
 
   const next = thread.completion_criteria.map((criterion) =>
