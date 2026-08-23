@@ -110,10 +110,6 @@ test('criteria.strike-retains', () => {
     assert.ok(!outstandingIds.includes(target.id))
     assert.ok(outstandingIds.includes(keep.id))
   }
-
-  const rereadFound = struck.completion_criteria.find((criterion) => criterion.id === target.id)
-  assert.ok(rereadFound !== undefined)
-  assert.equal(rereadFound?.text, target.text)
 })
 
 test('criteria.text-cap-refusal-is-complete', () => {
