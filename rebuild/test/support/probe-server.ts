@@ -21,7 +21,7 @@ const okReply = (text: string, structured: Record<string, unknown>): ToolReply<u
   structured
 })
 
-const CONFORMANT_INPUT = z.object({
+const CONFORMANT_INPUT = z.strictObject({
   value: z
     .string()
     .max(50)

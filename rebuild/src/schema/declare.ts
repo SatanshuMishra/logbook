@@ -20,7 +20,7 @@ export type Declared<T> = {
 }
 
 export const declare = <T>(name: string, schema: z.ZodType<T>): Declared<T> => {
-  const jsonSchema = z.toJSONSchema(schema) as Record<string, unknown>
+  const jsonSchema = z.toJSONSchema(schema, { target: 'draft-7', io: 'input' }) as Record<string, unknown>
 
   const refuse = (issues: z.core.$ZodIssue[]): Refusal => buildRefusal(jsonSchema, issues)
 

@@ -92,7 +92,7 @@ registerTool(server, rt, {
   name: 'probe_multi_value_literal',
   title: 'probe_multi_value_literal',
   description: 'Registers a two-value literal field to prove the published schema keeps every literal value rather than narrowing to the first.',
-  input: z.object({ mode: z.literal(['a', 'b']) }),
+  input: z.strictObject({ mode: z.literal(['a', 'b']) }),
   output: z.object({ mode: z.string() }),
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   handler: async (_rt, _ctx, input) => ({ ok: true, text: 'echoed', structured: { mode: input.mode } })
@@ -102,7 +102,7 @@ registerTool(server, rt, {
   name: 'probe_discriminated_union',
   title: 'probe_discriminated_union',
   description: 'Registers a discriminated union field to prove the published schema keeps the discriminator rather than degrading to a plain union.',
-  input: z.object({
+  input: z.strictObject({
     payload: z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('a'), x: z.string() }),
       z.object({ kind: z.literal('b'), y: z.number() })
@@ -143,22 +143,25 @@ const spawnDeriveProbeServer = async (): Promise<SpawnedServer> => {
   }
 }
 
-test('contract.published-schema-matches-enforced.production-registry-is-vacuous-but-real', async () => {
+test('contract.published-schema-matches-enforced.production-registry-is-populated-and-consistent', async () => {
+  assert.ok(ALL_TOOLS.length > 0, 'expected the production registry to carry at least one tool')
   const spawned = await spawnServer({ projectRoot: PROJECT_ROOT })
   try {
     const published = await listPublishedTools(spawned)
     const items = joinPublishedToEnforced(published, ALL_TOOLS)
+    assert.ok(items.length > 0, 'expected at least one published tool to census')
     assert.doesNotThrow(() => census(items, classifyCensusItem))
   } finally {
     await spawned.close()
   }
 })
 
-test('contract.published-schema-matches-enforced.production-registry-census-is-vacuous-but-real', async () => {
+test('contract.published-schema-matches-enforced.production-registry-census-is-populated-and-consistent', async () => {
   const spawned = await spawnServer({ projectRoot: PROJECT_ROOT })
   try {
     const registryCensus = await readRegistryCensus(spawned)
     const population = registryPopulation(registryCensus)
+    assert.ok(population.length > 0, 'expected the registry population to be non-empty now that tools are registered')
     assert.doesNotThrow(() => census([...population], (name) => classifyRegistryName(name, registryCensus)))
   } finally {
     await spawned.close()
@@ -277,38 +280,28 @@ test('contract.published-schema-matches-enforced.control.no-arguments-is-allowed
   }
 })
 
-test('contract.published-schema-matches-enforced.control.nullable-root-is-forbidden', async () => {
-  const spawned = await spawnProbeServer([CONTROL_SPECS.nullableRoot])
-  try {
-    const published = await listPublishedTools(spawned)
-    const tool = soleTool(published, 'probe_nullable_root')
-    assert.deepEqual(tool.inputSchema.properties, {})
-    const verdict = classifyPublishedInput(tool.inputSchema, ['a'])
-    assert.equal(verdict, 'forbidden')
-    assert.throws(
-      () => census([{ name: tool.name, inputSchema: tool.inputSchema, enforcedKeys: ['a'] }], classifyCensusItem),
-      (error: unknown) => error instanceof Error && error.message.includes('probe_nullable_root')
-    )
-  } finally {
-    await spawned.close()
-  }
+test('contract.published-schema-matches-enforced.control.nullable-root-is-forbidden', () => {
+  const server = new McpServer({ name: 'logbook-guard-probe', version: '0.0.0' }, { capabilities: { tools: {} } })
+  const rt = productionRuntime()
+  assert.throws(
+    () => registerTool(server, rt, adaptProbeSpec(CONTROL_SPECS.nullableRoot)),
+    (error: unknown) =>
+      error instanceof Error &&
+      error.message.includes('probe_nullable_root') &&
+      error.message.includes('root is not a plain object')
+  )
 })
 
-test('contract.published-schema-matches-enforced.control.union-root-is-forbidden', async () => {
-  const spawned = await spawnProbeServer([CONTROL_SPECS.unionRoot])
-  try {
-    const published = await listPublishedTools(spawned)
-    const tool = soleTool(published, 'probe_union_root')
-    assert.deepEqual(tool.inputSchema.properties, {})
-    const verdict = classifyPublishedInput(tool.inputSchema, ['a'])
-    assert.equal(verdict, 'forbidden')
-    assert.throws(
-      () => census([{ name: tool.name, inputSchema: tool.inputSchema, enforcedKeys: ['a'] }], classifyCensusItem),
-      (error: unknown) => error instanceof Error && error.message.includes('probe_union_root')
-    )
-  } finally {
-    await spawned.close()
-  }
+test('contract.published-schema-matches-enforced.control.union-root-is-forbidden', () => {
+  const server = new McpServer({ name: 'logbook-guard-probe', version: '0.0.0' }, { capabilities: { tools: {} } })
+  const rt = productionRuntime()
+  assert.throws(
+    () => registerTool(server, rt, adaptProbeSpec(CONTROL_SPECS.unionRoot)),
+    (error: unknown) =>
+      error instanceof Error &&
+      error.message.includes('probe_union_root') &&
+      error.message.includes('root is not a plain object')
+  )
 })
 
 test('contract.published-schema-matches-enforced.classifier.root-union-keyword-is-unclassifiable', () => {

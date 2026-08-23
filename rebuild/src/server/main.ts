@@ -5,6 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { Runtime } from '../runtime/runtime.ts'
 import { INSTRUCTIONS } from './instructions.ts'
+import { ALL_TOOLS, registerTool } from './register.ts'
 
 const SERVER_NAME = 'logbook'
 const PACKAGE_JSON_SEARCH_DEPTH = 10
@@ -33,19 +34,7 @@ const readServerVersion = (): string => {
 
 const SERVER_VERSION = readServerVersion()
 
-type ToolListingInitializer = { setToolRequestHandlers: () => void }
-
-const activateEmptyToolListing = (server: McpServer): void => {
-  const candidate = server as unknown as Partial<ToolListingInitializer>
-  if (typeof candidate.setToolRequestHandlers !== 'function') {
-    throw new Error(
-      'main: McpServer no longer exposes setToolRequestHandlers as a function; the SDK shape has changed and activateEmptyToolListing must be updated'
-    )
-  }
-  candidate.setToolRequestHandlers()
-}
-
-export const main = async (_rt: Runtime): Promise<void> => {
+export const main = async (rt: Runtime): Promise<void> => {
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
@@ -55,7 +44,9 @@ export const main = async (_rt: Runtime): Promise<void> => {
       }
     }
   )
-  activateEmptyToolListing(server)
+  for (const tool of ALL_TOOLS) {
+    registerTool(server, rt, tool)
+  }
   const transport = new StdioServerTransport()
   await server.connect(transport)
 }

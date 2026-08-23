@@ -102,7 +102,23 @@ test('error.refusal-carries-four-parts', async () => {
   }
 })
 
-test('error.validation-is-in-band', async () => {
+test('error.malformed-non-object-arguments-are-in-band', async () => {
+  const spawned = await spawnProbeServer([CONTROL_SPECS.conformant])
+  try {
+    await spawned.client.listTools()
+    const result = (await spawned.client.callTool({
+      name: 'probe_conformant'
+    })) as CallToolResult
+    assert.equal(result.isError, true)
+    const text = firstTextOf(result)
+    assert.match(text, /Input validation error/)
+    assert.match(text, /probe_conformant/)
+  } finally {
+    await spawned.close()
+  }
+})
+
+test('error.type-mismatch-returns-our-four-part-refusal', async () => {
   const spawned = await spawnProbeServer([CONTROL_SPECS.conformant])
   try {
     await spawned.client.listTools()
@@ -112,8 +128,11 @@ test('error.validation-is-in-band', async () => {
     })) as CallToolResult
     assert.equal(result.isError, true)
     const text = firstTextOf(result)
-    assert.match(text, /Input validation error/)
-    assert.match(text, /probe_conformant/)
+    const lines = text.split('\n')
+    assert.equal(lines[0], 'field: value')
+    assert.match(text, /^accepted: /m)
+    assert.match(text, /^example: /m)
+    assert.match(text, /^retryable: (true|false)/m)
   } finally {
     await spawned.close()
   }

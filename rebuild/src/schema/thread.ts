@@ -62,7 +62,7 @@ const CriterionSchema = z.object({
 
 const RiskSchema = z.object({
   id: ulidField('the risk identity, a ULID'),
-  scope: z.string().describe('the criterion or area of the thread this risk concerns'),
+  scope: z.string().max(caps.RISK_SCOPE_MAX).describe('the criterion or area of the thread this risk concerns'),
   text: z.string().max(caps.RISK_TEXT_MAX).describe('the risk text'),
   refs: z
     .array(z.string().max(caps.RISK_REF_MAX))
@@ -74,7 +74,7 @@ const KeyDecisionSchema = z.object({
   id: ulidField('the key-decision link identity, a ULID'),
   decision_id: ulidField('the decision record this key decision links to'),
   title: z.string().max(caps.KEY_DECISION_TITLE_MAX).describe('the decision title as it should render on the spine'),
-  scope: z.string().describe('the criterion or area of the thread this decision resolved')
+  scope: z.string().max(caps.KEY_DECISION_SCOPE_MAX).describe('the criterion or area of the thread this decision resolved')
 })
 
 const OutOfScopeSchema = z.object({
@@ -114,8 +114,8 @@ const ThreadShape = z.object({
     .describe('the reason this thread is blocked, or null when it is not blocked'),
   completion_criteria: z
     .array(CriterionSchema)
-    .max(caps.CRITERIA_MAX_ELEMENTS)
-    .describe('the criteria that define this thread as done'),
+    .max(caps.CRITERIA_RETENTION_MAX_ELEMENTS)
+    .describe('the criteria that define this thread as done, struck criteria retained'),
   spine: SpineSchema.describe('the progressive summary of this thread'),
   created_at: isoField('when this thread was created'),
   updated_at: isoField('when this thread was last updated')

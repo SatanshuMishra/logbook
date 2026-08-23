@@ -6,13 +6,26 @@ import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { Refusal } from '../../src/schema/declare.ts'
+import type { Criterion, Thread } from '../../src/schema/thread.ts'
+import type { Runtime } from '../../src/runtime/runtime.ts'
+import * as caps from '../../src/schema/caps.ts'
 import { toolRefusal } from '../../src/server/errors.ts'
+import type { ToolContext } from '../../src/server/register.ts'
+import { openThreadTool } from '../../src/server/tools/open_thread.ts'
+import { updateThreadTool } from '../../src/server/tools/update_thread.ts'
+import { closeThreadTool } from '../../src/server/tools/close_thread.ts'
+import { bindBranchTool } from '../../src/server/tools/bind_branch.ts'
+import { amendCriteriaTool } from '../../src/server/tools/amend_criteria.ts'
+import { commitThread, loadThread, openProjectStore } from '../../src/server/tool-support.ts'
 import { git, readIdentity, type Identity } from '../../src/store/git.ts'
 import { createStoreDirectories, layoutFor } from '../../src/store/layout.ts'
 import { openStore } from '../../src/store/records.ts'
 import { LEDGER_REF, casUpdateRef } from '../../src/store/ref.ts'
 import { ensureSingleStore } from '../../src/store/single-store.ts'
 import { withDetail } from '../../src/store/detail.ts'
+import { insertCriterion, rewriteCriterion, strikeCriterion } from '../../src/domain/criteria.ts'
+import { contributeToSpine } from '../../src/domain/spine.ts'
+import { transition } from '../../src/domain/lifecycle.ts'
 import { rawGit, withRepo, withRepoNoIdentity } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { census } from '../support/census.ts'
@@ -37,8 +50,240 @@ const READ_IDENTITY_PRODUCER: ProducerId = 'store/git.ts#readIdentity'
 const ENSURE_SINGLE_STORE_PRODUCER: ProducerId = 'store/single-store.ts#ensureSingleStore'
 const OPEN_STORE_PRODUCER: ProducerId = 'store/records.ts#openStore'
 const WITH_DETAIL_PRODUCER: ProducerId = 'store/detail.ts#withDetail'
+const INSERT_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#insertCriterion'
+const REWRITE_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#rewriteCriterion'
+const STRIKE_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#strikeCriterion'
+const CONTRIBUTE_TO_SPINE_PRODUCER: ProducerId = 'domain/spine.ts#contributeToSpine'
+const TRANSITION_PRODUCER: ProducerId = 'domain/lifecycle.ts#transition'
+const OPEN_THREAD_DUPLICATE_SLUG_PRODUCER: ProducerId = 'server/tools/open_thread.ts#duplicateSlugRefusal'
+const UPDATE_THREAD_UNKNOWN_CRITERION_PRODUCER: ProducerId = 'server/tools/update_thread.ts#unknownCriterionRefusal'
+const UPDATE_THREAD_UNKNOWN_DECISION_PRODUCER: ProducerId = 'server/tools/update_thread.ts#unknownDecisionRefusal'
+const CLOSE_THREAD_WHOLE_RECORD_CAP_PRODUCER: ProducerId = 'server/tools/close_thread.ts#wholeRecordCapRefusal'
+const CLOSE_THREAD_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/close_thread.ts#commitFailureRefusal'
+const BIND_BRANCH_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/bind_branch.ts#commitFailureRefusal'
+const BIND_BRANCH_INVALID_BINDING_PRODUCER: ProducerId = 'server/tools/bind_branch.ts#invalidBindingRefusal'
+const AMEND_CRITERIA_MISSING_FIELD_PRODUCER: ProducerId = 'server/tools/amend_criteria.ts#missingFieldRefusal'
+const OPEN_PROJECT_STORE_PRODUCER: ProducerId = 'server/tool-support.ts#openProjectStore'
+const LOAD_THREAD_PRODUCER: ProducerId = 'server/tool-support.ts#loadThread'
+const COMMIT_THREAD_PRODUCER: ProducerId = 'server/tool-support.ts#commitThread'
 
-const collectRealRefusals = (): TaggedRefusal[] => {
+const STUB_TOOL_CTX = {} as unknown as ToolContext
+
+const censusFixtureThread = (rt: Runtime): Thread => ({
+  id: rt.ulid(),
+  slug: 'census-fixture-thread',
+  title: 'Census fixture thread',
+  status: 'open',
+  blocked_by: null,
+  completion_criteria: [],
+  spine: {
+    active_goal: 'census fixture goal',
+    next_step: 'census fixture next step',
+    last_session: 'census fixture last session',
+    open_risks: [],
+    key_decisions: [],
+    out_of_scope: []
+  },
+  created_at: rt.now(),
+  updated_at: rt.now()
+})
+
+const OVER_CAP_FILL_CHUNK_SIZES: readonly number[] = [caps.CRITERION_TEXT_MAX, 100, 20, 4, 1, 0]
+
+const overCapProbeCriterion = (rt: Runtime, text: string): Criterion => ({
+  id: rt.ulid(),
+  ordinal: 1,
+  text,
+  done: false,
+  kind: 'planned',
+  struck_by: null
+})
+
+const buildThreadAtWholeRecordCapEdge = (rt: Runtime): Thread => {
+  const base: Thread = {
+    id: rt.ulid(),
+    slug: 'census-over-cap-thread',
+    title: 'Census over-cap thread',
+    status: 'open',
+    blocked_by: null,
+    completion_criteria: [],
+    spine: {
+      active_goal: 'census over-cap goal',
+      next_step: 'census over-cap next step',
+      last_session: 'census over-cap last session',
+      open_risks: [],
+      key_decisions: [],
+      out_of_scope: []
+    },
+    created_at: rt.now(),
+    updated_at: rt.now()
+  }
+
+  const sizeOf = (criteria: Criterion[]): number =>
+    Buffer.byteLength(JSON.stringify({ ...base, completion_criteria: criteria }), 'utf8')
+
+  let criteria: Criterion[] = []
+  for (const chunk of OVER_CAP_FILL_CHUNK_SIZES) {
+    while (true) {
+      const next = [...criteria, overCapProbeCriterion(rt, 'x'.repeat(chunk))]
+      if (next.length > caps.CRITERIA_RETENTION_MAX_ELEMENTS) break
+      if (sizeOf(next) > caps.THREAD_RECORD_SERIALISED_MAX_BYTES) break
+      criteria = next
+    }
+  }
+  if (criteria.length === 0) {
+    throw new Error('census over-cap fixture: the multi-resolution fill added no completion criteria')
+  }
+
+  const gap = caps.THREAD_RECORD_SERIALISED_MAX_BYTES - sizeOf(criteria)
+  if (gap < 0) {
+    throw new Error(`census over-cap fixture: the fill already exceeds the whole-record byte cap by ${-gap} bytes`)
+  }
+  const lastIndex = criteria.length - 1
+  const last = criteria[lastIndex] as Criterion
+  const extendedText = last.text + 'x'.repeat(gap)
+  if (extendedText.length > caps.CRITERION_TEXT_MAX) {
+    throw new Error(
+      `census over-cap fixture: closing a ${gap}-byte gap would push one criterion's text past its own ${caps.CRITERION_TEXT_MAX}-character cap`
+    )
+  }
+  criteria = [...criteria.slice(0, lastIndex), { ...last, text: extendedText }]
+
+  const atEdge: Thread = { ...base, completion_criteria: criteria }
+  const edgeSize = Buffer.byteLength(JSON.stringify(atEdge), 'utf8')
+  if (edgeSize !== caps.THREAD_RECORD_SERIALISED_MAX_BYTES) {
+    throw new Error(
+      `census over-cap fixture: expected exactly ${caps.THREAD_RECORD_SERIALISED_MAX_BYTES} bytes at the cap edge, computed ${edgeSize}`
+    )
+  }
+  return atEdge
+}
+
+const buildToolFixtureRepo = (): string => {
+  const repo = mkdtempSync(join(tmpdir(), 'logbook-tool-fixture-'))
+  rawGit(repo, ['init', '--initial-branch=main'])
+  rawGit(repo, ['config', 'user.name', 'Logbook Tool Fixture'])
+  rawGit(repo, ['config', 'user.email', 'tool-fixture@logbook.test'])
+  writeFileSync(join(repo, 'README.md'), 'logbook tool fixture repository\n')
+  rawGit(repo, ['add', 'README.md'])
+  rawGit(repo, ['commit', '-m', 'fixture: initial commit'])
+  return repo
+}
+
+const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
+  const refusals: TaggedRefusal[] = []
+  const pluginDataRoot = mkdtempSync(join(tmpdir(), 'logbook-tool-fixture-plugin-data-'))
+  const repo = buildToolFixtureRepo()
+  try {
+    const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: pluginDataRoot }, cwd: repo })
+
+    const firstOpen = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
+      title: 'census tool fixture thread',
+      slug: 'census-tool-fixture',
+      completion_criteria: ['a census criterion']
+    })
+    if (!firstOpen.ok) throw new Error('expected openThreadTool to open the census tool fixture thread')
+    const threadId = firstOpen.structured.thread_id
+
+    const openedStore = openProjectStore(rt)
+    if (!openedStore.ok) throw new Error('expected openProjectStore to open the census tool fixture store')
+    const store = openedStore.value
+
+    const unknownThreadLoad = loadThread(store, 'thread_id', rt.ulid())
+    if (unknownThreadLoad.ok) throw new Error('expected loadThread to refuse against an unknown thread id')
+    refusals.push({ producer: LOAD_THREAD_PRODUCER, refusal: unknownThreadLoad.refusal })
+
+    const openProjectStoreFailureRt = testRuntime({ env: {}, cwd: repo })
+    const openProjectStoreFailure = openProjectStore(openProjectStoreFailureRt)
+    if (openProjectStoreFailure.ok) throw new Error('expected openProjectStore to refuse when CLAUDE_PLUGIN_DATA is unset')
+    refusals.push({ producer: OPEN_PROJECT_STORE_PRODUCER, refusal: openProjectStoreFailure.refusal })
+
+    const duplicateOpen = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
+      title: 'census tool fixture thread again',
+      slug: 'census-tool-fixture',
+      completion_criteria: ['a census criterion']
+    })
+    if (duplicateOpen.ok) throw new Error('expected openThreadTool to refuse a duplicate slug')
+    refusals.push({ producer: OPEN_THREAD_DUPLICATE_SLUG_PRODUCER, refusal: duplicateOpen.refusal })
+
+    const unknownCriterion = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      criteria_done: [rt.ulid()]
+    })
+    if (unknownCriterion.ok) throw new Error('expected updateThreadTool to refuse an unknown criterion id')
+    refusals.push({ producer: UPDATE_THREAD_UNKNOWN_CRITERION_PRODUCER, refusal: unknownCriterion.refusal })
+
+    const unknownDecision = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      key_decisions_add: [{ decision_id: rt.ulid(), title: 'a census decision', scope: 'a census scope' }]
+    })
+    if (unknownDecision.ok) throw new Error('expected updateThreadTool to refuse an unresolved decision id')
+    refusals.push({ producer: UPDATE_THREAD_UNKNOWN_DECISION_PRODUCER, refusal: unknownDecision.refusal })
+
+    const missingKind = await amendCriteriaTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      operation: 'insert',
+      decision_id: rt.ulid(),
+      text: 'a census amendment'
+    })
+    if (missingKind.ok) throw new Error('expected amendCriteriaTool to refuse an insert with no kind')
+    refusals.push({ producer: AMEND_CRITERIA_MISSING_FIELD_PRODUCER, refusal: missingKind.refusal })
+
+    const overflowingBranch = String.fromCharCode(1).repeat(50) + 'a'.repeat(205)
+    const invalidBinding = await bindBranchTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      branch: overflowingBranch
+    })
+    if (invalidBinding.ok) throw new Error('expected bindBranchTool to refuse a branch that overflows its cap once escaped')
+    refusals.push({ producer: BIND_BRANCH_INVALID_BINDING_PRODUCER, refusal: invalidBinding.refusal })
+
+    const overCapThread = buildThreadAtWholeRecordCapEdge(rt)
+    const overCapSeed = store.commit([{ kind: 'thread', record: overCapThread }], 'seed census over-cap thread fixture')
+    if (!overCapSeed.ok) throw new Error('expected the census over-cap thread fixture to seed successfully')
+    const overCapClose = await closeThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: overCapThread.id,
+      outcome: 'abandoned',
+      detail: 'census whole-record cap probe'
+    })
+    if (overCapClose.ok) {
+      throw new Error('expected closeThreadTool to refuse when closing a thread already at the byte-cap edge pushes it over the cap')
+    }
+    refusals.push({ producer: CLOSE_THREAD_WHOLE_RECORD_CAP_PRODUCER, refusal: overCapClose.refusal })
+
+    rawGit(repo, ['config', '--unset', 'user.name'])
+    rawGit(repo, ['config', '--unset', 'user.email'])
+
+    const threadForCommitFailure = store.readThread(threadId)
+    if (threadForCommitFailure === null || threadForCommitFailure.quarantined) {
+      throw new Error('expected the census fixture thread to still read back for the commitThread probe')
+    }
+    const commitThreadFailure = commitThread(store, threadForCommitFailure.record, 'census commitThread failure probe')
+    if (commitThreadFailure.ok) throw new Error('expected commitThread to refuse when the ledger commit cannot complete')
+    refusals.push({ producer: COMMIT_THREAD_PRODUCER, refusal: commitThreadFailure.refusal })
+
+    const bindCommitFailure = await bindBranchTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      branch: 'census-commit-failure-branch'
+    })
+    if (bindCommitFailure.ok) throw new Error('expected bindBranchTool to refuse when the ledger commit cannot complete')
+    refusals.push({ producer: BIND_BRANCH_COMMIT_FAILURE_PRODUCER, refusal: bindCommitFailure.refusal })
+
+    const closeCommitFailure = await closeThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      outcome: 'abandoned',
+      detail: 'census commit-failure probe'
+    })
+    if (closeCommitFailure.ok) throw new Error('expected closeThreadTool to refuse when the ledger commit cannot complete')
+    refusals.push({ producer: CLOSE_THREAD_COMMIT_FAILURE_PRODUCER, refusal: closeCommitFailure.refusal })
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+    rmSync(pluginDataRoot, { recursive: true, force: true })
+  }
+
+  return refusals
+}
+
+const collectRealRefusals = async (): Promise<TaggedRefusal[]> => {
   const refusals: TaggedRefusal[] = [
     { producer: REFUSE_PRODUCER, refusal: refusalTemplate() },
     { producer: WITH_DETAIL_PRODUCER, refusal: withDetail(refusalTemplate(), 'a store-relative detail') }
@@ -153,11 +398,55 @@ const collectRealRefusals = (): TaggedRefusal[] => {
     rmSync(unreadableRecordsProject, { recursive: true, force: true })
   }
 
+  const domainRt = testRuntime()
+  const domainThread = censusFixtureThread(domainRt)
+  const neverResolves = (): boolean => false
+
+  const insertResult = insertCriterion(
+    domainRt,
+    domainThread,
+    { text: 'a census criterion', kind: 'planned', decisionId: undefined },
+    neverResolves
+  )
+  if (insertResult.ok) throw new Error('expected insertCriterion to refuse without a decision id')
+  refusals.push({ producer: INSERT_CRITERION_PRODUCER, refusal: insertResult })
+
+  const rewriteResult = rewriteCriterion(
+    domainRt,
+    domainThread,
+    { criterionId: 'unknown-criterion-id', text: 'rewritten census text', decisionId: undefined },
+    neverResolves
+  )
+  if (rewriteResult.ok) throw new Error('expected rewriteCriterion to refuse without a decision id')
+  refusals.push({ producer: REWRITE_CRITERION_PRODUCER, refusal: rewriteResult })
+
+  const strikeResult = strikeCriterion(
+    domainRt,
+    domainThread,
+    { criterionId: 'unknown-criterion-id', decisionId: undefined },
+    neverResolves
+  )
+  if (strikeResult.ok) throw new Error('expected strikeCriterion to refuse without a decision id')
+  refusals.push({ producer: STRIKE_CRITERION_PRODUCER, refusal: strikeResult })
+
+  const spineResult = contributeToSpine(domainThread.spine, {
+    active_goal: 'a'.repeat(caps.SPINE_ACTIVE_GOAL_MAX + 1)
+  })
+  if (spineResult.ok) throw new Error('expected contributeToSpine to refuse on an oversized active_goal')
+  refusals.push({ producer: CONTRIBUTE_TO_SPINE_PRODUCER, refusal: spineResult })
+
+  const transitionResult = transition(domainRt, domainThread, 'abandoned', '')
+  if (transitionResult.ok) throw new Error('expected transition to refuse an abandon with no reason')
+  refusals.push({ producer: TRANSITION_PRODUCER, refusal: transitionResult })
+
+  const toolRefusals = await collectToolRefusals()
+  refusals.push(...toolRefusals)
+
   return refusals
 }
 
-test('error.discloses-no-path', () => {
-  const tagged = collectRealRefusals()
+test('error.discloses-no-path', async () => {
+  const tagged = await collectRealRefusals()
   assert.ok(tagged.length > 0, 'expected at least one forced refusal to census')
 
   const scanned = scanRefusalProducers()

@@ -1,6 +1,8 @@
 import type { z } from 'zod'
 import type { Refusal } from './declare.ts'
 import { type JsonSchemaNode, resolveNode, synthesise } from './example.ts'
+import { clipGraphemes, escapeStored } from '../render/escape.ts'
+import * as caps from './caps.ts'
 
 const isNode = (value: unknown): value is JsonSchemaNode =>
   typeof value === 'object' && value !== null
@@ -28,6 +30,16 @@ const nodeAtPath = (root: JsonSchemaNode, path: (string | number | symbol)[]): J
 
 const renderField = (path: (string | number | symbol)[]): string =>
   path.length === 0 ? '(root)' : path.map((segment) => String(segment)).join('.')
+
+const renderUnrecognizedKeysField = (issue: z.core.$ZodIssue): string | null => {
+  if (issue.code !== 'unrecognized_keys') return null
+  const prefix = issue.path.map((segment) => String(segment)).join('.')
+  const escapedKeys = issue.keys.map((key) => clipGraphemes(escapeStored(key), caps.UNRECOGNIZED_KEY_NAME_MAX))
+  const shown = escapedKeys.slice(0, caps.UNRECOGNIZED_KEYS_SHOWN_MAX)
+  const remainder = escapedKeys.length - shown.length
+  const keys = remainder > 0 ? `${shown.join(',')} (+${remainder} more)` : shown.join(',')
+  return prefix.length === 0 ? keys : `${prefix}.${keys}`
+}
 
 const ACCEPTED_KEYS = [
   'minLength',
@@ -77,7 +89,7 @@ export const refuse = (jsonSchema: Record<string, unknown>, issues: z.core.$ZodI
   const resolvedNode = resolveNode(jsonSchema, outerNode)
   const effectiveNode: JsonSchemaNode = { ...resolvedNode, ...outerNode }
 
-  const field = renderField(issue.path)
+  const field = renderUnrecognizedKeysField(issue) ?? renderField(issue.path)
   const accepted = renderAccepted(effectiveNode)
   const example = renderExample(jsonSchema, outerNode)
   const retryable = !isNonRetryable(issue)

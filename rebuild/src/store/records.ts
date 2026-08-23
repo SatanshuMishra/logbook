@@ -28,6 +28,26 @@ export type Store = {
   commit: (changes: RecordChange[], message: string) => CommitResult
 }
 
+const validateChange = (change: RecordChange): Refusal | null => {
+  if (change.kind === 'raw') return null
+  if (change.kind === 'thread') {
+    const validated = ThreadRecord.parse(change.record)
+    return validated.ok ? null : validated
+  }
+  if (change.kind === 'decision') {
+    const validated = DecisionRecord.parse(change.record)
+    return validated.ok ? null : validated
+  }
+  const validated = SessionRecord.parse(change.record)
+  return validated.ok ? null : validated
+}
+
+const invalidChangeResult = (refusal: Refusal): CommitResult => ({
+  ok: false,
+  reason: 'invalid',
+  detail: `${refusal.field} failed its stored-shape validation: ${refusal.message}`
+})
+
 const threadPath = (layout: StoreLayout, id: Ulid): string => path.join(layout.records, 'threads', `${id}.json`)
 const decisionPath = (layout: StoreLayout, id: Ulid): string =>
   path.join(layout.records, 'decisions', `${id}.json`)
@@ -81,6 +101,12 @@ export const openStore = (rt: Runtime, projectRoot: string): Ok<Store> | Refusal
     readSessionEntries: (threadId) =>
       readAllRecordFiles<SessionEntry>(path.join(storeLayout.records, 'sessions', threadId), SessionRecord),
     commit: (changes, message) => {
+      for (const change of changes) {
+        const refusal = validateChange(change)
+        if (refusal !== null) {
+          return invalidChangeResult(refusal)
+        }
+      }
       const result = writeRecords(rt, storeLayout, changes, message)
       if (result.ok) {
         markSynced(storeLayout, result.after)
