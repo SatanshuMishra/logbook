@@ -155,10 +155,22 @@ const findRefusalType = (program: ts.Program, checker: ts.TypeChecker): ts.Type 
 const resolveAliasedSymbol = (checker: ts.TypeChecker, symbol: ts.Symbol): ts.Symbol =>
   (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(symbol) : symbol
 
+const carriesRefusalProperty = (checker: ts.TypeChecker, refusalType: ts.Type, constituent: ts.Type): boolean => {
+  const refusalProperty = constituent.getProperty('refusal')
+  if (refusalProperty === undefined) return false
+  const declarations = refusalProperty.declarations
+  if (declarations === undefined || declarations.length === 0) return false
+  const propertyType = checker.getTypeOfSymbolAtLocation(refusalProperty, declarations[0] as ts.Node)
+  return checker.isTypeAssignableTo(propertyType, refusalType)
+}
+
 const producesRefusal = (checker: ts.TypeChecker, refusalType: ts.Type, returnType: ts.Type): boolean => {
   const awaited = checker.getAwaitedType(returnType) ?? returnType
   const constituents = awaited.isUnion() ? awaited.types : [awaited]
-  return constituents.some((constituent) => checker.isTypeAssignableTo(constituent, refusalType))
+  return constituents.some(
+    (constituent) =>
+      checker.isTypeAssignableTo(constituent, refusalType) || carriesRefusalProperty(checker, refusalType, constituent)
+  )
 }
 
 export const scanRefusalProducers = (): ProducerId[] => {

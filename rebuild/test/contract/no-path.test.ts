@@ -16,6 +16,7 @@ import { updateThreadTool } from '../../src/server/tools/update_thread.ts'
 import { closeThreadTool, wholeRecordCapRefusal as closeThreadWholeRecordCapRefusal } from '../../src/server/tools/close_thread.ts'
 import { bindBranchTool } from '../../src/server/tools/bind_branch.ts'
 import { amendCriteriaTool } from '../../src/server/tools/amend_criteria.ts'
+import { commitThread, loadThread, openProjectStore } from '../../src/server/tool-support.ts'
 import { git, readIdentity, type Identity } from '../../src/store/git.ts'
 import { createStoreDirectories, layoutFor } from '../../src/store/layout.ts'
 import { openStore } from '../../src/store/records.ts'
@@ -62,6 +63,9 @@ const CLOSE_THREAD_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/close_thr
 const BIND_BRANCH_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/bind_branch.ts#commitFailureRefusal'
 const BIND_BRANCH_INVALID_BINDING_PRODUCER: ProducerId = 'server/tools/bind_branch.ts#invalidBindingRefusal'
 const AMEND_CRITERIA_MISSING_FIELD_PRODUCER: ProducerId = 'server/tools/amend_criteria.ts#missingFieldRefusal'
+const OPEN_PROJECT_STORE_PRODUCER: ProducerId = 'server/tool-support.ts#openProjectStore'
+const LOAD_THREAD_PRODUCER: ProducerId = 'server/tool-support.ts#loadThread'
+const COMMIT_THREAD_PRODUCER: ProducerId = 'server/tool-support.ts#commitThread'
 
 const STUB_TOOL_CTX = {} as unknown as ToolContext
 
@@ -110,6 +114,19 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     if (!firstOpen.ok) throw new Error('expected openThreadTool to open the census tool fixture thread')
     const threadId = firstOpen.structured.thread_id
 
+    const openedStore = openProjectStore(rt)
+    if (!openedStore.ok) throw new Error('expected openProjectStore to open the census tool fixture store')
+    const store = openedStore.value
+
+    const unknownThreadLoad = loadThread(store, 'thread_id', rt.ulid())
+    if (unknownThreadLoad.ok) throw new Error('expected loadThread to refuse against an unknown thread id')
+    refusals.push({ producer: LOAD_THREAD_PRODUCER, refusal: unknownThreadLoad.refusal })
+
+    const openProjectStoreFailureRt = testRuntime({ env: {}, cwd: repo })
+    const openProjectStoreFailure = openProjectStore(openProjectStoreFailureRt)
+    if (openProjectStoreFailure.ok) throw new Error('expected openProjectStore to refuse when CLAUDE_PLUGIN_DATA is unset')
+    refusals.push({ producer: OPEN_PROJECT_STORE_PRODUCER, refusal: openProjectStoreFailure.refusal })
+
     const duplicateOpen = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
       title: 'census tool fixture thread again',
       slug: 'census-tool-fixture',
@@ -151,6 +168,14 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
 
     rawGit(repo, ['config', '--unset', 'user.name'])
     rawGit(repo, ['config', '--unset', 'user.email'])
+
+    const threadForCommitFailure = store.readThread(threadId)
+    if (threadForCommitFailure === null || threadForCommitFailure.quarantined) {
+      throw new Error('expected the census fixture thread to still read back for the commitThread probe')
+    }
+    const commitThreadFailure = commitThread(store, threadForCommitFailure.record, 'census commitThread failure probe')
+    if (commitThreadFailure.ok) throw new Error('expected commitThread to refuse when the ledger commit cannot complete')
+    refusals.push({ producer: COMMIT_THREAD_PRODUCER, refusal: commitThreadFailure.refusal })
 
     const bindCommitFailure = await bindBranchTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,

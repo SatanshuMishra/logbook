@@ -9,7 +9,13 @@ import { rawGit } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
 import { listPublishedTools, type PublishedTool } from '../support/published.ts'
-import { generateSchemaCases, synthesiseValue, type JsonSchemaNode, type Mutation } from '../support/schema-arbitrary.ts'
+import {
+  generateSchemaCases,
+  synthesiseValue,
+  type ConstraintClass,
+  type JsonSchemaNode,
+  type Mutation
+} from '../support/schema-arbitrary.ts'
 import { openStore } from '../../src/store/records.ts'
 import type { Decision } from '../../src/schema/decision.ts'
 import type { Thread } from '../../src/schema/thread.ts'
@@ -222,10 +228,16 @@ const readStoredThread = (repo: string, pluginData: string, homeDir: string, thr
 const runRejectsInvalid = async (
   fx: Fixture,
   toolName: string,
+  expectedMissingClasses: readonly ConstraintClass[],
   overrides: Record<string, unknown> = {}
 ): Promise<void> => {
   const schema = schemaFor(fx.published, toolName)
-  const { mutations } = generateSchemaCases(toolName, schema, overrides)
+  const { mutations, missing } = generateSchemaCases(toolName, schema, overrides)
+  assert.deepEqual(
+    new Set(missing.map((m) => m.class)),
+    new Set(expectedMissingClasses),
+    `expected ${toolName}'s published schema to carry no mutation for exactly [${expectedMissingClasses.join(', ')}], but it carried none for [${missing.map((m) => m.class).join(', ')}]`
+  )
   assert.ok(mutations.length > 0, `expected at least one generated mutation for ${toolName}`)
   for (const mutation of mutations) {
     const result = (await fx.spawned.client.callTool({ name: toolName, arguments: mutation.input })) as CallToolResult
@@ -248,7 +260,7 @@ test('open_thread.spawn.contract', async () => {
 
 test('open_thread.rejects-invalid', async () => {
   await withFixture(async (fx) => {
-    await runRejectsInvalid(fx, 'open_thread')
+    await runRejectsInvalid(fx, 'open_thread', [])
   })
 })
 
@@ -268,7 +280,7 @@ test('update_thread.spawn.contract', async () => {
 
 test('update_thread.rejects-invalid', async () => {
   await withFixture(async (fx) => {
-    await runRejectsInvalid(fx, 'update_thread')
+    await runRejectsInvalid(fx, 'update_thread', ['minItems'])
   })
 })
 
@@ -296,7 +308,7 @@ test('close_thread.rejects-invalid', async () => {
     const { threadId } = await createFixtureThread(fx.spawned, fx.published)
     const before = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
 
-    await runRejectsInvalid(fx, 'close_thread')
+    await runRejectsInvalid(fx, 'close_thread', ['minItems'])
 
     const after = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
     assert.deepEqual(after, before, 'a thread must be left unchanged when every close_thread call it received was refused')
@@ -329,7 +341,7 @@ test('amend_criteria.spawn.contract', async () => {
 
 test('amend_criteria.rejects-invalid', async () => {
   await withFixture(async (fx) => {
-    await runRejectsInvalid(fx, 'amend_criteria')
+    await runRejectsInvalid(fx, 'amend_criteria', ['minItems'])
   })
 })
 
@@ -360,6 +372,6 @@ test('bind_branch.spawn.contract', async () => {
 
 test('bind_branch.rejects-invalid', async () => {
   await withFixture(async (fx) => {
-    await runRejectsInvalid(fx, 'bind_branch')
+    await runRejectsInvalid(fx, 'bind_branch', ['minItems'])
   })
 })
