@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import {
   existsSync,
   mkdtempSync,
@@ -16,7 +17,7 @@ import type { Runtime } from '../../src/runtime/runtime.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { git } from '../../src/store/git.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
-import { writeRecords, type RecordChange } from '../../src/store/write-path.ts'
+import { writeIndexScratchDir, writeRecords, type RecordChange } from '../../src/store/write-path.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { withRepo } from '../support/git-fixture.ts'
 
@@ -41,13 +42,19 @@ const withPluginData = <T>(fn: (pluginData: string) => T): T => {
   }
 }
 
-const sharedIndexSnapshot = (): Set<string> =>
-  new Set(readdirSync(tmpdir()).filter((name) => name.startsWith('logbook-write-index-')))
+const sharedIndexSnapshot = (layout: StoreLayout): Set<string> => {
+  try {
+    return new Set(readdirSync(writeIndexScratchDir(layout)).filter((name) => name.startsWith('logbook-write-index-')))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return new Set()
+    throw error
+  }
+}
 
-const newSharedIndexFiles = (before: Set<string>): string[] =>
-  [...sharedIndexSnapshot()].filter((name) => !before.has(name))
+const newSharedIndexFiles = (layout: StoreLayout, before: Set<string>): string[] =>
+  [...sharedIndexSnapshot(layout)].filter((name) => !before.has(name))
 
-const makeThread = (rt: Runtime, slug: string): RecordChange => ({
+const makeThread = (rt: Runtime, slug: string): Extract<RecordChange, { kind: 'thread' }> => ({
   kind: 'thread',
   record: {
     id: rt.ulid(),
@@ -209,13 +216,13 @@ test('write.leaves-no-temporary-index-on-success', () => {
     withPluginData((pluginData) => {
       const rt = runtimeWithHome(pluginData)
       const layout = layoutIn(rt, repo)
-      const before = sharedIndexSnapshot()
+      const before = sharedIndexSnapshot(layout)
 
       const change = makeThread(rt, 'index-cleanup-success')
       const result = writeRecords(rt, layout, [change], 'record with cleanup check')
       assert.equal(result.ok, true)
 
-      assert.deepEqual(newSharedIndexFiles(before), [])
+      assert.deepEqual(newSharedIndexFiles(layout, before), [])
     })
   })
 })
@@ -225,7 +232,7 @@ test('write.leaves-no-temporary-index-on-failure', () => {
     withPluginData((pluginData) => {
       const rt = runtimeWithHome(pluginData)
       const layout = layoutIn(rt, repo)
-      const before = sharedIndexSnapshot()
+      const before = sharedIndexSnapshot(layout)
 
       const failingGit: typeof git = (callRt, callRepo, args, opts) => {
         if (args[0] === 'write-tree') {
@@ -238,7 +245,30 @@ test('write.leaves-no-temporary-index-on-failure', () => {
       const result = writeRecords(rt, layout, [change], 'should fail', { git: failingGit })
       assert.equal(result.ok, false)
 
-      assert.deepEqual(newSharedIndexFiles(before), [])
+      assert.deepEqual(newSharedIndexFiles(layout, before), [])
+    })
+  })
+})
+
+test('write.index-census-ignores-a-concurrent-writers-in-flight-file', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const layout = layoutIn(rt, repo)
+      const before = sharedIndexSnapshot(layout)
+
+      const decoyPath = join(tmpdir(), `logbook-write-index-${randomUUID()}`)
+      writeFileSync(decoyPath, '')
+
+      try {
+        const change = makeThread(rt, 'index-census-decoy')
+        const result = writeRecords(rt, layout, [change], 'record while a decoy file is in flight elsewhere')
+        assert.equal(result.ok, true)
+
+        assert.deepEqual(newSharedIndexFiles(layout, before), [])
+      } finally {
+        rmSync(decoyPath, { force: true })
+      }
     })
   })
 })

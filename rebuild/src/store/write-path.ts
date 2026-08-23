@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, unlinkSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Decision } from '../schema/decision.ts'
@@ -15,6 +14,7 @@ export type RecordChange =
   | { kind: 'thread'; record: Thread }
   | { kind: 'decision'; record: Decision }
   | { kind: 'session'; record: SessionEntry }
+  | { kind: 'raw'; relPath: string; content: string }
 
 export type CommitResult =
   | { ok: true; ref: string; before: string | null; after: string }
@@ -23,19 +23,23 @@ export type CommitResult =
 export type WriteRecordsOps = {
   git: typeof git
   beforeCas: () => void
+  extraParents?: string[]
 }
 
 const MAX_ATTEMPTS = 5
 
+export const writeIndexScratchDir = (layout: StoreLayout): string => path.join(layout.root, 'write-index')
+
 const relativePathFor = (change: RecordChange): string => {
   if (change.kind === 'thread') return path.join('threads', `${change.record.id}.json`)
   if (change.kind === 'decision') return path.join('decisions', `${change.record.id}.json`)
+  if (change.kind === 'raw') return change.relPath
   return path.join('sessions', change.record.thread_id, `${change.record.id}.json`)
 }
 
-const contentFor = (change: RecordChange): string => JSON.stringify(change.record)
+const contentFor = (change: RecordChange): string => (change.kind === 'raw' ? change.content : JSON.stringify(change.record))
 
-const freshIndexPath = (): string => path.join(tmpdir(), `logbook-write-index-${randomUUID()}`)
+const freshIndexPath = (scratchDir: string): string => path.join(scratchDir, `logbook-write-index-${randomUUID()}`)
 
 const removeSharedIndex = (indexFile: string): void => {
   try {
@@ -47,8 +51,9 @@ const removeSharedIndex = (indexFile: string): void => {
   }
 }
 
-const withSharedIndex = <T>(fn: (indexFile: string) => T): T => {
-  const indexFile = freshIndexPath()
+const withSharedIndex = <T>(scratchDir: string, fn: (indexFile: string) => T): T => {
+  mkdirSync(scratchDir, { recursive: true })
+  const indexFile = freshIndexPath(scratchDir)
   try {
     return fn(indexFile)
   } finally {
@@ -67,7 +72,7 @@ const buildTree = (
   oldRef: string | null,
   targets: Target[]
 ): TreeResult =>
-  withSharedIndex((indexFile) => {
+  withSharedIndex(writeIndexScratchDir(layout), (indexFile) => {
     if (oldRef !== null) {
       const readTree = runGit(rt, layout.projectRoot, ['read-tree', oldRef], { indexFile })
       if (!readTree.ok) {
@@ -182,10 +187,11 @@ export const writeRecords = (
     }
     const tree = treeResult.tree
 
+    const parentRefs: string[] = [...(oldRef !== null ? [oldRef] : []), ...(ops.extraParents ?? [])]
     const commitArgs: string[] =
-      oldRef === null
+      parentRefs.length === 0
         ? ['commit-tree', tree, '-m', message]
-        : ['commit-tree', tree, '-p', oldRef, '-m', message]
+        : ['commit-tree', tree, ...parentRefs.flatMap((parent) => ['-p', parent]), '-m', message]
     const commitResult: GitResult = runGit(rt, layout.projectRoot, commitArgs, { identity: identity.value })
     if (!commitResult.ok) {
       rollback()
