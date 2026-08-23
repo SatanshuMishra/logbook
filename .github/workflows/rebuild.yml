@@ -90,7 +90,15 @@ jobs:
           echo "mutation run covers the unit and store layers only"
           echo "spawn, hook and sync layers are excluded because each spawns real processes"
 
-          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" -- rebuild/src | grep -E '\.ts$' || true)
+          set +e
+          RAW=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" -- rebuild/src)
+          diff_status=$?
+          set -e
+          if [ "$diff_status" -ne 0 ]; then
+            echo "git diff between $BASE_SHA and $HEAD_SHA failed with exit code $diff_status, the mutation scope cannot be computed"
+            exit 1
+          fi
+          CHANGED_FILES=$(printf '%s\n' "$RAW" | grep -E '\.ts$' || true)
 
           MUTATE_PATTERNS=$(jq -r '.mutate[]' rebuild/stryker.config.json)
           SCOPE=()
