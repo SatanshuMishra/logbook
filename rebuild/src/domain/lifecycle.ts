@@ -1,10 +1,12 @@
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Thread, Criterion } from '../schema/thread.ts'
 import type { Ok, Refusal } from '../schema/declare.ts'
+import * as caps from '../schema/caps.ts'
+import { escapeStored } from '../render/escape.ts'
 import { evaluateDoneGate, type GateFailure } from './done-gate.ts'
 
 const renderOutstanding = (outstanding: readonly Criterion[]): string =>
-  outstanding.map((criterion) => `${criterion.id}: ${criterion.text}`).join('; ')
+  outstanding.map((criterion) => `${criterion.id}: ${escapeStored(criterion.text)}`).join('; ')
 
 const refuseAbandon = (): Refusal => ({
   ok: false,
@@ -33,7 +35,7 @@ const refuseGate = (failure: GateFailure): Refusal => {
       accepted: 'every un-struck completion criterion marked done',
       example: 'mark each outstanding criterion done, or strike it, then retry',
       retryable: true,
-      message: `closing as done requires every un-struck completion criterion to be marked done; outstanding: ${renderOutstanding(failure.outstanding)}.`
+      message: `closing as done requires every un-struck completion criterion to be marked done; ${failure.outstanding.length} of at most ${caps.CRITERIA_MAX_ELEMENTS} outstanding: ${renderOutstanding(failure.outstanding)}.`
     }
   }
   return {

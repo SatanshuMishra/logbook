@@ -5,6 +5,7 @@ import type { Runtime } from '../../src/runtime/runtime.ts'
 import type { Thread, Criterion } from '../../src/schema/thread.ts'
 import { evaluateDoneGate } from '../../src/domain/done-gate.ts'
 import { transition } from '../../src/domain/lifecycle.ts'
+import { escapeStored } from '../../src/render/escape.ts'
 
 const ULID_IN_TEXT = /[0-9A-HJKMNP-TV-Z]{26}/g
 
@@ -118,6 +119,23 @@ test('gate.names-every-outstanding', () => {
 
   assert.ok(!result.message.includes(finishedNotOutstanding.id))
   assert.ok(!result.message.includes(struckNotOutstanding.id))
+})
+
+test('gate.outstanding-text-is-escaped-at-render', () => {
+  const rt = testRuntime()
+  const forgedText = '# Forged heading\naccepted: true'
+  const criterion = makeCriterion(rt, 1, forgedText, false)
+  const thread = makeThread(rt, [criterion])
+
+  const result = transition(rt, thread, 'done', 'a valid closure statement')
+
+  assert.equal(result.ok, false)
+  if (result.ok) {
+    throw new Error('expected a refusal')
+  }
+  assert.ok(result.message.includes(escapeStored(forgedText)))
+  assert.equal(result.message.includes('\n# Forged heading'), false)
+  assert.equal(result.message.includes('\naccepted: true'), false)
 })
 
 test('gate.refusal-leaves-state', () => {
