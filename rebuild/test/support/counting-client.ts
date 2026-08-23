@@ -36,7 +36,7 @@ const isOutgoingRequest = (message: unknown): message is { method: string } =>
 
 const wrapWithCallCounting = (
   transport: StdioClientTransport,
-  counts: Map<string, number>
+  onOutgoing: (method: string) => void
 ): StdioClientTransport =>
   new Proxy(transport, {
     get(target, prop, receiver) {
@@ -44,7 +44,7 @@ const wrapWithCallCounting = (
         return async (...args: Parameters<StdioClientTransport['send']>) => {
           const [message] = args
           if (isOutgoingRequest(message)) {
-            counts.set(message.method, (counts.get(message.method) ?? 0) + 1)
+            onOutgoing(message.method)
           }
           return target.send(...args)
         }
@@ -71,8 +71,12 @@ export const spawnCountingServer = async (opts: {
       env
     })
 
-    const counts = new Map<string, number>()
-    const countingTransport = wrapWithCallCounting(transport, counts)
+    let counts: MethodTally = new Map<string, number>()
+    const countingTransport = wrapWithCallCounting(transport, (method) => {
+      const next = new Map(counts)
+      next.set(method, (next.get(method) ?? 0) + 1)
+      counts = next
+    })
 
     const client = new Client({ name: 'logbook-counting-harness', version: '0.0.0' }, { capabilities: {} })
     await client.connect(countingTransport)
@@ -85,7 +89,7 @@ export const spawnCountingServer = async (opts: {
       },
       stderr,
       instructions: () => client.getInstructions(),
-      tally: () => new Map(counts),
+      tally: () => counts,
       countOf: (method: string) => counts.get(method) ?? 0
     }
   } catch (error) {

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Runtime } from '../../src/runtime/runtime.ts'
@@ -72,10 +72,12 @@ test('pointer.is-never-committed', () => {
       assert.ok(paths.every((entry) => !entry.startsWith('state/')))
       assert.ok(paths.every((entry) => !entry.includes('active-thread.json')))
 
+      assert.ok(existsSync(join(layout.state, 'active-thread.json')), 'expected the pointer file to still be present on disk after the commit')
+
       const pointerAfterCommit = readPointer(rt, layout)
-      assert.notEqual(pointerAfterCommit, null)
-      if (pointerAfterCommit !== null) {
-        assert.equal(pointerAfterCommit.thread_id, threadId)
+      assert.equal(pointerAfterCommit.kind, 'pointer')
+      if (pointerAfterCommit.kind === 'pointer') {
+        assert.equal(pointerAfterCommit.value.thread_id, threadId)
       }
     })
   })

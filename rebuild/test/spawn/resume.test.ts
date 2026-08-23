@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,7 +16,7 @@ import {
   type JsonSchemaNode,
   type Mutation
 } from '../support/schema-arbitrary.ts'
-import { layoutFor } from '../../src/store/layout.ts'
+import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { ULID_PATTERN, ISO_PATTERN } from '../../src/schema/ids.ts'
 import { openStore } from '../../src/store/records.ts'
 import { escapeStored } from '../../src/render/escape.ts'
@@ -197,10 +197,11 @@ const assertOkResult = (toolName: string, result: CallToolResult): void => {
 
 const createFixtureThread = async (
   spawned: EitherServer,
-  published: PublishedTool[]
+  published: PublishedTool[],
+  overrides: Record<string, unknown> = {}
 ): Promise<{ threadId: string; criterionId: string }> => {
   const schema = schemaFor(published, 'open_thread')
-  const { valid } = generateSchemaCases('open_thread', schema)
+  const { valid } = generateSchemaCases('open_thread', schema, overrides)
   const result = (await spawned.client.callTool({ name: 'open_thread', arguments: valid })) as CallToolResult
   assertOkResult('open_thread (fixture arrange)', result)
   const structured = result.structuredContent as { thread_id: string; completion_criteria: { id: string }[] }
@@ -224,6 +225,28 @@ const callPark = async (
   const { valid } = generateSchemaCases('park_thread', schema, overrides)
   return (await spawned.client.callTool({ name: 'park_thread', arguments: valid })) as CallToolResult
 }
+
+const callClose = async (
+  spawned: EitherServer,
+  published: PublishedTool[],
+  overrides: Record<string, unknown>
+): Promise<CallToolResult> => {
+  const schema = schemaFor(published, 'close_thread')
+  const { valid } = generateSchemaCases('close_thread', schema, overrides)
+  return (await spawned.client.callTool({ name: 'close_thread', arguments: valid })) as CallToolResult
+}
+
+const layoutInFixture = (repo: string, pluginData: string, homeDir: string): StoreLayout => {
+  const rt = testRuntime({ env: { HOME: homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: pluginData }, cwd: repo })
+  const layout = layoutFor(rt, repo)
+  if (!layout.ok) throw new Error(`resume fixture: could not resolve the store layout: ${layout.message}`)
+  return layout.value
+}
+
+const threadRecordPath = (layout: StoreLayout, threadId: string): string =>
+  join(layout.records, 'threads', `${threadId}.json`)
+
+const pointerFilePath = (layout: StoreLayout): string => join(layout.state, 'active-thread.json')
 
 const runRejectsInvalid = async (
   fx: Fixture,
@@ -268,36 +291,62 @@ const isPointerShaped = (value: unknown): value is { thread_id: string; written_
   )
 }
 
+const STATE_DIR_NON_POINTER_SENTINELS = new Set(['origin.json', 'last-synced'])
+
 const countPointerShapedFiles = (repo: string, pluginData: string, homeDir: string): number => {
   const rt = testRuntime({ env: { HOME: homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: pluginData }, cwd: repo })
   const layout = layoutFor(rt, repo)
   if (!layout.ok) throw new Error(`resume fixture: could not resolve the store layout to census the state directory: ${layout.message}`)
-  const entries = readdirSync(layout.value.state, { withFileTypes: true }).filter((entry) => entry.isFile())
+  const entries = readdirSync(layout.value.state, { withFileTypes: true }).filter(
+    (entry) => entry.isFile() && !STATE_DIR_NON_POINTER_SENTINELS.has(entry.name)
+  )
   return entries.filter((entry) => {
     const target = join(layout.value.state, entry.name)
     let raw: string
     try {
       raw = readFileSync(target, 'utf8')
-    } catch {
-      return false
+    } catch (error) {
+      throw new Error(`countPointerShapedFiles: could not read ${target}: ${(error as Error).message}`)
     }
+    let parsed: unknown
     try {
-      return isPointerShaped(JSON.parse(raw))
-    } catch {
-      return false
+      parsed = JSON.parse(raw)
+    } catch (error) {
+      throw new Error(`countPointerShapedFiles: ${target} is not valid JSON and cannot be classified: ${(error as Error).message}`)
     }
+    return isPointerShaped(parsed)
   }).length
 }
 
 test('resume_thread.spawn.contract', async () => {
   await withFixture(async (fx) => {
     assert.ok(fx.published.some((t) => t.name === 'resume_thread'))
-    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+    const fixtureTitle = 'resume wiring proof thread'
+    const fixtureCriterion = 'prove resume_thread renders this exact criterion text'
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published, {
+      title: fixtureTitle,
+      slug: 'resume-wiring-proof',
+      completion_criteria: [fixtureCriterion]
+    })
     const outputSchema = outputSchemaFor(fx.outputSchemas, 'resume_thread')
     const result = await callResume(fx.spawned, fx.published, threadId)
     assertOkResult('resume_thread', result)
     assertConformsToOutputSchema('resume_thread', outputSchema, result.structuredContent)
     assert.doesNotMatch(fx.spawned.stderr(), JSON_RPC_FRAMING_PATTERN)
+
+    const structured = result.structuredContent as { briefing: string }
+    assert.ok(
+      structured.briefing.includes(`Thread: ${fixtureTitle}`),
+      'the returned briefing must carry the resumed thread\'s own title, proving it was rendered rather than stubbed'
+    )
+    assert.ok(
+      structured.briefing.includes(fixtureCriterion),
+      'the returned briefing must carry the resumed thread\'s own completion criterion text'
+    )
+    assert.ok(
+      structured.briefing.includes('Currently being worked: yes'),
+      'the returned briefing must reflect the pointer this same resume call just wrote'
+    )
   })
 })
 
@@ -501,31 +550,201 @@ test('handoff.detects-crash', async () => {
     const p2 = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
     try {
       const published2 = await listPublishedTools(p2)
+      const stepFailures: string[] = []
 
-      const crashResume = await callResume(p2, published2, threadId)
-      assertOkResult('resume_thread (handoff step 3)', crashResume)
-      const crashStructured = crashResume.structuredContent as { previous_session: { thread_id: string } | null }
-      assert.notEqual(
-        crashStructured.previous_session,
-        null,
-        'a resume in a fresh process must detect the pointer a crashed prior session left behind'
-      )
-      assert.equal(
-        crashStructured.previous_session?.thread_id,
-        threadId,
-        'the detected previous session must name the thread the crashed session left marked as being worked'
-      )
+      try {
+        const crashResume = await callResume(p2, published2, threadId)
+        assertOkResult('resume_thread (handoff step 3)', crashResume)
+        const crashStructured = crashResume.structuredContent as { previous_session: { thread_id: string } | null }
+        assert.notEqual(
+          crashStructured.previous_session,
+          null,
+          'a resume in a fresh process must detect the pointer a crashed prior session left behind'
+        )
+        assert.equal(
+          crashStructured.previous_session?.thread_id,
+          threadId,
+          'the detected previous session must name the thread the crashed session left marked as being worked'
+        )
+      } catch (error) {
+        stepFailures.push(`handoff step 3: ${(error as Error).message}`)
+      }
 
-      const secondResume = await callResume(p2, published2, threadId)
-      assertOkResult('resume_thread (handoff step 4)', secondResume)
-      const secondStructured = secondResume.structuredContent as { previous_session: unknown }
-      assert.equal(
-        secondStructured.previous_session,
-        null,
-        'a second resume within the same session must not report itself as a crash of its own prior call'
-      )
+      try {
+        const secondResume = await callResume(p2, published2, threadId)
+        assertOkResult('resume_thread (handoff step 4)', secondResume)
+        const secondStructured = secondResume.structuredContent as { previous_session: unknown }
+        assert.equal(
+          secondStructured.previous_session,
+          null,
+          'a second resume within the same session must not report itself as a crash of its own prior call'
+        )
+      } catch (error) {
+        stepFailures.push(`handoff step 4: ${(error as Error).message}`)
+      }
+
+      assert.equal(stepFailures.length, 0, stepFailures.join(' | '))
     } finally {
       await p2.close()
+    }
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+    rmSync(pluginData, { recursive: true, force: true })
+  }
+})
+
+test('park.refuses-a-different-thread-id-and-keeps-the-pointer', async () => {
+  await withFixture(async (fx) => {
+    const a = await createFixtureThread(fx.spawned, fx.published, { slug: 'mismatch-thread-a' })
+    const b = await createFixtureThread(fx.spawned, fx.published, { slug: 'mismatch-thread-b' })
+    await callResume(fx.spawned, fx.published, a.threadId)
+
+    const mismatched = await callPark(fx.spawned, fx.published, { thread_id: b.threadId })
+    assertOkResult('park_thread (mismatched id)', mismatched)
+    const structured = mismatched.structuredContent as { status: string; pointer_released: boolean }
+    assert.equal(structured.status, 'not-the-worked-thread')
+    assert.equal(structured.pointer_released, false)
+
+    const followUp = await callPark(fx.spawned, fx.published, { thread_id: a.threadId })
+    assertOkResult('park_thread (a still holds the pointer)', followUp)
+    const followUpStructured = followUp.structuredContent as { status: string; parked_thread_ids: string[] }
+    assert.equal(followUpStructured.status, 'parked')
+    assert.ok(followUpStructured.parked_thread_ids.includes(a.threadId))
+  })
+})
+
+test('park.releases-a-stale-pointer-when-the-thread-record-is-gone', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+    await callResume(fx.spawned, fx.published, threadId)
+
+    const layout = layoutInFixture(fx.repo, fx.pluginData, fx.homeDir)
+    unlinkSync(threadRecordPath(layout, threadId))
+
+    const park = await callPark(fx.spawned, fx.published, {})
+    assertOkResult('park_thread (stale pointer)', park)
+    const structured = park.structuredContent as { status: string; pointer_released: boolean }
+    assert.equal(structured.status, 'stale-pointer-released')
+    assert.equal(structured.pointer_released, true)
+  })
+})
+
+test('park.refuses-a-quarantined-thread-record', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+    await callResume(fx.spawned, fx.published, threadId)
+
+    const layout = layoutInFixture(fx.repo, fx.pluginData, fx.homeDir)
+    writeFileSync(threadRecordPath(layout, threadId), '{not-json', 'utf8')
+
+    const park = await callPark(fx.spawned, fx.published, {})
+    assert.equal(park.isError, true, 'parking a thread whose stored record is quarantined must be refused')
+    const text = firstTextOf(park)
+    assert.equal(text.split('\n')[0], 'field: thread_id')
+    assert.match(text, new RegExp(threadId), 'the refusal must name the thread id that could not be resolved')
+  })
+})
+
+test('park.releases-the-pointer-when-the-thread-is-already-terminal', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+    await callResume(fx.spawned, fx.published, threadId)
+
+    const closed = await callClose(fx.spawned, fx.published, {
+      thread_id: threadId,
+      outcome: 'abandoned',
+      detail: 'no longer needed for this test'
+    })
+    assertOkResult('close_thread (terminal setup)', closed)
+
+    const beforePark = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
+
+    const park = await callPark(fx.spawned, fx.published, {})
+    assertOkResult('park_thread (terminal pointer)', park)
+    const structured = park.structuredContent as {
+      status: string
+      pointer_released: boolean
+      parked_thread_ids: string[]
+      session_entry_ids: string[]
+      spine_fields_updated: string[]
+    }
+    assert.equal(structured.status, 'terminal-pointer-released')
+    assert.equal(structured.pointer_released, true)
+    assert.deepEqual(structured.parked_thread_ids, [])
+    assert.deepEqual(structured.session_entry_ids, [])
+    assert.deepEqual(structured.spine_fields_updated, [])
+
+    const afterPark = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
+    assert.deepEqual(afterPark, beforePark, 'parking a terminal thread must commit nothing to its stored record')
+  })
+})
+
+test('resume.self-heals-a-corrupt-pointer', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+
+    const layout = layoutInFixture(fx.repo, fx.pluginData, fx.homeDir)
+    mkdirSync(layout.state, { recursive: true })
+    writeFileSync(pointerFilePath(layout), 'not-json{{{', 'utf8')
+
+    const resumed = await callResume(fx.spawned, fx.published, threadId)
+    assertOkResult('resume_thread (self-heal)', resumed)
+    const structured = resumed.structuredContent as { previous_session: unknown }
+    assert.equal(
+      structured.previous_session,
+      null,
+      'a corrupt pointer left behind must be treated as no previous session, not surfaced as one'
+    )
+
+    const park = await callPark(fx.spawned, fx.published, {})
+    assertOkResult('park_thread (after self-heal)', park)
+    const parkStructured = park.structuredContent as { status: string; parked_thread_ids: string[] }
+    assert.equal(parkStructured.status, 'parked')
+    assert.ok(parkStructured.parked_thread_ids.includes(threadId))
+  })
+})
+
+test('park.releases-a-corrupt-pointer', async () => {
+  await withFixture(async (fx) => {
+    const layout = layoutInFixture(fx.repo, fx.pluginData, fx.homeDir)
+    mkdirSync(layout.state, { recursive: true })
+    writeFileSync(pointerFilePath(layout), 'not-json{{{', 'utf8')
+
+    const park = await callPark(fx.spawned, fx.published, {})
+    assertOkResult('park_thread (corrupt pointer)', park)
+    const structured = park.structuredContent as { status: string; pointer_released: boolean }
+    assert.equal(structured.status, 'stale-pointer-released')
+    assert.equal(structured.pointer_released, true)
+  })
+})
+
+test('park.refuses-when-another-session-took-the-pointer', async () => {
+  const repo = bootstrapRepo()
+  const pluginData = mkdtempSync(join(tmpdir(), 'logbook-resume-ownership-plugin-data-'))
+  try {
+    const p1 = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
+    try {
+      const published1 = await listPublishedTools(p1)
+      const { threadId } = await createFixtureThread(p1, published1)
+      const firstResume = await callResume(p1, published1, threadId)
+      assertOkResult('resume_thread (ownership setup)', firstResume)
+
+      const p2 = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
+      try {
+        const published2 = await listPublishedTools(p2)
+        const secondResume = await callResume(p2, published2, threadId)
+        assertOkResult('resume_thread (second session takes the pointer)', secondResume)
+      } finally {
+        await p2.close()
+      }
+
+      const park = await callPark(p1, published1, {})
+      assertOkResult('park_thread (original session, pointer stolen)', park)
+      const structured = park.structuredContent as { status: string; pointer_released: boolean }
+      assert.equal(structured.status, 'not-the-worked-thread')
+      assert.equal(structured.pointer_released, false)
+    } finally {
+      await p1.close()
     }
   } finally {
     rmSync(repo, { recursive: true, force: true })

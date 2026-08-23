@@ -34,26 +34,25 @@ const baseThread = (overrides: Partial<Thread> = {}): Thread => ({
 })
 
 const BLOCKED_WORD_PATTERN = /\bblocked\b/i
-const INTERPOLATION_MARKER = '${'
 
 type BlockedCandidate = { line: number; hasInterpolation: boolean }
 
+const isTemplateSpanPart = (node: ts.Node): boolean =>
+  ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)
+
+const belongsToInterpolatedTemplate = (node: ts.Node): boolean =>
+  isTemplateSpanPart(node) && ts.isTemplateExpression(node.parent)
+
 const collectBlockedCandidates = (sourceFile: ts.SourceFile): BlockedCandidate[] => {
   const found: BlockedCandidate[] = []
-  const lines = sourceFile.text.split('\n')
   forEachDescendant(sourceFile, (node) => {
     const isLiteralWithText =
-      ts.isStringLiteral(node) ||
-      ts.isNoSubstitutionTemplateLiteral(node) ||
-      ts.isTemplateHead(node) ||
-      ts.isTemplateMiddle(node) ||
-      ts.isTemplateTail(node)
+      ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || isTemplateSpanPart(node)
     if (!isLiteralWithText) return
     const raw = node.getText(sourceFile)
     if (!BLOCKED_WORD_PATTERN.test(raw)) return
     const line = lineOf(sourceFile, node)
-    const lineText = lines[line - 1] ?? ''
-    found.push({ line, hasInterpolation: lineText.includes(INTERPOLATION_MARKER) })
+    found.push({ line, hasInterpolation: belongsToInterpolatedTemplate(node) })
   })
   return found
 }

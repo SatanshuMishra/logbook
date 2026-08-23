@@ -29,6 +29,7 @@ const layoutIn = (rt: Runtime, repo: string): StoreLayout => {
 }
 
 const pointerFileName = 'active-thread.json'
+const ABSENT = { kind: 'absent' } as const
 
 test('pointer.write-is-idempotent', () => {
   withRepo((repo) => {
@@ -39,17 +40,17 @@ test('pointer.write-is-idempotent', () => {
       const threadId = rt.ulid()
       const first = { thread_id: threadId, written_at: rt.now(), session_id: 'session-a' }
       writePointer(rt, layout, first)
-      const afterFirst = readdirSync(layout.state).filter((name) => name === pointerFileName)
+      const afterFirst = readdirSync(layout.state)
       assert.deepEqual(afterFirst, [pointerFileName])
 
       const second = { thread_id: threadId, written_at: rt.now(), session_id: 'session-a' }
       assert.notEqual(first.written_at, second.written_at)
       writePointer(rt, layout, second)
-      const afterSecond = readdirSync(layout.state).filter((name) => name === pointerFileName)
+      const afterSecond = readdirSync(layout.state)
       assert.deepEqual(afterSecond, [pointerFileName])
 
       const result = readPointer(rt, layout)
-      assert.deepEqual(result, second)
+      assert.deepEqual(result, { kind: 'pointer', value: second })
     })
   })
 })
@@ -61,15 +62,15 @@ test('pointer.release-is-idempotent', () => {
       const layout = layoutIn(rt, repo)
 
       assert.doesNotThrow(() => releasePointer(rt, layout))
-      assert.equal(readPointer(rt, layout), null)
+      assert.deepEqual(readPointer(rt, layout), ABSENT)
 
       writePointer(rt, layout, { thread_id: rt.ulid(), written_at: rt.now(), session_id: 'session-b' })
-      assert.notEqual(readPointer(rt, layout), null)
+      assert.notDeepEqual(readPointer(rt, layout), ABSENT)
 
       assert.doesNotThrow(() => releasePointer(rt, layout))
-      assert.equal(readPointer(rt, layout), null)
+      assert.deepEqual(readPointer(rt, layout), ABSENT)
       assert.doesNotThrow(() => releasePointer(rt, layout))
-      assert.equal(readPointer(rt, layout), null)
+      assert.deepEqual(readPointer(rt, layout), ABSENT)
     })
   })
 })
@@ -89,11 +90,11 @@ test('pointer.release-only-own', () => {
 
       const outcome = releasePointerIfOwned(rt, layout, other)
       assert.equal(outcome, 'not-owned')
-      assert.deepEqual(readPointer(rt, layout), original)
+      assert.deepEqual(readPointer(rt, layout), { kind: 'pointer', value: original })
 
       const ownedOutcome = releasePointerIfOwned(rt, layout, owner)
       assert.equal(ownedOutcome, 'released')
-      assert.equal(readPointer(rt, layout), null)
+      assert.deepEqual(readPointer(rt, layout), ABSENT)
     })
   })
 })
@@ -104,7 +105,7 @@ test('pointer.survives-nothing', () => {
       const rt = runtimeWithHome(pluginData)
       const sourceLayout = layoutIn(rt, repo)
       writePointer(rt, sourceLayout, { thread_id: rt.ulid(), written_at: rt.now(), session_id: 'session-d' })
-      assert.notEqual(readPointer(rt, sourceLayout), null)
+      assert.notDeepEqual(readPointer(rt, sourceLayout), ABSENT)
 
       const cloneParent = mkdtempSync(join(tmpdir(), 'logbook-pointer-clone-'))
       const clonePath = join(cloneParent, 'clone')
@@ -114,7 +115,7 @@ test('pointer.survives-nothing', () => {
 
         const cloneLayout = layoutIn(rt, clonePath)
         assert.notEqual(cloneLayout.root, sourceLayout.root)
-        assert.equal(readPointer(rt, cloneLayout), null)
+        assert.deepEqual(readPointer(rt, cloneLayout), ABSENT)
       } finally {
         rmSync(cloneParent, { recursive: true, force: true })
       }
@@ -122,7 +123,7 @@ test('pointer.survives-nothing', () => {
   })
 })
 
-test('pointer.unparseable-file-raises-instead-of-returning-null', () => {
+test('pointer.unparseable-file-reports-corrupt', () => {
   withRepo((repo) => {
     withPluginData((pluginData) => {
       const rt = runtimeWithHome(pluginData)
@@ -131,7 +132,29 @@ test('pointer.unparseable-file-raises-instead-of-returning-null', () => {
       mkdirSync(layout.state, { recursive: true })
       writeFileSync(join(layout.state, pointerFileName), 'not-json{{{', 'utf8')
 
-      assert.throws(() => readPointer(rt, layout))
+      const result = readPointer(rt, layout)
+      assert.equal(result.kind, 'corrupt')
+      if (result.kind !== 'corrupt') return
+      assert.ok(result.reason.length > 0)
+      assert.doesNotMatch(result.reason, /[\\/]/, 'the corrupt reason must not leak a filesystem path')
+    })
+  })
+})
+
+test('pointer.wrong-shape-json-reports-corrupt', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const layout = layoutIn(rt, repo)
+
+      mkdirSync(layout.state, { recursive: true })
+      writeFileSync(join(layout.state, pointerFileName), JSON.stringify({ thread_id: 'nope' }), 'utf8')
+
+      const result = readPointer(rt, layout)
+      assert.equal(result.kind, 'corrupt')
+      if (result.kind !== 'corrupt') return
+      assert.ok(result.reason.length > 0)
+      assert.doesNotMatch(result.reason, /[\\/]/, 'the corrupt reason must not leak a filesystem path')
     })
   })
 })
