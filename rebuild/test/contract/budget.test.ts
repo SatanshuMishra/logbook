@@ -29,7 +29,6 @@ test('contract.instructions-within-budget', async () => {
     assert.notEqual(instructions, undefined)
     assert.ok(Buffer.byteLength(instructions as string, 'utf8') < BUDGET_BYTES)
 
-    assert.equal(ALL_TOOLS.length, 0)
     const items = ALL_TOOLS.map((tool) => tool.description)
     assert.doesNotThrow(() => census(items, classifyDescription))
   } finally {

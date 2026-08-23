@@ -1,12 +1,30 @@
 #!/usr/bin/env node
+import { writeSync } from 'node:fs'
 import { productionRuntime } from '../src/runtime/runtime.ts'
 import { main } from '../src/server/main.ts'
 
 const rt = productionRuntime()
 
+const STDERR_FD = 2
+
+const isEagain = (error: unknown): boolean =>
+  typeof error === 'object' && error !== null && 'code' in error && (error as { code: unknown }).code === 'EAGAIN'
+
+const writeAllSync = (fd: number, data: string): void => {
+  const buffer = Buffer.from(data, 'utf8')
+  let offset = 0
+  while (offset < buffer.length) {
+    try {
+      offset += writeSync(fd, buffer, offset, buffer.length - offset)
+    } catch (error) {
+      if (!isEagain(error)) throw error
+    }
+  }
+}
+
 const reportFatal = (source: string, error: unknown): void => {
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error)
-  process.stderr.write(`${JSON.stringify({ level: 'error', source, message })}\n`)
+  writeAllSync(STDERR_FD, `${JSON.stringify({ level: 'error', source, message })}\n`)
   process.exitCode = 1
 }
 

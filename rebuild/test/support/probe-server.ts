@@ -163,11 +163,11 @@ const nameOfSpec = (spec: ProbeSpec): keyof typeof CONTROL_SPECS => {
 }
 
 const buildEntrySource = (keys: readonly string[]): string => `
-import { McpServer } from '${MCP_SERVER_MODULE_PATH}'
-import { StdioServerTransport } from '${MCP_STDIO_MODULE_PATH}'
-import { productionRuntime } from '${RUNTIME_MODULE_PATH}'
-import { registerTool } from '${REGISTER_MODULE_PATH}'
-import { CONTROL_SPECS, adaptProbeSpec } from '${PROBE_MODULE_PATH}'
+import { McpServer } from ${JSON.stringify(MCP_SERVER_MODULE_PATH)}
+import { StdioServerTransport } from ${JSON.stringify(MCP_STDIO_MODULE_PATH)}
+import { productionRuntime } from ${JSON.stringify(RUNTIME_MODULE_PATH)}
+import { registerTool } from ${JSON.stringify(REGISTER_MODULE_PATH)}
+import { CONTROL_SPECS, adaptProbeSpec } from ${JSON.stringify(PROBE_MODULE_PATH)}
 
 const requestedKeys = ${JSON.stringify(keys)}
 const rt = productionRuntime()
@@ -194,14 +194,19 @@ export const spawnProbeServer = async (specs: readonly ProbeSpec[]): Promise<Spa
   const entryPath = join(entryDir, 'entry.ts')
   writeFileSync(entryPath, buildEntrySource(keys), 'utf8')
 
-  const spawned = await spawnServer({ projectRoot: PROJECT_ROOT, entry: entryPath })
-  return {
-    client: spawned.client,
-    stderr: spawned.stderr,
-    instructions: spawned.instructions,
-    close: async () => {
-      await spawned.close()
-      rmSync(entryDir, { recursive: true, force: true })
+  try {
+    const spawned = await spawnServer({ projectRoot: PROJECT_ROOT, entry: entryPath })
+    return {
+      client: spawned.client,
+      stderr: spawned.stderr,
+      instructions: spawned.instructions,
+      close: async () => {
+        await spawned.close()
+        rmSync(entryDir, { recursive: true, force: true })
+      }
     }
+  } catch (error) {
+    rmSync(entryDir, { recursive: true, force: true })
+    throw error
   }
 }

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { buildControlledEnv, spawnTransport } from '../support/spawn-client.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const RUNTIME_DIST_PATH = fileURLToPath(new URL('../../dist/src/runtime/runtime.js', import.meta.url))
@@ -15,8 +15,8 @@ const STRAY_BYTE = 'X'
 const CONNECT_BACKSTOP_MS = 5000
 
 const buildWrapperSource = (writeStrayByte: boolean): string => `
-import { productionRuntime } from '${RUNTIME_DIST_PATH}'
-import { main } from '${MAIN_DIST_PATH}'
+import { productionRuntime } from ${JSON.stringify(RUNTIME_DIST_PATH)}
+import { main } from ${JSON.stringify(MAIN_DIST_PATH)}
 
 ${writeStrayByte ? `process.stdout.write('${STRAY_BYTE}')` : ''}
 
@@ -30,22 +30,17 @@ const writeWrapper = (dir: string, writeStrayByte: boolean): string => {
   return wrapperPath
 }
 
-const spawnWrapperTransport = (wrapperPath: string): StdioClientTransport => {
-  const inheritedPath = process.env.PATH
-  return new StdioClientTransport({
-    command: process.execPath,
-    args: [wrapperPath],
-    env: inheritedPath === undefined ? {} : { PATH: inheritedPath },
-    cwd: PROJECT_ROOT,
-    stderr: 'pipe'
-  })
-}
-
 test('server.stray-stdout-breaks-transport', async () => {
   const entryDir = mkdtempSync(join(tmpdir(), 'logbook-stray-stdout-'))
+  const homeDir = mkdtempSync(join(tmpdir(), 'logbook-stray-stdout-home-'))
   try {
     const wrapperPath = writeWrapper(entryDir, true)
-    const transport = spawnWrapperTransport(wrapperPath)
+    const { transport } = spawnTransport({
+      command: process.execPath,
+      args: [wrapperPath],
+      cwd: PROJECT_ROOT,
+      env: buildControlledEnv(homeDir)
+    })
     const client = new Client({ name: 'logbook-stray-stdout-harness', version: '0.0.0' }, { capabilities: {} })
 
     const transportError = new Promise<Error>((resolve) => {
@@ -73,5 +68,6 @@ test('server.stray-stdout-breaks-transport', async () => {
     }
   } finally {
     rmSync(entryDir, { recursive: true, force: true })
+    rmSync(homeDir, { recursive: true, force: true })
   }
 })
