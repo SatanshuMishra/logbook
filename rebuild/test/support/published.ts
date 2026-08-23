@@ -59,16 +59,19 @@ export const classifyDescription = (description: string): Verdict => {
 
 const TOOLS_DIR = fileURLToPath(new URL('../../src/server/tools', import.meta.url))
 
+const BARREL_BASENAME = 'index'
+
 const toolFileBasenames = (dir: string): string[] => {
   if (!existsSync(dir)) return []
   return readdirSync(dir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith('.ts'))
     .map((entry) => entry.name.slice(0, -3))
+    .filter((basename) => basename !== BARREL_BASENAME)
 }
 
 export type RegistryCensus = { files: readonly string[]; registered: readonly string[]; published: readonly string[] }
 
-const TOOLS_BARREL_PATH = join(TOOLS_DIR, 'index.ts')
+const TOOLS_BARREL_PATH = join(TOOLS_DIR, `${BARREL_BASENAME}.ts`)
 
 const importToolBarrel = async (): Promise<void> => {
   if (!existsSync(TOOLS_BARREL_PATH)) return

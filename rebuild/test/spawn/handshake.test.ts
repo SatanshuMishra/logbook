@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ALL_TOOLS } from '../../src/server/register.ts'
 import { census } from '../support/census.ts'
 import {
   buildControlledEnv,
@@ -21,7 +22,11 @@ test('server.spawn-handshake', async () => {
   try {
     const listed = await spawned.client.listTools()
     assert.ok(Array.isArray(listed.tools))
-    assert.deepEqual(listed.tools, [])
+    assert.ok(ALL_TOOLS.length > 0, 'expected the production registry to carry at least one tool')
+    assert.deepEqual(
+      listed.tools.map((tool) => tool.name).sort(),
+      ALL_TOOLS.map((tool) => tool.name).sort()
+    )
     assert.doesNotMatch(spawned.stderr(), JSON_RPC_FRAMING_PATTERN)
   } finally {
     await spawned.close()

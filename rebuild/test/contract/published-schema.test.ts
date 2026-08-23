@@ -143,22 +143,25 @@ const spawnDeriveProbeServer = async (): Promise<SpawnedServer> => {
   }
 }
 
-test('contract.published-schema-matches-enforced.production-registry-is-vacuous-but-real', async () => {
+test('contract.published-schema-matches-enforced.production-registry-is-populated-and-consistent', async () => {
+  assert.ok(ALL_TOOLS.length > 0, 'expected the production registry to carry at least one tool')
   const spawned = await spawnServer({ projectRoot: PROJECT_ROOT })
   try {
     const published = await listPublishedTools(spawned)
     const items = joinPublishedToEnforced(published, ALL_TOOLS)
+    assert.ok(items.length > 0, 'expected at least one published tool to census')
     assert.doesNotThrow(() => census(items, classifyCensusItem))
   } finally {
     await spawned.close()
   }
 })
 
-test('contract.published-schema-matches-enforced.production-registry-census-is-vacuous-but-real', async () => {
+test('contract.published-schema-matches-enforced.production-registry-census-is-populated-and-consistent', async () => {
   const spawned = await spawnServer({ projectRoot: PROJECT_ROOT })
   try {
     const registryCensus = await readRegistryCensus(spawned)
     const population = registryPopulation(registryCensus)
+    assert.ok(population.length > 0, 'expected the registry population to be non-empty now that tools are registered')
     assert.doesNotThrow(() => census([...population], (name) => classifyRegistryName(name, registryCensus)))
   } finally {
     await spawned.close()
