@@ -46,7 +46,7 @@ const OpenThreadOutputSchema = z.object({
 type OpenThreadInput = z.infer<typeof OpenThreadInputSchema>
 type OpenThreadOutput = z.infer<typeof OpenThreadOutputSchema>
 
-const duplicateSlugRefusal = (slug: string): Refusal => ({
+export const duplicateSlugRefusal = (slug: string): Refusal => ({
   ok: false,
   field: 'slug',
   accepted: 'a slug not already used by another thread in this project',

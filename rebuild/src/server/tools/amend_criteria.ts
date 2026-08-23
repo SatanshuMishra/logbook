@@ -43,7 +43,7 @@ const AmendCriteriaOutputSchema = z.object({
 type AmendCriteriaInput = z.infer<typeof AmendCriteriaInputSchema>
 type AmendCriteriaOutput = z.infer<typeof AmendCriteriaOutputSchema>
 
-const missingFieldRefusal = (field: string, forOperation: string): Refusal => ({
+export const missingFieldRefusal = (field: string, forOperation: string): Refusal => ({
   ok: false,
   field,
   accepted: `a value for ${field} when operation is "${forOperation}"`,

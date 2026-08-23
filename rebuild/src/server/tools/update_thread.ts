@@ -88,7 +88,7 @@ const UpdateThreadOutputSchema = z.object({
 type UpdateThreadInput = z.infer<typeof UpdateThreadInputSchema>
 type UpdateThreadOutput = z.infer<typeof UpdateThreadOutputSchema>
 
-const unknownCriterionRefusal = (ids: string[]): Refusal => ({
+export const unknownCriterionRefusal = (ids: string[]): Refusal => ({
   ok: false,
   field: 'criteria_done',
   accepted: 'only criterion ids already present on this thread',
@@ -97,7 +97,7 @@ const unknownCriterionRefusal = (ids: string[]): Refusal => ({
   message: `criteria_done names ids not present on this thread: ${ids.join(', ')}.`
 })
 
-const unknownDecisionRefusal = (ids: string[]): Refusal => ({
+export const unknownDecisionRefusal = (ids: string[]): Refusal => ({
   ok: false,
   field: 'key_decisions_add',
   accepted: 'a decision_id that resolves to a decision record already stored on this project',

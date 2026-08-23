@@ -32,7 +32,7 @@ const BindBranchOutputSchema = z.object({
 type BindBranchInput = z.infer<typeof BindBranchInputSchema>
 type BindBranchOutput = z.infer<typeof BindBranchOutputSchema>
 
-const commitFailureRefusal = (detail: string): Refusal =>
+export const commitFailureRefusal = (detail: string): Refusal =>
   withDetail(
     {
       ok: false,
@@ -45,7 +45,7 @@ const commitFailureRefusal = (detail: string): Refusal =>
     detail
   )
 
-const invalidBindingRefusal = (issue: string): Refusal => ({
+export const invalidBindingRefusal = (issue: string): Refusal => ({
   ok: false,
   field: 'branch',
   accepted: 'a branch name that stays within the stored binding shape',

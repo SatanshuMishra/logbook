@@ -31,7 +31,7 @@ const CloseThreadOutputSchema = z.object({
 type CloseThreadInput = z.infer<typeof CloseThreadInputSchema>
 type CloseThreadOutput = z.infer<typeof CloseThreadOutputSchema>
 
-const wholeRecordCapRefusal = (issue: string): Refusal => ({
+export const wholeRecordCapRefusal = (issue: string): Refusal => ({
   ok: false,
   field: 'thread',
   accepted: 'a serialised thread record that stays within the whole-record byte cap',
@@ -40,7 +40,7 @@ const wholeRecordCapRefusal = (issue: string): Refusal => ({
   message: `the thread record after this change failed its stored-shape validation: ${issue}`
 })
 
-const commitFailureRefusal = (detail: string): Refusal =>
+export const commitFailureRefusal = (detail: string): Refusal =>
   withDetail(
     {
       ok: false,
