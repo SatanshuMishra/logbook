@@ -51,19 +51,34 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
     const layout = layoutFor(rt, rt.cwd)
     if (!layout.ok) return { ok: false, refusal: layout }
 
-    const priorPointer = readPointer(rt, layout.value)
+    const priorPointerRead = readPointer(rt, layout.value)
     const previousSession =
-      priorPointer !== null && priorPointer.session_id !== rt.sessionId
-        ? { thread_id: priorPointer.thread_id, written_at: priorPointer.written_at }
+      priorPointerRead.kind === 'pointer' && priorPointerRead.value.session_id !== rt.sessionId
+        ? { thread_id: priorPointerRead.value.thread_id, written_at: priorPointerRead.value.written_at }
         : null
 
     const writtenPointer: Pointer = { thread_id: thread.id, written_at: rt.now(), session_id: rt.sessionId }
     writePointer(rt, layout.value, writtenPointer)
 
-    const decisions: Decision[] = thread.spine.key_decisions
-      .map((keyDecision) => store.readDecision(keyDecision.decision_id))
-      .filter((slot): slot is { quarantined: false; record: Decision } => slot !== null && !slot.quarantined)
-      .map((slot) => slot.record)
+    const decisionOutcomes = thread.spine.key_decisions.map((keyDecision) => ({
+      decisionId: keyDecision.decision_id,
+      slot: store.readDecision(keyDecision.decision_id)
+    }))
+
+    for (const outcome of decisionOutcomes) {
+      if (outcome.slot === null) {
+        rt.log({ level: 'error', event: 'briefing.decision-dangling', decision_id: outcome.decisionId })
+      } else if (outcome.slot.quarantined) {
+        rt.log({ level: 'error', event: 'briefing.decision-quarantined', decision_id: outcome.decisionId })
+      }
+    }
+
+    const decisions: Decision[] = decisionOutcomes
+      .filter(
+        (outcome): outcome is { decisionId: string; slot: { quarantined: false; record: Decision } } =>
+          outcome.slot !== null && !outcome.slot.quarantined
+      )
+      .map((outcome) => outcome.slot.record)
 
     const briefing = renderBriefing(thread, decisions, writtenPointer)
 

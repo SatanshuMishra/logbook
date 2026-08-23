@@ -9,7 +9,7 @@ import { ThreadRecord, type Thread } from '../../schema/thread.ts'
 import type { Store } from '../../store/records.ts'
 import type { StoreLayout } from '../../store/layout.ts'
 import { layoutFor } from '../../store/layout.ts'
-import { readPointer, releasePointer } from '../../domain/pointer.ts'
+import { readPointer, releasePointer, releasePointerIfOwned } from '../../domain/pointer.ts'
 import { withDetail } from '../../store/detail.ts'
 import { contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
 import type { Runtime } from '../../runtime/runtime.ts'
@@ -40,7 +40,13 @@ const ParkThreadInputSchema = z.strictObject({
 
 const ParkThreadOutputSchema = z.object({
   status: z
-    .enum(['parked', 'not-the-worked-thread', 'nothing-to-park', 'stale-pointer-released'])
+    .enum([
+      'parked',
+      'not-the-worked-thread',
+      'nothing-to-park',
+      'stale-pointer-released',
+      'terminal-pointer-released'
+    ])
     .describe('what this call actually did'),
   parked_thread_ids: z
     .array(z.string())
@@ -114,6 +120,22 @@ const emptyStatusReply = (status: 'not-the-worked-thread' | 'nothing-to-park'): 
   }
 })
 
+const releasedStatusReply = (
+  status: 'stale-pointer-released' | 'terminal-pointer-released',
+  text: string,
+  pointerReleased: boolean
+): ToolReply<ParkThreadOutput> => ({
+  ok: true,
+  text,
+  structured: {
+    status,
+    parked_thread_ids: [],
+    session_entry_ids: [],
+    spine_fields_updated: [],
+    pointer_released: pointerReleased
+  }
+})
+
 const parkResolvedThread = (
   rt: Runtime,
   store: Store,
@@ -124,18 +146,12 @@ const parkResolvedThread = (
   const slot = store.readThread(threadId)
 
   if (slot === null) {
-    releasePointer(rt, layout)
-    return {
-      ok: true,
-      text: 'the thread marked as being worked no longer has a record; the stale pointer was released.',
-      structured: {
-        status: 'stale-pointer-released',
-        parked_thread_ids: [],
-        session_entry_ids: [],
-        spine_fields_updated: [],
-        pointer_released: true
-      }
-    }
+    const released = releasePointerIfOwned(rt, layout, threadId)
+    return releasedStatusReply(
+      'stale-pointer-released',
+      'the thread marked as being worked no longer has a record; the stale pointer was released.',
+      released === 'released'
+    )
   }
 
   if (slot.quarantined) {
@@ -143,6 +159,15 @@ const parkResolvedThread = (
   }
 
   const thread = slot.record
+
+  if (thread.status !== 'open') {
+    const released = releasePointerIfOwned(rt, layout, threadId)
+    return releasedStatusReply(
+      'terminal-pointer-released',
+      `the thread marked as being worked is already ${thread.status}, which is terminal; the pointer was released.`,
+      released === 'released'
+    )
+  }
 
   const escapedOutcome = escapeStored(input.outcome)
   if (escapedOutcome.length > caps.SESSION_BODY_MAX) {
@@ -193,7 +218,7 @@ const parkResolvedThread = (
     return { ok: false, refusal: commitFailureRefusal(committed.detail) }
   }
 
-  releasePointer(rt, layout)
+  const released = releasePointerIfOwned(rt, layout, thread.id)
 
   return {
     ok: true,
@@ -203,7 +228,7 @@ const parkResolvedThread = (
       parked_thread_ids: [thread.id],
       session_entry_ids: [sessionEntry.id],
       spine_fields_updated: spineFieldsUpdated,
-      pointer_released: true
+      pointer_released: released === 'released'
     }
   }
 }
@@ -224,15 +249,27 @@ export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
     const layout = layoutFor(rt, rt.cwd)
     if (!layout.ok) return { ok: false, refusal: layout }
 
-    const pointer = readPointer(rt, layout.value)
+    const pointerRead = readPointer(rt, layout.value)
+
+    if (pointerRead.kind === 'corrupt') {
+      releasePointer(rt, layout.value)
+      return releasedStatusReply(
+        'stale-pointer-released',
+        'the record of what is being worked failed to parse; the stale pointer was released.',
+        true
+      )
+    }
+
+    if (pointerRead.kind === 'absent') return emptyStatusReply('nothing-to-park')
+
+    const pointer = pointerRead.value
 
     if (input.thread_id !== undefined) {
-      if (pointer === null) return emptyStatusReply('nothing-to-park')
       if (pointer.thread_id !== input.thread_id) return emptyStatusReply('not-the-worked-thread')
       return parkResolvedThread(rt, store, layout.value, pointer.thread_id, input)
     }
 
-    if (pointer === null) return emptyStatusReply('nothing-to-park')
+    if (pointer.session_id !== rt.sessionId) return emptyStatusReply('not-the-worked-thread')
     return parkResolvedThread(rt, store, layout.value, pointer.thread_id, input)
   }
 }
