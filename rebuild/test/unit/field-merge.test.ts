@@ -6,7 +6,14 @@ import type { Decision } from '../../src/schema/decision.ts'
 import type { SessionEntry } from '../../src/schema/session.ts'
 import { resolveNode } from '../../src/schema/example.ts'
 import { census } from '../support/census.ts'
-import { THREAD_RULES, mergeThread, mergeDecision, mergeSession } from '../../src/merge/field-merge.ts'
+import {
+  THREAD_RULES,
+  mergeThread,
+  mergeThreadTraced,
+  mergeDecision,
+  mergeSession,
+  resolveScalarField
+} from '../../src/merge/field-merge.ts'
 import type { FieldRule } from '../../src/merge/field-merge.ts'
 
 type JsonSchemaNode = Record<string, unknown>
@@ -29,11 +36,6 @@ const walkThreadRulePaths = (root: JsonSchemaNode): string[] => {
     }
   }
   return paths
-}
-
-const exercisedRules = new Set<FieldRule>()
-const recordCoverage = (rule: FieldRule): void => {
-  exercisedRules.add(rule)
 }
 
 const ULID_A = '01ARZ3NDEKTSV4RRFFQ69G5FAA'
@@ -110,7 +112,6 @@ test('merge.takes-the-only-side', () => {
   }
   assert.equal(result.merged.blocked_by, 'waiting on a review')
   assert.equal(ThreadRecord.parse(result.merged).ok, true)
-  recordCoverage('take-present')
 })
 
 test('merge.takes-identical', () => {
@@ -125,7 +126,6 @@ test('merge.takes-identical', () => {
     throw new Error('expected the merge to succeed')
   }
   assert.equal(result.merged.title, 'Field-level merge')
-  recordCoverage('take-present')
 })
 
 test('merge.unions-criteria', () => {
@@ -147,7 +147,6 @@ test('merge.unions-criteria', () => {
     result.merged.completion_criteria.map((c) => c.ordinal),
     [1, 2]
   )
-  recordCoverage('union-by-id')
 })
 
 test('merge.conflicts-on-same-id', () => {
@@ -165,10 +164,53 @@ test('merge.conflicts-on-same-id', () => {
   const found = result.conflicts[0]
   assert.ok(found)
   assert.equal(found.record, `thread:${ULID_THREAD}`)
-  assert.equal(found.field, 'completion_criteria')
+  assert.equal(found.field, `completion_criteria[${ULID_C}]`)
   assert.equal((found.ours as Criterion).text, 'ours version of the text')
   assert.equal((found.theirs as Criterion).text, 'theirs version of the text')
-  recordCoverage('union-by-id')
+})
+
+test('merge.criteria-conflict-on-done-divergence', () => {
+  const base = baseThread({ completion_criteria: [criterion(ULID_C, 'shared text', 1)] })
+  const ours = baseThread({
+    completion_criteria: [{ ...criterion(ULID_C, 'shared text', 1), done: false }]
+  })
+  const theirs = baseThread({
+    completion_criteria: [{ ...criterion(ULID_C, 'shared text', 1), done: true }]
+  })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(result.ok, false)
+  if (result.ok) {
+    throw new Error('expected the merge to refuse over a done divergence')
+  }
+  assert.equal(result.conflicts.length, 1)
+  const found = result.conflicts[0]
+  assert.ok(found)
+  assert.equal(found.field, `completion_criteria[${ULID_C}]`)
+  assert.equal((found.ours as Criterion).done, false)
+  assert.equal((found.theirs as Criterion).done, true)
+})
+
+test('merge.spine-open-risks-conflict-on-divergence', () => {
+  const base = baseThread({ spine: { ...baseSpine(), open_risks: [] } })
+  const ours = baseThread({
+    spine: { ...baseSpine(), open_risks: [{ id: ULID_D, scope: 'merge', text: 'ours risk text', refs: [] }] }
+  })
+  const theirs = baseThread({
+    spine: { ...baseSpine(), open_risks: [{ id: ULID_D, scope: 'merge', text: 'theirs risk text', refs: [] }] }
+  })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(result.ok, false)
+  if (result.ok) {
+    throw new Error('expected the merge to refuse over an open-risk divergence')
+  }
+  assert.equal(result.conflicts.length, 1)
+  const found = result.conflicts[0]
+  assert.ok(found)
+  assert.equal(found.field, `spine.open_risks[${ULID_D}]`)
 })
 
 test('merge.conflicts-on-scalar', () => {
@@ -188,10 +230,55 @@ test('merge.conflicts-on-scalar', () => {
   assert.equal(found.field, 'spine.next_step')
   assert.equal(found.ours, 'A')
   assert.equal(found.theirs, 'B')
-  recordCoverage('conflict-on-divergence')
 })
 
-test('merge.decision-never-conflicts', () => {
+test('merge.conflict-on-divergence-field-cleared-to-null-still-conflicts', () => {
+  const base = baseThread({ blocked_by: 'waiting on review' })
+  const ours = baseThread({ blocked_by: null })
+  const theirs = baseThread({ blocked_by: 'waiting on legal' })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(result.ok, false)
+  if (result.ok) {
+    throw new Error('expected the merge to refuse rather than silently keep theirs')
+  }
+  assert.equal(result.conflicts.length, 1)
+  const found = result.conflicts[0]
+  assert.ok(found)
+  assert.equal(found.field, 'blocked_by')
+  assert.equal(found.ours, null)
+  assert.equal(found.theirs, 'waiting on legal')
+})
+
+test('merge.take-present-absence-arm-fires-when-base-is-absent', () => {
+  const ours = { ...baseThread(), id: null } as unknown as Thread
+  const theirs = baseThread({ id: ULID_B })
+
+  const result = mergeThread(null, ours, theirs)
+
+  assert.equal(result.ok, true)
+  if (!result.ok) {
+    throw new Error('expected the merge to take the present side')
+  }
+  assert.equal(result.merged.id, ULID_B)
+})
+
+test('merge.scalar-resolution-throws-on-unhandled-rule', () => {
+  const base = baseThread({ title: 'A' })
+  const ours = baseThread({ title: 'B' })
+  const theirs = baseThread({ title: 'C' })
+
+  assert.throws(() =>
+    resolveScalarField('thread:test', base, ours, theirs, {
+      path: 'title',
+      rule: 'union-by-id',
+      get: (t) => t.title
+    })
+  )
+})
+
+test('merge.decision-identical-content-succeeds', () => {
   const first = mergeDecision(decision(ULID_DECISION_1), decision(ULID_DECISION_1))
   const second = mergeDecision(decision(ULID_DECISION_2), decision(ULID_DECISION_2))
 
@@ -202,7 +289,22 @@ test('merge.decision-never-conflicts', () => {
   }
   assert.equal(first.merged.id, ULID_DECISION_1)
   assert.equal(second.merged.id, ULID_DECISION_2)
-  assert.notEqual(first.merged.id, second.merged.id)
+})
+
+test('merge.decision-diverging-content-conflicts', () => {
+  const ours = decision(ULID_DECISION_1, { outcome: 'chose a' })
+  const theirs = decision(ULID_DECISION_1, { outcome: 'chose b' })
+
+  const result = mergeDecision(ours, theirs)
+
+  assert.equal(result.ok, false)
+  if (result.ok) {
+    throw new Error('expected the merge to refuse a diverging decision body')
+  }
+  assert.equal(result.conflicts.length, 1)
+  const found = result.conflicts[0]
+  assert.ok(found)
+  assert.equal(found.record, `decision:${ULID_DECISION_1}`)
 })
 
 test('merge.session-unions', () => {
@@ -219,7 +321,6 @@ test('merge.session-unions', () => {
     result.merged.map((entry) => entry.id),
     [ULID_A, ULID_B, ULID_C]
   )
-  recordCoverage('union-by-id')
 })
 
 test('merge.rule-table-is-covered', () => {
@@ -231,9 +332,16 @@ test('merge.rule-table-is-covered', () => {
     return rule === undefined ? 'unclassifiable' : 'allowed'
   })
 
+  const base = baseThread({ id: ULID_THREAD, created_at: '2026-08-01T00:00:00.000Z' })
+  const ours = baseThread({ id: ULID_A, created_at: '2026-08-02T00:00:00.000Z', slug: 'ours-slug' })
+  const theirs = baseThread({ id: ULID_B, created_at: '2026-08-03T00:00:00.000Z', slug: 'theirs-slug' })
+
+  const { dispatchedRules } = mergeThreadTraced(base, ours, theirs)
+  const exercisedRules = new Set(dispatchedRules)
+
   const usedRules = new Set(Object.values(THREAD_RULES))
   for (const rule of usedRules) {
-    assert.ok(exercisedRules.has(rule), `no behavioural test named a rule-table entry exercising ${rule}`)
+    assert.ok(exercisedRules.has(rule), `no rule dispatch in field-merge.ts exercised ${rule}`)
   }
 })
 
