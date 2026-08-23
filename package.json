@@ -5,7 +5,9 @@
   "type": "module",
   "description": "Git-native, multi-user, drift-aware logbook plugin for Claude Code.",
   "license": "MIT",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "test": "node --test",
     "rebuild:typecheck": "tsc -p rebuild/tsconfig.json --noEmit",
@@ -18,7 +20,9 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "typescript": "5.9.3",
-    "@types/node": "22.20.1"
+    "@modelcontextprotocol/inspector": "2.3.0",
+    "@stryker-mutator/core": "10.0.0",
+    "@types/node": "22.20.1",
+    "typescript": "5.9.3"
   }
 }
