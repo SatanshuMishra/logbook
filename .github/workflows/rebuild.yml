@@ -98,8 +98,8 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          echo "mutation run covers the unit and store layers only"
-          echo "spawn, hook and sync layers are excluded because each spawns real processes"
+          echo "mutation run covers the unit and store layers only, the layers the configured command runner can actually kill"
+          echo "spawn, hook and sync layers are excluded because no test in that runner exercises them"
 
           set +e
           RAW=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" -- rebuild/src)
