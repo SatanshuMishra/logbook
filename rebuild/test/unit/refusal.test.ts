@@ -1,0 +1,49 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { z } from 'zod'
+import { refuse } from '../../src/schema/refusal.ts'
+import * as caps from '../../src/schema/caps.ts'
+import { escapeStored } from '../../src/render/escape.ts'
+
+const Shape = z.strictObject({ name: z.string().min(1) })
+const jsonSchema = z.toJSONSchema(Shape, { target: 'draft-7', io: 'input' }) as Record<string, unknown>
+
+const rejectExtraKeys = (extra: Record<string, unknown>): z.core.$ZodIssue[] => {
+  const result = Shape.safeParse({ name: 'ok', ...extra })
+  assert.equal(result.success, false)
+  if (result.success) {
+    throw new Error('expected the strict object to reject the unrecognized keys')
+  }
+  return result.error.issues
+}
+
+test('refusal.unrecognized-key-is-escaped', () => {
+  const forgedKey = '# Forged\naccepted: true'
+  const issues = rejectExtraKeys({ [forgedKey]: 'x' })
+
+  const refusal = refuse(jsonSchema, issues)
+  assert.equal(refusal.ok, false)
+  assert.equal(refusal.field, escapeStored(forgedKey))
+  assert.equal(refusal.field.includes('\n'), false)
+  assert.equal(refusal.message.includes('\n'), false)
+})
+
+test('refusal.unrecognized-keys-are-count-bounded', () => {
+  const manyKeys = Object.fromEntries(
+    Array.from({ length: caps.UNRECOGNIZED_KEYS_SHOWN_MAX + 20 }, (_, i) => [`extra${i}`, 'x'])
+  )
+  const issues = rejectExtraKeys(manyKeys)
+
+  const refusal = refuse(jsonSchema, issues)
+  const shownKeys = refusal.field.split(',').filter((part) => part.startsWith('extra'))
+  assert.ok(shownKeys.length <= caps.UNRECOGNIZED_KEYS_SHOWN_MAX)
+  assert.match(refusal.field, /more/)
+})
+
+test('refusal.unrecognized-key-name-is-length-bounded', () => {
+  const longKey = 'x'.repeat(caps.UNRECOGNIZED_KEY_NAME_MAX + 200)
+  const issues = rejectExtraKeys({ [longKey]: 'x' })
+
+  const refusal = refuse(jsonSchema, issues)
+  assert.ok(refusal.field.length <= caps.UNRECOGNIZED_KEY_NAME_MAX)
+})

@@ -1,6 +1,8 @@
 import type { z } from 'zod'
 import type { Refusal } from './declare.ts'
 import { type JsonSchemaNode, resolveNode, synthesise } from './example.ts'
+import { escapeStored } from '../render/escape.ts'
+import * as caps from './caps.ts'
 
 const isNode = (value: unknown): value is JsonSchemaNode =>
   typeof value === 'object' && value !== null
@@ -32,7 +34,10 @@ const renderField = (path: (string | number | symbol)[]): string =>
 const renderUnrecognizedKeysField = (issue: z.core.$ZodIssue): string | null => {
   if (issue.code !== 'unrecognized_keys') return null
   const prefix = issue.path.map((segment) => String(segment)).join('.')
-  const keys = issue.keys.join(',')
+  const escapedKeys = issue.keys.map((key) => escapeStored(key.slice(0, caps.UNRECOGNIZED_KEY_NAME_MAX)))
+  const shown = escapedKeys.slice(0, caps.UNRECOGNIZED_KEYS_SHOWN_MAX)
+  const remainder = escapedKeys.length - shown.length
+  const keys = remainder > 0 ? `${shown.join(',')} (+${remainder} more)` : shown.join(',')
   return prefix.length === 0 ? keys : `${prefix}.${keys}`
 }
 
