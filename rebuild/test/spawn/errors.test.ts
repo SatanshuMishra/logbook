@@ -83,18 +83,13 @@ const firstTextOf = (result: CallToolResult): string => {
 test('error.refusal-carries-four-parts', async () => {
   const { spawned, cleanup } = await spawnErrorsProbeServer()
   try {
+    await spawned.client.listTools()
     const result = (await spawned.client.callTool({
       name: HANDLER_REFUSAL_TOOL_NAME,
       arguments: {}
     })) as CallToolResult
     assert.equal(result.isError, true)
-
-    const structured = result.structuredContent as Record<string, unknown> | undefined
-    assert.ok(structured !== undefined, 'expected the refusal to carry structuredContent')
-    assert.equal(structured.field, HANDLER_REFUSAL.field)
-    assert.equal(structured.accepted, HANDLER_REFUSAL.accepted)
-    assert.equal(structured.example, HANDLER_REFUSAL.example)
-    assert.equal(structured.retryable, HANDLER_REFUSAL.retryable)
+    assert.equal(result.structuredContent, undefined)
 
     const text = firstTextOf(result)
     assert.match(text, new RegExp(`field: ${HANDLER_REFUSAL.field}`))
@@ -110,6 +105,7 @@ test('error.refusal-carries-four-parts', async () => {
 test('error.validation-is-in-band', async () => {
   const spawned = await spawnProbeServer([CONTROL_SPECS.conformant])
   try {
+    await spawned.client.listTools()
     const result = (await spawned.client.callTool({
       name: 'probe_conformant',
       arguments: { value: 42 }

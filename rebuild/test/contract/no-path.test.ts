@@ -1,18 +1,19 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { Refusal } from '../../src/schema/declare.ts'
 import { toolRefusal } from '../../src/server/errors.ts'
-import { git, type Identity } from '../../src/store/git.ts'
-import { layoutFor } from '../../src/store/layout.ts'
+import { git, readIdentity, type Identity } from '../../src/store/git.ts'
+import { createStoreDirectories, layoutFor } from '../../src/store/layout.ts'
+import { openStore } from '../../src/store/records.ts'
 import { LEDGER_REF, casUpdateRef } from '../../src/store/ref.ts'
-import { rawGit, withRepo } from '../support/git-fixture.ts'
+import { ensureSingleStore } from '../../src/store/single-store.ts'
+import { rawGit, withRepo, withRepoNoIdentity } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { census } from '../support/census.ts'
-import type { Classified } from '../support/census.ts'
 import {
   SENTINEL_POSIX,
   SENTINEL_TOKEN,
@@ -20,19 +21,29 @@ import {
   classifyEmittedPath,
   emittedStrings,
   refusalTemplate,
+  scanRefusalProducers,
   taintRefusal
 } from '../support/refusal-census.ts'
-import type { EmittedString } from '../support/refusal-census.ts'
+import type { EmittedString, ProducerId } from '../support/refusal-census.ts'
 
-const collectRealRefusals = (): Refusal[] => {
-  const refusals: Refusal[] = [refusalTemplate()]
+type TaggedRefusal = { producer: ProducerId; refusal: Refusal }
+
+const REFUSE_PRODUCER: ProducerId = 'schema/refusal.ts#refuse'
+const LAYOUT_FOR_PRODUCER: ProducerId = 'store/layout.ts#layoutFor'
+const CAS_UPDATE_REF_PRODUCER: ProducerId = 'store/ref.ts#casUpdateRef'
+const READ_IDENTITY_PRODUCER: ProducerId = 'store/git.ts#readIdentity'
+const ENSURE_SINGLE_STORE_PRODUCER: ProducerId = 'store/single-store.ts#ensureSingleStore'
+const OPEN_STORE_PRODUCER: ProducerId = 'store/records.ts#openStore'
+
+const collectRealRefusals = (): TaggedRefusal[] => {
+  const refusals: TaggedRefusal[] = [{ producer: REFUSE_PRODUCER, refusal: refusalTemplate() }]
 
   const noPluginDataDir = mkdtempSync(join(tmpdir(), 'logbook-no-plugin-data-'))
   try {
     const rt = testRuntime({ env: {} })
     const result = layoutFor(rt, noPluginDataDir)
     if (result.ok) throw new Error('expected layoutFor to refuse when CLAUDE_PLUGIN_DATA is unset')
-    refusals.push(result)
+    refusals.push({ producer: LAYOUT_FOR_PRODUCER, refusal: result })
   } finally {
     rmSync(noPluginDataDir, { recursive: true, force: true })
   }
@@ -43,7 +54,7 @@ const collectRealRefusals = (): Refusal[] => {
     const missingPath = join(pluginDataRoot, 'does-not-exist', 'nested')
     const result = layoutFor(rt, missingPath)
     if (result.ok) throw new Error('expected layoutFor to refuse on a missing projectRoot')
-    refusals.push(result)
+    refusals.push({ producer: LAYOUT_FOR_PRODUCER, refusal: result })
   } finally {
     rmSync(pluginDataRoot, { recursive: true, force: true })
   }
@@ -65,7 +76,7 @@ const collectRealRefusals = (): Refusal[] => {
 
     const mismatch = casUpdateRef(rt, repo, LEDGER_REF, secondSha, 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef')
     if (mismatch.ok) throw new Error('expected a cas-mismatch refusal')
-    refusals.push(mismatch)
+    refusals.push({ producer: CAS_UPDATE_REF_PRODUCER, refusal: mismatch })
   })
 
   const nonGitDir = mkdtempSync(join(tmpdir(), 'logbook-non-git-'))
@@ -73,33 +84,96 @@ const collectRealRefusals = (): Refusal[] => {
     const rt = testRuntime()
     const ioFailure = casUpdateRef(rt, nonGitDir, LEDGER_REF, '1'.repeat(40), null)
     if (ioFailure.ok) throw new Error('expected an io refusal against a non-git directory')
-    refusals.push(ioFailure)
+    refusals.push({ producer: CAS_UPDATE_REF_PRODUCER, refusal: ioFailure })
   } finally {
     rmSync(nonGitDir, { recursive: true, force: true })
+  }
+
+  withRepoNoIdentity((repo) => {
+    const rt = testRuntime()
+    const identityFailure = readIdentity(rt, repo)
+    if (identityFailure.ok) throw new Error('expected readIdentity to refuse against a repo with no configured identity')
+    refusals.push({ producer: READ_IDENTITY_PRODUCER, refusal: identityFailure })
+  })
+
+  const duplicateStoreRoot = mkdtempSync(join(tmpdir(), 'logbook-duplicate-store-'))
+  try {
+    const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: duplicateStoreRoot } })
+    const projectRoot = mkdtempSync(join(tmpdir(), 'logbook-duplicate-store-project-'))
+    try {
+      const layout = layoutFor(rt, projectRoot)
+      if (!layout.ok) throw new Error('expected layoutFor to resolve for the duplicate-store fixture')
+      createStoreDirectories(layout.value)
+
+      const conflictingKey = 'stale-store-for-the-same-project'
+      const conflictingRoot = join(duplicateStoreRoot, conflictingKey)
+      mkdirSync(join(conflictingRoot, 'state'), { recursive: true })
+      writeFileSync(
+        join(conflictingRoot, 'state', 'origin.json'),
+        JSON.stringify({ project_root: layout.value.projectRoot }),
+        'utf8'
+      )
+
+      const duplicateFailure = ensureSingleStore(rt, layout.value)
+      if (duplicateFailure.ok) throw new Error('expected ensureSingleStore to refuse on a duplicate store')
+      refusals.push({ producer: ENSURE_SINGLE_STORE_PRODUCER, refusal: duplicateFailure })
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true })
+    }
+  } finally {
+    rmSync(duplicateStoreRoot, { recursive: true, force: true })
+  }
+
+  const unreadableRecordsPluginData = mkdtempSync(join(tmpdir(), 'logbook-unreadable-records-'))
+  const unreadableRecordsProject = mkdtempSync(join(tmpdir(), 'logbook-unreadable-records-project-'))
+  try {
+    const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: unreadableRecordsPluginData } })
+    const first = openStore(rt, unreadableRecordsProject)
+    if (!first.ok) throw new Error('expected the first openStore call to succeed and create the records directory')
+
+    const layout = layoutFor(rt, unreadableRecordsProject)
+    if (!layout.ok) throw new Error('expected layoutFor to resolve for the unreadable-records fixture')
+
+    chmodSync(layout.value.records, 0o000)
+    try {
+      const unreadable = openStore(rt, unreadableRecordsProject)
+      if (unreadable.ok) throw new Error('expected openStore to refuse against an unreadable records directory')
+      refusals.push({ producer: OPEN_STORE_PRODUCER, refusal: unreadable })
+    } finally {
+      chmodSync(layout.value.records, 0o755)
+    }
+  } finally {
+    rmSync(unreadableRecordsPluginData, { recursive: true, force: true })
+    rmSync(unreadableRecordsProject, { recursive: true, force: true })
   }
 
   return refusals
 }
 
 test('error.discloses-no-path', () => {
-  const refusals = collectRealRefusals()
-  assert.ok(refusals.length > 0, 'expected at least one forced refusal to census')
+  const tagged = collectRealRefusals()
+  assert.ok(tagged.length > 0, 'expected at least one forced refusal to census')
 
-  const emitted = refusals.flatMap((r) => emittedStrings(toolRefusal(r)))
+  const scanned = scanRefusalProducers()
+  assert.ok(scanned.length > 0, 'expected the static scan to find at least one refusal producer')
+  const covered = new Set(tagged.map((t) => t.producer))
+  const classifyProducerCoverage = (id: ProducerId): 'allowed' | 'unclassifiable' =>
+    covered.has(id) ? 'allowed' : 'unclassifiable'
+  assert.doesNotThrow(() => census(scanned, classifyProducerCoverage))
+
+  const emitted = tagged.flatMap(({ refusal }) => emittedStrings(toolRefusal(refusal), refusal.example))
   assert.ok(emitted.length > 0, 'expected the rendered refusals to carry emitted strings')
   assert.doesNotThrow(() => census(emitted, classifyEmittedPath))
 
-  const forbiddenPosix: EmittedString[] = [{ path: 'synthetic', value: `leaked at ${SENTINEL_POSIX}` }]
+  const forbiddenPosix: EmittedString[] = [
+    { path: 'content[0].text', value: `leaked at ${SENTINEL_POSIX}`, declaredExample: '' }
+  ]
   assert.throws(() => census(forbiddenPosix, classifyEmittedPath))
 
-  const forbiddenWin32: EmittedString[] = [{ path: 'synthetic', value: `leaked at ${SENTINEL_WIN32}` }]
+  const forbiddenWin32: EmittedString[] = [
+    { path: 'content[0].text', value: `leaked at ${SENTINEL_WIN32}`, declaredExample: '' }
+  ]
   assert.throws(() => census(forbiddenWin32, classifyEmittedPath))
-
-  const template = refusalTemplate()
-  const knownKeys = new Set(Object.keys(template))
-  const classifyRefusalKey = (key: string): Classified<string>['verdict'] | 'unclassifiable' =>
-    knownKeys.has(key) ? 'allowed' : 'unclassifiable'
-  assert.doesNotThrow(() => census(Object.keys(taintRefusal(template, SENTINEL_TOKEN)), classifyRefusalKey))
 })
 
 test('error.discloses-no-path.taint-refusal-rejects-unclosed-fields', () => {
@@ -113,7 +187,7 @@ test('error.discloses-no-path.taint-refusal-rejects-unclosed-fields', () => {
 test('error.discloses-no-path.field-closure-halts-on-an-unforeseen-field', () => {
   const template = refusalTemplate()
   const knownKeys = new Set(Object.keys(template))
-  const classifyRefusalKey = (key: string): Classified<string>['verdict'] | 'unclassifiable' =>
+  const classifyRefusalKey = (key: string): 'allowed' | 'unclassifiable' =>
     knownKeys.has(key) ? 'allowed' : 'unclassifiable'
 
   const withSeventhField = taintRefusal({ ...template, hint: 'a future field' } as Refusal, SENTINEL_TOKEN)
@@ -142,9 +216,9 @@ test('error.discloses-no-path.taint-survives-without-the-strip', () => {
   const leaky = { ...template, cause: SENTINEL_POSIX } as Refusal & { cause: string }
 
   const withStrip = toolRefusal(leaky)
-  assert.doesNotThrow(() => census(emittedStrings(withStrip), classifyEmittedPath))
+  assert.doesNotThrow(() => census(emittedStrings(withStrip, leaky.example), classifyEmittedPath))
   assert.equal(
-    emittedStrings(withStrip).some((s) => s.value.includes(SENTINEL_TOKEN)),
+    emittedStrings(withStrip, leaky.example).some((s) => s.value.includes(SENTINEL_TOKEN)),
     false
   )
 
@@ -153,5 +227,5 @@ test('error.discloses-no-path.taint-survives-without-the-strip', () => {
     content: [{ type: 'text', text: leaky.message }],
     structuredContent: { ...leaky }
   }
-  assert.throws(() => census(emittedStrings(withoutStrip), classifyEmittedPath))
+  assert.throws(() => census(emittedStrings(withoutStrip, leaky.example), classifyEmittedPath))
 })

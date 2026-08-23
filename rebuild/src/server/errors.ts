@@ -32,8 +32,7 @@ export const toolRefusal = (r: Refusal): CallToolResult => {
   const payload = pickRefusalFields(r)
   return {
     isError: true,
-    content: [{ type: 'text', text: renderRefusalText(payload) }],
-    structuredContent: payload
+    content: [{ type: 'text', text: renderRefusalText(payload) }]
   }
 }
 

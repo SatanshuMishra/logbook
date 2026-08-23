@@ -5,6 +5,7 @@ import { DecisionRecord, type Decision } from '../schema/decision.ts'
 import { SessionRecord, type SessionEntry } from '../schema/session.ts'
 import { ThreadRecord, type Thread, type Ulid } from '../schema/thread.ts'
 import type { Runtime } from '../runtime/runtime.ts'
+import { errnoCode, withDetail } from './detail.ts'
 import { createStoreDirectories, layoutFor, type StoreLayout } from './layout.ts'
 import { markSynced, readAllRecordFiles, readRecordFile, syncWorkingCopy } from './read-path.ts'
 import { ensureSingleStore } from './single-store.ts'
@@ -33,20 +34,25 @@ const decisionPath = (layout: StoreLayout, id: Ulid): string =>
 const sessionEntryPath = (layout: StoreLayout, threadId: Ulid, entryId: Ulid): string =>
   path.join(layout.records, 'sessions', threadId, `${entryId}.json`)
 
-const checkRecordsReadable = (layout: StoreLayout): Refusal | null => {
+const checkRecordsReadable = (rt: Runtime, layout: StoreLayout): Refusal | null => {
   try {
     readdirSync(layout.records)
     return null
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    return {
-      ok: false,
-      field: 'records',
-      accepted: 'a readable records directory',
-      example: 'chmod +r <records-directory>',
-      retryable: true,
-      message: `the store's records directory could not be read: ${detail}`
-    }
+    const code = errnoCode(error)
+    rt.log({ level: 'error', event: 'store.records-directory-unreadable', code, detail })
+    return withDetail(
+      {
+        ok: false,
+        field: 'records',
+        accepted: 'a readable records directory',
+        example: 'chmod +r <records-directory>',
+        retryable: true,
+        message: `the store's records directory could not be read: ${code}`
+      },
+      detail
+    )
   }
 }
 
@@ -61,7 +67,7 @@ export const openStore = (rt: Runtime, projectRoot: string): Ok<Store> | Refusal
 
   const storeLayout = ensured.value
 
-  const readableRefusal = checkRecordsReadable(storeLayout)
+  const readableRefusal = checkRecordsReadable(rt, storeLayout)
   if (readableRefusal !== null) return readableRefusal
 
   syncWorkingCopy(rt, storeLayout)
