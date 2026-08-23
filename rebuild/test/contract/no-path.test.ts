@@ -545,6 +545,31 @@ test('error.discloses-no-path', async () => {
   assert.throws(() => census(forbiddenWin32, classifyEmittedPath))
 })
 
+const REAL_PRODUCERS_VISIBLE_ONLY_VIA_OBJECT_DESCENT: readonly ProducerId[] = [
+  BINDING_RECORD_PARSE_PRODUCER,
+  BINDING_RECORD_REFUSE_PRODUCER,
+  DECISION_RECORD_PARSE_PRODUCER,
+  DECISION_RECORD_REFUSE_PRODUCER,
+  SESSION_RECORD_PARSE_PRODUCER,
+  SESSION_RECORD_REFUSE_PRODUCER,
+  THREAD_RECORD_PARSE_PRODUCER,
+  THREAD_RECORD_REFUSE_PRODUCER,
+  AMEND_CRITERIA_HANDLER_PRODUCER,
+  BIND_BRANCH_HANDLER_PRODUCER,
+  CLOSE_THREAD_HANDLER_PRODUCER,
+  OPEN_THREAD_HANDLER_PRODUCER,
+  PARK_THREAD_HANDLER_PRODUCER,
+  RESUME_THREAD_HANDLER_PRODUCER,
+  UPDATE_THREAD_HANDLER_PRODUCER
+]
+
+test('error.discloses-no-path.scan-finds-every-object-descent-producer', () => {
+  const scanned = new Set(scanRefusalProducers())
+  for (const producer of REAL_PRODUCERS_VISIBLE_ONLY_VIA_OBJECT_DESCENT) {
+    assert.ok(scanned.has(producer), `expected the static scan to find real producer "${producer}"`)
+  }
+})
+
 test('error.discloses-no-path.taint-refusal-rejects-unclosed-fields', () => {
   assert.throws(() => taintRefusal({} as Refusal, SENTINEL_TOKEN))
 
