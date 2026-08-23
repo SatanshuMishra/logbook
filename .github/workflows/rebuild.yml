@@ -44,7 +44,18 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - run: npm ci
-      - run: npm run rebuild:test
+      - name: Run the rebuild test suite and assert a non-zero pass floor
+        env:
+          NODE_OPTIONS: --test-reporter=tap
+        run: |
+          set -euo pipefail
+          npm run rebuild:test | tee test-output.tap
+          pass_count=$(grep -oE '^# pass [0-9]+' test-output.tap | tail -n 1 | grep -oE '[0-9]+$')
+          if [ -z "$pass_count" ] || [ "$pass_count" -eq 0 ]; then
+            echo "the test run reported zero passing tests, the configured globs may have matched nothing"
+            exit 1
+          fi
+          echo "the test run passed $pass_count tests"
 
   coverage:
     runs-on: ubuntu-latest
