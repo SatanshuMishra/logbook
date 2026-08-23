@@ -17,6 +17,7 @@ import {
   type Mutation
 } from '../support/schema-arbitrary.ts'
 import { openStore } from '../../src/store/records.ts'
+import { escapeStored } from '../../src/render/escape.ts'
 import type { Decision } from '../../src/schema/decision.ts'
 import type { Thread } from '../../src/schema/thread.ts'
 
@@ -373,5 +374,88 @@ test('bind_branch.spawn.contract', async () => {
 test('bind_branch.rejects-invalid', async () => {
   await withFixture(async (fx) => {
     await runRejectsInvalid(fx, 'bind_branch', ['minItems'])
+  })
+})
+
+test('amend_criteria.strike-retains-in-store', async () => {
+  await withFixture(async (fx) => {
+    const { threadId, criterionId } = await createFixtureThread(fx.spawned, fx.published)
+    const decisionId = seedDecision(fx.repo, fx.pluginData, fx.homeDir, threadId)
+
+    const struck = (await fx.spawned.client.callTool({
+      name: 'amend_criteria',
+      arguments: { thread_id: threadId, operation: 'strike', decision_id: decisionId, criterion_id: criterionId }
+    })) as CallToolResult
+    assertOkResult('amend_criteria (strike)', struck)
+
+    const stored = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
+    const struckCriterion = stored.completion_criteria.find((criterion) => criterion.id === criterionId)
+    assert.ok(struckCriterion !== undefined, 'a struck criterion must still be present when the thread is re-read from the store')
+    assert.equal(struckCriterion?.struck_by, decisionId)
+  })
+})
+
+test('amend_criteria.refuses-unresolvable-decision', async () => {
+  await withFixture(async (fx) => {
+    const { threadId, criterionId } = await createFixtureThread(fx.spawned, fx.published)
+    const unresolvableDecisionId = testRuntime().ulid()
+
+    const result = (await fx.spawned.client.callTool({
+      name: 'amend_criteria',
+      arguments: { thread_id: threadId, operation: 'strike', decision_id: unresolvableDecisionId, criterion_id: criterionId }
+    })) as CallToolResult
+    assert.equal(
+      result.isError,
+      true,
+      'a syntactically valid but unresolvable decision id must be refused through the real server wiring'
+    )
+    const text = firstTextOf(result)
+    assert.equal(text.split('\n')[0], 'field: criteria.strike.decision_id')
+  })
+})
+
+test('update_thread.cap-refusal-is-whole-call', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+
+    const firstGoal = 'the first active goal that succeeds entirely on its own'
+    const seeded = (await fx.spawned.client.callTool({
+      name: 'update_thread',
+      arguments: { thread_id: threadId, active_goal: firstGoal }
+    })) as CallToolResult
+    assertOkResult('update_thread (seed active_goal)', seeded)
+
+    const zeroWidthCount = 5
+    const regularCount = 480
+    const oversizedNextStep = 'n'.repeat(regularCount) + '​'.repeat(zeroWidthCount)
+    assert.ok(oversizedNextStep.length <= 500, 'the raw next_step must stay within the wire-level cap on its own')
+    assert.ok(
+      escapeStored(oversizedNextStep).length > 500,
+      'escaping the zero-width characters must be what pushes next_step over its cap'
+    )
+
+    const secondGoal = 'a second active goal that would also succeed entirely on its own'
+    const combined = (await fx.spawned.client.callTool({
+      name: 'update_thread',
+      arguments: { thread_id: threadId, active_goal: secondGoal, next_step: oversizedNextStep }
+    })) as CallToolResult
+    assert.equal(
+      combined.isError,
+      true,
+      'a call mixing a valid field with a field over its post-escape cap must be refused as one unit'
+    )
+    const text = firstTextOf(combined)
+    const lines = text.split('\n')
+    assert.equal(lines[0], 'field: spine.next_step')
+    assert.match(text, /^accepted: /m)
+    assert.match(text, /^example: /m)
+    assert.match(text, /^retryable: true/m)
+
+    const stored = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
+    assert.equal(
+      stored.spine.active_goal,
+      escapeStored(firstGoal),
+      'a refused whole call must not have written the valid active_goal field it carried alongside the violation'
+    )
   })
 })
