@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { z } from 'zod'
 import { ALL_TOOLS } from '../../src/server/register.ts'
+import { declare } from '../../src/schema/declare.ts'
 import { census } from '../support/census.ts'
 import { listPublishedTools, type Verdict } from '../support/published.ts'
 import { spawnServer } from '../support/spawn-client.ts'
@@ -44,8 +45,16 @@ const flattenSchemaNodes = (value: unknown, path: string): SchemaNode[] => {
   return collected
 }
 
-const classifyDescribedNode = (entry: SchemaNode): Verdict => {
+const UNWALKED_SUBSCHEMA_KEYS = ['anyOf', 'oneOf', 'allOf', '$defs', '$ref'] as const
+
+const carriesUnwalkedSubschema = (node: Record<string, unknown>): boolean => {
+  if (UNWALKED_SUBSCHEMA_KEYS.some((key) => key in node)) return true
+  return isPlainObject(node.additionalProperties)
+}
+
+export const classifyDescribedNode = (entry: SchemaNode): Verdict => {
   if (!isPlainObject(entry.value)) return 'unclassifiable'
+  if (carriesUnwalkedSubschema(entry.value)) return 'unclassifiable'
   const description = entry.value.description
   if (description === undefined) return 'forbidden'
   if (typeof description !== 'string') return 'unclassifiable'
@@ -59,7 +68,7 @@ test('contract.every-property-described', async () => {
   )
 
   const localItems = ALL_TOOLS.flatMap((spec) =>
-    flattenSchemaNodes(z.toJSONSchema(spec.input as unknown as z.ZodType), spec.name)
+    flattenSchemaNodes(declare(spec.name, spec.input as unknown as z.ZodType).jsonSchema, spec.name)
   )
   assert.doesNotThrow(() => census(localItems, classifyDescribedNode))
 
@@ -81,4 +90,24 @@ test('contract.every-property-described', async () => {
   } finally {
     await spawned.close()
   }
+})
+
+test('contract.every-property-described.control.unwalked-subschema-halts', () => {
+  const anyOfNode: SchemaNode = { path: 'probe.anyOfField', value: { anyOf: [{ type: 'string' }, { type: 'number' }] } }
+  assert.equal(classifyDescribedNode(anyOfNode), 'unclassifiable')
+
+  const refNode: SchemaNode = { path: 'probe.refField', value: { $ref: '#/$defs/probe' } }
+  assert.equal(classifyDescribedNode(refNode), 'unclassifiable')
+
+  const schemaAdditionalPropertiesNode: SchemaNode = {
+    path: 'probe.additionalPropertiesField',
+    value: { type: 'object', additionalProperties: { type: 'string' } }
+  }
+  assert.equal(classifyDescribedNode(schemaAdditionalPropertiesNode), 'unclassifiable')
+
+  const booleanAdditionalPropertiesNode: SchemaNode = {
+    path: 'probe.strictObjectField',
+    value: { type: 'object', additionalProperties: false, description: 'a strict object field' }
+  }
+  assert.equal(classifyDescribedNode(booleanAdditionalPropertiesNode), 'allowed')
 })
