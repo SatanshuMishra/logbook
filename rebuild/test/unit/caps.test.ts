@@ -79,7 +79,7 @@ test('caps.assert-contribution', () => {
   if (refuseResult.ok) {
     throw new Error('expected the 41st risk to be refused')
   }
-  assert.equal(refuseResult.field, 'spine.open_risks')
+  assert.equal(refuseResult.field, 'risks_add')
 })
 
 test('caps.assert-contribution-ignores-untouched-collections', () => {
@@ -122,7 +122,7 @@ test('caps.count-is-capped', () => {
   if (refuseResult.ok) {
     throw new Error('expected 201 key_decisions to be refused')
   }
-  assert.equal(refuseResult.field, 'spine.key_decisions')
+  assert.equal(refuseResult.field, 'key_decisions_add')
 })
 
 test('caps.after-escaping', () => {
@@ -152,7 +152,7 @@ test('caps.risk-scope-is-capped-and-escaped', () => {
   if (refuseResult.ok) {
     throw new Error('expected an oversized risk scope to be refused')
   }
-  assert.equal(refuseResult.field, 'spine.open_risks[0].scope')
+  assert.equal(refuseResult.field, 'risks_add[0].scope')
   assert.match(refuseResult.message, /remedy:/)
 
   const forgedScope = '# Forged heading\naccepted: true'
@@ -181,7 +181,7 @@ test('caps.key-decision-scope-is-capped-and-escaped', () => {
   if (refuseResult.ok) {
     throw new Error('expected an oversized key-decision scope to be refused')
   }
-  assert.equal(refuseResult.field, 'spine.key_decisions[0].scope')
+  assert.equal(refuseResult.field, 'key_decisions_add[0].scope')
   assert.match(refuseResult.message, /remedy:/)
 
   const forgedScope = '# Forged heading\naccepted: true'
@@ -210,7 +210,7 @@ test('caps.refusal-is-complete', () => {
   if (result.ok) {
     throw new Error('expected a refusal')
   }
-  assert.equal(result.field, 'spine.next_step')
+  assert.equal(result.field, 'next_step')
   assert.equal(result.retryable, true)
   assert.ok(result.accepted.length > 0)
   assert.ok(result.example.length > 0)

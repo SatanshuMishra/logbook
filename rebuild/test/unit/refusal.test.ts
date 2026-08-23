@@ -47,3 +47,20 @@ test('refusal.unrecognized-key-name-is-length-bounded', () => {
   const refusal = refuse(jsonSchema, issues)
   assert.ok(refusal.field.length <= caps.UNRECOGNIZED_KEY_NAME_MAX)
 })
+
+const isWellFormedUtf16 = (value: string): boolean => {
+  try {
+    encodeURIComponent(value)
+    return true
+  } catch {
+    return false
+  }
+}
+
+test('refusal.unrecognized-key-name-is-clipped-by-grapheme-not-code-unit', () => {
+  const emojiKey = 'a' + '😀'.repeat(100)
+  const issues = rejectExtraKeys({ [emojiKey]: 'x' })
+
+  const refusal = refuse(jsonSchema, issues)
+  assert.equal(isWellFormedUtf16(refusal.field), true, 'clipping a surrogate pair in half must never reach the caller')
+})

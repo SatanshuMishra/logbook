@@ -30,6 +30,12 @@ const COLLECTION_ELEMENTS_CAP: Record<CollectionField, number> = {
   out_of_scope: caps.OUT_OF_SCOPE_MAX_ELEMENTS
 }
 
+const CALLER_FIELD: Record<CollectionField, string> = {
+  open_risks: 'risks_add',
+  key_decisions: 'key_decisions_add',
+  out_of_scope: 'out_of_scope_add'
+}
+
 const capRefusal = (field: string, limit: number, observed: number, unit: string, remedy: string): Refusal => ({
   ok: false,
   field,
@@ -51,7 +57,7 @@ const checkScalarField = (field: ScalarField, value: string | undefined): Refusa
   if (value === undefined) {
     return null
   }
-  return checkTextCap(`spine.${field}`, value, SCALAR_CAP[field], 'shorten the value and retry')
+  return checkTextCap(field, value, SCALAR_CAP[field], 'shorten the value and retry')
 }
 
 const checkCollectionCount = (field: CollectionField, storedCount: number, contributedCount: number): Refusal | null => {
@@ -59,7 +65,7 @@ const checkCollectionCount = (field: CollectionField, storedCount: number, contr
   const observed = storedCount + contributedCount
   if (observed > limit) {
     return capRefusal(
-      `spine.${field}`,
+      CALLER_FIELD[field],
       limit,
       observed,
       'entries',
@@ -72,7 +78,7 @@ const checkCollectionCount = (field: CollectionField, storedCount: number, contr
 const checkRiskElements = (contributed: Risk[]): Refusal | null => {
   for (const [index, risk] of contributed.entries()) {
     const textRefusal = checkTextCap(
-      `spine.open_risks[${index}].text`,
+      `risks_add[${index}].text`,
       risk.text,
       caps.RISK_TEXT_MAX,
       'shorten the risk text and retry'
@@ -81,7 +87,7 @@ const checkRiskElements = (contributed: Risk[]): Refusal | null => {
       return textRefusal
     }
     const scopeRefusal = checkTextCap(
-      `spine.open_risks[${index}].scope`,
+      `risks_add[${index}].scope`,
       risk.scope,
       caps.RISK_SCOPE_MAX,
       'shorten the scope and retry'
@@ -91,7 +97,7 @@ const checkRiskElements = (contributed: Risk[]): Refusal | null => {
     }
     if (risk.refs.length > caps.RISK_REFS_MAX_ELEMENTS) {
       return capRefusal(
-        `spine.open_risks[${index}].refs`,
+        `risks_add[${index}].refs`,
         caps.RISK_REFS_MAX_ELEMENTS,
         risk.refs.length,
         'entries',
@@ -100,7 +106,7 @@ const checkRiskElements = (contributed: Risk[]): Refusal | null => {
     }
     for (const [refIndex, ref] of risk.refs.entries()) {
       const refRefusal = checkTextCap(
-        `spine.open_risks[${index}].refs[${refIndex}]`,
+        `risks_add[${index}].refs[${refIndex}]`,
         ref,
         caps.RISK_REF_MAX,
         'shorten the ref and retry'
@@ -116,7 +122,7 @@ const checkRiskElements = (contributed: Risk[]): Refusal | null => {
 const checkKeyDecisionElements = (contributed: KeyDecision[]): Refusal | null => {
   for (const [index, entry] of contributed.entries()) {
     const refusal = checkTextCap(
-      `spine.key_decisions[${index}].title`,
+      `key_decisions_add[${index}].title`,
       entry.title,
       caps.KEY_DECISION_TITLE_MAX,
       'shorten the title and retry'
@@ -125,7 +131,7 @@ const checkKeyDecisionElements = (contributed: KeyDecision[]): Refusal | null =>
       return refusal
     }
     const scopeRefusal = checkTextCap(
-      `spine.key_decisions[${index}].scope`,
+      `key_decisions_add[${index}].scope`,
       entry.scope,
       caps.KEY_DECISION_SCOPE_MAX,
       'shorten the scope and retry'
@@ -140,7 +146,7 @@ const checkKeyDecisionElements = (contributed: KeyDecision[]): Refusal | null =>
 const checkOutOfScopeElements = (contributed: OutOfScope[]): Refusal | null => {
   for (const [index, entry] of contributed.entries()) {
     const refusal = checkTextCap(
-      `spine.out_of_scope[${index}].text`,
+      `out_of_scope_add[${index}]`,
       entry.text,
       caps.OUT_OF_SCOPE_TEXT_MAX,
       'shorten the statement and retry'

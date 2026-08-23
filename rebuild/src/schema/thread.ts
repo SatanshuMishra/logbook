@@ -114,8 +114,8 @@ const ThreadShape = z.object({
     .describe('the reason this thread is blocked, or null when it is not blocked'),
   completion_criteria: z
     .array(CriterionSchema)
-    .max(caps.CRITERIA_MAX_ELEMENTS)
-    .describe('the criteria that define this thread as done'),
+    .max(caps.CRITERIA_RETENTION_MAX_ELEMENTS)
+    .describe('the criteria that define this thread as done, struck criteria retained'),
   spine: SpineSchema.describe('the progressive summary of this thread'),
   created_at: isoField('when this thread was created'),
   updated_at: isoField('when this thread was last updated')

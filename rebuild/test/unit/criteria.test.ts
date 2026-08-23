@@ -53,15 +53,15 @@ test('criteria.requires-decision-ref', () => {
 
   const insertMissing = insertCriterion(rt, thread, { text: 'a new criterion', kind: 'planned', decisionId: undefined }, resolve)
   assert.equal(insertMissing.ok, false)
-  assert.equal((insertMissing as { field: string }).field, 'criteria.insert.decision_id')
+  assert.equal((insertMissing as { field: string }).field, 'decision_id')
 
   const insertUnresolved = insertCriterion(rt, thread, { text: 'a new criterion', kind: 'planned', decisionId: unknown }, alwaysUnresolved)
   assert.equal(insertUnresolved.ok, false)
-  assert.equal((insertUnresolved as { field: string }).field, 'criteria.insert.decision_id')
+  assert.equal((insertUnresolved as { field: string }).field, 'decision_id')
 
   const rewriteMissing = rewriteCriterion(rt, thread, { criterionId: existing.id, text: 'rewritten text', decisionId: null }, resolve)
   assert.equal(rewriteMissing.ok, false)
-  assert.equal((rewriteMissing as { field: string }).field, 'criteria.rewrite.decision_id')
+  assert.equal((rewriteMissing as { field: string }).field, 'decision_id')
 
   const rewriteUnresolved = rewriteCriterion(
     rt,
@@ -70,15 +70,15 @@ test('criteria.requires-decision-ref', () => {
     alwaysUnresolved
   )
   assert.equal(rewriteUnresolved.ok, false)
-  assert.equal((rewriteUnresolved as { field: string }).field, 'criteria.rewrite.decision_id')
+  assert.equal((rewriteUnresolved as { field: string }).field, 'decision_id')
 
   const strikeMissing = strikeCriterion(rt, thread, { criterionId: existing.id, decisionId: '' }, resolve)
   assert.equal(strikeMissing.ok, false)
-  assert.equal((strikeMissing as { field: string }).field, 'criteria.strike.decision_id')
+  assert.equal((strikeMissing as { field: string }).field, 'decision_id')
 
   const strikeUnresolved = strikeCriterion(rt, thread, { criterionId: existing.id, decisionId: unknown }, alwaysUnresolved)
   assert.equal(strikeUnresolved.ok, false)
-  assert.equal((strikeUnresolved as { field: string }).field, 'criteria.strike.decision_id')
+  assert.equal((strikeUnresolved as { field: string }).field, 'decision_id')
 
   assert.deepStrictEqual(thread.completion_criteria, [existing])
 })

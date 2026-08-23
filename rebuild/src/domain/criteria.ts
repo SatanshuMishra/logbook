@@ -71,6 +71,24 @@ const capacityRefusal = (field: string, limit: number, observed: number, remedy:
   message: `${field} is already at its cap of ${limit} completion criteria; observed ${observed}; remedy: ${remedy}.`
 })
 
+const retentionCapacityRefusal = (field: string, limit: number, observed: number): Refusal => ({
+  ok: false,
+  field,
+  accepted: `at most ${limit} completion criteria retained on the thread, including struck ones`,
+  example: 'open a new thread that references this one instead of inserting another criterion here',
+  retryable: false,
+  message: `${field} names a thread already carrying ${observed} completion criteria, at its retention cap of ${limit}; struck criteria are retained forever and count toward this cap.`
+})
+
+const struckCriterionRefusal = (field: string, criterionId: string): Refusal => ({
+  ok: false,
+  field,
+  accepted: 'the id of a criterion that has not been struck',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: true,
+  message: `${field} names a struck criterion, which is retained as frozen history and cannot be rewritten; received ${criterionId}.`
+})
+
 const positionRefusal = (field: string, length: number): Refusal => ({
   ok: false,
   field,
@@ -99,7 +117,7 @@ export const insertCriterion = (
   input: InsertCriterionInput,
   resolveDecision: DecisionResolver
 ): Ok<Thread> | Refusal => {
-  const decisionResult = requireDecision('criteria.insert.decision_id', input.decisionId, resolveDecision)
+  const decisionResult = requireDecision('decision_id', input.decisionId, resolveDecision)
   if (!decisionResult.ok) {
     return decisionResult
   }
@@ -113,6 +131,9 @@ export const insertCriterion = (
       unstruckCount,
       'strike an existing criterion before inserting another'
     )
+  }
+  if (existing.length >= caps.CRITERIA_RETENTION_MAX_ELEMENTS) {
+    return retentionCapacityRefusal('thread_id', caps.CRITERIA_RETENTION_MAX_ELEMENTS, existing.length)
   }
 
   const position = input.position ?? existing.length
@@ -153,7 +174,7 @@ export const rewriteCriterion = (
   input: RewriteCriterionInput,
   resolveDecision: DecisionResolver
 ): Ok<Thread> | Refusal => {
-  const decisionResult = requireDecision('criteria.rewrite.decision_id', input.decisionId, resolveDecision)
+  const decisionResult = requireDecision('decision_id', input.decisionId, resolveDecision)
   if (!decisionResult.ok) {
     return decisionResult
   }
@@ -161,6 +182,9 @@ export const rewriteCriterion = (
   const target = thread.completion_criteria.find((criterion) => criterion.id === input.criterionId)
   if (target === undefined) {
     return criterionNotFoundRefusal('criteria.rewrite.criterion_id', input.criterionId)
+  }
+  if (target.struck_by !== null) {
+    return struckCriterionRefusal('criterion_id', input.criterionId)
   }
 
   const escapedText = escapeStored(input.text)
@@ -189,7 +213,7 @@ export const strikeCriterion = (
   input: StrikeCriterionInput,
   resolveDecision: DecisionResolver
 ): Ok<Thread> | Refusal => {
-  const decisionResult = requireDecision('criteria.strike.decision_id', input.decisionId, resolveDecision)
+  const decisionResult = requireDecision('decision_id', input.decisionId, resolveDecision)
   if (!decisionResult.ok) {
     return decisionResult
   }

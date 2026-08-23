@@ -21,8 +21,8 @@ const refuseGate = (failure: GateFailure): Refusal => {
   if (failure.reason === 'no-criteria') {
     return {
       ok: false,
-      field: 'completion_criteria',
-      accepted: 'at least one un-struck completion criterion',
+      field: 'outcome',
+      accepted: 'done only when the thread carries at least one un-struck completion criterion',
       example: 'add a completion criterion, or unstrike one, before closing as done',
       retryable: true,
       message: 'closing as done requires at least one un-struck completion criterion; none remain on this thread.'
@@ -31,8 +31,8 @@ const refuseGate = (failure: GateFailure): Refusal => {
   if (failure.reason === 'criteria-open') {
     return {
       ok: false,
-      field: 'completion_criteria',
-      accepted: 'every un-struck completion criterion marked done',
+      field: 'outcome',
+      accepted: 'done only when every un-struck completion criterion is marked done',
       example: 'mark each outstanding criterion done, or strike it, then retry',
       retryable: true,
       message: `closing as done requires every un-struck completion criterion to be marked done; ${failure.outstanding.length} of at most ${caps.CRITERIA_MAX_ELEMENTS} outstanding: ${renderOutstanding(failure.outstanding)}.`
@@ -40,7 +40,7 @@ const refuseGate = (failure: GateFailure): Refusal => {
   }
   return {
     ok: false,
-    field: 'closure',
+    field: 'detail',
     accepted: 'a non-empty closure statement',
     example: 'shipped the done gate and its tests',
     retryable: true,
