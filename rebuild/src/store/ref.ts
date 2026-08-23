@@ -1,5 +1,6 @@
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Ok, Refusal } from '../schema/declare.ts'
+import { withDetail } from './detail.ts'
 import { git } from './git.ts'
 
 export const LEDGER_REF = 'refs/logbook/ledger'
@@ -25,26 +26,35 @@ export const casUpdateRef = (
   }
 
   const cause = classifyFailure(result.stderr)
+  const detail = result.stderr.trim()
 
   if (cause === 'ref-moved') {
-    return {
+    rt.log({ level: 'error', event: 'store.cas-update-ref-moved', ref, code: result.code, detail })
+    return withDetail(
+      {
+        ok: false,
+        cause,
+        field: ref,
+        accepted: `the current value of ${ref} equal to ${expected === null ? '(no prior value)' : expected} at the moment of the write`,
+        example: next,
+        retryable: true,
+        message: `${ref} moved before this write landed (git update-ref exit ${result.code}); re-read and retry`
+      },
+      detail
+    )
+  }
+
+  rt.log({ level: 'error', event: 'store.cas-update-ref-failed', ref, code: result.code, detail })
+  return withDetail(
+    {
       ok: false,
       cause,
       field: ref,
-      accepted: `the current value of ${ref} equal to ${expected === null ? '(no prior value)' : expected} at the moment of the write`,
+      accepted: 'a repository git update-ref can execute against, unmoved',
       example: next,
-      retryable: true,
-      message: `${ref} moved before this write landed (git update-ref exit ${result.code}: ${result.stderr.trim()}); re-read and retry`
-    }
-  }
-
-  return {
-    ok: false,
-    cause,
-    field: ref,
-    accepted: 'a repository git update-ref can execute against, unmoved',
-    example: next,
-    retryable: false,
-    message: `git update-ref failed for ${ref} (exit ${result.code}): ${result.stderr.trim()}`
-  }
+      retryable: false,
+      message: `git update-ref failed for ${ref} (exit ${result.code})`
+    },
+    detail
+  )
 }

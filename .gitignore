@@ -1,5 +1,6 @@
 .mitosis/
 .DS_Store
+rebuild/dist/
 *.tmp-*
 .evidence/
 .playwright-mcp/
