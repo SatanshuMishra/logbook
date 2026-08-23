@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { Refusal } from '../../src/schema/declare.ts'
@@ -11,6 +12,7 @@ import { createStoreDirectories, layoutFor } from '../../src/store/layout.ts'
 import { openStore } from '../../src/store/records.ts'
 import { LEDGER_REF, casUpdateRef } from '../../src/store/ref.ts'
 import { ensureSingleStore } from '../../src/store/single-store.ts'
+import { withDetail } from '../../src/store/detail.ts'
 import { rawGit, withRepo, withRepoNoIdentity } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { census } from '../support/census.ts'
@@ -34,9 +36,13 @@ const CAS_UPDATE_REF_PRODUCER: ProducerId = 'store/ref.ts#casUpdateRef'
 const READ_IDENTITY_PRODUCER: ProducerId = 'store/git.ts#readIdentity'
 const ENSURE_SINGLE_STORE_PRODUCER: ProducerId = 'store/single-store.ts#ensureSingleStore'
 const OPEN_STORE_PRODUCER: ProducerId = 'store/records.ts#openStore'
+const WITH_DETAIL_PRODUCER: ProducerId = 'store/detail.ts#withDetail'
 
 const collectRealRefusals = (): TaggedRefusal[] => {
-  const refusals: TaggedRefusal[] = [{ producer: REFUSE_PRODUCER, refusal: refusalTemplate() }]
+  const refusals: TaggedRefusal[] = [
+    { producer: REFUSE_PRODUCER, refusal: refusalTemplate() },
+    { producer: WITH_DETAIL_PRODUCER, refusal: withDetail(refusalTemplate(), 'a store-relative detail') }
+  ]
 
   const noPluginDataDir = mkdtempSync(join(tmpdir(), 'logbook-no-plugin-data-'))
   try {
@@ -224,8 +230,104 @@ test('error.discloses-no-path.taint-survives-without-the-strip', () => {
 
   const withoutStrip: CallToolResult = {
     isError: true,
-    content: [{ type: 'text', text: leaky.message }],
-    structuredContent: { ...leaky }
+    content: [{ type: 'text', text: JSON.stringify(leaky) }]
   }
   assert.throws(() => census(emittedStrings(withoutStrip, leaky.example), classifyEmittedPath))
+})
+
+const SRC_ROOT = fileURLToPath(new URL('../../src', import.meta.url))
+
+test('error.discloses-no-path.producer-scan-covers-all-five-export-shapes', () => {
+  const probeDir = join(SRC_ROOT, '__census_probe__')
+  const probeFile = join(probeDir, 'plant.ts')
+  mkdirSync(probeDir, { recursive: true })
+  writeFileSync(
+    probeFile,
+    [
+      "import type { Refusal } from '../schema/declare.ts'",
+      '',
+      'export function probeFunctionDeclaration(): Refusal {',
+      "  return { ok: false, field: 'probe', accepted: 'probe', example: 'probe', retryable: false, message: 'leak' }",
+      '}',
+      '',
+      'export const probeConciseArrow = (): Refusal =>',
+      "  ({ ok: false, field: 'probe', accepted: 'probe', example: 'probe', retryable: false, message: 'leak' })",
+      '',
+      'export const probeAsyncArrow = async (): Promise<Refusal> =>',
+      "  ({ ok: false, field: 'probe', accepted: 'probe', example: 'probe', retryable: false, message: 'leak' })",
+      '',
+      'const probeAssignedThenExported = (): Refusal =>',
+      "  ({ ok: false, field: 'probe', accepted: 'probe', example: 'probe', retryable: false, message: 'leak' })",
+      'export { probeAssignedThenExported }',
+      '',
+      'export type ProbeStoreFailure = Refusal',
+      'export const probeTypeAliasReturn = (): ProbeStoreFailure =>',
+      "  ({ ok: false, field: 'probe', accepted: 'probe', example: 'probe', retryable: false, message: 'leak' })",
+      ''
+    ].join('\n'),
+    'utf8'
+  )
+
+  try {
+    const scanned = scanRefusalProducers()
+    const plantedFound = scanned.filter((id) => id.startsWith('__census_probe__/'))
+    assert.deepEqual(
+      new Set(plantedFound),
+      new Set([
+        '__census_probe__/plant.ts#probeFunctionDeclaration',
+        '__census_probe__/plant.ts#probeConciseArrow',
+        '__census_probe__/plant.ts#probeAsyncArrow',
+        '__census_probe__/plant.ts#probeAssignedThenExported',
+        '__census_probe__/plant.ts#probeTypeAliasReturn'
+      ])
+    )
+
+    const classifyUncovered = (id: ProducerId): 'allowed' | 'unclassifiable' =>
+      id.startsWith('__census_probe__/') ? 'unclassifiable' : 'allowed'
+    assert.throws(() => census(scanned, classifyUncovered))
+  } finally {
+    rmSync(probeDir, { recursive: true, force: true })
+  }
+
+  const scannedAfterCleanup = scanRefusalProducers()
+  assert.equal(
+    scannedAfterCleanup.some((id) => id.startsWith('__census_probe__/')),
+    false
+  )
+})
+
+test('error.discloses-no-path.example-scrub-is-positional-not-global', () => {
+  const row1Value = `field: probe\naccepted: probe\nexample: ${SENTINEL_POSIX}\nretryable: true\nprobe was refused; unrelated message text with no path.`
+  assert.doesNotThrow(() =>
+    census([{ path: 'content[0].text', value: row1Value, declaredExample: SENTINEL_POSIX }], classifyEmittedPath)
+  )
+
+  const row2Value = `field: probe\naccepted: probe\nexample: ${SENTINEL_POSIX}\nretryable: true\nprobe was refused; it accepts probe; a valid example is ${SENTINEL_POSIX}; retryable=true.`
+  assert.doesNotThrow(() =>
+    census([{ path: 'content[0].text', value: row2Value, declaredExample: SENTINEL_POSIX }], classifyEmittedPath)
+  )
+
+  const row3Value = `field: probe\naccepted: probe\nexample: /\nretryable: true\nprobe was refused; the real leaked path is ${SENTINEL_POSIX}; retryable=true.`
+  assert.throws(() =>
+    census([{ path: 'content[0].text', value: row3Value, declaredExample: '/' }], classifyEmittedPath)
+  )
+
+  const row4Value = `field: probe\naccepted: probe\nexample: chmod +r <dir>\nretryable: true\nprobe was refused; the real leaked path is ${SENTINEL_POSIX}; retryable=true.`
+  assert.throws(() =>
+    census([{ path: 'content[0].text', value: row4Value, declaredExample: 'chmod +r <dir>' }], classifyEmittedPath)
+  )
+})
+
+test('error.discloses-no-path.with-detail-is-idempotent', () => {
+  const original = refusalTemplate()
+  const snapshot = JSON.stringify(original)
+
+  const once = withDetail(original, 'first detail')
+  assert.doesNotThrow(() => withDetail(once, 'second detail'))
+  const twice = withDetail(once, 'second detail')
+
+  assert.equal(JSON.stringify(original), snapshot)
+  assert.notEqual(original, once)
+  assert.notEqual(once, twice)
+  assert.equal(Object.getOwnPropertyDescriptor(twice, 'detail')?.value, 'first detail | second detail')
 })

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import * as ts from 'typescript'
 import type { Classified } from './census.ts'
 import type { Refusal } from '../../src/schema/declare.ts'
 import { ThreadRecord } from '../../src/schema/thread.ts'
@@ -72,32 +73,31 @@ export const emittedStrings = (value: unknown, declaredExample: string): Emitted
 
 const normalizePath = (rawPath: string): string => rawPath.replace(/\[\d+\]/g, '')
 
-const KNOWN_PATTERN_CHECKED_PATHS = new Set([
-  'content.type',
-  'content.text',
-  'structuredContent.field',
-  'structuredContent.accepted',
-  'structuredContent.message',
-  'structuredContent.ok',
-  'structuredContent.retryable'
-])
+const KNOWN_PATTERN_CHECKED_PATHS = new Set(['content.type', 'content.text'])
 
-const KNOWN_EXAMPLE_PATH = 'structuredContent.example'
+const EXAMPLE_EXEMPTION_LENGTH_FLOOR = 4
+
+const escapeForRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const isExemptibleExample = (example: string): boolean => example.length >= EXAMPLE_EXEMPTION_LENGTH_FLOOR
+
+const scrubAnchoredExampleOccurrences = (value: string, declaredExample: string): string => {
+  if (!isExemptibleExample(declaredExample)) return value
+  const escaped = escapeForRegex(declaredExample)
+  const anchoredPattern = new RegExp(`(example:\\s*|a valid example is\\s*)${escaped}(?=[;\\n]|$)`, 'g')
+  return value.replace(anchoredPattern, '$1')
+}
 
 export const classifyEmittedPath = (
   s: EmittedString
 ): Classified<EmittedString>['verdict'] | 'unclassifiable' => {
   const normalized = normalizePath(s.path)
 
-  if (normalized === KNOWN_EXAMPLE_PATH) {
-    return s.value === s.declaredExample ? 'allowed' : 'unclassifiable'
-  }
-
   if (!KNOWN_PATTERN_CHECKED_PATHS.has(normalized)) {
     return 'unclassifiable'
   }
 
-  const scrubbed = s.declaredExample.length > 0 ? s.value.split(s.declaredExample).join('') : s.value
+  const scrubbed = scrubAnchoredExampleOccurrences(s.value, s.declaredExample)
   const looksLikePath = POSIX_ABSOLUTE_PATTERN.test(scrubbed) || WIN32_ABSOLUTE_PATTERN.test(scrubbed)
   return looksLikePath ? 'forbidden' : 'allowed'
 }
@@ -116,21 +116,86 @@ const walkTsFiles = (dir: string): string[] =>
     return [full]
   })
 
-const PRODUCER_SIGNATURE_PATTERN =
-  /export const (\w+)\s*=\s*(?:<[^>]*>\s*)?\(([\s\S]*?)\)\s*:\s*([\s\S]*?)\s*=>\s*\{/g
+const TSCONFIG_PATH = fileURLToPath(new URL('../../tsconfig.json', import.meta.url))
+const DECLARE_MODULE_PATH = fileURLToPath(new URL('../../src/schema/declare.ts', import.meta.url))
+
+const loadProgram = (): ts.Program => {
+  const configFile = ts.readConfigFile(TSCONFIG_PATH, ts.sys.readFile)
+  if (configFile.error !== undefined) {
+    throw new Error(
+      `scanRefusalProducers: failed to read ${TSCONFIG_PATH}: ${ts.flattenDiagnosticMessageText(configFile.error.messageText, '\n')}`
+    )
+  }
+  const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, path.dirname(TSCONFIG_PATH))
+  if (parsed.errors.length > 0) {
+    const rendered = parsed.errors
+      .map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'))
+      .join('\n')
+    throw new Error(`scanRefusalProducers: failed to parse ${TSCONFIG_PATH}: ${rendered}`)
+  }
+  return ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options })
+}
+
+const findRefusalType = (program: ts.Program, checker: ts.TypeChecker): ts.Type => {
+  const declareFile = program.getSourceFile(DECLARE_MODULE_PATH)
+  if (declareFile === undefined) {
+    throw new Error(`scanRefusalProducers: ${DECLARE_MODULE_PATH} is not part of the compiled program`)
+  }
+  const moduleSymbol = checker.getSymbolAtLocation(declareFile)
+  if (moduleSymbol === undefined) {
+    throw new Error('scanRefusalProducers: schema/declare.ts has no resolvable module symbol')
+  }
+  const refusalSymbol = checker.getExportsOfModule(moduleSymbol).find((symbol) => symbol.getName() === 'Refusal')
+  if (refusalSymbol === undefined) {
+    throw new Error('scanRefusalProducers: schema/declare.ts no longer exports a "Refusal" type')
+  }
+  return checker.getDeclaredTypeOfSymbol(refusalSymbol)
+}
+
+const resolveAliasedSymbol = (checker: ts.TypeChecker, symbol: ts.Symbol): ts.Symbol =>
+  (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(symbol) : symbol
+
+const producesRefusal = (checker: ts.TypeChecker, refusalType: ts.Type, returnType: ts.Type): boolean => {
+  const awaited = checker.getAwaitedType(returnType) ?? returnType
+  const constituents = awaited.isUnion() ? awaited.types : [awaited]
+  return constituents.some((constituent) => checker.isTypeAssignableTo(constituent, refusalType))
+}
 
 export const scanRefusalProducers = (): ProducerId[] => {
   const files = walkTsFiles(SRC_ROOT)
+  const program = loadProgram()
+  const checker = program.getTypeChecker()
+  const refusalType = findRefusalType(program, checker)
   const producers: ProducerId[] = []
+
   for (const file of files) {
-    const source = readFileSync(file, 'utf8')
     const relativeFile = path.relative(SRC_ROOT, file)
-    for (const match of source.matchAll(PRODUCER_SIGNATURE_PATTERN)) {
-      const name = match[1]
-      const returnType = match[3]
-      if (name === undefined || returnType === undefined) continue
-      if (/\bRefusal\b|\bCasFailure\b/.test(returnType)) {
-        producers.push(`${relativeFile}#${name}`)
+    const sourceFile = program.getSourceFile(file)
+    if (sourceFile === undefined) {
+      throw new Error(`scanRefusalProducers: ${relativeFile} is not part of the compiled program`)
+    }
+    const syntacticDiagnostics = program.getSyntacticDiagnostics(sourceFile)
+    if (syntacticDiagnostics.length > 0) {
+      const rendered = syntacticDiagnostics
+        .map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'))
+        .join('\n')
+      throw new Error(`scanRefusalProducers: ${relativeFile} failed to parse: ${rendered}`)
+    }
+    const moduleSymbol = checker.getSymbolAtLocation(sourceFile)
+    if (moduleSymbol === undefined) {
+      throw new Error(`scanRefusalProducers: ${relativeFile} has no resolvable module symbol`)
+    }
+    for (const exported of checker.getExportsOfModule(moduleSymbol)) {
+      const resolved = resolveAliasedSymbol(checker, exported)
+      if ((resolved.flags & ts.SymbolFlags.Value) === 0) continue
+      const type = checker.getTypeOfSymbol(resolved)
+      const callSignatures = type.getCallSignatures()
+      if (callSignatures.length === 0) continue
+      const matches = callSignatures.some((signature) =>
+        producesRefusal(checker, refusalType, checker.getReturnTypeOfSignature(signature))
+      )
+      if (matches) {
+        producers.push(`${relativeFile}#${exported.getName()}`)
       }
     }
   }
