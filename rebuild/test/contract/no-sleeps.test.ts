@@ -1,9 +1,19 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import path from 'node:path'
 import * as ts from 'typescript'
 import { census } from '../support/census.ts'
 import type { Classified } from '../support/census.ts'
-import { forEachDescendant, isAmbientGlobal, lineOf, loadSourceProgram, relativeToRoot, sourceFileFor } from '../support/source-census.ts'
+import {
+  REBUILD_ROOT,
+  findNamedImportSymbols,
+  forEachDescendant,
+  isAmbientGlobal,
+  lineOf,
+  loadSourceProgram,
+  relativeToRoot,
+  sourceFileFor
+} from '../support/source-census.ts'
 
 type DelayCandidate =
   | { kind: 'call'; file: string; line: number; verdict: 'allowed' | 'forbidden' }
@@ -14,6 +24,10 @@ const DELAY_TOKENS = [
   ['set', 'Interval('].join(''),
   ['Atomics', '.wait('].join('')
 ]
+
+const CHILD_PROCESS_MODULE_SPECIFIERS = ['node:child_process', 'child_process']
+const CHILD_PROCESS_FUNCTIONS = ['spawn', 'spawnSync', 'exec', 'execSync']
+const SLEEP_COMMAND_TOKEN = 'sleep'
 
 const COMPARISON_OPERATORS: ReadonlySet<ts.SyntaxKind> = new Set([
   ts.SyntaxKind.GreaterThanToken,
@@ -29,8 +43,11 @@ const delayKind = (checker: ts.TypeChecker, call: ts.CallExpression): string | u
     if (isAmbientGlobal(checker, callee, 'setInterval')) return 'setInterval'
     return undefined
   }
-  if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && callee.name.text === 'wait') {
-    if (isAmbientGlobal(checker, callee.expression, 'Atomics')) return 'Atomics.wait'
+  if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression)) {
+    const propName = callee.name.text
+    if (propName === 'wait' && isAmbientGlobal(checker, callee.expression, 'Atomics')) return 'Atomics.wait'
+    if (callee.expression.text === 'globalThis' && propName === 'setTimeout') return 'setTimeout'
+    if (callee.expression.text === 'globalThis' && propName === 'setInterval') return 'setInterval'
   }
   return undefined
 }
@@ -137,14 +154,30 @@ const literalTextChunks = (node: ts.Node): string[] => {
   return []
 }
 
+const containsSleepCommandText = (node: ts.Node): boolean => {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+    return node.text === SLEEP_COMMAND_TOKEN || node.text.endsWith(`/${SLEEP_COMMAND_TOKEN}`)
+  }
+  return false
+}
+
 const collectDelayCandidates = (checker: ts.TypeChecker, sourceFile: ts.SourceFile, relFile: string): DelayCandidate[] => {
   const found: DelayCandidate[] = []
+  const spawnImports = findNamedImportSymbols(checker, sourceFile, CHILD_PROCESS_MODULE_SPECIFIERS, CHILD_PROCESS_FUNCTIONS)
+
   forEachDescendant(sourceFile, (node) => {
     if (ts.isCallExpression(node)) {
       const kind = delayKind(checker, node)
       if (kind !== undefined) {
         const allowed = matchesPromiseRaceShape(checker, sourceFile, node) || matchesDeadlineLoopShape(node)
         found.push({ kind: 'call', file: relFile, line: lineOf(sourceFile, node), verdict: allowed ? 'allowed' : 'forbidden' })
+        return
+      }
+      if (ts.isIdentifier(node.expression)) {
+        const symbol = checker.getSymbolAtLocation(node.expression)
+        if (symbol !== undefined && spawnImports.has(symbol) && node.arguments.some((arg) => containsSleepCommandText(arg))) {
+          found.push({ kind: 'call', file: relFile, line: lineOf(sourceFile, node), verdict: 'forbidden' })
+        }
       }
       return
     }
@@ -182,4 +215,14 @@ test('contract.no-sleeps.halts-on-a-delay-token-embedded-in-a-string-literal', (
     { kind: 'text', file: 'store/write-path.test.ts', line: 1, token: ['set', 'Timeout('].join('') }
   ]
   assert.throws(() => census(synthetic, classifyDelay))
+})
+
+test('contract.no-sleeps.collector-catches-aliased-imports-globalThis-and-a-spawned-sleep-binary', () => {
+  const { checker, program } = loadSourceProgram()
+  const fixturePath = path.join(REBUILD_ROOT, 'test', 'fixtures', 'no-sleeps-violation.ts')
+  const sourceFile = sourceFileFor(program, fixturePath)
+  const relFile = relativeToRoot(fixturePath)
+  const candidates = collectDelayCandidates(checker, sourceFile, relFile)
+  assert.ok(candidates.length >= 3, `expected the collector to find all three delay shapes, found ${candidates.length}`)
+  assert.throws(() => census(candidates, classifyDelay))
 })

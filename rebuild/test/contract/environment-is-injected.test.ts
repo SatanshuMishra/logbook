@@ -1,9 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import path from 'node:path'
 import * as ts from 'typescript'
 import { census } from '../support/census.ts'
 import type { Classified } from '../support/census.ts'
 import {
+  REBUILD_ROOT,
   findNamedImportSymbols,
   forEachDescendant,
   isAmbientGlobal,
@@ -23,6 +25,8 @@ type EnvironmentCandidate = {
 }
 
 const KNOWN_CAPABILITIES: ReadonlySet<Capability> = new Set(['now', 'ulid', 'env', 'cwd'])
+const PROCESS_MODULE_SPECIFIERS = ['node:process', 'process']
+const PROCESS_CAPABILITY_NAMES = ['env', 'cwd']
 
 const findRuntimeType = (checker: ts.TypeChecker, program: ts.Program, productionFiles: string[]): ts.Type => {
   const matches: { file: string; type: ts.Type }[] = []
@@ -87,6 +91,7 @@ const collectEnvironmentCandidates = (
 ): EnvironmentCandidate[] => {
   const found: EnvironmentCandidate[] = []
   const ulidImports = findNamedImportSymbols(checker, sourceFile, ['ulid'], ['ulid'])
+  const processImports = findNamedImportSymbols(checker, sourceFile, PROCESS_MODULE_SPECIFIERS, PROCESS_CAPABILITY_NAMES)
   const verdictFor = (): 'allowed' | 'forbidden' => (permittedFiles.has(relFile) ? 'allowed' : 'forbidden')
 
   forEachDescendant(sourceFile, (node) => {
@@ -120,8 +125,14 @@ const collectEnvironmentCandidates = (
 
     if (ts.isIdentifier(node) && !ts.isImportSpecifier(node.parent)) {
       const symbol = checker.getSymbolAtLocation(node)
-      if (symbol !== undefined && ulidImports.has(symbol)) {
+      if (symbol === undefined) return
+      if (ulidImports.has(symbol)) {
         found.push({ file: relFile, line: lineOf(sourceFile, node), capability: 'ulid', verdict: verdictFor() })
+        return
+      }
+      const processCapability = processImports.get(symbol)
+      if (processCapability === 'env' || processCapability === 'cwd') {
+        found.push({ file: relFile, line: lineOf(sourceFile, node), capability: processCapability, verdict: verdictFor() })
       }
     }
   })
@@ -142,11 +153,6 @@ test('contract.environment-is-injected', () => {
     collectEnvironmentCandidates(checker, sourceFileFor(program, file), relativeToRoot(file), permittedFiles)
   )
   assert.ok(population.length > 0, 'expected at least one ambient-environment reference in the production partition')
-  assert.equal(
-    population.length,
-    4,
-    `expected exactly four ambient-environment references, found ${population.length}: ${JSON.stringify(population)}`
-  )
 
   assert.doesNotThrow(() => census(population, classifyCandidate))
 
@@ -162,4 +168,14 @@ test('contract.environment-is-injected.halts-on-an-unrecognised-capability', () 
     verdict: 'allowed' as const
   }
   assert.throws(() => census([bogus], classifyCandidate))
+})
+
+test('contract.environment-is-injected.collector-catches-named-process-imports', () => {
+  const { checker, program } = loadSourceProgram()
+  const fixturePath = path.join(REBUILD_ROOT, 'test', 'fixtures', 'environment-is-injected-violation.ts')
+  const sourceFile = sourceFileFor(program, fixturePath)
+  const relFile = relativeToRoot(fixturePath)
+  const candidates = collectEnvironmentCandidates(checker, sourceFile, relFile, new Set<string>())
+  assert.ok(candidates.length > 0, 'expected the collector to find the env/cwd process import usage in the fixture')
+  assert.throws(() => census(candidates, classifyCandidate))
 })

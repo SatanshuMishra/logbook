@@ -1,9 +1,42 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import path from 'node:path'
 import * as ts from 'typescript'
 import { census } from '../support/census.ts'
 import type { Classified } from '../support/census.ts'
-import { forEachDescendant, lineOf, loadSourceProgram, relativeToRoot, sourceFileFor } from '../support/source-census.ts'
+import {
+  REBUILD_ROOT,
+  findDefaultImportSymbols,
+  findNamedImportSymbols,
+  forEachDescendant,
+  lineOf,
+  loadSourceProgram,
+  relativeToRoot,
+  sourceFileFor
+} from '../support/source-census.ts'
+
+const ASSERT_MODULE_SPECIFIERS = ['node:assert', 'assert', 'node:assert/strict', 'assert/strict']
+const ASSERT_FUNCTION_NAMES = [
+  'ok',
+  'equal',
+  'notEqual',
+  'strictEqual',
+  'notStrictEqual',
+  'deepEqual',
+  'notDeepEqual',
+  'deepStrictEqual',
+  'notDeepStrictEqual',
+  'match',
+  'doesNotMatch',
+  'throws',
+  'doesNotThrow',
+  'ifError',
+  'rejects',
+  'doesNotReject',
+  'fail'
+]
+
+type AssertSymbols = { defaults: Set<ts.Symbol>; named: Set<ts.Symbol> }
 
 type BindingShape = 'none' | 'simple-identifier' | 'unresolvable'
 
@@ -21,16 +54,27 @@ const TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/
 
 const matchesIdentifierShape = (text: string): boolean => ULID_PATTERN.test(text) || TIMESTAMP_PATTERN.test(text)
 
-const isAssertCallee = (expr: ts.Expression): boolean => {
-  if (ts.isIdentifier(expr)) return expr.text === 'assert'
-  if (ts.isPropertyAccessExpression(expr) && ts.isIdentifier(expr.expression)) return expr.expression.text === 'assert'
+const findAssertSymbols = (checker: ts.TypeChecker, sourceFile: ts.SourceFile): AssertSymbols => ({
+  defaults: findDefaultImportSymbols(checker, sourceFile, ASSERT_MODULE_SPECIFIERS),
+  named: new Set(findNamedImportSymbols(checker, sourceFile, ASSERT_MODULE_SPECIFIERS, ASSERT_FUNCTION_NAMES).keys())
+})
+
+const isAssertCallee = (checker: ts.TypeChecker, assertSymbols: AssertSymbols, expr: ts.Expression): boolean => {
+  if (ts.isIdentifier(expr)) {
+    const symbol = checker.getSymbolAtLocation(expr)
+    return symbol !== undefined && assertSymbols.named.has(symbol)
+  }
+  if (ts.isPropertyAccessExpression(expr) && ts.isIdentifier(expr.expression)) {
+    const symbol = checker.getSymbolAtLocation(expr.expression)
+    return symbol !== undefined && assertSymbols.defaults.has(symbol)
+  }
   return false
 }
 
-const isInsideAssertCall = (node: ts.Node): boolean => {
+const isInsideAssertCall = (checker: ts.TypeChecker, assertSymbols: AssertSymbols, node: ts.Node): boolean => {
   let current: ts.Node | undefined = node.parent
   while (current !== undefined) {
-    if (ts.isCallExpression(current)) return isAssertCallee(current.expression)
+    if (ts.isCallExpression(current) && isAssertCallee(checker, assertSymbols, current.expression)) return true
     current = current.parent
   }
   return false
@@ -50,17 +94,27 @@ const findReferences = (
   return refs
 }
 
+const unwrapArrayLiteralWrappers = (node: ts.Node): ts.Node => {
+  let current = node
+  while (current.parent !== undefined && ts.isArrayLiteralExpression(current.parent)) {
+    current = current.parent
+  }
+  return current
+}
+
 const collectLiteralCandidate = (
   checker: ts.TypeChecker,
   sourceFile: ts.SourceFile,
   relFile: string,
+  assertSymbols: AssertSymbols,
   node: ts.StringLiteral
 ): LiteralCandidate => {
-  const insideAssertCall = isInsideAssertCall(node)
+  const insideAssertCall = isInsideAssertCall(checker, assertSymbols, node)
   const base = { file: relFile, line: lineOf(sourceFile, node), text: node.text, insideAssertCall }
-  const parent = node.parent
+  const bindingRoot = unwrapArrayLiteralWrappers(node)
+  const parent = bindingRoot.parent
 
-  if (!ts.isVariableDeclaration(parent) || parent.initializer !== node) {
+  if (parent === undefined || !ts.isVariableDeclaration(parent) || parent.initializer !== bindingRoot) {
     return { ...base, bindingShape: 'none', hasOutsideReference: null }
   }
   if (!ts.isIdentifier(parent.name)) {
@@ -74,15 +128,16 @@ const collectLiteralCandidate = (
   if (references.length === 0) {
     return { ...base, bindingShape: 'unresolvable', hasOutsideReference: null }
   }
-  const hasOutsideReference = references.some((ref) => !isInsideAssertCall(ref))
+  const hasOutsideReference = references.some((ref) => !isInsideAssertCall(checker, assertSymbols, ref))
   return { ...base, bindingShape: 'simple-identifier', hasOutsideReference }
 }
 
 const collectLiteralCandidates = (checker: ts.TypeChecker, sourceFile: ts.SourceFile, relFile: string): LiteralCandidate[] => {
   const found: LiteralCandidate[] = []
+  const assertSymbols = findAssertSymbols(checker, sourceFile)
   forEachDescendant(sourceFile, (node) => {
     if (ts.isStringLiteral(node) && matchesIdentifierShape(node.text)) {
-      found.push(collectLiteralCandidate(checker, sourceFile, relFile, node))
+      found.push(collectLiteralCandidate(checker, sourceFile, relFile, assertSymbols, node))
     }
   })
   return found
@@ -144,4 +199,14 @@ test('contract.no-literal-identifiers.halts-on-an-unresolvable-binding-shape', (
     }
   ]
   assert.throws(() => census(synthetic, classifyLiteral))
+})
+
+test('contract.no-literal-identifiers.collector-catches-a-named-assert-import-and-an-array-bound-literal', () => {
+  const { checker, program } = loadSourceProgram()
+  const fixturePath = path.join(REBUILD_ROOT, 'test', 'fixtures', 'no-literal-identifiers-violation.ts')
+  const sourceFile = sourceFileFor(program, fixturePath)
+  const relFile = relativeToRoot(fixturePath)
+  const candidates = collectLiteralCandidates(checker, sourceFile, relFile)
+  assert.ok(candidates.length >= 2, `expected the collector to find both literal shapes, found ${candidates.length}`)
+  assert.throws(() => census(candidates, classifyLiteral))
 })

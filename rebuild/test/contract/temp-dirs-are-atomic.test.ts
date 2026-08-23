@@ -1,13 +1,23 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import path from 'node:path'
 import * as ts from 'typescript'
 import { census } from '../support/census.ts'
 import type { Classified } from '../support/census.ts'
-import { findNamedImportSymbols, forEachDescendant, lineOf, loadSourceProgram, relativeToRoot, sourceFileFor } from '../support/source-census.ts'
+import {
+  REBUILD_ROOT,
+  findNamedImportSymbols,
+  findNamespaceImportSymbols,
+  forEachDescendant,
+  lineOf,
+  loadSourceProgram,
+  relativeToRoot,
+  sourceFileFor
+} from '../support/source-census.ts'
 
 type DirCandidate = { file: string; line: number; kind: string; verdict: 'allowed' | 'forbidden' | 'unclassifiable' }
 
-const NODE_FS_MODULE_SPECIFIERS = ['node:fs', 'fs']
+const NODE_FS_MODULE_SPECIFIERS = ['node:fs', 'fs', 'node:fs/promises', 'fs/promises']
 const NODE_FS_DIR_FUNCTIONS = ['mkdtemp', 'mkdtempSync', 'mkdir', 'mkdirSync', 'cp', 'cpSync']
 const CHILD_PROCESS_MODULE_SPECIFIERS = ['node:child_process', 'child_process']
 const CHILD_PROCESS_FUNCTIONS = ['spawn', 'spawnSync', 'exec', 'execSync']
@@ -51,6 +61,7 @@ const classifyDirCall = (relFile: string, sourceFile: ts.SourceFile, node: ts.Ca
 const collectDirCandidates = (checker: ts.TypeChecker, sourceFile: ts.SourceFile, relFile: string): DirCandidate[] => {
   const found: DirCandidate[] = []
   const fsImports = findNamedImportSymbols(checker, sourceFile, NODE_FS_MODULE_SPECIFIERS, NODE_FS_DIR_FUNCTIONS)
+  const fsNamespaceImports = findNamespaceImportSymbols(checker, sourceFile, NODE_FS_MODULE_SPECIFIERS)
   const childProcessImports = findNamedImportSymbols(
     checker,
     sourceFile,
@@ -59,18 +70,30 @@ const collectDirCandidates = (checker: ts.TypeChecker, sourceFile: ts.SourceFile
   )
 
   forEachDescendant(sourceFile, (node) => {
-    if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression)) return
-    const symbol = checker.getSymbolAtLocation(node.expression)
-    if (symbol === undefined) return
+    if (!ts.isCallExpression(node)) return
 
-    const fsFunctionName = fsImports.get(symbol)
-    if (fsFunctionName !== undefined) {
-      found.push(classifyDirCall(relFile, sourceFile, node, fsFunctionName))
+    if (ts.isIdentifier(node.expression)) {
+      const symbol = checker.getSymbolAtLocation(node.expression)
+      if (symbol === undefined) return
+
+      const fsFunctionName = fsImports.get(symbol)
+      if (fsFunctionName !== undefined) {
+        found.push(classifyDirCall(relFile, sourceFile, node, fsFunctionName))
+        return
+      }
+
+      if (childProcessImports.has(symbol) && node.arguments.some((arg) => containsMkdirText(arg))) {
+        found.push({ file: relFile, line: lineOf(sourceFile, node), kind: 'spawned-mkdir', verdict: 'unclassifiable' })
+      }
       return
     }
 
-    if (childProcessImports.has(symbol) && node.arguments.some((arg) => containsMkdirText(arg))) {
-      found.push({ file: relFile, line: lineOf(sourceFile, node), kind: 'spawned-mkdir', verdict: 'unclassifiable' })
+    if (ts.isPropertyAccessExpression(node.expression) && ts.isIdentifier(node.expression.expression)) {
+      const baseSymbol = checker.getSymbolAtLocation(node.expression.expression)
+      if (baseSymbol === undefined || !fsNamespaceImports.has(baseSymbol)) return
+      const functionName = node.expression.name.text
+      if (!NODE_FS_DIR_FUNCTIONS.includes(functionName)) return
+      found.push(classifyDirCall(relFile, sourceFile, node, functionName))
     }
   })
 
@@ -100,4 +123,14 @@ test('contract.temp-dirs-are-atomic.halts-on-a-copy-or-spawned-mkdir', () => {
     { file: 'support/clone-fixture.ts', line: 1, kind: 'cpSync', verdict: 'unclassifiable' }
   ]
   assert.throws(() => census(synthetic, classifyCandidate))
+})
+
+test('contract.temp-dirs-are-atomic.collector-catches-fs-promises-imports-and-namespace-calls', () => {
+  const { checker, program } = loadSourceProgram()
+  const fixturePath = path.join(REBUILD_ROOT, 'test', 'fixtures', 'temp-dirs-violation.ts')
+  const sourceFile = sourceFileFor(program, fixturePath)
+  const relFile = relativeToRoot(fixturePath)
+  const candidates = collectDirCandidates(checker, sourceFile, relFile)
+  assert.ok(candidates.length >= 2, `expected the collector to find both dir-creation shapes, found ${candidates.length}`)
+  assert.throws(() => census(candidates, classifyCandidate))
 })

@@ -5,6 +5,7 @@ import * as ts from 'typescript'
 export const REBUILD_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const TSCONFIG_PATH = fileURLToPath(new URL('../../tsconfig.json', import.meta.url))
 const TEST_ROOT_PREFIX = `test${path.sep}`
+const FIXTURE_DIR_PREFIX = `test${path.sep}fixtures${path.sep}`
 
 export type SourceProgram = {
   program: ts.Program
@@ -37,6 +38,8 @@ export const relativeToRoot = (absolutePath: string): string => path.relative(RE
 
 export const isTestFile = (relativePath: string): boolean => relativePath.startsWith(TEST_ROOT_PREFIX)
 
+export const isFixtureFile = (relativePath: string): boolean => relativePath.startsWith(FIXTURE_DIR_PREFIX)
+
 export const loadSourceProgram = (): SourceProgram => {
   const program = loadProgram()
   const checker = program.getTypeChecker()
@@ -47,7 +50,11 @@ export const loadSourceProgram = (): SourceProgram => {
     if (sourceFile === undefined) {
       throw new Error(`loadSourceProgram: ${fileName} is a root file name but is not part of the compiled program`)
     }
-    if (isTestFile(relativeToRoot(fileName))) {
+    const relFile = relativeToRoot(fileName)
+    if (isFixtureFile(relFile)) {
+      continue
+    }
+    if (isTestFile(relFile)) {
       testFiles.push(fileName)
     } else {
       productionFiles.push(fileName)
@@ -79,10 +86,12 @@ export const lineOf = (sourceFile: ts.SourceFile, node: ts.Node): number =>
   ts.getLineAndCharacterOfPosition(sourceFile, node.getStart(sourceFile)).line + 1
 
 export const isAmbientGlobal = (checker: ts.TypeChecker, node: ts.Node, name: string): boolean => {
-  if (!ts.isIdentifier(node) || node.text !== name) return false
+  if (!ts.isIdentifier(node)) return false
   const symbol = checker.getSymbolAtLocation(node)
   if (symbol === undefined) return false
-  const declarations = symbol.declarations
+  const resolved = (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(symbol) : symbol
+  if (resolved.getName() !== name) return false
+  const declarations = resolved.declarations
   if (declarations === undefined || declarations.length === 0) return false
   return declarations.every((declaration) => declaration.getSourceFile().fileName.endsWith('.d.ts'))
 }
@@ -109,6 +118,48 @@ export const findNamedImportSymbols = (
       if (symbol !== undefined) {
         matches.set(symbol, importedName)
       }
+    }
+  })
+  return matches
+}
+
+export const findNamespaceImportSymbols = (
+  checker: ts.TypeChecker,
+  sourceFile: ts.SourceFile,
+  moduleSpecifiers: readonly string[]
+): Set<ts.Symbol> => {
+  const matches = new Set<ts.Symbol>()
+  const moduleSet = new Set(moduleSpecifiers)
+  forEachDescendant(sourceFile, (node) => {
+    if (!ts.isImportDeclaration(node)) return
+    if (!ts.isStringLiteral(node.moduleSpecifier)) return
+    if (!moduleSet.has(node.moduleSpecifier.text)) return
+    const namedBindings = node.importClause?.namedBindings
+    if (namedBindings === undefined || !ts.isNamespaceImport(namedBindings)) return
+    const symbol = checker.getSymbolAtLocation(namedBindings.name)
+    if (symbol !== undefined) {
+      matches.add(symbol)
+    }
+  })
+  return matches
+}
+
+export const findDefaultImportSymbols = (
+  checker: ts.TypeChecker,
+  sourceFile: ts.SourceFile,
+  moduleSpecifiers: readonly string[]
+): Set<ts.Symbol> => {
+  const matches = new Set<ts.Symbol>()
+  const moduleSet = new Set(moduleSpecifiers)
+  forEachDescendant(sourceFile, (node) => {
+    if (!ts.isImportDeclaration(node)) return
+    if (!ts.isStringLiteral(node.moduleSpecifier)) return
+    if (!moduleSet.has(node.moduleSpecifier.text)) return
+    const defaultName = node.importClause?.name
+    if (defaultName === undefined) return
+    const symbol = checker.getSymbolAtLocation(defaultName)
+    if (symbol !== undefined) {
+      matches.add(symbol)
     }
   })
   return matches
