@@ -18,6 +18,7 @@ import {
 } from '../support/schema-arbitrary.ts'
 import { openStore } from '../../src/store/records.ts'
 import { escapeStored } from '../../src/render/escape.ts'
+import * as caps from '../../src/schema/caps.ts'
 import type { Decision } from '../../src/schema/decision.ts'
 import type { Thread } from '../../src/schema/thread.ts'
 
@@ -410,7 +411,7 @@ test('amend_criteria.refuses-unresolvable-decision', async () => {
       'a syntactically valid but unresolvable decision id must be refused through the real server wiring'
     )
     const text = firstTextOf(result)
-    assert.equal(text.split('\n')[0], 'field: criteria.strike.decision_id')
+    assert.equal(text.split('\n')[0], 'field: decision_id')
   })
 })
 
@@ -446,7 +447,7 @@ test('update_thread.cap-refusal-is-whole-call', async () => {
     )
     const text = firstTextOf(combined)
     const lines = text.split('\n')
-    assert.equal(lines[0], 'field: spine.next_step')
+    assert.equal(lines[0], 'field: next_step')
     assert.match(text, /^accepted: /m)
     assert.match(text, /^example: /m)
     assert.match(text, /^retryable: true/m)
@@ -457,5 +458,244 @@ test('update_thread.cap-refusal-is-whole-call', async () => {
       escapeStored(firstGoal),
       'a refused whole call must not have written the valid active_goal field it carried alongside the violation'
     )
+  })
+})
+
+test('amend_criteria.retention-cap-matches-stored-shape', async () => {
+  await withFixture(async (fx) => {
+    const criteria = Array.from({ length: caps.CRITERIA_MAX_ELEMENTS }, (_, i) => `criterion ${i}`)
+    const opened = (await fx.spawned.client.callTool({
+      name: 'open_thread',
+      arguments: { title: 'retention cap thread', slug: 'retention-cap-thread', completion_criteria: criteria }
+    })) as CallToolResult
+    assertOkResult('open_thread (retention cap fixture)', opened)
+    const openedStructured = opened.structuredContent as { thread_id: string; completion_criteria: { id: string }[] }
+    const threadId = openedStructured.thread_id
+    const firstCriterionId = openedStructured.completion_criteria[0]?.id
+    assert.ok(firstCriterionId !== undefined, 'retention cap fixture: open_thread minted no completion criteria')
+
+    const decisionId = seedDecision(fx.repo, fx.pluginData, fx.homeDir, threadId)
+
+    const struck = (await fx.spawned.client.callTool({
+      name: 'amend_criteria',
+      arguments: { thread_id: threadId, operation: 'strike', decision_id: decisionId, criterion_id: firstCriterionId }
+    })) as CallToolResult
+    assertOkResult('amend_criteria (strike to free the unstruck-count gate)', struck)
+
+    const inserted = (await fx.spawned.client.callTool({
+      name: 'amend_criteria',
+      arguments: {
+        thread_id: threadId,
+        operation: 'insert',
+        decision_id: decisionId,
+        text: 'a new criterion inserted after the strike freed capacity',
+        kind: 'detour'
+      }
+    })) as CallToolResult
+    assertOkResult(
+      'amend_criteria (insert must not be admitted by the domain gate and then rejected by the stored-shape cap)',
+      inserted
+    )
+
+    const stored = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
+    assert.equal(
+      stored.completion_criteria.length,
+      caps.CRITERIA_MAX_ELEMENTS + 1,
+      'the struck criterion must be retained alongside the freshly inserted one'
+    )
+  })
+})
+
+test('close_thread.session-body-cap-is-checked-after-escaping', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+
+    const zeroWidthCount = 1400
+    const oversizedDetail = 'x' + '​'.repeat(zeroWidthCount)
+    assert.ok(oversizedDetail.trim().length > 0, 'the detail must stay non-empty so the abandon-reason gate is not what refuses it')
+    assert.ok(oversizedDetail.length <= caps.THREAD_CLOSURE_DETAIL_MAX, 'the raw detail must stay within its own cap')
+    assert.ok(
+      escapeStored(oversizedDetail).length > caps.SESSION_BODY_MAX,
+      'escaping the zero-width characters must be what pushes the session body over its cap'
+    )
+
+    const result = (await fx.spawned.client.callTool({
+      name: 'close_thread',
+      arguments: { thread_id: threadId, outcome: 'abandoned', detail: oversizedDetail }
+    })) as CallToolResult
+
+    assert.equal(
+      result.isError,
+      true,
+      'closing with a session body that overflows its cap once escaped must be refused, not written and quarantined'
+    )
+    const text = firstTextOf(result)
+    assert.equal(text.split('\n')[0], 'field: detail')
+
+    const stored = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
+    assert.equal(stored.status, 'open', 'a refused close must leave the thread open')
+  })
+})
+
+test('close_thread.done-gate-refusal-names-outcome', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+
+    const result = (await fx.spawned.client.callTool({
+      name: 'close_thread',
+      arguments: { thread_id: threadId, outcome: 'done', detail: 'a valid closure statement' }
+    })) as CallToolResult
+
+    assert.equal(result.isError, true, 'closing as done with an outstanding criterion must be refused')
+    const text = firstTextOf(result)
+    assert.equal(text.split('\n')[0], 'field: outcome')
+  })
+})
+
+test('close_thread.done-thread-is-terminal', async () => {
+  await withFixture(async (fx) => {
+    const { threadId, criterionId } = await createFixtureThread(fx.spawned, fx.published)
+
+    const markDone = (await fx.spawned.client.callTool({
+      name: 'update_thread',
+      arguments: { thread_id: threadId, criteria_done: [criterionId] }
+    })) as CallToolResult
+    assertOkResult('update_thread (mark criterion done before closing)', markDone)
+
+    const closed = (await fx.spawned.client.callTool({
+      name: 'close_thread',
+      arguments: { thread_id: threadId, outcome: 'done', detail: 'shipped the health check before closing this thread' }
+    })) as CallToolResult
+    assertOkResult('close_thread (close as done)', closed)
+
+    const reclose = (await fx.spawned.client.callTool({
+      name: 'close_thread',
+      arguments: { thread_id: threadId, outcome: 'abandoned', detail: 'trying to close an already-done thread again' }
+    })) as CallToolResult
+    assert.equal(reclose.isError, true, 'a done thread must refuse a second close through any tool')
+    const recloseText = firstTextOf(reclose)
+    const recloseLines = recloseText.split('\n')
+    assert.equal(recloseLines[0], 'field: thread_id')
+    assert.match(recloseText, /^retryable: false/m)
+
+    const bindAttempt = (await fx.spawned.client.callTool({
+      name: 'bind_branch',
+      arguments: { thread_id: threadId, branch: 'post-close-branch' }
+    })) as CallToolResult
+    assert.equal(bindAttempt.isError, true, 'a done thread must refuse a branch binding too')
+  })
+})
+
+test('open_thread.title-cap-is-checked-after-escaping', async () => {
+  await withFixture(async (fx) => {
+    const zeroWidthCount = 5
+    const regularCount = 195
+    const oversizedTitle = 'n'.repeat(regularCount) + '​'.repeat(zeroWidthCount)
+    assert.ok(oversizedTitle.length <= caps.THREAD_TITLE_MAX, 'the raw title must stay within its own cap')
+    assert.ok(
+      escapeStored(oversizedTitle).length > caps.THREAD_TITLE_MAX,
+      'escaping the zero-width characters must be what pushes the title over its cap'
+    )
+
+    const result = (await fx.spawned.client.callTool({
+      name: 'open_thread',
+      arguments: { title: oversizedTitle, slug: 'title-cap-thread', completion_criteria: ['a criterion'] }
+    })) as CallToolResult
+
+    assert.equal(result.isError, true, 'a title within the raw cap but over the escaped cap must be refused')
+    const text = firstTextOf(result)
+    assert.equal(text.split('\n')[0], 'field: title')
+  })
+})
+
+test('bind_branch.escapes-branch-in-reply-and-structured-content', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+    const branch = '-forge-heading-branch'
+
+    const result = (await fx.spawned.client.callTool({
+      name: 'bind_branch',
+      arguments: { thread_id: threadId, branch }
+    })) as CallToolResult
+    assertOkResult('bind_branch (leading-markdown-char branch)', result)
+
+    const structured = result.structuredContent as { branch: string }
+    assert.equal(structured.branch, escapeStored(branch))
+    assert.notEqual(structured.branch, branch, 'the reply must not carry the raw unescaped branch name')
+    assert.equal(firstTextOf(result).includes(escapeStored(branch)), true)
+  })
+})
+
+test('bind_branch.rejects-branch-that-violates-git-ref-rules', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+
+    const result = (await fx.spawned.client.callTool({
+      name: 'bind_branch',
+      arguments: { thread_id: threadId, branch: 'feat/a..b' }
+    })) as CallToolResult
+    assert.equal(result.isError, true, 'a branch containing ".." must be refused before it can reach a commit message')
+    const text = firstTextOf(result)
+    assert.equal(text.split('\n')[0], 'field: branch')
+  })
+})
+
+test('amend_criteria.refuses-rewrite-of-a-struck-criterion', async () => {
+  await withFixture(async (fx) => {
+    const { threadId, criterionId } = await createFixtureThread(fx.spawned, fx.published)
+    const decisionId = seedDecision(fx.repo, fx.pluginData, fx.homeDir, threadId)
+
+    const struck = (await fx.spawned.client.callTool({
+      name: 'amend_criteria',
+      arguments: { thread_id: threadId, operation: 'strike', decision_id: decisionId, criterion_id: criterionId }
+    })) as CallToolResult
+    assertOkResult('amend_criteria (strike before rewrite attempt)', struck)
+
+    const rewrite = (await fx.spawned.client.callTool({
+      name: 'amend_criteria',
+      arguments: {
+        thread_id: threadId,
+        operation: 'rewrite',
+        decision_id: decisionId,
+        criterion_id: criterionId,
+        text: 'rewritten after strike'
+      }
+    })) as CallToolResult
+    assert.equal(rewrite.isError, true, 'a struck criterion is frozen history and must refuse a rewrite')
+    const text = firstTextOf(rewrite)
+    assert.equal(text.split('\n')[0], 'field: criterion_id')
+  })
+})
+
+test('update_thread.refuses-marking-a-struck-criterion-done', async () => {
+  await withFixture(async (fx) => {
+    const opened = (await fx.spawned.client.callTool({
+      name: 'open_thread',
+      arguments: {
+        title: 'struck-criteria thread',
+        slug: 'struck-criteria-thread',
+        completion_criteria: ['first criterion', 'second criterion']
+      }
+    })) as CallToolResult
+    assertOkResult('open_thread (struck-criteria fixture)', opened)
+    const openedStructured = opened.structuredContent as { thread_id: string; completion_criteria: { id: string }[] }
+    const threadId = openedStructured.thread_id
+    const struckId = openedStructured.completion_criteria[0]?.id
+    assert.ok(struckId !== undefined, 'struck-criteria fixture: open_thread minted no completion criteria')
+
+    const decisionId = seedDecision(fx.repo, fx.pluginData, fx.homeDir, threadId)
+    const struck = (await fx.spawned.client.callTool({
+      name: 'amend_criteria',
+      arguments: { thread_id: threadId, operation: 'strike', decision_id: decisionId, criterion_id: struckId }
+    })) as CallToolResult
+    assertOkResult('amend_criteria (strike before marking done)', struck)
+
+    const markDone = (await fx.spawned.client.callTool({
+      name: 'update_thread',
+      arguments: { thread_id: threadId, criteria_done: [struckId] }
+    })) as CallToolResult
+    assert.equal(markDone.isError, true, 'a struck criterion cannot be marked done')
+    const text = firstTextOf(markDone)
+    assert.equal(text.split('\n')[0], 'field: criteria_done')
   })
 })
