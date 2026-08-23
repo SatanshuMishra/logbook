@@ -16,12 +16,13 @@
     "integration_branch": "main"
   },
   "verify": {
-    "test_command": "npm test -- {test}",
+    "test_command": "node --test {test}",
     "suite_command": "npm test",
     "require_fresh_base": "warn",
     "live_drive": null,
     "scopedCheckCmd": "node --test",
-    "fullValidationCmd": "npm test"
+    "fullValidationCmd": "npm test",
+    "on_load_error_red": "warn"
   },
   "degrade": {
     "on_no_receipt": "require-downgrade-tag",
