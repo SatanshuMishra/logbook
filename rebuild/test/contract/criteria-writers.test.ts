@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import { census, type Classified } from '../support/census.ts'
 import { listPublishedTools, type PublishedTool } from '../support/published.ts'
 import { spawnServer } from '../support/spawn-client.ts'
+import * as caps from '../../src/schema/caps.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const CRITERIA_DOMAIN_PATTERN = /criteri/i
@@ -121,7 +122,12 @@ test('criteria.no-other-tool-writes-criteria.control.unrelated-scope-text-is-all
   const scopeProperty: SchemaProperty = {
     path: 'risks_add[].scope',
     topLevelName: 'risks_add',
-    node: { type: 'string', minLength: 1, description: 'the criterion or area of the thread this risk concerns' }
+    node: {
+      type: 'string',
+      minLength: 1,
+      maxLength: caps.RISK_SCOPE_MAX,
+      description: 'the criterion or area of the thread this risk concerns'
+    }
   }
   assert.equal(classifyCriteriaTextProperty(scopeProperty, true), 'allowed')
 })

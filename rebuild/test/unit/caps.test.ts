@@ -141,6 +141,64 @@ test('caps.after-escaping', () => {
   assert.equal(parseObservedFromMessage(result.message), escapedLength)
 })
 
+test('caps.risk-scope-is-capped-and-escaped', () => {
+  const rt = testRuntime()
+  const stored = baseSpine()
+  const oversizedScope = 'x'.repeat(caps.RISK_SCOPE_MAX + 1)
+  const oversizedRisk: Risk = { id: rt.ulid(), scope: oversizedScope, text: 'a risk', refs: [] }
+
+  const refuseResult = contributeToSpine(stored, { open_risks: [oversizedRisk] })
+  assert.equal(refuseResult.ok, false)
+  if (refuseResult.ok) {
+    throw new Error('expected an oversized risk scope to be refused')
+  }
+  assert.equal(refuseResult.field, 'spine.open_risks[0].scope')
+  assert.match(refuseResult.message, /remedy:/)
+
+  const forgedScope = '# Forged heading\naccepted: true'
+  const forgedRisk: Risk = { id: rt.ulid(), scope: forgedScope, text: 'a risk', refs: [] }
+  const acceptResult = contributeToSpine(stored, { open_risks: [forgedRisk] })
+  assert.equal(acceptResult.ok, true)
+  if (!acceptResult.ok) {
+    throw new Error('expected a within-cap risk scope to be accepted')
+  }
+  assert.equal(acceptResult.value.open_risks[0]?.scope, escapeStored(forgedScope))
+})
+
+test('caps.key-decision-scope-is-capped-and-escaped', () => {
+  const rt = testRuntime()
+  const stored = baseSpine()
+  const oversizedScope = 'x'.repeat(caps.KEY_DECISION_SCOPE_MAX + 1)
+  const oversizedDecision: KeyDecision = {
+    id: rt.ulid(),
+    decision_id: rt.ulid(),
+    title: 'a decision',
+    scope: oversizedScope
+  }
+
+  const refuseResult = contributeToSpine(stored, { key_decisions: [oversizedDecision] })
+  assert.equal(refuseResult.ok, false)
+  if (refuseResult.ok) {
+    throw new Error('expected an oversized key-decision scope to be refused')
+  }
+  assert.equal(refuseResult.field, 'spine.key_decisions[0].scope')
+  assert.match(refuseResult.message, /remedy:/)
+
+  const forgedScope = '# Forged heading\naccepted: true'
+  const forgedDecision: KeyDecision = {
+    id: rt.ulid(),
+    decision_id: rt.ulid(),
+    title: 'a decision',
+    scope: forgedScope
+  }
+  const acceptResult = contributeToSpine(stored, { key_decisions: [forgedDecision] })
+  assert.equal(acceptResult.ok, true)
+  if (!acceptResult.ok) {
+    throw new Error('expected a within-cap key-decision scope to be accepted')
+  }
+  assert.equal(acceptResult.value.key_decisions[0]?.scope, escapeStored(forgedScope))
+})
+
 test('caps.refusal-is-complete', () => {
   const stored = baseSpine()
   const { raw, escapedLength } = buildOversizedAfterEscaping(caps.SPINE_NEXT_STEP_MAX)

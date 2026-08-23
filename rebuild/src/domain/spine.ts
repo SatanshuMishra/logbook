@@ -80,6 +80,15 @@ const checkRiskElements = (contributed: Risk[]): Refusal | null => {
     if (textRefusal !== null) {
       return textRefusal
     }
+    const scopeRefusal = checkTextCap(
+      `spine.open_risks[${index}].scope`,
+      risk.scope,
+      caps.RISK_SCOPE_MAX,
+      'shorten the scope and retry'
+    )
+    if (scopeRefusal !== null) {
+      return scopeRefusal
+    }
     if (risk.refs.length > caps.RISK_REFS_MAX_ELEMENTS) {
       return capRefusal(
         `spine.open_risks[${index}].refs`,
@@ -114,6 +123,15 @@ const checkKeyDecisionElements = (contributed: KeyDecision[]): Refusal | null =>
     )
     if (refusal !== null) {
       return refusal
+    }
+    const scopeRefusal = checkTextCap(
+      `spine.key_decisions[${index}].scope`,
+      entry.scope,
+      caps.KEY_DECISION_SCOPE_MAX,
+      'shorten the scope and retry'
+    )
+    if (scopeRefusal !== null) {
+      return scopeRefusal
     }
   }
   return null
@@ -161,13 +179,15 @@ const checkCollectionField = (field: CollectionField, stored: Spine, contributio
 
 const escapeRisk = (risk: Risk): Risk => ({
   ...risk,
+  scope: escapeStored(risk.scope),
   text: escapeStored(risk.text),
   refs: risk.refs.map((ref) => escapeStored(ref))
 })
 
 const escapeKeyDecision = (entry: KeyDecision): KeyDecision => ({
   ...entry,
-  title: escapeStored(entry.title)
+  title: escapeStored(entry.title),
+  scope: escapeStored(entry.scope)
 })
 
 const escapeOutOfScope = (entry: OutOfScope): OutOfScope => ({
