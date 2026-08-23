@@ -1,0 +1,207 @@
+name: rebuild
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: npm run rebuild:typecheck
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: npm run rebuild:build
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['22.18.x', '24.x', '26.x']
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ matrix.node-version }}
+      - run: npm ci
+      - name: Run the rebuild test suite and assert a non-zero pass floor
+        env:
+          NODE_OPTIONS: --test-reporter=tap
+        run: |
+          set -euo pipefail
+          npm run rebuild:test | tee test-output.tap
+          pass_count=$(grep -oE '^# pass [0-9]+' test-output.tap | tail -n 1 | grep -oE '[0-9]+$')
+          if [ -z "$pass_count" ] || [ "$pass_count" -eq 0 ]; then
+            echo "the test run reported zero passing tests, the configured globs may have matched nothing"
+            exit 1
+          fi
+          echo "the test run passed $pass_count tests"
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - run: npm ci
+      - name: Run coverage, unit layer only, reported and never gated
+        run: |
+          set +e
+          npm run rebuild:coverage
+          status=$?
+          set -e
+          echo "coverage command exit code: $status"
+          if [ "$status" -eq 0 ]; then
+            echo "coverage command ran to completion, the reported numbers above are informational only"
+          else
+            echo "coverage command did not complete cleanly, exit code $status, this is reported and does not gate this job"
+          fi
+          exit 0
+
+  mutation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - run: npm ci
+      - name: Diff-scoped mutation testing against the stryker mutate scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          echo "mutation run covers the unit and store layers only, the layers the configured command runner can actually kill"
+          echo "spawn, hook and sync layers are excluded because no test in that runner exercises them"
+
+          set +e
+          RAW=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" -- rebuild/src)
+          diff_status=$?
+          set -e
+          if [ "$diff_status" -ne 0 ]; then
+            echo "git diff between $BASE_SHA and $HEAD_SHA failed with exit code $diff_status, the mutation scope cannot be computed"
+            exit 1
+          fi
+          CHANGED_FILES=$(printf '%s\n' "$RAW" | grep -E '\.ts$' || true)
+
+          MUTATE_PATTERNS=$(jq -r '.mutate[]' rebuild/stryker.config.json)
+          SCOPE=()
+          while IFS= read -r pattern; do
+            [ -n "$pattern" ] && SCOPE+=("$pattern")
+          done <<< "$MUTATE_PATTERNS"
+
+          TARGETS=()
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            matched=""
+            for pattern in "${SCOPE[@]}"; do
+              variant="${pattern/\*\*\//}"
+              if [[ "$file" == $pattern || "$file" == $variant ]]; then
+                matched=1
+                break
+              fi
+            done
+            if [ -n "$matched" ]; then
+              TARGETS+=("$file")
+            fi
+          done <<< "$CHANGED_FILES"
+
+          if [ "${#TARGETS[@]}" -eq 0 ]; then
+            echo "no changed file under rebuild/src intersects the configured stryker mutate scope, skipping the mutation run"
+            exit 0
+          fi
+
+          echo "mutation targets:"
+          printf '%s\n' "${TARGETS[@]}"
+
+          MUTATE_ARG=$(printf '%s,' "${TARGETS[@]}")
+          MUTATE_ARG="${MUTATE_ARG%,}"
+
+          npx stryker run rebuild/stryker.config.json --mutate "$MUTATE_ARG"
+
+  inspector:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: npm run rebuild:build
+      - run: npm run rebuild:inspect:cli
+
+  seeded-mutation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - run: npm ci
+      - name: Assert a seeded one-token mutant is caught by the unit layer
+        run: |
+          set -euo pipefail
+          TARGET_FILE="rebuild/src/render/escape.ts"
+
+          git diff --exit-code -- "$TARGET_FILE"
+
+          set +e
+          node --test "rebuild/test/unit/**/*.test.ts"
+          baseline_status=$?
+          set -e
+
+          if [ "$baseline_status" -ne 0 ]; then
+            echo "the seeded-mutation gate cannot run against an already-red suite, unit layer baseline exited $baseline_status before any mutant was applied"
+            exit 1
+          fi
+
+          grep -q '!==' <(sed -n '12p' "$TARGET_FILE")
+          awk 'NR==12{sub(/!==/,"===")} {print}' "$TARGET_FILE" > "$TARGET_FILE.mutant"
+          mv "$TARGET_FILE.mutant" "$TARGET_FILE"
+          sed -n '12p' "$TARGET_FILE"
+
+          set +e
+          node --test "rebuild/test/unit/**/*.test.ts"
+          mutant_status=$?
+          set -e
+
+          git checkout -- "$TARGET_FILE"
+          git diff --exit-code -- "$TARGET_FILE"
+
+          if [ "$mutant_status" -eq 0 ]; then
+            echo "seeded mutant in $TARGET_FILE was not caught by the unit layer, the mutation gate proved nothing"
+            exit 1
+          fi
+
+          echo "seeded mutant in $TARGET_FILE reddened the unit layer as expected, exit code $mutant_status"

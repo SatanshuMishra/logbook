@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "logbook": {
+      "command": "node",
+      "args": ["rebuild/dist/bin/logbook-server.js"],
+      "env": {
+        "CLAUDE_PLUGIN_DATA": ".inspector-data"
+      }
+    }
+  }
+}
