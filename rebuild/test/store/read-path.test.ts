@@ -28,7 +28,7 @@ const withPluginData = <T>(fn: (pluginData: string) => T): T => {
   }
 }
 
-const makeThread = (rt: Runtime, slug: string): RecordChange => ({
+const makeThread = (rt: Runtime, slug: string): Extract<RecordChange, { kind: 'thread' }> => ({
   kind: 'thread',
   record: {
     id: rt.ulid(),

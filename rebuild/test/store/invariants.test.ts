@@ -27,7 +27,7 @@ const layoutIn = (rt: Runtime, repo: string): StoreLayout => {
   return result.value
 }
 
-const makeThread = (rt: Runtime, slug: string): RecordChange => ({
+const makeThread = (rt: Runtime, slug: string): Extract<RecordChange, { kind: 'thread' }> => ({
   kind: 'thread',
   record: {
     id: rt.ulid(),
