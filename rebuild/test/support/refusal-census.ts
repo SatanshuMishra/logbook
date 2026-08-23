@@ -155,6 +155,23 @@ const findRefusalType = (program: ts.Program, checker: ts.TypeChecker): ts.Type 
 const resolveAliasedSymbol = (checker: ts.TypeChecker, symbol: ts.Symbol): ts.Symbol =>
   (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(symbol) : symbol
 
+const NESTED_PRODUCER_SEPARATOR = '.'
+
+const originSymbolOf = (type: ts.Type): ts.Symbol | undefined => type.aliasSymbol ?? type.getSymbol()
+
+const isDeclaredWithinSrc = (symbol: ts.Symbol): boolean => {
+  const declarations = symbol.declarations
+  if (declarations === undefined || declarations.length === 0) return false
+  return declarations.every((declaration) => declaration.getSourceFile().fileName.startsWith(SRC_ROOT))
+}
+
+const isDescendableExportedObjectType = (checker: ts.TypeChecker, type: ts.Type): boolean => {
+  if (checker.isArrayType(type) || checker.isTupleType(type)) return false
+  const origin = originSymbolOf(type)
+  if (origin === undefined) return false
+  return isDeclaredWithinSrc(origin)
+}
+
 const carriesRefusalProperty = (checker: ts.TypeChecker, refusalType: ts.Type, constituent: ts.Type): boolean => {
   const refusalProperty = constituent.getProperty('refusal')
   if (refusalProperty === undefined) return false
@@ -202,12 +219,28 @@ export const scanRefusalProducers = (): ProducerId[] => {
       if ((resolved.flags & ts.SymbolFlags.Value) === 0) continue
       const type = checker.getTypeOfSymbol(resolved)
       const callSignatures = type.getCallSignatures()
-      if (callSignatures.length === 0) continue
-      const matches = callSignatures.some((signature) =>
-        producesRefusal(checker, refusalType, checker.getReturnTypeOfSignature(signature))
-      )
-      if (matches) {
-        producers.push(`${relativeFile}#${exported.getName()}`)
+      if (callSignatures.length > 0) {
+        const matches = callSignatures.some((signature) =>
+          producesRefusal(checker, refusalType, checker.getReturnTypeOfSignature(signature))
+        )
+        if (matches) {
+          producers.push(`${relativeFile}#${exported.getName()}`)
+        }
+        continue
+      }
+      if (!isDescendableExportedObjectType(checker, type)) continue
+      for (const property of type.getProperties()) {
+        const declarations = property.declarations
+        if (declarations === undefined || declarations.length === 0) continue
+        const propertyType = checker.getTypeOfSymbolAtLocation(property, declarations[0] as ts.Node)
+        const propertyCallSignatures = propertyType.getCallSignatures()
+        if (propertyCallSignatures.length === 0) continue
+        const propertyMatches = propertyCallSignatures.some((signature) =>
+          producesRefusal(checker, refusalType, checker.getReturnTypeOfSignature(signature))
+        )
+        if (propertyMatches) {
+          producers.push(`${relativeFile}#${exported.getName()}${NESTED_PRODUCER_SEPARATOR}${property.getName()}`)
+        }
       }
     }
   }

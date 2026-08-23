@@ -7,6 +7,10 @@ import { test } from 'node:test'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { Refusal } from '../../src/schema/declare.ts'
 import type { Criterion, Thread } from '../../src/schema/thread.ts'
+import { ThreadRecord } from '../../src/schema/thread.ts'
+import { BindingRecord } from '../../src/schema/binding.ts'
+import { DecisionRecord } from '../../src/schema/decision.ts'
+import { SessionRecord } from '../../src/schema/session.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import * as caps from '../../src/schema/caps.ts'
 import { toolRefusal } from '../../src/server/errors.ts'
@@ -16,6 +20,8 @@ import { updateThreadTool } from '../../src/server/tools/update_thread.ts'
 import { closeThreadTool } from '../../src/server/tools/close_thread.ts'
 import { bindBranchTool } from '../../src/server/tools/bind_branch.ts'
 import { amendCriteriaTool } from '../../src/server/tools/amend_criteria.ts'
+import { resumeThreadTool } from '../../src/server/tools/resume_thread.ts'
+import { parkThreadTool } from '../../src/server/tools/park_thread.ts'
 import { commitThread, loadThread, openProjectStore } from '../../src/server/tool-support.ts'
 import { git, readIdentity, type Identity } from '../../src/store/git.ts'
 import { createStoreDirectories, layoutFor } from '../../src/store/layout.ts'
@@ -66,6 +72,21 @@ const AMEND_CRITERIA_MISSING_FIELD_PRODUCER: ProducerId = 'server/tools/amend_cr
 const OPEN_PROJECT_STORE_PRODUCER: ProducerId = 'server/tool-support.ts#openProjectStore'
 const LOAD_THREAD_PRODUCER: ProducerId = 'server/tool-support.ts#loadThread'
 const COMMIT_THREAD_PRODUCER: ProducerId = 'server/tool-support.ts#commitThread'
+const BINDING_RECORD_PARSE_PRODUCER: ProducerId = 'schema/binding.ts#BindingRecord.parse'
+const BINDING_RECORD_REFUSE_PRODUCER: ProducerId = 'schema/binding.ts#BindingRecord.refuse'
+const DECISION_RECORD_PARSE_PRODUCER: ProducerId = 'schema/decision.ts#DecisionRecord.parse'
+const DECISION_RECORD_REFUSE_PRODUCER: ProducerId = 'schema/decision.ts#DecisionRecord.refuse'
+const SESSION_RECORD_PARSE_PRODUCER: ProducerId = 'schema/session.ts#SessionRecord.parse'
+const SESSION_RECORD_REFUSE_PRODUCER: ProducerId = 'schema/session.ts#SessionRecord.refuse'
+const THREAD_RECORD_PARSE_PRODUCER: ProducerId = 'schema/thread.ts#ThreadRecord.parse'
+const THREAD_RECORD_REFUSE_PRODUCER: ProducerId = 'schema/thread.ts#ThreadRecord.refuse'
+const AMEND_CRITERIA_HANDLER_PRODUCER: ProducerId = 'server/tools/amend_criteria.ts#amendCriteriaTool.handler'
+const BIND_BRANCH_HANDLER_PRODUCER: ProducerId = 'server/tools/bind_branch.ts#bindBranchTool.handler'
+const CLOSE_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/close_thread.ts#closeThreadTool.handler'
+const OPEN_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/open_thread.ts#openThreadTool.handler'
+const PARK_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/park_thread.ts#parkThreadTool.handler'
+const RESUME_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/resume_thread.ts#resumeThreadTool.handler'
+const UPDATE_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/update_thread.ts#updateThreadTool.handler'
 
 const STUB_TOOL_CTX = {} as unknown as ToolContext
 
@@ -198,6 +219,18 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     if (openProjectStoreFailure.ok) throw new Error('expected openProjectStore to refuse when CLAUDE_PLUGIN_DATA is unset')
     refusals.push({ producer: OPEN_PROJECT_STORE_PRODUCER, refusal: openProjectStoreFailure.refusal })
 
+    const resumeUnknownThread = await resumeThreadTool.handler(rt, STUB_TOOL_CTX, { thread_id: rt.ulid() })
+    if (resumeUnknownThread.ok) throw new Error('expected resumeThreadTool to refuse an unknown thread id')
+    refusals.push({ producer: RESUME_THREAD_HANDLER_PRODUCER, refusal: resumeUnknownThread.refusal })
+
+    const resumeForPark = await resumeThreadTool.handler(rt, STUB_TOOL_CTX, { thread_id: threadId })
+    if (!resumeForPark.ok) throw new Error('expected resumeThreadTool to resume the census tool fixture thread')
+
+    const oversizedOutcome = 'x'.repeat(caps.SESSION_BODY_MAX + 1)
+    const parkFailure = await parkThreadTool.handler(rt, STUB_TOOL_CTX, { outcome: oversizedOutcome })
+    if (parkFailure.ok) throw new Error('expected parkThreadTool to refuse an outcome that overflows the session body cap')
+    refusals.push({ producer: PARK_THREAD_HANDLER_PRODUCER, refusal: parkFailure.refusal })
+
     const duplicateOpen = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
       title: 'census tool fixture thread again',
       slug: 'census-tool-fixture',
@@ -205,6 +238,7 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     })
     if (duplicateOpen.ok) throw new Error('expected openThreadTool to refuse a duplicate slug')
     refusals.push({ producer: OPEN_THREAD_DUPLICATE_SLUG_PRODUCER, refusal: duplicateOpen.refusal })
+    refusals.push({ producer: OPEN_THREAD_HANDLER_PRODUCER, refusal: duplicateOpen.refusal })
 
     const unknownCriterion = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,
@@ -212,6 +246,7 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     })
     if (unknownCriterion.ok) throw new Error('expected updateThreadTool to refuse an unknown criterion id')
     refusals.push({ producer: UPDATE_THREAD_UNKNOWN_CRITERION_PRODUCER, refusal: unknownCriterion.refusal })
+    refusals.push({ producer: UPDATE_THREAD_HANDLER_PRODUCER, refusal: unknownCriterion.refusal })
 
     const unknownDecision = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,
@@ -228,6 +263,7 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     })
     if (missingKind.ok) throw new Error('expected amendCriteriaTool to refuse an insert with no kind')
     refusals.push({ producer: AMEND_CRITERIA_MISSING_FIELD_PRODUCER, refusal: missingKind.refusal })
+    refusals.push({ producer: AMEND_CRITERIA_HANDLER_PRODUCER, refusal: missingKind.refusal })
 
     const overflowingBranch = String.fromCharCode(1).repeat(50) + 'a'.repeat(205)
     const invalidBinding = await bindBranchTool.handler(rt, STUB_TOOL_CTX, {
@@ -236,6 +272,7 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     })
     if (invalidBinding.ok) throw new Error('expected bindBranchTool to refuse a branch that overflows its cap once escaped')
     refusals.push({ producer: BIND_BRANCH_INVALID_BINDING_PRODUCER, refusal: invalidBinding.refusal })
+    refusals.push({ producer: BIND_BRANCH_HANDLER_PRODUCER, refusal: invalidBinding.refusal })
 
     const overCapThread = buildThreadAtWholeRecordCapEdge(rt)
     const overCapSeed = store.commit([{ kind: 'thread', record: overCapThread }], 'seed census over-cap thread fixture')
@@ -249,6 +286,7 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
       throw new Error('expected closeThreadTool to refuse when closing a thread already at the byte-cap edge pushes it over the cap')
     }
     refusals.push({ producer: CLOSE_THREAD_WHOLE_RECORD_CAP_PRODUCER, refusal: overCapClose.refusal })
+    refusals.push({ producer: CLOSE_THREAD_HANDLER_PRODUCER, refusal: overCapClose.refusal })
 
     rawGit(repo, ['config', '--unset', 'user.name'])
     rawGit(repo, ['config', '--unset', 'user.email'])
@@ -283,10 +321,46 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
   return refusals
 }
 
+const collectSchemaRecordRefusals = (): TaggedRefusal[] => {
+  const refusals: TaggedRefusal[] = []
+
+  const bindingParse = BindingRecord.parse({})
+  if (bindingParse.ok) throw new Error('expected BindingRecord.parse to refuse an empty binding')
+  refusals.push({ producer: BINDING_RECORD_PARSE_PRODUCER, refusal: bindingParse })
+
+  const bindingIssues = BindingRecord.schema.safeParse({})
+  if (bindingIssues.success) throw new Error('expected the binding schema to reject an empty object')
+  refusals.push({ producer: BINDING_RECORD_REFUSE_PRODUCER, refusal: BindingRecord.refuse(bindingIssues.error.issues) })
+
+  const decisionParse = DecisionRecord.parse({})
+  if (decisionParse.ok) throw new Error('expected DecisionRecord.parse to refuse an empty decision')
+  refusals.push({ producer: DECISION_RECORD_PARSE_PRODUCER, refusal: decisionParse })
+
+  const decisionIssues = DecisionRecord.schema.safeParse({})
+  if (decisionIssues.success) throw new Error('expected the decision schema to reject an empty object')
+  refusals.push({ producer: DECISION_RECORD_REFUSE_PRODUCER, refusal: DecisionRecord.refuse(decisionIssues.error.issues) })
+
+  const sessionParse = SessionRecord.parse({})
+  if (sessionParse.ok) throw new Error('expected SessionRecord.parse to refuse an empty session entry')
+  refusals.push({ producer: SESSION_RECORD_PARSE_PRODUCER, refusal: sessionParse })
+
+  const sessionIssues = SessionRecord.schema.safeParse({})
+  if (sessionIssues.success) throw new Error('expected the session schema to reject an empty object')
+  refusals.push({ producer: SESSION_RECORD_REFUSE_PRODUCER, refusal: SessionRecord.refuse(sessionIssues.error.issues) })
+
+  const threadIssues = ThreadRecord.schema.safeParse({})
+  if (threadIssues.success) throw new Error('expected the thread schema to reject an empty object')
+  refusals.push({ producer: THREAD_RECORD_REFUSE_PRODUCER, refusal: ThreadRecord.refuse(threadIssues.error.issues) })
+
+  return refusals
+}
+
 const collectRealRefusals = async (): Promise<TaggedRefusal[]> => {
   const refusals: TaggedRefusal[] = [
     { producer: REFUSE_PRODUCER, refusal: refusalTemplate() },
-    { producer: WITH_DETAIL_PRODUCER, refusal: withDetail(refusalTemplate(), 'a store-relative detail') }
+    { producer: THREAD_RECORD_PARSE_PRODUCER, refusal: refusalTemplate() },
+    { producer: WITH_DETAIL_PRODUCER, refusal: withDetail(refusalTemplate(), 'a store-relative detail') },
+    ...collectSchemaRecordRefusals()
   ]
 
   const noPluginDataDir = mkdtempSync(join(tmpdir(), 'logbook-no-plugin-data-'))
@@ -526,7 +600,7 @@ test('error.discloses-no-path.taint-survives-without-the-strip', () => {
 
 const SRC_ROOT = fileURLToPath(new URL('../../src', import.meta.url))
 
-test('error.discloses-no-path.producer-scan-covers-all-five-export-shapes', () => {
+test('error.discloses-no-path.producer-scan-covers-all-six-export-shapes', () => {
   const probeDir = join(SRC_ROOT, '__census_probe__')
   const probeFile = join(probeDir, 'plant.ts')
   mkdirSync(probeDir, { recursive: true })
@@ -552,6 +626,10 @@ test('error.discloses-no-path.producer-scan-covers-all-five-export-shapes', () =
       'export type ProbeStoreFailure = Refusal',
       'export const probeTypeAliasReturn = (): ProbeStoreFailure =>',
       "  ({ ok: false, field: 'probe', accepted: 'probe', example: 'probe', retryable: false, message: 'leak' })",
+      '',
+      'const probeFactoryBehindObject = (): Refusal =>',
+      "  ({ ok: false, field: 'probe', accepted: 'probe', example: 'probe', retryable: false, message: 'leak' })",
+      'export const probeSpecLikeObject = { handler: probeFactoryBehindObject }',
       ''
     ].join('\n'),
     'utf8'
@@ -567,7 +645,8 @@ test('error.discloses-no-path.producer-scan-covers-all-five-export-shapes', () =
         '__census_probe__/plant.ts#probeConciseArrow',
         '__census_probe__/plant.ts#probeAsyncArrow',
         '__census_probe__/plant.ts#probeAssignedThenExported',
-        '__census_probe__/plant.ts#probeTypeAliasReturn'
+        '__census_probe__/plant.ts#probeTypeAliasReturn',
+        '__census_probe__/plant.ts#probeSpecLikeObject.handler'
       ])
     )
 
