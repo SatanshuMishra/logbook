@@ -53,6 +53,15 @@ export const commitFailureRefusal = (detail: string): Refusal =>
     detail
   )
 
+const sessionBodyCapRefusal = (observed: number): Refusal => ({
+  ok: false,
+  field: 'detail',
+  accepted: `at most ${caps.SESSION_BODY_MAX} characters after escaping`,
+  example: 'shipped the health check before closing this thread',
+  retryable: true,
+  message: `detail exceeds its cap of ${caps.SESSION_BODY_MAX} characters after escaping; observed ${observed}; remedy: shorten the closure detail and retry.`
+})
+
 export const closeThreadTool: ToolSpec<CloseThreadInput, CloseThreadOutput> = {
   name: 'close_thread',
   title: 'Close thread',
@@ -80,11 +89,16 @@ export const closeThreadTool: ToolSpec<CloseThreadInput, CloseThreadOutput> = {
       return { ok: false, refusal: wholeRecordCapRefusal(validated.message) }
     }
 
+    const escapedDetail = escapeStored(input.detail)
+    if (escapedDetail.length > caps.SESSION_BODY_MAX) {
+      return { ok: false, refusal: sessionBodyCapRefusal(escapedDetail.length) }
+    }
+
     const sessionEntry: SessionEntry = {
       id: rt.ulid(),
       thread_id: thread.id,
       actor: 'logbook:close_thread',
-      body: escapeStored(input.detail),
+      body: escapedDetail,
       created_at: rt.now()
     }
 

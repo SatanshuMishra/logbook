@@ -2,7 +2,7 @@ import path from 'node:path'
 import { z } from 'zod'
 import type { ToolSpec } from '../register.ts'
 import type { Refusal } from '../../schema/declare.ts'
-import { ULID_PATTERN } from '../../schema/ids.ts'
+import { ULID_PATTERN, BRANCH_PATTERN } from '../../schema/ids.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { BindingRecord, type Binding } from '../../schema/binding.ts'
@@ -19,12 +19,13 @@ const BindBranchInputSchema = z.strictObject({
     .string()
     .min(1)
     .max(caps.BINDING_BRANCH_MAX)
+    .regex(BRANCH_PATTERN)
     .describe('the git branch name to bind, for example feat/logbook-m4-lifecycle-tools')
 })
 
 const BindBranchOutputSchema = z.object({
   thread_id: z.string().describe('the id of the thread the branch is bound to'),
-  branch: z.string().describe('the branch name that was bound'),
+  branch: z.string().max(caps.BINDING_BRANCH_MAX).describe('the branch name that was bound'),
   binding_id: z.string().describe('the id of the binding record, whether newly created or already existing'),
   created: z.boolean().describe('true when a new binding was written; false when the pair was already bound and nothing changed')
 })
@@ -74,23 +75,25 @@ export const bindBranchTool: ToolSpec<BindBranchInput, BindBranchOutput> = {
     const layout = layoutFor(rt, rt.cwd)
     if (!layout.ok) return { ok: false, refusal: layout }
 
+    const escapedBranch = escapeStored(input.branch)
+
     const bindingsDir = path.join(layout.value.records, 'bindings')
     const existingSlots = readAllRecordFiles<Binding>(bindingsDir, BindingRecord)
     const existing = existingSlots.find(
-      (slot) => !slot.quarantined && slot.record.thread_id === input.thread_id && slot.record.branch === escapeStored(input.branch)
+      (slot) => !slot.quarantined && slot.record.thread_id === input.thread_id && slot.record.branch === escapedBranch
     )
     if (existing !== undefined && !existing.quarantined) {
       return {
         ok: true,
-        text: `branch ${input.branch} is already bound to thread ${thread.slug}; nothing changed.`,
-        structured: { thread_id: input.thread_id, branch: input.branch, binding_id: existing.record.id, created: false }
+        text: `branch ${escapedBranch} is already bound to thread ${thread.slug}; nothing changed.`,
+        structured: { thread_id: input.thread_id, branch: escapedBranch, binding_id: existing.record.id, created: false }
       }
     }
 
     const binding: Binding = {
       id: rt.ulid(),
       thread_id: input.thread_id,
-      branch: escapeStored(input.branch),
+      branch: escapedBranch,
       created_at: rt.now()
     }
     const validated = BindingRecord.parse(binding)
@@ -100,7 +103,7 @@ export const bindBranchTool: ToolSpec<BindBranchInput, BindBranchOutput> = {
 
     const committed = store.commit(
       [{ kind: 'raw', relPath: path.join('bindings', `${binding.id}.json`), content: JSON.stringify(validated.value) }],
-      `bind branch ${input.branch} to thread ${thread.slug}`
+      `bind branch ${escapedBranch} to thread ${thread.slug}`
     )
     if (!committed.ok) {
       return { ok: false, refusal: commitFailureRefusal(committed.detail) }
@@ -108,8 +111,8 @@ export const bindBranchTool: ToolSpec<BindBranchInput, BindBranchOutput> = {
 
     return {
       ok: true,
-      text: `bound branch ${input.branch} to thread ${thread.slug}.`,
-      structured: { thread_id: input.thread_id, branch: input.branch, binding_id: binding.id, created: true }
+      text: `bound branch ${escapedBranch} to thread ${thread.slug}.`,
+      structured: { thread_id: input.thread_id, branch: escapedBranch, binding_id: binding.id, created: true }
     }
   }
 }

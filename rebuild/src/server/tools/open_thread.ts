@@ -55,6 +55,24 @@ export const duplicateSlugRefusal = (slug: string): Refusal => ({
   message: `slug "${slug}" is already used by another thread in this project.`
 })
 
+const titleCapRefusal = (observed: number): Refusal => ({
+  ok: false,
+  field: 'title',
+  accepted: `at most ${caps.THREAD_TITLE_MAX} characters after escaping`,
+  example: 'ship the health check before closing this thread',
+  retryable: true,
+  message: `title exceeds its cap of ${caps.THREAD_TITLE_MAX} characters after escaping; observed ${observed}; remedy: shorten the title and retry.`
+})
+
+const criterionTextCapRefusal = (index: number, observed: number): Refusal => ({
+  ok: false,
+  field: 'completion_criteria',
+  accepted: `at most ${caps.CRITERION_TEXT_MAX} characters after escaping, per criterion`,
+  example: 'ship the health check before closing this thread',
+  retryable: true,
+  message: `completion_criteria[${index}] exceeds its cap of ${caps.CRITERION_TEXT_MAX} characters after escaping; observed ${observed}; remedy: shorten the criterion text and retry.`
+})
+
 export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
   name: 'open_thread',
   title: 'Open thread',
@@ -73,11 +91,23 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
       return { ok: false, refusal: duplicateSlugRefusal(input.slug) }
     }
 
+    const escapedTitle = escapeStored(input.title)
+    if (escapedTitle.length > caps.THREAD_TITLE_MAX) {
+      return { ok: false, refusal: titleCapRefusal(escapedTitle.length) }
+    }
+
+    const escapedCriteriaTexts = input.completion_criteria.map((text) => escapeStored(text))
+    const oversizedIndex = escapedCriteriaTexts.findIndex((text) => text.length > caps.CRITERION_TEXT_MAX)
+    if (oversizedIndex !== -1) {
+      const oversizedText = escapedCriteriaTexts[oversizedIndex]
+      return { ok: false, refusal: criterionTextCapRefusal(oversizedIndex, oversizedText === undefined ? 0 : oversizedText.length) }
+    }
+
     const now = rt.now()
-    const completionCriteria: Criterion[] = input.completion_criteria.map((text, index) => ({
+    const completionCriteria: Criterion[] = escapedCriteriaTexts.map((text, index) => ({
       id: rt.ulid(),
       ordinal: index + 1,
-      text: escapeStored(text),
+      text,
       done: false,
       kind: 'planned',
       struck_by: null
@@ -86,7 +116,7 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
     const thread: Thread = {
       id: rt.ulid(),
       slug: input.slug,
-      title: escapeStored(input.title),
+      title: escapedTitle,
       status: 'open',
       blocked_by: null,
       completion_criteria: completionCriteria,

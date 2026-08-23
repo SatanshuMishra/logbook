@@ -18,7 +18,7 @@ export type RecordChange =
 
 export type CommitResult =
   | { ok: true; ref: string; before: string | null; after: string }
-  | { ok: false; reason: 'ref-moved' | 'io'; detail: string }
+  | { ok: false; reason: 'ref-moved' | 'io' | 'invalid'; detail: string }
 
 export type WriteRecordsOps = {
   git: typeof git

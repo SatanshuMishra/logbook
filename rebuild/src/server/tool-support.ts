@@ -29,10 +29,20 @@ const threadQuarantinedRefusal = (field: string, id: string): Refusal => ({
   message: `${field} names a thread record that failed to parse and was quarantined; received ${id}.`
 })
 
+const threadClosedRefusal = (field: string, id: string, status: Thread['status']): Refusal => ({
+  ok: false,
+  field,
+  accepted: 'the id of a thread that is still open',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: false,
+  message: `${field} names a thread that is already ${status}, which is terminal; open a new thread that references this one instead; received ${id}.`
+})
+
 export const loadThread = (store: Store, field: string, id: Ulid): Attempt<Thread> => {
   const slot = store.readThread(id)
   if (slot === null) return { ok: false, refusal: threadNotFoundRefusal(field, id) }
   if (slot.quarantined) return { ok: false, refusal: threadQuarantinedRefusal(field, id) }
+  if (slot.record.status !== 'open') return { ok: false, refusal: threadClosedRefusal(field, id, slot.record.status) }
   return { ok: true, value: slot.record }
 }
 

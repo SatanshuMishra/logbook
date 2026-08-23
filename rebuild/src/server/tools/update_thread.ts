@@ -97,6 +97,15 @@ export const unknownCriterionRefusal = (ids: string[]): Refusal => ({
   message: `criteria_done names ids not present on this thread: ${ids.join(', ')}.`
 })
 
+const struckCriterionRefusal = (ids: string[]): Refusal => ({
+  ok: false,
+  field: 'criteria_done',
+  accepted: 'only un-struck criterion ids present on this thread',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: true,
+  message: `criteria_done names criteria that have already been struck and cannot be marked done: ${ids.join(', ')}.`
+})
+
 export const unknownDecisionRefusal = (ids: string[]): Refusal => ({
   ok: false,
   field: 'key_decisions_add',
@@ -127,6 +136,12 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     const unknownCriteria = criteriaDoneIds.filter((id) => !thread.completion_criteria.some((c) => c.id === id))
     if (unknownCriteria.length > 0) {
       return { ok: false, refusal: unknownCriterionRefusal(unknownCriteria) }
+    }
+    const struckCriteria = criteriaDoneIds.filter((id) =>
+      thread.completion_criteria.some((c) => c.id === id && c.struck_by !== null)
+    )
+    if (struckCriteria.length > 0) {
+      return { ok: false, refusal: struckCriterionRefusal(struckCriteria) }
     }
     const markedDone = criteriaDoneIds.filter((id) => {
       const existing = thread.completion_criteria.find((c) => c.id === id)
