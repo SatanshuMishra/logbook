@@ -7,6 +7,7 @@ export type Runtime = {
   env: Readonly<Record<string, string | undefined>>
   cwd: string
   log: (record: Record<string, unknown>) => void
+  sessionId: string
 }
 
 export const productionRuntime = (): Runtime => {
@@ -16,6 +17,7 @@ export const productionRuntime = (): Runtime => {
     ulid: () => generateUlid(),
     env,
     cwd: process.cwd(),
-    log: createStderrLogger(env)
+    log: createStderrLogger(env),
+    sessionId: generateUlid()
   }
 }

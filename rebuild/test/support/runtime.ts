@@ -5,11 +5,14 @@ const ULID_TIME_PREFIX = '01ARZ3NDEK'
 const DEFAULT_START = '2024-01-01T00:00:00.000Z'
 const DEFAULT_STEP_MS = 1000
 
+const DEFAULT_SESSION_ID = 'test-session-id'
+
 export type TestRuntimeOptions = {
   start?: string
   stepMs?: number
   env?: Readonly<Record<string, string | undefined>>
   cwd?: string
+  sessionId?: string
 }
 
 const encodeMonotonicSuffix = (seq: number): string => {
@@ -43,6 +46,7 @@ export const testRuntime = (opts: TestRuntimeOptions = {}): Runtime => {
     ulid,
     env,
     cwd: opts.cwd ?? '/test-cwd',
-    log: () => {}
+    log: () => {},
+    sessionId: opts.sessionId ?? DEFAULT_SESSION_ID
   }
 }
