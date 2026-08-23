@@ -277,38 +277,28 @@ test('contract.published-schema-matches-enforced.control.no-arguments-is-allowed
   }
 })
 
-test('contract.published-schema-matches-enforced.control.nullable-root-is-forbidden', async () => {
-  const spawned = await spawnProbeServer([CONTROL_SPECS.nullableRoot])
-  try {
-    const published = await listPublishedTools(spawned)
-    const tool = soleTool(published, 'probe_nullable_root')
-    assert.deepEqual(tool.inputSchema.properties, {})
-    const verdict = classifyPublishedInput(tool.inputSchema, ['a'])
-    assert.equal(verdict, 'forbidden')
-    assert.throws(
-      () => census([{ name: tool.name, inputSchema: tool.inputSchema, enforcedKeys: ['a'] }], classifyCensusItem),
-      (error: unknown) => error instanceof Error && error.message.includes('probe_nullable_root')
-    )
-  } finally {
-    await spawned.close()
-  }
+test('contract.published-schema-matches-enforced.control.nullable-root-is-forbidden', () => {
+  const server = new McpServer({ name: 'logbook-guard-probe', version: '0.0.0' }, { capabilities: { tools: {} } })
+  const rt = productionRuntime()
+  assert.throws(
+    () => registerTool(server, rt, adaptProbeSpec(CONTROL_SPECS.nullableRoot)),
+    (error: unknown) =>
+      error instanceof Error &&
+      error.message.includes('probe_nullable_root') &&
+      error.message.includes('root is not a plain object')
+  )
 })
 
-test('contract.published-schema-matches-enforced.control.union-root-is-forbidden', async () => {
-  const spawned = await spawnProbeServer([CONTROL_SPECS.unionRoot])
-  try {
-    const published = await listPublishedTools(spawned)
-    const tool = soleTool(published, 'probe_union_root')
-    assert.deepEqual(tool.inputSchema.properties, {})
-    const verdict = classifyPublishedInput(tool.inputSchema, ['a'])
-    assert.equal(verdict, 'forbidden')
-    assert.throws(
-      () => census([{ name: tool.name, inputSchema: tool.inputSchema, enforcedKeys: ['a'] }], classifyCensusItem),
-      (error: unknown) => error instanceof Error && error.message.includes('probe_union_root')
-    )
-  } finally {
-    await spawned.close()
-  }
+test('contract.published-schema-matches-enforced.control.union-root-is-forbidden', () => {
+  const server = new McpServer({ name: 'logbook-guard-probe', version: '0.0.0' }, { capabilities: { tools: {} } })
+  const rt = productionRuntime()
+  assert.throws(
+    () => registerTool(server, rt, adaptProbeSpec(CONTROL_SPECS.unionRoot)),
+    (error: unknown) =>
+      error instanceof Error &&
+      error.message.includes('probe_union_root') &&
+      error.message.includes('root is not a plain object')
+  )
 })
 
 test('contract.published-schema-matches-enforced.classifier.root-union-keyword-is-unclassifiable', () => {

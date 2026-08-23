@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { Refusal } from '../../src/schema/declare.ts'
+import type { Thread } from '../../src/schema/thread.ts'
+import type { Runtime } from '../../src/runtime/runtime.ts'
+import * as caps from '../../src/schema/caps.ts'
 import { toolRefusal } from '../../src/server/errors.ts'
 import { git, readIdentity, type Identity } from '../../src/store/git.ts'
 import { createStoreDirectories, layoutFor } from '../../src/store/layout.ts'
@@ -13,6 +16,9 @@ import { openStore } from '../../src/store/records.ts'
 import { LEDGER_REF, casUpdateRef } from '../../src/store/ref.ts'
 import { ensureSingleStore } from '../../src/store/single-store.ts'
 import { withDetail } from '../../src/store/detail.ts'
+import { insertCriterion, rewriteCriterion, strikeCriterion } from '../../src/domain/criteria.ts'
+import { contributeToSpine } from '../../src/domain/spine.ts'
+import { transition } from '../../src/domain/lifecycle.ts'
 import { rawGit, withRepo, withRepoNoIdentity } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { census } from '../support/census.ts'
@@ -37,6 +43,30 @@ const READ_IDENTITY_PRODUCER: ProducerId = 'store/git.ts#readIdentity'
 const ENSURE_SINGLE_STORE_PRODUCER: ProducerId = 'store/single-store.ts#ensureSingleStore'
 const OPEN_STORE_PRODUCER: ProducerId = 'store/records.ts#openStore'
 const WITH_DETAIL_PRODUCER: ProducerId = 'store/detail.ts#withDetail'
+const INSERT_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#insertCriterion'
+const REWRITE_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#rewriteCriterion'
+const STRIKE_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#strikeCriterion'
+const CONTRIBUTE_TO_SPINE_PRODUCER: ProducerId = 'domain/spine.ts#contributeToSpine'
+const TRANSITION_PRODUCER: ProducerId = 'domain/lifecycle.ts#transition'
+
+const censusFixtureThread = (rt: Runtime): Thread => ({
+  id: rt.ulid(),
+  slug: 'census-fixture-thread',
+  title: 'Census fixture thread',
+  status: 'open',
+  blocked_by: null,
+  completion_criteria: [],
+  spine: {
+    active_goal: 'census fixture goal',
+    next_step: 'census fixture next step',
+    last_session: 'census fixture last session',
+    open_risks: [],
+    key_decisions: [],
+    out_of_scope: []
+  },
+  created_at: rt.now(),
+  updated_at: rt.now()
+})
 
 const collectRealRefusals = (): TaggedRefusal[] => {
   const refusals: TaggedRefusal[] = [
@@ -152,6 +182,47 @@ const collectRealRefusals = (): TaggedRefusal[] => {
     rmSync(unreadableRecordsPluginData, { recursive: true, force: true })
     rmSync(unreadableRecordsProject, { recursive: true, force: true })
   }
+
+  const domainRt = testRuntime()
+  const domainThread = censusFixtureThread(domainRt)
+  const neverResolves = (): boolean => false
+
+  const insertResult = insertCriterion(
+    domainRt,
+    domainThread,
+    { text: 'a census criterion', kind: 'planned', decisionId: undefined },
+    neverResolves
+  )
+  if (insertResult.ok) throw new Error('expected insertCriterion to refuse without a decision id')
+  refusals.push({ producer: INSERT_CRITERION_PRODUCER, refusal: insertResult })
+
+  const rewriteResult = rewriteCriterion(
+    domainRt,
+    domainThread,
+    { criterionId: 'unknown-criterion-id', text: 'rewritten census text', decisionId: undefined },
+    neverResolves
+  )
+  if (rewriteResult.ok) throw new Error('expected rewriteCriterion to refuse without a decision id')
+  refusals.push({ producer: REWRITE_CRITERION_PRODUCER, refusal: rewriteResult })
+
+  const strikeResult = strikeCriterion(
+    domainRt,
+    domainThread,
+    { criterionId: 'unknown-criterion-id', decisionId: undefined },
+    neverResolves
+  )
+  if (strikeResult.ok) throw new Error('expected strikeCriterion to refuse without a decision id')
+  refusals.push({ producer: STRIKE_CRITERION_PRODUCER, refusal: strikeResult })
+
+  const spineResult = contributeToSpine(domainThread.spine, {
+    active_goal: 'a'.repeat(caps.SPINE_ACTIVE_GOAL_MAX + 1)
+  })
+  if (spineResult.ok) throw new Error('expected contributeToSpine to refuse on an oversized active_goal')
+  refusals.push({ producer: CONTRIBUTE_TO_SPINE_PRODUCER, refusal: spineResult })
+
+  const transitionResult = transition(domainRt, domainThread, 'abandoned', '')
+  if (transitionResult.ok) throw new Error('expected transition to refuse an abandon with no reason')
+  refusals.push({ producer: TRANSITION_PRODUCER, refusal: transitionResult })
 
   return refusals
 }
