@@ -165,6 +165,16 @@ jobs:
 
           git diff --exit-code -- "$TARGET_FILE"
 
+          set +e
+          node --test "rebuild/test/unit/**/*.test.ts"
+          baseline_status=$?
+          set -e
+
+          if [ "$baseline_status" -ne 0 ]; then
+            echo "the seeded-mutation gate cannot run against an already-red suite, unit layer baseline exited $baseline_status before any mutant was applied"
+            exit 1
+          fi
+
           grep -q '!==' <(sed -n '12p' "$TARGET_FILE")
           awk 'NR==12{sub(/!==/,"===")} {print}' "$TARGET_FILE" > "$TARGET_FILE.mutant"
           mv "$TARGET_FILE.mutant" "$TARGET_FILE"
