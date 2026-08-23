@@ -22,7 +22,7 @@ export type SyncOutcome =
 export type SyncOps = { beforeCas?: () => void }
 
 const REMOTE_NAME = 'origin'
-const TRACKING_REF = 'refs/logbook/sync/origin-ledger'
+export const TRACKING_REF = 'refs/logbook/sync/origin-ledger'
 const MAX_SYNC_ATTEMPTS = 5
 const LEASE_REJECTION_PATTERN = /stale info|non-fast-forward/
 
