@@ -29,110 +29,44 @@ export const ALL_TOOLS: ToolSpec<never, never>[] = []
 
 export const NO_ARGUMENTS: z.ZodObject<Record<string, never>> = z.object({})
 
-type ZodDefLike = {
-  type: string
-  shape?: Record<string, z.ZodTypeAny>
-  innerType?: z.ZodTypeAny
-  element?: z.ZodTypeAny
-  values?: unknown[]
-  entries?: Record<string, string | number>
-  options?: z.ZodTypeAny[]
-  discriminator?: string
+const isJsonObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const propertiesOf = (jsonSchema: Record<string, unknown>): Record<string, unknown> | undefined =>
+  isJsonObject(jsonSchema.properties) ? jsonSchema.properties : undefined
+
+const forgePublishedInput = (jsonSchema: Record<string, unknown>): z.ZodTypeAny => {
+  const properties = propertiesOf(jsonSchema) ?? {}
+  const shape: z.ZodRawShape = Object.fromEntries(
+    Object.entries(properties).map(([key, node]) => [
+      key,
+      z.unknown().optional().meta(isJsonObject(node) ? node : {})
+    ])
+  )
+  const rootMeta: Record<string, unknown> = { ...jsonSchema }
+  delete rootMeta.type
+  delete rootMeta.properties
+  delete rootMeta.$schema
+  return z.object(shape).passthrough().meta(rootMeta)
 }
 
-const zodDef = (schema: z.ZodTypeAny): ZodDefLike =>
-  (schema as unknown as { _zod: { def: ZodDefLike } })._zod.def
+const takesArguments = (jsonSchema: Record<string, unknown>): boolean => {
+  const properties = propertiesOf(jsonSchema)
+  return properties !== undefined && Object.keys(properties).length > 0
+}
 
-const isPrimitiveLiteral = (value: unknown): value is string | number | boolean =>
-  typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
-
-const isPrimitiveLiteralArray = (values: unknown[]): values is (string | number | boolean)[] =>
-  values.every(isPrimitiveLiteral)
-
-const isZodObject = (schema: z.ZodTypeAny): schema is z.ZodObject<z.ZodRawShape> => zodDef(schema).type === 'object'
-
-const isStringArray = (values: unknown[]): values is string[] =>
-  values.every((value) => typeof value === 'string')
-
-const withDescription = <T extends z.ZodTypeAny>(schema: T, description: string | undefined): T =>
-  description === undefined ? schema : (schema.describe(description) as T)
-
-const derivePublishedNode = (schema: z.ZodTypeAny): z.ZodTypeAny => {
-  const def = zodDef(schema)
-  switch (def.type) {
-    case 'string':
-      return withDescription(z.string(), schema.description)
-    case 'number':
-      return withDescription(z.number(), schema.description)
-    case 'boolean':
-      return withDescription(z.boolean(), schema.description)
-    case 'literal': {
-      const values = def.values ?? []
-      if (values.length === 0 || !isPrimitiveLiteralArray(values)) {
-        throw new Error('register: literal schema carries no derivable primitive value')
-      }
-      return withDescription(z.literal(values), schema.description)
-    }
-    case 'enum': {
-      const values = Object.values(def.entries ?? {})
-      if (values.length === 0 || !isStringArray(values)) {
-        throw new Error('register: enum schema carries no derivable string values')
-      }
-      return withDescription(z.enum(values as [string, ...string[]]), schema.description)
-    }
-    case 'optional': {
-      if (def.innerType === undefined) {
-        throw new Error('register: optional schema carries no inner type')
-      }
-      return withDescription(derivePublishedNode(def.innerType).optional(), schema.description)
-    }
-    case 'nullable': {
-      if (def.innerType === undefined) {
-        throw new Error('register: nullable schema carries no inner type')
-      }
-      return withDescription(derivePublishedNode(def.innerType).nullable(), schema.description)
-    }
-    case 'array': {
-      if (def.element === undefined) {
-        throw new Error('register: array schema carries no element type')
-      }
-      return withDescription(z.array(derivePublishedNode(def.element)), schema.description)
-    }
-    case 'union': {
-      const options = def.options
-      if (options === undefined || options.length < 2) {
-        throw new Error('register: union schema carries fewer than two derivable options')
-      }
-      const derivedOptions = options.map(derivePublishedNode)
-      if (def.discriminator !== undefined) {
-        if (!derivedOptions.every(isZodObject)) {
-          throw new Error('register: discriminated union schema carries a non-object option')
-        }
-        const discriminableOptions = derivedOptions as [
-          z.ZodObject<z.ZodRawShape>,
-          z.ZodObject<z.ZodRawShape>,
-          ...z.ZodObject<z.ZodRawShape>[]
-        ]
-        return withDescription(z.discriminatedUnion(def.discriminator, discriminableOptions), schema.description)
-      }
-      const unionOptions = derivedOptions as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]]
-      return withDescription(z.union(unionOptions), schema.description)
-    }
-    case 'object': {
-      if (def.shape === undefined) {
-        throw new Error('register: object schema carries no shape')
-      }
-      const publishedShape: z.ZodRawShape = Object.fromEntries(
-        Object.entries(def.shape).map(([key, value]) => [key, derivePublishedNode(value)])
-      )
-      return withDescription(z.object(publishedShape).passthrough(), schema.description)
-    }
-    default:
-      throw new Error(`register: input schema node type "${def.type}" has no published-schema derivation`)
+const assertPublishableSchema = (name: string, jsonSchema: Record<string, unknown>): void => {
+  if (propertiesOf(jsonSchema) === undefined) {
+    throw new Error(
+      `registerTool: "${name}" declares an input schema whose root is not a plain object; the published schema cannot truthfully represent it`
+    )
+  }
+  if (takesArguments(jsonSchema) && jsonSchema.additionalProperties !== false) {
+    throw new Error(
+      `registerTool: "${name}" declares an input schema with arguments that is not a z.strictObject; unknown keys would be silently accepted instead of refused`
+    )
   }
 }
-
-const derivePublishedInputSchema = (schema: z.ZodObject<z.ZodRawShape>): z.ZodTypeAny => derivePublishedNode(schema)
 
 const shapeKeysOf = (schema: z.ZodObject<z.ZodRawShape>): readonly string[] | null => {
   const rawShape = (schema as unknown as { shape?: unknown }).shape
@@ -158,7 +92,8 @@ export const registerTool = <I, O>(server: McpServer, rt: Runtime, spec: ToolSpe
   }
 
   const declared = declare<I>(spec.name, spec.input as unknown as z.ZodType<I>)
-  const publishedInput = derivePublishedInputSchema(spec.input)
+  assertPublishableSchema(spec.name, declared.jsonSchema)
+  const publishedInput = forgePublishedInput(declared.jsonSchema)
 
   const wrappedHandler = async (rawArgs: unknown, extra: ToolContext): Promise<CallToolResult> => {
     try {

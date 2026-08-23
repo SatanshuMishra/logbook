@@ -29,6 +29,13 @@ const nodeAtPath = (root: JsonSchemaNode, path: (string | number | symbol)[]): J
 const renderField = (path: (string | number | symbol)[]): string =>
   path.length === 0 ? '(root)' : path.map((segment) => String(segment)).join('.')
 
+const renderUnrecognizedKeysField = (issue: z.core.$ZodIssue): string | null => {
+  if (issue.code !== 'unrecognized_keys') return null
+  const prefix = issue.path.map((segment) => String(segment)).join('.')
+  const keys = issue.keys.join(',')
+  return prefix.length === 0 ? keys : `${prefix}.${keys}`
+}
+
 const ACCEPTED_KEYS = [
   'minLength',
   'maxLength',
@@ -77,7 +84,7 @@ export const refuse = (jsonSchema: Record<string, unknown>, issues: z.core.$ZodI
   const resolvedNode = resolveNode(jsonSchema, outerNode)
   const effectiveNode: JsonSchemaNode = { ...resolvedNode, ...outerNode }
 
-  const field = renderField(issue.path)
+  const field = renderUnrecognizedKeysField(issue) ?? renderField(issue.path)
   const accepted = renderAccepted(effectiveNode)
   const example = renderExample(jsonSchema, outerNode)
   const retryable = !isNonRetryable(issue)

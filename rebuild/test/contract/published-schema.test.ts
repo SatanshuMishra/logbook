@@ -92,7 +92,7 @@ registerTool(server, rt, {
   name: 'probe_multi_value_literal',
   title: 'probe_multi_value_literal',
   description: 'Registers a two-value literal field to prove the published schema keeps every literal value rather than narrowing to the first.',
-  input: z.object({ mode: z.literal(['a', 'b']) }),
+  input: z.strictObject({ mode: z.literal(['a', 'b']) }),
   output: z.object({ mode: z.string() }),
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   handler: async (_rt, _ctx, input) => ({ ok: true, text: 'echoed', structured: { mode: input.mode } })
@@ -102,7 +102,7 @@ registerTool(server, rt, {
   name: 'probe_discriminated_union',
   title: 'probe_discriminated_union',
   description: 'Registers a discriminated union field to prove the published schema keeps the discriminator rather than degrading to a plain union.',
-  input: z.object({
+  input: z.strictObject({
     payload: z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('a'), x: z.string() }),
       z.object({ kind: z.literal('b'), y: z.number() })

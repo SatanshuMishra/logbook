@@ -107,8 +107,7 @@ test('error.validation-is-in-band', async () => {
   try {
     await spawned.client.listTools()
     const result = (await spawned.client.callTool({
-      name: 'probe_conformant',
-      arguments: { value: 42 }
+      name: 'probe_conformant'
     })) as CallToolResult
     assert.equal(result.isError, true)
     const text = firstTextOf(result)
