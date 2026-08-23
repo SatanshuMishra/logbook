@@ -5,6 +5,7 @@ import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/proto
 import type { Runtime } from '../runtime/runtime.ts'
 import { declare, type Refusal } from '../schema/declare.ts'
 import { toolOk, toolRefusal } from './errors.ts'
+import { TOOL_SPECS } from './tools/index.ts'
 
 export type ToolContext = RequestHandlerExtra<ServerRequest, ServerNotification>
 
@@ -25,7 +26,7 @@ export type ToolSpec<I, O> = {
   handler: (rt: Runtime, ctx: ToolContext, input: I) => Promise<ToolReply<O>>
 }
 
-export const ALL_TOOLS: ToolSpec<never, never>[] = []
+export const ALL_TOOLS: ToolSpec<never, never>[] = [...TOOL_SPECS]
 
 export const NO_ARGUMENTS: z.ZodObject<Record<string, never>> = z.object({})
 
