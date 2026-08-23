@@ -1,6 +1,9 @@
 .mitosis/
 .DS_Store
 rebuild/dist/
+.inspector-data/
+.stryker-tmp/
+reports/
 *.tmp-*
 .evidence/
 .playwright-mcp/
