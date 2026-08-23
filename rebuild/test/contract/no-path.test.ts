@@ -6,14 +6,14 @@ import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { Refusal } from '../../src/schema/declare.ts'
-import type { Thread } from '../../src/schema/thread.ts'
+import type { Criterion, Thread } from '../../src/schema/thread.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import * as caps from '../../src/schema/caps.ts'
 import { toolRefusal } from '../../src/server/errors.ts'
 import type { ToolContext } from '../../src/server/register.ts'
 import { openThreadTool } from '../../src/server/tools/open_thread.ts'
 import { updateThreadTool } from '../../src/server/tools/update_thread.ts'
-import { closeThreadTool, wholeRecordCapRefusal as closeThreadWholeRecordCapRefusal } from '../../src/server/tools/close_thread.ts'
+import { closeThreadTool } from '../../src/server/tools/close_thread.ts'
 import { bindBranchTool } from '../../src/server/tools/bind_branch.ts'
 import { amendCriteriaTool } from '../../src/server/tools/amend_criteria.ts'
 import { commitThread, loadThread, openProjectStore } from '../../src/server/tool-support.ts'
@@ -87,6 +87,77 @@ const censusFixtureThread = (rt: Runtime): Thread => ({
   created_at: rt.now(),
   updated_at: rt.now()
 })
+
+const OVER_CAP_FILL_CHUNK_SIZES: readonly number[] = [caps.CRITERION_TEXT_MAX, 100, 20, 4, 1, 0]
+
+const overCapProbeCriterion = (rt: Runtime, text: string): Criterion => ({
+  id: rt.ulid(),
+  ordinal: 1,
+  text,
+  done: false,
+  kind: 'planned',
+  struck_by: null
+})
+
+const buildThreadAtWholeRecordCapEdge = (rt: Runtime): Thread => {
+  const base: Thread = {
+    id: rt.ulid(),
+    slug: 'census-over-cap-thread',
+    title: 'Census over-cap thread',
+    status: 'open',
+    blocked_by: null,
+    completion_criteria: [],
+    spine: {
+      active_goal: 'census over-cap goal',
+      next_step: 'census over-cap next step',
+      last_session: 'census over-cap last session',
+      open_risks: [],
+      key_decisions: [],
+      out_of_scope: []
+    },
+    created_at: rt.now(),
+    updated_at: rt.now()
+  }
+
+  const sizeOf = (criteria: Criterion[]): number =>
+    Buffer.byteLength(JSON.stringify({ ...base, completion_criteria: criteria }), 'utf8')
+
+  let criteria: Criterion[] = []
+  for (const chunk of OVER_CAP_FILL_CHUNK_SIZES) {
+    while (true) {
+      const next = [...criteria, overCapProbeCriterion(rt, 'x'.repeat(chunk))]
+      if (next.length > caps.CRITERIA_RETENTION_MAX_ELEMENTS) break
+      if (sizeOf(next) > caps.THREAD_RECORD_SERIALISED_MAX_BYTES) break
+      criteria = next
+    }
+  }
+  if (criteria.length === 0) {
+    throw new Error('census over-cap fixture: the multi-resolution fill added no completion criteria')
+  }
+
+  const gap = caps.THREAD_RECORD_SERIALISED_MAX_BYTES - sizeOf(criteria)
+  if (gap < 0) {
+    throw new Error(`census over-cap fixture: the fill already exceeds the whole-record byte cap by ${-gap} bytes`)
+  }
+  const lastIndex = criteria.length - 1
+  const last = criteria[lastIndex] as Criterion
+  const extendedText = last.text + 'x'.repeat(gap)
+  if (extendedText.length > caps.CRITERION_TEXT_MAX) {
+    throw new Error(
+      `census over-cap fixture: closing a ${gap}-byte gap would push one criterion's text past its own ${caps.CRITERION_TEXT_MAX}-character cap`
+    )
+  }
+  criteria = [...criteria.slice(0, lastIndex), { ...last, text: extendedText }]
+
+  const atEdge: Thread = { ...base, completion_criteria: criteria }
+  const edgeSize = Buffer.byteLength(JSON.stringify(atEdge), 'utf8')
+  if (edgeSize !== caps.THREAD_RECORD_SERIALISED_MAX_BYTES) {
+    throw new Error(
+      `census over-cap fixture: expected exactly ${caps.THREAD_RECORD_SERIALISED_MAX_BYTES} bytes at the cap edge, computed ${edgeSize}`
+    )
+  }
+  return atEdge
+}
 
 const buildToolFixtureRepo = (): string => {
   const repo = mkdtempSync(join(tmpdir(), 'logbook-tool-fixture-'))
@@ -166,6 +237,19 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     if (invalidBinding.ok) throw new Error('expected bindBranchTool to refuse a branch that overflows its cap once escaped')
     refusals.push({ producer: BIND_BRANCH_INVALID_BINDING_PRODUCER, refusal: invalidBinding.refusal })
 
+    const overCapThread = buildThreadAtWholeRecordCapEdge(rt)
+    const overCapSeed = store.commit([{ kind: 'thread', record: overCapThread }], 'seed census over-cap thread fixture')
+    if (!overCapSeed.ok) throw new Error('expected the census over-cap thread fixture to seed successfully')
+    const overCapClose = await closeThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: overCapThread.id,
+      outcome: 'abandoned',
+      detail: 'census whole-record cap probe'
+    })
+    if (overCapClose.ok) {
+      throw new Error('expected closeThreadTool to refuse when closing a thread already at the byte-cap edge pushes it over the cap')
+    }
+    refusals.push({ producer: CLOSE_THREAD_WHOLE_RECORD_CAP_PRODUCER, refusal: overCapClose.refusal })
+
     rawGit(repo, ['config', '--unset', 'user.name'])
     rawGit(repo, ['config', '--unset', 'user.email'])
 
@@ -195,11 +279,6 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     rmSync(repo, { recursive: true, force: true })
     rmSync(pluginDataRoot, { recursive: true, force: true })
   }
-
-  refusals.push({
-    producer: CLOSE_THREAD_WHOLE_RECORD_CAP_PRODUCER,
-    refusal: closeThreadWholeRecordCapRefusal('a census-forced whole-record cap issue')
-  })
 
   return refusals
 }

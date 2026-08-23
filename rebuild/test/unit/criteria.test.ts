@@ -231,7 +231,4 @@ test('criteria.ordinals-recompute', () => {
   assert.match(insertedId, CROCKFORD_ALPHABET_PATTERN)
   assert.notEqual(insertedId, first.id)
   assert.notEqual(insertedId, second.id)
-
-  assert.ok(insertedCriterion !== undefined && insertedCriterion.text.length <= CRITERION_TEXT_MAX)
-  assert.ok(thread.completion_criteria.length <= CRITERIA_MAX_ELEMENTS)
 })

@@ -269,13 +269,26 @@ test('open_thread.rejects-invalid', async () => {
 test('update_thread.spawn.contract', async () => {
   await withFixture(async (fx) => {
     assert.ok(fx.published.some((t) => t.name === 'update_thread'))
-    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+    const { threadId, criterionId } = await createFixtureThread(fx.spawned, fx.published)
     const schema = schemaFor(fx.published, 'update_thread')
     const outputSchema = outputSchemaFor(fx.outputSchemas, 'update_thread')
-    const { valid } = generateSchemaCases('update_thread', schema, { thread_id: threadId })
+    const activeGoal = 'a real active goal supplied so this call actually changes the thread'
+    const { valid } = generateSchemaCases('update_thread', schema, {
+      thread_id: threadId,
+      criteria_done: [criterionId],
+      active_goal: activeGoal
+    })
     const result = (await fx.spawned.client.callTool({ name: 'update_thread', arguments: valid })) as CallToolResult
     assertOkResult('update_thread', result)
     assertConformsToOutputSchema('update_thread', outputSchema, result.structuredContent)
+    const structured = result.structuredContent as { criteria_marked_done: string[]; spine_fields_updated: string[] }
+    assert.deepEqual(structured.criteria_marked_done, [criterionId])
+    assert.deepEqual(structured.spine_fields_updated, ['active_goal'])
+
+    const stored = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
+    const storedCriterion = stored.completion_criteria.find((criterion) => criterion.id === criterionId)
+    assert.equal(storedCriterion?.done, true, 'the criterion named in criteria_done must be marked done in the store')
+    assert.equal(stored.spine.active_goal, escapeStored(activeGoal), 'active_goal must be written to the store')
     assert.doesNotMatch(fx.spawned.stderr(), JSON_RPC_FRAMING_PATTERN)
   })
 })
@@ -310,7 +323,17 @@ test('close_thread.rejects-invalid', async () => {
     const { threadId } = await createFixtureThread(fx.spawned, fx.published)
     const before = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
 
-    await runRejectsInvalid(fx, 'close_thread', ['minItems'])
+    await runRejectsInvalid(fx, 'close_thread', ['minItems'], { thread_id: threadId })
+
+    const doneGateRefusal = (await fx.spawned.client.callTool({
+      name: 'close_thread',
+      arguments: { thread_id: threadId, outcome: 'done', detail: 'a valid closure statement' }
+    })) as CallToolResult
+    assert.equal(
+      doneGateRefusal.isError,
+      true,
+      'closing as done with an outstanding criterion must be refused after reaching the handler'
+    )
 
     const after = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
     assert.deepEqual(after, before, 'a thread must be left unchanged when every close_thread call it received was refused')
@@ -427,11 +450,11 @@ test('update_thread.cap-refusal-is-whole-call', async () => {
     assertOkResult('update_thread (seed active_goal)', seeded)
 
     const zeroWidthCount = 5
-    const regularCount = 480
+    const regularCount = caps.SPINE_NEXT_STEP_MAX - 20
     const oversizedNextStep = 'n'.repeat(regularCount) + '​'.repeat(zeroWidthCount)
-    assert.ok(oversizedNextStep.length <= 500, 'the raw next_step must stay within the wire-level cap on its own')
+    assert.ok(oversizedNextStep.length <= caps.SPINE_NEXT_STEP_MAX, 'the raw next_step must stay within the wire-level cap on its own')
     assert.ok(
-      escapeStored(oversizedNextStep).length > 500,
+      escapeStored(oversizedNextStep).length > caps.SPINE_NEXT_STEP_MAX,
       'escaping the zero-width characters must be what pushes next_step over its cap'
     )
 
@@ -567,6 +590,11 @@ test('close_thread.done-thread-is-terminal', async () => {
       arguments: { thread_id: threadId, outcome: 'done', detail: 'shipped the health check before closing this thread' }
     })) as CallToolResult
     assertOkResult('close_thread (close as done)', closed)
+    const closedStructured = closed.structuredContent as { status: string }
+    assert.equal(closedStructured.status, 'done', 'the close_thread reply must report the thread as done')
+
+    const storedAfterClose = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
+    assert.equal(storedAfterClose.status, 'done', 'a successful done-close must be reflected in the stored thread')
 
     const reclose = (await fx.spawned.client.callTool({
       name: 'close_thread',
