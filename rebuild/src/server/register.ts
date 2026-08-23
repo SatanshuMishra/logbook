@@ -37,6 +37,7 @@ type ZodDefLike = {
   values?: unknown[]
   entries?: Record<string, string | number>
   options?: z.ZodTypeAny[]
+  discriminator?: string
 }
 
 const zodDef = (schema: z.ZodTypeAny): ZodDefLike =>
@@ -44,6 +45,11 @@ const zodDef = (schema: z.ZodTypeAny): ZodDefLike =>
 
 const isPrimitiveLiteral = (value: unknown): value is string | number | boolean =>
   typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+
+const isPrimitiveLiteralArray = (values: unknown[]): values is (string | number | boolean)[] =>
+  values.every(isPrimitiveLiteral)
+
+const isZodObject = (schema: z.ZodTypeAny): schema is z.ZodObject<z.ZodRawShape> => zodDef(schema).type === 'object'
 
 const isStringArray = (values: unknown[]): values is string[] =>
   values.every((value) => typeof value === 'string')
@@ -61,11 +67,11 @@ const derivePublishedNode = (schema: z.ZodTypeAny): z.ZodTypeAny => {
     case 'boolean':
       return withDescription(z.boolean(), schema.description)
     case 'literal': {
-      const [value] = def.values ?? []
-      if (!isPrimitiveLiteral(value)) {
+      const values = def.values ?? []
+      if (values.length === 0 || !isPrimitiveLiteralArray(values)) {
         throw new Error('register: literal schema carries no derivable primitive value')
       }
-      return withDescription(z.literal(value), schema.description)
+      return withDescription(z.literal(values), schema.description)
     }
     case 'enum': {
       const values = Object.values(def.entries ?? {})
@@ -97,8 +103,20 @@ const derivePublishedNode = (schema: z.ZodTypeAny): z.ZodTypeAny => {
       if (options === undefined || options.length < 2) {
         throw new Error('register: union schema carries fewer than two derivable options')
       }
-      const derivedOptions = options.map(derivePublishedNode) as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]]
-      return withDescription(z.union(derivedOptions), schema.description)
+      const derivedOptions = options.map(derivePublishedNode)
+      if (def.discriminator !== undefined) {
+        if (!derivedOptions.every(isZodObject)) {
+          throw new Error('register: discriminated union schema carries a non-object option')
+        }
+        const discriminableOptions = derivedOptions as [
+          z.ZodObject<z.ZodRawShape>,
+          z.ZodObject<z.ZodRawShape>,
+          ...z.ZodObject<z.ZodRawShape>[]
+        ]
+        return withDescription(z.discriminatedUnion(def.discriminator, discriminableOptions), schema.description)
+      }
+      const unionOptions = derivedOptions as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]]
+      return withDescription(z.union(unionOptions), schema.description)
     }
     case 'object': {
       if (def.shape === undefined) {
@@ -107,7 +125,7 @@ const derivePublishedNode = (schema: z.ZodTypeAny): z.ZodTypeAny => {
       const publishedShape: z.ZodRawShape = Object.fromEntries(
         Object.entries(def.shape).map(([key, value]) => [key, derivePublishedNode(value)])
       )
-      return withDescription(z.object(publishedShape), schema.description)
+      return withDescription(z.object(publishedShape).passthrough(), schema.description)
     }
     default:
       throw new Error(`register: input schema node type "${def.type}" has no published-schema derivation`)

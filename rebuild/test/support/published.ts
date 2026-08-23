@@ -1,5 +1,6 @@
 import { existsSync, readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ALL_TOOLS } from '../../src/server/register.ts'
 import type { Classified } from './census.ts'
 import type { SpawnedServer } from './spawn-client.ts'
@@ -67,7 +68,15 @@ const toolFileBasenames = (dir: string): string[] => {
 
 export type RegistryCensus = { files: readonly string[]; registered: readonly string[]; published: readonly string[] }
 
+const TOOLS_BARREL_PATH = join(TOOLS_DIR, 'index.ts')
+
+const importToolBarrel = async (): Promise<void> => {
+  if (!existsSync(TOOLS_BARREL_PATH)) return
+  await import(pathToFileURL(TOOLS_BARREL_PATH).href)
+}
+
 export const readRegistryCensus = async (s: SpawnedServer): Promise<RegistryCensus> => {
+  await importToolBarrel()
   const listed = await s.client.listTools()
   return {
     files: toolFileBasenames(TOOLS_DIR),
