@@ -11,6 +11,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 
 import { ALL_TOOLS, type ToolSpec, type ToolContext, type ToolReply } from '../../src/server/register.ts'
 import { openThreadTool } from '../../src/server/tools/open_thread.ts'
+import { resumeThreadTool } from '../../src/server/tools/resume_thread.ts'
 import { recordDecisionTool } from '../../src/server/tools/record_decision.ts'
 
 import type { Runtime } from '../../src/runtime/runtime.ts'
@@ -402,7 +403,8 @@ const rt = {
   ulid: () => ulid(),
   env: { HOME: home, CLAUDE_PLUGIN_DATA: pluginData },
   cwd: repo,
-  log: () => {}
+  log: () => {},
+  sessionId: ulid()
 }
 
 const waitForGo = () => new Promise((resolve, reject) => {
@@ -792,6 +794,30 @@ const buildDriver = (tool: ToolSpec<never, never>, world: CensusWorld): CensusDr
       buildVariants: async () => [
         { rt: world.anaRt, input: { thread_id: world.t0Id, branch: `census-probe-branch-${randomUUID()}` } }
       ]
+    }
+  }
+
+  if (tool.name === 'resume_thread') {
+    return {
+      name: tool.name,
+      decisionsDir: world.anaDecisionsDir,
+      handler,
+      buildVariants: async () => [{ rt: world.anaRt, input: { thread_id: world.t0Id } }]
+    }
+  }
+
+  if (tool.name === 'park_thread') {
+    return {
+      name: tool.name,
+      decisionsDir: world.anaDecisionsDir,
+      handler,
+      buildVariants: async () => {
+        const resumed = await resumeThreadTool.handler(world.anaRt, DUMMY_CTX, { thread_id: world.t0Id })
+        if (!resumed.ok) {
+          throw new Error(`census fixture: resume_thread refused while arranging the park_thread census probe: ${JSON.stringify(resumed.refusal)}`)
+        }
+        return [{ rt: world.anaRt, input: { outcome: 'a session entry written to close out the park_thread census probe' } }]
+      }
     }
   }
 
