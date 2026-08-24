@@ -1,84 +1,95 @@
-# Logbook Plugin
+# Logbook
 
-A Git-native, multi-user session continuity plugin for Claude Code, built from a frozen design spec.
+Logbook is a Claude Code plugin that keeps a durable "ledger" of what happened across coding sessions in a project — threads of work opened and closed, decisions made along the way, and a log of session events — so a later session, yours or someone else's, can pick up the right context instead of re-deriving it. Claude reads and writes that ledger through the Model Context Protocol (MCP), the standard way Claude Code talks to an external tool server; this plugin ships its own MCP server for that purpose.
 
-## Ledger protection: what guards it, what doesn't, and what's unverified
+Current version: 1.0.0 (`package.json:3`, `.claude-plugin/plugin.json:3`).
 
-The ledger lives in one of two places: for a git project, as commits on a ref inside the host repo's own `.git` (`GitRefDriver`); for a non-git project, as files under `CLAUDE_PLUGIN_DATA` (`LocalDriver`). Two mechanisms defend it — a PreToolUse guard that prompts before commands that look like they target the store, and recoverable history for both backends. Neither is a hard security boundary on its own; this section says exactly where each one stops.
+## Requirements
 
-### The PreToolUse guard
+Node.js **22.18 or newer** (`package.json:8-9`).
 
-`hooks/lib/pre-tool-use.mjs` fires on a small set of known-sensitive substrings — the ledger branch name `_ledger`, the `refs/ledger/` ref namespace, `CLAUDE_PLUGIN_DATA`, and every spelling of the resolved ledger root it can construct (absolute, `~`-abbreviated, `$HOME`-abbreviated, project-relative) (`hooks/lib/pre-tool-use.mjs:10-11`, `:144-155`, `:168-170`).
+This is enforced two ways:
 
-The guard emits exactly two verdicts:
+1. `.npmrc:1` sets `engine-strict=true`, so `npm install` refuses to run on an older Node.
+2. A runtime guard, `nodeFloorFailure` (`src/runtime/node-floor.ts:30-34`), runs at the top of the MCP server entrypoint (`bin/logbook-server.ts:24-28`) and inside every hook's stdin-reading helper (`hooks/lib/io.ts:39-43`). Below the floor it writes a clear message to stderr and exits with code 1, instead of failing deeper in the code with a confusing error.
 
-| Tool | Verdict on a match | Where |
+Why 22.18: this plugin ships TypeScript source directly — everything under `src/`, `bin/`, and `hooks/` is a `.ts` file, and there is no compiled JavaScript output (`tsconfig.json:12` sets `noEmit: true`; no `dist/` directory exists anywhere in the tree). Node runs `.ts` files itself through "type stripping" — erasing TypeScript's type syntax without compiling it — and that became available without a command-line flag in Node 22.18.0 (and separately in 23.6.0) ([Node.js TypeScript docs](https://nodejs.org/api/typescript.html)). `tsconfig.json:9` further restricts the source to syntax that stripping alone can erase (`erasableSyntaxOnly: true`), matching what Node's stripper actually supports.
+
+## Installation
+
+This repository is itself a Claude Code plugin marketplace. `.claude-plugin/marketplace.json:1-12` declares a marketplace named `logbook`, owned by `SatanshuMishra`, listing exactly one plugin — also named `logbook` — sourced from the repository root (`"source": "./"`).
+
+Installing from a marketplace is two separate steps in Claude Code, per Anthropic's own documentation ([Discover and install plugins](https://code.claude.com/docs/en/discover-plugins)):
+
+1. Register the marketplace: `/plugin marketplace add <path-to-a-clone-of-this-repo>`. A local path works; a hosted git repository works too, as `owner/repo` on GitHub or a full git URL elsewhere.
+2. Install the plugin it lists: `/plugin install logbook@logbook`.
+
+What the repository does not state: neither `.claude-plugin/plugin.json:1-9` nor `.claude-plugin/marketplace.json:1-12` declares a canonical hosted URL for this project (no `repository` or `homepage` field). The exact `owner/repo` form of step 1 is **[unverified]** from the repository's own tracked content — install from the path to your own clone.
+
+## What ships
+
+| Path | Holds |
+|---|---|
+| `bin/` | The two entry points: the MCP server (`bin/logbook-server.ts`) and a CLI (`bin/logbook-cli.ts`) |
+| `hooks/` | Six lifecycle hooks — `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SessionEnd`, `Stop` — wired in `hooks/hooks.json:1-28`, plus their shared helpers under `hooks/lib/`. There is deliberately no `PreCompact` hook; a dedicated test enforces its absence (`test/hooks/precompact-absent.test.ts:7-18`). |
+| `src/` | The TypeScript source, organized by feature: `schema/` (validated record shapes), `domain/` (thread-lifecycle rules), `store/` (the storage engine), `server/` (the MCP server and its tools), `hooklib/` (hook support code, including the write guard), `merge/` (multi-clone sync and conflict resolution), `render/` (text rendering for briefings and rosters), `runtime/` (process-level helpers, including the Node floor check), `cli/` (session-start/session-end helpers) |
+| `skills/` | Two Claude Code skills, `preflight` and `debrief`, each one `SKILL.md` (`skills/preflight/SKILL.md`, `skills/debrief/SKILL.md`) |
+| `test/` | The automated suite, split by concern: `unit/`, `store/`, `contract/`, `sync/`, `spawn/`, `hooks/` |
+| `scripts/` | Development-time scripts: git-hook installation, a packaging check, an audit-markdown generator |
+| `docs/` | Specs and audits written during development (`docs/specs/`, `docs/audits/`) |
+| `.claude-plugin/` | The plugin manifest (`plugin.json`) and the marketplace manifest (`marketplace.json`) |
+
+At the repository root: `package.json`, `tsconfig.json`, `.npmrc`, `.mcp.json` (declares the MCP server under the server key `ledger`, `.mcp.json:3`, pointing at `bin/logbook-server.ts`, `.mcp.json:5`), `stryker.config.json`, `inspector.config.json`.
+
+The MCP server registers twelve tools, listed in one place: `src/server/tools/index.ts:15-28` (`open_thread`, `update_thread`, `close_thread`, `amend_criteria`, `bind_branch`, `resume_thread`, `park_thread`, `record_decision`, `log_session_event`, `sync_ledger`, `resolve_conflict`, `list_threads`).
+
+## How the ledger is stored
+
+Everything lives under one root: `<CLAUDE_PLUGIN_DATA>/<projectKey>`, where `projectKey` is the first 32 hex characters of a SHA-256 hash of the project's canonicalized absolute path (`src/store/project-key.ts:3-4`, used at `src/store/layout.ts:77-78`).
+
+Two things sit under that root:
+
+- **`records/`** — a plain directory of JSON files: `threads/<id>.json`, `decisions/<id>.json`, `sessions/<thread-id>/<id>.json` (`src/store/layout.ts:79`; paths built at `src/store/records.ts:51-55`). This is the readable working copy.
+- **`state/`** — small pointer and bookkeeping files, including `origin.json`, which records the real project path (`src/store/layout.ts:80,88-91`).
+
+The durable half is git-native. Every write to the working copy also lands as a commit on a dedicated ref, `refs/logbook/ledger` (`src/store/ref.ts:6`) — and that ref lives directly inside the **host project's own `.git`**, not a separate repository. Every git call in the write path runs `git -C <project-root> ...` (`src/store/git.ts:68`), with the project root passed as `layout.projectRoot` (`src/store/write-path.ts:77,85,97,106,195,206`); the host project must already be a git repository for this to work.
+
+There is **no worktree**. Building a commit uses raw git plumbing against a throwaway index file rather than checking anything out: `read-tree`, `hash-object`, `update-index`, and `write-tree` build a tree object, then `commit-tree` and `update-ref` land it (`src/store/write-path.ts:75-111,190-208`). Nothing is ever checked out to a working directory for this ref.
+
+Concurrent writers are handled with compare-and-swap: `update-ref` is called with the previous commit it expects to be replacing, and a write that loses the race is retried against the new value, up to 5 times (`src/store/ref.ts:15-23`; `src/store/write-path.ts:29,175-221`).
+
+## Protection and its limits
+
+Writes are guarded on the way in. `src/hooklib/guard.ts` is called by the `PreToolUse` hook (`hooks/pre-tool-use.ts:1-23`), which only ever fires for `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Bash`, and the ledger's own MCP tools — every other tool is outside its matcher (`hooks/hooks.json:9-14`).
+
+| Situation | Verdict | Where |
 |---|---|---|
-| `Bash` | `ask` — Claude Code prompts before running the command | `hooks/lib/pre-tool-use.mjs:263-278`, `:298-301` |
-| `Write`, `Edit`, `MultiEdit`, `NotebookEdit` | `deny` — refused outright when the target path resolves under a ledger root | `hooks/lib/pre-tool-use.mjs:7`, `:291-296` |
+| Tool name matches the ledger MCP pattern (`mcp__ledger__*` / `mcp__plugin_logbook_ledger__*`) | `allow` — auto-approved | `src/hooklib/guard.ts:14,90-92` |
+| A write tool's target path resolves inside the store root | `deny` | `src/hooklib/guard.ts:16,106-110` |
+| A `Bash` command's text names the ledger ref, `CLAUDE_PLUGIN_DATA`, or a path inside the store root | `ask` — Claude Code prompts before running it | `src/hooklib/guard.ts:68-69,120-122` |
+| The store root can't be verified on disk | `deny` for a write tool, `ask` for `Bash` | `src/hooklib/guard.ts:100-104` |
+| Anything else | `silent` — no verdict, the tool proceeds | `src/hooklib/guard.ts:96,99,109,121` |
 
-There is no size-based verdict: a command is judged by the triggers it names, never by how long it is. The guard says what it is in its own reason text: *"this guard prompts for confirmation and is not a security boundary"* (`hooks/lib/pre-tool-use.mjs:86`).
+The guard says what it is, in its own text: *"this guard prompts for confirmation and is not a security boundary"* (`src/hooklib/guard.ts:17`, repeated in every `ask`/`deny` message it returns, e.g. `:103,117,122`).
 
-A trigger match is not the whole test for `Bash`. When every matched trigger is a ledger *ref* (not a store path), the guard splits the command on shell separators and reads each segment that names the ref: the command stays silent only if every such segment is a `git` invocation whose subcommand is in a closed read-only census (`hooks/lib/pre-tool-use.mjs:12-47`, `:226-250`), carries no leading environment assignment, no config- or exec-injecting pre-subcommand option (`-c`, `--config-env`, `--git-dir`, `--work-tree`, `--namespace`, `--exec-path`), no file-writing or program-executing option anywhere in the segment (`-O`, `--output`, `--ext-diff`, `--textconv`, `--open-files-in-pager`, plus the unique-prefix abbreviations git's own option parser accepts for them, such as `--op`) (`:48-74`, `:195-211`), and is inert — no backtick, no `$(`, no `${`, and no redirection except to `/dev/null` or a file-descriptor dup (`:75-78`, `:213-224`). So `git show _ledger --stat 2>/dev/null | head -1` runs silently while `git rev-parse main > .git/refs/heads/_ledger` prompts. This parsing is best-effort classification, not a sandbox; it exists to cut prompt volume on reads, and it fails toward `ask`.
+Confirmed gaps, each grounded in the current guard:
 
-The prompt is the entire protection: the guard cannot tell a destructive command from a benign one that happens to name the ledger, so it defers to you. Everything below follows from that — if prompts get approved reflexively, the guard stops protecting anything.
+1. **The plugin's own MCP tools are trusted completely.** A tool name matching the ledger pattern is `allow`ed with no inspection of its arguments (`src/hooklib/guard.ts:14,90-92`). This hook is not a second check on the plugin's own writes — only on everything else that might touch the store.
+2. **An unresolvable store is a silent store.** If `CLAUDE_PLUGIN_DATA` can't be resolved to a real root, the guard goes fully silent for every write tool and every `Bash` command — no prompt, no denial (`src/hooklib/guard.ts:47-48,98-99`). It cannot protect a store it cannot locate.
+3. **Bash detection reads text, not shell syntax.** It looks for path-shaped substrings in the raw command and resolves each one (`src/hooklib/guard.ts:20,71-74`); a path built through a shell variable, command substitution, or other indirection is invisible to it.
+4. **A command naming a strict ancestor of the store root passes with no prompt.** The containment check only matches a resolved path equal to, or nested under, the store root (`src/hooklib/guard.ts:38-42`); a command naming the whole plugin-data directory, for example, is shorter than that check and evades it.
+5. **No distinction between a read and a write.** Every `Bash` command that touches the store gets the same `ask`, destructive or not (`src/hooklib/guard.ts:120-122`). The prompt is the entire protection; a prompt approved out of habit protects nothing.
 
-### Turning the Bash prompts off
+## Development
 
-The `disable_bash_guard` user config option (`.claude-plugin/plugin.json:28-33`) silences the `Bash` verdict entirely. The write-tool `deny` and the ledger MCP auto-approval are unaffected by it (`hooks/lib/pre-tool-use.mjs:320-327`). The guard treats it as disabled only when the value is exactly the string `true` (`:93`, `:256-261`).
+There is no build script. Nothing here compiles the TypeScript — `npm test` and the server itself both run the `.ts` files directly (see Requirements above).
 
-It is read from two environment variables, either of which disarms the Bash guard for the session (`hooks/lib/pre-tool-use.mjs:89-92`):
-
-- `CLAUDE_PLUGIN_OPTION_DISABLE_BASH_GUARD` — what Claude Code sets from the `disable_bash_guard` option.
-- `LEDGER_DISABLE_BASH_GUARD` — an ambient environment variable with no user-config binding.
-
-Because the second is ambient, anything that can set an environment variable for the session can disarm the Bash guard — including an `env` block in a cloned repository's own `.claude/settings.json`. State it plainly: cloning an untrusted repository can turn these prompts off without asking you. The write-tool `deny` still holds in that case, and this is a known property of the opt-out, not a defect being tracked.
-
-### Recoverable history
-
-Both backends keep real, recoverable history rather than a single mutable snapshot.
-
-| Backend | Where history lives | On git failure |
+| Script | Command | What it does |
 |---|---|---|
-| Git projects (`GitRefDriver`) | Commits on the ledger ref inside the host repo's own object store — `refs/heads/_ledger` by default, or `refs/ledger/<branch>` under the `custom-ref` backend (`src/drivers/git-ledger.mjs:46-50`) | Not applicable: the driver only runs when the project is already a git worktree (`src/drivers/select.mjs:39-46`), so `git` is guaranteed present |
-| Non-git projects (`LocalDriver`) | A private, hooks-disabled git repo initialized under the ledger data directory, committed once per mutation (`src/drivers/local-driver.mjs:117-135`, `:263-286`) | Degrades safely: every commit call is wrapped in try/catch and falls back to a no-op result instead of throwing (`src/drivers/local-driver.mjs:49-51`, `:270-285`) |
-
-Every ledger-mutating tool call surfaces this in its result as a `recovery_degraded` boolean (`src/tools/shared.mjs:10-18`; e.g. `src/tools/open-thread.mjs:20-21`). `false` means the mutation landed in recoverable history; `true` means it landed on disk but the local recovery repo could not record it — check for `git` on `PATH` and the health of the recovery repo under the ledger data directory. `GitRefDriver` never reports `true`: it always writes into the host repo's already-guaranteed git store (`src/drivers/git-ref-driver.mjs:266-283`).
-
-### Five accepted gaps
-
-None of these are closed by the guard or by recoverable history. Each is a deliberate trade-off, not an oversight.
-
-1. **Prompt fatigue is the real failure mode, and it is security-relevant.** The read census exempts read-only `git` invocations that name the ledger ref, but every other shape of command is judged by the substring alone, so ordinary read-only commands still trigger the same `ask` prompt as destructive ones — for example `grep -rn '_ledger' src` prompts, purely because the literal substring `_ledger` appears in it (`hooks/lib/pre-tool-use.mjs:11`, `:263-278`). The number of previously-silent commands this newly prompts for is `[unverified]` — no test or doc in this repo pins a count — but the mechanism guarantees it is nontrivial. The guard's protection *is* the prompt; enough prompts for harmless commands trains reflexive approval, and reflexive approval defeats the guard on the command that actually matters. This is not a cosmetic annoyance — it is the primary way this control degrades in practice.
-
-2. **Under a non-default `ledger_branch`, the headline protection does not apply.** The guard's fixed substring triggers are the literal branch name `_ledger` and the literal `refs/ledger/` namespace (`hooks/lib/pre-tool-use.mjs:5,11`; `src/drivers/git-ledger.mjs:11`), but `ledger_branch` is user-configurable, wired from `LEDGER_BRANCH` (`.mcp.json:8`, `bin/ledger-server.mjs:10-12`) into driver selection (`src/drivers/select.mjs:44`). Under the default `orphan-branch` backend, a custom branch name resolves to `refs/heads/<branch>` (`src/drivers/git-ledger.mjs:46-50`) — a ref the guard never checks for, so commands that name that branch directly (`git branch -D <branch>`, `git push origin :<branch>`) get no prompt at all. Only the `custom-ref` backend is partially mitigated: every branch under it still resolves inside the fixed `refs/ledger/` namespace, which the guard does check for.
-
-3. **`rm -rf .git && git init` destroys the ledger ref with no prompt.** Neither `.git` nor `git init` is a trigger, and the command names no resolved ledger root path, so it passes through unclassified (`hooks/lib/pre-tool-use.mjs:263-278`). A `.git`-literal trigger was considered and deliberately rejected: it would fire on nearly every ordinary git command in a git project, and that volume would degrade the guard (per gap 1) more than this specific gap costs.
-
-4. **A repository-local content filter or merge driver can still reach ledger data through `.git/info/attributes`.** The ledger stores its data as a branch inside the user's own repository and drives it through a linked worktree, so that repository's local `.git/config` is always loaded and cannot be neutralized — it is the config of the repo the ledger lives in. A `filter.<name>.clean`/`filter.<name>.smudge` or `merge.<name>.driver` defined there is inert on its own; it runs only once some attribute source attaches its name to a ledger path. Every attribute source that can be reached is closed: a local `core.attributesFile` and the per-user default it replaces (`$XDG_CONFIG_HOME/git/attributes`), the system-wide attributes file, and a redefinition of the built-in `union` driver the ledger itself depends on for `sessions/**/*.md` (`src/drivers/git-ref-driver.mjs:26`; `src/util/git-env.mjs:25-27`, `:53`, `:69-78`). The user's own checked-out branch `.gitattributes` is not a vector: the linked worktree checks out the ledger tree, so tree-level attributes from the user's branches are simply absent from it. What stays open is `$GIT_DIR/info/attributes` — it holds the highest precedence of any attribute source ([gitattributes(5)](https://git-scm.com/docs/gitattributes)) and is shared from the common directory, so the main repository's file applies inside the linked worktree ([gitrepository-layout(5)](https://git-scm.com/docs/gitrepository-layout)), and no per-invocation mechanism overrides it (`--attr-source`, `attr.tree` and `core.attributesFile` were each tested against it and each failed). Exposure therefore needs both halves: the definition in the user's local config *and* a `.git/info/attributes` entry binding it to a ledger path. Closing it would require an architectural change — writing ledger content through plumbing that never consults attributes — which still would not cover the merge path. This narrow surface matches the project's threat model of agent accident, not a determined adversary.
-
-5. **A command naming any *ancestor* of a ledger root passes unclassified, with no prompt at all.** The guard's dynamic triggers are the resolved ledger roots themselves — `<CLAUDE_PLUGIN_DATA>/<projectKey>` and `<git-common-dir>/ledger` (`hooks/lib/ledger-roots.mjs:6-21`) — and a command matches only when it *contains* one of them as a substring (`hooks/lib/pre-tool-use.mjs:161-170`). A command naming a parent directory is shorter than the trigger, so it cannot contain it: `rm -rf <data-root>/<projectKey>` correctly prompts, while `rm -rf ~/.claude/plugins/data` and `rm -rf ~/.claude` classify as `null` rather than `ask`. Ancestor matching was considered and rejected for gap 3's reason — it would have to be evaluated for every project including git ones, and that volume would degrade the guard (per gap 1) more than this gap costs. For a non-git project the consequence is total: `LocalDriver` keeps both the ledger and its recovery repo under `CLAUDE_PLUGIN_DATA` by construction (`src/drivers/select.mjs:26-32`, `src/drivers/local-driver.mjs:21-26`), so a single ancestor deletion takes the records and their history together — the recovery repo is version history, not a backup. `sandbox.filesystem.denyWrite` below is the mitigation that holds here: being OS-enforced and path-based rather than spelling-based, it stops an ancestor `rm -rf` that the substring guard cannot see.
-
-### Hard mode: `sandbox.filesystem.denyWrite`
-
-Claude Code's Bash sandbox is an opt-in, OS-enforced alternative to the guard above ([Claude Code sandboxing docs](https://code.claude.com/docs/en/sandboxing)). Verified from that page:
-
-- `sandbox.filesystem.denyWrite` (and its siblings `allowWrite`, `denyRead`, `allowRead`) take an array of path strings, resolved by prefix — `/` for absolute, `~/` for home-relative, `./` or no prefix for project-relative — not shell-command substrings.
-- Enforcement is OS-level — Seatbelt on macOS, `bubblewrap` on Linux and WSL2 — applied to "every Bash command and its child processes." Unlike the substring tripwire above, this is spelling-independent: `/bin/rm`, `find -delete`, or a script that shells out indirectly cannot evade a path-based deny rule the way they evade a text match.
-- Filesystem arrays **merge** across settings scopes rather than replacing: "when the same filesystem array is defined in multiple settings scopes, the arrays are merged: paths from every scope are combined, not replaced."
-- On unsupported platforms or missing dependencies, the default is a warning followed by running **unsandboxed** — sandboxing is not enforced unless `sandbox.failIfUnavailable` is also set.
-
-```json
-{
-  "sandbox": {
-    "enabled": true,
-    "filesystem": {
-      "denyWrite": ["<ledger-root>"]
-    }
-  }
-}
-```
-
-**The critical caveat.** Whether hooks and MCP servers run *inside* the sandbox boundary is `[unverified]`. The documentation states the sandbox isolates "Bash subprocesses," and separately covers where built-in file tools, computer use, and subagents stand relative to it — but it never says which side of the boundary hooks or MCP servers fall on. That matters here specifically: this plugin's recoverable-history writes (the `LocalDriver` recovery repo, the `GitRefDriver` worktree) happen from an MCP server process, not from a sandboxed Bash command. If MCP servers *are* subject to `denyWrite`, a `denyWrite` entry covering the ledger root would stop the plugin from writing its own store — turning a protection into an outage. Do not assume hooks or MCP servers are exempt from this rule.
-
-To settle it before relying on it: enable the sandbox with the ledger root added to `denyWrite`, then confirm the plugin still commits per mutation (check `recovery_degraded` on a tool call, or inspect the ledger ref or recovery repo directly). This is a live-settings change, so it is yours to make, not something this doc can verify for you.
+| `npm test` | `node --test "test/unit/**/*.test.ts" "test/store/**/*.test.ts" "test/contract/**/*.test.ts" "test/sync/**/*.test.ts" "test/spawn/**/*.test.ts" "test/hooks/**/*.test.ts"` | Runs the suite with Node's built-in test runner, against the TypeScript sources directly (`package.json:12`) |
+| `npm run prepare` | `node scripts/install-githooks.mjs` | Installs this repository's local git hooks — npm's `prepare` lifecycle script (`package.json:13`) |
+| `npm run typecheck` | `tsc -p tsconfig.json --noEmit` | Type-checks the whole tree without emitting output (`package.json:14`) |
+| `npm run inspect` | `mcp-inspector --config inspector.config.json --server logbook` | Opens the MCP Inspector against this server (`package.json:15`) |
+| `npm run inspect:cli` | `mcp-inspector --cli --config inspector.config.json --server logbook --method tools/list` | Lists the server's tools from the command line (`package.json:16`) |
+| `npm run mutate` | `stryker run stryker.config.json` | Runs mutation testing (`package.json:17`) |
+| `npm run coverage` | `node --experimental-test-coverage --test "test/unit/**/*.test.ts"` | Runs the unit suite with coverage instrumentation (`package.json:18`) |
