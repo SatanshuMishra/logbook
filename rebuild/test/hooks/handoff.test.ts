@@ -1,12 +1,33 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { layoutFor, createStoreDirectories } from '../../src/store/layout.ts'
 import { writePointer } from '../../src/domain/pointer.ts'
 import { testRuntime } from '../support/runtime.ts'
-import { controlledEnv, freshTmpDir, runHookProcessWithEvent } from './hook-process.ts'
+import { controlledEnv, freshTmpDir, runHookProcessWithEvent, REBUILD_ROOT } from './hook-process.ts'
 
 const HANDOFF_FRAGMENT = 'was left marked as being worked when this session ended'
+
+test('handoff.bound-to-session-end', () => {
+  const hooksJsonPath = path.join(REBUILD_ROOT, 'hooks', 'hooks.json')
+  const parsed = JSON.parse(readFileSync(hooksJsonPath, 'utf8')) as {
+    hooks: Record<string, { hooks: { command: string }[] }[]>
+  }
+
+  const commandsFor = (eventName: string): string[] =>
+    (parsed.hooks[eventName] ?? []).flatMap((entry) => entry.hooks.map((hook) => hook.command))
+
+  assert.ok(
+    commandsFor('SessionEnd').some((command) => command.includes('session-end.ts')),
+    'expected hooks.json SessionEnd binding to route to session-end.ts, which raises the hand-off notice'
+  )
+  assert.equal(
+    commandsFor('Stop').some((command) => command.includes('session-end.ts')),
+    false,
+    'expected hooks.json Stop binding to not route to session-end.ts, which raises the hand-off notice'
+  )
+})
 
 test('handoff.fires-once', () => {
   const projectRoot = freshTmpDir('logbook-handoff-project-')
