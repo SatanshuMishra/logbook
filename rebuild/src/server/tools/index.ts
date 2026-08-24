@@ -10,6 +10,7 @@ import { recordDecisionTool } from './record_decision.ts'
 import { logSessionEventTool } from './log_session_event.ts'
 import { syncLedgerTool } from './sync_ledger.ts'
 import { resolveConflictTool } from './resolve_conflict.ts'
+import { listThreadsTool } from './list_threads.ts'
 
 export const TOOL_SPECS: ToolSpec<never, never>[] = [
   openThreadTool,
@@ -22,5 +23,6 @@ export const TOOL_SPECS: ToolSpec<never, never>[] = [
   recordDecisionTool,
   logSessionEventTool,
   syncLedgerTool,
-  resolveConflictTool
+  resolveConflictTool,
+  listThreadsTool
 ] as unknown as ToolSpec<never, never>[]

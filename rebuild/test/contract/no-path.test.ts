@@ -24,6 +24,7 @@ import { bindBranchTool } from '../../src/server/tools/bind_branch.ts'
 import { amendCriteriaTool } from '../../src/server/tools/amend_criteria.ts'
 import { resumeThreadTool } from '../../src/server/tools/resume_thread.ts'
 import { parkThreadTool } from '../../src/server/tools/park_thread.ts'
+import { listThreadsTool } from '../../src/server/tools/list_threads.ts'
 import { recordDecisionTool, invalidDecisionRefusal } from '../../src/server/tools/record_decision.ts'
 import { logSessionEventTool, invalidSessionEntryRefusal } from '../../src/server/tools/log_session_event.ts'
 import { syncLedgerTool } from '../../src/server/tools/sync_ledger.ts'
@@ -100,6 +101,7 @@ const THREAD_RECORD_REFUSE_PRODUCER: ProducerId = 'schema/thread.ts#ThreadRecord
 const AMEND_CRITERIA_HANDLER_PRODUCER: ProducerId = 'server/tools/amend_criteria.ts#amendCriteriaTool.handler'
 const BIND_BRANCH_HANDLER_PRODUCER: ProducerId = 'server/tools/bind_branch.ts#bindBranchTool.handler'
 const CLOSE_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/close_thread.ts#closeThreadTool.handler'
+const LIST_THREADS_HANDLER_PRODUCER: ProducerId = 'server/tools/list_threads.ts#listThreadsTool.handler'
 const OPEN_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/open_thread.ts#openThreadTool.handler'
 const PARK_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/park_thread.ts#parkThreadTool.handler'
 const RESUME_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/resume_thread.ts#resumeThreadTool.handler'
@@ -457,6 +459,14 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
       throw new Error('expected logSessionEventTool to refuse when the ledger commit cannot complete')
     }
     refusals.push({ producer: LOG_SESSION_EVENT_COMMIT_FAILURE_PRODUCER, refusal: logSessionEventCommitFailure.refusal })
+
+    const listThreadsUnknownCursor = await listThreadsTool.handler(rt, STUB_TOOL_CTX, { cursor: rt.ulid() })
+    if (listThreadsUnknownCursor.ok) throw new Error('expected listThreadsTool to refuse an unknown cursor')
+    refusals.push({ producer: LIST_THREADS_HANDLER_PRODUCER, refusal: listThreadsUnknownCursor.refusal })
+
+    const listThreadsOutOfRangeLimit = await listThreadsTool.handler(rt, STUB_TOOL_CTX, { limit: 0 })
+    if (listThreadsOutOfRangeLimit.ok) throw new Error('expected listThreadsTool to refuse an out-of-range limit')
+    refusals.push({ producer: LIST_THREADS_HANDLER_PRODUCER, refusal: listThreadsOutOfRangeLimit.refusal })
   } finally {
     rmSync(repo, { recursive: true, force: true })
     rmSync(pluginDataRoot, { recursive: true, force: true })
