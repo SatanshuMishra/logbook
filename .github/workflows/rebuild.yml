@@ -1,4 +1,4 @@
-name: rebuild
+name: ci
 
 on:
   pull_request:
@@ -17,19 +17,7 @@ jobs:
         with:
           node-version: '24'
       - run: npm ci --ignore-scripts
-      - run: npm run rebuild:typecheck
-
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: '24'
-      - run: npm ci --ignore-scripts
-      - run: npm run rebuild:build
+      - run: npm run typecheck
 
   test:
     runs-on: ubuntu-latest
@@ -49,7 +37,7 @@ jobs:
           NODE_OPTIONS: --test-reporter=tap
         run: |
           set -euo pipefail
-          npm run rebuild:test | tee test-output.tap
+          npm test | tee test-output.tap
           pass_count=$(grep -oE '^# pass [0-9]+' test-output.tap | tail -n 1 | grep -oE '[0-9]+$')
           if [ -z "$pass_count" ] || [ "$pass_count" -eq 0 ]; then
             echo "the test run reported zero passing tests, the configured globs may have matched nothing"
@@ -70,7 +58,7 @@ jobs:
       - name: Run coverage, unit layer only, reported and never gated
         run: |
           set +e
-          npm run rebuild:coverage
+          npm run coverage
           status=$?
           set -e
           echo "coverage command exit code: $status"
@@ -102,7 +90,7 @@ jobs:
           echo "spawn, hook and sync layers are excluded because no test in that runner exercises them"
 
           set +e
-          RAW=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" -- rebuild/src)
+          RAW=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" -- src)
           diff_status=$?
           set -e
           if [ "$diff_status" -ne 0 ]; then
@@ -111,7 +99,7 @@ jobs:
           fi
           CHANGED_FILES=$(printf '%s\n' "$RAW" | grep -E '\.ts$' || true)
 
-          MUTATE_PATTERNS=$(jq -r '.mutate[]' rebuild/stryker.config.json)
+          MUTATE_PATTERNS=$(jq -r '.mutate[]' stryker.config.json)
           SCOPE=()
           while IFS= read -r pattern; do
             [ -n "$pattern" ] && SCOPE+=("$pattern")
@@ -134,7 +122,7 @@ jobs:
           done <<< "$CHANGED_FILES"
 
           if [ "${#TARGETS[@]}" -eq 0 ]; then
-            echo "no changed file under rebuild/src intersects the configured stryker mutate scope, skipping the mutation run"
+            echo "no changed file under src intersects the configured stryker mutate scope, skipping the mutation run"
             exit 0
           fi
 
@@ -144,7 +132,7 @@ jobs:
           MUTATE_ARG=$(printf '%s,' "${TARGETS[@]}")
           MUTATE_ARG="${MUTATE_ARG%,}"
 
-          npx stryker run rebuild/stryker.config.json --mutate "$MUTATE_ARG"
+          npx stryker run stryker.config.json --mutate "$MUTATE_ARG"
 
   inspector:
     runs-on: ubuntu-latest
@@ -156,8 +144,7 @@ jobs:
         with:
           node-version: '24'
       - run: npm ci --ignore-scripts
-      - run: npm run rebuild:build
-      - run: npm run rebuild:inspect:cli
+      - run: npm run inspect:cli
 
   seeded-mutation:
     runs-on: ubuntu-latest
@@ -172,12 +159,12 @@ jobs:
       - name: Assert a seeded one-token mutant is caught by the unit layer
         run: |
           set -euo pipefail
-          TARGET_FILE="rebuild/src/render/escape.ts"
+          TARGET_FILE="src/render/escape.ts"
 
           git diff --exit-code -- "$TARGET_FILE"
 
           set +e
-          node --test "rebuild/test/unit/**/*.test.ts"
+          node --test "test/unit/**/*.test.ts"
           baseline_status=$?
           set -e
 
@@ -192,7 +179,7 @@ jobs:
           sed -n '12p' "$TARGET_FILE"
 
           set +e
-          node --test "rebuild/test/unit/**/*.test.ts"
+          node --test "test/unit/**/*.test.ts"
           mutant_status=$?
           set -e
 

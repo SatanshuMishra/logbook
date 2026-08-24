@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { rawGit, withRepo, type RawGitResult } from '../support/git-fixture.ts'
 
-const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
+const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const REAL_TSC_BIN_DIR = path.join(PROJECT_ROOT, 'node_modules', '.bin')
 
 const HOOK_TRIGGERING_ENV: Record<string, string | undefined> = {
@@ -17,7 +17,7 @@ const HOOK_TRIGGERING_ENV: Record<string, string | undefined> = {
   GIT_TERMINAL_PROMPT: '0'
 }
 
-const CHECK_FILE_RELATIVE = path.join('rebuild', 'check.ts')
+const CHECK_FILE_RELATIVE = 'check.ts'
 const TYPE_CLEAN_SOURCE = 'export const total: number = 1 + 1\n'
 const TYPE_ERROR_SOURCE = "export const total: number = 'not-a-number'\n"
 
@@ -50,16 +50,15 @@ const seedFixture = (repo: string): CopyOutcome[] => {
       {
         name: 'logbook-pre-commit-fixture',
         private: true,
-        scripts: { 'rebuild:typecheck': 'tsc -p rebuild/tsconfig.json --noEmit' }
+        scripts: { typecheck: 'tsc -p tsconfig.json --noEmit' }
       },
       null,
       2
     )}\n`
   )
 
-  mkdirSync(path.join(repo, 'rebuild'), { recursive: true })
   writeFileSync(
-    path.join(repo, 'rebuild', 'tsconfig.json'),
+    path.join(repo, 'tsconfig.json'),
     `${JSON.stringify(
       {
         compilerOptions: {

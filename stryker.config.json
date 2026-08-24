@@ -1,16 +1,16 @@
 {
-  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "packageManager": "npm",
   "testRunner": "command",
   "commandRunner": {
-    "command": "node --test \"rebuild/test/unit/**/*.test.ts\" \"rebuild/test/store/**/*.test.ts\""
+    "command": "node --test \"test/unit/**/*.test.ts\" \"test/store/**/*.test.ts\""
   },
   "mutate": [
-    "rebuild/src/store/**/*.ts",
-    "rebuild/src/schema/**/*.ts",
-    "rebuild/src/merge/field-merge.ts",
-    "rebuild/src/merge/conflict.ts",
-    "rebuild/src/render/**/*.ts"
+    "src/store/**/*.ts",
+    "src/schema/**/*.ts",
+    "src/merge/field-merge.ts",
+    "src/merge/conflict.ts",
+    "src/render/**/*.ts"
   ],
   "coverageAnalysis": "off",
   "timeoutMS": 60000,

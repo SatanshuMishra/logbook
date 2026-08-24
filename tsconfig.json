@@ -9,10 +9,7 @@
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true,
-    "rewriteRelativeImportExtensions": true,
-    "outDir": "dist",
-    "rootDir": ".",
-    "noEmit": false
+    "noEmit": true
   },
   "include": ["src/**/*.ts", "bin/**/*.ts", "hooks/**/*.ts", "test/**/*.ts"]
 }

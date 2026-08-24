@@ -1,24 +1,21 @@
 {
   "name": "logbook",
-  "version": "0.2.8",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Git-native, multi-user, drift-aware logbook plugin for Claude Code.",
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.18"
   },
   "scripts": {
-    "test": "node --test",
+    "test": "node --test \"test/unit/**/*.test.ts\" \"test/store/**/*.test.ts\" \"test/contract/**/*.test.ts\" \"test/sync/**/*.test.ts\" \"test/spawn/**/*.test.ts\" \"test/hooks/**/*.test.ts\"",
     "prepare": "node scripts/install-githooks.mjs",
-    "rebuild:typecheck": "tsc -p rebuild/tsconfig.json --noEmit",
-    "prerebuild:test": "npm run rebuild:build",
-    "rebuild:test": "node --test \"rebuild/test/unit/**/*.test.ts\" \"rebuild/test/store/**/*.test.ts\" \"rebuild/test/contract/**/*.test.ts\" \"rebuild/test/sync/**/*.test.ts\" \"rebuild/test/spawn/**/*.test.ts\" \"rebuild/test/hooks/**/*.test.ts\"",
-    "rebuild:build": "tsc -p rebuild/tsconfig.json && chmod +x rebuild/dist/bin/*.js",
-    "rebuild:inspect": "mcp-inspector --config rebuild/inspector.config.json --server logbook",
-    "rebuild:inspect:cli": "mcp-inspector --cli --config rebuild/inspector.config.json --server logbook --method tools/list",
-    "rebuild:mutate": "stryker run rebuild/stryker.config.json",
-    "rebuild:coverage": "node --experimental-test-coverage --test \"rebuild/test/unit/**/*.test.ts\""
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "inspect": "mcp-inspector --config inspector.config.json --server logbook",
+    "inspect:cli": "mcp-inspector --cli --config inspector.config.json --server logbook --method tools/list",
+    "mutate": "stryker run stryker.config.json",
+    "coverage": "node --experimental-test-coverage --test \"test/unit/**/*.test.ts\""
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
