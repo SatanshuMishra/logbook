@@ -1,6 +1,6 @@
 ---
 name: preflight
-description: Use at the start of work, or when picking up a paused or blocked thread.
+description: Use at the start of work to pick up an existing thread.
 ---
 
 ## Sequence

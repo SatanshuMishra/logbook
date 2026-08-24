@@ -1,6 +1,6 @@
 ---
 name: debrief
-description: Use when wrapping up work, at session hand-off.
+description: Use at session hand-off to wrap up the work of this session.
 ---
 
 ## Sequence

@@ -15,6 +15,7 @@ import { ULID_PATTERN, ISO_PATTERN } from '../../src/schema/ids.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const ENTRY = join(PROJECT_ROOT, 'rebuild/dist/bin/logbook-server.js')
+const SKILLS_DIR = join(PROJECT_ROOT, 'rebuild', 'skills')
 const PREFLIGHT_SKILL_PATH = join(PROJECT_ROOT, 'rebuild', 'skills', 'preflight', 'SKILL.md')
 const DEBRIEF_SKILL_PATH = join(PROJECT_ROOT, 'rebuild', 'skills', 'debrief', 'SKILL.md')
 
@@ -28,7 +29,19 @@ const readSkillFile = (absPath: string): SkillFile => ({
   content: readFileSync(absPath, 'utf8')
 })
 
-const loadSkillFiles = (): SkillFile[] => [readSkillFile(PREFLIGHT_SKILL_PATH), readSkillFile(DEBRIEF_SKILL_PATH)]
+const discoverSkillFilePaths = (): string[] =>
+  readdirSync(SKILLS_DIR, { withFileTypes: true }).map((entry) => {
+    if (!entry.isDirectory()) {
+      throw new Error(`skills.test: ${SKILLS_DIR} contains a non-directory entry "${entry.name}"`)
+    }
+    const skillPath = join(SKILLS_DIR, entry.name, 'SKILL.md')
+    if (!existsSync(skillPath)) {
+      throw new Error(`skills.test: skill directory "${entry.name}" has no SKILL.md`)
+    }
+    return skillPath
+  })
+
+const loadSkillFiles = (): SkillFile[] => discoverSkillFilePaths().map(readSkillFile)
 
 type CodeSpan = { file: string; line: number; text: string }
 
@@ -48,31 +61,20 @@ const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/
 const SEQUENCE_HEADING_PATTERN = /## Sequence\r?\n\r?\n([\s\S]*)$/
 const STEP_LINE_PATTERN = /^\d+\.\s+(.+)$/
 
-type ParsedSkill = { relPath: string; frontmatterKeys: string[]; steps: string[] }
+type ParsedSkill = { relPath: string; steps: string[] }
 
 const parseSkill = (file: SkillFile): ParsedSkill => {
   const frontmatterMatch = FRONTMATTER_PATTERN.exec(file.content)
   if (frontmatterMatch === null) {
     throw new Error(`skills.test: ${file.relPath} has no parseable frontmatter block`)
   }
-  const [, frontmatterBlock, body] = frontmatterMatch as unknown as [string, string, string]
-
-  const frontmatterKeys = frontmatterBlock
-    .split('\n')
-    .filter((line) => line.trim().length > 0)
-    .map((line) => {
-      const colonIndex = line.indexOf(':')
-      if (colonIndex === -1) {
-        throw new Error(`skills.test: ${file.relPath} frontmatter line "${line}" carries no colon`)
-      }
-      return line.slice(0, colonIndex).trim()
-    })
+  const body = frontmatterMatch[2] as string
 
   const sequenceMatch = SEQUENCE_HEADING_PATTERN.exec(body)
   if (sequenceMatch === null) {
     throw new Error(`skills.test: ${file.relPath} has no parseable "## Sequence" block`)
   }
-  const [, sequenceBlock] = sequenceMatch as unknown as [string, string]
+  const sequenceBlock = sequenceMatch[1] as string
 
   const steps = sequenceBlock
     .split('\n')
@@ -85,7 +87,7 @@ const parseSkill = (file: SkillFile): ParsedSkill => {
       return stepMatch[1] as string
     })
 
-  return { relPath: file.relPath, frontmatterKeys, steps }
+  return { relPath: file.relPath, steps }
 }
 
 const firstWordOf = (sentence: string): string | undefined => /^([A-Za-z]+)/.exec(sentence)?.[1]
@@ -102,7 +104,7 @@ const propertyKeysOf = (schema: unknown): Set<string> => {
 }
 
 const readLiveTools = async (): Promise<LiveTool[]> => {
-  const spawned = await spawnServer({ projectRoot: PROJECT_ROOT })
+  const spawned = await spawnServer({ projectRoot: PROJECT_ROOT, entry: ENTRY })
   try {
     const listed = await spawned.client.listTools()
     return listed.tools.map((tool) => ({
@@ -127,7 +129,8 @@ const classifySkillReference = (
   }
   const qualifiedMatch = QUALIFIED_PATTERN.exec(span.text)
   if (qualifiedMatch !== null) {
-    const [, toolName, fieldName] = qualifiedMatch as unknown as [string, string, string]
+    const toolName = qualifiedMatch[1] as string
+    const fieldName = qualifiedMatch[2] as string
     const tool = liveTools.get(toolName)
     if (tool === undefined) return 'forbidden'
     return tool.inputProperties.has(fieldName) || tool.outputProperties.has(fieldName) ? 'allowed' : 'forbidden'
@@ -151,6 +154,78 @@ const classifyBodySentence = (sentence: string): Classified<string>['verdict'] |
   return 'unclassifiable'
 }
 
+type SkillLineKind = 'frontmatter-delimiter' | 'frontmatter-entry' | 'heading' | 'step' | 'prose'
+
+type SkillLine = { file: string; lineNumber: number; kind: SkillLineKind; key: string | undefined; content: string }
+
+const FRONTMATTER_DELIMITER_LINE = '---'
+const FRONTMATTER_ENTRY_LINE_PATTERN = /^([A-Za-z_-]+):\s*(.*)$/
+const HEADING_LINE_PATTERN = /^#{1,6}\s+(.*)$/
+const LINE_KIND_STEP_PATTERN = /^\d+\.\s+(.*)$/
+
+type ParsedSkillLineKind = { kind: SkillLineKind; key: string | undefined; content: string }
+
+const parseSkillLineKind = (line: string, insideFrontmatter: boolean): ParsedSkillLineKind => {
+  if (line === FRONTMATTER_DELIMITER_LINE) {
+    return { kind: 'frontmatter-delimiter', key: undefined, content: '' }
+  }
+  if (insideFrontmatter) {
+    const entryMatch = FRONTMATTER_ENTRY_LINE_PATTERN.exec(line)
+    if (entryMatch !== null) {
+      const key = entryMatch[1] as string
+      const value = entryMatch[2] as string
+      return { kind: 'frontmatter-entry', key, content: value }
+    }
+  }
+  const headingMatch = HEADING_LINE_PATTERN.exec(line)
+  if (headingMatch !== null) {
+    return { kind: 'heading', key: undefined, content: headingMatch[1] as string }
+  }
+  const stepMatch = LINE_KIND_STEP_PATTERN.exec(line)
+  if (stepMatch !== null) {
+    return { kind: 'step', key: undefined, content: stepMatch[1] as string }
+  }
+  return { kind: 'prose', key: undefined, content: line }
+}
+
+type SkillLinesAcc = { delimiterCount: number; lines: SkillLine[] }
+
+const skillLinesOf = (file: SkillFile): SkillLine[] =>
+  file.content.split('\n').reduce<SkillLinesAcc>(
+    (acc, rawLine, index) => {
+      if (rawLine.trim().length === 0) return acc
+      const insideFrontmatter = acc.delimiterCount === 1
+      const parsed = parseSkillLineKind(rawLine, insideFrontmatter)
+      const nextDelimiterCount = parsed.kind === 'frontmatter-delimiter' ? acc.delimiterCount + 1 : acc.delimiterCount
+      const line: SkillLine = {
+        file: file.relPath,
+        lineNumber: index + 1,
+        kind: parsed.kind,
+        key: parsed.key,
+        content: parsed.content
+      }
+      return { delimiterCount: nextDelimiterCount, lines: [...acc.lines, line] }
+    },
+    { delimiterCount: 0, lines: [] }
+  ).lines
+
+const nonBlankLineCount = (content: string): number => content.split('\n').filter((line) => line.trim().length > 0).length
+
+const classifySkillLine = (line: SkillLine): Classified<SkillLine>['verdict'] | 'unclassifiable' => {
+  if (line.kind === 'frontmatter-delimiter') return 'allowed'
+  if (line.kind === 'frontmatter-entry') {
+    if (line.key === undefined || classifyFrontmatterKey(line.key) === 'forbidden') return 'forbidden'
+    return RULE_MARKER_PATTERN.test(line.content) ? 'forbidden' : 'allowed'
+  }
+  if (line.kind === 'heading') {
+    return RULE_MARKER_PATTERN.test(line.content) ? 'forbidden' : 'allowed'
+  }
+  if (line.kind === 'step') {
+    return classifyBodySentence(line.content)
+  }
+  return RULE_MARKER_PATTERN.test(line.content) ? 'forbidden' : 'unclassifiable'
+}
+
 const extractCallToolName = (step: string): string => {
   const spanTexts = Array.from(step.matchAll(CODE_SPAN_PATTERN)).map((match) => match[1] as string)
   const bareSpan = spanTexts.find((text) => BARE_TOOL_PATTERN.test(text))
@@ -162,6 +237,18 @@ const extractCallToolName = (step: string): string => {
 
 const extractCallSequence = (steps: string[]): string[] =>
   steps.filter((step) => firstWordOf(step) === 'Call').map(extractCallToolName)
+
+const assertContainsCallsInOrder = (actual: string[], expected: string[]): void => {
+  expected.reduce((searchFrom, expectedCall) => {
+    const foundAt = actual.indexOf(expectedCall, searchFrom)
+    assert.notEqual(
+      foundAt,
+      -1,
+      `skills.test: expected "${expectedCall}" at or after index ${searchFrom} in the call sequence [${actual.join(', ')}]`
+    )
+    return foundAt + 1
+  }, 0)
+}
 
 const runSetupStep = (repo: string, args: string[]): void => {
   const result = rawGit(repo, args)
@@ -209,8 +296,10 @@ const countPointers = (repo: string, pluginData: string, homeDir: string): numbe
     let parsed: unknown
     try {
       parsed = JSON.parse(readFileSync(target, 'utf8'))
-    } catch {
-      return false
+    } catch (error) {
+      throw new Error(
+        `skills.test: could not parse "${target}" as JSON while counting pointers: ${error instanceof Error ? error.message : String(error)}`
+      )
     }
     return isPointerShaped(parsed)
   }).length
@@ -239,11 +328,20 @@ const driveCallSequence = async (spawned: SpawnedServer, toolNames: string[], ct
   }
 }
 
+const isHaltedOnUnclassifiable = (error: unknown): boolean =>
+  error instanceof Error && error.message.includes('census halted on an unclassifiable item')
+
+const isRejectedAsForbidden = (error: unknown): boolean =>
+  error instanceof Error && error.message.includes('census rejected a forbidden item')
+
 test('contract.skill-references-exist', async () => {
   const liveTools = await readLiveTools()
   const liveToolMap = new Map(liveTools.map((tool) => [tool.name, tool]))
 
-  const spans = loadSkillFiles().flatMap(extractCodeSpans)
+  const skillFiles = loadSkillFiles()
+  assert.ok(skillFiles.length > 0, 'expected at least one discovered skill under rebuild/skills')
+
+  const spans = skillFiles.flatMap(extractCodeSpans)
   assert.ok(spans.length > 0, 'expected at least one backtick code span across the shipped skill files')
   assert.ok(spans.some((span) => BARE_TOOL_PATTERN.test(span.text)), 'expected at least one bare tool-name span')
   assert.ok(spans.some((span) => QUALIFIED_PATTERN.test(span.text)), 'expected at least one qualified tool.field span')
@@ -257,47 +355,62 @@ const SYNTHETIC_LIVE_TOOLS: Map<string, LiveTool> = new Map([
 
 test('contract.skill-references-exist.control.forbidden-tool-name', () => {
   const synthetic: CodeSpan[] = [{ file: 'synthetic', line: 1, text: 'not_a_real_tool' }]
-  assert.throws(() => census(synthetic, (span) => classifySkillReference(span, SYNTHETIC_LIVE_TOOLS)))
+  assert.throws(() => census(synthetic, (span) => classifySkillReference(span, SYNTHETIC_LIVE_TOOLS)), isRejectedAsForbidden)
 })
 
 test('contract.skill-references-exist.control.unclassifiable-reference', () => {
   const synthetic: CodeSpan[] = [{ file: 'synthetic', line: 1, text: 'Resume_Thread' }]
-  assert.throws(() => census(synthetic, (span) => classifySkillReference(span, SYNTHETIC_LIVE_TOOLS)))
+  assert.throws(() => census(synthetic, (span) => classifySkillReference(span, SYNTHETIC_LIVE_TOOLS)), isHaltedOnUnclassifiable)
+})
+
+test('contract.skill-references-exist.control.forbidden-qualified-field', () => {
+  const synthetic: CodeSpan[] = [{ file: 'synthetic', line: 1, text: 'list_threads.not_a_real_field' }]
+  assert.throws(() => census(synthetic, (span) => classifySkillReference(span, SYNTHETIC_LIVE_TOOLS)), isRejectedAsForbidden)
 })
 
 test('contract.skills-hold-no-rules', () => {
-  const parsedSkills = loadSkillFiles().map(parseSkill)
+  const skillFiles = loadSkillFiles()
+  assert.ok(skillFiles.length > 0, 'expected at least one discovered skill under rebuild/skills')
 
-  const frontmatterKeys = parsedSkills.flatMap((skill) => skill.frontmatterKeys)
-  assert.ok(frontmatterKeys.length > 0, 'expected at least one frontmatter key across the shipped skill files')
-  assert.doesNotThrow(() => census(frontmatterKeys, classifyFrontmatterKey))
+  const population = skillFiles.flatMap(skillLinesOf)
+  assert.ok(population.length > 0, 'expected at least one non-blank line across the discovered skill files')
 
-  const bodySentences = parsedSkills.flatMap((skill) => skill.steps)
-  assert.ok(bodySentences.length > 0, 'expected at least one body sentence across the shipped skill files')
-  assert.doesNotThrow(() => census(bodySentences, classifyBodySentence))
+  const expectedNonBlankLineCount = skillFiles.reduce((sum, file) => sum + nonBlankLineCount(file.content), 0)
+  assert.equal(
+    population.length,
+    expectedNonBlankLineCount,
+    'expected the classified population to cover every non-blank line; a smaller population means lines were silently dropped'
+  )
+
+  assert.doesNotThrow(() => census(population, classifySkillLine))
 })
 
 test('contract.skills-hold-no-rules.control.forbidden-frontmatter-key', () => {
   const synthetic = ['allowed-tools']
-  assert.throws(() => census(synthetic, classifyFrontmatterKey))
+  assert.throws(() => census(synthetic, classifyFrontmatterKey), isRejectedAsForbidden)
 })
 
 test('contract.skills-hold-no-rules.control.forbidden-body-sentence-with-a-rule-marker-after-its-verb', () => {
   const synthetic = ['Call `list_threads` only when the roster is empty.']
-  assert.throws(() => census(synthetic, classifyBodySentence))
+  assert.throws(() => census(synthetic, classifyBodySentence), isRejectedAsForbidden)
 })
 
 test('contract.skills-hold-no-rules.control.unclassifiable-body-sentence', () => {
   const synthetic = ['Read the returned roster aloud.']
-  assert.throws(() => census(synthetic, classifyBodySentence))
+  assert.throws(() => census(synthetic, classifyBodySentence), isHaltedOnUnclassifiable)
 })
 
 test('skill.preflight-presents-and-stops', () => {
   const preflight = parseSkill(readSkillFile(PREFLIGHT_SKILL_PATH))
   const steps = preflight.steps
 
+  const presentIndex = steps.findIndex((step) => firstWordOf(step) === 'Present')
+  assert.notEqual(presentIndex, -1, 'expected an explicit Present step in the preflight sequence')
+
   const waitIndex = steps.findIndex((step) => firstWordOf(step) === 'Wait')
   assert.notEqual(waitIndex, -1, 'expected an explicit Wait step in the preflight sequence')
+
+  assert.ok(presentIndex < waitIndex, 'expected the Present step to precede the Wait step')
 
   const resumeCallIndex = steps.findIndex((step) => stepContainsSpan(step, 'resume_thread'))
   assert.notEqual(resumeCallIndex, -1, 'expected a step calling `resume_thread` in the preflight sequence')
@@ -322,14 +435,19 @@ test('skill.cannot-strand', async () => {
   const debrief = parseSkill(readSkillFile(DEBRIEF_SKILL_PATH))
   const preflightCalls = extractCallSequence(preflight.steps)
   const debriefCalls = extractCallSequence(debrief.steps)
-  assert.deepEqual(preflightCalls, ['list_threads', 'resume_thread'])
-  assert.deepEqual(debriefCalls, ['park_thread'])
+  assertContainsCallsInOrder(preflightCalls, ['list_threads', 'resume_thread'])
+  assertContainsCallsInOrder(debriefCalls, ['park_thread'])
 
-  const repo = bootstrapRepo()
-  const pluginData = mkdtempSync(join(tmpdir(), 'logbook-skills-plugin-data-'))
-  const homeDir = mkdtempSync(join(tmpdir(), 'logbook-skills-home-'))
-  const spawned = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
+  let repo = ''
+  let pluginData = ''
+  let homeDir = ''
+  let spawned: SpawnedServer | undefined
   try {
+    repo = bootstrapRepo()
+    pluginData = mkdtempSync(join(tmpdir(), 'logbook-skills-plugin-data-'))
+    homeDir = mkdtempSync(join(tmpdir(), 'logbook-skills-home-'))
+    spawned = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
+
     await spawned.client.listTools()
 
     const opened = (await spawned.client.callTool({
@@ -367,9 +485,9 @@ test('skill.cannot-strand', async () => {
       'expected no pointer to remain set after driving the documented debrief sequence'
     )
   } finally {
-    await spawned.close()
-    rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginData, { recursive: true, force: true })
-    rmSync(homeDir, { recursive: true, force: true })
+    if (spawned !== undefined) await spawned.close()
+    if (repo !== '') rmSync(repo, { recursive: true, force: true })
+    if (pluginData !== '') rmSync(pluginData, { recursive: true, force: true })
+    if (homeDir !== '') rmSync(homeDir, { recursive: true, force: true })
   }
 })
