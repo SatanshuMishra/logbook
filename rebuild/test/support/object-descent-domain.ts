@@ -92,13 +92,28 @@ const listTsFilesRelativeTo = (relativeDir: string): string[] =>
     .filter((entry) => entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts'))
     .map((entry) => path.join(relativeDir, entry.name))
 
+const requireNonEmptyDerivation = (derivationName: string, relativeDir: string, files: string[]): string[] => {
+  if (files.length === 0) {
+    throw new Error(`${derivationName}: derived no expected files under ${relativeDir}`)
+  }
+  return files
+}
+
 export const deriveExpectedToolHandlerFiles = (): string[] =>
-  listTsFilesRelativeTo(TOOLS_DIR_RELATIVE).filter((relativeFile) => path.basename(relativeFile) !== TOOLS_INDEX_FILE)
+  requireNonEmptyDerivation(
+    'deriveExpectedToolHandlerFiles',
+    TOOLS_DIR_RELATIVE,
+    listTsFilesRelativeTo(TOOLS_DIR_RELATIVE).filter((relativeFile) => path.basename(relativeFile) !== TOOLS_INDEX_FILE)
+  )
 
 export const deriveExpectedRecordMethodsFiles = (): string[] =>
-  listTsFilesRelativeTo(SCHEMA_DIR_RELATIVE)
-    .filter((relativeFile) => path.basename(relativeFile) !== DECLARE_MODULE_FILE)
-    .filter((relativeFile) => DECLARE_ASSIGNMENT_PATTERN.test(readFileSync(path.join(SRC_ROOT, relativeFile), 'utf8')))
+  requireNonEmptyDerivation(
+    'deriveExpectedRecordMethodsFiles',
+    SCHEMA_DIR_RELATIVE,
+    listTsFilesRelativeTo(SCHEMA_DIR_RELATIVE)
+      .filter((relativeFile) => path.basename(relativeFile) !== DECLARE_MODULE_FILE)
+      .filter((relativeFile) => DECLARE_ASSIGNMENT_PATTERN.test(readFileSync(path.join(SRC_ROOT, relativeFile), 'utf8')))
+  )
 
 export const producerSourceFile = (producer: ProducerId): string => {
   const separatorIndex = producer.indexOf('#')
