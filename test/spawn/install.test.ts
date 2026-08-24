@@ -8,7 +8,20 @@ import { fileURLToPath } from 'node:url'
 import { rawGit, type RawGitResult } from '../support/git-fixture.ts'
 import { spawnServer } from '../support/spawn-client.ts'
 
-const EXPECTED_TOOL_COUNT = 12
+const EXPECTED_TOOL_NAMES = [
+  'amend_criteria',
+  'bind_branch',
+  'close_thread',
+  'list_threads',
+  'log_session_event',
+  'open_thread',
+  'park_thread',
+  'record_decision',
+  'resolve_conflict',
+  'resume_thread',
+  'sync_ledger',
+  'update_thread'
+]
 
 const GIT_ARCHIVE_IS_HEAD_NOT_WORKING_TREE =
   'git archive HEAD materialises the last commit, not the working tree; this is a post-commit gate, and on a dirty tree it proves nothing about uncommitted changes'
@@ -98,10 +111,10 @@ test('install.serves-new-server', async () => {
       assert.notStrictEqual(spawned.client.getServerVersion(), undefined)
       const listed = await spawned.client.listTools()
       const sortedNames = listed.tools.map((tool) => tool.name).sort()
-      assert.strictEqual(
-        listed.tools.length,
-        EXPECTED_TOOL_COUNT,
-        `expected exactly ${EXPECTED_TOOL_COUNT} tools, found ${listed.tools.length}: ${sortedNames.join(', ')}`
+      assert.deepStrictEqual(
+        sortedNames,
+        EXPECTED_TOOL_NAMES,
+        `expected exactly these tools: ${EXPECTED_TOOL_NAMES.join(', ')}; found: ${sortedNames.join(', ')}`
       )
     } finally {
       await spawned.close()

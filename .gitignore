@@ -1,6 +1,6 @@
 .mitosis/
 .DS_Store
-dist/
+/dist/
 .inspector-data/
 .stryker-tmp/
 reports/
