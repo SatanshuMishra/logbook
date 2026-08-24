@@ -6,6 +6,7 @@ import type { Decision } from '../schema/decision.ts'
 import type { Slot, Store, Thread } from '../store/records.ts'
 import { layoutFor } from '../store/layout.ts'
 import { readPointer } from '../domain/pointer.ts'
+import { escapeStored } from '../render/escape.ts'
 import { renderBriefing } from '../render/briefing.ts'
 import { paginateRoster, renderRoster, selectRosterThreads, toRosterRow } from '../render/roster.ts'
 import { openProjectStore } from './tool-support.ts'
@@ -44,7 +45,10 @@ const variableAsString = (variables: Variables, key: string): string => {
 const openStoreForRead = (rt: Runtime, addressLabel: string): Store => {
   const opened = openProjectStore(rt)
   if (!opened.ok) {
-    throw new McpError(ErrorCode.InternalError, `${addressLabel}: the store could not be opened: ${opened.refusal.message}`)
+    throw new McpError(
+      ErrorCode.InternalError,
+      [addressLabel, ': the store could not be opened: ', opened.refusal.message].join('')
+    )
   }
   return opened.value
 }
@@ -82,12 +86,15 @@ const readThreadResourceBody = (rt: Runtime, id: string): string => {
   const store = openStoreForRead(rt, 'logbook://thread')
   const slot = resolveThreadSlot(store, id)
   if (slot === null) {
-    throw new McpError(ErrorCode.InvalidParams, `logbook://thread: no thread record matches id or slug '${id}'`)
+    throw new McpError(
+      ErrorCode.InvalidParams,
+      `logbook://thread: no thread record matches id or slug '${escapeStored(id)}'`
+    )
   }
   if (slot.quarantined) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `logbook://thread: the record for '${id}' failed to parse and is quarantined: ${slot.reason}`
+      `logbook://thread: the record for '${escapeStored(id)}' failed to parse and is quarantined: ${escapeStored(slot.reason)}`
     )
   }
 
@@ -105,12 +112,15 @@ const readDecisionResourceBody = (rt: Runtime, id: string): string => {
   const store = openStoreForRead(rt, 'logbook://decision')
   const slot = store.readDecision(id)
   if (slot === null) {
-    throw new McpError(ErrorCode.InvalidParams, `logbook://decision: no decision record matches id '${id}'`)
+    throw new McpError(
+      ErrorCode.InvalidParams,
+      `logbook://decision: no decision record matches id '${escapeStored(id)}'`
+    )
   }
   if (slot.quarantined) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `logbook://decision: the record for '${id}' failed to parse and is quarantined: ${slot.reason}`
+      `logbook://decision: the record for '${escapeStored(id)}' failed to parse and is quarantined: ${escapeStored(slot.reason)}`
     )
   }
   return renderDecisionResource(slot.record)
@@ -122,13 +132,13 @@ const readSessionEntryResourceBody = (rt: Runtime, threadId: string, entryId: st
   if (slot === null) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `logbook://session: no session entry '${entryId}' exists for thread '${threadId}'`
+      `logbook://session: no session entry '${escapeStored(entryId)}' exists for thread '${escapeStored(threadId)}'`
     )
   }
   if (slot.quarantined) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `logbook://session: the entry '${entryId}' for thread '${threadId}' failed to parse and is quarantined: ${slot.reason}`
+      `logbook://session: the entry '${escapeStored(entryId)}' for thread '${escapeStored(threadId)}' failed to parse and is quarantined: ${escapeStored(slot.reason)}`
     )
   }
   return renderSessionEntryResource(slot.record)
