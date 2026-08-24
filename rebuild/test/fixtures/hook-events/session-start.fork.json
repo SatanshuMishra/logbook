@@ -1,0 +1,7 @@
+{
+  "session_id": "00000000-0000-4000-8000-000000000003",
+  "transcript_path": "/tmp/logbook-fixture-constructed/00000000-0000-4000-8000-000000000003.jsonl",
+  "cwd": "/tmp/logbook-fixture-constructed/project",
+  "hook_event_name": "SessionStart",
+  "source": "fork"
+}

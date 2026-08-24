@@ -12,7 +12,7 @@
     "test": "node --test",
     "rebuild:typecheck": "tsc -p rebuild/tsconfig.json --noEmit",
     "prerebuild:test": "npm run rebuild:build",
-    "rebuild:test": "node --test \"rebuild/test/unit/**/*.test.ts\" \"rebuild/test/store/**/*.test.ts\" \"rebuild/test/contract/**/*.test.ts\" \"rebuild/test/sync/**/*.test.ts\" \"rebuild/test/spawn/**/*.test.ts\"",
+    "rebuild:test": "node --test \"rebuild/test/unit/**/*.test.ts\" \"rebuild/test/store/**/*.test.ts\" \"rebuild/test/contract/**/*.test.ts\" \"rebuild/test/sync/**/*.test.ts\" \"rebuild/test/spawn/**/*.test.ts\" \"rebuild/test/hooks/**/*.test.ts\"",
     "rebuild:build": "tsc -p rebuild/tsconfig.json && chmod +x rebuild/dist/bin/*.js",
     "rebuild:inspect": "mcp-inspector --config rebuild/inspector.config.json --server logbook",
     "rebuild:inspect:cli": "mcp-inspector --cli --config rebuild/inspector.config.json --server logbook --method tools/list",
