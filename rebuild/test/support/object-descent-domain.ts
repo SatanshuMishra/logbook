@@ -1,3 +1,4 @@
+import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import * as ts from 'typescript'
 import { SRC_ROOT, loadProgram, resolveAliasedSymbol, walkTsFiles } from './refusal-census.ts'
@@ -78,4 +79,31 @@ export const deriveObjectDescentCandidates = (): ObjectDescentCandidate[] => {
   }
 
   return candidates
+}
+
+const TOOLS_DIR_RELATIVE = path.join('server', 'tools')
+const SCHEMA_DIR_RELATIVE = 'schema'
+const TOOLS_INDEX_FILE = 'index.ts'
+const DECLARE_MODULE_FILE = 'declare.ts'
+const DECLARE_ASSIGNMENT_PATTERN = /=\s*declare</
+
+const listTsFilesRelativeTo = (relativeDir: string): string[] =>
+  readdirSync(path.join(SRC_ROOT, relativeDir), { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts'))
+    .map((entry) => path.join(relativeDir, entry.name))
+
+export const deriveExpectedToolHandlerFiles = (): string[] =>
+  listTsFilesRelativeTo(TOOLS_DIR_RELATIVE).filter((relativeFile) => path.basename(relativeFile) !== TOOLS_INDEX_FILE)
+
+export const deriveExpectedRecordMethodsFiles = (): string[] =>
+  listTsFilesRelativeTo(SCHEMA_DIR_RELATIVE)
+    .filter((relativeFile) => path.basename(relativeFile) !== DECLARE_MODULE_FILE)
+    .filter((relativeFile) => DECLARE_ASSIGNMENT_PATTERN.test(readFileSync(path.join(SRC_ROOT, relativeFile), 'utf8')))
+
+export const producerSourceFile = (producer: ProducerId): string => {
+  const separatorIndex = producer.indexOf('#')
+  if (separatorIndex === -1) {
+    throw new Error(`producerSourceFile: "${producer}" has no "#" separator`)
+  }
+  return producer.slice(0, separatorIndex)
 }

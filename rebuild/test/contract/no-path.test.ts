@@ -35,8 +35,13 @@ import { transition } from '../../src/domain/lifecycle.ts'
 import { rawGit, withRepo, withRepoNoIdentity } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { census } from '../support/census.ts'
-import { deriveObjectDescentCandidates } from '../support/object-descent-domain.ts'
-import type { ObjectDescentCandidate } from '../support/object-descent-domain.ts'
+import {
+  deriveExpectedRecordMethodsFiles,
+  deriveExpectedToolHandlerFiles,
+  deriveObjectDescentCandidates,
+  producerSourceFile
+} from '../support/object-descent-domain.ts'
+import type { ObjectDescentCandidate, ObjectDescentFamily } from '../support/object-descent-domain.ts'
 import {
   SENTINEL_POSIX,
   SENTINEL_TOKEN,
@@ -557,6 +562,24 @@ test('error.discloses-no-path.scan-population-matches-the-independently-derived-
   const classifyAgainstScannedPopulation = (candidate: ObjectDescentCandidate): 'allowed' | 'unclassifiable' =>
     scanned.has(candidate.producer) ? 'allowed' : 'unclassifiable'
   assert.doesNotThrow(() => census(candidates, classifyAgainstScannedPopulation))
+
+  const filesCoveredByFamily = (family: ObjectDescentFamily): Set<string> =>
+    new Set(
+      candidates.filter((candidate) => candidate.family === family).map((candidate) => producerSourceFile(candidate.producer))
+    )
+
+  const assertFamilyCoversItsExpectedFiles = (family: ObjectDescentFamily, expectedFiles: string[]): void => {
+    const covered = filesCoveredByFamily(family)
+    for (const expectedFile of expectedFiles) {
+      assert.ok(
+        covered.has(expectedFile),
+        `expected the "${family}" object-descent family to have a candidate for ${expectedFile}, found none`
+      )
+    }
+  }
+
+  assertFamilyCoversItsExpectedFiles('tool-handler', deriveExpectedToolHandlerFiles())
+  assertFamilyCoversItsExpectedFiles('record-methods', deriveExpectedRecordMethodsFiles())
 })
 
 test('error.discloses-no-path.taint-refusal-rejects-unclosed-fields', () => {
