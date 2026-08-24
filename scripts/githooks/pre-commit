@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(git rev-parse --show-toplevel)
+if ! cd "$repo_root"; then
+  echo "pre-commit: failed to cd to repository root \"$repo_root\"" >&2
+  exit 1
+fi
+
+target="scripts/pre-commit-typecheck.sh"
+if [ ! -x "$target" ]; then
+  echo "pre-commit: commit blocked - missing or non-executable hook target \"$repo_root/$target\"" >&2
+  exit 1
+fi
+
+exec "$target" "$@"
