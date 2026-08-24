@@ -18,11 +18,14 @@ const LEGACY_PATHS = [
   'bin/ledger-cli.mjs',
   'hooks/commit-msg',
   'hooks/dispatcher',
-  'hooks/lib',
-  'src/drivers',
-  'src/tools',
-  'src/drift'
+  'hooks/lib/hook-io.mjs',
+  'src/drivers/git-ref-driver.mjs',
+  'src/tools/registry.mjs',
+  'src/drift/reconcile.mjs'
 ]
+
+const CENSUS_ROOTS = ['bin', 'hooks', 'skills', 'src', 'test']
+const FORBIDDEN_EXTENSIONS = ['.mjs', '.cjs']
 
 const EXPECTED_SKILL_FILES = ['skills/debrief/SKILL.md', 'skills/preflight/SKILL.md']
 
@@ -107,10 +110,22 @@ test('install.serves-new-server', async () => {
     const materialisedFiles = walkFiles(treeDir)
     const materialisedFileSet = new Set(materialisedFiles)
     for (const legacyPath of LEGACY_PATHS) {
-      const stillPresent =
-        materialisedFileSet.has(legacyPath) || materialisedFiles.some((file) => file.startsWith(`${legacyPath}/`))
-      assert.strictEqual(stillPresent, false, `legacy path ${legacyPath} is present in the materialised tree`)
+      assert.strictEqual(
+        materialisedFileSet.has(legacyPath),
+        false,
+        `legacy path ${legacyPath} is present in the materialised tree`
+      )
     }
+
+    const forbiddenExtensionFiles = materialisedFiles.filter((file) => {
+      const topLevelDir = file.split('/')[0] ?? ''
+      return CENSUS_ROOTS.includes(topLevelDir) && FORBIDDEN_EXTENSIONS.some((extension) => file.endsWith(extension))
+    })
+    assert.strictEqual(
+      forbiddenExtensionFiles.length,
+      0,
+      `legacy-era file extension found in the materialised tree: ${forbiddenExtensionFiles.join(', ')}`
+    )
 
     const skillFiles = materialisedFiles.filter((file) => file.startsWith('skills/') && file.endsWith('SKILL.md')).sort()
     assert.strictEqual(
