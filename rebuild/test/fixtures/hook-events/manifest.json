@@ -1,0 +1,133 @@
+{
+  "publishedTypesFound": false,
+  "typesSource": "derived-from-live-captures",
+  "typesFile": "../hook-types.d.ts",
+  "note": "No machine-readable schema and no shipped .d.ts for hook payloads were found on this machine: the claude binary at /opt/homebrew/Caskroom/claude-code@latest/2.1.241/claude is a compiled Mach-O executable with no bundled TypeScript declarations, no @anthropic-ai/claude-code or @anthropic-ai/claude-agent-sdk npm package was installed anywhere reachable, and the closest match (the VS Code extension anthropic.claude-code-2.1.241-darwin-arm64) ships only a minified extension.js, not published type declarations. Types in hook-types.d.ts are therefore derived from the captured payloads below and from SPEC section 8.2, not copied from a publisher-supplied source.",
+  "fixtures": [
+    {
+      "file": "session-start.startup.json",
+      "event": "SessionStart",
+      "type": "SessionStartEvent",
+      "field": "source",
+      "value": "startup",
+      "status": "CAPTURED",
+      "clientVersion": "2.1.241",
+      "capturedFrom": "scratchpad/probe/run2/out/hooks-SessionStart.jsonl"
+    },
+    {
+      "file": "session-start.resume.json",
+      "event": "SessionStart",
+      "type": "SessionStartEvent",
+      "field": "source",
+      "value": "resume",
+      "status": "CAPTURED",
+      "clientVersion": "2.1.241",
+      "capturedFrom": "scratchpad/probe/run3/out/hooks-SessionStart.jsonl"
+    },
+    {
+      "file": "session-start.clear.json",
+      "event": "SessionStart",
+      "type": "SessionStartEvent",
+      "field": "source",
+      "value": "clear",
+      "status": "CONSTRUCTED",
+      "note": "documented in SPEC 8.2 (source distinguishes startup from resume, clear, compact and fork) but never observed live in the probe capture session"
+    },
+    {
+      "file": "session-start.compact.json",
+      "event": "SessionStart",
+      "type": "SessionStartEvent",
+      "field": "source",
+      "value": "compact",
+      "status": "CONSTRUCTED",
+      "note": "documented in SPEC 8.2 but never observed live in the probe capture session"
+    },
+    {
+      "file": "session-start.fork.json",
+      "event": "SessionStart",
+      "type": "SessionStartEvent",
+      "field": "source",
+      "value": "fork",
+      "status": "CONSTRUCTED",
+      "note": "documented in SPEC 8.2 but never observed live in the probe capture session"
+    },
+    {
+      "file": "session-end.other.json",
+      "event": "SessionEnd",
+      "type": "SessionEndEvent",
+      "field": "reason",
+      "value": "other",
+      "status": "CAPTURED",
+      "clientVersion": "2.1.241",
+      "capturedFrom": "scratchpad/probe/run2/out/hooks-SessionEnd.jsonl"
+    },
+    {
+      "file": "session-end.clear.json",
+      "event": "SessionEnd",
+      "type": "SessionEndEvent",
+      "field": "reason",
+      "value": "clear",
+      "status": "CONSTRUCTED",
+      "note": "documented reason value per work order decision 0126; never observed live in the probe capture session"
+    },
+    {
+      "file": "session-end.resume.json",
+      "event": "SessionEnd",
+      "type": "SessionEndEvent",
+      "field": "reason",
+      "value": "resume",
+      "status": "CONSTRUCTED",
+      "note": "documented reason value per work order decision 0126; never observed live in the probe capture session"
+    },
+    {
+      "file": "session-end.logout.json",
+      "event": "SessionEnd",
+      "type": "SessionEndEvent",
+      "field": "reason",
+      "value": "logout",
+      "status": "CONSTRUCTED",
+      "note": "documented reason value per work order decision 0126; never observed live in the probe capture session"
+    },
+    {
+      "file": "session-end.prompt_input_exit.json",
+      "event": "SessionEnd",
+      "type": "SessionEndEvent",
+      "field": "reason",
+      "value": "prompt_input_exit",
+      "status": "CONSTRUCTED",
+      "note": "documented reason value per work order decision 0126; never observed live in the probe capture session"
+    },
+    {
+      "file": "user-prompt-submit.json",
+      "event": "UserPromptSubmit",
+      "type": "UserPromptSubmitEvent",
+      "status": "CAPTURED",
+      "clientVersion": "2.1.241",
+      "capturedFrom": "scratchpad/probe/run2/out/hooks-UserPromptSubmit.jsonl"
+    },
+    {
+      "file": "pre-tool-use.json",
+      "event": "PreToolUse",
+      "type": "PreToolUseEvent",
+      "status": "CAPTURED",
+      "clientVersion": "2.1.241",
+      "capturedFrom": "scratchpad/probe/run2/out/hooks-PreToolUse.jsonl"
+    },
+    {
+      "file": "post-tool-use.json",
+      "event": "PostToolUse",
+      "type": "PostToolUseEvent",
+      "status": "CAPTURED",
+      "clientVersion": "2.1.241",
+      "capturedFrom": "scratchpad/probe/run2/out/hooks-PostToolUse.jsonl"
+    },
+    {
+      "file": "stop.json",
+      "event": "Stop",
+      "type": "StopEvent",
+      "status": "CAPTURED",
+      "clientVersion": "2.1.241",
+      "capturedFrom": "scratchpad/probe/run2/out/hooks-Stop.jsonl"
+    }
+  ]
+}
