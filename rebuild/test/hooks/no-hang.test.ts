@@ -1,23 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  EVENT_NAME_OF,
   HOOK_NAMES,
   controlledEnv,
   declaredTimeoutMsFor,
   fixturesForEvent,
   readFixture,
-  runHookProcess,
-  type HookName
+  runHookProcess
 } from './hook-process.ts'
-
-const EVENT_NAME_OF: Readonly<Record<HookName, string>> = {
-  'session-start': 'SessionStart',
-  'user-prompt-submit': 'UserPromptSubmit',
-  'pre-tool-use': 'PreToolUse',
-  'post-tool-use': 'PostToolUse',
-  'session-end': 'SessionEnd',
-  stop: 'Stop'
-}
 
 for (const hookName of HOOK_NAMES) {
   test(`hook.${hookName}.no-hang`, () => {

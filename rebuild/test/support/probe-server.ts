@@ -145,7 +145,7 @@ export const adaptProbeSpec = (spec: ProbeSpec): ToolSpec<unknown, unknown> => (
   handler: async (_rt, _ctx, input) => spec.handler(input)
 })
 
-const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
+const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const REGISTER_MODULE_PATH = fileURLToPath(new URL('../../src/server/register.ts', import.meta.url))
 const RUNTIME_MODULE_PATH = fileURLToPath(new URL('../../src/runtime/runtime.ts', import.meta.url))
 const PROBE_MODULE_PATH = fileURLToPath(new URL(import.meta.url))

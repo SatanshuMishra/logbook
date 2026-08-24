@@ -13,11 +13,11 @@ import type { Classified } from '../support/census.ts'
 import { layoutFor } from '../../src/store/layout.ts'
 import { ULID_PATTERN, ISO_PATTERN } from '../../src/schema/ids.ts'
 
-const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
-const ENTRY = join(PROJECT_ROOT, 'rebuild/dist/bin/logbook-server.js')
-const SKILLS_DIR = join(PROJECT_ROOT, 'rebuild', 'skills')
-const PREFLIGHT_SKILL_PATH = join(PROJECT_ROOT, 'rebuild', 'skills', 'preflight', 'SKILL.md')
-const DEBRIEF_SKILL_PATH = join(PROJECT_ROOT, 'rebuild', 'skills', 'debrief', 'SKILL.md')
+const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
+const ENTRY = join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
+const SKILLS_DIR = join(PROJECT_ROOT, 'skills')
+const PREFLIGHT_SKILL_PATH = join(PROJECT_ROOT, 'skills', 'preflight', 'SKILL.md')
+const DEBRIEF_SKILL_PATH = join(PROJECT_ROOT, 'skills', 'debrief', 'SKILL.md')
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -339,7 +339,7 @@ test('contract.skill-references-exist', async () => {
   const liveToolMap = new Map(liveTools.map((tool) => [tool.name, tool]))
 
   const skillFiles = loadSkillFiles()
-  assert.ok(skillFiles.length > 0, 'expected at least one discovered skill under rebuild/skills')
+  assert.ok(skillFiles.length > 0, 'expected at least one discovered skill under skills')
 
   const spans = skillFiles.flatMap(extractCodeSpans)
   assert.ok(spans.length > 0, 'expected at least one backtick code span across the shipped skill files')
@@ -370,7 +370,7 @@ test('contract.skill-references-exist.control.forbidden-qualified-field', () => 
 
 test('contract.skills-hold-no-rules', () => {
   const skillFiles = loadSkillFiles()
-  assert.ok(skillFiles.length > 0, 'expected at least one discovered skill under rebuild/skills')
+  assert.ok(skillFiles.length > 0, 'expected at least one discovered skill under skills')
 
   const population = skillFiles.flatMap(skillLinesOf)
   assert.ok(population.length > 0, 'expected at least one non-blank line across the discovered skill files')

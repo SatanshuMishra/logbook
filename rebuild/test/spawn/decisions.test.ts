@@ -69,8 +69,8 @@ const bootstrapCommittedRepo = (prefix: string): string => {
 }
 
 
-const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
-const ENTRY = path.join(PROJECT_ROOT, 'rebuild/dist/bin/logbook-server.js')
+const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
+const ENTRY = path.join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
 const JSON_RPC_FRAMING_PATTERN = /"jsonrpc"\s*:\s*"2\.0"/
 
 type SpawnFixture = {

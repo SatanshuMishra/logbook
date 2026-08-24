@@ -5,12 +5,12 @@ import path from 'node:path'
 import { layoutFor, createStoreDirectories } from '../../src/store/layout.ts'
 import { writePointer } from '../../src/domain/pointer.ts'
 import { testRuntime } from '../support/runtime.ts'
-import { controlledEnv, freshTmpDir, runHookProcessWithEvent, REBUILD_ROOT } from './hook-process.ts'
+import { controlledEnv, freshTmpDir, runHookProcessWithEvent, TREE_ROOT } from './hook-process.ts'
 
 const HANDOFF_FRAGMENT = 'was left marked as being worked when this session ended'
 
 test('handoff.bound-to-session-end', () => {
-  const hooksJsonPath = path.join(REBUILD_ROOT, 'hooks', 'hooks.json')
+  const hooksJsonPath = path.join(TREE_ROOT, 'hooks', 'hooks.json')
   const parsed = JSON.parse(readFileSync(hooksJsonPath, 'utf8')) as {
     hooks: Record<string, { hooks: { command: string }[] }[]>
   }

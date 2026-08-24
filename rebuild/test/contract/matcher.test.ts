@@ -5,8 +5,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnServer } from '../support/spawn-client.ts'
 
-const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
-const HOOKS_JSON_PATH = path.join(PROJECT_ROOT, 'rebuild', 'hooks', 'hooks.json')
+const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
+const HOOKS_JSON_PATH = path.join(PROJECT_ROOT, 'hooks', 'hooks.json')
 
 type HooksJson = {
   hooks: {

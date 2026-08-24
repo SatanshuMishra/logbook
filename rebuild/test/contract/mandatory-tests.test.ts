@@ -7,7 +7,7 @@ import * as ts from 'typescript'
 import { census, type Classified } from '../support/census.ts'
 import { spawnServer } from '../support/spawn-client.ts'
 
-const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
+const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const TEST_ROOT = fileURLToPath(new URL('../../test', import.meta.url))
 const TSCONFIG_PATH = fileURLToPath(new URL('../../tsconfig.json', import.meta.url))
 

@@ -8,7 +8,7 @@ import { census } from '../support/census.ts'
 import { listPublishedTools, type Verdict } from '../support/published.ts'
 import { spawnServer } from '../support/spawn-client.ts'
 
-const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
+const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
 const MINIMUM_DESCRIPTION_LENGTH = 10
 

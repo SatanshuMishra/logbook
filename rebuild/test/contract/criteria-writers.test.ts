@@ -6,7 +6,7 @@ import { listPublishedTools, type PublishedTool } from '../support/published.ts'
 import { spawnServer } from '../support/spawn-client.ts'
 import * as caps from '../../src/schema/caps.ts'
 
-const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
+const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const CRITERIA_DOMAIN_PATTERN = /criteri/i
 const AMEND_CRITERIA_TOOL_NAME = 'amend_criteria'
 const THREAD_ID_PROPERTY = 'thread_id'

@@ -11,7 +11,7 @@ export type SpawnedServer = {
   instructions: () => string | undefined
 }
 
-const DEFAULT_ENTRY_RELATIVE = 'rebuild/dist/bin/logbook-server.js'
+const DEFAULT_ENTRY_RELATIVE = 'bin/logbook-server.ts'
 
 export const CONTROLLED_ENV_KEYS = ['HOME', 'LOGNAME', 'PATH', 'SHELL', 'TERM', 'USER'] as const
 
@@ -44,7 +44,7 @@ const resolveEntry = (projectRoot: string, entry: string | undefined): string =>
   const resolved = entry ?? path.join(projectRoot, DEFAULT_ENTRY_RELATIVE)
   if (!existsSync(resolved)) {
     throw new Error(
-      `spawnServer: built entry point not found at ${resolved}. Run \`npm run rebuild:build\` first.`
+      `spawnServer: no entry point exists at ${resolved}. This plugin ships TypeScript source with no build step.`
     )
   }
   return resolved

@@ -14,7 +14,7 @@ import {
   spawnTransport
 } from '../support/spawn-client.ts'
 
-const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
+const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const JSON_RPC_FRAMING_PATTERN = /"jsonrpc"\s*:\s*"2\.0"/
 
 test('server.spawn-handshake', async () => {

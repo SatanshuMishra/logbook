@@ -13,8 +13,8 @@ import type { Classified } from '../support/census.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
 
-const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
-const ENTRY = join(PROJECT_ROOT, 'rebuild/dist/bin/logbook-server.js')
+const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
+const ENTRY = join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
 
 type Fixture = {
   spawned: SpawnedServer

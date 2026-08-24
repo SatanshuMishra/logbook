@@ -10,8 +10,8 @@ import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
 import { listPublishedTools, type PublishedTool } from '../support/published.ts'
 import { generateSchemaCases, type ConstraintClass, type JsonSchemaNode, type Mutation } from '../support/schema-arbitrary.ts'
 
-const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
-const ENTRY = join(PROJECT_ROOT, 'rebuild/dist/bin/logbook-server.js')
+const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
+const ENTRY = join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
 const JSON_RPC_FRAMING_PATTERN = /"jsonrpc"\s*:\s*"2\.0"/
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

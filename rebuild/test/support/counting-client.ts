@@ -16,13 +16,13 @@ export type CountingServer = {
   countOf: (method: string) => number
 }
 
-const DEFAULT_ENTRY_RELATIVE = 'rebuild/dist/bin/logbook-server.js'
+const DEFAULT_ENTRY_RELATIVE = 'bin/logbook-server.ts'
 
 const resolveEntry = (projectRoot: string, entry: string | undefined): string => {
   const resolved = entry ?? path.join(projectRoot, DEFAULT_ENTRY_RELATIVE)
   if (!existsSync(resolved)) {
     throw new Error(
-      `spawnCountingServer: built entry point not found at ${resolved}. Run \`npm run rebuild:build\` first.`
+      `spawnCountingServer: no entry point exists at ${resolved}. This plugin ships TypeScript source with no build step.`
     )
   }
   return resolved

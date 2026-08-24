@@ -9,7 +9,7 @@ import type { Refusal } from '../../src/schema/declare.ts'
 import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
 import { spawnProbeServer, CONTROL_SPECS } from '../support/probe-server.ts'
 
-const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
+const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const REGISTER_MODULE_PATH = fileURLToPath(new URL('../../src/server/register.ts', import.meta.url))
 const RUNTIME_MODULE_PATH = fileURLToPath(new URL('../../src/runtime/runtime.ts', import.meta.url))
 const MCP_SERVER_MODULE_PATH = fileURLToPath(import.meta.resolve('@modelcontextprotocol/sdk/server/mcp.js'))

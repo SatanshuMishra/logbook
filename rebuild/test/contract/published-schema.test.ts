@@ -21,7 +21,7 @@ import {
 import { CONTROL_SPECS, adaptProbeSpec, spawnProbeServer } from '../support/probe-server.ts'
 import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
 
-const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
+const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
 type CensusItem = { name: string; inputSchema: Record<string, unknown>; enforcedKeys: readonly string[] | null }
 

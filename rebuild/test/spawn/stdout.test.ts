@@ -7,16 +7,16 @@ import { fileURLToPath } from 'node:url'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { buildControlledEnv, spawnTransport } from '../support/spawn-client.ts'
 
-const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
-const RUNTIME_DIST_PATH = fileURLToPath(new URL('../../dist/src/runtime/runtime.js', import.meta.url))
-const MAIN_DIST_PATH = fileURLToPath(new URL('../../dist/src/server/main.js', import.meta.url))
+const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
+const RUNTIME_MODULE_PATH = fileURLToPath(new URL('../../src/runtime/runtime.ts', import.meta.url))
+const MAIN_MODULE_PATH = fileURLToPath(new URL('../../src/server/main.ts', import.meta.url))
 
 const STRAY_BYTE = 'X'
 const CONNECT_BACKSTOP_MS = 5000
 
 const buildWrapperSource = (writeStrayByte: boolean): string => `
-import { productionRuntime } from ${JSON.stringify(RUNTIME_DIST_PATH)}
-import { main } from ${JSON.stringify(MAIN_DIST_PATH)}
+import { productionRuntime } from ${JSON.stringify(RUNTIME_MODULE_PATH)}
+import { main } from ${JSON.stringify(MAIN_MODULE_PATH)}
 
 ${writeStrayByte ? `process.stdout.write('${STRAY_BYTE}')` : ''}
 

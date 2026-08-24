@@ -12,7 +12,7 @@ import {
 import { CONTROL_SPECS, spawnProbeServer } from '../support/probe-server.ts'
 import { spawnServer } from '../support/spawn-client.ts'
 
-const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
+const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
 const soleTool = (tools: PublishedTool[], name: string): PublishedTool => {
   const found = tools.find((tool) => tool.name === name)

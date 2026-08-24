@@ -16,8 +16,8 @@ import { rawGit } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
 
-const PROJECT_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
-const ENTRY = path.join(PROJECT_ROOT, 'rebuild/dist/bin/logbook-server.js')
+const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
+const ENTRY = path.join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
 const CONFLICT_MARKERS = ['<<<<<<<', '=======', '>>>>>>>']
 
 type SpawnedTeammate = {
