@@ -27,7 +27,7 @@ const renderThreadLine = (thread: Thread): string =>
 export const renderThreadListing = (rt: Runtime, projectRoot: string): string => {
   const opened = openStore(rt, projectRoot)
   if (!opened.ok) {
-    return ['Logbook: the thread store could not be opened (', opened.message, ').'].join('')
+    return ['Logbook: the thread store could not be opened (', escapeStored(opened.message), ').'].join('')
   }
   const threads = opened.value
     .readThreads()

@@ -47,7 +47,7 @@ const openStoreForRead = (rt: Runtime, addressLabel: string): Store => {
   if (!opened.ok) {
     throw new McpError(
       ErrorCode.InternalError,
-      [addressLabel, ': the store could not be opened: ', opened.refusal.message].join('')
+      [escapeStored(addressLabel), ': the store could not be opened: ', escapeStored(opened.refusal.message)].join('')
     )
   }
   return opened.value
