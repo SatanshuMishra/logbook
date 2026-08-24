@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run rebuild:typecheck
 
   build:
@@ -28,7 +28,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run rebuild:build
 
   test:
@@ -43,7 +43,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ matrix.node-version }}
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Run the rebuild test suite and assert a non-zero pass floor
         env:
           NODE_OPTIONS: --test-reporter=tap
@@ -66,7 +66,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Run coverage, unit layer only, reported and never gated
         run: |
           set +e
@@ -91,7 +91,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Diff-scoped mutation testing against the stryker mutate scope
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -155,7 +155,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run rebuild:build
       - run: npm run rebuild:inspect:cli
 
@@ -168,7 +168,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Assert a seeded one-token mutant is caught by the unit layer
         run: |
           set -euo pipefail
