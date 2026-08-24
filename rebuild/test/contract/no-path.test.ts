@@ -35,6 +35,8 @@ import { transition } from '../../src/domain/lifecycle.ts'
 import { rawGit, withRepo, withRepoNoIdentity } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { census } from '../support/census.ts'
+import { deriveObjectDescentCandidates } from '../support/object-descent-domain.ts'
+import type { ObjectDescentCandidate } from '../support/object-descent-domain.ts'
 import {
   SENTINEL_POSIX,
   SENTINEL_TOKEN,
@@ -545,29 +547,16 @@ test('error.discloses-no-path', async () => {
   assert.throws(() => census(forbiddenWin32, classifyEmittedPath))
 })
 
-const REAL_PRODUCERS_VISIBLE_ONLY_VIA_OBJECT_DESCENT: readonly ProducerId[] = [
-  BINDING_RECORD_PARSE_PRODUCER,
-  BINDING_RECORD_REFUSE_PRODUCER,
-  DECISION_RECORD_PARSE_PRODUCER,
-  DECISION_RECORD_REFUSE_PRODUCER,
-  SESSION_RECORD_PARSE_PRODUCER,
-  SESSION_RECORD_REFUSE_PRODUCER,
-  THREAD_RECORD_PARSE_PRODUCER,
-  THREAD_RECORD_REFUSE_PRODUCER,
-  AMEND_CRITERIA_HANDLER_PRODUCER,
-  BIND_BRANCH_HANDLER_PRODUCER,
-  CLOSE_THREAD_HANDLER_PRODUCER,
-  OPEN_THREAD_HANDLER_PRODUCER,
-  PARK_THREAD_HANDLER_PRODUCER,
-  RESUME_THREAD_HANDLER_PRODUCER,
-  UPDATE_THREAD_HANDLER_PRODUCER
-]
-
-test('error.discloses-no-path.scan-finds-every-object-descent-producer', () => {
+test('error.discloses-no-path.scan-population-matches-the-independently-derived-object-descent-domain', () => {
   const scanned = new Set(scanRefusalProducers())
-  for (const producer of REAL_PRODUCERS_VISIBLE_ONLY_VIA_OBJECT_DESCENT) {
-    assert.ok(scanned.has(producer), `expected the static scan to find real producer "${producer}"`)
-  }
+  const candidates = deriveObjectDescentCandidates()
+  assert.ok(
+    candidates.length > 0,
+    'expected the independent object-descent derivation to find at least one candidate producer'
+  )
+  const classifyAgainstScannedPopulation = (candidate: ObjectDescentCandidate): 'allowed' | 'unclassifiable' =>
+    scanned.has(candidate.producer) ? 'allowed' : 'unclassifiable'
+  assert.doesNotThrow(() => census(candidates, classifyAgainstScannedPopulation))
 })
 
 test('error.discloses-no-path.taint-refusal-rejects-unclosed-fields', () => {

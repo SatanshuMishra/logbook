@@ -104,9 +104,9 @@ export const classifyEmittedPath = (
 
 export type ProducerId = string
 
-const SRC_ROOT = fileURLToPath(new URL('../../src', import.meta.url))
+export const SRC_ROOT = fileURLToPath(new URL('../../src', import.meta.url))
 
-const walkTsFiles = (dir: string): string[] =>
+export const walkTsFiles = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name)
     if (entry.isDirectory()) return walkTsFiles(full)
@@ -119,7 +119,7 @@ const walkTsFiles = (dir: string): string[] =>
 const TSCONFIG_PATH = fileURLToPath(new URL('../../tsconfig.json', import.meta.url))
 const DECLARE_MODULE_PATH = fileURLToPath(new URL('../../src/schema/declare.ts', import.meta.url))
 
-const loadProgram = (): ts.Program => {
+export const loadProgram = (): ts.Program => {
   const configFile = ts.readConfigFile(TSCONFIG_PATH, ts.sys.readFile)
   if (configFile.error !== undefined) {
     throw new Error(
@@ -152,7 +152,7 @@ const findRefusalType = (program: ts.Program, checker: ts.TypeChecker): ts.Type 
   return checker.getDeclaredTypeOfSymbol(refusalSymbol)
 }
 
-const resolveAliasedSymbol = (checker: ts.TypeChecker, symbol: ts.Symbol): ts.Symbol =>
+export const resolveAliasedSymbol = (checker: ts.TypeChecker, symbol: ts.Symbol): ts.Symbol =>
   (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(symbol) : symbol
 
 const NESTED_PRODUCER_SEPARATOR = '.'
