@@ -65,16 +65,16 @@ const renderBlockage = (blockedBy: string | null): string =>
 const renderRosterRow = (row: RosterRow): string =>
   [
     `Thread: ${escapeStored(row.title)} (${escapeStored(row.slug)})`,
-    `Id: ${row.id}`,
+    `Id: ${escapeStored(row.id)}`,
     renderBlockage(row.blocked_by),
     `Progress: ${row.criteria_done}/${row.criteria_total} criteria done`,
     `Next step: ${escapeStored(row.next_step)}`,
-    `Updated: ${row.updated_at}`
+    `Updated: ${escapeStored(row.updated_at)}`
   ].join('\n')
 
 export const renderRoster = (page: RosterPage): string => {
   const header = `Roster: ${page.rows.length} of ${page.total} resumable thread${page.total === 1 ? '' : 's'}.`
-  const footer = page.next_cursor === null ? 'No further pages.' : `Next cursor: ${page.next_cursor}`
+  const footer = page.next_cursor === null ? 'No further pages.' : `Next cursor: ${escapeStored(page.next_cursor)}`
 
   if (page.rows.length === 0) {
     return [header, footer].join('\n')

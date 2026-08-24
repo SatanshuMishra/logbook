@@ -22,12 +22,12 @@ const NO_RESUMABLE_THREADS = 'Logbook: no resumable threads.'
 
 const renderThreadLine = (thread: Thread): string =>
   `- [${escapeStored(thread.status)}] ${escapeStored(thread.slug)}: ${escapeStored(thread.title)} -- next: ` +
-  `${escapeStored(thread.spine.next_step)} (id ${thread.id})`
+  `${escapeStored(thread.spine.next_step)} (id ${escapeStored(thread.id)})`
 
 export const renderThreadListing = (rt: Runtime, projectRoot: string): string => {
   const opened = openStore(rt, projectRoot)
   if (!opened.ok) {
-    return `Logbook: the thread store could not be opened (${opened.message}).`
+    return ['Logbook: the thread store could not be opened (', escapeStored(opened.message), ').'].join('')
   }
   const threads = opened.value
     .readThreads()
@@ -35,7 +35,8 @@ export const renderThreadListing = (rt: Runtime, projectRoot: string): string =>
     .map((slot) => slot.record)
     .filter((thread) => thread.status === 'open')
   if (threads.length === 0) return NO_RESUMABLE_THREADS
-  return `Logbook resumable threads (${threads.length}):\n${threads.map(renderThreadLine).join('\n')}`
+  const threadLines = threads.map(renderThreadLine)
+  return [`Logbook resumable threads (${threads.length}):`, ...threadLines].join('\n')
 }
 
 const renderCrashReport = (rt: Runtime, projectRoot: string, sessionId: string): string | null => {
@@ -45,8 +46,8 @@ const renderCrashReport = (rt: Runtime, projectRoot: string, sessionId: string):
   if (pointerRead.kind !== 'pointer') return null
   if (pointerRead.value.session_id === sessionId) return null
   return (
-    `Logbook: a pointer left by a previous session still marks thread ${pointerRead.value.thread_id} as being ` +
-    `worked (since ${pointerRead.value.written_at}). That session may have crashed or been abandoned without ` +
+    `Logbook: a pointer left by a previous session still marks thread ${escapeStored(pointerRead.value.thread_id)} as being ` +
+    `worked (since ${escapeStored(pointerRead.value.written_at)}). That session may have crashed or been abandoned without ` +
     'handing off.'
   )
 }

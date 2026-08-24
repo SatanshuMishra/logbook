@@ -294,6 +294,21 @@ test('roster.render-escapes-every-stored-free-text-field', () => {
   assert.ok(rendered.includes(expectedNextStepLine))
 })
 
+test('roster.render-escapes-the-identifier-timestamp-and-cursor-fields', () => {
+  const row = baseRow({
+    id: '01ARZ\u2028TAIL',
+    slug: 'identifier-fixture',
+    updated_at: '2024-01-01T00:00:05.000Z\nX'
+  })
+  const rendered = renderRoster({ rows: [row], next_cursor: '#cursor\u2028tail', total: 2 })
+
+  assert.ok(rendered.includes('Id: 01ARZU+2028TAIL'))
+  assert.ok(rendered.includes('Updated: 2024-01-01T00:00:05.000ZU+000AX'))
+  assert.ok(rendered.includes('Next cursor: U+0023cursorU+2028tail'))
+  assert.equal(rendered.includes('\u2028'), false)
+  assert.equal(rendered.includes('01ARZ\u2028TAIL'), false)
+})
+
 test('roster.render-single-row-exact-output', () => {
   const row: RosterRow = {
     id: rt.ulid(),
