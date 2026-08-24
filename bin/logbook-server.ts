@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 import { writeSync } from 'node:fs'
+import { nodeFloorFailure } from '../src/runtime/node-floor.ts'
 import { productionRuntime } from '../src/runtime/runtime.ts'
 import { main } from '../src/server/main.ts'
-
-const rt = productionRuntime()
 
 const STDERR_FD = 2
 
@@ -21,6 +20,14 @@ const writeAllSync = (fd: number, data: string): void => {
     }
   }
 }
+
+const floorFailure = nodeFloorFailure(process.versions.node)
+if (floorFailure !== null) {
+  writeAllSync(STDERR_FD, `${floorFailure}\n`)
+  process.exit(1)
+}
+
+const rt = productionRuntime()
 
 const reportFatal = (source: string, error: unknown): void => {
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error)

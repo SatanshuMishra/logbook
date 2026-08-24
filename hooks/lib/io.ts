@@ -1,4 +1,5 @@
 import { clipGraphemes } from '../../src/render/escape.ts'
+import { nodeFloorFailure } from '../../src/runtime/node-floor.ts'
 
 export type HookVerdict = { block: false; json: object } | { block: true; reason: string }
 
@@ -35,6 +36,11 @@ export const runHook: (name: string, handler: (event: unknown) => HookVerdict) =
   name,
   handler
 ) => {
+  const floorFailure = nodeFloorFailure(process.versions.node)
+  if (floorFailure !== null) {
+    process.stderr.write(`${floorFailure}\n`)
+    process.exit(1)
+  }
   try {
     const raw = await readStdin()
     const event = parseEvent(raw)
