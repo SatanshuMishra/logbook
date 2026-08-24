@@ -3,7 +3,7 @@ import type { Decision } from '../schema/decision.ts'
 import type { SessionEntry } from '../schema/session.ts'
 
 const renderCommitLine = (commit: string | null): string =>
-  commit === null ? 'Commit: unknown' : 'Commit: ' + escapeStored(commit)
+  typeof commit !== 'string' ? 'Commit: unknown' : 'Commit: ' + escapeStored(commit)
 
 const renderSupersedesLine = (supersedes: readonly string[]): string =>
   supersedes.length === 0

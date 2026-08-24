@@ -27,6 +27,8 @@ const ESCAPE_MODULE_SPECIFIERS = ['./escape.ts', '../render/escape.ts', '../../r
 const ESCAPE_FUNCTION = 'escapeStored'
 const CLIP_FUNCTION = 'clipGraphemes'
 const ITERATION_CALLBACK_NAMES = new Set(['map', 'flatMap', 'filter', 'forEach', 'find'])
+const ARRAY_PRODUCING_NAMES = new Set(['map', 'flatMap'])
+const JOIN_METHOD = 'join'
 const MAX_RESOLUTION_DEPTH = 12
 
 type SiteClass = 'escaped' | 'server-authored' | 'unclassifiable'
@@ -136,6 +138,56 @@ const iterationReceiver = (parameter: ts.ParameterDeclaration): ts.Expression | 
   return callee.expression
 }
 
+const callbackBody = (ctx: Ctx, callback: ts.Expression): ts.Node | null => {
+  const current = unwrap(callback)
+  if (ts.isArrowFunction(current) || ts.isFunctionExpression(current)) return current.body
+  return calleeBody(ctx, current)
+}
+
+const mappedReturnExpressions = (ctx: Ctx, call: ts.CallExpression): ts.Expression[] | null => {
+  const callee = unwrap(call.expression)
+  if (!ts.isPropertyAccessExpression(callee)) return null
+  if (!ARRAY_PRODUCING_NAMES.has(callee.name.text)) return null
+  const callback = call.arguments[0]
+  if (callback === undefined) return null
+  const body = callbackBody(ctx, callback)
+  if (body === null) return null
+  return returnExpressionsOf(body)
+}
+
+const arrayProducerElements = (ctx: Ctx, expression: ts.Expression, depth: number): ts.Expression[] | null => {
+  if (depth > MAX_RESOLUTION_DEPTH) return null
+  const current = unwrap(expression)
+
+  if (ts.isArrayLiteralExpression(current)) {
+    return current.elements.flatMap((element) => {
+      if (!ts.isSpreadElement(element)) return [element]
+      return arrayProducerElements(ctx, element.expression, depth + 1) ?? [element]
+    })
+  }
+
+  if (ts.isCallExpression(current)) return mappedReturnExpressions(ctx, current)
+
+  if (ts.isIdentifier(current)) {
+    const declarations = symbolDeclarations(ctx, current)
+    if (declarations === null) return null
+    const declaration = declarations[0]
+    if (declaration === undefined || !declaredInSameFile(ctx, declaration)) return null
+    if (!ts.isVariableDeclaration(declaration) || declaration.initializer === undefined) return null
+    return arrayProducerElements(ctx, declaration.initializer, depth + 1)
+  }
+
+  return null
+}
+
+const joinedElements = (ctx: Ctx, node: ts.Node, depth: number): ts.Expression[] | null => {
+  if (!ts.isCallExpression(node)) return null
+  const callee = unwrap(node.expression)
+  if (!ts.isPropertyAccessExpression(callee)) return null
+  if (callee.name.text !== JOIN_METHOD) return null
+  return arrayProducerElements(ctx, callee.expression, depth)
+}
+
 const resolveTerminals = (ctx: Ctx, node: ts.Node, depth: number): ts.Expression[] | null => {
   if (depth > MAX_RESOLUTION_DEPTH) return null
   const current = unwrap(node)
@@ -209,6 +261,8 @@ const resolveTerminals = (ctx: Ctx, node: ts.Node, depth: number): ts.Expression
   }
 
   if (ts.isCallExpression(current)) {
+    if (escapeCallName(ctx, current) !== null) return [current]
+    if (joinedElements(ctx, current, depth + 1) !== null) return [current]
     const body = calleeBody(ctx, unwrap(current.expression))
     if (body === null) return null
     const returns = returnExpressionsOf(body)
@@ -226,11 +280,24 @@ const resolveTerminals = (ctx: Ctx, node: ts.Node, depth: number): ts.Expression
   return null
 }
 
+const isEscapedCall = (ctx: Ctx, node: ts.Node, depth: number): boolean => {
+  const called = escapeCallName(ctx, node)
+  if (called === ESCAPE_FUNCTION) return true
+  if (called !== CLIP_FUNCTION || !ts.isCallExpression(node)) return false
+  const wrapped = node.arguments[0]
+  return wrapped !== undefined && classifyExpression(ctx, wrapped, depth + 1) === 'escaped'
+}
+
 const isServerAuthoredTerminal = (ctx: Ctx, node: ts.Expression, depth: number): boolean => {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isNumericLiteral(node)) return true
   if (node.kind === ts.SyntaxKind.TrueKeyword || node.kind === ts.SyntaxKind.FalseKeyword) return true
+  if (isEscapedCall(ctx, node, depth)) return true
   if (ts.isTemplateExpression(node)) {
     return node.templateSpans.every((span) => classifyExpression(ctx, span.expression, depth + 1) !== 'unclassifiable')
+  }
+  const elements = joinedElements(ctx, node, depth + 1)
+  if (elements !== null) {
+    return elements.every((element) => classifyExpression(ctx, element, depth + 1) !== 'unclassifiable')
   }
   return typeIsNumericOrBoolean(ctx.checker.getTypeAtLocation(node))
 }
@@ -247,12 +314,7 @@ const isServerAuthored = (ctx: Ctx, node: ts.Node, depth: number): boolean => {
 const classifyExpression = (ctx: Ctx, expression: ts.Expression, depth: number): SiteClass => {
   if (depth > MAX_RESOLUTION_DEPTH) return 'unclassifiable'
   const current = unwrap(expression)
-  const called = escapeCallName(ctx, current)
-  if (called === ESCAPE_FUNCTION) return 'escaped'
-  if (called === CLIP_FUNCTION && ts.isCallExpression(current)) {
-    const wrapped = current.arguments[0]
-    if (wrapped !== undefined && classifyExpression(ctx, wrapped, depth + 1) === 'escaped') return 'escaped'
-  }
+  if (isEscapedCall(ctx, current, depth)) return 'escaped'
   return isServerAuthored(ctx, current, depth) ? 'server-authored' : 'unclassifiable'
 }
 
@@ -276,6 +338,17 @@ const concatSites = (ctx: Ctx, file: string, node: ts.BinaryExpression): Site[] 
     return [siteFor(ctx, file, operand)]
   })
 
+const collectedByAnotherSite = (ctx: Ctx, node: ts.Node): boolean => {
+  if (isLiteralTextNode(node)) return true
+  if (ts.isBinaryExpression(node) && isStringConcat(ctx, node)) return true
+  return joinedElements(ctx, node, 0) !== null
+}
+
+const joinSites = (ctx: Ctx, file: string, elements: readonly ts.Expression[]): Site[] =>
+  elements.flatMap((element) =>
+    collectedByAnotherSite(ctx, unwrap(element)) ? [] : [siteFor(ctx, file, element)]
+  )
+
 const collectSites = (ctx: Ctx, file: string): Site[] => {
   const found: Site[][] = []
   forEachDescendant(ctx.sourceFile, (node) => {
@@ -285,6 +358,11 @@ const collectSites = (ctx: Ctx, file: string): Site[] => {
     }
     if (ts.isBinaryExpression(node) && isStringConcat(ctx, node)) {
       found.push(concatSites(ctx, file, node))
+      return
+    }
+    const elements = joinedElements(ctx, node, 0)
+    if (elements !== null) {
+      found.push(joinSites(ctx, file, elements))
     }
   })
   return found.flat()
