@@ -497,6 +497,25 @@ const classifyChannel = (probe: Probe): ChannelName => {
 
 type Environment = { fixture: Fixture; probes: Probe[]; crashStderr: string }
 
+const CRASH_STDERR_POLL_TIMEOUT_MS = 1000
+const CRASH_STDERR_POLL_INTERVAL_MS = 5
+
+const awaitCrashStderr = async (readStderr: () => string): Promise<string> => {
+  const deadline = Date.now() + CRASH_STDERR_POLL_TIMEOUT_MS
+  let buffer = readStderr()
+  while (!ALL_TOOLS.every((spec) => buffer.includes(spec.name))) {
+    if (Date.now() >= deadline) {
+      const missing = ALL_TOOLS.filter((spec) => !buffer.includes(spec.name)).map((spec) => spec.name)
+      throw new Error(
+        `collectEnvironment: the operator stderr stream never carried a record for ${missing.join(', ')} within ${CRASH_STDERR_POLL_TIMEOUT_MS}ms of the last call; observed stderr was ${JSON.stringify(buffer)}`
+      )
+    }
+    await new Promise((resolve) => setTimeout(resolve, CRASH_STDERR_POLL_INTERVAL_MS))
+    buffer = readStderr()
+  }
+  return buffer
+}
+
 const collectEnvironment = async (label: string): Promise<Environment> => {
   const fixture = makeFixture(label)
   const probes: Probe[] = []
@@ -544,7 +563,7 @@ const collectEnvironment = async (label: string): Promise<Environment> => {
         text: firstTextOf(crashed, `${spec.name}/unexpected-failure`)
       })
     }
-    crashStderr = obstructed.stderr()
+    crashStderr = await awaitCrashStderr(obstructed.stderr)
   } finally {
     await obstructed.close()
   }
@@ -611,7 +630,7 @@ test('error.discloses-no-path.every-tool-every-channel', async () => {
       for (const spec of ALL_TOOLS) {
         assert.ok(
           first.crashStderr.includes(spec.name),
-          `${spec.name}: the unexpected-failure channel logged nothing to the operator stream, so the crash never happened and its probe proves nothing`
+          `${spec.name}: the probe assertions above already proved this crash happened; collectEnvironment's poll guarantees this stream carries every tool name before returning, so reaching this line with a miss means the operator-facing log record for this tool was lost or malformed, not that the crash never occurred`
         )
       }
     } finally {
