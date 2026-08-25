@@ -32,7 +32,7 @@ const debriefMessage = (): GetPromptResult => ({
       role: 'user',
       content: {
         type: 'text',
-        text: 'Ask me what this session accomplished, what changed, and what the next step is, then call park_thread with that outcome.'
+        text: 'Ask me what this session accomplished, what changed, and what the next step is, then call park_thread with that outcome. Read the reply before moving on: park_thread refuses and stores nothing when the thread it would write to is gone, terminal, quarantined, or held by another session, and the outcome text has to be re-sent.'
       }
     }
   ]
