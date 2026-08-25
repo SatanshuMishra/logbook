@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
-import { createStoreDirectories, layoutFor } from '../store/layout.ts'
+import { createStateDirectory, layoutFor } from '../store/layout.ts'
 import { durableWrite } from '../store/durable-write.ts'
 import { collectAssistantTexts, findLastResumeBriefing } from './transcript.ts'
 
@@ -55,7 +55,7 @@ export const stopGateVerdict = (rt: Runtime, event: StopEvent): StopVerdict => {
   if (gate !== null && gate.session_id === event.session_id) return { kind: 'silent' }
 
   const pledge = findLastResumeBriefing(event.transcript_path)
-  createStoreDirectories(layout.value)
+  createStateDirectory(layout.value)
   writeGate(rt, layout.value.state, event.session_id)
 
   if (pledge === null) return { kind: 'silent' }

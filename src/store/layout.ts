@@ -90,3 +90,7 @@ export const createStoreDirectories = (layout: StoreLayout): void => {
     writeFileSync(originPath, JSON.stringify({ project_root: layout.projectRoot }), 'utf8')
   }
 }
+
+export const createStateDirectory = (layout: StoreLayout): void => {
+  mkdirSync(layout.state, { recursive: true })
+}

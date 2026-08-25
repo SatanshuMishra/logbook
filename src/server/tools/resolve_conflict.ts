@@ -10,7 +10,7 @@ import { DecisionRecord, type Decision } from '../../schema/decision.ts'
 import type { Store } from '../../store/records.ts'
 import { layoutFor } from '../../store/layout.ts'
 import { git } from '../../store/git.ts'
-import { markSynced } from '../../store/read-path.ts'
+import { markMaterialised } from '../../store/read-path.ts'
 import { writeRecords, type RecordChange } from '../../store/write-path.ts'
 import type { Conflict } from '../../merge/conflict.ts'
 import { TRACKING_REF } from '../../merge/sync.ts'
@@ -638,7 +638,7 @@ export const resolveConflictTool: ToolSpec<ResolveConflictInput, ResolveConflict
       return { ok: false, refusal: commitFailureRefusal(commitResult.detail) }
     }
 
-    markSynced(layout.value, commitResult.after)
+    markMaterialised(layout.value, commitResult.after)
     clearConflictsFile(conflictsFilePath)
 
     return {

@@ -35,23 +35,34 @@ const countedMaterialiseGit: typeof git = (rt, repo, args, opts) => {
   return git(rt, repo, args, opts)
 }
 
-const lastSyncedPath = (layout: StoreLayout): string => path.join(layout.state, 'last-synced')
+const STAMP_FILE_NAME = 'last-materialised'
+const LEGACY_STAMP_FILE_NAME = 'last-synced'
 
-const readLastSynced = (layout: StoreLayout): string | null => {
+const stampPath = (layout: StoreLayout): string => path.join(layout.state, STAMP_FILE_NAME)
+
+const legacyStampPath = (layout: StoreLayout): string => path.join(layout.state, LEGACY_STAMP_FILE_NAME)
+
+const readStampFile = (target: string): string | null => {
   try {
-    return readFileSync(lastSyncedPath(layout), 'utf8').trim()
+    return readFileSync(target, 'utf8').trim()
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw error
   }
 }
 
-const writeLastSynced = (layout: StoreLayout, value: string): void => {
-  writeFileSync(lastSyncedPath(layout), value, 'utf8')
+const readStamp = (layout: StoreLayout): string | null => {
+  const current = readStampFile(stampPath(layout))
+  if (current !== null) return current
+  return readStampFile(legacyStampPath(layout))
 }
 
-export const markSynced = (layout: StoreLayout, ref: string): void => {
-  writeLastSynced(layout, ref)
+const writeStamp = (layout: StoreLayout, value: string): void => {
+  writeFileSync(stampPath(layout), value, 'utf8')
+}
+
+export const markMaterialised = (layout: StoreLayout, ref: string): void => {
+  writeStamp(layout, ref)
 }
 
 const parseLsTreeLine = (line: string): { blobId: string; relPath: string } | null => {
@@ -63,39 +74,64 @@ const parseLsTreeLine = (line: string): { blobId: string; relPath: string } | nu
   return { blobId, relPath: line.slice(tabIndex + 1) }
 }
 
-const materialiseTree = (rt: Runtime, layout: StoreLayout, ref: string): void => {
+export type MaterialiseOutcome = { ok: true } | { ok: false; detail: string }
+
+const materialiseTree = (rt: Runtime, layout: StoreLayout, ref: string): MaterialiseOutcome => {
   const list = countedMaterialiseGit(rt, layout.projectRoot, ['ls-tree', '-r', '--full-tree', ref])
-  if (!list.ok) return
+  if (!list.ok) {
+    return { ok: false, detail: `the ledger tree could not be listed (git ls-tree exit ${list.code})` }
+  }
 
   rmSync(layout.records, { recursive: true, force: true })
   mkdirSync(layout.records, { recursive: true })
 
   const lines = list.stdout.split('\n').filter((line) => line.length > 0)
+  let unreadable = 0
   for (const line of lines) {
     const parsed = parseLsTreeLine(line)
     if (parsed === null) continue
     const content = countedMaterialiseGit(rt, layout.projectRoot, ['cat-file', '-p', parsed.blobId])
-    if (!content.ok) continue
+    if (!content.ok) {
+      unreadable += 1
+      continue
+    }
     const target = path.join(layout.records, parsed.relPath)
     mkdirSync(path.dirname(target), { recursive: true })
     writeFileSync(target, content.stdout, 'utf8')
   }
+
+  if (unreadable > 0) {
+    return { ok: false, detail: `${unreadable} record blob(s) in the ledger tree could not be read` }
+  }
+  return { ok: true }
 }
 
-export const syncWorkingCopy = (rt: Runtime, layout: StoreLayout, runGit: typeof git = countedGit): void => {
+export type SyncWorkingCopyOutcome = { ok: true; materialised: boolean } | { ok: false; detail: string }
+
+export const syncWorkingCopy = (
+  rt: Runtime,
+  layout: StoreLayout,
+  runGit: typeof git = countedGit
+): SyncWorkingCopyOutcome => {
   const current = runGit(rt, layout.projectRoot, ['rev-parse', LEDGER_REF])
   const currentValue = current.ok ? current.stdout.trim() : null
-  const cached = readLastSynced(layout)
+  const cached = readStamp(layout)
 
-  if (currentValue === cached) return
+  if (currentValue === cached) return { ok: true, materialised: false }
 
   if (currentValue === null) {
-    writeLastSynced(layout, '')
-    return
+    writeStamp(layout, '')
+    return { ok: true, materialised: false }
   }
 
-  materialiseTree(rt, layout, currentValue)
-  writeLastSynced(layout, currentValue)
+  const outcome = materialiseTree(rt, layout, currentValue)
+  if (!outcome.ok) {
+    rt.log({ level: 'error', event: 'store.materialisation-failed', ref: currentValue, detail: outcome.detail })
+    return outcome
+  }
+
+  writeStamp(layout, currentValue)
+  return { ok: true, materialised: true }
 }
 
 export const readRecordFile = <T>(filePath: string, declared: Declared<T>): Slot<T> | null => {

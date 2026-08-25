@@ -6,8 +6,10 @@ import { SessionRecord, type SessionEntry } from '../schema/session.ts'
 import { ThreadRecord, type Thread, type Ulid } from '../schema/thread.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import { errnoCode, withDetail } from './detail.ts'
+import { git } from './git.ts'
 import { createStoreDirectories, layoutFor, type StoreLayout } from './layout.ts'
-import { markSynced, readAllRecordFiles, readRecordFile, syncWorkingCopy } from './read-path.ts'
+import { markMaterialised, readAllRecordFiles, readRecordFile, syncWorkingCopy } from './read-path.ts'
+import { LEDGER_REF } from './ref.ts'
 import { ensureSingleStore } from './single-store.ts'
 import { writeRecords } from './write-path.ts'
 import type { Loaded, Quarantined, Slot } from './read-path.ts'
@@ -76,6 +78,62 @@ const checkRecordsReadable = (rt: Runtime, layout: StoreLayout): Refusal | null 
   }
 }
 
+const diskRecordCount = (dir: string): number => {
+  try {
+    let total = 0
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        total += diskRecordCount(path.join(dir, entry.name))
+      } else if (entry.isFile() && entry.name.endsWith('.json')) {
+        total += 1
+      }
+    }
+    return total
+  } catch (error) {
+    if (errnoCode(error) === 'ENOENT') return 0
+    throw error
+  }
+}
+
+const refRecordCount = (rt: Runtime, layout: StoreLayout): number | null => {
+  const listing = git(rt, layout.projectRoot, ['ls-tree', '-r', '--name-only', LEDGER_REF])
+  if (!listing.ok) return null
+  return listing.stdout.split('\n').filter((line) => line.length > 0).length
+}
+
+const materialisationRefusal = (detail: string): Refusal =>
+  withDetail(
+    {
+      ok: false,
+      field: 'records',
+      accepted: 'a records directory materialised from the ledger ref',
+      example: 'git rev-parse refs/logbook/ledger',
+      retryable: true,
+      message: 'the ledger ref holds records this store did not materialise; the store was not opened'
+    },
+    detail
+  )
+
+const ensureMaterialised = (rt: Runtime, layout: StoreLayout): Ok<void> | Refusal => {
+  const outcome = syncWorkingCopy(rt, layout)
+  if (!outcome.ok) return materialisationRefusal(outcome.detail)
+
+  if (diskRecordCount(layout.records) > 0) return { ok: true, value: undefined }
+
+  const inRef = refRecordCount(rt, layout)
+  if (inRef === null || inRef === 0) return { ok: true, value: undefined }
+
+  rt.log({
+    level: 'error',
+    event: 'store.materialisation-anomaly',
+    records_in_ref: inRef,
+    records_on_disk: 0,
+    detail: 'the ledger ref holds records this store has not materialised'
+  })
+
+  return { ok: true, value: undefined }
+}
+
 export const openStore = (rt: Runtime, projectRoot: string): Ok<Store> | Refusal => {
   const layout = layoutFor(rt, projectRoot)
   if (!layout.ok) return layout
@@ -90,7 +148,8 @@ export const openStore = (rt: Runtime, projectRoot: string): Ok<Store> | Refusal
   const readableRefusal = checkRecordsReadable(rt, storeLayout)
   if (readableRefusal !== null) return readableRefusal
 
-  syncWorkingCopy(rt, storeLayout)
+  const materialisation = ensureMaterialised(rt, storeLayout)
+  if (!materialisation.ok) return materialisation
 
   const store: Store = {
     readThread: (id) => readRecordFile<Thread>(threadPath(storeLayout, id), ThreadRecord),
@@ -109,7 +168,7 @@ export const openStore = (rt: Runtime, projectRoot: string): Ok<Store> | Refusal
       }
       const result = writeRecords(rt, storeLayout, changes, message)
       if (result.ok) {
-        markSynced(storeLayout, result.after)
+        markMaterialised(storeLayout, result.after)
       }
       return result
     }
