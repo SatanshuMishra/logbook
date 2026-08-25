@@ -138,6 +138,18 @@ const restoreBackup = (rt: Runtime, backup: Backup): void => {
   }
 }
 
+const blobAt = (
+  rt: Runtime,
+  layout: StoreLayout,
+  runGit: typeof git,
+  ref: string | null,
+  relPath: string
+): string | null => {
+  if (ref === null) return null
+  const result = runGit(rt, layout.projectRoot, ['rev-parse', `${ref}:${relPath}`])
+  return result.ok ? result.stdout.trim() : null
+}
+
 export const writeRecords = (
   rt: Runtime,
   layout: StoreLayout,
@@ -209,7 +221,26 @@ export const writeRecords = (
     }
 
     if (cas.cause === 'ref-moved') {
-      oldRef = readCurrentRef()
+      const wonRef = readCurrentRef()
+      const changedUnderneath = targets.filter(
+        ({ relPath }) =>
+          blobAt(rt, layout, runGit, oldRef, relPath) !== blobAt(rt, layout, runGit, wonRef, relPath)
+      )
+      if (changedUnderneath.length > 0) {
+        rt.log({
+          level: 'error',
+          event: 'store.cas-retry-refused',
+          ref: LEDGER_REF,
+          contested_records: changedUnderneath.length
+        })
+        rollback()
+        return {
+          ok: false,
+          reason: 'ref-moved',
+          detail: `${LEDGER_REF} moved and ${changedUnderneath.length} of the record(s) being written changed in the winning commit; the write was refused rather than overwriting them`
+        }
+      }
+      oldRef = wonRef
       continue
     }
 
