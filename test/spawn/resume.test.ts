@@ -226,6 +226,21 @@ const callPark = async (
   return (await spawned.client.callTool({ name: 'park_thread', arguments: valid })) as CallToolResult
 }
 
+const callParkWithoutOutcome = async (
+  spawned: EitherServer,
+  published: PublishedTool[],
+  overrides: Record<string, unknown>
+): Promise<CallToolResult> => {
+  const schema = schemaFor(published, 'park_thread')
+  const { valid } = generateSchemaCases('park_thread', schema, overrides)
+  assert.equal(
+    'outcome' in valid,
+    false,
+    'a pointer-release call must carry no outcome; park_thread.outcome is still a required property of the published schema'
+  )
+  return (await spawned.client.callTool({ name: 'park_thread', arguments: valid })) as CallToolResult
+}
+
 const callClose = async (
   spawned: EitherServer,
   published: PublishedTool[],
@@ -277,6 +292,13 @@ const readStoredThread = (repo: string, pluginData: string, homeDir: string, thr
     throw new Error(`resume fixture: thread "${threadId}" could not be re-read from the store`)
   }
   return slot.record
+}
+
+const readSessionBodies = (repo: string, pluginData: string, homeDir: string, threadId: string): string[] => {
+  const rt = testRuntime({ env: { HOME: homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: pluginData }, cwd: repo })
+  const opened = openStore(rt, repo)
+  if (!opened.ok) throw new Error(`resume fixture: could not open the store to read session entries: ${opened.message}`)
+  return opened.value.readSessionEntries(threadId).flatMap((slot) => (slot.quarantined ? [] : [slot.record.body]))
 }
 
 const isPointerShaped = (value: unknown): value is { thread_id: string; written_at: string; session_id: string } => {
@@ -362,7 +384,10 @@ test('park_thread.spawn.contract', async () => {
     const { threadId } = await createFixtureThread(fx.spawned, fx.published)
     await callResume(fx.spawned, fx.published, threadId)
     const outputSchema = outputSchemaFor(fx.outputSchemas, 'park_thread')
-    const result = await callPark(fx.spawned, fx.published, { thread_id: threadId })
+    const result = await callPark(fx.spawned, fx.published, {
+      thread_id: threadId,
+      outcome: 'the contract fixture session outcome'
+    })
     assertOkResult('park_thread', result)
     assertConformsToOutputSchema('park_thread', outputSchema, result.structuredContent)
     assert.doesNotMatch(fx.spawned.stderr(), JSON_RPC_FRAMING_PATTERN)
@@ -371,7 +396,7 @@ test('park_thread.spawn.contract', async () => {
 
 test('park_thread.rejects-invalid', async () => {
   await withFixture(async (fx) => {
-    await runRejectsInvalid(fx, 'park_thread', ['minItems'])
+    await runRejectsInvalid(fx, 'park_thread', ['minItems', 'required'])
   })
 })
 
@@ -379,13 +404,13 @@ test('resume.round-trip', async () => {
   await withFixture(async (fx) => {
     const { threadId } = await createFixtureThread(fx.spawned, fx.published)
 
-    const firstPark = await callPark(fx.spawned, fx.published, {})
+    const firstPark = await callParkWithoutOutcome(fx.spawned, fx.published, {})
     assertOkResult('park_thread (before any resume)', firstPark)
     const firstStructured = firstPark.structuredContent as { status: string }
     assert.equal(
       firstStructured.status,
       'nothing-to-park',
-      'parking before any resume in this session must be a no-op, not a park of the freshly opened thread'
+      'parking with no outcome before any resume in this session must be a no-op, not a park of the freshly opened thread; the no-op is preserved only because nothing was supplied to lose, and the same call carrying an outcome must refuse instead of discarding it'
     )
 
     const resumed = await callResume(fx.spawned, fx.published, threadId)
@@ -455,6 +480,27 @@ test('resume.unknown-thread', async () => {
   })
 })
 
+test('park.refuses-an-outcome-when-nothing-is-marked-as-being-worked', async () => {
+  await withFixture(async (fx) => {
+    await createFixtureThread(fx.spawned, fx.published)
+
+    const park = await callPark(fx.spawned, fx.published, {
+      outcome: 'MARKER-NOTHING-TO-PARK this text must survive the refusal'
+    })
+
+    assert.equal(park.isError, true, 'park_thread must refuse an outcome when no thread is marked as being worked')
+    const text = firstTextOf(park)
+    assert.equal(text.split('\n')[0], 'field: outcome')
+    assert.match(text, /no thread is currently marked as being worked/)
+    assert.match(text, /NOT stored and must be re-sent/)
+    assert.equal(
+      countPointerShapedFiles(fx.repo, fx.pluginData, fx.homeDir),
+      0,
+      'a refusal on the no-pointer branch must leave the state directory exactly as it found it'
+    )
+  })
+})
+
 test('park.is-one-call', async () => {
   await withCountingFixture(async (fx) => {
     const { threadId } = await createFixtureThread(fx.spawned, fx.published)
@@ -477,7 +523,7 @@ test('park.twice-succeeds', async () => {
     const firstStructured = firstPark.structuredContent as { status: string }
     assert.equal(firstStructured.status, 'parked')
 
-    const secondPark = await callPark(fx.spawned, fx.published, { thread_id: threadId })
+    const secondPark = await callParkWithoutOutcome(fx.spawned, fx.published, { thread_id: threadId })
     assertOkResult('park_thread (second)', secondPark)
     const secondStructured = secondPark.structuredContent as {
       status: string
@@ -522,6 +568,28 @@ test('park.refreshes-the-spine', async () => {
     assert.deepEqual(after.spine.open_risks, before.spine.open_risks, 'open_risks must be untouched by a park call that supplied no risk contribution')
     assert.deepEqual(after.spine.key_decisions, before.spine.key_decisions, 'key_decisions must be untouched by a park call that supplied no decision contribution')
     assert.deepEqual(after.spine.out_of_scope, before.spine.out_of_scope, 'out_of_scope must be untouched by a park call that supplied no out-of-scope contribution')
+  })
+})
+
+test('park.control-a-held-pointer-still-stores-the-outcome', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+    await callResume(fx.spawned, fx.published, threadId)
+
+    const marker = 'MARKER-HAPPY-PATH-PARKED this text must be on disk afterwards'
+    const park = await callPark(fx.spawned, fx.published, { thread_id: threadId, outcome: marker })
+
+    assertOkResult('park_thread (control, pointer held)', park)
+    const structured = park.structuredContent as { status: string; session_entry_ids: string[] }
+    assert.equal(structured.status, 'parked')
+    assert.equal(structured.session_entry_ids.length, 1, 'a park with an outcome must write exactly one session entry')
+
+    const bodies = readSessionBodies(fx.repo, fx.pluginData, fx.homeDir, threadId)
+    assert.equal(
+      bodies.some((body) => body.includes(marker)),
+      true,
+      'the outcome supplied to a park with a held pointer must be readable from the stored session log'
+    )
   })
 })
 
@@ -599,13 +667,31 @@ test('park.refuses-a-different-thread-id-and-keeps-the-pointer', async () => {
     const b = await createFixtureThread(fx.spawned, fx.published, { slug: 'mismatch-thread-b' })
     await callResume(fx.spawned, fx.published, a.threadId)
 
-    const mismatched = await callPark(fx.spawned, fx.published, { thread_id: b.threadId })
-    assertOkResult('park_thread (mismatched id)', mismatched)
+    const refused = await callPark(fx.spawned, fx.published, {
+      thread_id: b.threadId,
+      outcome: 'MARKER-NOT-THE-WORKED-THREAD this text must survive the refusal'
+    })
+    assert.equal(refused.isError, true, 'park_thread must refuse an outcome aimed at a thread that is not the worked one')
+    const refusedText = firstTextOf(refused)
+    assert.equal(refusedText.split('\n')[0], 'field: outcome')
+    assert.match(refusedText, new RegExp(a.threadId), 'the refusal must name the thread that is actually being worked')
+    assert.match(refusedText, /NOT stored and must be re-sent/)
+    assert.equal(
+      countPointerShapedFiles(fx.repo, fx.pluginData, fx.homeDir),
+      1,
+      'a refusal on the mismatched-thread branch must leave the pointer in place'
+    )
+
+    const mismatched = await callParkWithoutOutcome(fx.spawned, fx.published, { thread_id: b.threadId })
+    assertOkResult('park_thread (mismatched id, no outcome)', mismatched)
     const structured = mismatched.structuredContent as { status: string; pointer_released: boolean }
     assert.equal(structured.status, 'not-the-worked-thread')
     assert.equal(structured.pointer_released, false)
 
-    const followUp = await callPark(fx.spawned, fx.published, { thread_id: a.threadId })
+    const followUp = await callPark(fx.spawned, fx.published, {
+      thread_id: a.threadId,
+      outcome: 'the mismatch fixture session outcome'
+    })
     assertOkResult('park_thread (a still holds the pointer)', followUp)
     const followUpStructured = followUp.structuredContent as { status: string; parked_thread_ids: string[] }
     assert.equal(followUpStructured.status, 'parked')
@@ -621,7 +707,21 @@ test('park.releases-a-stale-pointer-when-the-thread-record-is-gone', async () =>
     const layout = layoutInFixture(fx.repo, fx.pluginData, fx.homeDir)
     unlinkSync(threadRecordPath(layout, threadId))
 
-    const park = await callPark(fx.spawned, fx.published, {})
+    const refused = await callPark(fx.spawned, fx.published, {
+      outcome: 'MARKER-STALE-POINTER this text must survive the refusal'
+    })
+    assert.equal(refused.isError, true, 'park_thread must refuse an outcome when the worked thread has no stored record')
+    const refusedText = firstTextOf(refused)
+    assert.equal(refusedText.split('\n')[0], 'field: outcome')
+    assert.match(refusedText, new RegExp(threadId), 'the refusal must name the thread whose record is gone')
+    assert.match(refusedText, /NOT stored and must be re-sent/)
+    assert.equal(
+      countPointerShapedFiles(fx.repo, fx.pluginData, fx.homeDir),
+      1,
+      'a refusal on the missing-record branch must leave the pointer in place so the call can be retried'
+    )
+
+    const park = await callParkWithoutOutcome(fx.spawned, fx.published, {})
     assertOkResult('park_thread (stale pointer)', park)
     const structured = park.structuredContent as { status: string; pointer_released: boolean }
     assert.equal(structured.status, 'stale-pointer-released')
@@ -637,11 +737,46 @@ test('park.refuses-a-quarantined-thread-record', async () => {
     const layout = layoutInFixture(fx.repo, fx.pluginData, fx.homeDir)
     writeFileSync(threadRecordPath(layout, threadId), '{not-json', 'utf8')
 
-    const park = await callPark(fx.spawned, fx.published, {})
+    const park = await callPark(fx.spawned, fx.published, {
+      outcome: 'MARKER-QUARANTINE this text must survive the refusal'
+    })
     assert.equal(park.isError, true, 'parking a thread whose stored record is quarantined must be refused')
     const text = firstTextOf(park)
-    assert.equal(text.split('\n')[0], 'field: thread_id')
+    assert.equal(text.split('\n')[0], 'field: outcome')
     assert.match(text, new RegExp(threadId), 'the refusal must name the thread id that could not be resolved')
+    assert.match(text, /NOT stored and must be re-sent/)
+    assert.equal(
+      countPointerShapedFiles(fx.repo, fx.pluginData, fx.homeDir),
+      1,
+      'a refusal on the quarantined-record branch must leave the pointer in place so the call can be retried'
+    )
+  })
+})
+
+test('park.releases-a-pointer-that-names-a-quarantined-record', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+    await callResume(fx.spawned, fx.published, threadId)
+
+    const layout = layoutInFixture(fx.repo, fx.pluginData, fx.homeDir)
+    writeFileSync(threadRecordPath(layout, threadId), '{not-json', 'utf8')
+
+    assert.equal(
+      countPointerShapedFiles(fx.repo, fx.pluginData, fx.homeDir),
+      1,
+      'the fixture must start with the pointer naming the quarantined record'
+    )
+
+    const park = await callParkWithoutOutcome(fx.spawned, fx.published, {})
+    assertOkResult('park_thread (quarantined record, no outcome)', park)
+    const structured = park.structuredContent as { status: string; pointer_released: boolean }
+    assert.equal(structured.status, 'quarantined-pointer-released')
+    assert.equal(structured.pointer_released, true)
+    assert.equal(
+      countPointerShapedFiles(fx.repo, fx.pluginData, fx.homeDir),
+      0,
+      'a pointer naming a quarantined record must have a designed release, not only the side effect of resuming an unrelated thread'
+    )
   })
 })
 
@@ -659,7 +794,21 @@ test('park.releases-the-pointer-when-the-thread-is-already-terminal', async () =
 
     const beforePark = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
 
-    const park = await callPark(fx.spawned, fx.published, {})
+    const refused = await callPark(fx.spawned, fx.published, {
+      outcome: 'MARKER-TERMINAL-POINTER this text must survive the refusal'
+    })
+    assert.equal(refused.isError, true, 'park_thread must refuse an outcome when the worked thread is already terminal')
+    const refusedText = firstTextOf(refused)
+    assert.equal(refusedText.split('\n')[0], 'field: outcome')
+    assert.match(refusedText, /which is terminal/)
+    assert.match(refusedText, /NOT stored and must be re-sent/)
+    assert.equal(
+      countPointerShapedFiles(fx.repo, fx.pluginData, fx.homeDir),
+      1,
+      'a refusal on the terminal-thread branch must leave the pointer in place so the call can be retried'
+    )
+
+    const park = await callParkWithoutOutcome(fx.spawned, fx.published, {})
     assertOkResult('park_thread (terminal pointer)', park)
     const structured = park.structuredContent as {
       status: string
@@ -696,7 +845,7 @@ test('resume.self-heals-a-corrupt-pointer', async () => {
       'a corrupt pointer left behind must be treated as no previous session, not surfaced as one'
     )
 
-    const park = await callPark(fx.spawned, fx.published, {})
+    const park = await callParkWithoutOutcome(fx.spawned, fx.published, {})
     assertOkResult('park_thread (after self-heal)', park)
     const parkStructured = park.structuredContent as { status: string; parked_thread_ids: string[] }
     assert.equal(parkStructured.status, 'parked')
@@ -710,7 +859,21 @@ test('park.releases-a-corrupt-pointer', async () => {
     mkdirSync(layout.state, { recursive: true })
     writeFileSync(pointerFilePath(layout), 'not-json{{{', 'utf8')
 
-    const park = await callPark(fx.spawned, fx.published, {})
+    const refused = await callPark(fx.spawned, fx.published, {
+      outcome: 'MARKER-CORRUPT-POINTER this text must survive the refusal'
+    })
+    assert.equal(refused.isError, true, 'park_thread must refuse an outcome when the pointer file does not parse')
+    const refusedText = firstTextOf(refused)
+    assert.equal(refusedText.split('\n')[0], 'field: outcome')
+    assert.match(refusedText, /does not parse/)
+    assert.match(refusedText, /NOT stored and must be re-sent/)
+    assert.equal(
+      readFileSync(pointerFilePath(layout), 'utf8'),
+      'not-json{{{',
+      'a refusal on the corrupt-pointer branch must leave the unreadable pointer file exactly as it found it'
+    )
+
+    const park = await callParkWithoutOutcome(fx.spawned, fx.published, {})
     assertOkResult('park_thread (corrupt pointer)', park)
     const structured = park.structuredContent as { status: string; pointer_released: boolean }
     assert.equal(structured.status, 'stale-pointer-released')
@@ -738,7 +901,20 @@ test('park.refuses-when-another-session-took-the-pointer', async () => {
         await p2.close()
       }
 
-      const park = await callPark(p1, published1, {})
+      const refused = await callPark(p1, published1, {
+        outcome: 'MARKER-OTHER-SESSION this text must survive the refusal'
+      })
+      assert.equal(
+        refused.isError,
+        true,
+        'park_thread must refuse an outcome when another session holds the record of what is being worked'
+      )
+      const refusedText = firstTextOf(refused)
+      assert.equal(refusedText.split('\n')[0], 'field: outcome')
+      assert.match(refusedText, /belongs to a different session/)
+      assert.match(refusedText, /NOT stored and must be re-sent/)
+
+      const park = await callParkWithoutOutcome(p1, published1, {})
       assertOkResult('park_thread (original session, pointer stolen)', park)
       const structured = park.structuredContent as { status: string; pointer_released: boolean }
       assert.equal(structured.status, 'not-the-worked-thread')
