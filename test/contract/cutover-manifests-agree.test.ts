@@ -5,7 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnServer } from '../support/spawn-client.ts'
 
-const EXPECTED_VERSION = '1.0.0'
+const SEMVER_PATTERN = /^\d+\.\d+\.\d+$/
 const REPO_ROOT_MARKER = path.join('.claude-plugin', 'plugin.json')
 const REPO_ROOT_MAX_ASCENT = 10
 
@@ -50,20 +50,18 @@ test('cutover.manifests-agree', async () => {
   assert.strictEqual(existsSync(packageJsonPath), true, `resolved repo root ${repoRoot} has no package.json`)
 
   const packageJsonVersion = readManifestVersion(packageJsonPath)
-  assert.strictEqual(typeof packageJsonVersion, 'string')
-  assert.strictEqual(
+  assert.match(
     packageJsonVersion,
-    EXPECTED_VERSION,
-    `${packageJsonPath} version is ${packageJsonVersion}, expected ${EXPECTED_VERSION}`
+    SEMVER_PATTERN,
+    `${packageJsonPath} version is ${packageJsonVersion}, which is not a plain three-part semver; every other version assertion in this test is derived from it`
   )
 
   const pluginJsonPath = path.join(repoRoot, '.claude-plugin', 'plugin.json')
   const pluginJsonVersion = readManifestVersion(pluginJsonPath)
-  assert.strictEqual(typeof pluginJsonVersion, 'string')
   assert.strictEqual(
     pluginJsonVersion,
-    EXPECTED_VERSION,
-    `${pluginJsonPath} version is ${pluginJsonVersion}, expected ${EXPECTED_VERSION}`
+    packageJsonVersion,
+    `${pluginJsonPath} version is ${pluginJsonVersion}, but ${packageJsonPath} version is ${packageJsonVersion}`
   )
 
   const entry = path.join(repoRoot, 'bin', 'logbook-server.ts')
@@ -74,7 +72,6 @@ test('cutover.manifests-agree', async () => {
       assert.fail('the initialize handshake returned no serverInfo; the wire version is unobservable')
     }
     assert.strictEqual(info.name, 'logbook')
-    assert.strictEqual(info.version, EXPECTED_VERSION)
 
     assert.strictEqual(
       packageJsonVersion,
