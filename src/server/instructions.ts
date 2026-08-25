@@ -4,7 +4,10 @@ git repository so a whole team shares one record.
 
 Resuming is one call and parking is one call. resume_thread reconciles, marks the thread as
 being worked, and returns the finished briefing. park_thread writes the session log, refreshes
-the running summary, and releases the thread. Neither needs a preparatory call.
+the running summary, and releases the thread. Neither needs a preparatory call. park_thread
+refuses instead of parking when the thread it would write to is gone, terminal, quarantined, or
+held by another session; the refusal says the outcome text was not stored and has to be re-sent.
+Omit outcome and park_thread only releases the record of what is being worked.
 
 Identifiers are ULIDs: 26 characters, Crockford base32, for example
 01M0NDPM0ACCR9CD68PMHYWGGD. Do not compose one. Take a thread id from list_threads or from the
