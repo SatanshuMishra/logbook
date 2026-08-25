@@ -272,7 +272,7 @@ const clearConflictsFile = (conflictsPath: string): void => {
   }
 }
 
-const keyOf = (record: string, field: string): string => `${record} ${field}`
+const keyOf = (record: string, field: string): string => `${record}\0${field}`
 
 const byIdAscending = (a: { id: string }, b: { id: string }): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 
