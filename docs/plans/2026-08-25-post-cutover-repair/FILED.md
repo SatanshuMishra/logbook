@@ -254,3 +254,67 @@ planning surfaced it. Nothing here is folded into the ladder.
 - **Evidence:** F9c states that `src/server/instructions.ts:6-7` "may fall between" MSP-8 and MSP-9 and that no MSP appears to own it. It is owned. `docs/plans/2026-08-25-post-cutover-repair/MSP-3-park-thread-refuses.md` carries section 2.9, "`src/server/instructions.ts:5-7` - the server's standing instructions", and Step 14, "`src/server/instructions.ts` - REPLACE - stop promising parking always succeeds", and lists the file in its commit file list. That is the same prose F9c quotes, at the same lines.
 - **Disposition:** F9c's evidence about the sentence being falsified by ruling R2 is correct and is left standing; only its ownership conclusion is wrong. No new work is scheduled by it. F9c itself is not edited, per ruling O8.
 - **F9b is unaffected and remains a genuine unowned defect.**
+
+## F0b — MSP-0's version bump falsifies `README.md:5`, which cites the two files it bumped
+
+- **Surfaced by:** MSP-0 execution, `code-reviewer` pass over the applied diff.
+- **Evidence:** `README.md:5` reads verbatim ``Current version: 1.0.0 (`package.json:3`, `.claude-plugin/plugin.json:3`).`` (read directly at commit `5e43c3f`). Commit `5e43c3f` set both cited lines to `1.0.1`, so the sentence and both of its `path:line` citations are now false. Nothing guards it: `grep -rn "Current version" test scripts` exits `1` with no output, and `npm test` is green at 349/349 with this statement already false.
+- **Why it is above the ceiling:** MSP-0's acceptance is three criteria — the census test exists, it is red on the parent and green on the fix, and `npm test` is green. All three are met and verified; this breaks none of them. The declared in-scope exception is a test that passes at the parent `1592265` and fails on the applied tree, and no test asserts this line at either commit. The MSP-0 plan is frozen and names exactly five files; `README.md` is not among them, and its section 9 fixes three commits with exact file lists. F9a already records that the ladder's README rung is scoped to "any README correction the ladder has made necessary", which is precisely what this is. Orchestrator ruling O1 gives every rung a version bump, so a re-pinned literal here would be falsified nine more times — the same change-detector pattern MSP-0 just removed from `test/contract/cutover-manifests-agree.test.ts`.
+- **Dissent recorded:** `code-reviewer` classified this IN SCOPE as a regression introduced by this diff. The factual claim is correct and is not disputed; only the scope conclusion is overruled, on the four grounds above.
+- **Not folded in.**
+
+## F0c — the census discards the read-failure cause, so two different faults print identically
+
+- **Surfaced by:** MSP-0 execution, found independently by both `code-reviewer` and `conformance-auditor`.
+- **Evidence:** `test/contract/source-is-greppable-text.test.ts:29-35` reads `const readBytes = (absolutePath: string): Buffer | null => {` / `  try {` / `    return readFileSync(absolutePath)` / `  } catch {` / `    return null` / `  }` / `}`. The catch takes no binding, so `EACCES`, `ENOENT`, `EMFILE` and `EIO` all collapse to `null` and surface as the same `census halted on an unclassifiable item: {...}` message with no cause.
+- **Why it is above the ceiling:** the behaviour is fail-closed and the census still halts loudly naming the path, so no acceptance criterion is affected. Only diagnosability is lost. The file body is quoted verbatim in the frozen plan's section 4 step 2 and was reproduced byte-exactly by instruction; changing it is a plan amendment, not an execution detail.
+- **Not folded in.**
+
+## F0d — the "missing root" assertion cannot fire for a genuinely missing root
+
+- **Surfaced by:** MSP-0 execution, `code-reviewer`.
+- **Evidence:** `test/contract/source-is-greppable-text.test.ts:61` calls `const population = scanSourceRoots(PROJECT_ROOT)` before the per-root loop at `:62-67`, and `walkRoot` at `:18` calls `readdirSync` with no guard. `readdirSync` on an absent directory throws `ENOENT: no such file or directory, scandir '...'`, so a deleted `src/` propagates that raw error and the message at `:65` — ``a census over a missing root proves nothing`` — never renders.
+- **Why it is above the ceiling:** the test fails loudly on either branch, so the census cannot pass vacuously and no acceptance criterion is touched. The assertion is not dead: it still fires for a root that exists but is empty. The gap is message quality on one branch only.
+- **Not folded in.**
+
+## F0e — three symbols are exported from a test file with no consumer
+
+- **Surfaced by:** MSP-0 execution, `code-reviewer`.
+- **Evidence:** `test/contract/source-is-greppable-text.test.ts:15`, `:26` and `:37` declare `export type SourceByteEntry`, `export const scanSourceRoots` and `export const classifySourceBytes`. `grep -rn "scanSourceRoots\|classifySourceBytes" test src scripts` finds no hit outside that file (exit `1`).
+- **Why it is above the ceiling:** unreachable public surface affects no criterion. It invites a future test to import a classifier from a `.test.ts` file rather than from `test/support/`, which is a placement question for whoever needs the reuse.
+- **Not folded in.**
+
+## F0f — every scanned file is read twice on every run
+
+- **Surfaced by:** MSP-0 execution, `code-reviewer`.
+- **Evidence:** `test/contract/source-is-greppable-text.test.ts:68-71` passes `describePopulation(PROJECT_ROOT, population)` as the third argument to `assert.doesNotThrow`. That is a call, evaluated eagerly, and it classifies the whole population at `:53` before `census` classifies it again. Each classification reads from disk, so 73 files cost ~146 reads, plus a third read per violation from the `.map` at `:57`.
+- **Why it is above the ceiling:** the rendered message is correct and the receipt's parent-commit failure did name `resolve_conflict.ts [forbidden]`, so nothing is wrong with the output. The cost is wasted I/O and a narrow time-of-check/time-of-use window.
+- **Not folded in.**
+
+## F0g — `SEMVER_PATTERN` rejects prerelease and build-metadata versions that npm accepts
+
+- **Surfaced by:** MSP-0 execution, `code-reviewer`.
+- **Evidence:** `test/contract/cutover-manifests-agree.test.ts:8` reads `const SEMVER_PATTERN = /^\d+\.\d+\.\d+$/`, anchored to exactly three numeric parts. A valid prerelease such as `1.1.0-rc.1` or build metadata such as `1.0.1+build.5` is legal in `package.json` and would turn this test red.
+- **Why it is above the ceiling:** it is not a regression — the literal pin `'1.0.0'` it replaced would have failed on those forms too. Recorded so the constraint is known before a first release candidate rather than discovered by it.
+- **Not folded in.**
+
+## F0h — `package-lock.json` carries a third version, already drifted before this ladder
+
+- **Surfaced by:** MSP-0 execution, `code-reviewer`.
+- **Evidence:** `package-lock.json` root `version` and `packages[""].version` are both `0.2.8`. Read at parent `1592265` via `git show 1592265:package-lock.json`, both fields were already `0.2.8`, so this diff did not cause it. `cutover.manifests-agree` covers `package.json`, `.claude-plugin/plugin.json` and the wire version, and does not cover the lockfile.
+- **Why it is above the ceiling:** pre-existing at the parent and outside every MSP-0 criterion. Note for whoever takes it: `node_modules` is tracked in this repository and `npm install` must never be run here, so this cannot be repaired by regenerating the lockfile, and whether the lockfile belongs in the agreement contract at all is the prior question.
+- **Not folded in.**
+
+## F0i — sibling contract tests resolve the repository root by two different conventions
+
+- **Surfaced by:** MSP-0 execution, `code-reviewer`.
+- **Evidence:** `test/contract/source-is-greppable-text.test.ts:9` reads `const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))`, a hardcoded two-level ascent. `test/contract/cutover-manifests-agree.test.ts:22-32` instead walks upward looking for `.claude-plugin/plugin.json` under a bounded `REPO_ROOT_MAX_ASCENT` and throws a named `RepoRootNotFoundError` on failure.
+- **Why it is above the ceiling:** the hardcoded form is fail-closed — a wrong root makes `readdirSync` throw `ENOENT` rather than silently scanning the wrong tree — so no criterion is at risk. The cost is a second convention for one job, and extracting the marker-based resolver into `test/support/` touches a file MSP-0 does not own.
+- **Not folded in.**
+
+## F0j — coordinated version drift across all three surfaces is no longer detectable
+
+- **Surfaced by:** MSP-0 execution, `conformance-auditor`.
+- **Evidence:** `test/contract/cutover-manifests-agree.test.ts:53-85` after the de-pin asserts shape (`assert.match(packageJsonVersion, SEMVER_PATTERN)`), manifest agreement (`assert.strictEqual(pluginJsonVersion, packageJsonVersion)`) and wire agreement, all derived from `package.json`. If `package.json`, `.claude-plugin/plugin.json` and the wire version all moved together to the same well-formed but unintended value, the suite stays green; at parent `1592265` the literal pin would have caught it. Net assertion count in that file went 10 to 7.
+- **Why it is above the ceiling:** the de-pin is mandated by the frozen plan's section 4 step 3 and its section 3.5 ruling, and the test's declared contract is agreement — its name is `cutover.manifests-agree` — not a specific value. The trade is recorded here so it is explicit rather than implied; MSP-0 acceptance criterion 3 required the de-pin to reach a green `npm test` at all.
+- **Not folded in.**
