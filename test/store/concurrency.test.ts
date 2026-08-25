@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
+import { git } from '../../src/store/git.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
 import { openStore } from '../../src/store/records.ts'
@@ -230,3 +231,79 @@ test('concurrent.second-process-destroys-nothing', () => {
     })
   })
 })
+
+test('concurrent.same-record-loser-refuses-rather-than-overwrites', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+
+      const seeded = openStore(rt, repo)
+      assert.equal(seeded.ok, true)
+      if (!seeded.ok) return
+
+      const contested = makeThread(rt, 'contested-thread')
+      const seedCommit = seeded.value.commit([contested], 'seed the contested thread')
+      assert.equal(seedCommit.ok, true)
+      if (!seedCommit.ok) return
+
+      const layout = layoutIn(rt, repo)
+      const base = expectLoaded(seeded.value.readThread(contested.record.id), 'the seeded contested record')
+
+      const writerA: RecordChange = {
+        kind: 'thread',
+        record: { ...base, spine: { ...base.spine, next_step: 'A wrote this next step' }, updated_at: rt.now() }
+      }
+      const writerB: RecordChange = {
+        kind: 'thread',
+        record: { ...base, spine: { ...base.spine, active_goal: 'B wrote this active goal' }, updated_at: rt.now() }
+      }
+
+      let writerBLanded = false
+      const beforeCas = (): void => {
+        if (writerBLanded) return
+        const landed = writeRecords(rt, layout, [writerB], 'B: change the active goal')
+        assert.equal(landed.ok, true, "the winning writer's commit must land before the losing writer retries")
+        writerBLanded = landed.ok
+      }
+
+      const writerAResult = writeRecords(rt, layout, [writerA], 'A: change the next step', { beforeCas })
+
+      assert.equal(writerBLanded, true, 'the fixture requires the winning writer to have committed')
+
+      assert.equal(
+        writerAResult.ok,
+        false,
+        'the writer that lost the race must be refused, never told it succeeded over a record it did not read'
+      )
+      if (writerAResult.ok) return
+      assert.equal(writerAResult.reason, 'ref-moved')
+      assert.ok(writerAResult.detail.length > 0, 'the refusal must say why the write was refused')
+
+      const committed = git(rt, repo, ['cat-file', '-p', `${LEDGER_REF}:threads/${contested.record.id}.json`])
+      assert.equal(committed.ok, true)
+      if (!committed.ok) return
+      const survivor = JSON.parse(committed.stdout) as Thread
+
+      assert.equal(
+        survivor.spine.active_goal,
+        'B wrote this active goal',
+        "the winning writer's committed field must survive the losing writer's retry"
+      )
+      assert.equal(
+        survivor.spine.next_step,
+        base.spine.next_step,
+        'the refused writer must not have laid its stale record over the winner'
+      )
+
+      const reopened = openStore(rt, repo)
+      assert.equal(reopened.ok, true)
+      if (!reopened.ok) return
+      const readBack = expectLoaded(
+        reopened.value.readThread(contested.record.id),
+        'the contested record read back through the store'
+      )
+      assert.deepEqual(readBack, survivor, 'the store must read back exactly the record the ledger ref holds')
+    })
+  })
+})
+
