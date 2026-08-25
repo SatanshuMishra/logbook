@@ -32,7 +32,7 @@ export const EXACT_DEPENDENCIES = {
   zod: '4.4.3'
 }
 
-export const REQUIRED_ENGINE_NODE = '>=22.18'
+export const REQUIRED_ENGINE_NODE = '>=22.19'
 
 export const SERVER_ARGS = ['${CLAUDE_PLUGIN_ROOT}/bin/logbook-server.ts']
 

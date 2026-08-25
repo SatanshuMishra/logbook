@@ -1,5 +1,5 @@
 export const NODE_FLOOR_MAJOR = 22
-export const NODE_FLOOR_MINOR = 18
+export const NODE_FLOOR_MINOR = 19
 
 const REQUIRED_LABEL = `${NODE_FLOOR_MAJOR}.${NODE_FLOOR_MINOR}`
 const VERSION_PATTERN = /^(\d+)\.(\d+)(?:\.\d+)?$/

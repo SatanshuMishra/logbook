@@ -6,7 +6,7 @@
   "description": "Git-native, multi-user, drift-aware logbook plugin for Claude Code.",
   "license": "MIT",
   "engines": {
-    "node": ">=22.18"
+    "node": ">=22.19"
   },
   "scripts": {
     "test": "node --test \"test/unit/**/*.test.ts\" \"test/store/**/*.test.ts\" \"test/contract/**/*.test.ts\" \"test/sync/**/*.test.ts\" \"test/spawn/**/*.test.ts\" \"test/hooks/**/*.test.ts\"",

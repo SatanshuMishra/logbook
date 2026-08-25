@@ -3,11 +3,11 @@ import assert from 'node:assert/strict'
 import { nodeFloorFailure } from '../../src/runtime/node-floor.ts'
 
 test('runtime.node-floor.at-floor-passes', () => {
-  assert.equal(nodeFloorFailure('22.18.0'), null)
+  assert.equal(nodeFloorFailure('22.19.0'), null)
 })
 
 test('runtime.node-floor.above-floor-patch-passes', () => {
-  assert.equal(nodeFloorFailure('22.18.5'), null)
+  assert.equal(nodeFloorFailure('22.19.5'), null)
 })
 
 test('runtime.node-floor.above-floor-major-passes', () => {
@@ -19,10 +19,10 @@ test('runtime.node-floor.well-above-floor-passes', () => {
 })
 
 test('runtime.node-floor.below-floor-minor-fails', () => {
-  const message = nodeFloorFailure('22.17.9')
+  const message = nodeFloorFailure('22.18.9')
   assert.notEqual(message, null)
   assert.ok(typeof message === 'string' && message.length > 0)
-  assert.ok(message?.includes('22.17.9'))
+  assert.ok(message?.includes('22.18.9'))
 })
 
 test('runtime.node-floor.below-floor-major-fails', () => {
