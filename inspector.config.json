@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "logbook": {
+      "command": "node",
+      "args": ["bin/logbook-server.ts"],
+      "env": {
+        "CLAUDE_PLUGIN_DATA": ".inspector-data"
+      }
+    }
+  }
+}
