@@ -35,23 +35,34 @@ const countedMaterialiseGit: typeof git = (rt, repo, args, opts) => {
   return git(rt, repo, args, opts)
 }
 
-const lastSyncedPath = (layout: StoreLayout): string => path.join(layout.state, 'last-synced')
+const STAMP_FILE_NAME = 'last-materialised'
+const LEGACY_STAMP_FILE_NAME = 'last-synced'
 
-const readLastSynced = (layout: StoreLayout): string | null => {
+const stampPath = (layout: StoreLayout): string => path.join(layout.state, STAMP_FILE_NAME)
+
+const legacyStampPath = (layout: StoreLayout): string => path.join(layout.state, LEGACY_STAMP_FILE_NAME)
+
+const readStampFile = (target: string): string | null => {
   try {
-    return readFileSync(lastSyncedPath(layout), 'utf8').trim()
+    return readFileSync(target, 'utf8').trim()
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw error
   }
 }
 
-const writeLastSynced = (layout: StoreLayout, value: string): void => {
-  writeFileSync(lastSyncedPath(layout), value, 'utf8')
+const readStamp = (layout: StoreLayout): string | null => {
+  const current = readStampFile(stampPath(layout))
+  if (current !== null) return current
+  return readStampFile(legacyStampPath(layout))
 }
 
-export const markSynced = (layout: StoreLayout, ref: string): void => {
-  writeLastSynced(layout, ref)
+const writeStamp = (layout: StoreLayout, value: string): void => {
+  writeFileSync(stampPath(layout), value, 'utf8')
+}
+
+export const markMaterialised = (layout: StoreLayout, ref: string): void => {
+  writeStamp(layout, ref)
 }
 
 const parseLsTreeLine = (line: string): { blobId: string; relPath: string } | null => {
@@ -85,17 +96,17 @@ const materialiseTree = (rt: Runtime, layout: StoreLayout, ref: string): void =>
 export const syncWorkingCopy = (rt: Runtime, layout: StoreLayout, runGit: typeof git = countedGit): void => {
   const current = runGit(rt, layout.projectRoot, ['rev-parse', LEDGER_REF])
   const currentValue = current.ok ? current.stdout.trim() : null
-  const cached = readLastSynced(layout)
+  const cached = readStamp(layout)
 
   if (currentValue === cached) return
 
   if (currentValue === null) {
-    writeLastSynced(layout, '')
+    writeStamp(layout, '')
     return
   }
 
   materialiseTree(rt, layout, currentValue)
-  writeLastSynced(layout, currentValue)
+  writeStamp(layout, currentValue)
 }
 
 export const readRecordFile = <T>(filePath: string, declared: Declared<T>): Slot<T> | null => {

@@ -279,7 +279,7 @@ const isPointerShaped = (value: unknown): value is Pointer =>
   typeof value.session_id === 'string' &&
   value.session_id.length > 0
 
-const STATE_DIR_NON_POINTER_SENTINELS = new Set(['origin.json', 'last-synced'])
+const STATE_DIR_NON_POINTER_SENTINELS = new Set(['origin.json', 'last-synced', 'last-materialised'])
 
 const countPointers = (repo: string, pluginData: string, homeDir: string): number => {
   const rt = testRuntime({ env: { HOME: homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: pluginData }, cwd: repo })

@@ -7,7 +7,7 @@ import { ThreadRecord, type Thread, type Ulid } from '../schema/thread.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import { errnoCode, withDetail } from './detail.ts'
 import { createStoreDirectories, layoutFor, type StoreLayout } from './layout.ts'
-import { markSynced, readAllRecordFiles, readRecordFile, syncWorkingCopy } from './read-path.ts'
+import { markMaterialised, readAllRecordFiles, readRecordFile, syncWorkingCopy } from './read-path.ts'
 import { ensureSingleStore } from './single-store.ts'
 import { writeRecords } from './write-path.ts'
 import type { Loaded, Quarantined, Slot } from './read-path.ts'
@@ -109,7 +109,7 @@ export const openStore = (rt: Runtime, projectRoot: string): Ok<Store> | Refusal
       }
       const result = writeRecords(rt, storeLayout, changes, message)
       if (result.ok) {
-        markSynced(storeLayout, result.after)
+        markMaterialised(storeLayout, result.after)
       }
       return result
     }

@@ -291,7 +291,7 @@ const isPointerShaped = (value: unknown): value is { thread_id: string; written_
   )
 }
 
-const STATE_DIR_NON_POINTER_SENTINELS = new Set(['origin.json', 'last-synced'])
+const STATE_DIR_NON_POINTER_SENTINELS = new Set(['origin.json', 'last-synced', 'last-materialised'])
 
 const countPointerShapedFiles = (repo: string, pluginData: string, homeDir: string): number => {
   const rt = testRuntime({ env: { HOME: homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: pluginData }, cwd: repo })
