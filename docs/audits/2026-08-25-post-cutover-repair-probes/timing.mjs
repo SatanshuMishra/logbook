@@ -1,0 +1,7 @@
+const t0 = performance.now()
+await import('/Users/satanshumishra/Documents/DevLabs/logbook/src/hooklib/guard.ts')
+const t1 = performance.now()
+await import('/Users/satanshumishra/Documents/DevLabs/logbook/src/server/tools/index.ts')
+const t2 = performance.now()
+console.log('guard.ts import ms:', (t1-t0).toFixed(1))
+console.log('tools/index.ts import ms (additional):', (t2-t1).toFixed(1))
