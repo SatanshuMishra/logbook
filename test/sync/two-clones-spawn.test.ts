@@ -173,6 +173,14 @@ const layoutOf = (teammate: SpawnedTeammate): StoreLayout => {
 const decisionSlotsOf = (teammate: SpawnedTeammate) =>
   readAllRecordFiles<Decision>(path.join(layoutOf(teammate).records, 'decisions'), DecisionRecord)
 
+const threadRecordOf = (teammate: SpawnedTeammate, threadId: string): Thread => {
+  const slots = readAllRecordFiles<Thread>(path.join(layoutOf(teammate).records, 'threads'), ThreadRecord)
+  for (const slot of slots) {
+    if (!slot.quarantined && slot.record.id === threadId) return slot.record
+  }
+  throw new Error(`two-clones-spawn: thread ${threadId} could not be read back for ${teammate.name}`)
+}
+
 const runSpawnOfflineMergeScenario = (pusherFirst: 'ana' | 'ben'): Promise<void> =>
   withTwoSpawnedClones(async (ana, ben) => {
     const opened = await callTool(ana, 'open_thread', {
@@ -244,6 +252,18 @@ const runSpawnOfflineMergeScenario = (pusherFirst: 'ana' | 'ben'): Promise<void>
     )
 
     assert.notEqual(firstDecisionId, secondDecisionId, 'no collision: the two identifiers must be distinct')
+
+    const mergedThread = threadRecordOf(second, threadId)
+    assert.equal(
+      mergedThread.spine.key_decisions.length,
+      2,
+      'nothing lost: both clones now write the thread record offline, so the merged running summary must carry both links'
+    )
+    assert.deepEqual(
+      new Set(mergedThread.spine.key_decisions.map((entry) => entry.decision_id)),
+      new Set([firstDecisionId, secondDecisionId]),
+      'nothing lost: the merged running summary must link exactly the two decisions by id'
+    )
 
     assertRecordsAreClean(layoutOf(second))
 

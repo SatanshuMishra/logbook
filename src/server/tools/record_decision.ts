@@ -5,6 +5,8 @@ import { ULID_PATTERN } from '../../schema/ids.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { DecisionRecord, type Decision } from '../../schema/decision.ts'
+import { ThreadRecord, type Criterion, type KeyDecision, type Thread } from '../../schema/thread.ts'
+import type { RecordChange } from '../../store/write-path.ts'
 import { readProjectHead } from '../../store/git.ts'
 import { withDetail } from '../../store/detail.ts'
 import { openProjectStore, loadThread } from '../tool-support.ts'
@@ -20,6 +22,14 @@ const RecordDecisionInputSchema = z.strictObject({
     .max(caps.DECISION_OPTIONS_MAX_ELEMENTS)
     .describe('the options that were on the table, for example ["ship the fast path", "keep the safe default"]'),
   outcome: z.string().max(caps.DECISION_OUTCOME_MAX).describe('the outcome that was chosen and why'),
+  scope: z
+    .string()
+    .min(1)
+    .max(caps.KEY_DECISION_SCOPE_MAX)
+    .optional()
+    .describe(
+      'the criterion or area of the thread this decision resolved, stored on the spine link; omit it and the lowest-numbered completion criterion that is neither done nor struck is used'
+    ),
   supersedes: z
     .array(ulidField('the id of a decision this new one reverses or replaces'))
     .max(caps.DECISION_SUPERSEDES_MAX_ELEMENTS)
@@ -30,11 +40,25 @@ const RecordDecisionInputSchema = z.strictObject({
 const RecordDecisionOutputSchema = z.object({
   decision_id: z.string().describe('the id minted for the new decision record'),
   thread_id: z.string().describe('the id of the thread the decision was recorded against'),
-  commit: z.string().nullable().describe('the project HEAD sha recorded on the decision, or null when it could not be read')
+  commit: z.string().nullable().describe('the project HEAD sha recorded on the decision, or null when it could not be read'),
+  linked: z.boolean().describe('whether this call also linked the decision into the thread running summary'),
+  link_skipped_reason: z
+    .string()
+    .nullable()
+    .describe('why the spine link was not written, or null when it was written')
 })
 
 type RecordDecisionInput = z.infer<typeof RecordDecisionInputSchema>
 type RecordDecisionOutput = z.infer<typeof RecordDecisionOutputSchema>
+
+const deriveScope = (thread: Thread): string | null => {
+  const open = thread.completion_criteria.filter((criterion) => !criterion.done && criterion.struck_by === null)
+  const lowest = open.reduce<Criterion | null>(
+    (best, candidate) => (best === null || candidate.ordinal < best.ordinal ? candidate : best),
+    null
+  )
+  return lowest === null ? null : `criterion ${lowest.ordinal}`
+}
 
 export const titleCapRefusal = (observed: number): Refusal => ({
   ok: false,
@@ -94,6 +118,24 @@ export const commitFailureRefusal = (detail: string): Refusal =>
     detail
   )
 
+export const scopeCapRefusal = (observed: number): Refusal => ({
+  ok: false,
+  field: 'scope',
+  accepted: `at most ${caps.KEY_DECISION_SCOPE_MAX} characters after escaping`,
+  example: 'the merge queue fast path',
+  retryable: true,
+  message: `scope exceeds its cap of ${caps.KEY_DECISION_SCOPE_MAX} characters after escaping; observed ${observed}; remedy: shorten the scope and retry.`
+})
+
+export const noOpenCriterionRefusal = (threadId: string): Refusal => ({
+  ok: false,
+  field: 'scope',
+  accepted: 'an explicit scope, when no completion criterion is left open to derive one from',
+  example: 'the merge queue fast path',
+  retryable: true,
+  message: `every completion criterion on thread ${threadId} is done or struck, so scope cannot be derived; the decision was not recorded; remedy: send scope explicitly and retry.`
+})
+
 export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOutput> = {
   name: 'record_decision',
   title: 'Record decision',
@@ -133,6 +175,14 @@ export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOut
       return { ok: false, refusal: optionCapRefusal(oversizedIndex, oversizedOption === undefined ? 0 : oversizedOption.length) }
     }
 
+    const escapedScope = input.scope === undefined ? deriveScope(thread) : escapeStored(input.scope)
+    if (escapedScope === null) {
+      return { ok: false, refusal: noOpenCriterionRefusal(thread.id) }
+    }
+    if (escapedScope.length > caps.KEY_DECISION_SCOPE_MAX) {
+      return { ok: false, refusal: scopeCapRefusal(escapedScope.length) }
+    }
+
     const commit = readProjectHead(rt, rt.cwd)
 
     const decision: Decision = {
@@ -152,15 +202,56 @@ export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOut
       return { ok: false, refusal: invalidDecisionRefusal(validated.message) }
     }
 
-    const committed = store.commit([{ kind: 'decision', record: validated.value }], `record decision ${validated.value.id} on thread ${thread.slug}`)
+    const keyDecision: KeyDecision = {
+      id: rt.ulid(),
+      decision_id: validated.value.id,
+      title: validated.value.title,
+      scope: escapedScope
+    }
+
+    const prospective: Thread = {
+      ...thread,
+      spine: { ...thread.spine, key_decisions: [...thread.spine.key_decisions, keyDecision] },
+      updated_at: rt.now()
+    }
+
+    const prospectiveBytes = Buffer.byteLength(JSON.stringify(prospective), 'utf8')
+    const prospectiveValidated =
+      prospectiveBytes > caps.THREAD_RECORD_SERIALISED_MAX_BYTES ? null : ThreadRecord.parse(prospective)
+
+    const linkSkippedReason =
+      prospectiveValidated === null
+        ? `linking this decision would take the thread record to ${prospectiveBytes} bytes, over its cap of ${caps.THREAD_RECORD_SERIALISED_MAX_BYTES} bytes; the decision was recorded and the spine link was not written; remedy: strike an entry from the thread running summary, then link this decision with update_thread key_decisions_add.`
+        : prospectiveValidated.ok
+          ? null
+          : `the thread record carrying this link failed its stored-shape validation, so the decision was recorded and the spine link was not written: ${prospectiveValidated.message}`
+
+    const changes: RecordChange[] =
+      prospectiveValidated !== null && prospectiveValidated.ok
+        ? [
+            { kind: 'decision', record: validated.value },
+            { kind: 'thread', record: prospectiveValidated.value }
+          ]
+        : [{ kind: 'decision', record: validated.value }]
+
+    const committed = store.commit(changes, `record decision ${validated.value.id} on thread ${thread.slug}`)
     if (!committed.ok) {
       return { ok: false, refusal: commitFailureRefusal(committed.detail) }
     }
 
     return {
       ok: true,
-      text: `recorded decision ${validated.value.id} on thread ${thread.slug}.`,
-      structured: { decision_id: validated.value.id, thread_id: thread.id, commit: validated.value.commit }
+      text:
+        linkSkippedReason === null
+          ? `recorded decision ${validated.value.id} on thread ${thread.slug} and linked it into the running summary.`
+          : `recorded decision ${validated.value.id} on thread ${thread.slug}; the running-summary link was not written.`,
+      structured: {
+        decision_id: validated.value.id,
+        thread_id: thread.id,
+        commit: validated.value.commit,
+        linked: linkSkippedReason === null,
+        link_skipped_reason: linkSkippedReason
+      }
     }
   }
 }
