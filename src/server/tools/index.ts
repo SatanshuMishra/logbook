@@ -1,4 +1,5 @@
 import type { ToolSpec } from '../register.ts'
+import { LEDGER_TOOL_NAMES, type LedgerToolName } from '../tool-names.ts'
 import { openThreadTool } from './open_thread.ts'
 import { updateThreadTool } from './update_thread.ts'
 import { closeThreadTool } from './close_thread.ts'
@@ -12,17 +13,21 @@ import { syncLedgerTool } from './sync_ledger.ts'
 import { resolveConflictTool } from './resolve_conflict.ts'
 import { listThreadsTool } from './list_threads.ts'
 
-export const TOOL_SPECS: ToolSpec<never, never>[] = [
-  openThreadTool,
-  updateThreadTool,
-  closeThreadTool,
-  amendCriteriaTool,
-  bindBranchTool,
-  resumeThreadTool,
-  parkThreadTool,
-  recordDecisionTool,
-  logSessionEventTool,
-  syncLedgerTool,
-  resolveConflictTool,
-  listThreadsTool
-] as unknown as ToolSpec<never, never>[]
+const SPEC_BY_NAME = {
+  open_thread: openThreadTool,
+  update_thread: updateThreadTool,
+  close_thread: closeThreadTool,
+  amend_criteria: amendCriteriaTool,
+  bind_branch: bindBranchTool,
+  resume_thread: resumeThreadTool,
+  park_thread: parkThreadTool,
+  record_decision: recordDecisionTool,
+  log_session_event: logSessionEventTool,
+  sync_ledger: syncLedgerTool,
+  resolve_conflict: resolveConflictTool,
+  list_threads: listThreadsTool
+} satisfies Record<LedgerToolName, { name: string }>
+
+export const TOOL_SPECS: ToolSpec<never, never>[] = LEDGER_TOOL_NAMES.map(
+  (name) => SPEC_BY_NAME[name]
+) as unknown as ToolSpec<never, never>[]
