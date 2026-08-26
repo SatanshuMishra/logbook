@@ -106,6 +106,43 @@ const seedStore = async (spawned: SpawnedServer): Promise<SeededIds> => {
   }
 }
 
+type ThreadDetailIds = { threadId: string; criterionIds: string[]; riskIds: string[] }
+
+const seedThreadWithRisksAndCriteria = async (spawned: SpawnedServer): Promise<ThreadDetailIds> => {
+  await spawned.client.listTools()
+
+  const opened = (await spawned.client.callTool({
+    name: 'open_thread',
+    arguments: {
+      title: 'thread detail fixture thread',
+      slug: 'thread-detail-fixture-thread',
+      completion_criteria: ['the first thread detail criterion', 'the second thread detail criterion']
+    }
+  })) as CallToolResult
+  assertOkResult('open_thread (thread detail fixture arrange)', opened)
+  const openedStructured = opened.structuredContent as {
+    thread_id: string
+    completion_criteria: { id: string; ordinal: number; text: string }[]
+  }
+  const threadId = openedStructured.thread_id
+  const criterionIds = openedStructured.completion_criteria.map((criterion) => criterion.id)
+
+  const updated = (await spawned.client.callTool({
+    name: 'update_thread',
+    arguments: {
+      thread_id: threadId,
+      risks_add: [
+        { text: 'the first thread detail risk', scope: 'the first thread detail criterion' },
+        { text: 'the second thread detail risk', scope: 'the second thread detail criterion' }
+      ]
+    }
+  })) as CallToolResult
+  assertOkResult('update_thread (thread detail fixture arrange)', updated)
+  const updatedStructured = updated.structuredContent as { risks_added: string[] }
+
+  return { threadId, criterionIds, riskIds: updatedStructured.risks_added }
+}
+
 const parseIndexShapes = (indexBody: string): string[] =>
   indexBody
     .split('\n')
@@ -248,5 +285,35 @@ test('resource.read-is-pure', async () => {
 
     const after = snapshotLayout(layout.value, fx.repo)
     assertSnapshotsIdentical(before, after)
+  })
+})
+
+const readThreadResourceText = async (spawned: SpawnedServer, threadId: string): Promise<string> => {
+  const read = await spawned.client.readResource({ uri: `logbook://thread/${threadId}` })
+  const [content] = read.contents
+  assert.ok(
+    content !== undefined && 'text' in content && typeof content.text === 'string',
+    'expected logbook://thread to return text content'
+  )
+  return (content as { text: string }).text
+}
+
+test('resource.thread-detail-shows-every-risk-and-criterion-id', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedThreadWithRisksAndCriteria(fx.spawned)
+    assert.equal(ids.criterionIds.length, 2, 'expected the fixture to mint two criterion ids')
+    assert.equal(ids.riskIds.length, 2, 'expected the fixture to mint two risk ids')
+
+    const detailText = await readThreadResourceText(fx.spawned, ids.threadId)
+
+    for (const criterionId of ids.criterionIds) {
+      assert.ok(
+        detailText.includes(criterionId),
+        `expected the thread resource to contain criterion id ${criterionId}`
+      )
+    }
+    for (const riskId of ids.riskIds) {
+      assert.ok(detailText.includes(riskId), `expected the thread resource to contain risk id ${riskId}`)
+    }
   })
 })

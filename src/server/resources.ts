@@ -6,10 +6,10 @@ import type { Slot, Store, Thread } from '../store/records.ts'
 import { layoutFor } from '../store/layout.ts'
 import { readPointer } from '../domain/pointer.ts'
 import { escapeStored } from '../render/escape.ts'
-import { renderBriefing, type DecisionIntegrity } from '../render/briefing.ts'
+import type { DecisionIntegrity } from '../render/briefing.ts'
 import { paginateRoster, renderRoster, selectRosterThreads, toRosterRow } from '../render/roster.ts'
 import { openProjectStore, resolvePredecessor } from './tool-support.ts'
-import { renderDecisionResource, renderSessionEntryResource } from './resource-render.ts'
+import { renderDecisionResource, renderSessionEntryResource, renderThreadDetail } from './resource-render.ts'
 import {
   completeDecisionIds,
   completeSessionEntryIds,
@@ -22,7 +22,10 @@ type Address = { shape: string; description: string }
 const ADDRESSES: readonly Address[] = [
   { shape: 'logbook://index', description: 'lists every address this server publishes, one per line, this line included' },
   { shape: 'logbook://roster', description: 'the resumable roster, the same content list_threads returns' },
-  { shape: 'logbook://thread/{id}', description: 'one thread record, rendered, resolved by its id or its slug' },
+  {
+    shape: 'logbook://thread/{id}',
+    description: 'one thread record in full, every risk and criterion id shown, resolved by its id or its slug'
+  },
   { shape: 'logbook://decision/{id}', description: 'one decision record, resolved by its id' },
   {
     shape: 'logbook://session/{thread_id}/{entry_id}',
@@ -103,7 +106,7 @@ const readThreadResourceBody = (rt: Runtime, id: string): string => {
   const pointerRead = layout.ok ? readPointer(rt, layout.value) : { kind: 'absent' as const }
   const pointer = pointerRead.kind === 'pointer' ? pointerRead.value : null
 
-  return renderBriefing(thread, decisionIntegrity, pointer, resolvePredecessor(rt, store, thread))
+  return renderThreadDetail(thread, decisionIntegrity, pointer, resolvePredecessor(rt, store, thread))
 }
 
 const readDecisionResourceBody = (rt: Runtime, id: string): string => {
@@ -186,7 +189,7 @@ export const registerResources = (server: McpServer, rt: Runtime): void => {
     }),
     {
       title: 'Thread',
-      description: 'One thread record, rendered, resolved by its ULID id or its slug.',
+      description: 'One thread record in full, every risk and criterion id shown, resolved by its ULID id or its slug.',
       mimeType: 'text/markdown'
     },
     (uri, variables) => ({
