@@ -354,6 +354,7 @@ test('merge.rule-table-is-covered.walk-finds-spine-and-top-level-paths', () => {
       'completion_criteria',
       'created_at',
       'id',
+      'predecessor_id',
       'slug',
       'spine',
       'spine.active_goal',

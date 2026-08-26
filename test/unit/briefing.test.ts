@@ -62,7 +62,7 @@ const classifyBlockedCandidate = (candidate: BlockedCandidate): Classified<Block
 
 test('briefing.blocked-renders-its-reason', () => {
   const thread = baseThread({ blocked_by: 'waiting on the infra approval' })
-  const rendered = renderBriefing(thread, [], null)
+  const rendered = renderBriefing(thread, [], null, null)
   assert.ok(rendered.split('\n').some((line) => line.includes('waiting on the infra approval')))
 
   const { program } = loadSourceProgram()
@@ -78,7 +78,7 @@ test('briefing.blocked-renders-its-reason', () => {
 
 test('briefing.blockage-none-when-not-blocked', () => {
   const thread = baseThread({ blocked_by: null })
-  const rendered = renderBriefing(thread, [], null)
+  const rendered = renderBriefing(thread, [], null, null)
   assert.ok(rendered.split('\n').includes('Blockage: none'))
 })
 
@@ -122,7 +122,7 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
 
   const pointer: Pointer = { thread_id: threadId, written_at: rt.now(), session_id: 'session-x' }
 
-  const rendered = renderBriefing(thread, [decisionOne], pointer)
+  const rendered = renderBriefing(thread, [decisionOne], pointer, null)
 
   const expected = [
     'Thread: Ship the renderer',
@@ -132,6 +132,7 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     'Active goal: ship the renderer',
     'Next step: add tests',
     'Last session: wrote the first draft',
+    'Related:',
     'Open risks:',
     '- escaping might be incomplete',
     'Key decisions:',
@@ -150,7 +151,7 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
 
 test('briefing.renders-headers-only-when-lists-are-empty', () => {
   const thread = baseThread({ title: 'Empty Thread', status: 'done', blocked_by: 'still finishing docs' })
-  const rendered = renderBriefing(thread, [], null)
+  const rendered = renderBriefing(thread, [], null, null)
   const expected = [
     'Thread: Empty Thread',
     'Status: done',
@@ -159,6 +160,7 @@ test('briefing.renders-headers-only-when-lists-are-empty', () => {
     'Active goal: ship the thing',
     'Next step: write the tests',
     'Last session: wrote the renderer',
+    'Related:',
     'Open risks:',
     'Key decisions:',
     'Out of scope:',
@@ -171,7 +173,7 @@ test('briefing.renders-headers-only-when-lists-are-empty', () => {
 test('briefing.pointer-status-is-no-for-a-different-thread', () => {
   const thread = baseThread()
   const pointer: Pointer = { thread_id: rt.ulid(), written_at: rt.now(), session_id: 'someone-else' }
-  const rendered = renderBriefing(thread, [], pointer)
+  const rendered = renderBriefing(thread, [], pointer, null)
   assert.ok(rendered.split('\n').includes('Currently being worked: no'))
 })
 
@@ -181,7 +183,7 @@ test('briefing.criterion-status-is-open-when-undone-and-unstruck', () => {
       { id: rt.ulid(), ordinal: 1, text: 'not started yet', done: false, kind: 'planned', struck_by: null }
     ]
   })
-  const rendered = renderBriefing(thread, [], null)
+  const rendered = renderBriefing(thread, [], null, null)
   assert.ok(rendered.split('\n').includes('c1 [open] not started yet'))
 })
 
@@ -209,7 +211,7 @@ test('briefing.renders-multiple-decisions-in-order', () => {
     supersedes: [],
     created_at: rt.now()
   }
-  const rendered = renderBriefing(thread, [first, second], null)
+  const rendered = renderBriefing(thread, [first, second], null, null)
   const lines = rendered.split('\n')
   const decisionsIndex = lines.indexOf('Decisions:')
   assert.equal(lines[decisionsIndex + 1], '- first: outcome one')
@@ -243,6 +245,6 @@ test('briefing.escapes-every-free-text-field', () => {
     supersedes: [],
     created_at: rt.now()
   }
-  const rendered = renderBriefing(thread, [decision], null)
+  const rendered = renderBriefing(thread, [decision], null, null)
   assert.equal(rendered.includes('#'), false)
 })

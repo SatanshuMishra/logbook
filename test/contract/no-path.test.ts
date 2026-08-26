@@ -37,7 +37,7 @@ import {
   unclassifiableRecordRefusal,
   divergenceUnverifiableRefusal
 } from '../../src/server/tools/resolve_conflict.ts'
-import { commitThread, loadThread, openProjectStore } from '../../src/server/tool-support.ts'
+import { commitThread, loadThread, loadThreadForReference, openProjectStore } from '../../src/server/tool-support.ts'
 import { git, readIdentity, type Identity } from '../../src/store/git.ts'
 import { createStoreDirectories, layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { openStore, type Store } from '../../src/store/records.ts'
@@ -93,6 +93,7 @@ const BIND_BRANCH_INVALID_BINDING_PRODUCER: ProducerId = 'server/tools/bind_bran
 const AMEND_CRITERIA_MISSING_FIELD_PRODUCER: ProducerId = 'server/tools/amend_criteria.ts#missingFieldRefusal'
 const OPEN_PROJECT_STORE_PRODUCER: ProducerId = 'server/tool-support.ts#openProjectStore'
 const LOAD_THREAD_PRODUCER: ProducerId = 'server/tool-support.ts#loadThread'
+const LOAD_THREAD_FOR_REFERENCE_PRODUCER: ProducerId = 'server/tool-support.ts#loadThreadForReference'
 const COMMIT_THREAD_PRODUCER: ProducerId = 'server/tool-support.ts#commitThread'
 const BINDING_RECORD_PARSE_PRODUCER: ProducerId = 'schema/binding.ts#BindingRecord.parse'
 const BINDING_RECORD_REFUSE_PRODUCER: ProducerId = 'schema/binding.ts#BindingRecord.refuse'
@@ -281,6 +282,10 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     const unknownThreadLoad = loadThread(store, 'thread_id', rt.ulid())
     if (unknownThreadLoad.ok) throw new Error('expected loadThread to refuse against an unknown thread id')
     refusals.push({ producer: LOAD_THREAD_PRODUCER, refusal: unknownThreadLoad.refusal })
+
+    const unknownReferenceLoad = loadThreadForReference(store, 'predecessor_id', rt.ulid())
+    if (unknownReferenceLoad.ok) throw new Error('expected loadThreadForReference to refuse against an unknown thread id')
+    refusals.push({ producer: LOAD_THREAD_FOR_REFERENCE_PRODUCER, refusal: unknownReferenceLoad.refusal })
 
     const openProjectStoreFailureRt = testRuntime({ env: {}, cwd: repo })
     const openProjectStoreFailure = openProjectStore(openProjectStoreFailureRt)

@@ -5,7 +5,7 @@ import type { Decision } from '../../schema/decision.ts'
 import { layoutFor } from '../../store/layout.ts'
 import { readPointer, writePointer, type Pointer } from '../../domain/pointer.ts'
 import { renderBriefing } from '../../render/briefing.ts'
-import { openProjectStore, loadThread } from '../tool-support.ts'
+import { openProjectStore, loadThread, resolvePredecessor } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 
@@ -80,7 +80,7 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
       )
       .map((outcome) => outcome.slot.record)
 
-    const briefing = renderBriefing(thread, decisions, writtenPointer)
+    const briefing = renderBriefing(thread, decisions, writtenPointer, resolvePredecessor(rt, store, thread))
 
     return {
       ok: true,

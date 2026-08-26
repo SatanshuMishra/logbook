@@ -9,7 +9,7 @@ import { readPointer } from '../domain/pointer.ts'
 import { escapeStored } from '../render/escape.ts'
 import { renderBriefing } from '../render/briefing.ts'
 import { paginateRoster, renderRoster, selectRosterThreads, toRosterRow } from '../render/roster.ts'
-import { openProjectStore } from './tool-support.ts'
+import { openProjectStore, resolvePredecessor } from './tool-support.ts'
 import { renderDecisionResource, renderSessionEntryResource } from './resource-render.ts'
 import {
   completeDecisionIds,
@@ -105,7 +105,7 @@ const readThreadResourceBody = (rt: Runtime, id: string): string => {
   const pointerRead = layout.ok ? readPointer(rt, layout.value) : { kind: 'absent' as const }
   const pointer = pointerRead.kind === 'pointer' ? pointerRead.value : null
 
-  return renderBriefing(thread, decisions, pointer)
+  return renderBriefing(thread, decisions, pointer, resolvePredecessor(rt, store, thread))
 }
 
 const readDecisionResourceBody = (rt: Runtime, id: string): string => {

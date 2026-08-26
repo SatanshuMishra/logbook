@@ -39,6 +39,28 @@ const threadClosedRefusal = (field: string, id: string, status: Thread['status']
   message: `${field} names a thread that is already ${status}, which is terminal; open a new thread that references this one instead; received ${id}.`
 })
 
+export const loadThreadForReference = (store: Store, field: string, id: Ulid): Attempt<Thread> => {
+  const slot = store.readThread(id)
+  if (slot === null) return { ok: false, refusal: threadNotFoundRefusal(field, id) }
+  if (slot.quarantined) return { ok: false, refusal: threadQuarantinedRefusal(field, id) }
+  return { ok: true, value: slot.record }
+}
+
+export const resolvePredecessor = (rt: Runtime, store: Store, thread: Thread): Thread | null => {
+  const predecessorId = thread.predecessor_id
+  if (predecessorId === undefined) return null
+  const slot = store.readThread(predecessorId)
+  if (slot === null) {
+    rt.log({ level: 'error', event: 'briefing.predecessor-dangling', thread_id: thread.id, predecessor_id: predecessorId })
+    return null
+  }
+  if (slot.quarantined) {
+    rt.log({ level: 'error', event: 'briefing.predecessor-quarantined', thread_id: thread.id, predecessor_id: predecessorId })
+    return null
+  }
+  return slot.record
+}
+
 export const loadThread = (store: Store, field: string, id: Ulid): Attempt<Thread> => {
   const slot = store.readThread(id)
   if (slot === null) return { ok: false, refusal: threadNotFoundRefusal(field, id) }

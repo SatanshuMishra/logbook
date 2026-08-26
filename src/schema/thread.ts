@@ -34,6 +34,7 @@ export type Thread = {
   title: string
   status: 'open' | 'done' | 'abandoned'
   blocked_by: string | null
+  predecessor_id?: Ulid | undefined
   completion_criteria: Criterion[]
   spine: Spine
   created_at: Iso8601
@@ -112,6 +113,11 @@ const ThreadShape = z.object({
     .max(caps.THREAD_BLOCKED_BY_MAX)
     .nullable()
     .describe('the reason this thread is blocked, or null when it is not blocked'),
+  predecessor_id: z
+    .string()
+    .regex(ULID_PATTERN)
+    .optional()
+    .describe('the id of the thread this one succeeds, absent when this thread succeeds no earlier thread'),
   completion_criteria: z
     .array(CriterionSchema)
     .max(caps.CRITERIA_RETENTION_MAX_ELEMENTS)
