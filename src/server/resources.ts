@@ -2,12 +2,11 @@ import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mc
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js'
 import type { Variables } from '@modelcontextprotocol/sdk/shared/uriTemplate.js'
 import type { Runtime } from '../runtime/runtime.ts'
-import type { Decision } from '../schema/decision.ts'
 import type { Slot, Store, Thread } from '../store/records.ts'
 import { layoutFor } from '../store/layout.ts'
 import { readPointer } from '../domain/pointer.ts'
 import { escapeStored } from '../render/escape.ts'
-import { renderBriefing } from '../render/briefing.ts'
+import { renderBriefing, type DecisionIntegrity } from '../render/briefing.ts'
 import { paginateRoster, renderRoster, selectRosterThreads, toRosterRow } from '../render/roster.ts'
 import { openProjectStore, resolvePredecessor } from './tool-support.ts'
 import { renderDecisionResource, renderSessionEntryResource } from './resource-render.ts'
@@ -60,26 +59,25 @@ const resolveThreadSlot = (store: Store, id: string): Slot<Thread> | null => {
   return bySlug ?? null
 }
 
-const decisionsForThread = (rt: Runtime, store: Store, thread: Thread): Decision[] => {
+const decisionIntegrityForThread = (rt: Runtime, store: Store, thread: Thread): DecisionIntegrity => {
   const outcomes = thread.spine.key_decisions.map((keyDecision) => ({
     decisionId: keyDecision.decision_id,
     slot: store.readDecision(keyDecision.decision_id)
   }))
 
+  const dangling: string[] = []
+  const quarantined: string[] = []
   for (const outcome of outcomes) {
     if (outcome.slot === null) {
+      dangling.push(outcome.decisionId)
       rt.log({ level: 'error', event: 'resource.thread-decision-dangling', decision_id: outcome.decisionId })
     } else if (outcome.slot.quarantined) {
+      quarantined.push(outcome.decisionId)
       rt.log({ level: 'error', event: 'resource.thread-decision-quarantined', decision_id: outcome.decisionId })
     }
   }
 
-  return outcomes
-    .filter(
-      (outcome): outcome is { decisionId: string; slot: { quarantined: false; record: Decision } } =>
-        outcome.slot !== null && !outcome.slot.quarantined
-    )
-    .map((outcome) => outcome.slot.record)
+  return { resolved: outcomes.length - dangling.length - quarantined.length, dangling, quarantined }
 }
 
 const readThreadResourceBody = (rt: Runtime, id: string): string => {
@@ -99,13 +97,13 @@ const readThreadResourceBody = (rt: Runtime, id: string): string => {
   }
 
   const thread = slot.record
-  const decisions = decisionsForThread(rt, store, thread)
+  const decisionIntegrity = decisionIntegrityForThread(rt, store, thread)
 
   const layout = layoutFor(rt, rt.cwd)
   const pointerRead = layout.ok ? readPointer(rt, layout.value) : { kind: 'absent' as const }
   const pointer = pointerRead.kind === 'pointer' ? pointerRead.value : null
 
-  return renderBriefing(thread, decisions, pointer, resolvePredecessor(rt, store, thread))
+  return renderBriefing(thread, decisionIntegrity, pointer, resolvePredecessor(rt, store, thread))
 }
 
 const readDecisionResourceBody = (rt: Runtime, id: string): string => {

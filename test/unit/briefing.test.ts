@@ -2,9 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import * as ts from 'typescript'
-import { renderBriefing } from '../../src/render/briefing.ts'
+import { renderBriefing, type DecisionIntegrity } from '../../src/render/briefing.ts'
 import type { Thread } from '../../src/schema/thread.ts'
-import type { Decision } from '../../src/schema/decision.ts'
 import type { Pointer } from '../../src/domain/pointer.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { census } from '../support/census.ts'
@@ -12,6 +11,8 @@ import type { Classified } from '../support/census.ts'
 import { REBUILD_ROOT, forEachDescendant, lineOf, loadSourceProgram, sourceFileFor } from '../support/source-census.ts'
 
 const rt = testRuntime()
+
+const EMPTY_INTEGRITY: DecisionIntegrity = { resolved: 0, dangling: [], quarantined: [] }
 
 const baseThread = (overrides: Partial<Thread> = {}): Thread => ({
   id: rt.ulid(),
@@ -62,7 +63,7 @@ const classifyBlockedCandidate = (candidate: BlockedCandidate): Classified<Block
 
 test('briefing.blocked-renders-its-reason', () => {
   const thread = baseThread({ blocked_by: 'waiting on the infra approval' })
-  const rendered = renderBriefing(thread, [], null, null)
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
   assert.ok(rendered.split('\n').some((line) => line.includes('waiting on the infra approval')))
 
   const { program } = loadSourceProgram()
@@ -78,23 +79,13 @@ test('briefing.blocked-renders-its-reason', () => {
 
 test('briefing.blockage-none-when-not-blocked', () => {
   const thread = baseThread({ blocked_by: null })
-  const rendered = renderBriefing(thread, [], null, null)
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
   assert.ok(rendered.split('\n').includes('Blockage: none'))
 })
 
 test('briefing.renders-exact-output-for-a-full-thread', () => {
   const threadId = rt.ulid()
-  const decisionOne: Decision = {
-    id: rt.ulid(),
-    thread_id: threadId,
-    title: 'use postgres',
-    context: 'needed a database',
-    options: ['postgres', 'sqlite'],
-    outcome: 'chose postgres for durability',
-    commit: null,
-    supersedes: [],
-    created_at: rt.now()
-  }
+  const decisionOneId = rt.ulid()
   const criterionA = { id: rt.ulid(), ordinal: 1, text: 'first criterion', done: true, kind: 'planned' as const, struck_by: null }
   const criterionB = {
     id: rt.ulid(),
@@ -115,14 +106,15 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
       next_step: 'add tests',
       last_session: 'wrote the first draft',
       open_risks: [{ id: rt.ulid(), scope: 'renderer', text: 'escaping might be incomplete', refs: [] }],
-      key_decisions: [{ id: rt.ulid(), decision_id: decisionOne.id, title: 'use postgres', scope: 'storage' }],
+      key_decisions: [{ id: rt.ulid(), decision_id: decisionOneId, title: 'use postgres', scope: 'storage' }],
       out_of_scope: [{ id: rt.ulid(), text: 'does not cover the CLI' }]
     }
   })
 
   const pointer: Pointer = { thread_id: threadId, written_at: rt.now(), session_id: 'session-x' }
 
-  const rendered = renderBriefing(thread, [decisionOne], pointer, null)
+  const integrity: DecisionIntegrity = { resolved: 1, dangling: [], quarantined: [] }
+  const rendered = renderBriefing(thread, integrity, pointer, null)
 
   const expected = [
     'Thread: Ship the renderer',
@@ -143,7 +135,7 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     'c1 [done] first criterion',
     'c2 [struck] second criterion',
     'Decisions:',
-    '- use postgres: chose postgres for durability'
+    'resolved: 1'
   ].join('\n')
 
   assert.equal(rendered, expected)
@@ -151,7 +143,7 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
 
 test('briefing.renders-headers-only-when-lists-are-empty', () => {
   const thread = baseThread({ title: 'Empty Thread', status: 'done', blocked_by: 'still finishing docs' })
-  const rendered = renderBriefing(thread, [], null, null)
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
   const expected = [
     'Thread: Empty Thread',
     'Status: done',
@@ -165,7 +157,8 @@ test('briefing.renders-headers-only-when-lists-are-empty', () => {
     'Key decisions:',
     'Out of scope:',
     'Completion criteria:',
-    'Decisions:'
+    'Decisions:',
+    'resolved: 0'
   ].join('\n')
   assert.equal(rendered, expected)
 })
@@ -173,7 +166,7 @@ test('briefing.renders-headers-only-when-lists-are-empty', () => {
 test('briefing.pointer-status-is-no-for-a-different-thread', () => {
   const thread = baseThread()
   const pointer: Pointer = { thread_id: rt.ulid(), written_at: rt.now(), session_id: 'someone-else' }
-  const rendered = renderBriefing(thread, [], pointer, null)
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, pointer, null)
   assert.ok(rendered.split('\n').includes('Currently being worked: no'))
 })
 
@@ -183,39 +176,24 @@ test('briefing.criterion-status-is-open-when-undone-and-unstruck', () => {
       { id: rt.ulid(), ordinal: 1, text: 'not started yet', done: false, kind: 'planned', struck_by: null }
     ]
   })
-  const rendered = renderBriefing(thread, [], null, null)
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
   assert.ok(rendered.split('\n').includes('c1 [open] not started yet'))
 })
 
-test('briefing.renders-multiple-decisions-in-order', () => {
+test('briefing.renders-dangling-and-quarantined-decisions-in-order', () => {
   const thread = baseThread()
-  const first: Decision = {
-    id: rt.ulid(),
-    thread_id: thread.id,
-    title: 'first',
-    context: '',
-    options: [],
-    outcome: 'outcome one',
-    commit: null,
-    supersedes: [],
-    created_at: rt.now()
+  const integrity: DecisionIntegrity = {
+    resolved: 0,
+    dangling: ['dangling-one', 'dangling-two'],
+    quarantined: ['quarantined-one']
   }
-  const second: Decision = {
-    id: rt.ulid(),
-    thread_id: thread.id,
-    title: 'second',
-    context: '',
-    options: [],
-    outcome: 'outcome two',
-    commit: null,
-    supersedes: [],
-    created_at: rt.now()
-  }
-  const rendered = renderBriefing(thread, [first, second], null, null)
+  const rendered = renderBriefing(thread, integrity, null, null)
   const lines = rendered.split('\n')
   const decisionsIndex = lines.indexOf('Decisions:')
-  assert.equal(lines[decisionsIndex + 1], '- first: outcome one')
-  assert.equal(lines[decisionsIndex + 2], '- second: outcome two')
+  assert.equal(lines[decisionsIndex + 1], 'resolved: 0')
+  assert.equal(lines[decisionsIndex + 2], 'dangling: dangling-one')
+  assert.equal(lines[decisionsIndex + 3], 'dangling: dangling-two')
+  assert.equal(lines[decisionsIndex + 4], 'quarantined: quarantined-one')
 })
 
 test('briefing.escapes-every-free-text-field', () => {
@@ -234,17 +212,11 @@ test('briefing.escapes-every-free-text-field', () => {
       out_of_scope: [{ id: rt.ulid(), text: '# oos heading' }]
     }
   })
-  const decision: Decision = {
-    id: rt.ulid(),
-    thread_id: thread.id,
-    title: '# decision title',
-    context: '',
-    options: [],
-    outcome: '# outcome heading',
-    commit: null,
-    supersedes: [],
-    created_at: rt.now()
+  const integrity: DecisionIntegrity = {
+    resolved: 0,
+    dangling: ['# dangling heading'],
+    quarantined: ['# quarantined heading']
   }
-  const rendered = renderBriefing(thread, [decision], null, null)
+  const rendered = renderBriefing(thread, integrity, null, null)
   assert.equal(rendered.includes('#'), false)
 })

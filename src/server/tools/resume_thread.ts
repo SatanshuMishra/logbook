@@ -1,10 +1,9 @@
 import { z } from 'zod'
 import type { ToolSpec } from '../register.ts'
 import { ULID_PATTERN } from '../../schema/ids.ts'
-import type { Decision } from '../../schema/decision.ts'
 import { layoutFor } from '../../store/layout.ts'
 import { readPointer, writePointer, type Pointer } from '../../domain/pointer.ts'
-import { renderBriefing } from '../../render/briefing.ts'
+import { renderBriefing, type DecisionIntegrity } from '../../render/briefing.ts'
 import { openProjectStore, loadThread, resolvePredecessor } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
@@ -65,22 +64,25 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
       slot: store.readDecision(keyDecision.decision_id)
     }))
 
+    const dangling: string[] = []
+    const quarantined: string[] = []
     for (const outcome of decisionOutcomes) {
       if (outcome.slot === null) {
+        dangling.push(outcome.decisionId)
         rt.log({ level: 'error', event: 'briefing.decision-dangling', decision_id: outcome.decisionId })
       } else if (outcome.slot.quarantined) {
+        quarantined.push(outcome.decisionId)
         rt.log({ level: 'error', event: 'briefing.decision-quarantined', decision_id: outcome.decisionId })
       }
     }
 
-    const decisions: Decision[] = decisionOutcomes
-      .filter(
-        (outcome): outcome is { decisionId: string; slot: { quarantined: false; record: Decision } } =>
-          outcome.slot !== null && !outcome.slot.quarantined
-      )
-      .map((outcome) => outcome.slot.record)
+    const decisionIntegrity: DecisionIntegrity = {
+      resolved: decisionOutcomes.length - dangling.length - quarantined.length,
+      dangling,
+      quarantined
+    }
 
-    const briefing = renderBriefing(thread, decisions, writtenPointer, resolvePredecessor(rt, store, thread))
+    const briefing = renderBriefing(thread, decisionIntegrity, writtenPointer, resolvePredecessor(rt, store, thread))
 
     return {
       ok: true,
