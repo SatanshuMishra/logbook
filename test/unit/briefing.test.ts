@@ -246,7 +246,7 @@ test('briefing.lane-a-is-the-current-criterions-items-shown-in-full', () => {
       active_goal: 'g',
       next_step: 'n',
       last_session: 'l',
-      open_risks: [currentRisk, otherRisk],
+      open_risks: [otherRisk, currentRisk],
       key_decisions: [],
       out_of_scope: []
     }
@@ -258,7 +258,66 @@ test('briefing.lane-a-is-the-current-criterions-items-shown-in-full', () => {
   assert.equal(
     rendered.split('\n')[openRisksIndex + 1],
     `- ${currentRisk.id} risk tied to the current criterion`,
-    'the current criterion risk must render first, in lane A'
+    'the current criterion risk must render first, in lane A, even though it was recorded last'
+  )
+})
+
+test('briefing.out-of-scope-overflow-is-capped-and-counted-in-the-tail', () => {
+  const outOfScopeItems: OutOfScope[] = Array.from({ length: 12 }, (_, index) => ({
+    id: rt.ulid(),
+    text: `out of scope item ${index}`
+  }))
+  const thread = baseThread({
+    spine: {
+      active_goal: 'g',
+      next_step: 'n',
+      last_session: 'l',
+      open_risks: [],
+      key_decisions: [],
+      out_of_scope: outOfScopeItems
+    }
+  })
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
+  assert.ok(rendered.includes('out of scope item 0'))
+  assert.ok(rendered.includes('out of scope item 9'))
+  assert.equal(
+    rendered.includes('out of scope item 10'),
+    false,
+    'out-of-scope is capped at 10 shown; the 11th item must not render'
+  )
+  assert.equal(
+    rendered.includes('out of scope item 11'),
+    false,
+    'out-of-scope is capped at 10 shown; the 12th item must not render'
+  )
+  assert.ok(
+    rendered.includes('- 2 out-of-scope items not shown'),
+    'the two overflow out-of-scope items must be counted in the not-shown tail'
+  )
+})
+
+test('briefing.dangling-and-quarantined-overflow-is-capped-and-counted-in-the-tail', () => {
+  const thread = baseThread()
+  const integrity: DecisionIntegrity = {
+    resolved: 0,
+    dangling: Array.from({ length: 8 }, (_, index) => `dangling-${index}`),
+    quarantined: Array.from({ length: 4 }, (_, index) => `quarantined-${index}`)
+  }
+  const rendered = renderBriefing(thread, integrity, null, null)
+  const lines = rendered.split('\n')
+  assert.equal(
+    lines.filter((line) => line.startsWith('dangling: ')).length,
+    6,
+    'dangling decision ids are capped at 6 shown'
+  )
+  assert.equal(
+    lines.filter((line) => line.startsWith('quarantined: ')).length,
+    4,
+    'all 4 quarantined decision ids fit under the cap of 6 and must all render'
+  )
+  assert.ok(
+    rendered.includes('- 2 dangling or quarantined decision ids not shown'),
+    'the 2 overflow dangling ids must be counted in the not-shown tail, combined with quarantined overflow'
   )
 })
 
