@@ -1,7 +1,12 @@
 import type { Thread, Criterion, Risk, KeyDecision, OutOfScope } from '../schema/thread.ts'
-import type { Decision } from '../schema/decision.ts'
 import type { Pointer } from '../domain/pointer.ts'
 import { escapeStored } from './escape.ts'
+
+export type DecisionIntegrity = {
+  resolved: number
+  dangling: string[]
+  quarantined: string[]
+}
 
 const criterionStatus = (criterion: Criterion): string => {
   if (criterion.struck_by !== null) return 'struck'
@@ -17,8 +22,9 @@ const renderKeyDecisionLine = (keyDecision: KeyDecision): string => `- ${escapeS
 
 const renderOutOfScopeLine = (outOfScope: OutOfScope): string => `- ${escapeStored(outOfScope.text)}`
 
-const renderDecisionLine = (decision: Decision): string =>
-  `- ${escapeStored(decision.title)}: ${escapeStored(decision.outcome)}`
+const renderDanglingLine = (decisionId: string): string => `dangling: ${escapeStored(decisionId)}`
+
+const renderQuarantinedLine = (decisionId: string): string => `quarantined: ${escapeStored(decisionId)}`
 
 const renderRelatedLine = (predecessor: Thread): string =>
   `- succeeds: ${escapeStored(predecessor.title)} (${escapeStored(predecessor.slug)})`
@@ -31,7 +37,7 @@ const renderPointerStatus = (pointer: Pointer | null, threadId: string): string 
 
 export const renderBriefing = (
   thread: Thread,
-  decisions: Decision[],
+  decisionIntegrity: DecisionIntegrity,
   pointer: Pointer | null,
   predecessor: Thread | null
 ): string => {
@@ -39,7 +45,8 @@ export const renderBriefing = (
   const riskLines = thread.spine.open_risks.map(renderRiskLine)
   const keyDecisionLines = thread.spine.key_decisions.map(renderKeyDecisionLine)
   const outOfScopeLines = thread.spine.out_of_scope.map(renderOutOfScopeLine)
-  const decisionLines = decisions.map(renderDecisionLine)
+  const danglingLines = decisionIntegrity.dangling.map(renderDanglingLine)
+  const quarantinedLines = decisionIntegrity.quarantined.map(renderQuarantinedLine)
   const relatedThreads = predecessor === null ? [] : [predecessor]
   const relatedLines = relatedThreads.map(renderRelatedLine)
 
@@ -62,6 +69,8 @@ export const renderBriefing = (
     'Completion criteria:',
     ...criteriaLines,
     'Decisions:',
-    ...decisionLines
+    `resolved: ${decisionIntegrity.resolved}`,
+    ...danglingLines,
+    ...quarantinedLines
   ].join('\n')
 }

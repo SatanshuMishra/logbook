@@ -271,7 +271,9 @@ test('record_decision.rejects-invalid', async () => {
   })
 })
 
-test('decision.appears-in-both-briefing-sections-without-a-second-call', async () => {
+const DECISION_OUTCOME_SENTINEL = 'SENTINEL-OUTCOME-BODY-e37e0a20 auto-link, because the follow-up is silently optional'
+
+test('decision.outcome-body-is-absent-from-both-briefing-surfaces', async () => {
   await withSpawnFixture(async (fx) => {
     const threadId = await createFixtureThread(fx.spawned, fx.published)
 
@@ -282,7 +284,7 @@ test('decision.appears-in-both-briefing-sections-without-a-second-call', async (
         title: 'link decisions into the spine automatically',
         context: 'a decision recorded alone never reaches the briefing',
         options: ['auto-link in record_decision', 'require a follow-up update_thread'],
-        outcome: 'auto-link, because the follow-up is silently optional'
+        outcome: DECISION_OUTCOME_SENTINEL
       }
     })) as CallToolResult
     assertOkResult('record_decision (auto-link)', recorded)
@@ -295,7 +297,8 @@ test('decision.appears-in-both-briefing-sections-without-a-second-call', async (
       arguments: { thread_id: threadId }
     })) as CallToolResult
     assertOkResult('resume_thread (briefing)', resumed)
-    const lines = (resumed.structuredContent as { briefing: string }).briefing.split('\n')
+    const briefing = (resumed.structuredContent as { briefing: string }).briefing
+    const lines = briefing.split('\n')
 
     const keyDecisionsAt = lines.indexOf('Key decisions:')
     const decisionsAt = lines.indexOf('Decisions:')
@@ -307,9 +310,22 @@ test('decision.appears-in-both-briefing-sections-without-a-second-call', async (
       'the Key decisions section must carry the decision title with no intervening update_thread call'
     )
     assert.equal(
-      lines[decisionsAt + 1],
-      '- link decisions into the spine automatically: auto-link, because the follow-up is silently optional',
-      'the Decisions section must carry the decision title and its outcome'
+      briefing.includes(DECISION_OUTCOME_SENTINEL),
+      false,
+      'resume_thread must never inline a decision outcome body into the briefing it returns'
+    )
+
+    const resourceRead = await fx.spawned.client.readResource({ uri: `logbook://thread/${threadId}` })
+    const [firstContent] = resourceRead.contents
+    assert.ok(
+      firstContent !== undefined && 'text' in firstContent && typeof firstContent.text === 'string',
+      'expected logbook://thread to return text content'
+    )
+    const resourceText = (firstContent as { text: string }).text
+    assert.equal(
+      resourceText.includes(DECISION_OUTCOME_SENTINEL),
+      false,
+      'logbook://thread must never inline a decision outcome body into the rendering it returns'
     )
   })
 })
