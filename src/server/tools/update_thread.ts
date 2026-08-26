@@ -51,6 +51,16 @@ const UpdateThreadInputSchema = z.strictObject({
     .max(caps.SPINE_LAST_SESSION_MAX)
     .optional()
     .describe('replaces the spine last_session field when supplied; omit to leave it unchanged'),
+  blocked_by: z
+    .string()
+    .min(1)
+    .max(caps.THREAD_BLOCKED_BY_MAX)
+    .optional()
+    .describe('what this thread is blocked on; omit to leave it unchanged, and send blocked_by_clear to clear it'),
+  blocked_by_clear: z
+    .boolean()
+    .optional()
+    .describe('send true to clear what this thread is blocked on; omit to leave it unchanged'),
   risks_add: z
     .array(RiskAddSchema)
     .max(caps.OPEN_RISKS_MAX_ELEMENTS)
@@ -82,7 +92,8 @@ const UpdateThreadOutputSchema = z.object({
   risks_added: z.array(z.string()).describe('ids minted for risks this call added'),
   risks_retired: z.array(z.string()).describe('ids of risks this call removed from the spine'),
   key_decisions_added: z.array(z.string()).describe('ids minted for key decisions this call linked into the spine'),
-  out_of_scope_added: z.array(z.string()).describe('ids minted for out-of-scope statements this call added')
+  out_of_scope_added: z.array(z.string()).describe('ids minted for out-of-scope statements this call added'),
+  blocked_by_set: z.boolean().describe('whether this call changed what the thread is blocked on, by either setting or clearing it')
 })
 
 type UpdateThreadInput = z.infer<typeof UpdateThreadInputSchema>
@@ -106,6 +117,15 @@ const struckCriterionRefusal = (ids: string[]): Refusal => ({
   message: `criteria_done names criteria that have already been struck and cannot be marked done: ${ids.join(', ')}.`
 })
 
+export const conflictingBlockageRefusal = (): Refusal => ({
+  ok: false,
+  field: 'blocked_by',
+  accepted: 'either blocked_by to say what the thread is blocked on, or blocked_by_clear to clear it, never both in one call',
+  example: 'waiting on the infra approval',
+  retryable: true,
+  message: 'blocked_by and blocked_by_clear were both supplied; send one or the other, not both.'
+})
+
 export const unknownDecisionRefusal = (ids: string[]): Refusal => ({
   ok: false,
   field: 'key_decisions_add',
@@ -119,7 +139,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
   name: 'update_thread',
   title: 'Update thread',
   description:
-    'Records mid-session progress on one thread: mark criteria done, refresh any of the six running-summary fields, and add or retire risks. Every argument is optional and only what is supplied is written, so a call carrying just criteria_done: ["<criterion ulid>"] changes nothing else. Risks are retired by id rather than by resubmitting the whole list, so a thread with fourteen risks costs one id to change one of them. The reply reports what changed, not what the record now holds.',
+    'Records mid-session progress on one thread: mark criteria done, refresh any of the six running-summary fields, set or clear what the thread is blocked on, and add or retire risks. Every argument is optional and only what is supplied is written, so a call carrying just criteria_done: ["<criterion ulid>"] changes nothing else. Risks are retired by id rather than by resubmitting the whole list, so a thread with fourteen risks costs one id to change one of them. The reply reports what changed, not what the record now holds.',
   input: UpdateThreadInputSchema,
   output: UpdateThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -193,13 +213,21 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
       ...(input.last_session !== undefined ? (['last_session'] as const) : [])
     ]
 
+    const blockedBySupplied = input.blocked_by !== undefined
+    const blockedByCleared = input.blocked_by_clear === true
+    if (blockedBySupplied && blockedByCleared) {
+      return { ok: false, refusal: conflictingBlockageRefusal() }
+    }
+    const blockageChanged = blockedBySupplied || blockedByCleared
+
     const nothingChanged =
       markedDone.length === 0 &&
       retiredIds.length === 0 &&
       newRisks.length === 0 &&
       newKeyDecisions.length === 0 &&
       newOutOfScope.length === 0 &&
-      spineFieldsUpdated.length === 0
+      spineFieldsUpdated.length === 0 &&
+      !blockageChanged
 
     if (nothingChanged) {
       return {
@@ -212,7 +240,8 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
           risks_added: [],
           risks_retired: [],
           key_decisions_added: [],
-          out_of_scope_added: []
+          out_of_scope_added: [],
+          blocked_by_set: false
         }
       }
     }
@@ -225,6 +254,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
 
     const nextThread: Thread = {
       ...thread,
+      blocked_by: blockedByCleared ? null : (input.blocked_by ?? thread.blocked_by),
       completion_criteria: nextCriteria,
       spine: contributed.value,
       updated_at: rt.now()
@@ -243,7 +273,8 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
         risks_added: newRisks.map((r) => r.id),
         risks_retired: retiredIds,
         key_decisions_added: newKeyDecisions.map((kd) => kd.id),
-        out_of_scope_added: newOutOfScope.map((o) => o.id)
+        out_of_scope_added: newOutOfScope.map((o) => o.id),
+        blocked_by_set: blockageChanged
       }
     }
   }
