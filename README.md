@@ -36,7 +36,7 @@ What the repository does not state: neither `.claude-plugin/plugin.json:1-9` nor
 | `skills/` | Two Claude Code skills, `preflight` and `debrief`, each one `SKILL.md` (`skills/preflight/SKILL.md`, `skills/debrief/SKILL.md`) |
 | `test/` | The automated suite, split by concern: `unit/`, `store/`, `contract/`, `sync/`, `spawn/`, `hooks/` |
 | `scripts/` | Development-time scripts: git-hook installation, a packaging check, an audit-markdown generator |
-| `docs/` | Specs and audits written during development (`docs/specs/`, `docs/audits/`) |
+| `docs/` | Development documentation. Includes `docs/specs/`, `docs/audits/`, and `docs/rules/` — the last of these holding the standing continuity rule this repository authors for an operator to install |
 | `.claude-plugin/` | The plugin manifest (`plugin.json`) and the marketplace manifest (`marketplace.json`) |
 
 At the repository root: `package.json`, `tsconfig.json`, `.npmrc`, `.mcp.json` (declares the MCP server under the server key `ledger`, `.mcp.json:3`, pointing at `bin/logbook-server.ts`, `.mcp.json:5`), `stryker.config.json`, `inspector.config.json`.
@@ -56,7 +56,7 @@ The durable half is git-native. Every write to the working copy also lands as a 
 
 There is **no worktree**. Building a commit uses raw git plumbing against a throwaway index file rather than checking anything out: `read-tree`, `hash-object`, `update-index`, and `write-tree` build a tree object, then `commit-tree` and `update-ref` land it (`src/store/write-path.ts:75-111,190-208`). Nothing is ever checked out to a working directory for this ref.
 
-Concurrent writers are handled with compare-and-swap: `update-ref` is called with the previous commit it expects to be replacing, and a write that loses the race is retried against the new value, up to 5 times (`src/store/ref.ts:15-23`; `src/store/write-path.ts:29,175-221`).
+Concurrent writers are handled with compare-and-swap: `update-ref` is called with the previous commit it expects to be replacing. A write that loses the race re-reads both the ref and the record it is about to rewrite before retrying, and refuses rather than retrying when that record changed underneath it; it retries up to 5 times (`src/store/ref.ts:15-23`; `src/store/write-path.ts:29,175-221`).
 
 ## Protection and its limits
 
