@@ -349,7 +349,8 @@ test('contract.published-schema-matches-enforced.registry-census-halts-on-a-name
   const syntheticCensus: RegistryCensus = {
     files: ['ghost_tool'],
     registered: ['ghost_tool'],
-    published: []
+    published: [],
+    guardApproved: ['ghost_tool']
   }
   const population = registryPopulation(syntheticCensus)
   assert.deepEqual([...population].sort(), ['ghost_tool'])
@@ -360,13 +361,46 @@ test('contract.published-schema-matches-enforced.registry-census-halts-on-a-name
   )
 })
 
-test('contract.published-schema-matches-enforced.registry-census-allows-a-name-present-on-all-three-sides', () => {
+test('contract.published-schema-matches-enforced.registry-census-allows-a-name-present-on-every-axis', () => {
   const syntheticCensus: RegistryCensus = {
     files: ['real_tool'],
     registered: ['real_tool'],
-    published: ['real_tool']
+    published: ['real_tool'],
+    guardApproved: ['real_tool']
   }
   const population = registryPopulation(syntheticCensus)
   assert.deepEqual([...population], ['real_tool'])
   assert.doesNotThrow(() => census([...population], (name) => classifyRegistryName(name, syntheticCensus)))
+})
+
+test('contract.published-schema-matches-enforced.registry-census-halts-on-a-name-registered-but-not-guard-approved', () => {
+  const syntheticCensus: RegistryCensus = {
+    files: ['ghost_tool'],
+    registered: ['ghost_tool'],
+    published: ['ghost_tool'],
+    guardApproved: []
+  }
+  const population = registryPopulation(syntheticCensus)
+  assert.deepEqual([...population], ['ghost_tool'])
+  assert.equal(classifyRegistryName('ghost_tool', syntheticCensus), 'unclassifiable')
+  assert.throws(
+    () => census([...population], (name) => classifyRegistryName(name, syntheticCensus)),
+    (error: unknown) => error instanceof Error && error.message.includes('ghost_tool')
+  )
+})
+
+test('contract.published-schema-matches-enforced.registry-census-halts-on-a-name-guard-approved-but-not-registered', () => {
+  const syntheticCensus: RegistryCensus = {
+    files: [],
+    registered: [],
+    published: [],
+    guardApproved: ['ghost_tool']
+  }
+  const population = registryPopulation(syntheticCensus)
+  assert.deepEqual([...population], ['ghost_tool'])
+  assert.equal(classifyRegistryName('ghost_tool', syntheticCensus), 'unclassifiable')
+  assert.throws(
+    () => census([...population], (name) => classifyRegistryName(name, syntheticCensus)),
+    (error: unknown) => error instanceof Error && error.message.includes('ghost_tool')
+  )
 })

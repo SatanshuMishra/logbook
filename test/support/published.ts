@@ -2,6 +2,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ALL_TOOLS } from '../../src/server/register.ts'
+import { LEDGER_TOOL_NAMES } from '../../src/server/tool-names.ts'
 import type { Classified } from './census.ts'
 import type { SpawnedServer } from './spawn-client.ts'
 
@@ -69,7 +70,12 @@ const toolFileBasenames = (dir: string): string[] => {
     .filter((basename) => basename !== BARREL_BASENAME)
 }
 
-export type RegistryCensus = { files: readonly string[]; registered: readonly string[]; published: readonly string[] }
+export type RegistryCensus = {
+  files: readonly string[]
+  registered: readonly string[]
+  published: readonly string[]
+  guardApproved: readonly string[]
+}
 
 const TOOLS_BARREL_PATH = join(TOOLS_DIR, `${BARREL_BASENAME}.ts`)
 
@@ -84,7 +90,8 @@ export const readRegistryCensus = async (s: SpawnedServer): Promise<RegistryCens
   return {
     files: toolFileBasenames(TOOLS_DIR),
     registered: ALL_TOOLS.map((tool) => tool.name),
-    published: listed.tools.map((tool) => tool.name)
+    published: listed.tools.map((tool) => tool.name),
+    guardApproved: [...LEDGER_TOOL_NAMES]
   }
 }
 
@@ -92,8 +99,9 @@ export const classifyRegistryName = (name: string, c: RegistryCensus): Verdict =
   const inFiles = c.files.includes(name)
   const inRegistered = c.registered.includes(name)
   const inPublished = c.published.includes(name)
-  return inFiles && inRegistered && inPublished ? 'allowed' : 'unclassifiable'
+  const inGuardApproved = c.guardApproved.includes(name)
+  return inFiles && inRegistered && inPublished && inGuardApproved ? 'allowed' : 'unclassifiable'
 }
 
 export const registryPopulation = (c: RegistryCensus): readonly string[] =>
-  [...new Set([...c.files, ...c.registered, ...c.published])]
+  [...new Set([...c.files, ...c.registered, ...c.published, ...c.guardApproved])]

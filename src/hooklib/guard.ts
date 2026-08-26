@@ -4,6 +4,7 @@ import type { Runtime } from '../runtime/runtime.ts'
 import { layoutFor } from '../store/layout.ts'
 import { LEDGER_REF } from '../store/ref.ts'
 import { errnoCode } from '../store/detail.ts'
+import { isLedgerToolName } from '../server/tool-names.ts'
 
 export type GuardVerdict =
   | { kind: 'allow'; reason: string }
@@ -11,7 +12,13 @@ export type GuardVerdict =
   | { kind: 'deny'; reason: string }
   | { kind: 'silent' }
 
-export const LEDGER_TOOL_PATTERN = /^mcp__(?:plugin_logbook_)?ledger__[A-Za-z][A-Za-z0-9_]*$/
+export const LEDGER_TOOL_PATTERN = /^mcp__(?:plugin_logbook_)?ledger__([A-Za-z][A-Za-z0-9_]*)$/
+
+const isRegisteredLedgerTool = (toolName: string): boolean => {
+  const matched = LEDGER_TOOL_PATTERN.exec(toolName)
+  const suffix = matched?.[1]
+  return suffix !== undefined && isLedgerToolName(suffix)
+}
 
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 const NOT_A_BOUNDARY = 'this guard prompts for confirmation and is not a security boundary'
@@ -87,8 +94,8 @@ export const guardDecision = (rt: Runtime, raw: unknown): GuardVerdict => {
   const event = parsePreToolUseEvent(raw, rt.cwd)
   if (event === null) return { kind: 'silent' }
 
-  if (LEDGER_TOOL_PATTERN.test(event.tool_name)) {
-    return { kind: 'allow', reason: 'a logbook ledger tool call, auto-approved' }
+  if (isRegisteredLedgerTool(event.tool_name)) {
+    return { kind: 'allow', reason: 'a registered logbook ledger tool call, auto-approved' }
   }
 
   const isWriteTool = WRITE_TOOLS.has(event.tool_name)
