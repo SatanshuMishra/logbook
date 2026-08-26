@@ -25,7 +25,11 @@ import { amendCriteriaTool } from '../../src/server/tools/amend_criteria.ts'
 import { resumeThreadTool } from '../../src/server/tools/resume_thread.ts'
 import { parkThreadTool } from '../../src/server/tools/park_thread.ts'
 import { listThreadsTool } from '../../src/server/tools/list_threads.ts'
-import { recordDecisionTool, invalidDecisionRefusal } from '../../src/server/tools/record_decision.ts'
+import {
+  recordDecisionTool,
+  invalidDecisionRefusal,
+  noOpenCriterionRefusal
+} from '../../src/server/tools/record_decision.ts'
 import { logSessionEventTool, invalidSessionEntryRefusal } from '../../src/server/tools/log_session_event.ts'
 import { syncLedgerTool } from '../../src/server/tools/sync_ledger.ts'
 import {
@@ -113,6 +117,8 @@ const RECORD_DECISION_OUTCOME_CAP_PRODUCER: ProducerId = 'server/tools/record_de
 const RECORD_DECISION_OPTION_CAP_PRODUCER: ProducerId = 'server/tools/record_decision.ts#optionCapRefusal'
 const RECORD_DECISION_INVALID_PRODUCER: ProducerId = 'server/tools/record_decision.ts#invalidDecisionRefusal'
 const RECORD_DECISION_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/record_decision.ts#commitFailureRefusal'
+const RECORD_DECISION_SCOPE_CAP_PRODUCER: ProducerId = 'server/tools/record_decision.ts#scopeCapRefusal'
+const RECORD_DECISION_NO_OPEN_CRITERION_PRODUCER: ProducerId = 'server/tools/record_decision.ts#noOpenCriterionRefusal'
 const RECORD_DECISION_HANDLER_PRODUCER: ProducerId = 'server/tools/record_decision.ts#recordDecisionTool.handler'
 
 const LOG_SESSION_EVENT_ACTOR_CAP_PRODUCER: ProducerId = 'server/tools/log_session_event.ts#actorCapRefusal'
@@ -394,6 +400,18 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     })
     if (optionOverflow.ok) throw new Error('expected recordDecisionTool to refuse an option that overflows its cap once escaped')
     refusals.push({ producer: RECORD_DECISION_OPTION_CAP_PRODUCER, refusal: optionOverflow.refusal })
+
+    const scopeOverflow = await recordDecisionTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      title: 'a census title',
+      context: 'a census context',
+      options: ['a census option'],
+      outcome: 'a census outcome',
+      scope: CONTROL_CHAR_OVERFLOW(34)
+    })
+    if (scopeOverflow.ok) throw new Error('expected recordDecisionTool to refuse a scope that overflows its cap once escaped')
+    refusals.push({ producer: RECORD_DECISION_SCOPE_CAP_PRODUCER, refusal: scopeOverflow.refusal })
+    refusals.push({ producer: RECORD_DECISION_NO_OPEN_CRITERION_PRODUCER, refusal: noOpenCriterionRefusal(threadId) })
 
     const actorOverflow = await logSessionEventTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,
@@ -929,7 +947,8 @@ const collectResolveConflictUnsafeDivergenceRefusal = async (): Promise<TaggedRe
       title: 'a divergence fixture decision',
       context: 'a divergence fixture context',
       options: ['a divergence fixture option'],
-      outcome: 'a divergence fixture outcome'
+      outcome: 'a divergence fixture outcome',
+      scope: 'the divergence fixture'
     })
     if (!anaDecision.ok) throw new Error('expected ana to record a decision unrelated to the title conflict')
 
