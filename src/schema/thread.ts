@@ -15,8 +15,8 @@ export type Criterion = {
   struck_by: Ulid | null
 }
 
-export type Risk = { id: Ulid; scope: string; text: string; refs: string[] }
-export type KeyDecision = { id: Ulid; decision_id: Ulid; title: string; scope: string }
+export type Risk = { id: Ulid; scope: string; text: string; refs: string[]; criterion_id?: Ulid | undefined }
+export type KeyDecision = { id: Ulid; decision_id: Ulid; title: string; scope: string; criterion_id?: Ulid | undefined }
 export type OutOfScope = { id: Ulid; text: string }
 
 export type Spine = {
@@ -42,6 +42,7 @@ export type Thread = {
 }
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
+const optionalUlidField = (description: string) => z.string().regex(ULID_PATTERN).optional().describe(description)
 const isoField = (description: string) => z.string().regex(ISO_PATTERN).describe(description)
 
 const CriterionSchema = z.object({
@@ -68,14 +69,16 @@ const RiskSchema = z.object({
   refs: z
     .array(z.string().max(caps.RISK_REF_MAX))
     .max(caps.RISK_REFS_MAX_ELEMENTS)
-    .describe('external pointers backing this risk')
+    .describe('external pointers backing this risk'),
+  criterion_id: optionalUlidField('the criterion this risk ranks against, absent when the risk is unanchored')
 })
 
 const KeyDecisionSchema = z.object({
   id: ulidField('the key-decision link identity, a ULID'),
   decision_id: ulidField('the decision record this key decision links to'),
   title: z.string().max(caps.KEY_DECISION_TITLE_MAX).describe('the decision title as it should render on the spine'),
-  scope: z.string().max(caps.KEY_DECISION_SCOPE_MAX).describe('the criterion or area of the thread this decision resolved')
+  scope: z.string().max(caps.KEY_DECISION_SCOPE_MAX).describe('the criterion or area of the thread this decision resolved'),
+  criterion_id: optionalUlidField('the criterion this decision ranks against, absent when the decision is unanchored')
 })
 
 const OutOfScopeSchema = z.object({
