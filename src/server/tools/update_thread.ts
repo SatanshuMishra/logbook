@@ -9,6 +9,7 @@ import { contributeToSpine, type SpineContribution } from '../../domain/spine.ts
 import { commitThread, loadThread, openProjectStore } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
+const optionalUlidField = (description: string) => z.string().regex(ULID_PATTERN).optional().describe(description)
 
 const RiskAddSchema = z
   .strictObject({
@@ -18,7 +19,10 @@ const RiskAddSchema = z
       .array(z.string().max(caps.RISK_REF_MAX).describe('one external pointer backing this risk'))
       .max(caps.RISK_REFS_MAX_ELEMENTS)
       .optional()
-      .describe('external pointers backing this risk; omit or send an empty array for none')
+      .describe('external pointers backing this risk; omit or send an empty array for none'),
+    criterion_id: optionalUlidField(
+      'the completion criterion this risk ranks against; refused when it names no criterion on this thread'
+    )
   })
   .describe('one new risk to append to the spine')
 
@@ -145,6 +149,15 @@ export const unknownDecisionRefusal = (ids: string[]): Refusal => ({
   message: `key_decisions_add names decision ids that do not resolve to a stored decision: ${ids.join(', ')}.`
 })
 
+const danglingRiskCriterionRefusal = (ids: string[]): Refusal => ({
+  ok: false,
+  field: 'risks_add',
+  accepted: 'a criterion_id that names a completion criterion already present on this thread',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: true,
+  message: `risks_add names criterion ids not present on this thread: ${ids.join(', ')}.`
+})
+
 export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> = {
   name: 'update_thread',
   title: 'Update thread',
@@ -189,8 +202,18 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
       id: rt.ulid(),
       scope: r.scope,
       text: r.text,
-      refs: r.refs ?? []
+      refs: r.refs ?? [],
+      criterion_id: r.criterion_id
     }))
+    const danglingRiskCriteria = newRisks.filter(
+      (r) => r.criterion_id !== undefined && !thread.completion_criteria.some((c) => c.id === r.criterion_id)
+    )
+    if (danglingRiskCriteria.length > 0) {
+      return {
+        ok: false,
+        refusal: danglingRiskCriterionRefusal(danglingRiskCriteria.map((r) => r.criterion_id as string))
+      }
+    }
 
     const newKeyDecisions: KeyDecision[] = (input.key_decisions_add ?? []).map((kd) => ({
       id: rt.ulid(),

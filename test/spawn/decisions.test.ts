@@ -417,6 +417,40 @@ test('decision.refuses-naming-scope-when-no-open-criterion-remains', async () =>
   })
 })
 
+test('update_thread.refuses-a-risk-naming-no-criterion-on-the-thread', async () => {
+  await withSpawnFixture(async (fx) => {
+    const fixture = await openThreadWithCriteria(fx, 'risk-criterion-existence-fixture', ['the only criterion'])
+    const danglingCriterionId = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
+    assert.notEqual(
+      fixture.criteria[0]?.id,
+      danglingCriterionId,
+      'the fixture must mint a criterion id that differs from the dangling probe id'
+    )
+
+    const refused = (await fx.spawned.client.callTool({
+      name: 'update_thread',
+      arguments: {
+        thread_id: fixture.threadId,
+        risks_add: [
+          {
+            text: 'a risk anchored to a criterion absent from this thread',
+            scope: 'an area of the thread',
+            criterion_id: danglingCriterionId
+          }
+        ]
+      }
+    })) as CallToolResult
+
+    assert.equal(refused.isError, true, 'update_thread must refuse a risk naming a criterion absent from the thread')
+    const text = firstTextOf(refused)
+    assert.equal(text.split('\n')[0], 'field: risks_add')
+    assert.match(text, new RegExp(danglingCriterionId))
+
+    const stored = readStoredThread(fx, fixture.threadId)
+    assert.equal(stored.spine.open_risks.length, 0, 'the refused risk must not have been written to the spine')
+  })
+})
+
 test('decision.records-the-decision-and-reports-the-skipped-link-at-the-byte-cap', async () => {
   await withSpawnFixture(async (fx) => {
     const threadId = await createFixtureThread(fx.spawned, fx.published)
