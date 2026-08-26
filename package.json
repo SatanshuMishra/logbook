@@ -1,6 +1,6 @@
 {
   "name": "logbook",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "private": true,
   "type": "module",
   "description": "Git-native, multi-user, drift-aware logbook plugin for Claude Code.",
