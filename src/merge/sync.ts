@@ -14,8 +14,10 @@ import { writeRecords, type RecordChange } from '../store/write-path.ts'
 import { mergeDecision, mergeSession, mergeThread } from './field-merge.ts'
 import type { Conflict } from './conflict.ts'
 
+export type SyncAction = 'noop' | 'pushed' | 'pushed-unverified' | 'fast-forwarded' | 'merged'
+
 export type SyncOutcome =
-  | { ok: true; action: 'noop' | 'pushed' | 'fast-forwarded' | 'merged'; ref: string }
+  | { ok: true; action: SyncAction; ref: string; local_sha: string | null; remote_sha: string | null }
   | { ok: false; reason: 'conflict'; conflicts: Conflict[] }
   | { ok: false; reason: 'offline' | 'rejected'; detail: string }
 
@@ -39,6 +41,27 @@ type AttemptOutcome =
 const readRef = (rt: Runtime, repo: string, ref: string): string | null => {
   const result = git(rt, repo, ['rev-parse', ref])
   return result.ok ? result.stdout.trim() : null
+}
+
+const readRemoteLedgerSha = (rt: Runtime, repo: string): string | null => {
+  const result = git(rt, repo, ['ls-remote', REMOTE_NAME, LEDGER_REF])
+  if (!result.ok) return null
+  const line = result.stdout.split('\n').find((entry) => entry.trim().length > 0)
+  if (line === undefined) return null
+  const sha = line.split('\t')[0]
+  if (sha === undefined) return null
+  const trimmed = sha.trim()
+  return trimmed.length === 0 ? null : trimmed
+}
+
+type PushReceipt = { local_sha: string | null; remote_sha: string | null; verified: boolean }
+
+const readBackAfterPush = (rt: Runtime, layout: StoreLayout): PushReceipt => {
+  const remoteSha = readRemoteLedgerSha(rt, layout.projectRoot)
+  if (remoteSha === null) return { local_sha: null, remote_sha: null, verified: false }
+  const localSha = readRef(rt, layout.projectRoot, LEDGER_REF)
+  if (localSha === null) return { local_sha: null, remote_sha: null, verified: false }
+  return { local_sha: localSha, remote_sha: remoteSha, verified: localSha === remoteSha }
 }
 
 const isAncestor = (rt: Runtime, repo: string, ancestor: string, descendant: string): boolean =>
@@ -237,7 +260,10 @@ const fastForward = (rt: Runtime, layout: StoreLayout, localVal: string | null, 
   const cas = casUpdateRef(rt, layout.projectRoot, LEDGER_REF, remoteVal, localVal)
   if (cas.ok) {
     syncWorkingCopy(rt, layout)
-    return { kind: 'return', outcome: { ok: true, action: 'fast-forwarded', ref: LEDGER_REF } }
+    return {
+      kind: 'return',
+      outcome: { ok: true, action: 'fast-forwarded', ref: LEDGER_REF, local_sha: remoteVal, remote_sha: remoteVal }
+    }
   }
   if (cas.cause === 'ref-moved') return { kind: 'retry' }
   return { kind: 'return', outcome: { ok: false, reason: 'rejected', detail: cas.message } }
@@ -245,7 +271,19 @@ const fastForward = (rt: Runtime, layout: StoreLayout, localVal: string | null, 
 
 const pushPlain = (rt: Runtime, layout: StoreLayout): AttemptOutcome => {
   const result = git(rt, layout.projectRoot, ['push', REMOTE_NAME, `${LEDGER_REF}:${LEDGER_REF}`])
-  if (result.ok) return { kind: 'return', outcome: { ok: true, action: 'pushed', ref: LEDGER_REF } }
+  if (result.ok) {
+    const receipt = readBackAfterPush(rt, layout)
+    return {
+      kind: 'return',
+      outcome: {
+        ok: true,
+        action: receipt.verified ? 'pushed' : 'pushed-unverified',
+        ref: LEDGER_REF,
+        local_sha: receipt.local_sha,
+        remote_sha: receipt.remote_sha
+      }
+    }
+  }
   if (isLeaseRejection(result.stderr)) return { kind: 'retry' }
   return { kind: 'return', outcome: { ok: false, reason: 'rejected', detail: result.stderr.trim() } }
 }
@@ -320,7 +358,17 @@ const performMerge = (
         return { kind: 'return', outcome: { ok: false, reason: 'rejected', detail: pushResult.stderr.trim() } }
       }
 
-      return { kind: 'return', outcome: { ok: true, action: 'merged', ref: LEDGER_REF } }
+      const mergeReceipt = readBackAfterPush(rt, layout)
+      return {
+        kind: 'return',
+        outcome: {
+          ok: true,
+          action: mergeReceipt.verified ? 'merged' : 'pushed-unverified',
+          ref: LEDGER_REF,
+          local_sha: mergeReceipt.local_sha,
+          remote_sha: mergeReceipt.remote_sha
+        }
+      }
     } finally {
       if (baseScratch !== null) rmSync(baseScratch, { recursive: true, force: true })
     }
@@ -357,7 +405,10 @@ const runAttempt = (rt: Runtime, store: Store, layout: StoreLayout, ops: Partial
   const localVal = readRef(rt, repo, LEDGER_REF)
 
   if (localVal === remoteVal) {
-    return { kind: 'return', outcome: { ok: true, action: 'noop', ref: LEDGER_REF } }
+    return {
+      kind: 'return',
+      outcome: { ok: true, action: 'noop', ref: LEDGER_REF, local_sha: localVal, remote_sha: remoteVal }
+    }
   }
 
   if (remoteVal === null) {
