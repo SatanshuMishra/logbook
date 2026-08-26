@@ -86,6 +86,8 @@ const TRANSITION_PRODUCER: ProducerId = 'domain/lifecycle.ts#transition'
 const OPEN_THREAD_DUPLICATE_SLUG_PRODUCER: ProducerId = 'server/tools/open_thread.ts#duplicateSlugRefusal'
 const UPDATE_THREAD_UNKNOWN_CRITERION_PRODUCER: ProducerId = 'server/tools/update_thread.ts#unknownCriterionRefusal'
 const UPDATE_THREAD_UNKNOWN_DECISION_PRODUCER: ProducerId = 'server/tools/update_thread.ts#unknownDecisionRefusal'
+const UPDATE_THREAD_CONFLICTING_BLOCKAGE_PRODUCER: ProducerId =
+  'server/tools/update_thread.ts#conflictingBlockageRefusal'
 const CLOSE_THREAD_WHOLE_RECORD_CAP_PRODUCER: ProducerId = 'server/tools/close_thread.ts#wholeRecordCapRefusal'
 const CLOSE_THREAD_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/close_thread.ts#commitFailureRefusal'
 const BIND_BRANCH_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/bind_branch.ts#commitFailureRefusal'
@@ -327,6 +329,19 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     })
     if (unknownDecision.ok) throw new Error('expected updateThreadTool to refuse an unresolved decision id')
     refusals.push({ producer: UPDATE_THREAD_UNKNOWN_DECISION_PRODUCER, refusal: unknownDecision.refusal })
+
+    const conflictingBlockage = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      blocked_by: 'waiting on the infra approval',
+      blocked_by_clear: true
+    })
+    if (conflictingBlockage.ok) {
+      throw new Error('expected updateThreadTool to refuse a blockage that is both set and cleared in one call')
+    }
+    refusals.push({
+      producer: UPDATE_THREAD_CONFLICTING_BLOCKAGE_PRODUCER,
+      refusal: conflictingBlockage.refusal
+    })
 
     const missingKind = await amendCriteriaTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,
