@@ -20,18 +20,28 @@ const renderOutOfScopeLine = (outOfScope: OutOfScope): string => `- ${escapeStor
 const renderDecisionLine = (decision: Decision): string =>
   `- ${escapeStored(decision.title)}: ${escapeStored(decision.outcome)}`
 
+const renderRelatedLine = (predecessor: Thread): string =>
+  `- succeeds: ${escapeStored(predecessor.title)} (${escapeStored(predecessor.slug)})`
+
 const renderBlockage = (blockedBy: string | null): string =>
   blockedBy === null ? 'Blockage: none' : `Blocked: ${escapeStored(blockedBy)}`
 
 const renderPointerStatus = (pointer: Pointer | null, threadId: string): string =>
   pointer !== null && pointer.thread_id === threadId ? 'Currently being worked: yes' : 'Currently being worked: no'
 
-export const renderBriefing = (thread: Thread, decisions: Decision[], pointer: Pointer | null): string => {
+export const renderBriefing = (
+  thread: Thread,
+  decisions: Decision[],
+  pointer: Pointer | null,
+  predecessor: Thread | null
+): string => {
   const criteriaLines = thread.completion_criteria.map((criterion, index) => renderCriterionLine(criterion, index + 1))
   const riskLines = thread.spine.open_risks.map(renderRiskLine)
   const keyDecisionLines = thread.spine.key_decisions.map(renderKeyDecisionLine)
   const outOfScopeLines = thread.spine.out_of_scope.map(renderOutOfScopeLine)
   const decisionLines = decisions.map(renderDecisionLine)
+  const relatedThreads = predecessor === null ? [] : [predecessor]
+  const relatedLines = relatedThreads.map(renderRelatedLine)
 
   return [
     `Thread: ${escapeStored(thread.title)}`,
@@ -41,6 +51,8 @@ export const renderBriefing = (thread: Thread, decisions: Decision[], pointer: P
     `Active goal: ${escapeStored(thread.spine.active_goal)}`,
     `Next step: ${escapeStored(thread.spine.next_step)}`,
     `Last session: ${escapeStored(thread.spine.last_session)}`,
+    'Related:',
+    ...relatedLines,
     'Open risks:',
     ...riskLines,
     'Key decisions:',

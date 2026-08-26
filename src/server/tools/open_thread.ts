@@ -2,10 +2,10 @@ import { z } from 'zod'
 import type { ToolSpec } from '../register.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import type { Criterion, Thread } from '../../schema/thread.ts'
-import { SLUG_PATTERN } from '../../schema/ids.ts'
+import { SLUG_PATTERN, ULID_PATTERN } from '../../schema/ids.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
-import { commitThread, openProjectStore } from '../tool-support.ts'
+import { commitThread, loadThreadForReference, openProjectStore } from '../tool-support.ts'
 
 const OpenThreadInputSchema = z.strictObject({
   title: z.string().min(1).max(caps.THREAD_TITLE_MAX).describe('the one-line thread title'),
@@ -15,6 +15,11 @@ const OpenThreadInputSchema = z.strictObject({
     .max(caps.THREAD_SLUG_MAX)
     .regex(SLUG_PATTERN)
     .describe('a short lowercase label unique in this project, letters digits and hyphens, for example merge-and-sync'),
+  predecessor_id: z
+    .string()
+    .regex(ULID_PATTERN)
+    .optional()
+    .describe('the id of an existing thread this new thread succeeds, a 26-character ULID such as 01M0NDPM0ACCR9CD68PMHYWGGD; omit it when this thread succeeds no earlier thread'),
   completion_criteria: z
     .array(
       z
@@ -103,6 +108,12 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
       return { ok: false, refusal: criterionTextCapRefusal(oversizedIndex, oversizedText === undefined ? 0 : oversizedText.length) }
     }
 
+    const predecessorId = input.predecessor_id
+    if (predecessorId !== undefined) {
+      const predecessor = loadThreadForReference(store, 'predecessor_id', predecessorId)
+      if (!predecessor.ok) return { ok: false, refusal: predecessor.refusal }
+    }
+
     const now = rt.now()
     const completionCriteria: Criterion[] = escapedCriteriaTexts.map((text, index) => ({
       id: rt.ulid(),
@@ -119,6 +130,7 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
       title: escapedTitle,
       status: 'open',
       blocked_by: null,
+      ...(predecessorId === undefined ? {} : { predecessor_id: predecessorId }),
       completion_criteria: completionCriteria,
       spine: {
         active_goal: '',

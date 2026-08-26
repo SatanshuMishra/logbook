@@ -33,7 +33,7 @@ test('schema.refusal-is-generated', () => {
 })
 
 type PathSegment = string | number
-type MutationCandidate = { path: PathSegment[]; cap: number | null }
+type MutationCandidate = { path: PathSegment[]; cap: number | null; optional: boolean }
 type ZodAny = z.ZodType<unknown>
 
 const isNode = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
@@ -74,6 +74,19 @@ const deleteAtPath = (record: Record<string, unknown>, path: PathSegment[]): Rec
     throw new Error('deleteAtPath requires a non-empty path')
   }
   delete parent[String(lastSegment)]
+  return clone
+}
+
+const UNACCEPTABLE_VALUE = { unacceptable: true }
+
+const setUnacceptableAtPath = (record: Record<string, unknown>, path: PathSegment[]): Record<string, unknown> => {
+  const clone = deepClone(record)
+  const parent = cursorTo(clone, path)
+  const lastSegment = path[path.length - 1]
+  if (lastSegment === undefined) {
+    throw new Error('setUnacceptableAtPath requires a non-empty path')
+  }
+  parent[String(lastSegment)] = UNACCEPTABLE_VALUE
   return clone
 }
 
@@ -176,7 +189,8 @@ const deriveCandidates = (schema: ZodAny, sample: unknown, path: PathSegment[]):
       const fieldUnwrapped = zodUnwrap(fieldSchema)
       const leaf: MutationCandidate = {
         path: fieldPath,
-        cap: isStringLikeZodType(fieldUnwrapped) ? zodMaxLength(fieldUnwrapped) : null
+        cap: isStringLikeZodType(fieldUnwrapped) ? zodMaxLength(fieldUnwrapped) : null,
+        optional: zodDefType(fieldSchema) === 'optional'
       }
       return [leaf, ...deriveCandidates(fieldSchema, record[key], fieldPath)]
     })
@@ -216,7 +230,9 @@ const runRefusalExampleProperty = <T extends Record<string, unknown>>(
     const useOverLength = canOverLength && random() < 0.5
     const mutated = useOverLength
       ? overLengthAtPath(validRecord, candidate.path, candidate.cap as number)
-      : deleteAtPath(validRecord, candidate.path)
+      : candidate.optional
+        ? setUnacceptableAtPath(validRecord, candidate.path)
+        : deleteAtPath(validRecord, candidate.path)
 
     const result = declaration.parse(mutated)
     assert.equal(result.ok, false, `mutation at ${candidate.path.join('.')} unexpectedly validated`)

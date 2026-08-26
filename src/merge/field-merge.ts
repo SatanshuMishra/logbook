@@ -19,6 +19,7 @@ export const THREAD_RULES: Record<keyof Thread | `spine.${keyof Spine}`, FieldRu
   title: 'conflict-on-divergence',
   status: 'conflict-on-divergence',
   blocked_by: 'conflict-on-divergence',
+  predecessor_id: 'take-present',
   completion_criteria: 'union-by-id',
   spine: 'take-present',
   created_at: 'take-present',
@@ -39,6 +40,7 @@ const SCALAR_DESCRIPTORS: ScalarDescriptor[] = [
   { path: 'title', rule: THREAD_RULES.title, get: (t) => t.title },
   { path: 'status', rule: THREAD_RULES.status, get: (t) => t.status },
   { path: 'blocked_by', rule: THREAD_RULES.blocked_by, get: (t) => t.blocked_by },
+  { path: 'predecessor_id', rule: THREAD_RULES.predecessor_id, get: (t) => t.predecessor_id },
   { path: 'created_at', rule: THREAD_RULES.created_at, get: (t) => t.created_at },
   { path: 'spine.active_goal', rule: THREAD_RULES['spine.active_goal'], get: (t) => t.spine.active_goal },
   { path: 'spine.next_step', rule: THREAD_RULES['spine.next_step'], get: (t) => t.spine.next_step },
@@ -234,12 +236,15 @@ export const mergeThreadTraced = (base: Thread | null, ours: Thread, theirs: Thr
 
   const byPath = new Map(scalarResolutions.map((resolution) => [resolution.path, resolution.value] as const))
 
+  const mergedPredecessorId = byPath.get('predecessor_id') as Thread['predecessor_id']
+
   const merged: Thread = {
     id: byPath.get('id') as Thread['id'],
     slug: byPath.get('slug') as Thread['slug'],
     title: byPath.get('title') as Thread['title'],
     status: byPath.get('status') as Thread['status'],
     blocked_by: byPath.get('blocked_by') as Thread['blocked_by'],
+    ...(mergedPredecessorId === undefined ? {} : { predecessor_id: mergedPredecessorId }),
     completion_criteria: criteriaResolution.merged,
     spine: {
       active_goal: byPath.get('spine.active_goal') as Spine['active_goal'],
