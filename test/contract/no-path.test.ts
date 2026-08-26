@@ -88,6 +88,7 @@ const UPDATE_THREAD_UNKNOWN_CRITERION_PRODUCER: ProducerId = 'server/tools/updat
 const UPDATE_THREAD_UNKNOWN_DECISION_PRODUCER: ProducerId = 'server/tools/update_thread.ts#unknownDecisionRefusal'
 const UPDATE_THREAD_CONFLICTING_BLOCKAGE_PRODUCER: ProducerId =
   'server/tools/update_thread.ts#conflictingBlockageRefusal'
+const UPDATE_THREAD_BLOCKED_BY_CAP_PRODUCER: ProducerId = 'server/tools/update_thread.ts#blockedByCapRefusal'
 const CLOSE_THREAD_WHOLE_RECORD_CAP_PRODUCER: ProducerId = 'server/tools/close_thread.ts#wholeRecordCapRefusal'
 const CLOSE_THREAD_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/close_thread.ts#commitFailureRefusal'
 const BIND_BRANCH_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/bind_branch.ts#commitFailureRefusal'
@@ -341,6 +342,18 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     refusals.push({
       producer: UPDATE_THREAD_CONFLICTING_BLOCKAGE_PRODUCER,
       refusal: conflictingBlockage.refusal
+    })
+
+    const overflowingBlockedBy = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      blocked_by: CONTROL_CHAR_OVERFLOW(84)
+    })
+    if (overflowingBlockedBy.ok) {
+      throw new Error('expected updateThreadTool to refuse a blocked_by whose escaped form overflows its cap')
+    }
+    refusals.push({
+      producer: UPDATE_THREAD_BLOCKED_BY_CAP_PRODUCER,
+      refusal: overflowingBlockedBy.refusal
     })
 
     const missingKind = await amendCriteriaTool.handler(rt, STUB_TOOL_CTX, {

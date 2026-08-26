@@ -4,6 +4,7 @@ import type { Refusal } from '../../schema/declare.ts'
 import { ULID_PATTERN } from '../../schema/ids.ts'
 import type { KeyDecision, Risk, Spine, Thread } from '../../schema/thread.ts'
 import * as caps from '../../schema/caps.ts'
+import { escapeStored } from '../../render/escape.ts'
 import { contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
 import { commitThread, loadThread, openProjectStore } from '../tool-support.ts'
 
@@ -126,6 +127,15 @@ export const conflictingBlockageRefusal = (): Refusal => ({
   message: 'blocked_by and blocked_by_clear were both supplied; send one or the other, not both.'
 })
 
+export const blockedByCapRefusal = (observed: number): Refusal => ({
+  ok: false,
+  field: 'blocked_by',
+  accepted: `at most ${caps.THREAD_BLOCKED_BY_MAX} characters after escaping`,
+  example: 'waiting on the infra approval',
+  retryable: true,
+  message: `blocked_by exceeds its cap of ${caps.THREAD_BLOCKED_BY_MAX} characters after escaping; observed ${observed}; remedy: shorten the blocked_by text and retry.`
+})
+
 export const unknownDecisionRefusal = (ids: string[]): Refusal => ({
   ok: false,
   field: 'key_decisions_add',
@@ -218,6 +228,10 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     if (blockedBySupplied && blockedByCleared) {
       return { ok: false, refusal: conflictingBlockageRefusal() }
     }
+    const escapedBlockedBy = input.blocked_by === undefined ? undefined : escapeStored(input.blocked_by)
+    if (escapedBlockedBy !== undefined && escapedBlockedBy.length > caps.THREAD_BLOCKED_BY_MAX) {
+      return { ok: false, refusal: blockedByCapRefusal(escapedBlockedBy.length) }
+    }
     const blockageChanged = blockedBySupplied || blockedByCleared
 
     const nothingChanged =
@@ -254,7 +268,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
 
     const nextThread: Thread = {
       ...thread,
-      blocked_by: blockedByCleared ? null : (input.blocked_by ?? thread.blocked_by),
+      blocked_by: blockedByCleared ? null : (escapedBlockedBy ?? thread.blocked_by),
       completion_criteria: nextCriteria,
       spine: contributed.value,
       updated_at: rt.now()

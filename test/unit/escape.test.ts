@@ -53,6 +53,24 @@ test('escape.title-cannot-forge-heading', () => {
   assert.equal(/(^|\n)#{1,6}\s/.test(escaped), false)
 })
 
+const MARKDOWN_LEADING_CHARS = ['#', '-', '*', '+', '>', '`', '~']
+
+const collectIdempotencyPopulation = (): number[] => [
+  ...collectEscapableUnion(),
+  ...MARKDOWN_LEADING_CHARS.map((char) => char.codePointAt(0) as number)
+]
+
+test('escape.stored-is-idempotent-over-the-escapable-and-markdown-leading-population', () => {
+  const population = collectIdempotencyPopulation()
+  assert.ok(population.length > 0)
+  census(population, (codePoint) => {
+    const char = String.fromCodePoint(codePoint)
+    const once = escapeStored(char)
+    const twice = escapeStored(once)
+    return twice === once ? 'allowed' : 'forbidden'
+  })
+})
+
 test('clip.is-grapheme-safe', () => {
   const family = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}'
   const input = family.repeat(5)
