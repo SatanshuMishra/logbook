@@ -10,11 +10,14 @@ import { ALL_TOOLS, registerTool, type ToolSpec } from '../../src/server/registe
 import { productionRuntime } from '../../src/runtime/runtime.ts'
 import { census } from '../support/census.ts'
 import {
+  claimPopulation,
+  classifyPublishedClaim,
   classifyPublishedInput,
   classifyRegistryName,
   listPublishedTools,
   readRegistryCensus,
   registryPopulation,
+  type ClaimCensusItem,
   type PublishedTool,
   type RegistryCensus
 } from '../support/published.ts'
@@ -350,7 +353,8 @@ test('contract.published-schema-matches-enforced.registry-census-halts-on-a-name
     files: ['ghost_tool'],
     registered: ['ghost_tool'],
     published: [],
-    guardApproved: ['ghost_tool']
+    guardApproved: ['ghost_tool'],
+    descriptionClaimsReachable: ['ghost_tool']
   }
   const population = registryPopulation(syntheticCensus)
   assert.deepEqual([...population].sort(), ['ghost_tool'])
@@ -366,7 +370,8 @@ test('contract.published-schema-matches-enforced.registry-census-allows-a-name-p
     files: ['real_tool'],
     registered: ['real_tool'],
     published: ['real_tool'],
-    guardApproved: ['real_tool']
+    guardApproved: ['real_tool'],
+    descriptionClaimsReachable: ['real_tool']
   }
   const population = registryPopulation(syntheticCensus)
   assert.deepEqual([...population], ['real_tool'])
@@ -378,7 +383,8 @@ test('contract.published-schema-matches-enforced.registry-census-halts-on-a-name
     files: ['ghost_tool'],
     registered: ['ghost_tool'],
     published: ['ghost_tool'],
-    guardApproved: []
+    guardApproved: [],
+    descriptionClaimsReachable: ['ghost_tool']
   }
   const population = registryPopulation(syntheticCensus)
   assert.deepEqual([...population], ['ghost_tool'])
@@ -394,7 +400,8 @@ test('contract.published-schema-matches-enforced.registry-census-halts-on-a-name
     files: [],
     registered: [],
     published: [],
-    guardApproved: ['ghost_tool']
+    guardApproved: ['ghost_tool'],
+    descriptionClaimsReachable: []
   }
   const population = registryPopulation(syntheticCensus)
   assert.deepEqual([...population], ['ghost_tool'])
@@ -403,4 +410,115 @@ test('contract.published-schema-matches-enforced.registry-census-halts-on-a-name
     () => census([...population], (name) => classifyRegistryName(name, syntheticCensus)),
     (error: unknown) => error instanceof Error && error.message.includes('ghost_tool')
   )
+})
+
+test('contract.published-schema-matches-enforced.registry-census-halts-on-a-name-whose-claims-are-unreachable', () => {
+  const syntheticCensus: RegistryCensus = {
+    files: ['ghost_tool'],
+    registered: ['ghost_tool'],
+    published: ['ghost_tool'],
+    guardApproved: ['ghost_tool'],
+    descriptionClaimsReachable: []
+  }
+  const population = registryPopulation(syntheticCensus)
+  assert.deepEqual([...population], ['ghost_tool'])
+  assert.equal(classifyRegistryName('ghost_tool', syntheticCensus), 'unclassifiable')
+  assert.throws(
+    () => census([...population], (name) => classifyRegistryName(name, syntheticCensus)),
+    (error: unknown) => error instanceof Error && error.message.includes('ghost_tool')
+  )
+})
+
+const CLAIM_PROBE_TOOLS: PublishedTool[] = [
+  {
+    name: 'probe_claim_writer',
+    description: 'A probe tool that publishes one argument named value.',
+    inputSchema: { type: 'object', properties: { value: { type: 'string' } } }
+  }
+]
+
+const claimProbeItem = (phrase: string, providers: readonly string[] | null): ClaimCensusItem => ({
+  tool: 'probe_claim_writer',
+  description: 'A probe tool that publishes one argument named value.',
+  phrase,
+  providers
+})
+
+test('contract.published-schema-matches-enforced.claims.every-published-claim-is-reachable', async () => {
+  const spawned = await spawnServer({ projectRoot: PROJECT_ROOT })
+  try {
+    const published = await listPublishedTools(spawned)
+    const items = claimPopulation(published)
+    assert.ok(items.length > 0, 'expected the published tools to contribute at least one claim to census')
+    assert.doesNotThrow(() => census(items, (item) => classifyPublishedClaim(item, published)))
+  } finally {
+    await spawned.close()
+  }
+})
+
+test('contract.published-schema-matches-enforced.claims.park-thread-summary-fields-are-reachable', async () => {
+  const spawned = await spawnServer({ projectRoot: PROJECT_ROOT })
+  try {
+    const published = await listPublishedTools(spawned)
+    const items = claimPopulation(published).filter((item) => item.tool === 'park_thread')
+    assert.ok(items.length > 0, 'expected park_thread to contribute at least one claim to census')
+    assert.doesNotThrow(() => census(items, (item) => classifyPublishedClaim(item, published)))
+  } finally {
+    await spawned.close()
+  }
+})
+
+test('contract.published-schema-matches-enforced.claims.list-threads-blockage-promise-has-a-writer', async () => {
+  const spawned = await spawnServer({ projectRoot: PROJECT_ROOT })
+  try {
+    const published = await listPublishedTools(spawned)
+    const items = claimPopulation(published).filter((item) => item.tool === 'list_threads')
+    assert.ok(items.length > 0, 'expected list_threads to contribute at least one claim to census')
+    assert.doesNotThrow(() => census(items, (item) => classifyPublishedClaim(item, published)))
+  } finally {
+    await spawned.close()
+  }
+})
+
+test('contract.published-schema-matches-enforced.claims.control.an-undeclared-tool-halts-the-census', () => {
+  const items = claimPopulation(CLAIM_PROBE_TOOLS)
+  assert.equal(items.length, 1)
+  assert.equal(items[0]?.providers, null)
+  assert.throws(
+    () => census(items, (item) => classifyPublishedClaim(item, CLAIM_PROBE_TOOLS)),
+    (error: unknown) => error instanceof Error && error.message.includes('probe_claim_writer')
+  )
+})
+
+test('contract.published-schema-matches-enforced.claims.control.a-claim-with-no-providers-is-allowed', () => {
+  const item = claimProbeItem('publishes one argument named value', [])
+  assert.equal(classifyPublishedClaim(item, CLAIM_PROBE_TOOLS), 'allowed')
+  assert.doesNotThrow(() => census([item], (candidate) => classifyPublishedClaim(candidate, CLAIM_PROBE_TOOLS)))
+})
+
+test('contract.published-schema-matches-enforced.claims.control.a-claim-naming-a-missing-key-is-forbidden', () => {
+  const reachable = claimProbeItem('publishes one argument named value', ['probe_claim_writer.value'])
+  assert.equal(classifyPublishedClaim(reachable, CLAIM_PROBE_TOOLS), 'allowed')
+  const missing = claimProbeItem('publishes one argument named value', ['probe_claim_writer.absent'])
+  assert.equal(classifyPublishedClaim(missing, CLAIM_PROBE_TOOLS), 'forbidden')
+  assert.throws(
+    () => census([missing], (candidate) => classifyPublishedClaim(candidate, CLAIM_PROBE_TOOLS)),
+    (error: unknown) => error instanceof Error && error.message.includes('probe_claim_writer.absent')
+  )
+})
+
+test('contract.published-schema-matches-enforced.claims.control.a-phrase-absent-from-the-description-halts-the-census', () => {
+  const drifted = claimProbeItem('a clause this description does not carry', ['probe_claim_writer.value'])
+  assert.equal(classifyPublishedClaim(drifted, CLAIM_PROBE_TOOLS), 'unclassifiable')
+  assert.throws(
+    () => census([drifted], (candidate) => classifyPublishedClaim(candidate, CLAIM_PROBE_TOOLS)),
+    (error: unknown) => error instanceof Error && error.message.includes('a clause this description does not carry')
+  )
+})
+
+test('contract.published-schema-matches-enforced.claims.control.an-unresolvable-provider-address-halts-the-census', () => {
+  const noSeparator = claimProbeItem('publishes one argument named value', ['probe_claim_writer'])
+  assert.equal(classifyPublishedClaim(noSeparator, CLAIM_PROBE_TOOLS), 'unclassifiable')
+  const unknownTool = claimProbeItem('publishes one argument named value', ['probe_absent_tool.value'])
+  assert.equal(classifyPublishedClaim(unknownTool, CLAIM_PROBE_TOOLS), 'unclassifiable')
 })

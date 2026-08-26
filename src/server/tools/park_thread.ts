@@ -320,7 +320,7 @@ export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
   name: 'park_thread',
   title: 'Park thread',
   description:
-    'Ends work on the thread being worked right now, in a single call: it writes the session log entry, refreshes the six running-summary fields, and releases the record of what is being worked. Takes the outcome as text plus whichever summary fields changed; the thread id is optional because the machine already knows which thread is being worked. Parking a thread that is already parked is not an error. The thread stays open, parking is not closing, and a parked thread appears in the next roster.',
+    'Ends work on the thread being worked right now, in a single call: it writes the session log entry, refreshes the last_session and next_step fields, and releases the record of what is being worked. Send the outcome as text plus either of those two fields; the thread id is optional because the machine already knows which thread is being worked. Omit the outcome to release the record of what is being worked without writing a session log entry. The thread stays open, parking is not closing, and a parked thread appears in the next roster.',
   input: ParkThreadInputSchema,
   output: ParkThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },

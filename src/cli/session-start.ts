@@ -21,7 +21,7 @@ export const parseSessionStartEvent = (raw: unknown): SessionStartEvent | null =
 const NO_RESUMABLE_THREADS = 'Logbook: no resumable threads.'
 
 const renderThreadLine = (thread: Thread): string =>
-  `- [${escapeStored(thread.status)}] ${escapeStored(thread.slug)}: ${escapeStored(thread.title)} -- next: ` +
+  `- ${escapeStored(thread.slug)}: ${escapeStored(thread.title)} -- next: ` +
   `${escapeStored(thread.spine.next_step)} (id ${escapeStored(thread.id)})`
 
 export const renderThreadListing = (rt: Runtime, projectRoot: string): string => {
