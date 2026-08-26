@@ -18,12 +18,14 @@ import type { Runtime } from '../../src/runtime/runtime.ts'
 import { declare } from '../../src/schema/declare.ts'
 import { ULID_PATTERN } from '../../src/schema/ids.ts'
 import { openStore, type Store } from '../../src/store/records.ts'
+import type { KeyDecision, Thread } from '../../src/schema/thread.ts'
 import { layoutFor } from '../../src/store/layout.ts'
 import { git } from '../../src/store/git.ts'
 import { writeRecords, type RecordChange } from '../../src/store/write-path.ts'
 import { sync } from '../../src/merge/sync.ts'
 
 import { census, type Classified } from '../support/census.ts'
+import * as caps from '../../src/schema/caps.ts'
 import { rawGit } from '../support/git-fixture.ts'
 import type { Teammate } from '../support/clone-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
@@ -77,6 +79,8 @@ type SpawnFixture = {
   spawned: SpawnedServer
   published: PublishedTool[]
   outputSchemas: Map<string, Record<string, unknown>>
+  repo: string
+  pluginData: string
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -95,7 +99,7 @@ const withSpawnFixture = async (fn: (fx: SpawnFixture) => Promise<void>): Promis
         outputSchemas.set(tool.name, tool.outputSchema as Record<string, unknown>)
       }
     }
-    await fn({ spawned, published, outputSchemas })
+    await fn({ spawned, published, outputSchemas, repo, pluginData })
   } finally {
     await spawned.close()
     rmSync(repo, { recursive: true, force: true })
@@ -187,6 +191,45 @@ const createFixtureThread = async (spawned: SpawnedServer, published: PublishedT
   return structured.thread_id
 }
 
+const readStoredThread = (fx: SpawnFixture, threadId: string): Thread => {
+  const rt = testRuntime({
+    env: { HOME: process.env.HOME, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: fx.pluginData },
+    cwd: fx.repo
+  })
+  const opened = openStore(rt, fx.repo)
+  if (!opened.ok) throw new Error(`decisions fixture: could not open the store to re-read a thread: ${opened.message}`)
+  const slot = opened.value.readThread(threadId)
+  if (slot === null || slot.quarantined) {
+    throw new Error(`decisions fixture: thread "${threadId}" could not be re-read from the store`)
+  }
+  return slot.record
+}
+
+const openThreadWithCriteria = async (
+  fx: SpawnFixture,
+  slug: string,
+  criteria: string[]
+): Promise<{ threadId: string; criteria: { id: string; ordinal: number }[] }> => {
+  const opened = (await fx.spawned.client.callTool({
+    name: 'open_thread',
+    arguments: { title: `${slug} fixture`, slug, completion_criteria: criteria }
+  })) as CallToolResult
+  assertOkResult(`open_thread (${slug})`, opened)
+  const structured = opened.structuredContent as {
+    thread_id: string
+    completion_criteria: { id: string; ordinal: number }[]
+  }
+  return { threadId: structured.thread_id, criteria: structured.completion_criteria }
+}
+
+const markCriterionDone = async (fx: SpawnFixture, threadId: string, criterionId: string): Promise<void> => {
+  const marked = (await fx.spawned.client.callTool({
+    name: 'update_thread',
+    arguments: { thread_id: threadId, criteria_done: [criterionId] }
+  })) as CallToolResult
+  assertOkResult('update_thread (mark a criterion done)', marked)
+}
+
 const runRejectsInvalid = async (
   fx: SpawnFixture,
   toolName: string,
@@ -225,6 +268,219 @@ test('record_decision.rejects-invalid', async () => {
   await withSpawnFixture(async (fx) => {
     const threadId = await createFixtureThread(fx.spawned, fx.published)
     await runRejectsInvalid(fx, 'record_decision', ['minItems'], { thread_id: threadId })
+  })
+})
+
+test('decision.appears-in-both-briefing-sections-without-a-second-call', async () => {
+  await withSpawnFixture(async (fx) => {
+    const threadId = await createFixtureThread(fx.spawned, fx.published)
+
+    const recorded = (await fx.spawned.client.callTool({
+      name: 'record_decision',
+      arguments: {
+        thread_id: threadId,
+        title: 'link decisions into the spine automatically',
+        context: 'a decision recorded alone never reaches the briefing',
+        options: ['auto-link in record_decision', 'require a follow-up update_thread'],
+        outcome: 'auto-link, because the follow-up is silently optional'
+      }
+    })) as CallToolResult
+    assertOkResult('record_decision (auto-link)', recorded)
+    const recordedStructured = recorded.structuredContent as { linked: boolean; link_skipped_reason: string | null }
+    assert.equal(recordedStructured.linked, true, 'a decision on an ordinary thread must be linked by the same call')
+    assert.equal(recordedStructured.link_skipped_reason, null)
+
+    const resumed = (await fx.spawned.client.callTool({
+      name: 'resume_thread',
+      arguments: { thread_id: threadId }
+    })) as CallToolResult
+    assertOkResult('resume_thread (briefing)', resumed)
+    const lines = (resumed.structuredContent as { briefing: string }).briefing.split('\n')
+
+    const keyDecisionsAt = lines.indexOf('Key decisions:')
+    const decisionsAt = lines.indexOf('Decisions:')
+    assert.notEqual(keyDecisionsAt, -1, 'the briefing must carry a Key decisions section')
+    assert.notEqual(decisionsAt, -1, 'the briefing must carry a Decisions section')
+    assert.equal(
+      lines[keyDecisionsAt + 1],
+      '- link decisions into the spine automatically',
+      'the Key decisions section must carry the decision title with no intervening update_thread call'
+    )
+    assert.equal(
+      lines[decisionsAt + 1],
+      '- link decisions into the spine automatically: auto-link, because the follow-up is silently optional',
+      'the Decisions section must carry the decision title and its outcome'
+    )
+  })
+})
+
+test('decision.scope-derives-to-the-lowest-open-criterion', async () => {
+  await withSpawnFixture(async (fx) => {
+    const fixture = await openThreadWithCriteria(fx, 'scope-derivation-fixture', [
+      'the first criterion',
+      'the second criterion',
+      'the third criterion'
+    ])
+    const first = fixture.criteria[0]
+    assert.ok(first !== undefined, 'open_thread must mint the completion criteria it was given')
+    assert.equal(first.ordinal, 1, 'the first minted criterion must carry ordinal 1')
+    await markCriterionDone(fx, fixture.threadId, first.id)
+
+    const recorded = (await fx.spawned.client.callTool({
+      name: 'record_decision',
+      arguments: {
+        thread_id: fixture.threadId,
+        title: 'a decision with a derived scope',
+        context: 'the first criterion is already done',
+        options: ['derive the scope', 'demand an explicit one'],
+        outcome: 'derive it from the lowest criterion still open'
+      }
+    })) as CallToolResult
+    assertOkResult('record_decision (derived scope)', recorded)
+
+    const stored = readStoredThread(fx, fixture.threadId)
+    assert.equal(stored.spine.key_decisions.length, 1)
+    assert.equal(
+      stored.spine.key_decisions[0]?.scope,
+      'criterion 2',
+      'scope must derive to the lowest-ordinal criterion that is neither done nor struck'
+    )
+  })
+})
+
+test('decision.scope-uses-an-explicit-value-in-place-of-the-derived-one', async () => {
+  await withSpawnFixture(async (fx) => {
+    const threadId = await createFixtureThread(fx.spawned, fx.published)
+
+    const recorded = (await fx.spawned.client.callTool({
+      name: 'record_decision',
+      arguments: {
+        thread_id: threadId,
+        title: 'a decision with an explicit scope',
+        context: 'the caller knows the area better than the derivation does',
+        options: ['use the derived scope', 'send an explicit one'],
+        outcome: 'send an explicit one',
+        scope: 'the merge queue fast path'
+      }
+    })) as CallToolResult
+    assertOkResult('record_decision (explicit scope)', recorded)
+
+    const stored = readStoredThread(fx, threadId)
+    assert.equal(stored.spine.key_decisions.length, 1)
+    assert.equal(
+      stored.spine.key_decisions[0]?.scope,
+      'the merge queue fast path',
+      'an explicit scope must be stored in place of the derived one'
+    )
+  })
+})
+
+test('decision.refuses-naming-scope-when-no-open-criterion-remains', async () => {
+  await withSpawnFixture(async (fx) => {
+    const fixture = await openThreadWithCriteria(fx, 'scope-refusal-fixture', ['the only criterion'])
+    const only = fixture.criteria[0]
+    assert.ok(only !== undefined, 'open_thread must mint the one criterion it was given')
+    await markCriterionDone(fx, fixture.threadId, only.id)
+
+    const refused = (await fx.spawned.client.callTool({
+      name: 'record_decision',
+      arguments: {
+        thread_id: fixture.threadId,
+        title: 'a decision with nothing to derive a scope from',
+        context: 'every criterion is done',
+        options: ['invent a scope', 'refuse and say so'],
+        outcome: 'refuse and say so'
+      }
+    })) as CallToolResult
+
+    assert.equal(refused.isError, true, 'record_decision must refuse when scope cannot be derived')
+    const text = firstTextOf(refused)
+    assert.equal(text.split('\n')[0], 'field: scope')
+    assert.match(text, /is done or struck/)
+    assert.match(text, /the decision was not recorded/)
+  })
+})
+
+test('decision.records-the-decision-and-reports-the-skipped-link-at-the-byte-cap', async () => {
+  await withSpawnFixture(async (fx) => {
+    const threadId = await createFixtureThread(fx.spawned, fx.published)
+
+    const rt = testRuntime({
+      env: { HOME: process.env.HOME, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: fx.pluginData },
+      cwd: fx.repo
+    })
+    const opened = openStore(rt, fx.repo)
+    assert.equal(opened.ok, true, 'the byte-cap fixture must be able to open the store')
+    if (!opened.ok) return
+    const store = opened.value
+
+    const maxLengthEntry = (): KeyDecision => ({
+      id: rt.ulid(),
+      decision_id: rt.ulid(),
+      title: 't'.repeat(caps.KEY_DECISION_TITLE_MAX),
+      scope: 'c'.repeat(caps.KEY_DECISION_SCOPE_MAX)
+    })
+    const planned = maxLengthEntry()
+    const withEntry = (thread: Thread, entry: KeyDecision): Thread => ({
+      ...thread,
+      spine: { ...thread.spine, key_decisions: [...thread.spine.key_decisions, entry] }
+    })
+    const bytesOf = (thread: Thread): number => Buffer.byteLength(JSON.stringify(thread), 'utf8')
+    const grow = (thread: Thread): Thread => {
+      if (bytesOf(withEntry(thread, planned)) > caps.THREAD_RECORD_SERIALISED_MAX_BYTES) return thread
+      if (thread.spine.key_decisions.length >= caps.KEY_DECISIONS_MAX_ELEMENTS - 1) return thread
+      return grow(withEntry(thread, maxLengthEntry()))
+    }
+
+    const saturated = grow(readStoredThread(fx, threadId))
+    assert.ok(
+      bytesOf(saturated) <= caps.THREAD_RECORD_SERIALISED_MAX_BYTES,
+      'the saturated fixture must itself still fit inside the byte cap'
+    )
+    assert.ok(
+      bytesOf(withEntry(saturated, planned)) > caps.THREAD_RECORD_SERIALISED_MAX_BYTES,
+      'the saturated fixture must leave no room for one more maximum-length link'
+    )
+    const seeded = store.commit([{ kind: 'thread', record: saturated }], 'saturate the thread to the byte cap')
+    assert.equal(seeded.ok, true, 'the saturated fixture must commit before the tool is called')
+
+    const recorded = (await fx.spawned.client.callTool({
+      name: 'record_decision',
+      arguments: {
+        thread_id: threadId,
+        title: 't'.repeat(caps.KEY_DECISION_TITLE_MAX),
+        context: 'the thread record has no room left for another link',
+        options: ['refuse the whole call', 'record the decision and skip the link'],
+        outcome: 'record the decision and skip the link',
+        scope: 'c'.repeat(caps.KEY_DECISION_SCOPE_MAX)
+      }
+    })) as CallToolResult
+
+    assertOkResult('record_decision (at the byte cap)', recorded)
+    const structured = recorded.structuredContent as {
+      decision_id: string
+      linked: boolean
+      link_skipped_reason: string | null
+    }
+    assert.equal(structured.linked, false, 'the link must be reported as not written')
+    assert.notEqual(structured.link_skipped_reason, null, 'a skipped link must carry a populated reason')
+    assert.match(String(structured.link_skipped_reason), /over its cap of/)
+
+    const afterStore = openStore(rt, fx.repo)
+    assert.equal(afterStore.ok, true, 'the store must reopen after the tool call')
+    if (!afterStore.ok) return
+    const decisionSlot = afterStore.value.readDecision(structured.decision_id)
+    assert.ok(
+      decisionSlot !== null && !decisionSlot.quarantined,
+      'the decision itself must be on disk even though the link was skipped'
+    )
+
+    const afterThread = readStoredThread(fx, threadId)
+    assert.equal(
+      afterThread.spine.key_decisions.length,
+      saturated.spine.key_decisions.length,
+      'the running summary must be unchanged when the link is skipped'
+    )
   })
 })
 
