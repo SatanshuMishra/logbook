@@ -64,21 +64,21 @@ Writes are guarded on the way in. `src/hooklib/guard.ts` is called by the `PreTo
 
 | Situation | Verdict | Where |
 |---|---|---|
-| Tool name matches the ledger MCP pattern (`mcp__ledger__*` / `mcp__plugin_logbook_ledger__*`) | `allow` — auto-approved | `src/hooklib/guard.ts:14,90-92` |
-| A write tool's target path resolves inside the store root | `deny` | `src/hooklib/guard.ts:16,106-110` |
-| A `Bash` command's text names the ledger ref, `CLAUDE_PLUGIN_DATA`, or a path inside the store root | `ask` — Claude Code prompts before running it | `src/hooklib/guard.ts:68-69,120-122` |
-| The store root can't be verified on disk | `deny` for a write tool, `ask` for `Bash` | `src/hooklib/guard.ts:100-104` |
-| Anything else | `silent` — no verdict, the tool proceeds | `src/hooklib/guard.ts:96,99,109,121` |
+| Tool name matches the ledger MCP pattern (`mcp__ledger__*` / `mcp__plugin_logbook_ledger__*`) **and** its suffix is a registered tool name | `allow` — auto-approved | `src/hooklib/guard.ts:15,17-21,97-99` |
+| A write tool's target path resolves inside the store root | `deny` | `src/hooklib/guard.ts:23,113-117` |
+| A `Bash` command's text names the ledger ref, `CLAUDE_PLUGIN_DATA`, or a path inside the store root | `ask` — Claude Code prompts before running it | `src/hooklib/guard.ts:75-76,127-129` |
+| The store root can't be verified on disk | `deny` for a write tool, `ask` for `Bash` | `src/hooklib/guard.ts:107-111` |
+| Anything else | `silent` — no verdict, the tool proceeds | `src/hooklib/guard.ts:103,106,116,128` |
 
-The guard says what it is, in its own text: *"this guard prompts for confirmation and is not a security boundary"* (`src/hooklib/guard.ts:17`, repeated in every `ask`/`deny` message it returns, e.g. `:103,117,122`).
+The guard says what it is, in its own text: *"this guard prompts for confirmation and is not a security boundary"* (`src/hooklib/guard.ts:24`, repeated in every `ask`/`deny` message it returns, e.g. `:110,124,129`).
 
 Confirmed gaps, each grounded in the current guard:
 
-1. **The plugin's own MCP tools are trusted completely.** A tool name matching the ledger pattern is `allow`ed with no inspection of its arguments (`src/hooklib/guard.ts:14,90-92`). This hook is not a second check on the plugin's own writes — only on everything else that might touch the store.
-2. **An unresolvable store is a silent store.** If `CLAUDE_PLUGIN_DATA` can't be resolved to a real root, the guard goes fully silent for every write tool and every `Bash` command — no prompt, no denial (`src/hooklib/guard.ts:47-48,98-99`). It cannot protect a store it cannot locate.
-3. **Bash detection reads text, not shell syntax.** It looks for path-shaped substrings in the raw command and resolves each one (`src/hooklib/guard.ts:20,71-74`); a path built through a shell variable, command substitution, or other indirection is invisible to it.
-4. **A command naming a strict ancestor of the store root passes with no prompt.** The containment check only matches a resolved path equal to, or nested under, the store root (`src/hooklib/guard.ts:38-42`); a command naming the whole plugin-data directory, for example, is shorter than that check and evades it.
-5. **No distinction between a read and a write.** Every `Bash` command that touches the store gets the same `ask`, destructive or not (`src/hooklib/guard.ts:120-122`). The prompt is the entire protection; a prompt approved out of habit protects nothing.
+1. **The plugin's own registered MCP tools are trusted completely, and the server they came from is not checked.** A tool name whose prefix matches the ledger pattern and whose suffix is a name this server actually registers is `allow`ed with no inspection of its arguments (`src/hooklib/guard.ts:15,17-21,97-99`). Checking the name against the registry narrows the surface and does not close it, because the PreToolUse event carries no server identity: a hostile server keyed `ledger` exposing a tool named `open_thread` still auto-approves. This hook is not a second check on the plugin's own writes — only on everything else that might touch the store.
+2. **An unresolvable store is a silent store.** If `CLAUDE_PLUGIN_DATA` can't be resolved to a real root, the guard goes fully silent for every write tool and every `Bash` command — no prompt, no denial (`src/hooklib/guard.ts:54-55,105-106`). It cannot protect a store it cannot locate.
+3. **Bash detection reads text, not shell syntax.** It looks for path-shaped substrings in the raw command and resolves each one (`src/hooklib/guard.ts:27,78-81`); a path built through a shell variable, command substitution, or other indirection is invisible to it.
+4. **A command naming a strict ancestor of the store root passes with no prompt.** The containment check only matches a resolved path equal to, or nested under, the store root (`src/hooklib/guard.ts:45-49`); a command naming the whole plugin-data directory, for example, is shorter than that check and evades it.
+5. **No distinction between a read and a write.** Every `Bash` command that touches the store gets the same `ask`, destructive or not (`src/hooklib/guard.ts:127-129`). The prompt is the entire protection; a prompt approved out of habit protects nothing.
 
 ## Development
 
