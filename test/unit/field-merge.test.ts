@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ThreadRecord } from '../../src/schema/thread.ts'
-import type { Thread, Spine, Criterion } from '../../src/schema/thread.ts'
+import type { Thread, Spine, Criterion, Risk } from '../../src/schema/thread.ts'
 import type { Decision } from '../../src/schema/decision.ts'
 import type { SessionEntry } from '../../src/schema/session.ts'
 import { resolveNode } from '../../src/schema/example.ts'
@@ -211,6 +211,50 @@ test('merge.spine-open-risks-conflict-on-divergence', () => {
   const found = result.conflicts[0]
   assert.ok(found)
   assert.equal(found.field, `spine.open_risks[${ULID_D}]`)
+})
+
+test('merge.spine-open-risks-conflict-on-criterion-id-divergence', () => {
+  const base = baseThread({ spine: { ...baseSpine(), open_risks: [] } })
+  const ours = baseThread({
+    spine: {
+      ...baseSpine(),
+      open_risks: [{ id: ULID_D, scope: 'merge', text: 'shared risk text', refs: [], criterion_id: ULID_A }]
+    }
+  })
+  const theirs = baseThread({
+    spine: {
+      ...baseSpine(),
+      open_risks: [{ id: ULID_D, scope: 'merge', text: 'shared risk text', refs: [], criterion_id: ULID_B }]
+    }
+  })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(result.ok, false)
+  if (result.ok) {
+    throw new Error('expected the merge to refuse over a criterion_id-only divergence')
+  }
+  assert.equal(result.conflicts.length, 1)
+  const found = result.conflicts[0]
+  assert.ok(found)
+  assert.equal(found.field, `spine.open_risks[${ULID_D}]`)
+  assert.deepEqual(found.ours, { id: ULID_D, scope: 'merge', text: 'shared risk text', refs: [], criterion_id: ULID_A })
+  assert.deepEqual(found.theirs, { id: ULID_D, scope: 'merge', text: 'shared risk text', refs: [], criterion_id: ULID_B })
+})
+
+test('merge.spine-open-risks-one-sided-add-with-criterion-id-survives-intact', () => {
+  const risk: Risk = { id: ULID_D, scope: 'merge', text: 'anchored risk', refs: [], criterion_id: ULID_A }
+  const base = baseThread({ spine: { ...baseSpine(), open_risks: [] } })
+  const ours = baseThread({ spine: { ...baseSpine(), open_risks: [risk] } })
+  const theirs = baseThread({ spine: { ...baseSpine(), open_risks: [] } })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(result.ok, true)
+  if (!result.ok) {
+    throw new Error('expected a one-sided add to merge without conflict')
+  }
+  assert.deepEqual(result.merged.spine.open_risks, [risk])
 })
 
 test('merge.conflicts-on-scalar', () => {
