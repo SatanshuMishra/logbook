@@ -11,9 +11,17 @@ const SyncLedgerInputSchema = NO_ARGUMENTS
 
 const SyncLedgerOutputSchema = z.object({
   action: z
-    .enum(['noop', 'pushed', 'fast-forwarded', 'merged'])
-    .describe('what sync did: nothing changed, a plain push, a fast-forward of the local ledger, or a real merge of both sides'),
-  ref: z.string().describe('the ledger ref that sync acted on')
+    .enum(['noop', 'pushed', 'pushed-unverified', 'fast-forwarded', 'merged'])
+    .describe('what sync did: nothing changed, a push whose arrival on the shared copy was confirmed, a push whose arrival could not be confirmed, a fast-forward of the local ledger, or a real merge of both sides'),
+  ref: z.string().describe('the ledger ref that sync acted on'),
+  local_sha: z
+    .string()
+    .nullable()
+    .describe('the commit this machine holds on the ledger ref when sync finished, or null when it could not be read'),
+  remote_sha: z
+    .string()
+    .nullable()
+    .describe('the commit the shared copy holds on the ledger ref, read back from the remote after any push, or null when it could not be read')
 })
 
 type SyncLedgerInput = z.infer<typeof SyncLedgerInputSchema>
@@ -79,7 +87,12 @@ export const syncLedgerTool: ToolSpec<SyncLedgerInput, SyncLedgerOutput> = {
       return {
         ok: true,
         text: `sync ${outcome.action === 'noop' ? 'found nothing to do' : outcome.action}.`,
-        structured: { action: outcome.action, ref: outcome.ref }
+        structured: {
+          action: outcome.action,
+          ref: outcome.ref,
+          local_sha: outcome.local_sha,
+          remote_sha: outcome.remote_sha
+        }
       }
     }
 
