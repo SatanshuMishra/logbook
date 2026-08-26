@@ -95,13 +95,8 @@ const laneSplit = <T extends { criterion_id?: string | undefined }>(
   capA: number,
   capB: number
 ): Laned<T> => {
-  const laneA: T[] = []
-  const laneB: T[] = []
-  for (const item of items) {
-    const lane = laneFor(item.criterion_id, criteriaById, currentId)
-    if (lane === 'A') laneA.push(item)
-    else if (lane === 'B') laneB.push(item)
-  }
+  const laneA = items.filter((item) => laneFor(item.criterion_id, criteriaById, currentId) === 'A')
+  const laneB = items.filter((item) => laneFor(item.criterion_id, criteriaById, currentId) === 'B')
   const shownA = laneA.slice(0, capA)
   const shownB = laneB.slice(0, capB)
   return { shown: [...shownA, ...shownB], hidden: items.length - shownA.length - shownB.length }
