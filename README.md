@@ -56,7 +56,7 @@ The durable half is git-native. Every write to the working copy also lands as a 
 
 There is **no worktree**. Building a commit uses raw git plumbing against a throwaway index file rather than checking anything out: `read-tree`, `hash-object`, `update-index`, and `write-tree` build a tree object, then `commit-tree` and `update-ref` land it (`src/store/write-path.ts:75-111,190-208`). Nothing is ever checked out to a working directory for this ref.
 
-Concurrent writers are handled with compare-and-swap: `update-ref` is called with the previous commit it expects to be replacing. A write that loses the race re-reads both the ref and the record it is about to rewrite before retrying, and refuses rather than retrying when that re-read cannot be performed; it retries up to 5 times (`src/store/ref.ts:15-23`; `src/store/write-path.ts:29,175-221`).
+Concurrent writers are handled with compare-and-swap: `update-ref` is called with the previous commit it expects to be replacing. A write that loses the race re-reads both the ref and the record it is about to rewrite before retrying, and refuses rather than retrying when that record changed underneath it; it retries up to 5 times (`src/store/ref.ts:15-23`; `src/store/write-path.ts:29,175-221`).
 
 ## Protection and its limits
 
