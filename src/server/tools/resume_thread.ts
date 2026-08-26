@@ -35,7 +35,7 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
   name: 'resume_thread',
   title: 'Resume thread',
   description:
-    'Picks up one thread and returns its finished briefing in a single call: it reconciles the store, marks the thread as the one being worked on this machine, and renders what the previous session left. Takes one thread id, a 26-character ULID such as 01M0NDPM0ACCR9CD68PMHYWGGD, which comes from list_threads or the roster resource. Calling it twice on the same thread is not an error and leaves the same single record of what is being worked. The briefing it returns is finished text meant to be shown as it stands.',
+    'Picks up one thread and returns its finished briefing in a single call: it marks the thread as the one being worked on this machine and renders what the previous session left. Takes one thread id, a 26-character ULID such as 01M0NDPM0ACCR9CD68PMHYWGGD, which comes from list_threads or the roster resource. Calling it twice on the same thread is not an error and leaves the same single record of what is being worked. The briefing it returns is finished text meant to be shown as it stands.',
   input: ResumeThreadInputSchema,
   output: ResumeThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
