@@ -579,3 +579,63 @@ ladder's own MSPs. The two schemes do not collide and are not meant to.
 - **Evidence:** both defects were real. Pre-fix source at commit `213c15f` rendered `Blocked: ${clip(blockedBy, SCALAR_FIELD_CLIP)}` at `src/render/briefing.ts:64` — an 80-grapheme clip against a 500-character schema cap. The gap: the entire current `test/unit/briefing.test.ts`, all 16 tests, was run unmodified against that pre-fix source and passed in full. Reverting `692c7e0`'s source change alone, leaving the tests untouched, leaves the full suite green — this is the inertness mutation `testing.md` requires of every fix, and it fails. Two sub-cases have no discriminating test: (a) `blocked_by` surviving whole through the budget-constrained shrunk-clip path — `renderBlockage` at `src/render/briefing.ts:59-60` is structurally unclipped, but nothing asserts the full text survives when the briefing is budget-constrained; (b) the discretionary width being derived from a measured remainder rather than a constant — `shrunkClip`, `clippablePoolCount` and `clippablePoolNaturalTextLen` at `src/render/briefing.ts:114-147` are unexported and have no direct test. A third, related gap: the key-decision overflow tail at `src/render/briefing.ts:174` emits `"- N key decisions not shown"`, but no test exceeds the key-decision lane caps (`LANE_A_TITLES_MAX = 10`, `LANE_B_TITLES_MAX = 5`) to exercise it. That branch rendered for the first time on live data on 2026-08-26, after the `criterion_id` backfill landed, so the path is now known-reachable and merely untested.
 - **Why it is above the ceiling:** the fix was accepted against completion criteria `c4`, `c6` and `c7` of the briefing-size thread, and all three were met on their own terms — the regressions adversarial review found were real, and the fix commit closes them. Acceptance is a ceiling: what a later pass finds beyond a met criterion is filed as a new item, never a reopening of the criterion that already closed. This item is filed as new, not as a reopening of `c4`.
 - **Not folded in.**
+
+# Filed, not fixed — store defects surfaced by continuous integration
+
+Items in `src/store/` found while shipping an unrelated ladder. They take an `S` prefix, distinct from
+the `F`/`E` prefixes above and the `U` prefix below, because they belong to no ladder's unit numbering.
+
+## S1 — the materialisation rebuild wipes the shared records directory with no mutual exclusion, so a concurrent reader sees records that are momentarily absent
+
+- **Surfaced by:** continuous integration on pull request 90, where `test (22.19.x)` went red on
+  `concurrent.distinct-ids` while `test (24.x)` and `test (26.x)` passed on the identical commit. The
+  version split was a coincidence of scheduling, not a cause.
+- **Evidence:** `src/store/read-path.ts:85-86` calls `rmSync(layout.records, { recursive: true, force:
+  true })` followed by `mkdirSync`, then rebuilds the directory one file at a time. That directory is per
+  project, not per process, and there is no lock anywhere in `src/store/` — the only match for "lock" is
+  a git error-message pattern at `src/store/ref.ts:10`. Any other process reading or writing inside the
+  directory during the rebuild sees records that are momentarily absent.
+
+  A reader cannot self-heal. `syncWorkingCopy` short-circuits at `read-path.ts:120` when the stamp
+  already equals the current ref, so a reader arriving after one process wrote the stamp at `:133`, but
+  while a third is still mid-rebuild, skips materialisation entirely, reads the missing file, receives
+  `ENOENT` at `:142`, and `loadThread` refuses at `src/server/tool-support.ts:64-66`.
+
+  Three symptoms of the one window were captured as real stack traces, not inferred: `ENOTEMPTY ...
+  rmdir '.../records/decisions'` at `read-path.ts:85`; `ENOENT ... rename
+  '.../threads/<id>.json.durable-write-*.tmp'` at `src/store/durable-write.ts:77` reached through
+  `restoreBackup` at `src/store/write-path.ts:129`; and the CI symptom itself, `thread_id does not match
+  any thread in this project`, reproduced verbatim including the id `01ARZ3NDEK0000000000000001`.
+
+  Measured over eight concurrent runs of `test/spawn/decisions.test.ts`, 80 trials per arm: Node 22.19.0
+  at `cf93595` failed 3 times; Node 26.4.0 at `cf93595` failed 3 times; Node 22.19.0 at the parent
+  `bfdc68a` failed 2 times; a single unloaded run on Node 22.19.0 across 30 trials failed 0 times. There
+  is no Node-version difference in either direction, and the exact CI text was reproduced on Node 26
+  rather than on 22.19. Concurrency is required; load is the variable, not the runtime version.
+
+  **Aggravating factor, and the reason this is not merely a flaky test.** `writeRecords` captures its
+  rollback snapshot once, before the attempt loop, at `write-path.ts:172`. If the thread file happens to
+  be absent at that instant the snapshot records `existed: false`, and a later `rollback()` at
+  `write-path.ts:236`, `:247` or `:251` calls `restoreBackup`, which unlinks the thread record at
+  `write-path.ts:132-138`. That converts a transient read window into persistent record loss in a store
+  whose whole purpose is durability.
+- **Distinct from both neighbouring items.** `D11`/`E4a` is a lost update on the commit path, where a
+  rival's committed content is overwritten, and its own record states that `concurrent.distinct-ids` does
+  not cover it. `F2a` is a dirty read in which a reader sees an extra, uncommitted record; it cites the
+  same `syncWorkingCopy` short-circuit but never the `rmSync` wipe. This item is a missing record on the
+  read path and is neither of them. Nothing in this directory names cross-process exclusion around the
+  rebuild.
+- **Why it is above the ceiling:** it is pre-existing, reproduces on the parent commit, and lives
+  entirely in `src/store/`, outside the declared surface of every unit in the briefing styling ladder,
+  whose production diffs touch only `src/render/briefing.ts` and `src/server/tools/resume_thread.ts`. The
+  runtime import closure of `src/server/tools/record_decision.ts` is 21 modules and excludes both; they
+  appear only through an `import type` at `record_decision.ts:2`, which erases at runtime.
+- **Proposed remedy, not applied.** Make the rebuild additive: write each blob over its path with the
+  already-atomic `durableWrite` (`durable-write.ts:60-101`), then delete only files present on disk and
+  absent from the tree, so a current record is never momentarily missing. Separately, take an exclusive
+  lock around materialisation, which is what closes the `ENOTEMPTY`. Re-capturing the rollback backup per
+  attempt at `write-path.ts:172` closes the persistence half. The choice between locking and an additive
+  rebuild is a design decision and should be settled before implementation. A deterministic red test is
+  cheap: `writeRecords` already exposes a `beforeCas` seam at `write-path.ts:214`, used by
+  `test/store/concurrency.test.ts:186` and `:262`.
+- **Not folded in.**
