@@ -1,0 +1,175 @@
+# PLAN: the resumption briefing is styled, and its criteria list is bounded
+
+Status: APPROVED. Parent commit `1e04924`, suite green 421/421.
+Ladder: two units, `A1` and `A2`, shipped in that order. `A2` depends on `A1`'s headroom.
+
+## 0. What is wrong
+
+`resume_thread` returns finished text the assistant echoes verbatim. That text carries no markdown, so
+every consecutive line collapses into one paragraph when the harness renders it as GitHub-flavoured
+markdown. The reader gets a wall.
+
+Styling it is blocked by arithmetic, not by the verbatim-echo hook. Measured on the parent:
+
+| Render | chars (cap 12000) | payload bytes (cap 24000) |
+|---|---:|---:|
+| parent | 11,549 | 23,728 |
+| naive markdown restyle, uncapped criteria | 12,049 | 24,740 |
+
+The briefing is emitted twice per reply, at `src/server/tools/resume_thread.ts:89` and `:92`, so a
+character costs two payload bytes. A closed formula reproduced all four measured points exactly:
+
+```
+payload bytes = 2 x chars + 2 x newlines + 140
+```
+
+The payload cap binds before the character cap: 451 chars of character headroom is only 272 bytes,
+which is 136 ordinary characters.
+
+## 1. The governing rule
+
+**Styling cost is O(1) in the number of records, never O(n).** The naive restyle's 500-char cost splits
+into 180 chars of fixed styling and 320 chars of per-row prefixes across 160 surplus criterion rows.
+That 320 is the O(n) term and it is the whole defect.
+
+## 2. A1 — the completion-criteria list is bounded
+
+Criteria are the only list the renderer never caps. Risks, key decisions, out-of-scope items and
+dangling or quarantined decision ids all carry a cap and a `Not shown:` bullet.
+
+### The cap value
+
+`CRITERIA_SHOWN_MAX = 40`, derived from `caps.CRITERIA_MAX_ELEMENTS = 40` at `src/schema/caps.ts:12`,
+enforced against un-struck criteria at `src/domain/criteria.ts:126-134` and applied to the initial list
+at `src/server/tools/open_thread.ts:32`. Retention allows 200 (`caps.ts:13`), but every criterion beyond
+40 can only be struck. A cap of 40 that ranks un-struck first therefore shows every open and every done
+criterion on any thread reachable through the tools.
+
+The budget ceiling was measured separately at 63 rows. 40 is chosen over 63 because the surplus can only
+ever be retired work, and because a cap derived from the domain invariant never needs re-deriving when
+criterion text grows.
+
+### The selection rule
+
+Rank `open` 0, `done` 1, `struck` 2. Tie-break on original array index, which equals ordinal order via
+`recomputeOrdinals` at `src/domain/criteria.ts:111-112`. Select the lowest-ranked 40, then render them in
+original ordinal order so the reader sees ascending `c1, c3, c7` with gaps where retired items dropped.
+
+`currentCriterionId` needs no special case: it is defined at `src/render/briefing.ts:67-70` as the first
+un-struck, not-done criterion, so it is already rank 0's lowest index.
+
+Overflow bullet, one line, deliberately plain: `- N completion criteria not shown`. A wording such as
+"settled criteria" would be false on a hand-written or synced record carrying 200 open criteria, which
+the schema admits even though the tools refuse to create it.
+
+### What must NOT move
+
+| Component | Rule |
+|---|---|
+| `currentCriterionId` (`:67-70`) | computed over the FULL array |
+| `criteriaById` map (`:216`) | built over the FULL array |
+| `laneFor` / `laneSplit` (`:72-98`) | unchanged |
+| `capList` (`:100-103`) | unchanged, and NOT reused for criteria |
+
+The `criteriaById` map is the trap. A risk anchored to a hidden done criterion must still resolve to
+lane C and collapse. Build the map from the shown subset and it falls through `laneFor`'s
+`if (criterion === undefined) return 'B'` at `:78` and renders in full, inverting the assertion at
+`test/unit/briefing.test.ts:324`.
+
+### What must move
+
+`clippablePoolCount` (`:119`) and `clippablePoolNaturalTextLen` (`:127`) currently read
+`thread.completion_criteria.length`. Left alone they divide the clip budget across 200 items while 40
+render, over-clipping text roughly fivefold. No existing test catches this.
+
+### A1 acceptance criteria (the ceiling)
+
+1. A test named `briefing.completion-criteria-are-capped-and-open-ones-survive` exists, is RED on parent
+   `1e04924` and GREEN on the fix. Fixture: 199 struck criteria at ordinals 1-199 and one open criterion
+   at ordinal 200. It asserts exactly 40 criterion rows, that the ordinal-200 open criterion's id is
+   present, and that the tail carries `- 160 completion criteria not shown`.
+2. Two inertness mutations each turn that test RED, verified by running them and then reverting:
+   removing the cap, and replacing the ranked cap with a plain `slice(0, 40)`.
+3. `test/unit/briefing.test.ts:324` still passes, verified by running it, proving `criteriaById` was not
+   narrowed to the shown subset.
+4. `decisionRecordSizedThread` (`test/unit/briefing.test.ts:417-453`) is made genuinely maximal:
+   criterion text at the 500 cap, `key_decisions` populated to its 200 cap, `slug` at its 64 cap. The
+   fixture is currently not maximal and hides the true parent margin of 138 payload bytes.
+5. `npm run typecheck` exits 0 and `npm test` exits 0 with at least 421 passing.
+
+## 3. A2 — the briefing is styled as markdown
+
+Applied only after A1's headroom exists. Measured at cap 40: 10,572 chars and 21,466 bytes, leaving
+1,428 chars and 2,534 bytes.
+
+### The token set
+
+| Line family | Before | After |
+|---|---|---|
+| header, 7 lines | `Thread: v` | `- **Thread:** v` |
+| section labels, 7 | `Open risks:` | `**Open risks:**` |
+| before each label | none | one blank line |
+| criterion row | `c1 [open] id: t` | `- c1 [open] id: t` |
+| decisions rows | `resolved: N` | `- resolved: N` |
+| not-shown tail | `See addr ...` | `- See addr ...` |
+| risk, key-decision, out-of-scope, related rows | already `- ` | unchanged |
+
+Criterion and decision rows must become bullets for the same reason the header must: consecutive
+non-blank lines are one paragraph in CommonMark, so 40 plain `c1 ...` lines under a bold label
+reproduce the wall this unit removes.
+
+No `#` is emitted anywhere. Bold labels do not match `forgery.test.ts:48`'s
+`STRUCTURAL_MARKER_AT_LINE_START` because that pattern requires whitespace or end-of-line after the
+marker and `**Open` has `*` in that position. Both facts were confirmed by running those regexes against
+every new line shape.
+
+### A2 acceptance criteria (the ceiling)
+
+1. A test named `briefing.styling-cost-is-a-function-of-sections-not-of-record-count` exists, is RED on
+   the A1 head and GREEN on the fix. It renders two threads identical but for criterion count, 5 against
+   40, and asserts the bold-marker count is greater than zero and identical across both.
+2. Two inertness mutations each turn that test RED, verified then reverted: reverting bold labels to
+   plain, and making any criterion row emit an O(n) styling token.
+3. `rendered.includes('#')` is false, and `test/spawn/forgery.test.ts` passes unchanged.
+4. Both caps hold on the genuinely maximal fixture from A1 criterion 4, asserted in the suite.
+5. `npm run typecheck` exits 0 and `npm test` exits 0 with at least 421 passing.
+
+## 4. Verification
+
+Per unit: `npm run typecheck` and `npm test`, both exit 0. **Never `npm install` or `npm ci`** -
+`node_modules` is tracked and `yaml` is hand-vendored.
+
+Per merge, by hand, because `main` has no branch protection, no required checks, and no workflow that
+triggers on the trunk:
+
+```
+git merge-base --is-ancestor <merged-head> origin/main
+git checkout <merge-commit-sha> && npm run typecheck && npm test
+```
+
+A2 is stacked on A1. A1 merges first, its branch is deleted, the ref is confirmed gone, and only then
+does A2 merge.
+
+## 5. Standing constraints
+
+Constraints C2 through C8 of `docs/plans/2026-08-26-briefing-scoping-repair-PLAN.md` section 5 apply
+unchanged. C1 does not reach this diff: prior unit U2 split the thread resource, so `renderBriefing` now
+has a single production caller at `src/server/tools/resume_thread.ts:85`.
+
+## 6. Filed, not folded
+
+| Item | Evidence |
+|---|---|
+| **A0a** - the render has no post-shrink cap re-check. `src/render/briefing.ts:243-255` returns the shrunk render without re-measuring it, so scaffolding alone can silently exceed budget. Pre-existing; neither unit creates it. Measured across seven adversarial fixtures at cap 40 the post-shrink render landed 506 to 590 chars under the cap, so neither unit needs it. | `src/render/briefing.ts:243-255` |
+| **A0b** - `shrunkClip` never clamps `perItemClip` to `FULL_CLIP`. Unreachable while the write-boundary escape invariant holds; fed inflated natural lengths it produced a 130,881-char render. Becomes live the moment any render-side escape lands. | `src/render/briefing.ts:134-147` |
+| **A0c** - five header fields are never clipped: `title`, `blocked_by`, `active_goal`, `next_step`, `last_session`. They are the only unbounded contributors to the render. | `src/render/briefing.ts:183-189` |
+| **A0d** - `test/unit/briefing.test.ts:216` asserts no `#` anywhere, but passes by fixture luck: every probe is a single leading `#` and `escapeStored` escapes only a line's first character (`src/render/escape.ts:35`). A stored `## x` leaves a mid-line `#`. Harmless, since headings need line start, but the census reads stronger than it is. | `test/unit/briefing.test.ts:216` |
+| **A0e** - mid-line markdown in stored values becomes live once the briefing is markdown. `escapeStored` handles line-leading only. The security-consequential characters are `[` and `<`; `*`, `_`, backtick and `~` are fidelity only, and CommonMark renders unmatched delimiters literally. A render-side escape is measured at 31,417 chars / 63,174 bytes, a 2.6x cap violation, and requires A0b and A0c first. | `src/render/escape.ts:22-38` |
+| **A0f** - styling the twins is out of scope: `renderThreadDetail` (`src/server/resource-render.ts:69`) and `renderRoster` (`src/render/roster.ts:65`) have the same wall and are unchanged by this ladder. | - |
+| **A0g** - the resume payload can exceed its byte cap on ordinary schema-admissible records, and this unit widens the set of records that do. The briefing is serialised into the reply twice, once as `content[0].text` and once as `structuredContent.briefing`, so payload bytes run at roughly `2 x (chars + lines) + 130`. With `BRIEFING_MAX_CHARS = 12000` and `RESUME_PAYLOAD_MAX_BYTES = 24000` the true character ceiling that satisfies the byte cap is about 11,935 minus the line count, not 12,000 - and the renderer checks the character cap only, never the byte cap. Two plain-ASCII fixtures, each `ThreadRecord.parse` ok, measure the two halves of this. **Fixture 1, on which the parent PASSES and this unit's head FAILS**, so this unit does make more records breach: record 47,158 of 65,536 bytes, shaped as 140 criteria at 60 characters of text, 20 risks at 500, 20 key decisions at 50 and 20 out-of-scope at 300. Parent 11,471/12,000 chars PASS and 23,436/24,000 bytes PASS; head 11,995/12,000 chars PASS but 24,284/24,000 bytes FAIL by 284. A grid over schema-admissible plain-ASCII records found 1,239 such configurations, and a randomised run over 2,088 admissible records found 14 byte-cap regressions and zero character-cap regressions. **Fixture 2, on which BOTH the parent and this unit's head FAIL**, so the breach is also reachable pre-existing: record 63,098 of 65,536 bytes, shaped as 200 criteria with 99-character text, all `done: false` and `struck_by: null`, ordinals 1-200; 40 risks with 102-character text, all anchored to `criteria[0]`; 20 key decisions with 102-character titles, all anchored to `criteria[0]`; 40 out-of-scope at 102; `title` 200; `slug` 64; `blocked_by` 500; `active_goal`, `next_step` and `last_session` 500 each; 50 dangling and 50 quarantined decision ids; and a predecessor with a 200-character title and a 64-character slug. Parent 11,747 chars, 262 lines, 24,156/24,000 bytes FAIL by 156; head 11,998 chars, 102 lines, 24,338/24,000 bytes FAIL by 338. Anchoring to `criteria[0]` is the lever. A lane is where the renderer files a risk or a key decision: lane A is the items anchored to the criterion currently being worked, lane B is everything unanchored or anchored elsewhere but still live, lane C is items anchored to a done or struck criterion, which collapse. `criteria[0]` is the current criterion, so anchored items fill lane A at its caps of 8 risks and 10 key decisions rather than lane B's 4 and 5. The text lengths are tuned so the render lands just under the character cap and takes the unclipped path; longer text trips clipping, which pulls the render back and hides the breach. **The claim that the numbers are identical on the parent is disproved by fixture 1.** The honest statement is that the breach is reachable on the parent, and that this unit widens the set of records that reach it. Neither fixture's worst case is proven global: both came from bounded sweeps, so each is a lower bound on the true worst case. This is not A0a. A0a is the missing post-shrink re-check, measured at 506 to 590 characters of margin against the CHARACTER cap; the byte cap has no such margin. | `src/render/briefing.ts:12-13`, `:277-280`, `src/server/tools/resume_thread.ts:89`, `:92` |
+| **A0h** - the `done`-before-`struck` rank ordering is unasserted. Swapping the rank constants for `done` and `struck` leaves every test green, because the shipped fixture is 199 struck criteria plus one open one (`test/unit/briefing.test.ts:464-467`) and carries no done criterion at all, so rank 1 is never exercised. The code is correct as shipped; this is a coverage gap, not a defect. | `src/render/briefing.ts:107-115` |
+| **A0i** - original-ordinal-order emission is unasserted. `capCriteria` selects the 40 lowest-ranked criteria and then emits them in original ordinal order, so the reader sees ascending ordinals with gaps where retired items dropped out. Replacing that emission with a rank-order sort leaves every test green. Correct as shipped; a coverage gap, not a defect. | `src/render/briefing.ts:122-138` |
+| **A0j** - `criterionStatus` is typed `string`, so a fourth status would silently rank as struck. It returns `string` rather than a closed union of the three statuses `open`, `done` and `struck`, so a status added later falls through the rank lookup, is treated as the lowest priority, and hides behind the cap with no compile error. | `src/render/briefing.ts:41-44` |
+| **A0k** - nothing pins the shown cap to the schema invariant. `CRITERIA_SHOWN_MAX` now derives from `caps.CRITERIA_MAX_ELEMENTS`, and that derivation is what makes the safety claim true: a cap of 40 is safe only because that invariant bounds un-struck criteria, so every open and every done criterion always fits. No test fails if someone reverts it to a bare `40`, because the two expressions evaluate identically today. | `src/render/briefing.ts:29`, `src/schema/caps.ts:12` |
+| **A0l** - the schema's per-field caps are not jointly satisfiable. `ThreadRecord.parse` enforces a whole-record cap, `THREAD_RECORD_SERIALISED_MAX_BYTES = 65536`. Two hundred completion criteria consume 60,419 of those 65,536 bytes with EMPTY text, which is 92 percent of the record budget, leaving roughly 5,117 bytes against about 200 bytes per character of criterion text and about 302 bytes per key decision. Measured admissible frontier at 200 criteria, `parse.ok` true at every row: 0 key decisions allow 25 characters of criterion text (65,419 bytes); 5 allow 18 (65,528 bytes); 10 allow 10 (65,438 bytes); 16 allow 1 (65,450 bytes); 17 or more are inadmissible at any text length. The shipped fixture sits on the 5-key-decision row of that frontier (`test/unit/briefing.test.ts:487-488`). The consequence: no schema-admissible record can hold the retention maximum of criteria alongside criterion text at its 500-character cap or key decisions at their 200-element cap. Pre-existing; this unit neither creates nor fixes it. | `src/schema/thread.ts:133-146`, `src/schema/caps.ts:39` |
+| **A0m** - the suite has no render-maximal fixture. The size fixture maximises RECORD bytes, not RENDERED output, and the test consuming it was honestly renamed to say so: `briefing.renders-a-record-byte-maximal-thread-within-budget`. Its risks and key decisions carry no `criterion_id`, so they fall to lane B and only 4 and 5 of them render; anchoring them to the current criterion fills lane A at its caps of 8 and 10 and yields a strictly larger render. That gap is what lets A0g pass the suite. A working seed for such a fixture is the 140/60/20/20/20 shape recorded in A0g. | `test/unit/briefing.test.ts:490-531`, `src/render/briefing.ts:18-23` |
