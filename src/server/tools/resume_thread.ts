@@ -3,7 +3,7 @@ import type { ToolSpec } from '../register.ts'
 import { ULID_PATTERN } from '../../schema/ids.ts'
 import { layoutFor } from '../../store/layout.ts'
 import { readPointer, writePointer, type Pointer } from '../../domain/pointer.ts'
-import { renderBriefing, type DecisionIntegrity } from '../../render/briefing.ts'
+import { renderBriefingWithPasses, resumePayloadBytes, type DecisionIntegrity } from '../../render/briefing.ts'
 import { openProjectStore, loadThread, resolvePredecessor } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
@@ -82,7 +82,24 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
       quarantined
     }
 
-    const briefing = renderBriefing(thread, decisionIntegrity, writtenPointer, resolvePredecessor(rt, store, thread))
+    const hasPreviousSession = previousSession !== null
+    const render = renderBriefingWithPasses(
+      thread,
+      decisionIntegrity,
+      writtenPointer,
+      resolvePredecessor(rt, store, thread),
+      hasPreviousSession
+    )
+    const briefing = render.briefing
+
+    if (!render.withinBudget) {
+      rt.log({
+        level: 'error',
+        event: 'briefing.budget-exceeded',
+        chars: briefing.length,
+        bytes: resumePayloadBytes(briefing, thread.id, hasPreviousSession)
+      })
+    }
 
     return {
       ok: true,

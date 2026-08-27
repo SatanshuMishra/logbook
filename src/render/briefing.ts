@@ -12,6 +12,35 @@ export type DecisionIntegrity = {
 export const BRIEFING_MAX_CHARS = 12000
 export const RESUME_PAYLOAD_MAX_BYTES = 24000
 
+const RESUME_PAYLOAD_RESERVE_BYTES = 200
+const RESUME_PAYLOAD_TARGET_BYTES = RESUME_PAYLOAD_MAX_BYTES - RESUME_PAYLOAD_RESERVE_BYTES
+
+const BRIEFING_COPIES_IN_RESUME_PAYLOAD = 2
+const RESUME_PAYLOAD_SCAFFOLD_BYTES = 114
+const PREVIOUS_SESSION_NULL_BYTES = 4
+const PREVIOUS_SESSION_LARGEST_BYTES = 82
+const PREVIOUS_SESSION_PRESENT_EXTRA_BYTES = PREVIOUS_SESSION_LARGEST_BYTES - PREVIOUS_SESSION_NULL_BYTES
+const PREVIOUS_SESSION_ABSENT_EXTRA_BYTES = 0
+const PREVIOUS_SESSION_DEFAULT_PRESENT = true
+const JSON_STRING_DELIMITER_BYTES = 2
+
+const jsonEscapedByteLen = (text: string): number =>
+  Buffer.byteLength(JSON.stringify(text), 'utf8') - JSON_STRING_DELIMITER_BYTES
+
+export const resumePayloadBytes = (
+  briefing: string,
+  threadId: string,
+  hasPreviousSession: boolean = PREVIOUS_SESSION_DEFAULT_PRESENT
+): number =>
+  BRIEFING_COPIES_IN_RESUME_PAYLOAD * jsonEscapedByteLen(briefing) +
+  jsonEscapedByteLen(threadId) +
+  RESUME_PAYLOAD_SCAFFOLD_BYTES +
+  (hasPreviousSession ? PREVIOUS_SESSION_PRESENT_EXTRA_BYTES : PREVIOUS_SESSION_ABSENT_EXTRA_BYTES)
+
+const fitsBudget = (briefing: string, threadId: string, hasPreviousSession: boolean): boolean =>
+  briefing.length <= BRIEFING_MAX_CHARS &&
+  resumePayloadBytes(briefing, threadId, hasPreviousSession) <= RESUME_PAYLOAD_TARGET_BYTES
+
 const RELATED_TITLE_CLIP = 100
 const RELATED_SLUG_CLIP = 64
 
@@ -32,7 +61,6 @@ const CRITERION_TEXT_NATURAL_MAX = 500
 const DECISION_ID_SHOWN_MAX = 6
 
 const MIN_TEXT_CLIP = 0
-const NOT_SHOWN_MARKER_RESERVE = 600
 const TEXT_CLIPPED_BULLET =
   '- some criterion, risk, key decision or out-of-scope text was shortened to fit the character budget'
 
@@ -139,46 +167,50 @@ const capCriteria = (criteria: readonly Criterion[], cap: number): Laned<Criteri
 
 type RenderClip = { risk: number; keyDecision: number; outOfScope: number; criterion: number }
 
-const FULL_CLIP: RenderClip = {
-  risk: RISK_TEXT_NATURAL_MAX,
-  keyDecision: KEY_DECISION_TITLE_NATURAL_MAX,
-  outOfScope: OUT_OF_SCOPE_TEXT_NATURAL_MAX,
-  criterion: CRITERION_TEXT_NATURAL_MAX
-}
+const clipAt = (perItemClip: number): RenderClip => ({
+  risk: Math.min(perItemClip, RISK_TEXT_NATURAL_MAX),
+  keyDecision: Math.min(perItemClip, KEY_DECISION_TITLE_NATURAL_MAX),
+  outOfScope: Math.min(perItemClip, OUT_OF_SCOPE_TEXT_NATURAL_MAX),
+  criterion: Math.min(perItemClip, CRITERION_TEXT_NATURAL_MAX)
+})
 
-const clippablePoolCount = (
-  criteria: Laned<Criterion>,
-  risks: Laned<Risk>,
-  keyDecisions: Laned<KeyDecision>,
-  outOfScope: Laned<OutOfScope>
-): number => criteria.shown.length + risks.shown.length + keyDecisions.shown.length + outOfScope.shown.length
+const MAX_ITEM_CLIP = Math.max(
+  RISK_TEXT_NATURAL_MAX,
+  KEY_DECISION_TITLE_NATURAL_MAX,
+  OUT_OF_SCOPE_TEXT_NATURAL_MAX,
+  CRITERION_TEXT_NATURAL_MAX
+)
 
-const clippablePoolNaturalTextLen = (
-  criteria: Laned<Criterion>,
-  risks: Laned<Risk>,
-  keyDecisions: Laned<KeyDecision>,
-  outOfScope: Laned<OutOfScope>
-): number => {
-  const criterionLen = criteria.shown.reduce((sum, item) => sum + escapeStored(item.text).length, 0)
-  const riskLen = risks.shown.reduce((sum, item) => sum + escapeStored(item.text).length, 0)
-  const keyDecisionLen = keyDecisions.shown.reduce((sum, item) => sum + escapeStored(item.title).length, 0)
-  const outOfScopeLen = outOfScope.shown.reduce((sum, item) => sum + escapeStored(item.text).length, 0)
-  return criterionLen + riskLen + keyDecisionLen + outOfScopeLen
-}
+const FULL_CLIP: RenderClip = clipAt(MAX_ITEM_CLIP)
 
-const shrunkClip = (
-  overage: number,
-  criteria: Laned<Criterion>,
-  risks: Laned<Risk>,
-  keyDecisions: Laned<KeyDecision>,
-  outOfScope: Laned<OutOfScope>
-): RenderClip => {
-  const poolCount = clippablePoolCount(criteria, risks, keyDecisions, outOfScope)
-  if (poolCount === 0) return FULL_CLIP
-  const naturalTextLen = clippablePoolNaturalTextLen(criteria, risks, keyDecisions, outOfScope)
-  const targetTextLen = Math.max(poolCount * MIN_TEXT_CLIP, naturalTextLen - overage - NOT_SHOWN_MARKER_RESERVE)
-  const perItemClip = Math.max(MIN_TEXT_CLIP, Math.floor(targetTextLen / poolCount))
-  return { risk: perItemClip, keyDecision: perItemClip, outOfScope: perItemClip, criterion: perItemClip }
+type ClipSearch = { briefing: string; passes: number }
+
+const largestFittingClipRender = (
+  renderAtClip: (perItemClip: number) => string,
+  fits: (briefing: string) => boolean,
+  unclipped: string
+): ClipSearch => {
+  let accepted = MIN_TEXT_CLIP - 1
+  let ceiling = MAX_ITEM_CLIP
+  let bestFitting: string | null = null
+  let passes = 0
+
+  while (accepted < ceiling) {
+    const candidate = Math.ceil((accepted + ceiling) / 2)
+    const rendered = renderAtClip(candidate)
+    passes += 1
+    if (fits(rendered)) {
+      accepted = candidate
+      bestFitting = rendered
+    } else {
+      ceiling = candidate - 1
+    }
+  }
+
+  if (bestFitting !== null) return { briefing: bestFitting, passes }
+  const floorRender = renderAtClip(MIN_TEXT_CLIP)
+  const smallest = floorRender.length < unclipped.length ? floorRender : unclipped
+  return { briefing: smallest, passes: passes + 1 }
 }
 
 const assembleBriefing = (
@@ -244,12 +276,15 @@ const assembleBriefing = (
   ].join('\n')
 }
 
-export const renderBriefing = (
+export type BriefingRender = { briefing: string; passes: number; withinBudget: boolean }
+
+export const renderBriefingWithPasses = (
   thread: Thread,
   decisionIntegrity: DecisionIntegrity,
   pointer: Pointer | null,
-  predecessor: Thread | null
-): string => {
+  predecessor: Thread | null,
+  hasPreviousSession: boolean = PREVIOUS_SESSION_DEFAULT_PRESENT
+): BriefingRender => {
   const criteriaById = new Map(thread.completion_criteria.map((criterion) => [criterion.id, criterion] as const))
   const currentId = currentCriterionId(thread.completion_criteria)
 
@@ -260,37 +295,43 @@ export const renderBriefing = (
   const dangling = capList(decisionIntegrity.dangling, DECISION_ID_SHOWN_MAX)
   const quarantined = capList(decisionIntegrity.quarantined, DECISION_ID_SHOWN_MAX)
 
-  const unclipped = assembleBriefing(
-    thread,
-    decisionIntegrity,
-    pointer,
-    predecessor,
-    risks,
-    keyDecisions,
-    outOfScope,
-    criteria,
-    dangling,
-    quarantined,
-    FULL_CLIP,
-    false
-  )
-  if (unclipped.length <= BRIEFING_MAX_CHARS) return unclipped
+  const renderWith = (renderClip: RenderClip, textWasClipped: boolean): string =>
+    assembleBriefing(
+      thread,
+      decisionIntegrity,
+      pointer,
+      predecessor,
+      risks,
+      keyDecisions,
+      outOfScope,
+      criteria,
+      dangling,
+      quarantined,
+      renderClip,
+      textWasClipped
+    )
 
-  const overage = unclipped.length - BRIEFING_MAX_CHARS
-  const renderClip = shrunkClip(overage, criteria, risks, keyDecisions, outOfScope)
+  const finish = (briefing: string, passes: number): BriefingRender => ({
+    briefing,
+    passes,
+    withinBudget: fitsBudget(briefing, thread.id, hasPreviousSession)
+  })
 
-  return assembleBriefing(
-    thread,
-    decisionIntegrity,
-    pointer,
-    predecessor,
-    risks,
-    keyDecisions,
-    outOfScope,
-    criteria,
-    dangling,
-    quarantined,
-    renderClip,
-    true
+  const unclipped = renderWith(FULL_CLIP, false)
+  if (fitsBudget(unclipped, thread.id, hasPreviousSession)) return finish(unclipped, 1)
+
+  const search = largestFittingClipRender(
+    (perItemClip) => renderWith(clipAt(perItemClip), true),
+    (briefing) => fitsBudget(briefing, thread.id, hasPreviousSession),
+    unclipped
   )
+  return finish(search.briefing, search.passes + 1)
 }
+
+export const renderBriefing = (
+  thread: Thread,
+  decisionIntegrity: DecisionIntegrity,
+  pointer: Pointer | null,
+  predecessor: Thread | null,
+  hasPreviousSession: boolean = PREVIOUS_SESSION_DEFAULT_PRESENT
+): string => renderBriefingWithPasses(thread, decisionIntegrity, pointer, predecessor, hasPreviousSession).briefing

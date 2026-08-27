@@ -2,14 +2,22 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import * as ts from 'typescript'
-import { renderBriefing, BRIEFING_MAX_CHARS, RESUME_PAYLOAD_MAX_BYTES, type DecisionIntegrity } from '../../src/render/briefing.ts'
+import {
+  renderBriefing,
+  renderBriefingWithPasses,
+  BRIEFING_MAX_CHARS,
+  RESUME_PAYLOAD_MAX_BYTES,
+  type DecisionIntegrity
+} from '../../src/render/briefing.ts'
 import { ThreadRecord, type Thread, type Criterion, type Risk, type KeyDecision, type OutOfScope } from '../../src/schema/thread.ts'
-import { KEY_DECISION_TITLE_MAX, THREAD_SLUG_MAX } from '../../src/schema/caps.ts'
+import { CRITERIA_MAX_ELEMENTS, KEY_DECISION_TITLE_MAX, OPEN_RISKS_MAX_ELEMENTS, THREAD_SLUG_MAX } from '../../src/schema/caps.ts'
 import type { Pointer } from '../../src/domain/pointer.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { census } from '../support/census.ts'
 import type { Classified } from '../support/census.ts'
 import { REBUILD_ROOT, forEachDescendant, lineOf, loadSourceProgram, sourceFileFor } from '../support/source-census.ts'
+import { buildSweepFixture, type SweepShape } from '../support/briefing-sweep-fixture.ts'
+import { overBudgetThread } from '../support/briefing-over-budget-fixture.ts'
 
 const rt = testRuntime()
 
@@ -563,5 +571,142 @@ test('briefing.renders-a-record-byte-maximal-thread-within-budget', () => {
     criterionRowCount(rendered),
     40,
     'a record-byte-maximal thread renders exactly 40 criterion rows, the rest withheld to the not-shown tail'
+  )
+})
+
+const ordinarySmallThread = (): Thread =>
+  baseThread({
+    title: 'Guard the briefing byte budget',
+    completion_criteria: [
+      criterion({ ordinal: 1, text: 'the renderer enforces the resume payload byte cap', done: true }),
+      criterion({ ordinal: 2, text: 'the frontier sweep finds no breaching record' }),
+      criterion({ ordinal: 3, text: 'the common path still converges in one pass' })
+    ],
+    spine: {
+      active_goal: 'make the briefing budget guard byte-denominated',
+      next_step: 'assert the ordinary path never enters the clip search',
+      last_session: 'replaced the single-shot shrink with a convergent search',
+      open_risks: [risk({ text: 'the character cap cannot bound multi-byte output' })],
+      key_decisions: [],
+      out_of_scope: [{ id: rt.ulid(), text: 'the pre-cutover ledger records stay frozen' }]
+    }
+  })
+
+test('briefing.an-ordinary-small-thread-renders-in-a-single-pass', () => {
+  const thread = ordinarySmallThread()
+  assert.equal(ThreadRecord.parse(thread).ok, true, 'the ordinary fixture must itself be schema-admissible')
+
+  const render = renderBriefingWithPasses(thread, EMPTY_INTEGRITY, null, null)
+
+  assert.equal(
+    render.passes,
+    1,
+    `an ordinary small thread must satisfy both caps on the unclipped attempt and never enter the clip search, got ${render.passes} renders`
+  )
+})
+
+const CLIP_SEARCH_PASS_CEILING = 11
+
+test('briefing.the-clip-search-converges-within-the-pass-ceiling', () => {
+  const thread = decisionRecordSizedThread()
+  const predecessor = baseThread({ title: 'x'.repeat(200), slug: 'a'.repeat(60) })
+  const integrity: DecisionIntegrity = {
+    resolved: 5,
+    dangling: Array.from({ length: 50 }, () => rt.ulid()),
+    quarantined: Array.from({ length: 50 }, () => rt.ulid())
+  }
+
+  const render = renderBriefingWithPasses(thread, integrity, null, predecessor)
+
+  assert.ok(
+    render.passes > 1,
+    'a record-byte-maximal thread must actually enter the clip search, or the ceiling below is unexercised'
+  )
+  assert.ok(
+    render.passes <= CLIP_SEARCH_PASS_CEILING,
+    `the clip search must converge within ${CLIP_SEARCH_PASS_CEILING} renders, got ${render.passes}`
+  )
+})
+
+const ASCII_FILL = 'x'
+const WORST_REACHABLE_CRITERION_TEXT_LENGTH = 51
+const RISK_TEXT_RETAINED_FLOOR = 250
+
+const worstReachableAsciiShape: SweepShape = {
+  fill: ASCII_FILL,
+  anchored: true,
+  criteriaCount: CRITERIA_MAX_ELEMENTS,
+  keyDecisionCount: 0,
+  criterionTextLength: WORST_REACHABLE_CRITERION_TEXT_LENGTH,
+  bulkCount: OPEN_RISKS_MAX_ELEMENTS
+}
+
+const textAfterPrefix = (rendered: string, prefix: string): number => {
+  const line = rendered.split('\n').find((candidate) => candidate.startsWith(prefix))
+  if (line === undefined) {
+    throw new Error(`expected the rendered briefing to carry a line beginning "${prefix}", found none`)
+  }
+  return line.length - prefix.length
+}
+
+test('briefing.the-clip-search-keeps-most-of-the-risk-text-on-the-worst-reachable-ascii-record', () => {
+  const { thread, predecessor, integrity } = buildSweepFixture(rt, worstReachableAsciiShape)
+  assert.equal(
+    ThreadRecord.parse(thread).ok,
+    true,
+    'the worst-reachable ascii fixture must itself be schema-admissible, or it says nothing about records the store can hold'
+  )
+  const shownRisk = thread.spine.open_risks[0]
+  if (shownRisk === undefined) {
+    throw new Error('the worst-reachable ascii fixture must carry at least one risk, or there is no retained text to measure')
+  }
+
+  const render = renderBriefingWithPasses(thread, EMPTY_INTEGRITY, null, predecessor)
+
+  assert.ok(
+    render.passes > 1,
+    `this record must actually enter the clip search, or the retained-text floor below is measuring an unclipped render; got ${render.passes} renders`
+  )
+  assert.equal(
+    render.withinBudget,
+    true,
+    'the clip search must land this record inside both caps, or the retained-text floor below is bought by breaching the budget'
+  )
+
+  const retained = textAfterPrefix(render.briefing, `- ${shownRisk.id} `)
+  assert.ok(
+    retained >= RISK_TEXT_RETAINED_FLOOR,
+    `expected the clip search to keep at least ${RISK_TEXT_RETAINED_FLOOR} characters of the first shown risk, got ${retained}; a one-shot shrink that overshoots the budget keeps far less`
+  )
+})
+
+test('briefing.within-budget-is-true-on-an-ordinary-thread-and-false-when-the-render-breaches-a-cap', () => {
+  const ordinary = renderBriefingWithPasses(ordinarySmallThread(), EMPTY_INTEGRITY, null, null)
+  assert.equal(
+    ordinary.withinBudget,
+    true,
+    `an ordinary small thread must report as within budget, got a render of ${ordinary.briefing.length} characters`
+  )
+  assert.ok(
+    ordinary.briefing.length <= BRIEFING_MAX_CHARS,
+    `the ordinary render must sit inside the character cap for that report to be true, got ${ordinary.briefing.length}`
+  )
+
+  const degenerate = overBudgetThread(rt)
+  assert.equal(
+    ThreadRecord.parse(degenerate).ok,
+    true,
+    'the over-budget fixture must itself be schema-admissible, or the renderer would never be handed it'
+  )
+
+  const breaching = renderBriefingWithPasses(degenerate, EMPTY_INTEGRITY, null, null)
+  assert.ok(
+    breaching.briefing.length > BRIEFING_MAX_CHARS,
+    `the over-budget fixture must actually render past the ${BRIEFING_MAX_CHARS} character cap, got ${breaching.briefing.length}`
+  )
+  assert.equal(
+    breaching.withinBudget,
+    false,
+    `a render past the character cap must report as outside budget, got a render of ${breaching.briefing.length} characters reported as within budget`
   )
 })
