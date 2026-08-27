@@ -3,6 +3,17 @@
 Items found above an MSP acceptance ceiling. Each carries its evidence and the MSP whose
 planning surfaced it. Nothing here is folded into the ladder.
 
+The 25 items added by commit `96fde84` — `F0k` and `E1a` through `E9a` — were audited on
+2026-08-26 against trunk commit `b6ace21` (v1.2.0, clean tree). The method was read-only
+verification: each item's own text was treated as a claim to check, never as an established
+fact, and every path:line citation added below was personally confirmed at `b6ace21`.
+
+No other item in this file has been audited. An item with no `Audited` bullet has not been
+checked against trunk, and its claims remain exactly as unverified as they were when filed —
+the absence of an audit bullet is not evidence that the item is sound. Two of the 25 audited
+items, `E5d` and `E8a`, were found already FIXED on trunk, so this file's filed state is not by
+itself a reliable indicator of an item's current state.
+
 
 ## F7a — `cutover.manifests-agree` hard-codes the version, so EVERY MSP's bump breaks it
 
@@ -325,6 +336,7 @@ planning surfaced it. Nothing here is folded into the ladder.
 - **Evidence:** "There is no CI on main at all. Both `.github/workflows/receipts.yml` and `rebuild.yml` trigger on `pull_request` only, with no push trigger, and `gh run list --branch main` returns nothing. Every green check on a pull request runs against GitHub's computed merge-with-base, never against the merge commit that lands. Invariant I1 says `npm test` passes on every merge commit and nothing enforces it after merge." No line number within either workflow file is recorded, and no commit sha is given for this finding (a separate later hand-verification names commit `0d7c07c`, but that is not part of this quote).
 - **Why it is above the ceiling:** recorded as an open risk rather than fixed, because fixing it would extend a frozen scope; the frozen MSP-0 plan names exactly five files, and neither workflow file is among them.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN — both workflow files still carry `pull_request` as their only trigger (`.github/workflows/receipts.yml:2-3`, `.github/workflows/rebuild.yml:3-4`); no push trigger exists anywhere and `gh run list --branch main` returns zero rows. Drift from the original claim: `rebuild.yml` declares `name: ci`, not `rebuild`.
 
 
 # Filed, not fixed — discovered during execution (MSP-1 onward)
@@ -352,6 +364,7 @@ this section.
 - **Evidence:** the diff changed `syncWorkingCopy`'s return type from `void` to a result, `ensureMaterialised` checks it, and three of its four call sites in `src/merge/sync.ts` at lines 239, 310 and 335 discard it as a bare statement; `fastForward` still reports `fast-forwarded` and `performMerge` still pushes and reports `merged` when the materialisation behind them failed. Severity HIGH, read at commit `0d7c07c8942db4b6f8ed8cc7ca3e9e103d3d3b26`. The fourth call site — the one that does check the result — is not named or given a line number in the record.
 - **Why it is above the ceiling:** it breaks none of MSP-1's six criteria and none of its ten gates, and it is not a regression, so the ceiling rule places it above the line the same way it placed `F2A` above MSP-2's.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN (original line citations stale) — commit 4433cfe moved the cited lines 239/310/335 to `src/merge/sync.ts:262`, `:348`, `:383`; all three still discard the result. `fastForward` still returns `action: 'fast-forwarded'` (`:265`); `performMerge` still pushes (`:350`) and returns `merged` (`:366`). The record's unnamed fourth call site is `src/store/records.ts:118`, checked at `:119`.
 
 ## E2a — `blobAt` folds a failed git lookup into the same `null` as a genuinely absent record, letting a stale record overwrite the winner on double failure
 
@@ -359,6 +372,7 @@ this section.
 - **Evidence:** `blobAt` at `src/store/write-path.ts:150` folds a non-zero git exit, a spawn error and a genuinely absent path into the same `null`. If both lookups for one record fail inside the same retry, `null` is not unequal to `null`, the retry continues, and the stale record is written over the winner — the defect MSP-2 closes, reached through the error path instead of the race path, which the record states is in tension with ruling R3's under-no-circumstance language. The named remedy is `classifyFailure` at `src/store/ref.ts:12-13`. Read at commit `0d7c07c8942db4b6f8ed8cc7ca3e9e103d3d3b26`, pull request 66. No numeric severity label is given for `F2A`; it is referred to elsewhere only as "the most consequential of the wave's filed items."
 - **Why it is above the ceiling:** `F2A` is not a regression this diff introduced — before the fix the retry overwrote the winner on every lost race, and after it the overwrite survives only when a git subprocess fails, so the change is strictly an improvement and the standing rule that a unit owns what its own diff breaks does not reach it. Criterion 1 is discharged by a test that asserts over the race path, which is the path the criterion and the audit probe both describe; the acceptance list is a ceiling, so an item discovered above it is filed rather than folded in.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN — `src/store/write-path.ts:150` (`return result.ok ? result.stdout.trim() : null`) still folds `src/store/git.ts:74` (spawn error) and `:80` (non-zero exit) into the same null. Comparison at `write-path.ts:227`; on double failure the filter at `:225-228` yields empty, `:229` is skipped, and `:243-244` retries the write. Cited line 150 is exactly accurate.
 
 ## E3a — `park_thread` checks the caller's session identity only when `thread_id` is omitted, letting a second local session park a thread the first session holds
 
@@ -366,6 +380,7 @@ this section.
 - **Evidence:** `park_thread` compares `pointer.session_id` to `rt.sessionId` only on the branch where `thread_id` is omitted; when `thread_id` is supplied and matches the pointer, control reaches `parkResolvedThread` with the caller's session identity never inspected, and `releasePointerIfOwned` checks only `thread_id`, so it is no backstop. It is reachable with no exotic precondition: `list_threads` hands any local session the thread ids, so a second session parks a thread the first holds by naming it. A security-reviewer characterised it MEDIUM, pre-existing and byte-identical at the parent commit, with a six-line fix reusing the existing `otherSessionRefusal` constructor in a file MSP-3 already edits; its six new refusal branches are a strict tightening with no regression, but MSP-3 did add one more action reachable through that pre-existing gap, which is its own criterion 4 working as specified. Neither source gives a file path or a line number for `park_thread`'s comparison logic itself.
 - **Why it is above the ceiling:** filed at MEDIUM with the fix written down, and Wave 2 merges. The security rule's stop-and-escalate ordering is for a security issue a change introduces; this one is byte-identical at the parent, and halting three units whose every gate is green over inherited debt is the escalation the ladder exists to prevent.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN — `src/server/tools/park_thread.ts:358-366`: when `thread_id` is supplied and matches the pointer, `:365` still returns `parkResolvedThread` directly; the only `pointer.session_id !== rt.sessionId` check is `:368`, reachable solely on the thread_id-omitted path. `src/domain/pointer.ts:75-81`'s `releasePointerIfOwned` compares thread_id only, so it is no backstop; `otherSessionRefusal` sits unused on that path at `:123-130`.
 
 ## E4a — `record_decision` reads the thread before `writeRecords` re-reads its CAS baseline, so a rival write in that gap is silently overwritten with no per-record version token to catch it
 
@@ -373,6 +388,7 @@ this section.
 - **Evidence:** `record_decision` reads the thread at `record_decision.ts:152`, then `writeRecords` reads its compare-and-swap baseline fresh and later at `write-path.ts:184`. If a rival write landed in that gap, the baseline already contains it, so the first swap succeeds and returns at `write-path.ts:219-221`. The `changedUnderneath` guard is gated on `cas.cause === 'ref-moved'` at `write-path.ts:223` and therefore never runs; it covers only a rival landing during this call's own attempt. `buildTree` then stamps the stale content over the rival's at `write-path.ts:94-104`, unconditionally, and no per-record version token exists anywhere in the commit path. MSP-4b makes `record_decision` a two-record writer, widening the exposure. Read at commit `49dce11a634919ed91000a74fd6bee132413b113`; the `concurrent.distinct-ids` test is named as not covering this property. The SPEC's stated mitigation — that MSP-2 is a hard dependency and lands first — does NOT close this window: it narrowed the during-attempt race and left this before-attempt read gap open. `D11` must be scheduled on its own evidence. No severity label is assigned to `D11`'s expanded blast radius in either source.
 - **Why it is above the ceiling:** filed, and MSP-4b ships. The fix lives in `src/store/write-path.ts`, a file entirely outside MSP-4b's declared surface; all seven acceptance criteria are met and no test that passed on the parent fails now, so the ceiling rule files it rather than folding it in.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN — every cited line still lands: `src/server/tools/record_decision.ts:152` loads the thread, `:237` commits, reaching `src/store/write-path.ts:184`; `changedUnderneath` is gated at `:223`; Thread still carries no version field (`src/schema/thread.ts:31-42`); `record_decision` is still a two-record writer (`record_decision.ts:229-235`).
 
 ## E5a — a `Record` type check on the tool-name map verifies value shape only, not key/value correspondence, so a swap of two names compiles
 
@@ -380,6 +396,7 @@ this section.
 - **Evidence:** `src/server/tools/index.ts:16-29` — `satisfies Record<LedgerToolName,{name:string}>` checks value shape, not key/value correspondence, so a swap of the names compiles. Severity MEDIUM. The record states the live mitigation: the census's `files` axis catches it because it derives independently. No reproduction command and no measured value are given.
 - **Why it is above the ceiling:** the session records this among the wave's "FILED ITEMS" rather than fixed in place; it gives no item-specific ceiling reasoning beyond the severity and the live mitigation noted above.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN, and the item's own stated mitigation is FALSE — `src/server/tools/index.ts:16-29`'s `satisfies Record<LedgerToolName, { name: string }>` still checks identical value shape for every key, so swapping two entries type-checks; registration keys off the spec's own field (`src/server/register.ts:116-117`), so a swap changes only ordering. Correction: the item's claim that the census `files` axis catches this "because it derives independently" does not hold — `test/support/published.ts:212-213` derives basenames and `:242-244` derives name sets, both identical under a swap. Not verified by running the census.
 
 ## E5b — `LEDGER_TOOL_NAMES` is declared `as const` rather than frozen with `Object.freeze`, though no exploit path was found
 
@@ -387,6 +404,7 @@ this section.
 - **Evidence:** `src/server/tool-names.ts:1-14` — `LEDGER_TOOL_NAMES` is `as const`, not `Object.freeze`'d. Severity LOW. The record states no exploit path was found. No reproduction command and no measured value are given.
 - **Why it is above the ceiling:** the session records this among the wave's "FILED ITEMS" rather than fixed in place; it gives no item-specific ceiling reasoning beyond the severity and the absence of an exploit path.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN — `src/server/tool-names.ts:1-14` still closes with `] as const` and carries no `Object.freeze`; `:19` re-widens the type via `as readonly string[]`.
 
 ## E5c — a roster gap: `technical-writer` has no Bash tool, so it cannot produce command receipts, and reported `CAPABILITY-BLOCKED` instead
 
@@ -394,6 +412,7 @@ this section.
 - **Evidence:** the `technical-writer` agent has no Bash tool, so it cannot produce command receipts; it emitted `CAPABILITY-BLOCKED` rather than fabricating them. Unlike `F1` through `F7` and `F9` through `F15`, this item carries no severity label. No file path, no line number and no reproduction command are given.
 - **Why it is above the ceiling:** the session records this among the wave's "FILED ITEMS" rather than fixed in place; it gives no item-specific ceiling reasoning.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN (outside this repo) — `~/.claude/agents/technical-writer.md:4` still lists `tools: Read, Edit, Write, Grep, Glob, WebFetch, StructuredOutput`, no Bash; the file's mtime predates the filing and nothing on main could close it, since the agent definition lives outside this repository.
 
 ## E5d — no read surface exposes a completion criterion's ULID, so marking a criterion done requires reading the store from disk, which the write guard exists to keep callers out of
 
@@ -401,6 +420,7 @@ this section.
 - **Evidence:** verifying criterion 4 required a criterion ULID, which `update_thread` demands and which no read surface exposes: `list_threads` omits them, and both the resume briefing and the `logbook://thread` resource render criteria as `c1` through `c7` labels with no ids. Finding the id meant reading the thread record from disk. `src/hooklib/guard.ts:20` and `test/hooks/guard-registry.test.ts` are cited elsewhere in the same record, but for the underlying criterion-4 fix, not for this filed gap itself. No proposed fix, file path, or severity is given for the missing read-surface gap.
 - **Why it is above the ceiling:** filed rather than fixed — no read surface exposes criterion ids, so marking a criterion requires reading the store from disk, which the write guard is designed to keep callers out of.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** FIXED — `src/server/resource-render.ts:44-45` now renders `c{ordinal} [{status}] {criterion.id}` in the `logbook://thread/{id}` detail render (`:75`), and `src/render/briefing.ts:44-45` does the same in the resume briefing (`:170`); closed by ee575ca and cbebe5c, both authored after 96fde84. Residual: `list_threads` still omits criterion ids (`src/render/roster.ts:4-13`), but reading the store from disk is no longer required to find one.
 
 ## E6a — `readRemoteLedgerSha` publishes `ls-remote` output as `remote_sha` with no hex-shape validation
 
@@ -408,6 +428,7 @@ this section.
 - **Evidence:** `readRemoteLedgerSha` at `src/merge/sync.ts:46-55` publishes `ls-remote` output as `remote_sha` with no hex-shape validation. Severity MEDIUM. The stated remedy: validate and return `null` so it degrades to `pushed-unverified`. No reproduction command, no measured value and no test name are given.
 - **Why it is above the ceiling:** the session records this among the wave's "FILED ITEMS" rather than fixed in place; it gives no item-specific ceiling reasoning beyond the severity and the stated remedy.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN — `src/merge/sync.ts:46-55`'s `readRemoteLedgerSha` still returns the trimmed value with no hex or length check; published via `readBackAfterPush` (`:64`) into `remote_sha` at `:283` and `:369`, out through `src/server/tools/sync_ledger.ts:94`, whose output schema at `:21-24` is `z.string().nullable()` with no regex.
 
 ## E6b — the same sync function discards stderr on a failed read-back, collapsing two distinct error causes into one
 
@@ -415,6 +436,7 @@ this section.
 - **Evidence:** the record names lines 46-48 of "the same function" as the preceding item, discarding stderr on a failed read-back and collapsing "no ledger ref" with "verification errored". It states no file path of its own; the function is `readRemoteLedgerSha`, which `E6a` records at `src/merge/sync.ts:46-55`. Severity MEDIUM. The record notes `casUpdateRef` in `src/store/ref.ts` already logs this. No reproduction command and no measured value are given.
 - **Why it is above the ceiling:** the session records this among the wave's "FILED ITEMS" rather than fixed in place; it gives no item-specific ceiling reasoning beyond the severity and the comparison to `casUpdateRef`.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN — `src/merge/sync.ts:48`'s `if (!result.ok) return null` still never reads `result.stderr`, with no `rt.log` anywhere in `:46-55`; a remote with no ledger ref exits 0 with empty stdout and also returns null at `:50`, indistinguishable from the error case. Contrast `src/store/ref.ts:32` and `:47`, which both log `detail`.
 
 ## E6c — `sync.ts` line 49 takes only the first non-blank line, currently unreachable given `LEDGER_REF`'s shape
 
@@ -422,6 +444,7 @@ this section.
 - **Evidence:** `src/merge/sync.ts:49` takes the first non-blank line. Severity LOW. The record states this is unreachable today since `LEDGER_REF` is fully qualified. No reproduction command and no measured value are given.
 - **Why it is above the ceiling:** the session records this among the wave's "FILED ITEMS" rather than fixed in place; it gives no item-specific ceiling reasoning beyond the severity and the unreachability note.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN (latent, unreachable as stated) — `src/merge/sync.ts:49` still takes only the first non-blank line; unreachability premise holds, since `LEDGER_REF` is fully qualified at `src/store/ref.ts:6` and passed to ls-remote at `sync.ts:47`. A latent shape assumption, not a live fault.
 
 ## E6d — a widening cast in the sync receipt test now costs a static guarantee
 
@@ -429,6 +452,7 @@ this section.
 - **Evidence:** `test/sync/receipt.test.ts:16-18` — a widening cast now costs a static guarantee. Severity LOW. The log does not describe what the cast widens from or to, gives no reproduction command, and gives no measured value.
 - **Why it is above the ceiling:** the session records this among the wave's "FILED ITEMS" rather than fixed in place; it gives no item-specific ceiling reasoning beyond the severity.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN — `test/sync/receipt.test.ts:16-18` still defines `SyncReceiptFields` and `receiptOf = (outcome: object) => outcome as Partial<SyncReceiptFields>`, re-widened at call sites `:83`/`:86-88`/`:91`/`:96`, `:110`/`:113`, `:164`/`:170-171`. The original record did not say what the cast widens; it is twofold — the parameter erases the narrowed `SyncOutcome` to `object`, and `Partial<>` makes both fields optional, so a dropped or renamed `remote_sha` still compiles.
 
 ## E6e — the noop and fast-forwarded paths publish a pre-attempt `remote_sha` though the schema promises a post-push read-back, so it can go stale
 
@@ -436,6 +460,7 @@ this section.
 - **Evidence:** the `noop` and `fast-forwarded` code paths publish a pre-attempt `remote_sha` while the schema says read-back-after-push. Severity LOW. The record characterises this as "honest but can be stale." No file path, no line number and no reproduction command are given.
 - **Why it is above the ceiling:** the session records this among the wave's "FILED ITEMS" rather than fixed in place; it gives no item-specific ceiling reasoning beyond the severity.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN (structural; not reproduced) — `src/server/tools/sync_ledger.ts:24` still promises `remote_sha` is read back after any push, but `remoteVal` is read pre-attempt at `src/merge/sync.ts:394-402`; the noop path publishes it at `:410` and `fastForward` publishes it at `:265`, and neither calls `readBackAfterPush` (`:59`), unlike `pushPlain` (`:275`) and `performMerge` (`:361`). Honest limit: confirmed by reading the structure only; no staleness window was actually executed.
 
 ## E7a — the `predecessor_id` merge path has no real test; an early-return fixture masks the take-present dispatch path
 
@@ -443,6 +468,7 @@ this section.
 - **Evidence:** the `predecessor_id` merge path has no real test. `test/unit/field-merge.test.ts:357` asserts only the path name, and the `baseThread` fixture at `:58-69` omits the field, so the early `isDeepStrictEqual` return at `src/merge/field-merge.ts:63-65` fires before take-present dispatches. Severity MEDIUM. No reproduction command and no measured value are given.
 - **Why it is above the ceiling:** the session records this among the wave's "FILED ITEMS" rather than fixed in place; it gives no item-specific ceiling reasoning beyond the severity.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN (citation stale) — cited `:357` is stale (trunk `:357` is blank, inside `merge.session-unions` starting `:354`). Substance still holds: `test/unit/field-merge.test.ts:58-69`'s fixture omits `predecessor_id`; `src/merge/field-merge.ts:63-65` early-returns `dispatchedRule: null` on deep equality; the only mention is `test/unit/field-merge.test.ts:401`, inside a path-name list. Proven by execution: the take-present arm at `field-merge.ts:91-92` is never reached for this field.
 
 ## E7b — `mergeSpine` rebuilds a record by explicit key enumeration with no spread, the adjacent-gap instance of a known defect class, filed as a spine risk
 
@@ -450,6 +476,7 @@ this section.
 - **Evidence:** `mergeSpine` at `src/domain/spine.ts:204-220`, filed as `F10`. Severity MEDIUM, read at commit `f17e92772d493539f2ae5d20a6a94ddaf326fe93`. The defect class is described as a record rebuilt by explicit key enumeration with no spread, and nothing forces its completeness at compile time, so an added optional field is silently dropped; `field-merge.ts` was the first known member and MSP-7 closed it, `mergeSpine` is the second, open member. The record states this instance is latent only because Spine currently carries no optional field. Neither source describes the fix, a PR number, a reproduction command or a measured value; the wording "naming all six keys" used for this item elsewhere does not appear in either source and is not carried here.
 - **Why it is above the ceiling:** both open instances are filed against the class and MSP-7 ships at its declared ceiling. Folding them in would breach G0's rule that acceptance is a ceiling and not a floor, and it would do so on the exact unit whose plan was already the largest of the three.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN (latent only) — `src/domain/spine.ts:204-220`'s `mergeSpine` still names all six keys with no spread, unchanged since 60c939f; latent only because `Spine` has six required fields and no optional one (`src/schema/thread.ts:22-29`). The class's first member IS closed: `src/merge/field-merge.ts:247` now uses the conditional-spread form.
 
 ## E7c — the same record-rebuilding defect class recurs in the conflict merge module
 
@@ -457,6 +484,7 @@ this section.
 - **Evidence:** `src/merge/conflict.ts:3-8`, severity LOW, filed as `F11`. The session log's entire description of this item is "same class" — it does not describe the symbol at that location beyond calling it the same defect class as `mergeSpine` (`E7b`). The decision record adds that this is the second open member of the class (a record rebuilt by explicit key enumeration with no spread, nothing forcing its completeness at compile time), latent only because `conflict.ts` currently carries no optional field, read at commit `f17e92772d493539f2ae5d20a6a94ddaf326fe93`. Neither source names a PR number, a reproduction command or a dispatched-fix description.
 - **Why it is above the ceiling:** both open instances are filed against the class and MSP-7 ships at its declared ceiling. Folding them in would breach G0's rule that acceptance is a ceiling and not a floor, and it would do so on the exact unit whose plan was already the largest of the three.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STALE-CLAIM — do not work this as filed; the described harm has no mechanism. Code is present at the cited lines, but `src/merge/conflict.ts:1` declares all four fields required, and `:3-8` maps four parameters 1:1 onto four keys — there is no source record to copy from, so "an added optional field is silently dropped" cannot occur, and the implied spread remedy has no operand.
 
 ## E7d — `loadThreadForReference` and `loadThread` are near-duplicate functions
 
@@ -464,6 +492,7 @@ this section.
 - **Evidence:** `loadThreadForReference` and `loadThread` are near-duplicate, at `src/server/tool-support.ts:42-47` and `:64-70` respectively. Severity LOW. The log does not describe what differs between the two functions, and gives no reproduction command.
 - **Why it is above the ceiling:** the session records this among the wave's "FILED ITEMS" rather than fixed in place; it gives no item-specific ceiling reasoning beyond the severity.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN — `src/server/tool-support.ts:42-47` (`loadThreadForReference`) and `:64-70` (`loadThread`) are still identical apart from `:68`, the `status !== 'open'` check; `loadThreadForReference` was added by 49daa01. Constraint on any fix: the differing line is deliberate — deduplication must keep the status check as a parameter, never drop it.
 
 ## E7e — `open_thread`'s prose description never mentions the new lineage capability
 
@@ -471,6 +500,7 @@ this section.
 - **Evidence:** `open_thread`'s prose description never mentions the new capability, at `src/server/tools/open_thread.ts:84-85`. Severity LOW. The log does not state which "new capability" specifically beyond what is inferable from the rest of the session (predecessor lineage), and gives no reproduction command.
 - **Why it is above the ceiling:** the session records this among the wave's "FILED ITEMS" rather than fixed in place; it gives no item-specific ceiling reasoning beyond the severity.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN but OVERSTATED — real, but only the tool-level description is affected. `src/server/tools/open_thread.ts:84-85`'s description still never says "predecessor" or "succeeds", but the parameter itself is documented at `:18-22` and the handler implements it at `:111-115`; the gap is confined to the tool-level description text.
 
 ## E7f — a pre-existing two-state existence oracle in `tool-support.ts`, unresolved and carried forward
 
@@ -478,6 +508,7 @@ this section.
 - **Evidence:** a pre-existing two-state existence oracle at `src/server/tool-support.ts:15-29`. Severity LOW. The log does not describe what the "two-state existence oracle" checks or why two states are considered wrong, and gives no reproduction command.
 - **Why it is above the ceiling:** the session records this among the wave's "FILED ITEMS" rather than fixed in place; it gives no item-specific ceiling reasoning beyond the severity and the description "pre-existing."
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** UNVERIFIABLE — not actionable as filed; do not work this item. "Pre-existing and carried forward" is confirmed: `src/server/tool-support.ts:15-22` and `:24-31` are byte-identical to 49daa01~1. But the underlying oracle is three-valued, not two: `src/store/read-path.ts:137-157` returns null on ENOENT (`:142`), quarantined on bad JSON (`:150`) or failed parse (`:155`), loaded (`:157`), and rethrows a non-ENOENT error at `:143`. The item never states which two states it means or why two is wrong; that is not recoverable from this repository — resolvable only from the MSP-7 Wave-4 session-log entry for F14.
 
 ## E7g — `resolvePredecessor` applies no status filter while a sibling roster function filters out done/abandoned threads (speculative)
 
@@ -485,6 +516,7 @@ this section.
 - **Evidence:** `resolvePredecessor` applies no status filter while `selectRosterThreads` filters `done`/`abandoned`. Severity LOW. The source marks this finding "speculative" explicitly, and gives no file path, no line number and no reproduction command.
 - **Why it is above the ceiling:** the session records this among the wave's "FILED ITEMS" rather than fixed in place; it gives no item-specific ceiling reasoning beyond the severity and the "speculative" label.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN on both stated facts, but do not fix this — applying the proposed fix would regress the briefing's `Related:` render. `src/server/tool-support.ts:49-62`'s `resolvePredecessor` still returns without a status check (`:61`), and `src/render/roster.ts:19`/`:23` do filter terminal statuses; both facts hold. But the asymmetry is intentional — the closed-thread refusal at `tool-support.ts:39` reads "open a new thread that references this one instead", and `loadThreadForReference` (`:42-47`) exists solely to skip that check for `open_thread.ts:113`. Applying the roster's terminal-status filter here would stop the briefing's `Related:` line from rendering, since a predecessor is by design usually done or abandoned.
 
 ## E8a — `update_thread` persists `blocked_by` text raw while every sibling free-text writer escapes at write time, and `render/roster.ts` copies it raw into `list_threads` output
 
@@ -492,6 +524,7 @@ this section.
 - **Evidence:** `update_thread.ts:257` persists the caller's `blocked_by` text raw, while every sibling free-text writer in the codebase escapes at write time, including `spine.ts:204-207` on `update_thread`'s own call path and `resolve_conflict.ts:362-365` on `blocked_by` specifically. `render/roster.ts:36` then copies the value raw into the structured JSON `list_threads` returns, so render-time escaping never reaches it. The gap was inert while `blocked_by` had no writer; this diff makes it live. Severity HIGH. Read at commit `426ac1cdc1e922dbe252047af0bad89bd3a7abe4`, pull request 74, with the suite green at 393 of 393.
 - **Why it is above the ceiling:** filed, not folded in, and scheduled as the next rung ahead of MSP-9. No test regresses here, the suite stays green at 393, so the ladder's regression rule — a test that passes on the parent and fails on the applied tree — does not reach this finding, and `receipts.md` is explicit that a reviewer finding which breaks no gate is filed rather than fixed in flight, because re-review rounds are not a substitute for an executable check.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** FIXED — `src/server/tools/update_thread.ts:254` now escapes, `:255-257` caps post-escape, `:294` persists the escaped value; closed by 0801170. Residual: `src/render/roster.ts:36` still copies `thread.blocked_by` verbatim into the row, but the stored value is now escaped at write time, so no raw text reaches `list_threads`.
 
 ## E8b — `resolve_conflict.ts` is missing its own post-escape cap check, filed as a real member of the same defect class rather than folded into the `blocked_by` fix
 
@@ -499,6 +532,7 @@ this section.
 - **Evidence:** `resolve_conflict.ts`'s own missing post-escape cap check, id `R-3`, is filed as a real member of the same defect class rather than folded in. No severity label, no line number, and no description of what the missing cap check would need to do are given for `R-3` itself; it is distinct from the `resolve_conflict.ts:362-365` reference cited in `E8a`.
 - **Why it is above the ceiling:** the record states only "is FILED as a real member of the same class rather than folded in," with no further reasoning given beyond that clause.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN, but the consequence is MISFRAMED — the literal defect stands: `src/server/tools/resolve_conflict.ts:569` and `:590` still escape with no `length > caps.` check of its own (every sibling tool file has one). Correction: no unchecked over-cap write is possible, since whole-record validation at `:601` and `:609` catches it. The real consequence is liveness, not data integrity — the entire `resolve_conflict` call is refused, so a conflict carrying such a value may have no resolvable path at all, via the generic record-shape refusal rather than a field-named cap refusal.
 
 ## E8c — a shared escape-then-cap helper across five tool files plus `spine.ts` is filed rather than built now, to keep the security fix from carrying a cross-cutting refactor
 
@@ -506,6 +540,7 @@ this section.
 - **Evidence:** "Alternative D," the shared helper across five tool files plus `spine.ts`, is filed. The five tool files are not individually named or path-cited in the record.
 - **Why it is above the ceiling:** mixing a cross-cutting refactor into a security fix violates the rule separating refactor from behavior-change commits.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN (count drifted) — no shared helper exists anywhere in `src/`; the pattern is inlined at `close_thread.ts:93`, `open_thread.ts:100,105`, `update_thread.ts:255`, `park_thread.ts:248`, `record_decision.ts:157,162,167,172,182`, `log_session_event.ts:85,90`, `domain/criteria.ts:145,191`, plus escaping-only in `domain/spine.ts:204-207`. Six tool files now carry the inlined pattern, not the five the item names.
 
 ## E9a — census row 103 held a stale verdict, proving the frozen census can go stale, and the other 194 rows were never independently re-verified
 
@@ -513,6 +548,7 @@ this section.
 - **Evidence:** `renderThreadLine` at `src/cli/session-start.ts:23-25` interpolates exactly four fields — `slug`, `title`, `next_step`, `id` — with no fifth segment; `status` appears in the render path only as a listing filter at `:36` and never reaches the rendered text. `test/unit/session-start.test.ts:61` asserts the absence and `:79` asserts the four survivors, both passing. So census row 103's claim is FALSE of the shipped code. Row 105 is cited as an existing correct example ("false | omitted") for comparison. Read at commit `9d8c11332b74f6aa6309d0b79d18a2fa9c3e1d55`. Row 103 proves at least one verdict in the frozen census went stale against a tree that moved under it, and because the prescribed walk matches dispositions while taking every verdict as given, the remaining 194 rows carry unquantified staleness of the same kind; none of them are individually identified or re-checked in the record.
 - **Why it is above the ceiling:** the consequence is the durable part, and it is filed rather than folded in — row 103 proves at least one verdict in the frozen census went stale against a tree that moved under it.
 - **Not folded in.**
+- **Audited 2026-08-26 at b6ace21:** STILL-OPEN on both halves — the artifact is `docs/plans/2026-08-25-post-cutover-repair/MSP-9-continuity-rule.md` section 5.3 (`:1077-:1322`); totals at `:1321` read 195 rows; row 103 at `:1212` still reads `| 103 | The roster carries the thread status | true | carried |`, which is false of shipped code — `src/cli/session-start.ts:23-25` interpolates only slug, title, next_step and id, and `thread.status` appears at `:36` only as a filter. Staleness is proven, not asserted: at the census's parent 0ade582 the line read `- [${escapeStored(thread.status)}] ...`; commit 7c2306b removed it, so the verdict was correct when written and went stale under a moving tree. Second half holds: no re-verification of the other 194 rows exists. Containment: the false statement did not propagate into the shipped rule — `docs/rules/continuity-ledger.md` carries no roster status claim.
 
 ## Named at hand-off but not recoverable from the ledger
 
