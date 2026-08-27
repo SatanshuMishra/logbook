@@ -26,8 +26,8 @@ export const SWEEP_FIXTURE_NOT_SWEPT = [
   'risk text length, out-of-scope text length and key-decision title length, each held at its schema cap',
   'criterion status, which is held open so that no criterion collapses into the retired lane',
   'mixed fills within one record, so a record is entirely ASCII or entirely multi-byte',
-  'the escape-expanding fill class, meaning characters the stored-text escape rewrites into a U+XXXX token and so grows roughly sixfold; both swept fills pass through that escape unchanged, so no swept record carries one',
-  'grapheme density, meaning how many UTF-16 code units one reader-visible character spans; both swept fills are exactly one code unit per grapheme, so every swept record has a grapheme count equal to its character count'
+  'the escape-expanding fill class, meaning characters the stored-text escape rewrites into a U+XXXX token and so grows roughly sixfold; every swept fill passes through that escape unchanged, so no swept record carries one',
+  'grapheme density, meaning how many UTF-16 code units one reader-visible character spans; every swept fill is exactly one code unit per grapheme, so every swept record has a grapheme count equal to its character count'
 ]
 
 export const buildSweepFixture = (rt: Runtime, shape: SweepShape): SweepFixture => {
