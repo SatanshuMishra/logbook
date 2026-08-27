@@ -72,7 +72,7 @@ const criterionStatus = (criterion: Criterion): string => {
 }
 
 const renderCriterionLine = (criterion: Criterion, textClip: number): string =>
-  `c${criterion.ordinal} [${criterionStatus(criterion)}] ${escapeStored(criterion.id)}: ${clip(criterion.text, textClip)}`
+  `- c${criterion.ordinal} [${criterionStatus(criterion)}] ${escapeStored(criterion.id)}: ${clip(criterion.text, textClip)}`
 
 const renderRiskLine = (risk: Risk, textClip: number): string => `- ${escapeStored(risk.id)} ${clip(risk.text, textClip)}`
 
@@ -80,17 +80,17 @@ const renderKeyDecisionLine = (keyDecision: KeyDecision, textClip: number): stri
 
 const renderOutOfScopeLine = (outOfScope: OutOfScope, textClip: number): string => `- ${clip(outOfScope.text, textClip)}`
 
-const renderDanglingLine = (decisionId: string): string => `dangling: ${escapeStored(decisionId)}`
-const renderQuarantinedLine = (decisionId: string): string => `quarantined: ${escapeStored(decisionId)}`
+const renderDanglingLine = (decisionId: string): string => `- dangling: ${escapeStored(decisionId)}`
+const renderQuarantinedLine = (decisionId: string): string => `- quarantined: ${escapeStored(decisionId)}`
 
 const renderRelatedLine = (predecessor: Thread): string =>
   `- succeeds: ${clip(predecessor.title, RELATED_TITLE_CLIP)} (${clip(predecessor.slug, RELATED_SLUG_CLIP)})`
 
 const renderBlockage = (blockedBy: string | null): string =>
-  blockedBy === null ? 'Blockage: none' : `Blocked: ${escapeStored(blockedBy)}`
+  blockedBy === null ? '**Blockage:** none' : `**Blocked:** ${escapeStored(blockedBy)}`
 
 const renderPointerStatus = (pointer: Pointer | null, threadId: string): string =>
-  pointer !== null && pointer.thread_id === threadId ? 'Currently being worked: yes' : 'Currently being worked: no'
+  pointer !== null && pointer.thread_id === threadId ? '**Currently being worked:** yes' : '**Currently being worked:** no'
 
 type Lane = 'A' | 'B' | 'C'
 
@@ -249,28 +249,35 @@ const assembleBriefing = (
   ]
 
   return [
-    `Thread: ${escapeStored(thread.title)}`,
-    `Status: ${escapeStored(thread.status)}`,
+    `**Thread:** ${escapeStored(thread.title)}`,
+    `**Status:** ${escapeStored(thread.status)}`,
     renderBlockage(thread.blocked_by),
     renderPointerStatus(pointer, thread.id),
-    `Active goal: ${escapeStored(thread.spine.active_goal)}`,
-    `Next step: ${escapeStored(thread.spine.next_step)}`,
-    `Last session: ${escapeStored(thread.spine.last_session)}`,
-    ...relatedThreads.slice(0, 1).map(() => 'Related:'),
+    `**Active goal:** ${escapeStored(thread.spine.active_goal)}`,
+    `**Next step:** ${escapeStored(thread.spine.next_step)}`,
+    `**Last session:** ${escapeStored(thread.spine.last_session)}`,
+    ...relatedThreads.slice(0, 1).map(() => ''),
+    ...relatedThreads.slice(0, 1).map(() => '**Related:**'),
     ...relatedLines,
-    ...risks.shown.slice(0, 1).map(() => 'Open risks:'),
+    ...risks.shown.slice(0, 1).map(() => ''),
+    ...risks.shown.slice(0, 1).map(() => '**Open risks:**'),
     ...riskLines,
-    ...keyDecisions.shown.slice(0, 1).map(() => 'Key decisions:'),
+    ...keyDecisions.shown.slice(0, 1).map(() => ''),
+    ...keyDecisions.shown.slice(0, 1).map(() => '**Key decisions:**'),
     ...keyDecisionLines,
-    ...outOfScope.shown.slice(0, 1).map(() => 'Out of scope:'),
+    ...outOfScope.shown.slice(0, 1).map(() => ''),
+    ...outOfScope.shown.slice(0, 1).map(() => '**Out of scope:**'),
     ...outOfScopeLines,
-    ...criteria.shown.slice(0, 1).map(() => 'Completion criteria:'),
+    ...criteria.shown.slice(0, 1).map(() => ''),
+    ...criteria.shown.slice(0, 1).map(() => '**Completion criteria:**'),
     ...criterionLines,
-    'Decisions:',
-    `resolved: ${decisionIntegrity.resolved}`,
+    '',
+    '**Decisions:**',
+    `- resolved: ${decisionIntegrity.resolved}`,
     ...dangling.shown.map(renderDanglingLine),
     ...quarantined.shown.map(renderQuarantinedLine),
-    ...notShownBulletLines.slice(0, 1).map(() => 'Not shown:'),
+    ...notShownBulletLines.slice(0, 1).map(() => ''),
+    ...notShownBulletLines.slice(0, 1).map(() => '**Not shown:**'),
     ...notShownBulletLines,
     ...notShownBulletLines.slice(0, 1).map(() => `See ${clip(notShownAddress, 200)} for the complete record.`)
   ].join('\n')

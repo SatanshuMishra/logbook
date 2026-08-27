@@ -17,10 +17,12 @@ const rt = testRuntime()
 
 const ASCII_FILL = 'x'
 const MULTI_BYTE_FILL = '漢'
+const DELIMITER_FILL = '_'
 
 const FILLS = [
   { name: 'ascii', char: ASCII_FILL },
-  { name: 'cjk', char: MULTI_BYTE_FILL }
+  { name: 'cjk', char: MULTI_BYTE_FILL },
+  { name: 'delimiter', char: DELIMITER_FILL }
 ] as const
 
 const ANCHORINGS = [
@@ -239,6 +241,7 @@ const sweep = (): SweptRecord[] => {
 test('briefing.frontier-sweep-finds-no-record-breaching-the-character-or-byte-cap', (t) => {
   assert.equal(Buffer.byteLength(ASCII_FILL, 'utf8'), 1, 'the ASCII fill must be one byte per character')
   assert.equal(Buffer.byteLength(MULTI_BYTE_FILL, 'utf8'), 3, 'the multi-byte fill must be three bytes per character')
+  assert.equal(Buffer.byteLength(DELIMITER_FILL, 'utf8'), 1, 'the delimiter fill must be one byte per character')
   assert.equal(
     MULTI_BYTE_FILL.length,
     1,
