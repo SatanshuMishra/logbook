@@ -9,6 +9,7 @@ export type DecisionIntegrity = {
   quarantined: string[]
 }
 
+export const BRIEFING_HEADING = '# Your Preflight Briefing'
 export const BRIEFING_MAX_CHARS = 12000
 export const RESUME_PAYLOAD_MAX_BYTES = 24000
 
@@ -71,8 +72,12 @@ const criterionStatus = (criterion: Criterion): string => {
   return criterion.done ? 'done' : 'open'
 }
 
-const renderCriterionLine = (criterion: Criterion, textClip: number): string =>
-  `- c${criterion.ordinal} [${criterionStatus(criterion)}]: ${clip(criterion.text, textClip)} (${escapeStored(criterion.id)})`
+const renderCriterionLine = (criterion: Criterion, textClip: number): string => {
+  const text = clip(criterion.text, textClip)
+  const label = `- c${criterion.ordinal} [${criterionStatus(criterion)}]:`
+  const withText = text.length === 0 ? label : `${label} ${text}`
+  return `${withText} (id ${escapeStored(criterion.id)})`
+}
 
 const renderRiskLine = (risk: Risk, textClip: number): string => `- ${escapeStored(risk.id)} ${clip(risk.text, textClip)}`
 
@@ -230,6 +235,10 @@ const assembleBriefing = (
   const notShownAddress = `logbook://thread/${escapeStored(thread.id)}`
   const danglingOrQuarantinedHidden = dangling.hidden + quarantined.hidden
 
+  const activeGoalLines = thread.spine.active_goal.length === 0 ? [] : [thread.spine.active_goal]
+  const lastSessionLines = thread.spine.last_session.length === 0 ? [] : [thread.spine.last_session]
+  const nextStepLines = thread.spine.next_step.length === 0 ? [] : [thread.spine.next_step]
+
   const relatedThreads = predecessor === null ? [] : [predecessor]
   const relatedLines = relatedThreads.map(renderRelatedLine)
   const riskLines = risks.shown.map((item) => renderRiskLine(item, renderClip.risk))
@@ -249,24 +258,24 @@ const assembleBriefing = (
   ]
 
   return [
-    '# Your Preflight Briefing',
+    BRIEFING_HEADING,
     '',
     `**Thread:** ${escapeStored(thread.title)}`,
     `**Status:** ${escapeStored(thread.status)}`,
     renderBlockage(thread.blocked_by),
     renderPointerStatus(pointer, thread.id),
-    '',
-    '**Active goal:**',
-    '',
-    escapeStored(thread.spine.active_goal),
-    '',
-    '**Last session:**',
-    '',
-    escapeStored(thread.spine.last_session),
-    '',
-    '**Next step:**',
-    '',
-    escapeStored(thread.spine.next_step),
+    ...activeGoalLines.slice(0, 1).map(() => ''),
+    ...activeGoalLines.slice(0, 1).map(() => '**Active goal:**'),
+    ...activeGoalLines.slice(0, 1).map(() => ''),
+    ...activeGoalLines.map((value) => escapeStored(value)),
+    ...lastSessionLines.slice(0, 1).map(() => ''),
+    ...lastSessionLines.slice(0, 1).map(() => '**Last session:**'),
+    ...lastSessionLines.slice(0, 1).map(() => ''),
+    ...lastSessionLines.map((value) => escapeStored(value)),
+    ...nextStepLines.slice(0, 1).map(() => ''),
+    ...nextStepLines.slice(0, 1).map(() => '**Next step:**'),
+    ...nextStepLines.slice(0, 1).map(() => ''),
+    ...nextStepLines.map((value) => escapeStored(value)),
     ...relatedThreads.slice(0, 1).map(() => ''),
     ...relatedThreads.slice(0, 1).map(() => '**Related:**'),
     ...relatedLines,

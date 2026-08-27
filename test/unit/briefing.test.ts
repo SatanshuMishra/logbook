@@ -5,6 +5,7 @@ import * as ts from 'typescript'
 import {
   renderBriefing,
   renderBriefingWithPasses,
+  BRIEFING_HEADING,
   BRIEFING_MAX_CHARS,
   RESUME_PAYLOAD_MAX_BYTES,
   type DecisionIntegrity
@@ -127,7 +128,7 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
   const rendered = renderBriefing(thread, integrity, pointer, null)
 
   const expected = [
-    '# Your Preflight Briefing',
+    BRIEFING_HEADING,
     '',
     '**Thread:** Ship the renderer',
     '**Status:** open',
@@ -156,8 +157,8 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     '- does not cover the CLI',
     '',
     '**Completion criteria:**',
-    `- c1 [done]: first criterion (${criterionA.id})`,
-    `- c2 [struck]: second criterion (${criterionB.id})`,
+    `- c1 [done]: first criterion (id ${criterionA.id})`,
+    `- c2 [struck]: second criterion (id ${criterionB.id})`,
     '',
     '**Decisions:**',
     '- resolved: 1'
@@ -170,7 +171,7 @@ test('briefing.omits-empty-list-sections-entirely', () => {
   const thread = baseThread({ title: 'Empty Thread', status: 'done', blocked_by: 'still finishing docs' })
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
   const expected = [
-    '# Your Preflight Briefing',
+    BRIEFING_HEADING,
     '',
     '**Thread:** Empty Thread',
     '**Status:** done',
@@ -209,7 +210,7 @@ test('briefing.criterion-status-is-open-when-undone-and-unstruck', () => {
   const criterion = { id: rt.ulid(), ordinal: 1, text: 'not started yet', done: false, kind: 'planned' as const, struck_by: null }
   const thread = baseThread({ completion_criteria: [criterion] })
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  assert.ok(rendered.split('\n').includes(`- c1 [open]: not started yet (${criterion.id})`))
+  assert.ok(rendered.split('\n').includes(`- c1 [open]: not started yet (id ${criterion.id})`))
 })
 
 test('briefing.renders-dangling-and-quarantined-decisions-in-order', () => {
@@ -251,7 +252,7 @@ test('briefing.escapes-every-free-text-field', () => {
   }
   const rendered = renderBriefing(thread, integrity, null, null)
   const [firstLine, ...restLines] = rendered.split('\n')
-  assert.equal(firstLine, '# Your Preflight Briefing')
+  assert.equal(firstLine, BRIEFING_HEADING)
   assert.equal(restLines.join('\n').includes('#'), false)
 })
 
