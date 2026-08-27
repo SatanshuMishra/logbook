@@ -1,6 +1,6 @@
 {
   "name": "logbook",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "displayName": "Logbook",
   "description": "Git-native, multi-user, drift-aware session continuity for Claude Code.",
   "author": { "name": "Logbook Plugin" },
