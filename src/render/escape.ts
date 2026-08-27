@@ -5,6 +5,9 @@ const ORDINARY_SPACE = ' '
 const LINE_SEPARATOR = '\u2028'
 const PARAGRAPH_SEPARATOR = '\u2029'
 const MARKDOWN_LEADING_CHARS = new Set(['#', '-', '*', '+', '>', '`', '~'])
+const ORDERED_LIST_DIGIT = /[0-9]/
+const ORDERED_LIST_PUNCTUATION = new Set(['.', ')'])
+const ORDERED_LIST_TERMINATOR = /\s/
 
 const isBlank = (char: string): boolean => {
   if (char === LINE_SEPARATOR || char === PARAGRAPH_SEPARATOR) return true
@@ -19,20 +22,50 @@ const toEscaped = (char: string): string => {
   return `U+${codePoint.toString(16).toUpperCase().padStart(4, '0')}`
 }
 
+const escapeChar = (char: string): string => (isEscapable(char) ? toEscaped(char) : char)
+
+const orderedListMarkerEnd = (chars: readonly string[], start: number): number | null => {
+  let cursor = start
+  while (cursor < chars.length && ORDERED_LIST_DIGIT.test(chars[cursor] as string)) cursor += 1
+  if (cursor === start) return null
+  const punctuation = chars[cursor]
+  if (punctuation === undefined || !ORDERED_LIST_PUNCTUATION.has(punctuation)) return null
+  const after = chars[cursor + 1]
+  if (after !== undefined && !ORDERED_LIST_TERMINATOR.test(after)) return null
+  return cursor + 1
+}
+
 export const escapeStored = (text: string): string => {
   const chars = Array.from(text)
   const out: string[] = []
   let atLineStart = true
-  for (const char of chars) {
-    const isLineBreak = char === '\n' || char === '\r'
+  let index = 0
+  while (index < chars.length) {
+    const char = chars[index] as string
+    if (atLineStart && char === ORDINARY_SPACE) {
+      out.push(char)
+      index += 1
+      continue
+    }
     if (atLineStart && MARKDOWN_LEADING_CHARS.has(char)) {
       out.push(toEscaped(char))
-    } else if (isEscapable(char)) {
-      out.push(toEscaped(char))
-    } else {
-      out.push(char)
+      atLineStart = false
+      index += 1
+      continue
     }
-    atLineStart = isLineBreak
+    if (atLineStart) {
+      const markerEnd = orderedListMarkerEnd(chars, index)
+      if (markerEnd !== null) {
+        for (let cursor = index; cursor < markerEnd - 1; cursor += 1) out.push(escapeChar(chars[cursor] as string))
+        out.push(toEscaped(chars[markerEnd - 1] as string))
+        atLineStart = false
+        index = markerEnd
+        continue
+      }
+    }
+    out.push(escapeChar(char))
+    atLineStart = char === '\n' || char === '\r'
+    index += 1
   }
   return out.join('')
 }

@@ -14,6 +14,7 @@ import { ALL_TOOLS } from '../../src/server/register.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { openStore } from '../../src/store/records.ts'
 import { escapeStored } from '../../src/render/escape.ts'
+import { BRIEFING_HEADING } from '../../src/render/briefing.ts'
 import { renderThreadListing } from '../../src/cli/session-start.ts'
 import { UNRECOGNIZED_KEY_NAME_MAX } from '../../src/schema/caps.ts'
 import type { Thread } from '../../src/schema/thread.ts'
@@ -46,11 +47,10 @@ const linesOf = (text: string): string[] => text.split('\n')
 
 const HEADING_AT_LINE_START = /^[ \t]*#/
 const STRUCTURAL_MARKER_AT_LINE_START = /^[ \t]*(#{1,6}|[-*+>]|`{3}|~{3}|\d+[.)])(?=\s|$)/
-const FIXED_BRIEFING_HEADING = '# Your Preflight Briefing'
 
 const headingLinesOf = (text: string): string[] => {
   const lines = linesOf(text)
-  const withoutFixedHeading = lines[0] === FIXED_BRIEFING_HEADING ? lines.slice(1) : lines
+  const withoutFixedHeading = lines[0] === BRIEFING_HEADING ? lines.slice(1) : lines
   return withoutFixedHeading.filter((line) => HEADING_AT_LINE_START.test(line))
 }
 
