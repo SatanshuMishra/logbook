@@ -171,7 +171,7 @@ test('briefing.omits-empty-list-sections-entirely', () => {
     '- resolved: 0'
   ].join('\n')
   assert.equal(rendered, expected)
-  for (const heading of ['Related:', 'Open risks:', 'Key decisions:', 'Out of scope:', 'Completion criteria:', 'Not shown:']) {
+  for (const heading of ['**Related:**', '**Open risks:**', '**Key decisions:**', '**Out of scope:**', '**Completion criteria:**', '**Not shown:**']) {
     assert.equal(rendered.includes(heading), false, `expected ${heading} to be omitted when its list is empty`)
   }
 })
@@ -401,7 +401,7 @@ test('briefing.a-risk-on-a-criterion-hidden-by-the-cap-still-collapses-to-lane-c
   })
 
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  const hiddenCriterionRow = /^c41 \[/
+  const hiddenCriterionRow = /^- c41 \[/
 
   assert.equal(
     rendered.split('\n').some((line) => hiddenCriterionRow.test(line)),
@@ -471,7 +471,7 @@ test('briefing.omits-the-not-shown-tail-when-nothing-was-cut', () => {
     }
   })
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  assert.equal(rendered.includes('Not shown:'), false)
+  assert.equal(rendered.includes('**Not shown:**'), false)
 })
 
 test('briefing.completion-criteria-are-capped-and-open-ones-survive', () => {
