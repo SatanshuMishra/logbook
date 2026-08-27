@@ -46,9 +46,13 @@ const linesOf = (text: string): string[] => text.split('\n')
 
 const HEADING_AT_LINE_START = /^[ \t]*#/
 const STRUCTURAL_MARKER_AT_LINE_START = /^[ \t]*(#{1,6}|[-*+>]|`{3}|~{3}|\d+[.)])(?=\s|$)/
+const FIXED_BRIEFING_HEADING = '# Your Preflight Briefing'
 
-const headingLinesOf = (text: string): string[] =>
-  linesOf(text).filter((line) => HEADING_AT_LINE_START.test(line))
+const headingLinesOf = (text: string): string[] => {
+  const lines = linesOf(text)
+  const withoutFixedHeading = lines[0] === FIXED_BRIEFING_HEADING ? lines.slice(1) : lines
+  return withoutFixedHeading.filter((line) => HEADING_AT_LINE_START.test(line))
+}
 
 const markerSequenceOf = (text: string): string[] =>
   linesOf(text).map((line) => {
