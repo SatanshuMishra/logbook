@@ -5,6 +5,7 @@ import * as ts from 'typescript'
 import {
   renderBriefing,
   renderBriefingWithPasses,
+  BRIEFING_HEADING,
   BRIEFING_MAX_CHARS,
   RESUME_PAYLOAD_MAX_BYTES,
   type DecisionIntegrity
@@ -127,13 +128,24 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
   const rendered = renderBriefing(thread, integrity, pointer, null)
 
   const expected = [
+    BRIEFING_HEADING,
+    '',
     '**Thread:** Ship the renderer',
     '**Status:** open',
     '**Blockage:** none',
     '**Currently being worked:** yes',
-    '**Active goal:** ship the renderer',
-    '**Next step:** add tests',
-    '**Last session:** wrote the first draft',
+    '',
+    '**Active goal:**',
+    '',
+    'ship the renderer',
+    '',
+    '**Last session:**',
+    '',
+    'wrote the first draft',
+    '',
+    '**Next step:**',
+    '',
+    'add tests',
     '',
     '**Open risks:**',
     `- ${riskId} escaping might be incomplete`,
@@ -145,8 +157,8 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     '- does not cover the CLI',
     '',
     '**Completion criteria:**',
-    `- c1 [done] ${criterionA.id}: first criterion`,
-    `- c2 [struck] ${criterionB.id}: second criterion`,
+    `- c1 [done]: first criterion (id ${criterionA.id})`,
+    `- c2 [struck]: second criterion (id ${criterionB.id})`,
     '',
     '**Decisions:**',
     '- resolved: 1'
@@ -159,13 +171,24 @@ test('briefing.omits-empty-list-sections-entirely', () => {
   const thread = baseThread({ title: 'Empty Thread', status: 'done', blocked_by: 'still finishing docs' })
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
   const expected = [
+    BRIEFING_HEADING,
+    '',
     '**Thread:** Empty Thread',
     '**Status:** done',
     '**Blocked:** still finishing docs',
     '**Currently being worked:** no',
-    '**Active goal:** ship the thing',
-    '**Next step:** write the tests',
-    '**Last session:** wrote the renderer',
+    '',
+    '**Active goal:**',
+    '',
+    'ship the thing',
+    '',
+    '**Last session:**',
+    '',
+    'wrote the renderer',
+    '',
+    '**Next step:**',
+    '',
+    'write the tests',
     '',
     '**Decisions:**',
     '- resolved: 0'
@@ -187,7 +210,7 @@ test('briefing.criterion-status-is-open-when-undone-and-unstruck', () => {
   const criterion = { id: rt.ulid(), ordinal: 1, text: 'not started yet', done: false, kind: 'planned' as const, struck_by: null }
   const thread = baseThread({ completion_criteria: [criterion] })
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  assert.ok(rendered.split('\n').includes(`- c1 [open] ${criterion.id}: not started yet`))
+  assert.ok(rendered.split('\n').includes(`- c1 [open]: not started yet (id ${criterion.id})`))
 })
 
 test('briefing.renders-dangling-and-quarantined-decisions-in-order', () => {
@@ -228,7 +251,9 @@ test('briefing.escapes-every-free-text-field', () => {
     quarantined: ['# quarantined heading']
   }
   const rendered = renderBriefing(thread, integrity, null, null)
-  assert.equal(rendered.includes('#'), false)
+  const [firstLine, ...restLines] = rendered.split('\n')
+  assert.equal(firstLine, BRIEFING_HEADING)
+  assert.equal(restLines.join('\n').includes('#'), false)
 })
 
 const criterion = (overrides: Partial<Criterion> = {}): Criterion => ({
@@ -249,7 +274,7 @@ const risk = (overrides: Partial<Risk> = {}): Risk => ({
   ...overrides
 })
 
-const CRITERION_ROW_PATTERN = /^- c\d+ \[(open|done|struck)\] /
+const CRITERION_ROW_PATTERN = /^- c\d+ \[(open|done|struck)\]: /
 
 const criterionRowCount = (rendered: string): number =>
   rendered.split('\n').filter((line) => CRITERION_ROW_PATTERN.test(line)).length
