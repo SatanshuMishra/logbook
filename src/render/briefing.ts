@@ -1,5 +1,6 @@
 import type { Thread, Criterion, Risk, KeyDecision, OutOfScope } from '../schema/thread.ts'
 import type { Pointer } from '../domain/pointer.ts'
+import * as caps from '../schema/caps.ts'
 import { escapeStored, clipGraphemes } from './escape.ts'
 
 export type DecisionIntegrity = {
@@ -25,6 +26,7 @@ const KEY_DECISION_TITLE_NATURAL_MAX = 200
 const OUT_OF_SCOPE_SHOWN_MAX = 10
 const OUT_OF_SCOPE_TEXT_NATURAL_MAX = 300
 
+const CRITERIA_SHOWN_MAX = caps.CRITERIA_MAX_ELEMENTS
 const CRITERION_TEXT_NATURAL_MAX = 500
 
 const DECISION_ID_SHOWN_MAX = 6
@@ -102,6 +104,39 @@ const capList = <T>(items: readonly T[], cap: number): Laned<T> => ({
   hidden: Math.max(0, items.length - cap)
 })
 
+const CRITERION_RANK_OPEN = 0
+const CRITERION_RANK_DONE = 1
+const CRITERION_RANK_STRUCK = 2
+
+const criterionRank = (criterion: Criterion): number => {
+  const status = criterionStatus(criterion)
+  if (status === 'open') return CRITERION_RANK_OPEN
+  return status === 'done' ? CRITERION_RANK_DONE : CRITERION_RANK_STRUCK
+}
+
+type RankedCriterion = { criterion: Criterion; index: number; rank: number }
+
+const byRankThenOriginalIndex = (left: RankedCriterion, right: RankedCriterion): number =>
+  left.rank === right.rank ? left.index - right.index : left.rank - right.rank
+
+const capCriteria = (criteria: readonly Criterion[], cap: number): Laned<Criterion> => {
+  const ranked: RankedCriterion[] = criteria.map((criterion, index) => ({
+    criterion,
+    index,
+    rank: criterionRank(criterion)
+  }))
+  const selectedIndices = new Set(
+    [...ranked]
+      .sort(byRankThenOriginalIndex)
+      .slice(0, Math.max(0, cap))
+      .map((entry) => entry.index)
+  )
+  return {
+    shown: ranked.filter((entry) => selectedIndices.has(entry.index)).map((entry) => entry.criterion),
+    hidden: criteria.length - selectedIndices.size
+  }
+}
+
 type RenderClip = { risk: number; keyDecision: number; outOfScope: number; criterion: number }
 
 const FULL_CLIP: RenderClip = {
@@ -112,19 +147,19 @@ const FULL_CLIP: RenderClip = {
 }
 
 const clippablePoolCount = (
-  thread: Thread,
+  criteria: Laned<Criterion>,
   risks: Laned<Risk>,
   keyDecisions: Laned<KeyDecision>,
   outOfScope: Laned<OutOfScope>
-): number => thread.completion_criteria.length + risks.shown.length + keyDecisions.shown.length + outOfScope.shown.length
+): number => criteria.shown.length + risks.shown.length + keyDecisions.shown.length + outOfScope.shown.length
 
 const clippablePoolNaturalTextLen = (
-  thread: Thread,
+  criteria: Laned<Criterion>,
   risks: Laned<Risk>,
   keyDecisions: Laned<KeyDecision>,
   outOfScope: Laned<OutOfScope>
 ): number => {
-  const criterionLen = thread.completion_criteria.reduce((sum, item) => sum + escapeStored(item.text).length, 0)
+  const criterionLen = criteria.shown.reduce((sum, item) => sum + escapeStored(item.text).length, 0)
   const riskLen = risks.shown.reduce((sum, item) => sum + escapeStored(item.text).length, 0)
   const keyDecisionLen = keyDecisions.shown.reduce((sum, item) => sum + escapeStored(item.title).length, 0)
   const outOfScopeLen = outOfScope.shown.reduce((sum, item) => sum + escapeStored(item.text).length, 0)
@@ -133,14 +168,14 @@ const clippablePoolNaturalTextLen = (
 
 const shrunkClip = (
   overage: number,
-  thread: Thread,
+  criteria: Laned<Criterion>,
   risks: Laned<Risk>,
   keyDecisions: Laned<KeyDecision>,
   outOfScope: Laned<OutOfScope>
 ): RenderClip => {
-  const poolCount = clippablePoolCount(thread, risks, keyDecisions, outOfScope)
+  const poolCount = clippablePoolCount(criteria, risks, keyDecisions, outOfScope)
   if (poolCount === 0) return FULL_CLIP
-  const naturalTextLen = clippablePoolNaturalTextLen(thread, risks, keyDecisions, outOfScope)
+  const naturalTextLen = clippablePoolNaturalTextLen(criteria, risks, keyDecisions, outOfScope)
   const targetTextLen = Math.max(poolCount * MIN_TEXT_CLIP, naturalTextLen - overage - NOT_SHOWN_MARKER_RESERVE)
   const perItemClip = Math.max(MIN_TEXT_CLIP, Math.floor(targetTextLen / poolCount))
   return { risk: perItemClip, keyDecision: perItemClip, outOfScope: perItemClip, criterion: perItemClip }
@@ -154,6 +189,7 @@ const assembleBriefing = (
   risks: Laned<Risk>,
   keyDecisions: Laned<KeyDecision>,
   outOfScope: Laned<OutOfScope>,
+  criteria: Laned<Criterion>,
   dangling: Laned<string>,
   quarantined: Laned<string>,
   renderClip: RenderClip,
@@ -167,12 +203,13 @@ const assembleBriefing = (
   const riskLines = risks.shown.map((item) => renderRiskLine(item, renderClip.risk))
   const keyDecisionLines = keyDecisions.shown.map((item) => renderKeyDecisionLine(item, renderClip.keyDecision))
   const outOfScopeLines = outOfScope.shown.map((item) => renderOutOfScopeLine(item, renderClip.outOfScope))
-  const criterionLines = thread.completion_criteria.map((item) => renderCriterionLine(item, renderClip.criterion))
+  const criterionLines = criteria.shown.map((item) => renderCriterionLine(item, renderClip.criterion))
 
   const notShownBulletLines = [
     ...[risks.hidden].filter((count) => count > 0).map((count) => `- ${count} risks not shown`),
     ...[keyDecisions.hidden].filter((count) => count > 0).map((count) => `- ${count} key decisions not shown`),
     ...[outOfScope.hidden].filter((count) => count > 0).map((count) => `- ${count} out-of-scope items not shown`),
+    ...[criteria.hidden].filter((count) => count > 0).map((count) => `- ${count} completion criteria not shown`),
     ...[danglingOrQuarantinedHidden]
       .filter((count) => count > 0)
       .map((count) => `- ${count} dangling or quarantined decision ids not shown`),
@@ -195,7 +232,7 @@ const assembleBriefing = (
     ...keyDecisionLines,
     ...outOfScope.shown.slice(0, 1).map(() => 'Out of scope:'),
     ...outOfScopeLines,
-    ...thread.completion_criteria.slice(0, 1).map(() => 'Completion criteria:'),
+    ...criteria.shown.slice(0, 1).map(() => 'Completion criteria:'),
     ...criterionLines,
     'Decisions:',
     `resolved: ${decisionIntegrity.resolved}`,
@@ -219,6 +256,7 @@ export const renderBriefing = (
   const risks = laneSplit(thread.spine.open_risks, criteriaById, currentId, LANE_A_RISKS_MAX, LANE_B_RISKS_MAX)
   const keyDecisions = laneSplit(thread.spine.key_decisions, criteriaById, currentId, LANE_A_TITLES_MAX, LANE_B_TITLES_MAX)
   const outOfScope = capList(thread.spine.out_of_scope, OUT_OF_SCOPE_SHOWN_MAX)
+  const criteria = capCriteria(thread.completion_criteria, CRITERIA_SHOWN_MAX)
   const dangling = capList(decisionIntegrity.dangling, DECISION_ID_SHOWN_MAX)
   const quarantined = capList(decisionIntegrity.quarantined, DECISION_ID_SHOWN_MAX)
 
@@ -230,6 +268,7 @@ export const renderBriefing = (
     risks,
     keyDecisions,
     outOfScope,
+    criteria,
     dangling,
     quarantined,
     FULL_CLIP,
@@ -238,7 +277,7 @@ export const renderBriefing = (
   if (unclipped.length <= BRIEFING_MAX_CHARS) return unclipped
 
   const overage = unclipped.length - BRIEFING_MAX_CHARS
-  const renderClip = shrunkClip(overage, thread, risks, keyDecisions, outOfScope)
+  const renderClip = shrunkClip(overage, criteria, risks, keyDecisions, outOfScope)
 
   return assembleBriefing(
     thread,
@@ -248,6 +287,7 @@ export const renderBriefing = (
     risks,
     keyDecisions,
     outOfScope,
+    criteria,
     dangling,
     quarantined,
     renderClip,

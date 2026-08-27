@@ -4,6 +4,7 @@ import path from 'node:path'
 import * as ts from 'typescript'
 import { renderBriefing, BRIEFING_MAX_CHARS, RESUME_PAYLOAD_MAX_BYTES, type DecisionIntegrity } from '../../src/render/briefing.ts'
 import { ThreadRecord, type Thread, type Criterion, type Risk, type KeyDecision, type OutOfScope } from '../../src/schema/thread.ts'
+import { KEY_DECISION_TITLE_MAX, THREAD_SLUG_MAX } from '../../src/schema/caps.ts'
 import type { Pointer } from '../../src/domain/pointer.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { census } from '../support/census.ts'
@@ -234,6 +235,11 @@ const risk = (overrides: Partial<Risk> = {}): Risk => ({
   ...overrides
 })
 
+const CRITERION_ROW_PATTERN = /^c\d+ \[(open|done|struck)\] /
+
+const criterionRowCount = (rendered: string): number =>
+  rendered.split('\n').filter((line) => CRITERION_ROW_PATTERN.test(line)).length
+
 test('briefing.lane-a-is-the-current-criterions-items-shown-in-full', () => {
   const current = criterion({ ordinal: 1, text: 'the current criterion' })
   const other = criterion({ ordinal: 2, text: 'a later live criterion' })
@@ -359,6 +365,46 @@ test('briefing.lane-c-collapses-a-done-criterions-risk-while-lane-b-shows-an-una
   )
 })
 
+const CRITERIA_FILLING_EVERY_SHOWN_SLOT = 40
+
+test('briefing.a-risk-on-a-criterion-hidden-by-the-cap-still-collapses-to-lane-c', () => {
+  const openCriteria: Criterion[] = Array.from({ length: CRITERIA_FILLING_EVERY_SHOWN_SLOT }, (_, index) =>
+    criterion({ ordinal: index + 1, text: `open criterion ${index + 1}` })
+  )
+  const hiddenDone = criterion({ ordinal: 41, text: 'finished after the shown slots ran out', done: true })
+  const settledRisk = risk({ text: 'a risk on a criterion the cap withheld', criterion_id: hiddenDone.id })
+
+  const thread = baseThread({
+    completion_criteria: [...openCriteria, hiddenDone],
+    spine: {
+      active_goal: 'g',
+      next_step: 'n',
+      last_session: 'l',
+      open_risks: [settledRisk],
+      key_decisions: [],
+      out_of_scope: []
+    }
+  })
+
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
+  const hiddenCriterionRow = /^c41 \[/
+
+  assert.equal(
+    rendered.split('\n').some((line) => hiddenCriterionRow.test(line)),
+    false,
+    'the done criterion at ordinal 41 must be pushed out of the 40 shown slots by the 40 open ones that outrank it'
+  )
+  assert.equal(
+    rendered.includes(settledRisk.id),
+    false,
+    'a risk anchored to a done criterion must stay collapsed even when the cap withheld that criterion; resolving anchors against only the shown criteria would leave it unresolved and render it in full'
+  )
+  assert.ok(
+    rendered.includes('- 1 risks not shown'),
+    'the risk collapsed against the withheld done criterion must be counted in the not-shown tail'
+  )
+})
+
 test('briefing.a-risk-naming-a-criterion-that-no-longer-resolves-is-treated-as-unanchored', () => {
   const onlyCriterion = criterion({ ordinal: 1, text: 'the only criterion', done: true })
   const wrongTagRisk = risk({ text: 'a risk naming an unknown criterion', criterion_id: rt.ulid() })
@@ -414,12 +460,39 @@ test('briefing.omits-the-not-shown-tail-when-nothing-was-cut', () => {
   assert.equal(rendered.includes('Not shown:'), false)
 })
 
+test('briefing.completion-criteria-are-capped-and-open-ones-survive', () => {
+  const retired: Criterion[] = Array.from({ length: 199 }, (_, index) =>
+    criterion({ ordinal: index + 1, text: 'retired', struck_by: rt.ulid() })
+  )
+  const survivor = criterion({ ordinal: 200, text: 'still open' })
+  const thread = baseThread({ completion_criteria: [...retired, survivor] })
+
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
+
+  assert.equal(
+    criterionRowCount(rendered),
+    40,
+    'the completion criteria list must render at most 40 rows, however many criteria the thread retains'
+  )
+  assert.ok(
+    rendered.includes(survivor.id),
+    'the open criterion at ordinal 200 must survive the cap; a plain slice of the first 40 would drop it'
+  )
+  assert.ok(
+    rendered.includes('- 160 completion criteria not shown'),
+    'the 160 criteria the cap withheld must be counted in the not-shown tail'
+  )
+})
+
+const CRITERION_TEXT_AT_RECORD_BYTE_CEILING = 18
+const KEY_DECISIONS_AT_RECORD_BYTE_CEILING = 5
+
 const decisionRecordSizedThread = (): Thread => {
   const text = (n: number): string => 'x'.repeat(n)
   const criteria: Criterion[] = Array.from({ length: 200 }, (_, index) => ({
     id: rt.ulid(),
     ordinal: index + 1,
-    text: text(10),
+    text: text(CRITERION_TEXT_AT_RECORD_BYTE_CEILING),
     done: false,
     kind: 'planned',
     struck_by: null
@@ -430,11 +503,16 @@ const decisionRecordSizedThread = (): Thread => {
     text: text(500),
     refs: []
   }))
-  const keyDecisions: KeyDecision[] = []
+  const keyDecisions: KeyDecision[] = Array.from({ length: KEY_DECISIONS_AT_RECORD_BYTE_CEILING }, () => ({
+    id: rt.ulid(),
+    decision_id: rt.ulid(),
+    title: text(KEY_DECISION_TITLE_MAX),
+    scope: 'x'
+  }))
   const outOfScope: OutOfScope[] = Array.from({ length: 40 }, () => ({ id: rt.ulid(), text: text(300) }))
   return {
     id: rt.ulid(),
-    slug: 'a'.repeat(30),
+    slug: 'a'.repeat(THREAD_SLUG_MAX),
     title: text(200),
     status: 'open',
     blocked_by: text(500),
@@ -452,7 +530,7 @@ const decisionRecordSizedThread = (): Thread => {
   }
 }
 
-test('briefing.renders-the-largest-schema-admissible-thread-within-budget', () => {
+test('briefing.renders-a-record-byte-maximal-thread-within-budget', () => {
   const thread = decisionRecordSizedThread()
   const parsed = ThreadRecord.parse(thread)
   assert.equal(parsed.ok, true, 'the constructed fixture must itself be schema-admissible')
@@ -480,10 +558,10 @@ test('briefing.renders-the-largest-schema-admissible-thread-within-budget', () =
     `expected the serialised resume_thread payload to be at most ${RESUME_PAYLOAD_MAX_BYTES} bytes, got ${payloadBytes}`
   )
 
-  assert.ok(rendered.includes('Completion criteria:'), 'every one of the 200 criteria is listed, never dropped')
+  assert.ok(rendered.includes('Completion criteria:'), 'the completion criteria section still renders on a record-byte-maximal thread')
   assert.equal(
-    rendered.split('\n').filter((line) => line.startsWith('c')).length,
-    200,
-    'all 200 retained criteria must render, one line each, none omitted'
+    criterionRowCount(rendered),
+    40,
+    'a record-byte-maximal thread renders exactly 40 criterion rows, the rest withheld to the not-shown tail'
   )
 })
