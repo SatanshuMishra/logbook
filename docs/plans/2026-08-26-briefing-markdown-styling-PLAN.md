@@ -173,3 +173,93 @@ has a single production caller at `src/server/tools/resume_thread.ts:85`.
 | **A0k** - nothing pins the shown cap to the schema invariant. `CRITERIA_SHOWN_MAX` now derives from `caps.CRITERIA_MAX_ELEMENTS`, and that derivation is what makes the safety claim true: a cap of 40 is safe only because that invariant bounds un-struck criteria, so every open and every done criterion always fits. No test fails if someone reverts it to a bare `40`, because the two expressions evaluate identically today. | `src/render/briefing.ts:29`, `src/schema/caps.ts:12` |
 | **A0l** - the schema's per-field caps are not jointly satisfiable. `ThreadRecord.parse` enforces a whole-record cap, `THREAD_RECORD_SERIALISED_MAX_BYTES = 65536`. Two hundred completion criteria consume 60,419 of those 65,536 bytes with EMPTY text, which is 92 percent of the record budget, leaving roughly 5,117 bytes against about 200 bytes per character of criterion text and about 302 bytes per key decision. Measured admissible frontier at 200 criteria, `parse.ok` true at every row: 0 key decisions allow 25 characters of criterion text (65,419 bytes); 5 allow 18 (65,528 bytes); 10 allow 10 (65,438 bytes); 16 allow 1 (65,450 bytes); 17 or more are inadmissible at any text length. The shipped fixture sits on the 5-key-decision row of that frontier (`test/unit/briefing.test.ts:487-488`). The consequence: no schema-admissible record can hold the retention maximum of criteria alongside criterion text at its 500-character cap or key decisions at their 200-element cap. Pre-existing; this unit neither creates nor fixes it. | `src/schema/thread.ts:133-146`, `src/schema/caps.ts:39` |
 | **A0m** - the suite has no render-maximal fixture. The size fixture maximises RECORD bytes, not RENDERED output, and the test consuming it was honestly renamed to say so: `briefing.renders-a-record-byte-maximal-thread-within-budget`. Its risks and key decisions carry no `criterion_id`, so they fall to lane B and only 4 and 5 of them render; anchoring them to the current criterion fills lane A at its caps of 8 and 10 and yields a strictly larger render. That gap is what lets A0g pass the suite. A working seed for such a fixture is the 140/60/20/20/20 shape recorded in A0g. | `test/unit/briefing.test.ts:490-531`, `src/render/briefing.ts:18-23` |
+
+# 7. Unit A1B — the budget guard is byte-denominated and convergent
+
+Inserted between A1 and A2 after measurement. Sections 0-5 are unchanged; this section adds a unit and
+does not alter A1's ceiling, which was met and shipped.
+
+## Why this exists
+
+`BRIEFING_MAX_CHARS = 12000` is enforced at runtime (`src/render/briefing.ts:238-255`).
+`RESUME_PAYLOAD_MAX_BYTES = 24000` is asserted only in the suite and never at runtime. The enforced
+guard cannot imply the asserted one:
+
+- For ASCII, `bytes = 2 x chars + 2 x newlines + 140`. A render at exactly 12,000 chars with 91 newlines
+  is 24,322 bytes. **No render with even one newline can sit at the character cap and satisfy the byte
+  cap.** The gap is at least 161 characters.
+- For multi-byte text the character cap cannot bound bytes at all. 11,995 characters of CJK render to
+  **61,886 bytes**, 2.6x the cap. `escapeStored` passes ordinary non-ASCII through and the write-boundary
+  caps count characters, not bytes.
+
+Measured populations of records that pass the enforced cap and breach the asserted one:
+
+| Population | breaching | worst case |
+|---|---:|---|
+| Schema-admissible, 9,780 points swept | 247 | 11,984 chars / 24,278 bytes |
+| Tool-reachable, 14,210 points swept | **338** | **11,988 chars / 24,284 bytes** |
+
+The tool-reachable worst case is 40 open criteria with 51-character text and no key decisions - an
+ordinary large thread. `clipped` is false on every one of them, so the shrink pass never fires.
+
+A1 widened this. On the security review's fixture the parent passes at 23,436 bytes and A1 fails at
+24,284; a randomised run over 2,088 admissible records found 14 byte-cap regressions and zero character
+regressions. With 200 rows the fixed per-row scaffolding was large and the single-shot shrink undershot;
+with 40 rows the shrink reaches its target and lands in the dead band. A1B closes A0g.
+
+## The design
+
+**Part 1, an exact byte predictor in the renderer.** The reply shape is fixed, so its size is computable:
+
+```
+payloadBytes = 2 x jsonEscapedByteLen(briefing) + jsonEscapedByteLen(threadId) + 114
+```
+
+Verified exact on 8 of 8 renders across ASCII, CJK and Latin-1, including the suite fixture, which it
+predicted at 23,790 against an actual 23,790. Unlike the character proxy it sees multi-byte text.
+
+**Part 2, a convergent search.** Replace the single-shot shrink with a binary search on the per-item
+clip, keeping the largest clip whose render satisfies BOTH caps. Measured against the cliff it replaces:
+
+| Case | A1 shipped | single-shot shrink | convergent |
+|---|---|---|---|
+| Suite record-byte-maximal | 23,790 pass | 24,174 fail | **24,000 pass**, risk text 453 |
+| Worst reachable, 40 criteria at 51 | **24,284 fail** | 18,106 pass, risk text 116 | **23,994 pass**, risk text 392 |
+| CJK, 40 criteria at 51 | **61,244 fail** | **41,562 fail** | **23,790 pass** |
+
+Content preservation is 3.4x better than the cliff on the worst reachable record. Cost is 20.1 ms against
+1.8 ms on the worst thread, 11 passes against 1; an ordinary thread still converges in a single pass.
+`resume_thread` is called once per session pickup.
+
+**Reserve.** Target 23,800 bytes, not 24,000. The convergent search lands the suite-maximal case at
+exactly 24,000, and a knife-edge equality is fragile against any later change.
+
+## A1B acceptance criteria (the ceiling)
+
+1. A frontier-sweep census test exists. It sweeps the admissible parameter grid - criteria count,
+   criterion text length, key-decision count - at the record byte ceiling, in ASCII and in a multi-byte
+   fill, and asserts zero rendered records exceed either cap. **It declares the grid it covered and halts
+   on anything it cannot classify.** A pinned count or a sampled allowlist is forbidden.
+2. That sweep is RED on the parent commit, finding at least one breaching record. Measured today: 338
+   tool-reachable records, worst 24,284 bytes, plus a CJK record at 61,244 bytes.
+3. Two inertness mutations each turn it RED, run and then reverted: reverting the byte predictor to the
+   character proxy must redden the CJK record, and reverting the convergent search to the single-shot
+   shrink must redden the 40-criteria-at-51-characters record.
+4. An ordinary small thread still converges in one pass, asserted rather than assumed.
+5. `npm run typecheck` exits 0 and `npm test` exits 0 with at least 423 passing.
+
+# 8. Amendment to A2, made before A2 started
+
+A2's acceptance criterion 4 in section 3 read "both caps hold on the genuinely maximal fixture". It is
+withdrawn and replaced. It named a fixture that maximises neither cap, and it made a single fixture the
+thing that establishes a population-wide property, which is a sample wearing a census costume.
+
+> **A2 AC4 (replacement).** With A1B's guard in place, the frontier sweep from A1B criterion 1 is re-run
+> with the markdown token set applied and still finds zero records exceeding either cap. A2 adds no
+> trimming to its token set to achieve this.
+
+Measured basis: A2's full token set costs 185 characters and 384 payload bytes, not the ~260 and ~534
+estimated in section 3. The breakdown is 77 characters O(1) - 7 header items, 7 section labels, 7 blank
+lines - and 108 characters across 54 row bullets. With A1B in place the full set lands untrimmed.
+
+Section 3's remaining criteria 1, 2, 3 and 5 stand unchanged.
