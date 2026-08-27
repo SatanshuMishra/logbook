@@ -58,7 +58,7 @@ test('lineage.briefing-renders-the-predecessor-it-was-opened-with', async () => 
     if (!resumed.ok) throw new Error('expected the successor thread to resume')
 
     const lines = resumed.structured.briefing.split('\n')
-    const relatedIndex = lines.indexOf('Related:')
+    const relatedIndex = lines.indexOf('**Related:**')
     assert.notEqual(relatedIndex, -1)
     assert.equal(lines[relatedIndex + 1], '- succeeds: The thread that came first (came-first)')
   })

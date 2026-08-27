@@ -300,8 +300,8 @@ test('decision.outcome-body-is-absent-from-both-briefing-surfaces', async () => 
     const briefing = (resumed.structuredContent as { briefing: string }).briefing
     const lines = briefing.split('\n')
 
-    const keyDecisionsAt = lines.indexOf('Key decisions:')
-    const decisionsAt = lines.indexOf('Decisions:')
+    const keyDecisionsAt = lines.indexOf('**Key decisions:**')
+    const decisionsAt = lines.indexOf('**Decisions:**')
     assert.notEqual(keyDecisionsAt, -1, 'the briefing must carry a Key decisions section')
     assert.notEqual(decisionsAt, -1, 'the briefing must carry a Decisions section')
     assert.equal(

@@ -89,7 +89,7 @@ test('briefing.blocked-renders-its-reason', () => {
 test('briefing.blockage-none-when-not-blocked', () => {
   const thread = baseThread({ blocked_by: null })
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  assert.ok(rendered.split('\n').includes('Blockage: none'))
+  assert.ok(rendered.split('\n').includes('**Blockage:** none'))
 })
 
 test('briefing.renders-exact-output-for-a-full-thread', () => {
@@ -127,24 +127,29 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
   const rendered = renderBriefing(thread, integrity, pointer, null)
 
   const expected = [
-    'Thread: Ship the renderer',
-    'Status: open',
-    'Blockage: none',
-    'Currently being worked: yes',
-    'Active goal: ship the renderer',
-    'Next step: add tests',
-    'Last session: wrote the first draft',
-    'Open risks:',
+    '**Thread:** Ship the renderer',
+    '**Status:** open',
+    '**Blockage:** none',
+    '**Currently being worked:** yes',
+    '**Active goal:** ship the renderer',
+    '**Next step:** add tests',
+    '**Last session:** wrote the first draft',
+    '',
+    '**Open risks:**',
     `- ${riskId} escaping might be incomplete`,
-    'Key decisions:',
+    '',
+    '**Key decisions:**',
     '- use postgres',
-    'Out of scope:',
+    '',
+    '**Out of scope:**',
     '- does not cover the CLI',
-    'Completion criteria:',
-    `c1 [done] ${criterionA.id}: first criterion`,
-    `c2 [struck] ${criterionB.id}: second criterion`,
-    'Decisions:',
-    'resolved: 1'
+    '',
+    '**Completion criteria:**',
+    `- c1 [done] ${criterionA.id}: first criterion`,
+    `- c2 [struck] ${criterionB.id}: second criterion`,
+    '',
+    '**Decisions:**',
+    '- resolved: 1'
   ].join('\n')
 
   assert.equal(rendered, expected)
@@ -154,15 +159,16 @@ test('briefing.omits-empty-list-sections-entirely', () => {
   const thread = baseThread({ title: 'Empty Thread', status: 'done', blocked_by: 'still finishing docs' })
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
   const expected = [
-    'Thread: Empty Thread',
-    'Status: done',
-    'Blocked: still finishing docs',
-    'Currently being worked: no',
-    'Active goal: ship the thing',
-    'Next step: write the tests',
-    'Last session: wrote the renderer',
-    'Decisions:',
-    'resolved: 0'
+    '**Thread:** Empty Thread',
+    '**Status:** done',
+    '**Blocked:** still finishing docs',
+    '**Currently being worked:** no',
+    '**Active goal:** ship the thing',
+    '**Next step:** write the tests',
+    '**Last session:** wrote the renderer',
+    '',
+    '**Decisions:**',
+    '- resolved: 0'
   ].join('\n')
   assert.equal(rendered, expected)
   for (const heading of ['Related:', 'Open risks:', 'Key decisions:', 'Out of scope:', 'Completion criteria:', 'Not shown:']) {
@@ -174,14 +180,14 @@ test('briefing.pointer-status-is-no-for-a-different-thread', () => {
   const thread = baseThread()
   const pointer: Pointer = { thread_id: rt.ulid(), written_at: rt.now(), session_id: 'someone-else' }
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, pointer, null)
-  assert.ok(rendered.split('\n').includes('Currently being worked: no'))
+  assert.ok(rendered.split('\n').includes('**Currently being worked:** no'))
 })
 
 test('briefing.criterion-status-is-open-when-undone-and-unstruck', () => {
   const criterion = { id: rt.ulid(), ordinal: 1, text: 'not started yet', done: false, kind: 'planned' as const, struck_by: null }
   const thread = baseThread({ completion_criteria: [criterion] })
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  assert.ok(rendered.split('\n').includes(`c1 [open] ${criterion.id}: not started yet`))
+  assert.ok(rendered.split('\n').includes(`- c1 [open] ${criterion.id}: not started yet`))
 })
 
 test('briefing.renders-dangling-and-quarantined-decisions-in-order', () => {
@@ -193,11 +199,11 @@ test('briefing.renders-dangling-and-quarantined-decisions-in-order', () => {
   }
   const rendered = renderBriefing(thread, integrity, null, null)
   const lines = rendered.split('\n')
-  const decisionsIndex = lines.indexOf('Decisions:')
-  assert.equal(lines[decisionsIndex + 1], 'resolved: 0')
-  assert.equal(lines[decisionsIndex + 2], 'dangling: dangling-one')
-  assert.equal(lines[decisionsIndex + 3], 'dangling: dangling-two')
-  assert.equal(lines[decisionsIndex + 4], 'quarantined: quarantined-one')
+  const decisionsIndex = lines.indexOf('**Decisions:**')
+  assert.equal(lines[decisionsIndex + 1], '- resolved: 0')
+  assert.equal(lines[decisionsIndex + 2], '- dangling: dangling-one')
+  assert.equal(lines[decisionsIndex + 3], '- dangling: dangling-two')
+  assert.equal(lines[decisionsIndex + 4], '- quarantined: quarantined-one')
 })
 
 test('briefing.escapes-every-free-text-field', () => {
@@ -243,7 +249,7 @@ const risk = (overrides: Partial<Risk> = {}): Risk => ({
   ...overrides
 })
 
-const CRITERION_ROW_PATTERN = /^c\d+ \[(open|done|struck)\] /
+const CRITERION_ROW_PATTERN = /^- c\d+ \[(open|done|struck)\] /
 
 const criterionRowCount = (rendered: string): number =>
   rendered.split('\n').filter((line) => CRITERION_ROW_PATTERN.test(line)).length
@@ -267,7 +273,7 @@ test('briefing.lane-a-is-the-current-criterions-items-shown-in-full', () => {
   })
 
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  const openRisksIndex = rendered.split('\n').indexOf('Open risks:')
+  const openRisksIndex = rendered.split('\n').indexOf('**Open risks:**')
   assert.notEqual(openRisksIndex, -1)
   assert.equal(
     rendered.split('\n')[openRisksIndex + 1],
@@ -320,12 +326,12 @@ test('briefing.dangling-and-quarantined-overflow-is-capped-and-counted-in-the-ta
   const rendered = renderBriefing(thread, integrity, null, null)
   const lines = rendered.split('\n')
   assert.equal(
-    lines.filter((line) => line.startsWith('dangling: ')).length,
+    lines.filter((line) => line.startsWith('- dangling: ')).length,
     6,
     'dangling decision ids are capped at 6 shown'
   )
   assert.equal(
-    lines.filter((line) => line.startsWith('quarantined: ')).length,
+    lines.filter((line) => line.startsWith('- quarantined: ')).length,
     4,
     'all 4 quarantined decision ids fit under the cap of 6 and must all render'
   )
@@ -566,7 +572,7 @@ test('briefing.renders-a-record-byte-maximal-thread-within-budget', () => {
     `expected the serialised resume_thread payload to be at most ${RESUME_PAYLOAD_MAX_BYTES} bytes, got ${payloadBytes}`
   )
 
-  assert.ok(rendered.includes('Completion criteria:'), 'the completion criteria section still renders on a record-byte-maximal thread')
+  assert.ok(rendered.includes('**Completion criteria:**'), 'the completion criteria section still renders on a record-byte-maximal thread')
   assert.equal(
     criterionRowCount(rendered),
     40,

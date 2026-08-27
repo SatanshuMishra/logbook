@@ -358,7 +358,7 @@ test('resume_thread.spawn.contract', async () => {
 
     const structured = result.structuredContent as { briefing: string }
     assert.ok(
-      structured.briefing.includes(`Thread: ${fixtureTitle}`),
+      structured.briefing.includes(`**Thread:** ${fixtureTitle}`),
       'the returned briefing must carry the resumed thread\'s own title, proving it was rendered rather than stubbed'
     )
     assert.ok(
@@ -366,7 +366,7 @@ test('resume_thread.spawn.contract', async () => {
       'the returned briefing must carry the resumed thread\'s own completion criterion text'
     )
     assert.ok(
-      structured.briefing.includes('Currently being worked: yes'),
+      structured.briefing.includes('**Currently being worked:** yes'),
       'the returned briefing must reflect the pointer this same resume call just wrote'
     )
   })
