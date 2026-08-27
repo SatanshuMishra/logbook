@@ -72,7 +72,7 @@ const criterionStatus = (criterion: Criterion): string => {
 }
 
 const renderCriterionLine = (criterion: Criterion, textClip: number): string =>
-  `- c${criterion.ordinal} [${criterionStatus(criterion)}] ${escapeStored(criterion.id)}: ${clip(criterion.text, textClip)}`
+  `- c${criterion.ordinal} [${criterionStatus(criterion)}]: ${clip(criterion.text, textClip)} (${escapeStored(criterion.id)})`
 
 const renderRiskLine = (risk: Risk, textClip: number): string => `- ${escapeStored(risk.id)} ${clip(risk.text, textClip)}`
 
@@ -249,13 +249,24 @@ const assembleBriefing = (
   ]
 
   return [
+    '# Your Preflight Briefing',
+    '',
     `**Thread:** ${escapeStored(thread.title)}`,
     `**Status:** ${escapeStored(thread.status)}`,
     renderBlockage(thread.blocked_by),
     renderPointerStatus(pointer, thread.id),
-    `**Active goal:** ${escapeStored(thread.spine.active_goal)}`,
-    `**Next step:** ${escapeStored(thread.spine.next_step)}`,
-    `**Last session:** ${escapeStored(thread.spine.last_session)}`,
+    '',
+    '**Active goal:**',
+    '',
+    escapeStored(thread.spine.active_goal),
+    '',
+    '**Last session:**',
+    '',
+    escapeStored(thread.spine.last_session),
+    '',
+    '**Next step:**',
+    '',
+    escapeStored(thread.spine.next_step),
     ...relatedThreads.slice(0, 1).map(() => ''),
     ...relatedThreads.slice(0, 1).map(() => '**Related:**'),
     ...relatedLines,
