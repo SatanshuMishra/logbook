@@ -527,3 +527,19 @@ asserts that the defect is real.
 - A Wave 2 item that `writeRecords` exceeds the file-length guideline. `writeRecords` appears in the corpus only in the context of its compare-and-swap logic; no length or diff-size claim about it exists.
 - Three lower-severity MSP-1 review items. The Wave 2 debrief states "Fifteen items across the three units" and names only two of them individually; no three MSP-1-specific items are itemised anywhere.
 - An MSP-4a HIGH finding that `close_thread.ts`, `park_thread.ts` and `resolve_conflict.ts` each duplicate the refusal factory. The string `close_thread` does not occur anywhere in the 62-record decision corpus.
+
+# Filed, not fixed — discovered after the briefing scoping repair ladder shipped
+
+Items found above this ladder's acceptance ceiling after a unit shipped. Each carries its evidence
+and the unit whose review surfaced it. Nothing here is folded into the ladder.
+
+This ladder numbers its units `U1` through `U7`, not `MSP-N`, so its filed items take a `U` prefix
+tied to the unit number rather than the `F`/`E` prefixes used above for the post-cutover-repair
+ladder's own MSPs. The two schemes do not collide and are not meant to.
+
+## U6a — the briefing budget repair shipped without regression coverage
+
+- **Surfaced by:** adversarial review of U6 (the renderer: budget, lanes, truncated tail), after commit `692c7e0` ("fix(briefing): render blocked_by unclipped and compute the discretionary budget from a measured remainder") shipped the fix for two defects the review found: `blocked_by` was being clipped, and roughly 74% of the character budget went unspent while core fields were cut.
+- **Evidence:** both defects were real. Pre-fix source at commit `213c15f` rendered `Blocked: ${clip(blockedBy, SCALAR_FIELD_CLIP)}` at `src/render/briefing.ts:64` — an 80-grapheme clip against a 500-character schema cap. The gap: the entire current `test/unit/briefing.test.ts`, all 16 tests, was run unmodified against that pre-fix source and passed in full. Reverting `692c7e0`'s source change alone, leaving the tests untouched, leaves the full suite green — this is the inertness mutation `testing.md` requires of every fix, and it fails. Two sub-cases have no discriminating test: (a) `blocked_by` surviving whole through the budget-constrained shrunk-clip path — `renderBlockage` at `src/render/briefing.ts:59-60` is structurally unclipped, but nothing asserts the full text survives when the briefing is budget-constrained; (b) the discretionary width being derived from a measured remainder rather than a constant — `shrunkClip`, `clippablePoolCount` and `clippablePoolNaturalTextLen` at `src/render/briefing.ts:114-147` are unexported and have no direct test. A third, related gap: the key-decision overflow tail at `src/render/briefing.ts:174` emits `"- N key decisions not shown"`, but no test exceeds the key-decision lane caps (`LANE_A_TITLES_MAX = 10`, `LANE_B_TITLES_MAX = 5`) to exercise it. That branch rendered for the first time on live data on 2026-08-26, after the `criterion_id` backfill landed, so the path is now known-reachable and merely untested.
+- **Why it is above the ceiling:** the fix was accepted against completion criteria `c4`, `c6` and `c7` of the briefing-size thread, and all three were met on their own terms — the regressions adversarial review found were real, and the fix commit closes them. Acceptance is a ceiling: what a later pass finds beyond a met criterion is filed as a new item, never a reopening of the criterion that already closed. This item is filed as new, not as a reopening of `c4`.
+- **Not folded in.**
