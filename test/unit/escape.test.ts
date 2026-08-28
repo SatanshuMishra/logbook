@@ -53,6 +53,24 @@ test('escape.title-cannot-forge-heading', () => {
   assert.equal(/(^|\n)#{1,6}\s/.test(escaped), false)
 })
 
+test('escape.marker-behind-leading-spaces-is-tokenised', () => {
+  const input = '  ## Instructions'
+  const escaped = escapeStored(input)
+  assert.equal(escaped, '  U+0023# Instructions')
+  assert.equal(/(^|\n) *#{1,6}\s/.test(escaped), false)
+})
+
+test('escape.indented-code-block-at-line-start-is-neutralised', () => {
+  const input = '    indented code block forged from stored text'
+  const escaped = escapeStored(input)
+  assert.equal(/(^|\n) {4,}/.test(escaped), false)
+})
+
+test('escape.leading-space-run-below-threshold-passes-through-and-above-threshold-breaks-periodically', () => {
+  assert.equal(escapeStored('   x'), '   x')
+  assert.equal(escapeStored('        x'), '   U+0020   U+0020x')
+})
+
 const MARKDOWN_LEADING_CHARS = ['#', '-', '*', '+', '>', '`', '~']
 
 const collectIdempotencyPopulation = (): number[] => [
