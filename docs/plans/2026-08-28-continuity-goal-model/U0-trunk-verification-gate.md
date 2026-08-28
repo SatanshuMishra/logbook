@@ -46,6 +46,8 @@ Stated because `OR18` scope item 3 is "nothing else", and because a reader could
 - It does **not** raise the mutation score, and does not re-run mutation testing.
 - It does **not** edit, skip, focus or delete any test in order to reach a green.
 
+Two standing plan invariants hold vacuously here, and are recorded rather than left silent. `P2`, no new silent success, has nothing to bind: this unit changes no path under `src/`, so there is no code path that could report success without doing what was asked. `P3`, no record disappears, likewise: this unit adds no thread-record field and performs no store write.
+
 ### The check this unit adds blocks nothing
 
 This is the most important sentence in the plan, and it is here so that no reader draws a stronger conclusion than the change supports.
@@ -170,7 +172,7 @@ That exact line appears **exactly once** in each of the two files. **What is wro
 
 **Divergence 1 — the mitosis decomposition procedure named by an agent definition does not exist on disk.**
 
-`~/.claude/skills/mitosis/SKILL.md` is absent. The directory `~/.claude/skills/mitosis/` exists and contains only `templates/`. The file is staged for deletion in the operator's configuration repository on branch `chore/remove-mitosis`, and `~/.claude/skills` is a symlink into that working tree, so the removal is live. **Ruling applied:** orchestrator ruling `OR20` — this ladder depends on no external decomposition procedure. `PLANNING-BRIEF.md` and `ORCHESTRATOR-RULINGS.md` are jointly self-contained, and this plan was authored under those two documents alone. Nothing about this unit's scope changes. The implementer needs nothing from that file.
+`~/.claude/skills/mitosis/SKILL.md` is absent from disk, and per orchestrator ruling `OR20` this ladder depends on no external decomposition procedure, so nothing in this unit's scope changes and the implementer needs nothing from that file.
 
 **Divergence 2 — `U0` is not a SPEC unit, so the brief's three ceiling sources are empty for it.**
 
@@ -445,7 +447,7 @@ Rationale: acceptance criterion 2. Section 2.2 records that this job reads `gith
 
 ### Step 8 — `package.json` and `.claude-plugin/plugin.json` — read-then-increment
 
-Run this exact command from the repository root. It reads the current version, refuses if the two files disagree or if the version line is not unique in either file, increments PATCH because this unit's Conventional Commits type is `ci`, and writes both files.
+Run this exact command from the repository root. It reads the current version, refuses if the two files disagree or if the version line is not unique in either file, increments PATCH because this unit's Conventional Commits type is `ci`, and writes both files. The type driving this increment is the unit's own type, `ci`, which is also the pull request title's type in section 10 and therefore the squash commit's subject type. Commit 2 in section 9 is typed `chore` because that single commit carries only metadata; that local type does not change the increment.
 
 ```bash
 node -e '
@@ -638,7 +640,7 @@ node --test "test/contract/workflow-hardening-census.test.ts"
 
 The count is **`6 of 8`**, not the parent's `5 of 8`, because the `mutation` job now carries a gate in a workflow that does not run on push — a combination the census does not model, so it halts on it as `unclassifiable`. That is the census reporting an incoherent state rather than quietly passing it.
 
-**The exact restore.** Re-apply section 4 step 6. Then re-run the command above and expect exit code `0` and `pass 4`, `fail 0`.
+**The exact restore.** Re-apply section 4 step 6. Then run the command above again — a fresh observation against a restored file, not a repeat of a failed run — and expect exit code `0` and `pass 4`, `fail 0`.
 
 ### 7.2 Mutation for acceptance criterion 2 — remove the `mutation` job's gate
 
@@ -676,13 +678,13 @@ node --test "test/contract/workflow-hardening-census.test.ts"
 
 Exactly one item, and it is the `mutation` job. This is the census catching the precise failure `OR18` ruling 2 exists to prevent: a job that reads pull-request-only data starting on a push.
 
-**The exact restore.** Re-apply section 4 step 7. Then re-run the command above and expect exit code `0` and `pass 4`, `fail 0`.
+**The exact restore.** Re-apply section 4 step 7. Then run the command above again — a fresh observation against a restored file, not a repeat of a failed run — and expect exit code `0` and `pass 4`, `fail 0`.
 
 ---
 
 ## 8. Full verification
 
-Run in this order, from the repository root, after every step of section 4 has been applied and after both mutations of section 7 have been restored.
+Run in this order, from the repository root, after every step of section 4 has been applied and after both mutations of section 7 have been restored. Run the whole of section 8 **before** making either commit in section 9: 8.1 reads the uncommitted working tree, and after a commit it would print nothing.
 
 **Never run `npm ci` or `npm install`.** `node_modules` is tracked in this repository and an install rewrites tracked files (`P10`).
 
@@ -707,7 +709,7 @@ test/contract/workflow-hardening-census.test.ts
 npm run typecheck
 ```
 
-Expected exit code: `0`. Expected output: no diagnostics printed. This was run during planning against the modified test file under the project's own `tsconfig.json` settings — including `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `erasableSyntaxOnly` and `verbatimModuleSyntax` — and exited 0.
+Expected exit code: `0`. Expected stdout and stderr: empty. `tsc --noEmit` prints a diagnostic line only on failure, so a successful run has no proving substring and the exit code is the whole result. This was run during planning against the modified test file under the project's own `tsconfig.json` settings — including `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `erasableSyntaxOnly` and `verbatimModuleSyntax` — and exited 0.
 
 ### 8.3 The census file alone
 
@@ -823,6 +825,8 @@ node ~/.claude/lib/git/pr.mjs pr-create \
   --not-verified "the mutation score - unverified-reasoned, no baseline exists for the store modules and none was measured"
 ```
 
+Expected exit code: `0`. Expected stdout substring: the new pull request's URL, beginning `https://github.com/SatanshuMishra/logbook/pull/`.
+
 Every `--verified` line above names a check section 6, 7 or 8 instructs the implementer to run and read. A `--verified` line for a check that was not run is forbidden by `P6`; such a check is written `--not-verified "<the same thing> - not run"`.
 
 ### When the full-suite re-run of stop condition 4 was used
@@ -854,7 +858,7 @@ For each: what the implementer sees, the exact command that shows it, and what t
 node -e 'const fs=require("fs");console.log(JSON.parse(fs.readFileSync("package.json","utf8")).version, JSON.parse(fs.readFileSync(".claude-plugin/plugin.json","utf8")).version)'
 ```
 
-If the two printed values are not identical, **STOP and report; do not improvise.**
+Expected exit code: `0`. Expected stdout: one line carrying two version strings. If the two printed values are not identical, **STOP and report; do not improvise.**
 
 A version merely **higher** than `1.4.1` is not a stop condition. It means the ladder shifted, and the read-then-increment in step 8 handles it correctly.
 
@@ -869,7 +873,7 @@ grep -c '^  pull_request:$' .github/workflows/rebuild.yml
 grep -c '^  mutation:$' .github/workflows/rebuild.yml
 ```
 
-Both must print exactly `1`. If either prints anything else, **STOP and report; do not improvise.**
+Expected exit code: `0` for each. Both must print exactly `1`. If either prints anything else, **STOP and report; do not improvise.**
 
 ### Stop condition 3 — a test-file FIND string is not found, or is not unique
 
@@ -884,7 +888,7 @@ grep -c '^  return { file: label, topPermissions: (doc as Record<string, unknown
 grep -c "^    describeViolations('install-ignore-scripts', population, classify)$" test/contract/workflow-hardening-census.test.ts
 ```
 
-All four must print exactly `1`. If any prints anything else, **STOP and report; do not improvise.**
+Expected exit code: `0` for each. All four must print exactly `1`. If any prints anything else, **STOP and report; do not improvise.**
 
 ### Stop condition 4 — the known tracked full-suite failure
 
@@ -908,7 +912,7 @@ This block is reproduced verbatim from orchestrator ruling `OR19`. It governs th
 git diff --name-only
 ```
 
-Expected: exactly one line, `test/contract/workflow-hardening-census.test.ts`. Anything else means steps 6 or 7 were applied too early and the red observation is invalid. Revert the workflow file with `git checkout -- .github/workflows/rebuild.yml`, then repeat section 6 from point 2. When the extra line is not the workflow file, **STOP and report; do not improvise.**
+Expected exit code: `0`. Expected stdout: exactly one line, `test/contract/workflow-hardening-census.test.ts`. Anything else means steps 6 or 7 were applied too early and the red observation is invalid. Revert the workflow file with `git checkout -- .github/workflows/rebuild.yml`, then repeat section 6 from point 2. When the extra line is not the workflow file, **STOP and report; do not improvise.**
 
 ### Stop condition 6 — the red on the parent is not `5 of 8 items`
 
@@ -920,7 +924,7 @@ Expected: exactly one line, `test/contract/workflow-hardening-census.test.ts`. A
 node --test "test/contract/workflow-hardening-census.test.ts" 2>&1 | grep 'items violate'
 ```
 
-Expected substring: `5 of 8 items violate or cannot be classified`. Any other pair of numbers means the set of workflow files or jobs changed after this plan was written, so the plan's measured receipt no longer describes the tree. **STOP and report; do not improvise.**
+Expected exit code: `0`, `grep` having found a match. Expected stdout substring: `5 of 8 items violate or cannot be classified`. Any other pair of numbers means the set of workflow files or jobs changed after this plan was written, so the plan's measured receipt no longer describes the tree. **STOP and report; do not improvise.**
 
 ### Stop condition 7 — a third workflow file exists
 
@@ -932,7 +936,7 @@ Expected substring: `5 of 8 items violate or cannot be classified`. Any other pa
 ls .github/workflows/
 ```
 
-Expected output: exactly `rebuild.yml` and `receipts.yml`. A third file changes the census population and may classify as forbidden for reasons outside this unit's ceiling. **STOP and report; do not improvise.**
+Expected exit code: `0`. Expected stdout: exactly `rebuild.yml` and `receipts.yml`, one per line. A third file changes the census population and may classify as forbidden for reasons outside this unit's ceiling. **STOP and report; do not improvise.**
 
 ### Stop condition 8 — the census halts as `unclassifiable` after the change
 
@@ -944,4 +948,4 @@ Expected output: exactly `rebuild.yml` and `receipts.yml`. A third file changes 
 node --test "test/contract/workflow-hardening-census.test.ts" 2>&1 | grep 'census halted'
 ```
 
-Expected: no output, and `grep` exits 1 having found nothing. When the phrase appears, a job exists in a shape this census does not model. **STOP and report; do not improvise.** Do not add an allowlist, do not exclude the item, and do not pin a count — `P8` forbids all three.
+Expected exit code: `1`, `grep` having found nothing — a non-zero exit is the PASSING case for this command. Expected stdout: empty. When the phrase appears and `grep` exits `0` instead, a job exists in a shape this census does not model. **STOP and report; do not improvise.** Do not add an allowlist, do not exclude the item, and do not pin a count — `P8` forbids all three.
