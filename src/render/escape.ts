@@ -5,6 +5,7 @@ const ORDINARY_SPACE = ' '
 const LINE_SEPARATOR = '\u2028'
 const PARAGRAPH_SEPARATOR = '\u2029'
 const MARKDOWN_LEADING_CHARS = new Set(['#', '-', '*', '+', '>', '`', '~'])
+const MARKDOWN_INDENT_THRESHOLD = 4
 const ORDERED_LIST_DIGIT = /[0-9]/
 const ORDERED_LIST_PUNCTUATION = new Set(['.', ')'])
 const ORDERED_LIST_TERMINATOR = /\s/
@@ -39,17 +40,25 @@ export const escapeStored = (text: string): string => {
   const chars = Array.from(text)
   const out: string[] = []
   let atLineStart = true
+  let spaceRun = 0
   let index = 0
   while (index < chars.length) {
     const char = chars[index] as string
     if (atLineStart && char === ORDINARY_SPACE) {
-      out.push(char)
+      if (spaceRun + 1 >= MARKDOWN_INDENT_THRESHOLD) {
+        out.push(toEscaped(char))
+        spaceRun = 0
+      } else {
+        out.push(char)
+        spaceRun += 1
+      }
       index += 1
       continue
     }
     if (atLineStart && MARKDOWN_LEADING_CHARS.has(char)) {
       out.push(toEscaped(char))
       atLineStart = false
+      spaceRun = 0
       index += 1
       continue
     }
@@ -59,12 +68,14 @@ export const escapeStored = (text: string): string => {
         for (let cursor = index; cursor < markerEnd - 1; cursor += 1) out.push(escapeChar(chars[cursor] as string))
         out.push(toEscaped(chars[markerEnd - 1] as string))
         atLineStart = false
+        spaceRun = 0
         index = markerEnd
         continue
       }
     }
     out.push(escapeChar(char))
     atLineStart = char === '\n' || char === '\r'
+    spaceRun = 0
     index += 1
   }
   return out.join('')
