@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type { Declared } from '../schema/declare.ts'
 import type { Runtime } from '../runtime/runtime.ts'
@@ -76,34 +77,117 @@ const parseLsTreeLine = (line: string): { blobId: string; relPath: string } | nu
 
 export type MaterialiseOutcome = { ok: true } | { ok: false; detail: string }
 
+const RECORDS_SCRATCH_DIR_NAME = 'records-scratch'
+
+const recordsScratchRoot = (layout: StoreLayout): string => path.join(layout.root, RECORDS_SCRATCH_DIR_NAME)
+
+const freshRecordsScratchDir = (layout: StoreLayout): string =>
+  path.join(recordsScratchRoot(layout), randomUUID())
+
+const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
+const errnoOf = (error: unknown): string | null => {
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const code = (error as { code?: unknown }).code
+    if (typeof code === 'string') return code
+  }
+  return null
+}
+
+const discardScratchDir = (rt: Runtime, dir: string): void => {
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch (error) {
+    rt.log({
+      level: 'error',
+      event: 'store.materialise-scratch-cleanup-failed',
+      dir,
+      detail: describeError(error)
+    })
+  }
+}
+
+const swapRecordsTreeIntoPlace = (rt: Runtime, layout: StoreLayout, newTreeDir: string): MaterialiseOutcome => {
+  const displacedDir = freshRecordsScratchDir(layout)
+  let recordsWasDisplaced = false
+
+  try {
+    renameSync(layout.records, displacedDir)
+    recordsWasDisplaced = true
+  } catch (error) {
+    if (errnoOf(error) !== 'ENOENT') {
+      discardScratchDir(rt, newTreeDir)
+      return { ok: false, detail: `renameSync(records -> scratch) failed: ${describeError(error)}` }
+    }
+  }
+
+  try {
+    renameSync(newTreeDir, layout.records)
+  } catch (error) {
+    const placeDetail = `renameSync(scratch -> records) failed: ${describeError(error)}`
+    if (!recordsWasDisplaced) {
+      discardScratchDir(rt, newTreeDir)
+      return { ok: false, detail: placeDetail }
+    }
+    try {
+      renameSync(displacedDir, layout.records)
+    } catch (restoreError) {
+      discardScratchDir(rt, newTreeDir)
+      discardScratchDir(rt, displacedDir)
+      return {
+        ok: false,
+        detail: `${placeDetail}; restoring the displaced records tree also failed: ${describeError(restoreError)}`
+      }
+    }
+    discardScratchDir(rt, newTreeDir)
+    return { ok: false, detail: placeDetail }
+  }
+
+  if (recordsWasDisplaced) {
+    discardScratchDir(rt, displacedDir)
+  }
+
+  return { ok: true }
+}
+
 const materialiseTree = (rt: Runtime, layout: StoreLayout, ref: string): MaterialiseOutcome => {
   const list = countedMaterialiseGit(rt, layout.projectRoot, ['ls-tree', '-r', '--full-tree', ref])
   if (!list.ok) {
     return { ok: false, detail: `the ledger tree could not be listed (git ls-tree exit ${list.code})` }
   }
 
-  rmSync(layout.records, { recursive: true, force: true })
-  mkdirSync(layout.records, { recursive: true })
-
+  const newTreeDir = freshRecordsScratchDir(layout)
   const lines = list.stdout.split('\n').filter((line) => line.length > 0)
   let unreadable = 0
-  for (const line of lines) {
-    const parsed = parseLsTreeLine(line)
-    if (parsed === null) continue
-    const content = countedMaterialiseGit(rt, layout.projectRoot, ['cat-file', '-p', parsed.blobId])
-    if (!content.ok) {
-      unreadable += 1
-      continue
+  let currentTarget = newTreeDir
+  try {
+    mkdirSync(newTreeDir, { recursive: true })
+    for (const line of lines) {
+      const parsed = parseLsTreeLine(line)
+      if (parsed === null) continue
+      const content = countedMaterialiseGit(rt, layout.projectRoot, ['cat-file', '-p', parsed.blobId])
+      if (!content.ok) {
+        unreadable += 1
+        continue
+      }
+      currentTarget = path.join(newTreeDir, parsed.relPath)
+      mkdirSync(path.dirname(currentTarget), { recursive: true })
+      writeFileSync(currentTarget, content.stdout, 'utf8')
     }
-    const target = path.join(layout.records, parsed.relPath)
-    mkdirSync(path.dirname(target), { recursive: true })
-    writeFileSync(target, content.stdout, 'utf8')
+  } catch (error) {
+    discardScratchDir(rt, newTreeDir)
+    return {
+      ok: false,
+      detail: `writing ${currentTarget} into the records scratch tree failed: ${describeError(error)}`
+    }
   }
 
   if (unreadable > 0) {
+    discardScratchDir(rt, newTreeDir)
     return { ok: false, detail: `${unreadable} record blob(s) in the ledger tree could not be read` }
   }
-  return { ok: true }
+
+  return swapRecordsTreeIntoPlace(rt, layout, newTreeDir)
 }
 
 export type SyncWorkingCopyOutcome = { ok: true; materialised: boolean } | { ok: false; detail: string }
