@@ -548,3 +548,28 @@ For `U2` a `concurrent.distinct-ids` failure is signal, not noise. `U2`'s sectio
 No plan may write a re-run into an acceptance criterion, into a receipt, or into `## 6. Red on the
 parent`. A receipt is decided by one run. The re-run above governs only the full-suite gate in
 `## 8. Full verification`, and it is disclosed in the pull request body every time it is used.
+
+## OR20 — This ladder depends on no external decomposition procedure
+
+A plan author blocked on `~/.claude/skills/mitosis/SKILL.md`, which does not exist on disk. It is
+staged for deletion in the operator's configuration repository (branch `chore/remove-mitosis`), and
+`~/.claude/skills` is a symlink into that working tree, so the removal is live the moment the
+checkout moves. The file still exists at that repository's `HEAD`; only the working tree has it
+removed.
+
+Ruled: **this ladder does not depend on it, and no planner blocks on it.** `PLANNING-BRIEF.md` and
+this file are jointly self-contained by construction — the twelve mandatory headings, the plan
+invariants `P1`-`P11`, the wave order, the branch names, the version rule, the receipt obligation
+and the stop conditions are all stated here in full. A planner that cannot read that skill proceeds
+under these two documents alone and records the absence as one line in
+`## 3. Divergences from the SPEC`.
+
+The planner that blocked was RIGHT to stop rather than work from a remembered version of a procedure
+it could not see, and right to refuse to restore a file in the operator's global configuration. That
+restoration is the operator's act, not a planner's, and it is not required here.
+
+Two knock-on facts, recorded so they are not rediscovered: the same deletion removes
+`mitosis/templates/receipts.yml`, which the receipts standard names as the CI template for target
+repositories — this repository already has its own `.github/workflows/receipts.yml`, so nothing in
+this ladder needs the template. And any agent whose definition instructs it to read that skill first
+will block identically; the instruction above is the standing answer.
