@@ -161,6 +161,8 @@ jobs:
         run: |
           set -euo pipefail
           TARGET_FILE="src/render/escape.ts"
+          MUTATION_TARGET='char !== ORDINARY_SPACE'
+          MUTATION_REPLACEMENT='char === ORDINARY_SPACE'
 
           git diff --exit-code -- "$TARGET_FILE"
 
@@ -174,10 +176,17 @@ jobs:
             exit 1
           fi
 
-          grep -q '!==' <(sed -n '12p' "$TARGET_FILE")
-          awk 'NR==12{sub(/!==/,"===")} {print}' "$TARGET_FILE" > "$TARGET_FILE.mutant"
+          set +e
+          occurrence_count=$(grep -o -F -- "$MUTATION_TARGET" "$TARGET_FILE" | wc -l | tr -d ' ')
+          set -e
+          if [ "$occurrence_count" -ne 1 ]; then
+            echo "expected exactly one occurrence of '$MUTATION_TARGET' in $TARGET_FILE to seed the mutant, found $occurrence_count, the gate's target has moved and the gate needs updating"
+            exit 1
+          fi
+
+          sed -e "s/${MUTATION_TARGET}/${MUTATION_REPLACEMENT}/" "$TARGET_FILE" > "$TARGET_FILE.mutant"
           mv "$TARGET_FILE.mutant" "$TARGET_FILE"
-          sed -n '12p' "$TARGET_FILE"
+          grep -n -F -- "$MUTATION_REPLACEMENT" "$TARGET_FILE"
 
           set +e
           node --test "test/unit/**/*.test.ts"
