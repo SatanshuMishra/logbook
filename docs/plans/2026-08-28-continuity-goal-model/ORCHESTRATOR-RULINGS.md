@@ -400,3 +400,24 @@ receipt wins and the ceiling yields. The plan then states the measured number, t
 split, and the specific acceptance criterion a split would make unsatisfiable. The pull request body
 says the diff is large and names the reason it is not divisible; a reviewer must learn the size from
 the pull request, never from the Files Changed tab.
+
+## OR17 — DIVERGENCE: wave 1 is partially ordered — U2 follows U1
+
+SPEC section 9 places `U1` and `U2` in the same wave and calls the wave "fully parallel". They are
+not disjoint under `OR15`: `OR15` obligation 6 may require `U1` to add a `binding` branch to
+`validateChange` in `src/store/records.ts`, and SPEC section 9 assigns `src/store/records.ts` to
+`U2`.
+
+Ruled: **`U2` is cut from a `main` that already contains `U1`.** This costs nothing — `OR1` already
+merges `U1` before `U2` — and it removes the entire class of conflict rather than making the
+conflict conditional on a census outcome nobody has run yet. `U3` remains fully parallel with both.
+
+`U2`'s section 11 carries a stop condition proving `U1` landed before any edit to
+`src/store/records.ts` begins.
+
+Rejected: giving `U1` a carve-out region inside `src/store/records.ts` while `U2` edits the rest. Two
+planners authoring FIND/REPLACE against one file cannot both be applied without a merge judgement,
+which `PLANNING-BRIEF.md` section 2 forbids passing to the implementer.
+
+Rejected: deferring the `binding` branch to `U2`. `A5` is `U1`'s invariant; a unit that ships an
+invariant it cannot hold over one record type has not shipped it.
