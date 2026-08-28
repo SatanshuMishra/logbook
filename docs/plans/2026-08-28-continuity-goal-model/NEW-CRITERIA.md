@@ -53,6 +53,16 @@ Sites: `src/domain/spine.ts:188-207`, `src/domain/criteria.ts:144,190`,
 their own escaped form. Filed as `F10a`; ruled by `OR22`. The near-term obligation is on `U3` — the
 README publishes `LG5` with its exception. The durable obligation is `N4`.
 
+**Read this correctly, because the obvious misreading is the opposite of the truth.** No individual
+transform is lossy. Measured against the shipped encoder on Node `v26.4.0` / Unicode 17.0: 263
+emitted code points, 1315 samples, **0 irreversible** — `\n` becomes `U+000A` and becomes `\n` again.
+`D12` reads as though the line-break rewrite destroys structure; it does not. `D12`'s real defect is
+its second clause, that no inverse existed anywhere in the codebase, and `U10` closes that by writing
+one. What remains broken is the SCHEME, not any transform in it: two distinct inputs can share one
+stored form, so the inverse is correct on every value it is given and still cannot recover which of
+the two was written. `B43`'s refusal clause therefore has an empty subject and `U10` authors no
+refusal.
+
 ## N6 — `receipts.config.json` leaves the gates the standard requires explicit at their defaults
 
 Measured during gate zero: no gate is explicitly set to `block` anywhere in the file. `G11` (deleted,
