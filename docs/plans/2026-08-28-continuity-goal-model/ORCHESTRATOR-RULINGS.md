@@ -717,3 +717,54 @@ constraint and the sha constraint, and is given `class: 'pointer'` directly.** N
 `OR15`'s assurance to `U6` is unchanged and remains accurate: every node the shared flattener emits
 carries a string `class` of exactly `structural`, `pointer` or `content`; `$defs` and `$ref` do not
 occur; `anyOf` nodes still carry `class` at the top level. `U6` may rely on it as written.
+
+## OR25 — amendment to `OR23`: the spawn allowlist splits out as `U1-D`
+
+`U1`'s per-pull-request appendix remeasured the three parts by applying their own blocks to a
+throwaway tree: **`U1-A` 243 lines (60 production / 183 test), `U1-B` 590 (228/362), `U1-C` 244
+(66/178).** The sum, 1,077, exceeds the unit's 1,040 because `src/schema/thread.ts` is edited by both
+`B` and `C`.
+
+`U1-B` at 590 is not the ~480 `OR23` granted an exception for, and the plan reported that pulling
+`test/contract/spawn-allowlist.test.ts` out brings it to **476**.
+
+Ruled: **it is pulled out, as a fourth pull request `U1-D`.**
+
+`OR16` licenses an overage only "where a split is shown to break a red-on-parent receipt, and the
+showing is written down". That showing exists for the field-class census — declarations without it
+have nothing red at their parent, the census without them is a permanent red — and it is granted.
+**No such showing exists for `B42`/`S2`.** The plan itself demonstrated the opposite by naming the
+number a split would produce. A licence granted for one showing does not extend to material the
+showing never covered, and stretching it that way is how a bounded exception becomes a general one.
+
+The cohesion argument points the same way: `B42`/`S2` governs which modules may spawn a process and
+forbids record types reaching them. That is a different reason-to-change from field classes and the
+git boundary, and bundling them makes a reviewer context-switch between two unrelated invariants
+inside one diff.
+
+`U1-B` remains over the ceiling at 476 and keeps its `OR16` exception on the original showing. Its
+composition is 228 production lines against 362 test — disclosed in its pull request body, not
+averaged away, since the per-line review burden of the two is not comparable.
+
+### Revised rows, replacing the `U1` block of `OR23`
+
+| Order | Part | Carries | Branch | Type | Version from -> to |
+| --- | --- | --- | --- | --- | --- |
+| 2 | U1-A Refusal completeness | `A1` | `fix/u1a-refusal-completeness` | fix | 1.4.2 -> 1.4.3 |
+| 3 | U1-B Field classes and the git boundary | `B5`, `B13`, `A5` | `feat/u1b-field-classes` | feat | 1.4.3 -> 1.5.0 |
+| 4 | U1-C Goal-model fields and the cap census | `B2`, `B3`, `B4`, `B6`, `B7`, `A7` | `feat/u1c-goal-model-fields` | feat | 1.5.0 -> 1.6.0 |
+| 5 | **U1-D Spawn allowlist** | `B42`, `S2` | `test/u1d-spawn-allowlist` | test | 1.6.0 -> 1.6.1 |
+
+`test` increments PATCH under `OR6`. Every later row in `OR23` shifts by one patch; `OR6`'s
+read-then-increment absorbs the shift, so no plan is re-authored for it. `U4` still takes the MAJOR
+bump.
+
+**`U1-D` lands last within `U1` and its receipt is honest about what it is.** A census over code that
+already complies is GREEN at its parent, so it has no red-on-parent in the ordinary sense. Its plan
+block states that plainly and gives the substitute `PLANNING-BRIEF.md` section 6 already provides:
+the census cannot run at the parent because the allowlist it reads does not exist there. Its
+inertness mutation is the real proof — add a spawning module without classifying it, and the census
+must halt.
+
+**Consequence for `U7`:** `B42`/`S2` is asserted from `U1-D`, not `U1-B`. `U7`'s stop condition for
+the allowlist names `U1-D`.
