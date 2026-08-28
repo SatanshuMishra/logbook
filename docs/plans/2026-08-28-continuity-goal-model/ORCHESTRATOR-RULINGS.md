@@ -651,3 +651,69 @@ what the tracked criterion exists for.
 **The full discharge of `LG5` — moving escaping off the write path so the stored bytes equal the
 supplied bytes — is `F10b`, is new material this SPEC does not cover, and becomes a NEW thread
 criterion.** It is never folded into `U10`, `U4`, `U8` or `U9`.
+
+## OR23 — `U1` splits into three, and the ladder gains three rows
+
+`U1` measured at **1,040 changed lines** (324 production, 716 test), applied to a throwaway tree and
+diffed. That is 2.6 times the ceiling, so `OR16` requires a split, and the plan ruled one without
+acting on it — correctly, since branch names and version steps are `OR1`'s to give. Those rows are
+below.
+
+| Order | Unit | Carries | Branch | Type | Version from -> to |
+| --- | --- | --- | --- | --- | --- |
+| — | Documentation (`OR21`) | spec + all planning docs | `docs/continuity-goal-model-spec` | docs | none |
+| 1 | U0 Trunk verification gate | — | `ci/u0-trunk-verification-gate` | ci | 1.4.1 -> 1.4.2 |
+| 2 | **U1-A Refusal completeness** | `A1` | `fix/u1a-refusal-completeness` | fix | 1.4.2 -> 1.4.3 |
+| 3 | **U1-B Field classes and the git boundary** | `B5`, `B13`, `B42`, `A5`, `S2` | `feat/u1b-field-classes` | feat | 1.4.3 -> 1.5.0 |
+| 4 | **U1-C Goal-model fields and the cap census** | `B2`, `B3`, `B4`, `B6`, `B7`, `A7` | `feat/u1c-goal-model-fields` | feat | 1.5.0 -> 1.6.0 |
+| 5 | U2 Store cost and safety | `B37`, `B38`, `B40` | `perf/u2-store-cost-and-safety` | perf | 1.6.0 -> 1.6.1 |
+| 6 | U3 Promises | `B36` | `docs/u3-promises` | docs | 1.6.1 -> 1.6.2 |
+| 7 | U4 Criterion contract | `B8`, `B9`, `B10`, `B41` | `feat/u4-criterion-contract` | feat | 1.6.2 -> 2.0.0 |
+| 8 | U5 The briefing hides nothing | `B16`-`B22`, `B24` | `feat/u5-briefing-hides-nothing` | feat | 2.0.0 -> 2.1.0 |
+| 9 | U6 Discovery | `B25`-`B28` | `feat/u6-discovery` | feat | 2.1.0 -> 2.2.0 |
+| 10 | U7 Capture | `B29`-`B34` | `feat/u7-capture` | feat | 2.2.0 -> 2.3.0 |
+| 11 | U8 Derived last_session | `B14`, `B23` | `feat/u8-derived-last-session` | feat | 2.3.0 -> 2.4.0 |
+| 12 | U9 Declared focus | `B11`, `B12`, `B15`, `B35`, `B39` | `feat/u9-declared-focus` | feat | 2.4.0 -> 2.5.0 |
+| 13 | U10 Write fidelity | `B43` | `fix/u10-write-fidelity` | fix | 2.5.0 -> 2.5.1 |
+
+`U4` still takes the MAJOR bump for `B9`'s breaking input change, per `OR1`. `OR6`'s read-then-increment
+governs every step, so a further split anywhere shifts the table without invalidating any plan.
+
+**`U1-B`'s roughly 480 lines exceed the ceiling, and the exception is granted under `OR16`'s
+shown-not-asserted clause.** The showing, from the plan: cutting it further separates the class
+declarations from the census that proves them, and the census IS the receipt for `B5`. Declarations
+without the census ship a convention no check protects and have nothing red at their parent, because
+declarations are inert until something reads them. The census without the declarations is a permanent
+red. Neither half has a receipt, so the ceiling yields and the receipt wins. `U1-B`'s pull request
+body states the size and names that reason.
+
+### How the three are executed from one plan document
+
+`OR16` normally requires one complete document per pull request. It is waived here, once, for a
+specific reason: `U1`'s three parts share one ground-truth section covering nine schema modules, and
+triplicating three thousand lines to avoid one appendix trades a real risk of the three copies
+drifting for a formatting convention. All three are executed by one implementer in sequence on one
+unit's surface, not by three implementers who each see only their own file.
+
+Instead, `U1`'s plan gains a **per-pull-request execution appendix** — one block per pull request,
+each carrying its branch, its version step, its ordered step list, its own red-on-parent with the
+exact expected failure text, its own inertness mutation, its own full verification, its own
+`pr-create` invocation, and its own stop conditions. Nothing in that appendix may say "see section
+N for the other one": each block is executable start to finish. The shared sections 2, 3, 4 and 5
+remain the single source for ground truth, edits and tests, and each appendix block names the exact
+step and test numbers it consumes.
+
+## OR24 — amendment to `OR15`: `Decision.commit` uses one combined pattern, not a chained one
+
+`U1` planning found that building `Decision.commit` as `pointer(...)` and then chaining `.regex()`
+for the sha makes zod emit `allOf` in the generated JSON Schema. That breaks two things `OR15`
+promised: the refusal's valid example, and the assurance given to `U6` that the flattener's nodes
+carry `class` at the top level with no `allOf` to descend.
+
+Ruled: **`Decision.commit` declares a single combined pattern that carries both the pointer
+constraint and the sha constraint, and is given `class: 'pointer'` directly.** No chaining, no
+`allOf`.
+
+`OR15`'s assurance to `U6` is unchanged and remains accurate: every node the shared flattener emits
+carries a string `class` of exactly `structural`, `pointer` or `content`; `$defs` and `$ref` do not
+occur; `anyOf` nodes still carry `class` at the top level. `U6` may rely on it as written.

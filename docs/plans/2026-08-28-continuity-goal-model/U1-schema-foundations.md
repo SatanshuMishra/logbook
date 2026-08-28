@@ -12,16 +12,20 @@ are all cut from a `main` that already contains this unit.
 
 **Wave:** 1.
 
-**Branch names:** this unit ships as **two pull requests** (section 10 gives the measured reason):
+**Branch name:** `feat/u1-schema-foundations`. This is the branch this plan authorises, and section
+4 is one undivided change on it.
 
-- Stage A — `feat/u1a-schema-field-classes`
-- Stage B — `feat/u1b-goal-model-fields`
+Section 10 measures the diff at 1,040 changed lines and **rules a split into three pull requests**.
+That ruling needs the orchestrator to add three rows to `OR1` — three branch names, three version
+steps — before it can be executed. Until that happens, the single branch above and the single
+invocation in section 10 are what this plan authorises. The split is a recommendation with its
+measured basis, not an instruction the implementer acts on alone.
 
-**PR title scope:** `schema` for both stages.
+**PR title scope:** `schema`.
 
 **Version bump:** Baseline `1.4.2` -> `1.5.0` per orchestrator ruling OR1, applied as a
-read-then-increment (section 4, steps A0 and B0). Stage A takes `1.4.2` -> `1.5.0`; stage B takes
-`1.5.0` -> `1.6.0`. Both are `feat`, so both increment MINOR and set PATCH to 0.
+read-then-increment (section 4, step 1). This unit is a `feat`, so it increments MINOR and sets
+PATCH to 0.
 
 **Owns:** `src/schema/*` — `binding.ts`, `caps.ts`, `decision.ts`, `declare.ts`, `example.ts`,
 `ids.ts`, `refusal.ts`, `session.ts`, `thread.ts`.
@@ -51,7 +55,11 @@ read-then-increment (section 4, steps A0 and B0). Stage A takes `1.4.2` -> `1.5.
   `test/unit/declare.test.ts` — four existing tests enumerate a population that this change
   legitimately grows. Each is answered by classifying the new member, never by narrowing the census.
 
-**Not edited:** `src/store/records.ts`. Section 3 records the finding that made this unnecessary.
+`package.json` and `.claude-plugin/plugin.json` are also edited, by step 1. They are not listed above
+because they are not census fallout: every unit in this ladder edits them by construction, under the
+version rule, and no unit owns them exclusively.
+
+**Not edited:** `src/store/records.ts`. Section 3.5 records the finding that made this unnecessary.
 No file owned by another unit is touched.
 
 **SPEC anchors:** section 9 unit `U1`; section 8 rules `B1`, `B2`, `B3`, `B4`, `B5`, `B6`, `B7`,
@@ -91,14 +99,18 @@ defects `D3`, `D9`, `D19`, `D20`, `D21`, `D22`, `D23`.
 8. **A thread can carry the artifacts it produced.** Each artifact is an id, a label and a pointer;
    the pointer is class `pointer` and is subject to criterion 2. *Discharges `B3` and `D23`.*
 9. **Parsing a stored record adds no bytes to it.** The serialised size of a record written before
-   this change is identical before and after parsing. *Guards the write-time size bound in criterion
-   11 against being silently consumed by the new fields.*
+   this change is identical before and after parsing. *Discharges the SPEC section 9 `Green` clause
+   "Every record in the live store parses unchanged", at byte granularity: a record already sitting
+   at the write-time size bound stops parsing the moment parsing grows it. Guards `A1` from
+   reporting a limit the caller did not breach.*
 10. **`open_risks` accumulates past forty entries.** The element cap that penalised parallel working
     styles is gone from the record schema and from the write path; the element caps on
     `key_decisions` and `out_of_scope` still refuse. *Discharges `B6` and `D21`.*
 11. **The write-time size bound is `THREAD_RECORD_SERIALISED_MAX_BYTES = 65536`, sized against a
-    measured largest live thread record of 39,079 bytes.** The arithmetic is in section 3.
-    *Discharges the orchestrator ruling OR12 obligation.*
+    measured largest live thread record of 39,079 bytes.** The arithmetic is in section 3.4.
+    *Discharges `A1` — `THREAD_RECORD_SERIALISED_MAX_BYTES` is one of the capped fields in the
+    closed census over `src/schema/caps.ts` — and the sizing obligation orchestrator ruling OR12
+    places on this unit.*
 12. **`Criterion.kind` is retained, and a merge divergence in it conflicts.** Two copies of one
     criterion differing only in `kind` produce exactly one conflict rather than silently picking
     one. *Discharges `B7` and closes `D22` by census outcome.*
@@ -106,7 +118,13 @@ defects `D3`, `D9`, `D19`, `D20`, `D21`, `D22`, `D23`.
 14. **A decision whose spine link will not fit the thread record's cap is still written, and the
     response says why the link was skipped.** *Discharges `A7`.*
 15. **Every record in the live store parses unchanged, and the full suite is green.** *Discharges
-    the SPEC section 9 `Green` cell for this unit.*
+    the SPEC section 9 `Green` clauses "Every record in the live store parses unchanged" and "Full
+    suite green" for this unit.*
+
+Criteria 9, 11 and 15 name a `Green` clause or an orchestrator ruling rather than a `B#`. That is
+deliberate and is the second and third of the three sources this list is built from: the unit's
+`Carries` cell, the clauses of its `Green` cell, and the invariants assigned to it. Every other
+criterion names a behavioural rule or an invariant.
 
 Anything discovered above this list is appended to
 `docs/plans/2026-08-28-continuity-goal-model/FILED.md` as a new item with its evidence, and is NOT
@@ -488,7 +506,12 @@ Wave 3 is sequential: `U8` merges before `U9`. Wave 1 is partially ordered: `U2`
 `main` that already contains this unit. Neither changes anything this plan does; both are restated
 because the affected plans must agree.
 
-### 3.8 The pattern for a git object id accepts two lengths
+### 3.8 No mitosis decomposition procedure was consulted
+
+This ladder does not depend on one, and the file that described it is deleted from disk. This plan
+was authored under `PLANNING-BRIEF.md` and `ORCHESTRATOR-RULINGS.md` alone.
+
+### 3.9 The pattern for a git object id accepts two lengths
 
 `SHA_PATTERN` accepts forty **or** sixty-four lowercase hex characters. All 95 decision records in
 the live store carry a forty-character value and none is null, so forty alone would be sufficient
@@ -496,3 +519,2562 @@ today. Sixty-four is accepted because git repositories using the SHA-256 object 
 sixty-four-character ids, and `readProjectHead` (`src/store/git.ts:106-109`) returns whatever
 `git rev-parse HEAD` prints. **Rejected:** forty only — it would refuse a legitimate HEAD on a
 SHA-256 repository and there is no benefit to trade for that.
+
+---
+
+## 4. The change, step by step
+
+Sixteen steps in application order. The tree does not typecheck between steps 11 and 12 — adding a
+field to `Thread` makes the merge rule table incomplete until step 12 lands, so those two steps are
+applied together and share a commit. Apply steps 1 through 16 in order, then verify.
+
+Section 9 groups these steps into commits. Section 10 records the measured diff size and the split
+ruling.
+
+### Step 1 — bump the version
+
+File: `package.json` and `.claude-plugin/plugin.json`. REPLACE.
+
+Read the current version first, then increment. Do not hard-code the pair.
+
+Run:
+
+```
+node -e "console.log(require('./package.json').version, require('./.claude-plugin/plugin.json').version)"
+```
+
+Expected exit code: **0**. Expected output: one line carrying the same plain semver value twice,
+for example `1.4.2 1.4.2`. Call that value `MAJOR.MINOR.PATCH`. This unit is a `feat`, so the new
+value is `MAJOR.(MINOR+1).0`. Against the baseline the ladder expects, that is `1.4.2` -> `1.5.0`.
+
+In `package.json`, FIND:
+
+```
+  "version": "1.4.2",
+```
+
+REPLACE with:
+
+```
+  "version": "1.5.0",
+```
+
+In `.claude-plugin/plugin.json`, FIND:
+
+```
+  "version": "1.4.2",
+```
+
+REPLACE with:
+
+```
+  "version": "1.5.0",
+```
+
+Both FIND strings above are the value the first command printed. Both REPLACE strings are the value
+you computed from it. Substitute the values you read and computed, not the illustrative pair, into
+all four strings. A value higher than `1.4.2` means the ladder moved ahead of this plan and is
+handled by that substitution alone. The two manifests disagreeing with each other is a stop
+condition — section 11.1.
+
+Rationale: `P4` requires both manifests to move in one commit.
+
+### Step 2 — add the object-id pattern
+
+File: `src/schema/ids.ts`. REPLACE.
+
+FIND:
+
+```ts
+export const BRANCH_PATTERN = /^(?!\/)(?!.*\.\.)(?!.*\/\/)(?!.*\.lock$)(?!.*\/$)(?!.*\.$)[A-Za-z0-9._/-]+$/
+```
+
+REPLACE with:
+
+```ts
+export const BRANCH_PATTERN = /^(?!\/)(?!.*\.\.)(?!.*\/\/)(?!.*\.lock$)(?!.*\/$)(?!.*\.$)[A-Za-z0-9._/-]+$/
+export const SHA_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
+```
+
+Rationale: `B13` requires `Decision.commit` to carry a sha pattern.
+
+### Step 3 — add the new caps
+
+File: `src/schema/caps.ts`. Three edits.
+
+Edit 1 — FIND:
+
+```ts
+export const CRITERION_TEXT_MAX = 500
+```
+
+REPLACE with:
+
+```ts
+export const CRITERION_TEXT_MAX = 500
+export const CRITERION_CHECK_MAX = 500
+export const CRITERION_RESULT_MAX = 1000
+```
+
+Edit 2 — FIND:
+
+```ts
+export const OUT_OF_SCOPE_TEXT_MAX = 300
+```
+
+REPLACE with:
+
+```ts
+export const OUT_OF_SCOPE_TEXT_MAX = 300
+
+export const ARTIFACT_LABEL_MAX = 200
+export const ARTIFACT_POINTER_MAX = 500
+```
+
+Edit 3 — FIND:
+
+```ts
+export const DECISION_SUPERSEDES_MAX_ELEMENTS = 20
+```
+
+REPLACE with:
+
+```ts
+export const DECISION_SUPERSEDES_MAX_ELEMENTS = 20
+export const DECISION_COMMIT_MAX = 64
+```
+
+`OPEN_RISKS_MAX_ELEMENTS` is left exactly where it is. Section 3.3 records why: its per-call use at
+`src/server/tools/update_thread.ts:71` and `:76` is style-neutral and survives, and that file belongs
+to another unit.
+
+Rationale: `B2` needs caps for `check` and `result`; `B3` needs caps for an artifact's label and
+pointer; `B13` needs a cap for the commit field.
+
+### Step 4 — give the sha pattern a valid synthesised example
+
+File: `src/schema/example.ts`. Two edits.
+
+Edit 1 — FIND:
+
+```ts
+import { ULID_PATTERN, SLUG_PATTERN, ISO_PATTERN } from './ids.ts'
+```
+
+REPLACE with:
+
+```ts
+import { ULID_PATTERN, SLUG_PATTERN, ISO_PATTERN, SHA_PATTERN } from './ids.ts'
+```
+
+Edit 2 — FIND:
+
+```ts
+  if (pattern === ISO_PATTERN.source) {
+    return '2024-01-01T00:00:00.000Z'
+  }
+```
+
+REPLACE with:
+
+```ts
+  if (pattern === ISO_PATTERN.source) {
+    return '2024-01-01T00:00:00.000Z'
+  }
+  if (pattern === SHA_PATTERN.source) {
+    return '0'.repeat(40)
+  }
+```
+
+Rationale: without this the refusal for an invalid commit offers `"x"` as a valid example, which is
+not one. Acceptance criterion 4 requires the four parts of a refusal to be true, not merely present.
+
+### Step 5 — create the field-class module
+
+File: `src/schema/field-class.ts`. CREATE. Entire contents:
+
+```ts
+import { z } from 'zod'
+
+export const POINTER_PATTERN = /^(?!\+\+\+ )(?!--- )(?!.*(?:```|@@ |U\+000A|U\+000D))[^\r\n]*$/
+
+export const structural = <T extends z.ZodType>(schema: T): T => schema.meta({ class: 'structural' }) as T
+
+export const content = <T extends z.ZodType>(schema: T): T => schema.meta({ class: 'content' }) as T
+
+export const pointer = (max: number, description: string) =>
+  z.string().max(max).regex(POINTER_PATTERN).describe(description).meta({ class: 'pointer' })
+```
+
+Rationale: `B5` requires every field to declare its class. `pointer` also carries the `A5`
+validator, so declaring a class and enforcing it are one act.
+
+### Step 6 — carry the parsed input into the refusal
+
+File: `src/schema/declare.ts`. Two edits.
+
+Edit 1 — FIND:
+
+```ts
+  refuse: (issues: z.core.$ZodIssue[]) => Refusal
+}
+```
+
+REPLACE with:
+
+```ts
+  refuse: (issues: z.core.$ZodIssue[], input?: unknown) => Refusal
+}
+```
+
+Edit 2 — FIND:
+
+```ts
+  const refuse = (issues: z.core.$ZodIssue[]): Refusal => buildRefusal(jsonSchema, issues)
+
+  const parse = (input: unknown): Ok<T> | Refusal => {
+    const result = schema.safeParse(input)
+    if (result.success) {
+      return { ok: true, value: result.data }
+    }
+    return refuse(result.error.issues)
+  }
+```
+
+REPLACE with:
+
+```ts
+  const refuse = (issues: z.core.$ZodIssue[], input?: unknown): Refusal =>
+    buildRefusal(jsonSchema, issues, input)
+
+  const parse = (input: unknown): Ok<T> | Refusal => {
+    const result = schema.safeParse(input)
+    if (result.success) {
+      return { ok: true, value: result.data }
+    }
+    return refuse(result.error.issues, input)
+  }
+```
+
+Rationale: `A1` requires the refusal to name the observed value, which is reachable only from the
+input. The new parameter is optional, so the four existing callers in
+`test/contract/no-path.test.ts` compile unchanged.
+
+### Step 7 — name the observed value and a remedy in the refusal
+
+File: `src/schema/refusal.ts`. Three edits.
+
+Edit 1 — FIND:
+
+```ts
+const renderMessage = (field: string, accepted: string, example: string, retryable: boolean): string =>
+  `${field} was refused; it accepts ${accepted}; a valid example is ${example}; retryable=${retryable}.`
+```
+
+REPLACE with:
+
+```ts
+const valueAtPath = (input: unknown, path: (string | number | symbol)[]): unknown => {
+  let cursor: unknown = input
+  for (const segment of path) {
+    if (cursor === null || typeof cursor !== 'object') return undefined
+    cursor = (cursor as Record<string, unknown>)[String(segment)]
+  }
+  return cursor
+}
+
+const renderObserved = (input: unknown, issue: z.core.$ZodIssue): string | null => {
+  const value = valueAtPath(input, issue.path)
+  if (typeof value === 'string') return `${value.length} characters`
+  if (Array.isArray(value)) return `${value.length} entries`
+  return null
+}
+
+const renderRemedy = (issue: z.core.$ZodIssue): string => {
+  if (issue.code === 'too_big' && issue.origin === 'array') {
+    return `remove entries until at most ${String(issue.maximum)} remain and retry`
+  }
+  if (issue.code === 'too_big') {
+    return `shorten the value to at most ${String(issue.maximum)} and retry`
+  }
+  if (issue.code === 'too_small') {
+    return `lengthen the value to at least ${String(issue.minimum)} and retry`
+  }
+  return 'send a value matching what this field accepts and retry'
+}
+
+const renderMessage = (
+  field: string,
+  accepted: string,
+  observed: string | null,
+  example: string,
+  remedy: string,
+  retryable: boolean
+): string => {
+  const observedClause = observed === null ? '' : `observed ${observed}; `
+  return `${field} was refused; it accepts ${accepted}; ${observedClause}a valid example is ${example}; remedy: ${remedy}; retryable=${retryable}.`
+}
+```
+
+Edit 2 — FIND:
+
+```ts
+export const refuse = (jsonSchema: Record<string, unknown>, issues: z.core.$ZodIssue[]): Refusal => {
+```
+
+REPLACE with:
+
+```ts
+export const refuse = (
+  jsonSchema: Record<string, unknown>,
+  issues: z.core.$ZodIssue[],
+  input?: unknown
+): Refusal => {
+```
+
+Edit 3 — FIND:
+
+```ts
+  const retryable = !isNonRetryable(issue)
+  const message = renderMessage(field, accepted, example, retryable)
+```
+
+REPLACE with:
+
+```ts
+  const retryable = !isNonRetryable(issue)
+  const observed = renderObserved(input, issue)
+  const message = renderMessage(field, accepted, observed, example, renderRemedy(issue), retryable)
+```
+
+Rationale: `A1` requires the refusal to name the field, the limit, the observed value and a remedy.
+The field and the limit are already present; this adds the other two. The `a valid example is …;`
+clause keeps its exact shape and trailing semicolon, so the anchored scrub at
+`test/support/refusal-census.ts:87` still matches.
+
+### Step 8 — replace the decision record schema
+
+File: `src/schema/decision.ts`. REPLACE (whole file). Entire new contents:
+
+```ts
+import { z } from 'zod'
+import { declare } from './declare.ts'
+import { ULID_PATTERN, ISO_PATTERN, SHA_PATTERN } from './ids.ts'
+import { content, structural } from './field-class.ts'
+import * as caps from './caps.ts'
+import type { Ulid, Iso8601 } from './thread.ts'
+
+export type { Ulid, Iso8601 } from './thread.ts'
+
+export type Decision = {
+  id: Ulid
+  thread_id: Ulid
+  title: string
+  context: string
+  options: string[]
+  outcome: string
+  commit: string | null
+  supersedes: Ulid[]
+  created_at: Iso8601
+}
+
+const ulidField = (description: string) => structural(z.string().regex(ULID_PATTERN).describe(description))
+
+const DecisionShape = z.object({
+  id: ulidField('the decision identity, a ULID'),
+  thread_id: ulidField('the thread this decision belongs to'),
+  title: content(z.string().min(1).max(caps.DECISION_TITLE_MAX).describe('the decision title')),
+  context: content(z.string().max(caps.DECISION_CONTEXT_MAX).describe('the context the decision was made in')),
+  options: z
+    .array(content(z.string().max(caps.DECISION_OPTION_MAX).describe('one option that was considered')))
+    .max(caps.DECISION_OPTIONS_MAX_ELEMENTS)
+    .describe('the options considered')
+    .meta({ class: 'content' }),
+  outcome: content(z.string().max(caps.DECISION_OUTCOME_MAX).describe('the chosen outcome and its rationale')),
+  commit: z
+    .string()
+    .max(caps.DECISION_COMMIT_MAX)
+    .regex(SHA_PATTERN)
+    .nullable()
+    .describe('the project HEAD sha at the time of recording, or null when it could not be read')
+    .meta({ class: 'pointer' }),
+  supersedes: z
+    .array(structural(z.string().regex(ULID_PATTERN).describe('one decision id this decision supersedes')))
+    .max(caps.DECISION_SUPERSEDES_MAX_ELEMENTS)
+    .describe('decision ids this decision supersedes')
+    .meta({ class: 'structural' }),
+  created_at: structural(z.string().regex(ISO_PATTERN).describe('when this decision was recorded'))
+})
+
+export const DecisionRecord = declare<Decision>('decision', DecisionShape)
+```
+
+Rationale: `B5` — every field declares its class; `B13` — `commit` gains its cap and its sha
+pattern.
+
+### Step 9 — replace the session record schema
+
+File: `src/schema/session.ts`. REPLACE (whole file). Entire new contents:
+
+```ts
+import { z } from 'zod'
+import { declare } from './declare.ts'
+import { ULID_PATTERN, ISO_PATTERN } from './ids.ts'
+import { content, structural } from './field-class.ts'
+import * as caps from './caps.ts'
+import type { Ulid, Iso8601 } from './thread.ts'
+
+export type { Ulid, Iso8601 } from './thread.ts'
+
+export type SessionEntry = {
+  id: Ulid
+  thread_id: Ulid
+  actor: string
+  body: string
+  created_at: Iso8601
+}
+
+const ulidField = (description: string) => structural(z.string().regex(ULID_PATTERN).describe(description))
+
+const SessionShape = z.object({
+  id: ulidField('the session entry identity, a ULID'),
+  thread_id: ulidField('the thread this session entry belongs to'),
+  actor: content(z.string().min(1).max(caps.SESSION_ACTOR_MAX).describe('who or what wrote this session entry')),
+  body: content(z.string().max(caps.SESSION_BODY_MAX).describe('the session entry text')),
+  created_at: structural(z.string().regex(ISO_PATTERN).describe('when this session entry was written'))
+})
+
+export const SessionRecord = declare<SessionEntry>('session', SessionShape)
+```
+
+Rationale: `B5`.
+
+### Step 10 — replace the binding record schema
+
+File: `src/schema/binding.ts`. REPLACE (whole file). Entire new contents:
+
+```ts
+import { z } from 'zod'
+import { declare } from './declare.ts'
+import { ULID_PATTERN, ISO_PATTERN } from './ids.ts'
+import { pointer, structural } from './field-class.ts'
+import * as caps from './caps.ts'
+import type { Ulid, Iso8601 } from './thread.ts'
+
+export type { Ulid, Iso8601 } from './thread.ts'
+
+export type Binding = {
+  id: Ulid
+  thread_id: Ulid
+  branch: string
+  created_at: Iso8601
+}
+
+const ulidField = (description: string) => structural(z.string().regex(ULID_PATTERN).describe(description))
+
+const BindingShape = z.object({
+  id: ulidField('the binding identity, a ULID'),
+  thread_id: ulidField('the thread this branch is bound to'),
+  branch: pointer(caps.BINDING_BRANCH_MAX, 'the git branch name bound to this thread'),
+  created_at: structural(z.string().regex(ISO_PATTERN).describe('when this binding was recorded'))
+})
+
+export const BindingRecord = declare<Binding>('binding', BindingShape)
+```
+
+Rationale: `B5`, and `branch` becomes class `pointer`, which is what makes `A5` hold over bindings
+through `bind_branch`'s own parse (section 3.5).
+
+### Step 11 — replace the thread record schema
+
+File: `src/schema/thread.ts`. REPLACE (whole file). Entire new contents:
+
+```ts
+import { z } from 'zod'
+import { declare } from './declare.ts'
+import { ULID_PATTERN, SLUG_PATTERN, ISO_PATTERN } from './ids.ts'
+import { content, pointer, structural } from './field-class.ts'
+import * as caps from './caps.ts'
+
+export type Ulid = string
+export type Iso8601 = string
+
+export type ResultStatus = 'verified' | 'unverified-reasoned'
+
+export type Criterion = {
+  id: Ulid
+  ordinal: number
+  text: string
+  done: boolean
+  kind: 'planned' | 'detour'
+  check?: string | null | undefined
+  result?: string | null | undefined
+  result_status?: ResultStatus | null | undefined
+  struck_by: Ulid | null
+}
+
+export type Risk = { id: Ulid; scope: string; text: string; refs: string[]; criterion_id?: Ulid | undefined }
+export type KeyDecision = { id: Ulid; decision_id: Ulid; title: string; scope: string; criterion_id?: Ulid | undefined }
+export type OutOfScope = { id: Ulid; text: string }
+export type Artifact = { id: Ulid; label: string; pointer: string }
+
+export type Spine = {
+  active_goal: string
+  next_step: string
+  last_session: string
+  open_risks: Risk[]
+  key_decisions: KeyDecision[]
+  out_of_scope: OutOfScope[]
+}
+
+export type Thread = {
+  id: Ulid
+  slug: string
+  title: string
+  status: 'open' | 'done' | 'abandoned'
+  blocked_by: string | null
+  predecessor_id?: Ulid | undefined
+  completion_criteria: Criterion[]
+  artifacts?: Artifact[] | undefined
+  spine: Spine
+  created_at: Iso8601
+  updated_at: Iso8601
+}
+
+const ulidField = (description: string) => structural(z.string().regex(ULID_PATTERN).describe(description))
+const optionalUlidField = (description: string) =>
+  structural(z.string().regex(ULID_PATTERN).optional().describe(description))
+const isoField = (description: string) => structural(z.string().regex(ISO_PATTERN).describe(description))
+
+const CriterionSchema = structural(
+  z.object({
+    id: ulidField('the criterion identity, a stable ULID that the merge keys on'),
+    ordinal: structural(
+      z.number().int().min(1).describe('the rendered position of this criterion, recomputed on render, never merged')
+    ),
+    text: content(z.string().max(caps.CRITERION_TEXT_MAX).describe('the criterion text')),
+    done: structural(z.boolean().describe('whether this criterion has been satisfied')),
+    kind: structural(
+      z.enum(['planned', 'detour']).describe('whether this criterion was planned up front or added mid-thread')
+    ),
+    check: content(
+      z
+        .string()
+        .max(caps.CRITERION_CHECK_MAX)
+        .nullable()
+        .optional()
+        .describe('the re-runnable check that decides whether this criterion is true, absent when none is recorded')
+    ),
+    result: content(
+      z
+        .string()
+        .max(caps.CRITERION_RESULT_MAX)
+        .nullable()
+        .optional()
+        .describe('what the check returned when this criterion was marked done, absent when none is recorded')
+    ),
+    result_status: structural(
+      z
+        .enum(['verified', 'unverified-reasoned'])
+        .nullable()
+        .optional()
+        .describe('whether the recorded result came from running the check, absent when none is recorded')
+    ),
+    struck_by: structural(
+      z
+        .string()
+        .regex(ULID_PATTERN)
+        .nullable()
+        .describe('the decision id that struck this criterion, or null when it has not been struck')
+    )
+  })
+)
+
+const RiskSchema = structural(
+  z.object({
+    id: ulidField('the risk identity, a ULID'),
+    scope: content(
+      z.string().max(caps.RISK_SCOPE_MAX).describe('the criterion or area of the thread this risk concerns')
+    ),
+    text: content(z.string().max(caps.RISK_TEXT_MAX).describe('the risk text')),
+    refs: z
+      .array(pointer(caps.RISK_REF_MAX, 'one external pointer backing this risk'))
+      .max(caps.RISK_REFS_MAX_ELEMENTS)
+      .describe('external pointers backing this risk')
+      .meta({ class: 'pointer' }),
+    criterion_id: optionalUlidField('the criterion this risk ranks against, absent when the risk is unanchored')
+  })
+)
+
+const KeyDecisionSchema = structural(
+  z.object({
+    id: ulidField('the key-decision link identity, a ULID'),
+    decision_id: ulidField('the decision record this key decision links to'),
+    title: content(
+      z.string().max(caps.KEY_DECISION_TITLE_MAX).describe('the decision title as it should render on the spine')
+    ),
+    scope: content(
+      z.string().max(caps.KEY_DECISION_SCOPE_MAX).describe('the criterion or area of the thread this decision resolved')
+    ),
+    criterion_id: optionalUlidField('the criterion this decision ranks against, absent when the decision is unanchored')
+  })
+)
+
+const OutOfScopeSchema = structural(
+  z.object({
+    id: ulidField('the out-of-scope entry identity, a ULID'),
+    text: content(z.string().max(caps.OUT_OF_SCOPE_TEXT_MAX).describe('the out-of-scope statement'))
+  })
+)
+
+const ArtifactSchema = structural(
+  z.object({
+    id: ulidField('the artifact entry identity, a ULID'),
+    label: content(z.string().min(1).max(caps.ARTIFACT_LABEL_MAX).describe('what this artifact is, in a few words')),
+    pointer: pointer(caps.ARTIFACT_POINTER_MAX, 'a path or url naming where this artifact lives')
+  })
+)
+
+const SpineSchema = z.object({
+  active_goal: content(z.string().max(caps.SPINE_ACTIVE_GOAL_MAX).describe('the thread goal currently being worked')),
+  next_step: content(z.string().max(caps.SPINE_NEXT_STEP_MAX).describe('the next concrete step in this thread')),
+  last_session: content(z.string().max(caps.SPINE_LAST_SESSION_MAX).describe('a summary of the most recent session')),
+  open_risks: z.array(RiskSchema).describe('risks still open on this thread').meta({ class: 'structural' }),
+  key_decisions: z
+    .array(KeyDecisionSchema)
+    .max(caps.KEY_DECISIONS_MAX_ELEMENTS)
+    .describe('decisions linked into the spine')
+    .meta({ class: 'structural' }),
+  out_of_scope: z
+    .array(OutOfScopeSchema)
+    .max(caps.OUT_OF_SCOPE_MAX_ELEMENTS)
+    .describe('statements of what this thread explicitly excludes')
+    .meta({ class: 'structural' })
+})
+
+const ThreadShape = z.object({
+  id: ulidField('the thread identity, a ULID'),
+  slug: content(
+    z.string().min(1).max(caps.THREAD_SLUG_MAX).regex(SLUG_PATTERN).describe('a short lowercase label for the thread')
+  ),
+  title: content(z.string().min(1).max(caps.THREAD_TITLE_MAX).describe('the thread title')),
+  status: structural(z.enum(['open', 'done', 'abandoned']).describe('the thread lifecycle state')),
+  blocked_by: content(
+    z
+      .string()
+      .max(caps.THREAD_BLOCKED_BY_MAX)
+      .nullable()
+      .describe('the reason this thread is blocked, or null when it is not blocked')
+  ),
+  predecessor_id: optionalUlidField(
+    'the id of the thread this one succeeds, absent when this thread succeeds no earlier thread'
+  ),
+  completion_criteria: z
+    .array(CriterionSchema)
+    .max(caps.CRITERIA_RETENTION_MAX_ELEMENTS)
+    .describe('the criteria that define this thread as done, struck criteria retained')
+    .meta({ class: 'structural' }),
+  artifacts: z
+    .array(ArtifactSchema)
+    .optional()
+    .describe('the artifacts this thread produced, each a label and a pointer')
+    .meta({ class: 'structural' }),
+  spine: SpineSchema.describe('the progressive summary of this thread').meta({ class: 'structural' }),
+  created_at: isoField('when this thread was created'),
+  updated_at: isoField('when this thread was last updated')
+})
+
+const ThreadShapeWithByteCap = ThreadShape.superRefine((value, ctx) => {
+  const bytes = Buffer.byteLength(JSON.stringify(value), 'utf8')
+  if (bytes > caps.THREAD_RECORD_SERIALISED_MAX_BYTES) {
+    ctx.addIssue({
+      code: 'too_big',
+      origin: 'string',
+      maximum: caps.THREAD_RECORD_SERIALISED_MAX_BYTES,
+      inclusive: true,
+      path: [],
+      message: `serialised thread record exceeds ${caps.THREAD_RECORD_SERIALISED_MAX_BYTES} bytes`,
+      input: value
+    })
+  }
+})
+
+export const ThreadRecord = declare<Thread>('thread', ThreadShapeWithByteCap)
+```
+
+Rationale: `B5` — every field declares its class, including both an array node and its element node;
+`B2` — `check`, `result` and `result_status` land optional; `B3` — `Artifact` and `Thread.artifacts`
+land, with `pointer` class `pointer`; `B4` — `Risk.refs` is retained and becomes class `pointer`;
+`B6` — `open_risks` loses its element cap and is bounded by the whole-record byte cap; `B7` — `kind`
+is retained.
+
+The three new criterion fields and `artifacts` use `.optional()` and never `.default(...)`. Section
+3.4 records the measured reason: a default makes parsing add bytes, which splits the two places the
+record-size bound is measured and makes a record sitting at the bound unwritable.
+
+### Step 12 — give the merge rule table an entry for artifacts
+
+File: `src/merge/field-merge.ts`. REPLACE.
+
+FIND:
+
+```ts
+  completion_criteria: 'union-by-id',
+```
+
+REPLACE with:
+
+```ts
+  completion_criteria: 'union-by-id',
+  artifacts: 'union-by-id',
+```
+
+Rationale: `THREAD_RULES` is typed over `keyof Thread`, so the tree does not typecheck without this
+key. `union-by-id` is the rule every other id-bearing collection on the thread already uses, and an
+artifact carries a ULID id.
+
+### Step 13 — stop capping open risks by element count on the write path
+
+File: `src/domain/spine.ts`. Two edits.
+
+Edit 1 — FIND:
+
+```ts
+const COLLECTION_ELEMENTS_CAP: Record<CollectionField, number> = {
+  open_risks: caps.OPEN_RISKS_MAX_ELEMENTS,
+```
+
+REPLACE with:
+
+```ts
+const COLLECTION_ELEMENTS_CAP: Record<CollectionField, number | null> = {
+  open_risks: null,
+```
+
+Edit 2 — FIND:
+
+```ts
+  const limit = COLLECTION_ELEMENTS_CAP[field]
+  const observed = storedCount + contributedCount
+```
+
+REPLACE with:
+
+```ts
+  const limit = COLLECTION_ELEMENTS_CAP[field]
+  if (limit === null) {
+    return null
+  }
+  const observed = storedCount + contributedCount
+```
+
+Rationale: `B6` and `D21`. This is the second of the two places the element cap was enforced; the
+first was the record schema, removed in step 11. `key_decisions` and `out_of_scope` keep theirs.
+
+### Step 14 — classify the new members of four existing censuses
+
+Four shipped tests enumerate a population this change legitimately grows. Each is answered by
+classifying the new member. None is narrowed, and no count is pinned.
+
+Edit 1 — file `test/unit/records.test.ts`. FIND:
+
+```ts
+const EXPECTED_COLLECTION_PATHS = ['completion_criteria', 'spine.key_decisions', 'spine.open_risks', 'spine.out_of_scope']
+```
+
+REPLACE with:
+
+```ts
+const EXPECTED_COLLECTION_PATHS = ['artifacts', 'completion_criteria', 'spine.key_decisions', 'spine.open_risks', 'spine.out_of_scope']
+```
+
+Edit 2 — file `test/unit/records.test.ts`. FIND:
+
+```ts
+  assert.deepStrictEqual(discoveredPaths, ['completion_criteria', 'spine.open_risks', 'spine.out_of_scope'])
+```
+
+REPLACE with:
+
+```ts
+  assert.deepStrictEqual(discoveredPaths, ['artifacts', 'completion_criteria', 'spine.open_risks', 'spine.out_of_scope'])
+```
+
+Edit 3 — file `test/unit/field-merge.test.ts`. FIND:
+
+```ts
+    [
+      'blocked_by',
+      'completion_criteria',
+```
+
+REPLACE with:
+
+```ts
+    [
+      'artifacts',
+      'blocked_by',
+      'completion_criteria',
+```
+
+Edit 4 — file `test/unit/declare.test.ts`. This exact block occurs **twice**; apply the same
+replacement to **both** occurrences. FIND:
+
+```ts
+    completion_criteria: [
+      { id: '0'.repeat(26), ordinal: 1, text: 'a', done: false, kind: 'planned', struck_by: null }
+    ],
+    spine: {
+```
+
+REPLACE with:
+
+```ts
+    completion_criteria: [
+      { id: '0'.repeat(26), ordinal: 1, text: 'a', done: false, kind: 'planned', struck_by: null }
+    ],
+    artifacts: [{ id: '0'.repeat(26), label: 'a', pointer: 'a' }],
+    spine: {
+```
+
+Rationale: `deriveCandidates` throws when it reaches an array-of-object field whose sample array is
+empty, by design, so the fixture must carry one artifact for the new field to be reachable.
+
+### Step 15 — retire the open-risks accumulation assertions
+
+File: `test/unit/caps.test.ts`. Two edits.
+
+Edit 1 — FIND:
+
+```ts
+test('caps.assert-contribution', () => {
+  const rt = testRuntime()
+  const makeRisk = (label: string): Risk => ({ id: rt.ulid(), scope: 'test', text: `risk ${label}`, refs: [] })
+
+  const risks39 = Array.from({ length: caps.OPEN_RISKS_MAX_ELEMENTS - 1 }, (_, i) => makeRisk(String(i)))
+  const stored39: Spine = { ...baseSpine(), open_risks: risks39 }
+
+  const acceptResult = contributeToSpine(stored39, { open_risks: [makeRisk('new')] })
+  assert.equal(acceptResult.ok, true)
+  if (!acceptResult.ok) {
+    throw new Error('expected the 40th risk to be accepted')
+  }
+  assert.equal(acceptResult.value.open_risks.length, caps.OPEN_RISKS_MAX_ELEMENTS)
+
+  const risks40 = Array.from({ length: caps.OPEN_RISKS_MAX_ELEMENTS }, (_, i) => makeRisk(String(i)))
+  const stored40: Spine = { ...baseSpine(), open_risks: risks40 }
+
+  const refuseResult = contributeToSpine(stored40, { open_risks: [makeRisk('overflow')] })
+  assert.equal(refuseResult.ok, false)
+  if (refuseResult.ok) {
+    throw new Error('expected the 41st risk to be refused')
+  }
+  assert.equal(refuseResult.field, 'risks_add')
+})
+```
+
+REPLACE with:
+
+```ts
+test('caps.open-risks-accumulate-past-the-old-element-cap', () => {
+  const rt = testRuntime()
+  const makeRisk = (label: string): Risk => ({ id: rt.ulid(), scope: 'test', text: `risk ${label}`, refs: [] })
+
+  const risks40 = Array.from({ length: caps.OPEN_RISKS_MAX_ELEMENTS }, (_, i) => makeRisk(String(i)))
+  const stored40: Spine = { ...baseSpine(), open_risks: risks40 }
+
+  const acceptResult = contributeToSpine(stored40, { open_risks: [makeRisk('forty-first')] })
+  assert.equal(acceptResult.ok, true)
+  if (!acceptResult.ok) {
+    throw new Error('expected the 41st risk to be accepted; open_risks is bounded by record size, not element count')
+  }
+  assert.equal(acceptResult.value.open_risks.length, caps.OPEN_RISKS_MAX_ELEMENTS + 1)
+})
+
+test('caps.key-decisions-still-refuse-on-their-element-cap', () => {
+  const rt = testRuntime()
+  const makeDecision = (label: string): KeyDecision => ({
+    id: rt.ulid(),
+    decision_id: rt.ulid(),
+    title: `decision ${label}`,
+    scope: 'test'
+  })
+  const stored: Spine = {
+    ...baseSpine(),
+    key_decisions: Array.from({ length: caps.KEY_DECISIONS_MAX_ELEMENTS }, (_, i) => makeDecision(String(i)))
+  }
+
+  const refuseResult = contributeToSpine(stored, { key_decisions: [makeDecision('overflow')] })
+  assert.equal(refuseResult.ok, false)
+  if (refuseResult.ok) {
+    throw new Error('expected the 201st key decision to be refused')
+  }
+  assert.equal(refuseResult.field, 'key_decisions_add')
+})
+```
+
+Edit 2 — FIND:
+
+```ts
+  const overCapRisks = Array.from({ length: caps.OPEN_RISKS_MAX_ELEMENTS + 5 }, (_, i) => makeRisk(String(i)))
+```
+
+REPLACE with:
+
+```ts
+  const overCapRisks = Array.from({ length: caps.KEY_DECISIONS_MAX_ELEMENTS + 5 }, (_, i) => makeRisk(String(i)))
+```
+
+Rationale: the first assertion tested the cap this change removes, so it is replaced by its
+opposite — accumulation past forty now succeeds — and by a new assertion that the two element caps
+which survive still refuse. The second edit only needs a number larger than the stored collection;
+`OPEN_RISKS_MAX_ELEMENTS` is no longer the right one to borrow.
+
+### Step 16 — name the field that failed
+
+File: `src/server/tool-support.ts`. Two edits.
+
+Edit 1 — FIND:
+
+```ts
+const invalidThreadRecordRefusal = (issue: string): Refusal => ({
+  ok: false,
+  field: 'thread',
+```
+
+REPLACE with:
+
+```ts
+const invalidThreadRecordRefusal = (field: string, issue: string): Refusal => ({
+  ok: false,
+  field,
+```
+
+Edit 2 — FIND:
+
+```ts
+    return { ok: false, refusal: invalidThreadRecordRefusal(validated.message) }
+```
+
+REPLACE with:
+
+```ts
+    return { ok: false, refusal: invalidThreadRecordRefusal(validated.field, validated.message) }
+```
+
+Rationale: `OR15` obligation 4. `A5` requires the refusal to name the field; this function was
+discarding the field the validator named and reporting `thread`.
+
+---
+
+## 5. Tests
+
+Five new files and the four existing-file edits already given as steps 14 and 15. Every new file is
+given in full.
+
+### 5.1 `test/unit/field-class.test.ts` — CREATE
+
+Discharges acceptance criteria 1 and 13, and SPEC rule `B5`.
+
+```ts
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { census, type Classified } from '../support/census.ts'
+import { ThreadRecord } from '../../src/schema/thread.ts'
+import { DecisionRecord } from '../../src/schema/decision.ts'
+import { SessionRecord } from '../../src/schema/session.ts'
+import { BindingRecord } from '../../src/schema/binding.ts'
+import { POINTER_PATTERN } from '../../src/schema/field-class.ts'
+
+type SchemaNode = { path: string; value: unknown }
+
+const FIELD_CLASSES = ['structural', 'pointer', 'content'] as const
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const flattenSchemaNodes = (value: unknown, path: string): SchemaNode[] => {
+  if (!isPlainObject(value)) return []
+  const collected: SchemaNode[] = []
+  const properties = value.properties
+  if (properties !== undefined) {
+    if (!isPlainObject(properties)) {
+      collected.push({ path: `${path}.properties`, value: properties })
+    } else {
+      for (const [key, child] of Object.entries(properties)) {
+        const childPath = `${path}.${key}`
+        collected.push({ path: childPath, value: child })
+        collected.push(...flattenSchemaNodes(child, childPath))
+      }
+    }
+  }
+  const items = value.items
+  if (items !== undefined) {
+    const itemsPath = `${path}[]`
+    collected.push({ path: itemsPath, value: items })
+    collected.push(...flattenSchemaNodes(items, itemsPath))
+  }
+  return collected
+}
+
+export const classifyFieldClassNode = (entry: SchemaNode): Classified<SchemaNode>['verdict'] | 'unclassifiable' => {
+  if (!isPlainObject(entry.value)) return 'unclassifiable'
+  if ('$ref' in entry.value) return 'unclassifiable'
+  const declared = entry.value.class
+  if (declared === undefined) return 'forbidden'
+  if (typeof declared !== 'string') return 'unclassifiable'
+  return (FIELD_CLASSES as readonly string[]).includes(declared) ? 'allowed' : 'unclassifiable'
+}
+
+const RECORDS = [ThreadRecord, DecisionRecord, SessionRecord, BindingRecord]
+
+const allNodes = (): SchemaNode[] => RECORDS.flatMap((record) => flattenSchemaNodes(record.jsonSchema, record.name))
+
+test('field-class.every-record-field-declares-a-class', () => {
+  const nodes = allNodes()
+  assert.ok(
+    nodes.length > 0,
+    'field-class: the four record schemas flattened to no nodes; a census over an empty list proves nothing'
+  )
+  assert.doesNotThrow(() => census(nodes, classifyFieldClassNode))
+})
+
+test('field-class.an-array-and-its-element-declare-the-same-class', () => {
+  const byPath = new Map(allNodes().map((node) => [node.path, node.value] as const))
+  const elementPaths = [...byPath.keys()].filter((path) => path.endsWith('[]'))
+  assert.ok(elementPaths.length > 0, 'field-class: no array element nodes were emitted; the pairing assertion proves nothing')
+  for (const elementPath of elementPaths) {
+    const arrayPath = elementPath.slice(0, -2)
+    const arrayNode = byPath.get(arrayPath)
+    const elementNode = byPath.get(elementPath)
+    assert.ok(isPlainObject(arrayNode), `field-class: ${arrayPath} is not a plain object`)
+    assert.ok(isPlainObject(elementNode), `field-class: ${elementPath} is not a plain object`)
+    assert.equal(
+      elementNode.class,
+      arrayNode.class,
+      `field-class: ${arrayPath} declares ${String(arrayNode.class)} but ${elementPath} declares ${String(elementNode.class)}`
+    )
+  }
+})
+
+test('field-class.every-declared-pointer-carries-the-pointer-pattern', () => {
+  const pointers = allNodes().filter((node) => isPlainObject(node.value) && node.value.class === 'pointer')
+  assert.ok(pointers.length > 0, 'field-class: no pointer-class node was emitted; the pattern assertion proves nothing')
+  for (const node of pointers) {
+    const value = node.value as Record<string, unknown>
+    if (value.type !== 'string') continue
+    assert.ok(
+      typeof value.pattern === 'string' && value.pattern.length > 0,
+      `field-class: ${node.path} declares class pointer but carries no pattern`
+    )
+  }
+})
+
+test('field-class.control.an-undeclared-node-is-forbidden-and-a-foreign-class-halts', () => {
+  assert.equal(classifyFieldClassNode({ path: 'probe.undeclared', value: { type: 'string' } }), 'forbidden')
+  assert.equal(classifyFieldClassNode({ path: 'probe.foreign', value: { type: 'string', class: 'metadata' } }), 'unclassifiable')
+  assert.equal(classifyFieldClassNode({ path: 'probe.ref', value: { $ref: '#/$defs/probe' } }), 'unclassifiable')
+  assert.equal(classifyFieldClassNode({ path: 'probe.notObject', value: 'string' }), 'unclassifiable')
+  assert.equal(classifyFieldClassNode({ path: 'probe.ok', value: { type: 'string', class: 'content' } }), 'allowed')
+})
+
+test('field-class.pointer-pattern-refuses-content-and-accepts-an-address', () => {
+  for (const forbidden of [
+    'docs/spec.md\nsecond line',
+    'see ```ts for the shape',
+    '@@ -1,2 +1,2 @@',
+    '+++ b/file.ts',
+    '--- a/file.ts',
+    'left U+000A behind'
+  ]) {
+    assert.equal(POINTER_PATTERN.test(forbidden), false, `POINTER_PATTERN must refuse ${JSON.stringify(forbidden)}`)
+  }
+  for (const accepted of [
+    'docs/specs/2026-08-28-continuity-goal-model.md#L120',
+    'src/schema/thread.ts:44',
+    'https://example.invalid/a/b',
+    '0'.repeat(40)
+  ]) {
+    assert.equal(POINTER_PATTERN.test(accepted), true, `POINTER_PATTERN must accept ${JSON.stringify(accepted)}`)
+  }
+})
+```
+
+Note on the flattener: `OR15` assigns `U6` the job of lifting this flattener into
+`test/support/schema-nodes.ts` so both tests import one copy. Until `U6` lands, this unit keeps its
+own copy and does not create that shared module.
+
+### 5.2 `test/unit/git-boundary.test.ts` — CREATE
+
+Discharges acceptance criteria 2, 3 and 8, and SPEC invariant `A5` and rule `B13`. The first three
+tests are the `A5` assertion `OR15` obligation 5 requires, asserting
+`field === 'spine.open_risks.0.refs.0'` for a line break, a code fence and a `@@ ` diff hunk marker.
+
+```ts
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { ThreadRecord, type Thread } from '../../src/schema/thread.ts'
+import { DecisionRecord, type Decision } from '../../src/schema/decision.ts'
+import { BindingRecord, type Binding } from '../../src/schema/binding.ts'
+import * as caps from '../../src/schema/caps.ts'
+
+const THREAD_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAZ'
+const CRITERION_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
+const RISK_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAW'
+const DECISION_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAY'
+const ARTIFACT_ID = '01ARZ3NDEKTSV4RRFFQ69G5FB0'
+const A_REAL_SHA = '0123456789abcdef0123456789abcdef01234567'
+
+const CONTENT_NOT_POINTER = [
+  ['a-line-break', 'docs/spec.md\nsecond line'],
+  ['a-code-fence', 'see ```ts for the shape'],
+  ['a-diff-hunk-marker', '@@ -1,2 +1,2 @@']
+] as const
+
+const baseThread = (): Thread => ({
+  id: THREAD_ID,
+  slug: 'a-thread',
+  title: 'a thread',
+  status: 'open',
+  blocked_by: null,
+  completion_criteria: [{ id: CRITERION_ID, ordinal: 1, text: 'ship it', done: false, kind: 'planned', struck_by: null }],
+  spine: {
+    active_goal: 'ship it',
+    next_step: 'write the tests',
+    last_session: 'read the spec',
+    open_risks: [],
+    key_decisions: [],
+    out_of_scope: []
+  },
+  created_at: '2026-08-28T00:00:00.000Z',
+  updated_at: '2026-08-28T00:00:00.000Z'
+})
+
+const threadWithRiskRef = (ref: string): Thread => {
+  const thread = baseThread()
+  return {
+    ...thread,
+    spine: { ...thread.spine, open_risks: [{ id: RISK_ID, scope: 'ship it', text: 'a risk', refs: [ref] }] }
+  }
+}
+
+const baseDecision = (): Decision => ({
+  id: DECISION_ID,
+  thread_id: THREAD_ID,
+  title: 'a decision',
+  context: 'the context',
+  options: ['one', 'two'],
+  outcome: 'the outcome',
+  commit: A_REAL_SHA,
+  supersedes: [],
+  created_at: '2026-08-28T00:00:00.000Z'
+})
+
+const baseBinding = (branch: string): Binding => ({
+  id: ARTIFACT_ID,
+  thread_id: THREAD_ID,
+  branch,
+  created_at: '2026-08-28T00:00:00.000Z'
+})
+
+for (const [label, value] of CONTENT_NOT_POINTER) {
+  test(`git-boundary.a-risk-ref-carrying-${label}-is-refused`, () => {
+    const result = ThreadRecord.parse(threadWithRiskRef(value))
+    assert.equal(result.ok, false, `a risk ref carrying ${label} must be refused`)
+    if (result.ok) return
+    assert.equal(result.field, 'spine.open_risks.0.refs.0')
+    assert.equal(result.retryable, true)
+    assert.match(result.message, /remedy: /)
+  })
+}
+
+test('git-boundary.a-risk-ref-that-is-an-address-is-accepted', () => {
+  const result = ThreadRecord.parse(threadWithRiskRef('docs/specs/2026-08-28-continuity-goal-model.md#L120'))
+  assert.equal(result.ok, true, 'an ordinary path-and-anchor pointer must be accepted')
+  if (!result.ok) return
+  assert.equal(result.value.spine.open_risks[0]?.refs[0], 'docs/specs/2026-08-28-continuity-goal-model.md#L120')
+})
+
+test('git-boundary.an-artifact-pointer-carrying-a-code-fence-is-refused', () => {
+  const result = ThreadRecord.parse({
+    ...baseThread(),
+    artifacts: [{ id: ARTIFACT_ID, label: 'the plan', pointer: 'see ```ts' }]
+  })
+  assert.equal(result.ok, false, 'an artifact pointer carrying a code fence must be refused')
+  if (result.ok) return
+  assert.equal(result.field, 'artifacts.0.pointer')
+})
+
+test('git-boundary.a-decision-commit-that-is-not-a-sha-is-refused', () => {
+  const result = DecisionRecord.parse({ ...baseDecision(), commit: 'e5f0195' })
+  assert.equal(result.ok, false, 'a short sha must be refused; the stored field is a full object id')
+  if (result.ok) return
+  assert.equal(result.field, 'commit')
+  assert.equal(result.retryable, true)
+  assert.match(result.example, /^[0-9a-f]{40}$/)
+})
+
+test('git-boundary.a-decision-commit-carrying-a-diff-hunk-marker-is-refused', () => {
+  const result = DecisionRecord.parse({ ...baseDecision(), commit: '@@ -1,2 +1,2 @@' })
+  assert.equal(result.ok, false, 'a commit field carrying diff content must be refused')
+  if (result.ok) return
+  assert.equal(result.field, 'commit')
+})
+
+test('git-boundary.a-decision-commit-that-is-a-sha-or-null-is-accepted', () => {
+  assert.equal(DecisionRecord.parse(baseDecision()).ok, true, 'a forty-character object id must be accepted')
+  assert.equal(
+    DecisionRecord.parse({ ...baseDecision(), commit: null }).ok,
+    true,
+    'a null commit must stay acceptable; it is what an unreadable HEAD stores'
+  )
+  assert.equal(
+    DecisionRecord.parse({ ...baseDecision(), commit: 'a'.repeat(64) }).ok,
+    true,
+    'a sixty-four-character object id must be accepted'
+  )
+  assert.equal(caps.DECISION_COMMIT_MAX, 64)
+})
+
+test('git-boundary.a-binding-branch-carrying-a-line-break-is-refused-by-its-record-schema', () => {
+  const result = BindingRecord.parse(baseBinding('feat/x\nrm -rf /'))
+  assert.equal(result.ok, false, 'a binding branch carrying a line break must be refused')
+  if (result.ok) return
+  assert.equal(result.field, 'branch')
+})
+
+test('git-boundary.a-binding-branch-that-is-an-ordinary-branch-name-is-accepted', () => {
+  assert.equal(BindingRecord.parse(baseBinding('feat/u1-schema-foundations')).ok, true)
+})
+```
+
+### 5.3 `test/unit/caps-census.test.ts` — CREATE
+
+Discharges acceptance criteria 4 and 5, and SPEC invariant `A1` and rule `B6`.
+
+Two censuses. The first classifies every exported name of `src/schema/caps.ts` into a closed set of
+four roles and halts on a name it cannot place, so adding a cap without classifying it turns the
+suite red. The second enumerates every field in the four record schemas carrying a length or element
+bound, drives a value one over that bound through the record's own parser, and asserts the refusal
+names the field, the limit, the observed value and a remedy.
+
+```ts
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { census, type Classified } from '../support/census.ts'
+import { synthesise, type JsonSchemaNode } from '../../src/schema/example.ts'
+import type { Declared } from '../../src/schema/declare.ts'
+import { ThreadRecord } from '../../src/schema/thread.ts'
+import { DecisionRecord } from '../../src/schema/decision.ts'
+import { SessionRecord } from '../../src/schema/session.ts'
+import { BindingRecord } from '../../src/schema/binding.ts'
+import * as caps from '../../src/schema/caps.ts'
+
+type CapRole = 'record-field' | 'call-payload' | 'record-bytes' | 'refusal-display'
+
+const CAP_ROLES: Record<string, CapRole> = {
+  THREAD_TITLE_MAX: 'record-field',
+  THREAD_SLUG_MAX: 'record-field',
+  THREAD_BLOCKED_BY_MAX: 'record-field',
+  THREAD_CLOSURE_DETAIL_MAX: 'call-payload',
+  BINDING_BRANCH_MAX: 'record-field',
+  SPINE_ACTIVE_GOAL_MAX: 'record-field',
+  SPINE_NEXT_STEP_MAX: 'record-field',
+  SPINE_LAST_SESSION_MAX: 'record-field',
+  CRITERIA_MAX_ELEMENTS: 'call-payload',
+  OPEN_RISKS_MAX_ELEMENTS: 'call-payload',
+  CRITERIA_RETENTION_MAX_ELEMENTS: 'record-field',
+  CRITERION_TEXT_MAX: 'record-field',
+  CRITERION_CHECK_MAX: 'record-field',
+  CRITERION_RESULT_MAX: 'record-field',
+  RISK_TEXT_MAX: 'record-field',
+  RISK_SCOPE_MAX: 'record-field',
+  RISK_REFS_MAX_ELEMENTS: 'record-field',
+  RISK_REF_MAX: 'record-field',
+  KEY_DECISIONS_MAX_ELEMENTS: 'record-field',
+  KEY_DECISION_TITLE_MAX: 'record-field',
+  KEY_DECISION_SCOPE_MAX: 'record-field',
+  OUT_OF_SCOPE_MAX_ELEMENTS: 'record-field',
+  OUT_OF_SCOPE_TEXT_MAX: 'record-field',
+  ARTIFACT_LABEL_MAX: 'record-field',
+  ARTIFACT_POINTER_MAX: 'record-field',
+  DECISION_TITLE_MAX: 'record-field',
+  DECISION_CONTEXT_MAX: 'record-field',
+  DECISION_OUTCOME_MAX: 'record-field',
+  DECISION_OPTIONS_MAX_ELEMENTS: 'record-field',
+  DECISION_OPTION_MAX: 'record-field',
+  DECISION_SUPERSEDES_MAX_ELEMENTS: 'record-field',
+  DECISION_COMMIT_MAX: 'record-field',
+  SESSION_ACTOR_MAX: 'record-field',
+  SESSION_BODY_MAX: 'record-field',
+  THREAD_RECORD_SERIALISED_MAX_BYTES: 'record-bytes',
+  UNRECOGNIZED_KEYS_SHOWN_MAX: 'refusal-display',
+  UNRECOGNIZED_KEY_NAME_MAX: 'refusal-display'
+}
+
+export const classifyCapConstant = (name: string): Classified<string>['verdict'] | 'unclassifiable' =>
+  CAP_ROLES[name] === undefined ? 'unclassifiable' : 'allowed'
+
+test('caps-census.every-cap-constant-declares-the-role-it-plays', () => {
+  const names = Object.keys(caps)
+  assert.ok(
+    names.length > 0,
+    'caps-census: src/schema/caps.ts exported nothing; a census over an empty list proves nothing'
+  )
+  assert.doesNotThrow(() => census(names, classifyCapConstant))
+  for (const declaredName of Object.keys(CAP_ROLES)) {
+    assert.ok(
+      names.includes(declaredName),
+      `caps-census: CAP_ROLES names ${declaredName}, which src/schema/caps.ts no longer exports`
+    )
+  }
+})
+
+test('caps-census.control.an-unclassified-cap-halts-the-census', () => {
+  assert.equal(classifyCapConstant('A_BRAND_NEW_MAX'), 'unclassifiable')
+  assert.equal(classifyCapConstant('THREAD_TITLE_MAX'), 'allowed')
+})
+
+type CappedNode = {
+  record: Declared<unknown>
+  path: (string | number)[]
+  label: string
+  limit: number
+  kind: 'string' | 'array'
+}
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const collectCappedNodes = (record: Declared<unknown>): CappedNode[] => {
+  const found: CappedNode[] = []
+  const visit = (raw: unknown, path: (string | number)[]): void => {
+    if (!isPlainObject(raw)) return
+    const members = Array.isArray(raw.anyOf) ? raw.anyOf : [raw]
+    for (const member of members) {
+      if (!isPlainObject(member)) continue
+      const merged = { ...raw, ...member }
+      const label = `${record.name}.${path.join('.')}`
+      if (typeof merged.maxLength === 'number') {
+        found.push({ record, path, label, limit: merged.maxLength, kind: 'string' })
+      }
+      if (typeof merged.maxItems === 'number') {
+        found.push({ record, path, label, limit: merged.maxItems, kind: 'array' })
+      }
+      if (isPlainObject(merged.properties)) {
+        for (const [key, child] of Object.entries(merged.properties)) visit(child, [...path, key])
+      }
+      if (merged.items !== undefined) visit(merged.items, [...path, 0])
+    }
+  }
+  visit(record.jsonSchema, [])
+  return found
+}
+
+const nodeAt = (root: JsonSchemaNode, path: (string | number)[]): JsonSchemaNode => {
+  let cursor: JsonSchemaNode = root
+  for (const segment of path) {
+    const members = Array.isArray(cursor.anyOf) ? (cursor.anyOf as unknown[]) : [cursor]
+    const merged = members.filter(isPlainObject).reduce<Record<string, unknown>>((acc, m) => ({ ...acc, ...m }), {})
+    const next =
+      typeof segment === 'number'
+        ? merged.items
+        : isPlainObject(merged.properties)
+          ? (merged.properties as Record<string, unknown>)[segment]
+          : undefined
+    if (!isPlainObject(next)) return cursor
+    cursor = next
+  }
+  return cursor
+}
+
+const setAtPath = (
+  root: JsonSchemaNode,
+  base: unknown,
+  path: (string | number)[],
+  walked: (string | number)[],
+  value: unknown
+): unknown => {
+  if (path.length === 0) return value
+  const [head, ...rest] = path as [string | number, ...(string | number)[]]
+  const here = [...walked, head]
+  if (typeof head === 'number') {
+    const list = Array.isArray(base) ? [...base] : []
+    const seeded = list[head] ?? synthesise(root, nodeAt(root, here))
+    list[head] = setAtPath(root, seeded, rest, here, value)
+    return list
+  }
+  const object = isPlainObject(base) ? { ...base } : {}
+  const seeded = object[head] ?? synthesise(root, nodeAt(root, here))
+  object[head] = setAtPath(root, seeded, rest, here, value)
+  return object
+}
+
+const overCapValue = (root: JsonSchemaNode, node: CappedNode): unknown => {
+  if (node.kind === 'string') return 'x'.repeat(node.limit + 1)
+  return Array.from({ length: node.limit + 1 }, () => synthesise(root, nodeAt(root, [...node.path, 0])))
+}
+
+const RECORDS: Declared<unknown>[] = [
+  ThreadRecord as unknown as Declared<unknown>,
+  DecisionRecord as unknown as Declared<unknown>,
+  SessionRecord as unknown as Declared<unknown>,
+  BindingRecord as unknown as Declared<unknown>
+]
+
+test('caps-census.every-capped-record-field-refuses-with-field-limit-observed-and-remedy', () => {
+  const nodes = RECORDS.flatMap(collectCappedNodes)
+  assert.ok(
+    nodes.length > 0,
+    'caps-census: no capped record field was discovered; a census over an empty list proves nothing'
+  )
+
+  for (const node of nodes) {
+    const root = node.record.jsonSchema as JsonSchemaNode
+    const candidate = setAtPath(root, synthesise(root, root), node.path, [], overCapValue(root, node))
+    const parsed = node.record.parse(candidate)
+
+    assert.equal(parsed.ok, false, `caps-census: ${node.label} accepted a value one over its cap of ${node.limit}`)
+    if (parsed.ok) continue
+    assert.equal(parsed.field, node.path.join('.'), `caps-census: ${node.label} refused but named field ${parsed.field}`)
+    assert.match(parsed.message, new RegExp(String(node.limit)), `caps-census: ${node.label} refusal omits its limit`)
+    assert.match(
+      parsed.message,
+      /observed \d+ (characters|entries)/,
+      `caps-census: ${node.label} refusal omits the observed value`
+    )
+    assert.match(parsed.message, /remedy: /, `caps-census: ${node.label} refusal omits a remedy`)
+    assert.equal(parsed.retryable, true, `caps-census: ${node.label} refusal must be retryable`)
+  }
+})
+```
+
+### 5.4 `test/unit/goal-model-fields.test.ts` — CREATE
+
+Discharges acceptance criteria 7, 8, 9 and 12, and SPEC rules `B2`, `B3` and `B7`.
+
+The last test is the one that pins the `Criterion.kind` reader the `B7` census found. It is the
+receipt for retaining the field: delete `kind: item.kind` from `criterionContent`
+(`src/merge/field-merge.ts:151`) and this test goes red.
+
+```ts
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { isDeepStrictEqual } from 'node:util'
+import { ThreadRecord, type Thread } from '../../src/schema/thread.ts'
+import { mergeThread } from '../../src/merge/field-merge.ts'
+
+const THREAD_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAZ'
+const CRITERION_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
+const ARTIFACT_ID = '01ARZ3NDEKTSV4RRFFQ69G5FB0'
+
+const legacyThreadShape = (): Record<string, unknown> => ({
+  id: THREAD_ID,
+  slug: 'a-legacy-thread',
+  title: 'a thread written before this change',
+  status: 'open',
+  blocked_by: null,
+  completion_criteria: [{ id: CRITERION_ID, ordinal: 1, text: 'ship it', done: false, kind: 'planned', struck_by: null }],
+  spine: {
+    active_goal: 'ship it',
+    next_step: 'write the tests',
+    last_session: 'read the spec',
+    open_risks: [],
+    key_decisions: [],
+    out_of_scope: []
+  },
+  created_at: '2026-08-28T00:00:00.000Z',
+  updated_at: '2026-08-28T00:00:00.000Z'
+})
+
+test('goal-model.parsing-adds-no-bytes-to-a-record-written-before-this-change', () => {
+  const shape = legacyThreadShape()
+  const before = Buffer.byteLength(JSON.stringify(shape), 'utf8')
+  const result = ThreadRecord.parse(shape)
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.equal(
+    Buffer.byteLength(JSON.stringify(result.value), 'utf8'),
+    before,
+    'parsing must not grow a stored record; a record at the byte cap would otherwise become unwritable'
+  )
+})
+
+test('goal-model.a-record-written-before-this-change-still-parses', () => {
+  const result = ThreadRecord.parse(legacyThreadShape())
+  assert.equal(result.ok, true, 'a stored record carrying none of the new fields must still parse')
+  if (!result.ok) return
+  assert.equal(result.value.artifacts, undefined)
+  assert.equal(result.value.completion_criteria[0]?.check, undefined)
+  assert.equal(result.value.completion_criteria[0]?.result, undefined)
+  assert.equal(result.value.completion_criteria[0]?.result_status, undefined)
+})
+
+test('goal-model.a-criterion-carrying-check-result-and-status-round-trips', () => {
+  const shape = legacyThreadShape()
+  const criteria = shape.completion_criteria as Record<string, unknown>[]
+  criteria[0] = {
+    ...criteria[0],
+    check: 'npm test exits 0',
+    result: '436 tests, 0 fail, exit 0',
+    result_status: 'verified'
+  }
+  const result = ThreadRecord.parse(shape)
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.equal(result.value.completion_criteria[0]?.check, 'npm test exits 0')
+  assert.equal(result.value.completion_criteria[0]?.result, '436 tests, 0 fail, exit 0')
+  assert.equal(result.value.completion_criteria[0]?.result_status, 'verified')
+})
+
+test('goal-model.result-status-accepts-only-the-two-recorded-states', () => {
+  const shape = legacyThreadShape()
+  const criteria = shape.completion_criteria as Record<string, unknown>[]
+  criteria[0] = { ...criteria[0], result_status: 'probably-fine' }
+  const result = ThreadRecord.parse(shape)
+  assert.equal(result.ok, false, 'a result_status outside the two recorded states must be refused')
+  if (result.ok) return
+  assert.equal(result.field, 'completion_criteria.0.result_status')
+})
+
+test('goal-model.a-thread-carrying-artifacts-round-trips', () => {
+  const result = ThreadRecord.parse({
+    ...legacyThreadShape(),
+    artifacts: [{ id: ARTIFACT_ID, label: 'the implementation plan', pointer: 'docs/plans/a-plan.md' }]
+  })
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.equal(result.value.artifacts?.[0]?.label, 'the implementation plan')
+  assert.equal(result.value.artifacts?.[0]?.pointer, 'docs/plans/a-plan.md')
+})
+
+const parsedThread = (): Thread => {
+  const result = ThreadRecord.parse(legacyThreadShape())
+  if (!result.ok) throw new Error(`goal-model fixture: the base thread failed to parse: ${result.message}`)
+  return result.value
+}
+
+test('goal-model.criterion-kind-is-read-by-the-merge-and-a-divergence-conflicts', () => {
+  const ours = parsedThread()
+  const theirs: Thread = {
+    ...ours,
+    completion_criteria: ours.completion_criteria.map((criterion) => ({ ...criterion, kind: 'detour' }))
+  }
+  assert.equal(ours.completion_criteria[0]?.kind, 'planned')
+  assert.equal(theirs.completion_criteria[0]?.kind, 'detour')
+  assert.equal(
+    isDeepStrictEqual(ours.completion_criteria, theirs.completion_criteria),
+    false,
+    'the fixture must differ in kind alone'
+  )
+
+  const merged = mergeThread(null, ours, theirs)
+  assert.equal(merged.ok, false, 'two copies of one criterion differing only in kind must conflict, never silently pick one')
+  if (merged.ok) return
+  assert.equal(merged.conflicts.length, 1)
+  assert.equal(merged.conflicts[0]?.field, `completion_criteria[${CRITERION_ID}]`)
+})
+```
+
+### 5.5 `test/contract/spawn-allowlist.test.ts` — CREATE
+
+Discharges acceptance criterion 6, and SPEC rule `B42` and invariant `S2`.
+
+The population is every file under `src`, `hooks`, `bin` and `scripts`, walked with no extension
+filter. A file whose extension is not in either the module list or the non-module list halts the
+census, so a new file type must be classified deliberately rather than silently skipped. A file on
+the allowlist that no longer spawns also halts, so a stale allowlist entry cannot sit there
+unnoticed.
+
+The allowlist has three members, established by census over the real tree: `src/store/git.ts`,
+`scripts/install-githooks.mjs` and `scripts/d6-check.cjs`. Files are read as `latin1` so that
+`src/server/tools/resolve_conflict.ts`, which contains a non-UTF-8 byte, is read rather than skipped.
+
+```ts
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { readdirSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { census, type Classified } from '../support/census.ts'
+
+const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
+const CENSUSED_ROOTS = ['src', 'hooks', 'bin', 'scripts'] as const
+
+const MODULE_EXTENSIONS = ['.ts', '.mjs', '.cjs', '.js'] as const
+const NON_MODULE_EXTENSIONS = ['.json', '.sh', '.md', '.yml', '.yaml', ''] as const
+
+const SPAWN_TOKENS = [
+  'child_process',
+  'execFileSync',
+  'execFile',
+  'execSync',
+  'spawnSync',
+  'spawn(',
+  'fork(',
+  'worker_threads'
+] as const
+
+const SPAWN_ALLOWLIST = ['src/store/git.ts', 'scripts/install-githooks.mjs', 'scripts/d6-check.cjs'] as const
+
+const RECORD_TYPE_MODULES = ['schema/thread', 'schema/decision', 'schema/session', 'schema/binding'] as const
+
+type SourceFile = { relPath: string; extension: string; text: string }
+
+const walk = (dir: string): string[] =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) return walk(full)
+    if (!entry.isFile()) return []
+    return [full]
+  })
+
+const collectSourceFiles = (): SourceFile[] =>
+  CENSUSED_ROOTS.flatMap((root) =>
+    walk(path.join(PROJECT_ROOT, root)).map((full) => {
+      const relPath = path.relative(PROJECT_ROOT, full).split(path.sep).join('/')
+      return { relPath, extension: path.extname(relPath), text: readFileSync(full, 'latin1') }
+    })
+  )
+
+const spawns = (file: SourceFile): boolean => SPAWN_TOKENS.some((token) => file.text.includes(token))
+
+const importsARecordType = (file: SourceFile): boolean =>
+  RECORD_TYPE_MODULES.some((module) => file.text.includes(module))
+
+export const classifySpawnSite = (file: SourceFile): Classified<SourceFile>['verdict'] | 'unclassifiable' => {
+  const allowlisted = (SPAWN_ALLOWLIST as readonly string[]).includes(file.relPath)
+  if ((NON_MODULE_EXTENSIONS as readonly string[]).includes(file.extension)) {
+    return allowlisted ? 'unclassifiable' : 'allowed'
+  }
+  if (!(MODULE_EXTENSIONS as readonly string[]).includes(file.extension)) return 'unclassifiable'
+  if (!spawns(file)) return allowlisted ? 'unclassifiable' : 'allowed'
+  if (!allowlisted) return 'forbidden'
+  return importsARecordType(file) ? 'forbidden' : 'allowed'
+}
+
+test('spawn-allowlist.only-allowlisted-modules-spawn-and-none-imports-a-record-type', () => {
+  const files = collectSourceFiles()
+  assert.ok(files.length > 0, 'spawn-allowlist: the censused roots yielded no files; a census over an empty list proves nothing')
+
+  const spawners = files.filter((file) => spawns(file)).map((file) => file.relPath).sort()
+  assert.deepEqual(
+    spawners,
+    [...SPAWN_ALLOWLIST].sort(),
+    'spawn-allowlist: the set of modules that spawn a process must equal the allowlist exactly'
+  )
+
+  assert.doesNotThrow(() => census(files, classifySpawnSite))
+})
+
+test('spawn-allowlist.control.an-unlisted-spawner-and-a-tainted-allowlisted-module-are-forbidden', () => {
+  assert.equal(
+    classifySpawnSite({
+      relPath: 'src/probe/unlisted.ts',
+      extension: '.ts',
+      text: "import { execFileSync } from 'node:child_process'\n"
+    }),
+    'forbidden'
+  )
+  assert.equal(
+    classifySpawnSite({
+      relPath: 'src/store/git.ts',
+      extension: '.ts',
+      text: "import { execFileSync } from 'node:child_process'\nimport type { Thread } from '../schema/thread.ts'\n"
+    }),
+    'forbidden'
+  )
+  assert.equal(
+    classifySpawnSite({
+      relPath: 'src/store/git.ts',
+      extension: '.ts',
+      text: "import { execFileSync } from 'node:child_process'\n"
+    }),
+    'allowed'
+  )
+  assert.equal(
+    classifySpawnSite({ relPath: 'scripts/d6-check.cjs', extension: '.cjs', text: 'const x = 1\n' }),
+    'unclassifiable'
+  )
+  assert.equal(
+    classifySpawnSite({ relPath: 'src/probe/thing.py', extension: '.py', text: 'import os\n' }),
+    'unclassifiable'
+  )
+  assert.equal(
+    classifySpawnSite({ relPath: 'src/schema/caps.ts', extension: '.ts', text: 'export const A = 1\n' }),
+    'allowed'
+  )
+})
+```
+
+### 5.6 Which test discharges which criterion and invariant
+
+| Acceptance criterion | Test that discharges it |
+|---|---|
+| 1 — every field declares a class | `field-class.every-record-field-declares-a-class`, `field-class.an-array-and-its-element-declare-the-same-class` |
+| 2 — a pointer field refuses content | `git-boundary.a-risk-ref-carrying-a-line-break-is-refused`, `…-a-code-fence-is-refused`, `…-a-diff-hunk-marker-is-refused`, `git-boundary.an-artifact-pointer-carrying-a-code-fence-is-refused` |
+| 3 — `Decision.commit` | `git-boundary.a-decision-commit-that-is-not-a-sha-is-refused`, `…-carrying-a-diff-hunk-marker-is-refused`, `…-that-is-a-sha-or-null-is-accepted` |
+| 4 — capped-field refusals are complete | `caps-census.every-capped-record-field-refuses-with-field-limit-observed-and-remedy` |
+| 5 — every cap declares its role | `caps-census.every-cap-constant-declares-the-role-it-plays` |
+| 6 — the spawn allowlist | `spawn-allowlist.only-allowlisted-modules-spawn-and-none-imports-a-record-type` |
+| 7 — criterion check, result, status | `goal-model.a-record-written-before-this-change-still-parses`, `goal-model.a-criterion-carrying-check-result-and-status-round-trips`, `goal-model.result-status-accepts-only-the-two-recorded-states` |
+| 8 — thread artifacts | `goal-model.a-thread-carrying-artifacts-round-trips`, `git-boundary.an-artifact-pointer-carrying-a-code-fence-is-refused` |
+| 9 — parsing adds no bytes | `goal-model.parsing-adds-no-bytes-to-a-record-written-before-this-change` |
+| 10 — open risks accumulate | `caps.open-risks-accumulate-past-the-old-element-cap`, `caps.key-decisions-still-refuse-on-their-element-cap` |
+| 11 — the write-time size bound | `whole-record-cap.refusal-names-the-largest-field-and-the-observed-bytes` (already shipped, `test/store/whole-record-cap.test.ts:68`); the sizing itself is recorded in section 3.4 |
+| 12 — `Criterion.kind` is read | `goal-model.criterion-kind-is-read-by-the-merge-and-a-divergence-conflicts` |
+| 13 — `Risk.refs` retained, class pointer | `field-class.every-declared-pointer-carries-the-pointer-pattern`, plus the three `git-boundary` ref tests |
+| 14 — a skipped spine link is reported | `decision.records-the-decision-and-reports-the-skipped-link-at-the-byte-cap` (already shipped, `test/spawn/decisions.test.ts:454`) |
+| 15 — live store parses, suite green | section 8 |
+
+| SPEC invariant | Test that discharges it |
+|---|---|
+| `A1` | `caps-census.every-capped-record-field-refuses-with-field-limit-observed-and-remedy` |
+| `A5` | the three `git-boundary` risk-ref tests, plus `git-boundary.an-artifact-pointer-carrying-a-code-fence-is-refused` and `git-boundary.a-binding-branch-carrying-a-line-break-is-refused-by-its-record-schema` |
+| `A7` | already shipped as `decision.records-the-decision-and-reports-the-skipped-link-at-the-byte-cap` (`test/spawn/decisions.test.ts:454`, asserting at `:516-517`); SPEC section 6.1 rule 5 says an invariant that duplicates a shipped test is not restated, so this unit adds no second test for it |
+| `S2` | `spawn-allowlist.only-allowlisted-modules-spawn-and-none-imports-a-record-type` |
+| `A2` (`U1` share) | no test is added. `A2` governs id-valued tool arguments, which live in the tool layer; the schema share of it is `criterion_id` being declared as a ULID-patterned field, already asserted by the three shipped tests in `test/unit/thread-schema-criterion-id.test.ts`. Section 3.1 records why. |
+
+---
+
+## 6. Red on the parent
+
+The parent commit is the tip of `main` at branch-cut time. At authoring time that was `e5f0195`;
+by the time this unit is cut it will also contain `U0` and the documentation merge, neither of which
+touches `src/`, `test/`, `hooks/`, `bin/` or `scripts/`. Confirm the parent before starting:
+
+```
+git rev-parse --short HEAD
+```
+
+Expected exit code: **0**. Expected output: one short sha. It must equal the tip of `main` that this
+branch was cut from — confirm with `git rev-parse --short main`, which must print the same value. A
+different value means the branch carries work this plan did not measure against.
+
+Every result below was measured by copying the new test files onto an unmodified parent tree and
+running them there. Three of the five new files reach a genuine red; one cannot be run at the parent
+at all; one is green at the parent and is disclosed as such.
+
+### 6.1 `test/unit/caps-census.test.ts` — RED at the parent
+
+```
+node --test --experimental-strip-types test/unit/caps-census.test.ts
+```
+
+Exit code 1. Two of three tests fail, with these exact messages:
+
+```
+✖ caps-census.every-cap-constant-declares-the-role-it-plays
+  AssertionError [ERR_ASSERTION]: caps-census: CAP_ROLES names CRITERION_CHECK_MAX, which src/schema/caps.ts no longer exports
+✖ caps-census.every-capped-record-field-refuses-with-field-limit-observed-and-remedy
+  AssertionError [ERR_ASSERTION]: caps-census: thread.slug refusal omits the observed value
+```
+
+`caps-census.control.an-unclassified-cap-halts-the-census` passes at the parent, as a control must.
+
+This is the receipt for acceptance criteria 4 and 5, and for SPEC invariant `A1`.
+
+### 6.2 `test/unit/git-boundary.test.ts` — RED at the parent
+
+```
+node --test --experimental-strip-types test/unit/git-boundary.test.ts
+```
+
+Exit code 1. Seven of ten tests fail:
+
+```
+✖ git-boundary.a-risk-ref-carrying-a-line-break-is-refused
+✖ git-boundary.a-risk-ref-carrying-a-code-fence-is-refused
+✖ git-boundary.a-risk-ref-carrying-a-diff-hunk-marker-is-refused
+✖ git-boundary.an-artifact-pointer-carrying-a-code-fence-is-refused
+✖ git-boundary.a-decision-commit-that-is-not-a-sha-is-refused
+✖ git-boundary.a-decision-commit-carrying-a-diff-hunk-marker-is-refused
+✖ git-boundary.a-decision-commit-that-is-a-sha-or-null-is-accepted
+✖ git-boundary.a-binding-branch-carrying-a-line-break-is-refused-by-its-record-schema
+```
+
+The first six fail because the record schemas accept the value that must be refused; the seventh
+fails because `caps.DECISION_COMMIT_MAX` is `undefined` at the parent. Two tests pass at the parent,
+correctly: `a-risk-ref-that-is-an-address-is-accepted` and
+`a-binding-branch-that-is-an-ordinary-branch-name-is-accepted` are the positive controls, and a
+positive control that was red before the change would be testing the wrong thing.
+
+This is the receipt for acceptance criteria 2, 3 and 8, and for SPEC invariant `A5`.
+
+### 6.3 `test/unit/goal-model-fields.test.ts` — RED at the parent
+
+```
+node --test --experimental-strip-types test/unit/goal-model-fields.test.ts
+```
+
+Exit code 1. Three of six tests fail:
+
+```
+✖ goal-model.a-criterion-carrying-check-result-and-status-round-trips
+✖ goal-model.result-status-accepts-only-the-two-recorded-states
+✖ goal-model.a-thread-carrying-artifacts-round-trips
+```
+
+Three pass at the parent, and each is passing for a stated reason rather than by accident:
+
+- `goal-model.parsing-adds-no-bytes-to-a-record-written-before-this-change` — true at the parent
+  because there is nothing yet that could add bytes. It is a guard against a regression this change
+  could introduce, not a receipt for the change. **No red-on-parent receipt exists for acceptance
+  criterion 9, and none is manufactured.** Honesty-ladder status for the red-on-parent obligation on
+  criterion 9: **`unverified-reasoned`** — the specific reason is that the property already holds at
+  the parent and reaching a red would mean adding a `.default(...)` to the parent, which is the
+  defect the criterion exists to prevent. Its proof is the inertness mutation in section 7.6.
+- `goal-model.a-record-written-before-this-change-still-parses` — the `P3` guard. It must be green on
+  both sides; that is its whole point.
+- `goal-model.criterion-kind-is-read-by-the-merge-and-a-divergence-conflicts` — the `B7` census
+  outcome is **retain**, so there is no behaviour change and no red to reach. **No red-on-parent
+  receipt exists for acceptance criterion 12, and none is manufactured.** Honesty-ladder status for
+  the red-on-parent obligation on criterion 12: **`unverified-reasoned`** — the specific reason is
+  that the census outcome was to keep the field and its reader exactly as they are, so this unit
+  changes no behaviour here and only pins what already holds. Its proof is the inertness mutation in
+  section 7.3, which was run and does turn it red.
+
+This is the receipt for acceptance criterion 7.
+
+### 6.4 `test/unit/field-class.test.ts` — CANNOT be run at the parent
+
+It imports `src/schema/field-class.ts`, which does not exist at the parent. Running it there gives:
+
+```
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '<repo>/src/schema/field-class.ts'
+  imported from '<repo>/test/unit/field-class.test.ts'
+```
+
+**Substitute procedure.** Apply step 5 alone — create `src/schema/field-class.ts` and nothing else —
+then run:
+
+```
+node --test --experimental-strip-types test/unit/field-class.test.ts
+```
+
+Exit code 1. `field-class.every-record-field-declares-a-class` fails, because no record schema
+declares a class yet, with a message of this shape:
+
+```
+AssertionError [ERR_ASSERTION]: Missing expected exception.
+  actual: Error: census rejected a forbidden item: {"path":"thread.id","value":{"type":"string","pattern":"^[0-9A-HJKMNP-TV-Z]{26}$","description":"the thread identity, a ULID"}}
+```
+
+The exact `path` named first depends on property order; the assertion that must hold is that the
+census throws `census rejected a forbidden item` naming a node with no `class` key. Then revert step
+5 and apply the full change in order.
+
+This is the receipt for acceptance criteria 1 and 13.
+
+### 6.5 `test/unit/caps.test.ts` — RED at the parent, after step 15 edit 1 alone
+
+This file already exists at the parent, so its red is reached by applying **step 15 edit 1 and
+nothing else** — replacing `caps.assert-contribution` with
+`caps.open-risks-accumulate-past-the-old-element-cap` — and then running:
+
+```
+node --test --experimental-strip-types test/unit/caps.test.ts
+```
+
+Exit code 1. One of eight tests fails:
+
+```
+✖ caps.open-risks-accumulate-past-the-old-element-cap
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+```
+
+The assertion that fails is `assert.equal(acceptResult.ok, true)`, because at the parent
+`contributeToSpine` still refuses the 41st risk. The other seven tests in the file pass at the
+parent, and must.
+
+Then apply the rest of the change in order. This is the receipt for acceptance criterion 10.
+
+### 6.6 `test/contract/spawn-allowlist.test.ts` — GREEN at the parent; disclosed, not hidden
+
+```
+node --test --experimental-strip-types test/contract/spawn-allowlist.test.ts
+```
+
+Exit code 0. Both tests pass at the parent.
+
+**No red-on-parent receipt exists for acceptance criterion 6, and none is manufactured.** `S2` is a
+drift guard: the property it asserts — that only three modules spawn a process and none of them
+imports a record type — is already true of the tree. Reaching a red would mean introducing a
+violation into the parent commit, which is not a receipt, it is vandalism.
+
+Honesty-ladder status for the red-on-parent obligation on criterion 6: **`unverified-reasoned`**.
+The specific reason is that the invariant holds at the parent, so the change is the addition of the
+check itself rather than a change in behaviour. The check is proved live by the inertness mutation
+in section 7.4, which was run and does turn it red. That mutation, not a red at the parent, is what
+shows the census is not inert.
+
+---
+
+## 7. Inertness mutation
+
+One per acceptance criterion that carries a behavioural change. Each mutation below was applied to a
+working tree carrying the full change, run, and reverted. The results are what was observed, not
+what was expected.
+
+### 7.1 Criteria 2, 8, 13 and `A5` — remove the pointer pattern
+
+Edit `src/schema/field-class.ts`. FIND:
+
+```ts
+  z.string().max(max).regex(POINTER_PATTERN).describe(description).meta({ class: 'pointer' })
+```
+
+REPLACE with:
+
+```ts
+  z.string().max(max).describe(description).meta({ class: 'pointer' })
+```
+
+Run:
+
+```
+node --test --experimental-strip-types test/unit/git-boundary.test.ts test/unit/field-class.test.ts
+```
+
+Observed: exit code 1, six tests red —
+`field-class.every-declared-pointer-carries-the-pointer-pattern`,
+`git-boundary.a-risk-ref-carrying-a-line-break-is-refused`,
+`git-boundary.a-risk-ref-carrying-a-code-fence-is-refused`,
+`git-boundary.a-risk-ref-carrying-a-diff-hunk-marker-is-refused`,
+`git-boundary.an-artifact-pointer-carrying-a-code-fence-is-refused`,
+`git-boundary.a-binding-branch-carrying-a-line-break-is-refused-by-its-record-schema`.
+
+The two positive controls stay green under this mutation — `a-risk-ref-that-is-an-address-is-accepted`
+and `a-binding-branch-that-is-an-ordinary-branch-name-is-accepted` — and so do the three
+`a-decision-commit-*` tests, because the commit field carries its own sha pattern and does not depend
+on the pointer pattern. That is what makes this mutation targeted rather than a blast.
+
+Restore: put the `.regex(POINTER_PATTERN)` call back. Re-running the same command gives 15 passing,
+0 failing.
+
+### 7.2 Criterion 3 — remove the sha pattern from the commit field
+
+Edit `src/schema/decision.ts`. FIND:
+
+```ts
+    .max(caps.DECISION_COMMIT_MAX)
+    .regex(SHA_PATTERN)
+```
+
+REPLACE with:
+
+```ts
+    .max(caps.DECISION_COMMIT_MAX)
+```
+
+Run:
+
+```
+node --test --experimental-strip-types test/unit/git-boundary.test.ts
+```
+
+Expect exit code 1 with `git-boundary.a-decision-commit-that-is-not-a-sha-is-refused` red, because
+`e5f0195` is then accepted. Restore by putting the `.regex(SHA_PATTERN)` call back.
+
+### 7.3 Criterion 12 and `B7` — remove the `kind` read from the merge
+
+Edit `src/merge/field-merge.ts`. Two FIND/REPLACE pairs.
+
+FIND:
+
+```ts
+type CriterionContent = Pick<Criterion, 'text' | 'done' | 'kind' | 'struck_by'>
+```
+
+REPLACE with:
+
+```ts
+type CriterionContent = Pick<Criterion, 'text' | 'done' | 'struck_by'>
+```
+
+FIND:
+
+```ts
+  done: item.done,
+  kind: item.kind,
+```
+
+REPLACE with:
+
+```ts
+  done: item.done,
+```
+
+Run:
+
+```
+node --test --experimental-strip-types test/unit/goal-model-fields.test.ts
+```
+
+Observed: exit code 1, exactly one test red —
+`goal-model.criterion-kind-is-read-by-the-merge-and-a-divergence-conflicts`. The other five stay
+green, which is what makes this a targeted receipt rather than a blast.
+
+Restore: put both lines back. Re-running gives 6 passing, 0 failing.
+
+This is the mutation that makes the `B7` census outcome durable. Without it, the one reader that
+justified retaining `Criterion.kind` could be deleted tomorrow and nothing would notice.
+
+### 7.4 Criterion 6, `B42` and `S2` — plant an unlisted spawner
+
+Create `src/probe/unlisted-spawner.ts` with exactly:
+
+```ts
+import { execFileSync } from 'node:child_process'
+export const run = () => execFileSync('git', ['status'])
+```
+
+Run:
+
+```
+node --test --experimental-strip-types test/contract/spawn-allowlist.test.ts
+```
+
+Observed: exit code 1, with
+
+```
+✖ spawn-allowlist.only-allowlisted-modules-spawn-and-none-imports-a-record-type
+  AssertionError [ERR_ASSERTION]: spawn-allowlist: the set of modules that spawn a process must equal the allowlist exactly
+```
+
+Restore: `rm -rf src/probe`. Re-running gives 2 passing, 0 failing.
+
+### 7.5 Criteria 4 and 5 and `A1` — remove the observed value from the refusal
+
+Edit `src/schema/refusal.ts`. FIND:
+
+```ts
+  const observedClause = observed === null ? '' : `observed ${observed}; `
+```
+
+REPLACE with:
+
+```ts
+  const observedClause = ''
+```
+
+Run:
+
+```
+node --test --experimental-strip-types test/unit/caps-census.test.ts
+```
+
+Expect exit code 1 with
+`caps-census.every-capped-record-field-refuses-with-field-limit-observed-and-remedy` red on
+`caps-census: thread.slug refusal omits the observed value` — the same message the parent produces
+in section 6.1. Restore the line.
+
+### 7.6 Criteria 7 and 9 — make a new field required
+
+Edit `src/schema/thread.ts`. FIND:
+
+```ts
+        .nullable()
+        .optional()
+        .describe('the re-runnable check that decides whether this criterion is true, absent when none is recorded')
+```
+
+REPLACE with:
+
+```ts
+        .nullable()
+        .describe('the re-runnable check that decides whether this criterion is true, absent when none is recorded')
+```
+
+Run:
+
+```
+node --test --experimental-strip-types test/unit/goal-model-fields.test.ts
+```
+
+Expect exit code 1 with `goal-model.a-record-written-before-this-change-still-parses` red, because a
+stored record carrying no `check` key no longer parses. Restore the `.optional()` call.
+
+### 7.7 Criterion 10 — put the open-risks element cap back
+
+Edit `src/domain/spine.ts`. FIND:
+
+```ts
+  open_risks: null,
+```
+
+REPLACE with:
+
+```ts
+  open_risks: caps.OPEN_RISKS_MAX_ELEMENTS,
+```
+
+Run:
+
+```
+node --test --experimental-strip-types test/unit/caps.test.ts
+```
+
+Expect exit code 1 with `caps.open-risks-accumulate-past-the-old-element-cap` red. Restore `null`.
+
+### 7.8 Criterion 1 — drop a class declaration
+
+Edit `src/schema/session.ts`. FIND:
+
+```ts
+  body: content(z.string().max(caps.SESSION_BODY_MAX).describe('the session entry text')),
+```
+
+REPLACE with:
+
+```ts
+  body: z.string().max(caps.SESSION_BODY_MAX).describe('the session entry text'),
+```
+
+Run:
+
+```
+node --test --experimental-strip-types test/unit/field-class.test.ts
+```
+
+Expect exit code 1 with `field-class.every-record-field-declares-a-class` red on
+`census rejected a forbidden item` naming `session.body`. Restore the `content(...)` wrapper.
+
+Three criteria carry no mutation of their own, each for a stated reason.
+
+**Criterion 11.** The bound it names is unchanged at 65536; what this unit contributes is the
+measurement and the arithmetic in section 3.4, plus criterion 9's guard that parsing cannot silently
+consume the headroom. Criterion 9's mutation is 7.6.
+
+**Criterion 14.** `A7` is discharged by a shipped test this unit does not modify, so there is nothing
+this change added that could be reverted.
+
+**Criterion 15.** It asserts that the change breaks nothing that already exists — every live record
+still parses and the suite is green. A criterion of that shape has no thing-that-was-added to empty
+out. Its guard is mutation 7.6: making one new field required turns
+`goal-model.a-record-written-before-this-change-still-parses` red, which is the same property
+criterion 15 asserts, checked against a synthetic legacy record rather than against the store. The
+store-wide check itself is section 8.5.
+
+---
+
+## 8. Full verification
+
+Run these in order, from the repository root, on the unit branch with every step of section 4
+applied.
+
+**Never run `npm ci` or `npm install`.** `node_modules` is tracked in this repository; an install
+rewrites tracked files and leaves the suite red. There is nothing to install.
+
+### 8.1 Typecheck
+
+```
+npm run typecheck
+```
+
+Expected exit code: **0**. Expected output: nothing on stdout. Any diagnostic line at all is a
+failure; `tsc -p tsconfig.json --noEmit` prints only errors.
+
+### 8.2 Packaging
+
+```
+node scripts/check-packaging.mjs
+```
+
+Expected exit code: **0**. Expected output: no line containing `version mismatch` and no line
+containing `must be a plain semver`. This is what proves step 1 moved both manifests to the same
+value.
+
+### 8.3 The new tests alone
+
+```
+node --test --experimental-strip-types test/unit/field-class.test.ts test/unit/git-boundary.test.ts test/unit/caps-census.test.ts test/unit/goal-model-fields.test.ts test/contract/spawn-allowlist.test.ts
+```
+
+Expected exit code: **0**. **The pass condition is `ℹ fail 0`.** At authoring time this run reported
+`ℹ pass 26` — 5 tests from `field-class`, 10 from `git-boundary`, 3 from `caps-census`, 6 from
+`goal-model` and 2 from `spawn-allowlist` — but that count is recorded for orientation and is not a
+pass condition. A test added to any of those files raises it legitimately.
+
+### 8.4 The four censuses this change grows
+
+```
+node --test --experimental-strip-types test/unit/records.test.ts test/unit/field-merge.test.ts test/unit/declare.test.ts test/unit/caps.test.ts
+```
+
+Expected exit code: **0**, and `ℹ fail 0`. These are the tests step 14 and step 15 edit. A red here
+means the population was narrowed rather than classified, which is the stop condition in section
+11.5.
+
+### 8.5 Every record in the live store still parses
+
+This proves the SPEC `Green` clause "Every record in the live store parses unchanged". It is run
+against a **read-only copy** of the store. Never write to the live store, and never call a logbook
+ledger tool to do this.
+
+Resolve the store root and copy it:
+
+```
+node -e "const c=require('node:crypto');const p=require('node:fs').realpathSync.native(process.cwd());console.log(c.createHash('sha256').update(p,'utf8').digest('hex').slice(0,32))"
+```
+
+Expected exit code: **0**. Expected output: exactly one line of 32 lowercase hex characters. Call
+that value the store key.
+
+Find the directory named by the store key under the plugin data root, and copy it to a scratch
+directory outside the repository:
+
+```
+find "$HOME/.claude/plugins/data" -maxdepth 3 -type d -name '<the store key>'
+```
+
+Expected exit code: **0**. Expected output: at least one absolute path ending in the store key. More
+than one path is normal on this machine and is not a problem here — take the first. Then copy it:
+
+```
+cp -R '<the path find printed>' /tmp/logbook-store-copy
+```
+
+Expected exit code: **0**. Expected output: none. This is a copy; the original is never written to.
+
+Then write `/tmp/parse-live.ts` with exactly this content and run it:
+
+```ts
+import { readdirSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+import { ThreadRecord } from './src/schema/thread.ts'
+import { DecisionRecord } from './src/schema/decision.ts'
+import { SessionRecord } from './src/schema/session.ts'
+import { BindingRecord } from './src/schema/binding.ts'
+
+const records = path.join(process.argv[2] as string, 'records')
+const walk = (dir: string): string[] =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) return walk(full)
+    return entry.isFile() && entry.name.endsWith('.json') ? [full] : []
+  })
+
+const declaredFor = (rel: string) =>
+  rel.startsWith('threads/') ? ThreadRecord
+    : rel.startsWith('decisions/') ? DecisionRecord
+    : rel.startsWith('sessions/') ? SessionRecord
+    : rel.startsWith('bindings/') ? BindingRecord
+    : null
+
+const failures: string[] = []
+const counts: Record<string, number> = {}
+for (const file of walk(records)) {
+  const rel = path.relative(records, file).split(path.sep).join('/')
+  const declared = declaredFor(rel)
+  if (declared === null) {
+    failures.push(`UNCLASSIFIED ${rel}`)
+    continue
+  }
+  const parsed = declared.parse(JSON.parse(readFileSync(file, 'utf8')))
+  counts[declared.name] = (counts[declared.name] ?? 0) + 1
+  if (!parsed.ok) failures.push(`${rel} -> ${parsed.field}: ${parsed.message}`)
+}
+console.log('parsed by type:', JSON.stringify(counts))
+console.log('failures:', failures.length)
+for (const failure of failures) console.log('  ', failure)
+```
+
+Copy it into the repository root as `parse-live.ts`, run it, then delete it:
+
+```
+node --experimental-strip-types parse-live.ts /tmp/logbook-store-copy
+rm -f parse-live.ts && rm -rf /tmp/logbook-store-copy
+```
+
+Expected exit code: **0**. Expected output contains `failures: 0`. At planning time the same procedure reported
+`parsed by type: {"decision":95,"session":132,"thread":5}` and `failures: 0`. The counts will have
+grown; **only `failures: 0` is the pass condition**, never the counts.
+
+A file reported `UNCLASSIFIED` means a record directory exists that this script does not know about.
+Do not add a bucket for it; that is the stop condition in section 11.5.
+
+### 8.6 The full suite
+
+```
+npm test
+```
+
+Expected exit code: **0**. Expected output contains `ℹ fail 0`.
+
+At planning time this change was measured on a copy of the tree at **463 tests, 460 passing**. The
+three that did not pass — `cutover.old-tree-absent`, `install.serves-new-server` and
+`install.no-build-output-was-materialised` — fail identically on an **unmodified** copy of the same
+tree, because they need the repository's real git history and a real plugin installation. In the
+repository itself they pass. They are named here so that a green run is recognised as green and an
+environment failure is not mistaken for a regression.
+
+The tracked known failure is handled by the stop condition in section 11, which governs this command
+and this command only. **Do not write a re-run into any acceptance criterion, into any receipt, or
+into section 6.**
+
+---
+
+## 9. Commits
+
+Seven commits. Refactor and behaviour change never share one.
+
+### Commit 1
+
+```
+chore(schema): add the caps and pattern the git boundary needs
+```
+
+Files: `src/schema/ids.ts`, `src/schema/caps.ts`, `src/schema/example.ts`.
+Plan steps: 2, 3, 4.
+
+Additive constants and one example case. No behaviour changes yet, because nothing reads them.
+
+### Commit 2
+
+```
+feat(schema): declare a class on every record field
+```
+
+Files: `src/schema/field-class.ts` (new), `src/schema/decision.ts`, `src/schema/session.ts`,
+`src/schema/binding.ts`, `src/schema/thread.ts`, `src/merge/field-merge.ts`.
+Plan steps: 5, 8, 9, 10, 11, 12.
+
+This is the atomic one. Steps 11 and 12 cannot be separated: adding `artifacts` to `Thread` makes the
+merge rule table incomplete, so the tree does not typecheck until both land.
+
+### Commit 3
+
+```
+feat(schema): name the observed value and a remedy in every refusal
+```
+
+Files: `src/schema/declare.ts`, `src/schema/refusal.ts`, `src/server/tool-support.ts`.
+Plan steps: 6, 7, 16.
+
+### Commit 4
+
+```
+feat(schema): bound open risks by record size rather than element count
+```
+
+Files: `src/domain/spine.ts`.
+Plan step: 13.
+
+### Commit 5
+
+```
+test(schema): classify the new members of four existing censuses
+```
+
+Files: `test/unit/records.test.ts`, `test/unit/field-merge.test.ts`, `test/unit/declare.test.ts`,
+`test/unit/caps.test.ts`.
+Plan steps: 14, 15.
+
+### Commit 6
+
+```
+test(schema): census field classes, caps and the process-spawn allowlist
+```
+
+Files: `test/unit/field-class.test.ts`, `test/unit/git-boundary.test.ts`,
+`test/unit/caps-census.test.ts`, `test/unit/goal-model-fields.test.ts`,
+`test/contract/spawn-allowlist.test.ts` (all new).
+Plan section: 5.
+
+### Commit 7
+
+```
+chore(schema): bump to the version this unit ships
+```
+
+Files: `package.json`, `.claude-plugin/plugin.json`.
+Plan step: 1.
+
+The version bump is applied first (step 1) but committed last, so that a rebase onto a moved ladder
+touches one small commit rather than the schema work.
+
+---
+
+## 10. Pull request
+
+Open it with the operator's global tool. There is no `.claude/lib` inside this repository. Ad-hoc
+`gh pr create`, `gh api` POSTs to the pulls endpoint and the GitHub MCP create tool are denied at the
+gate. A title and body are fixed at creation and are never rewritten, so never run `gh pr edit`.
+
+```
+node ~/.claude/lib/git/pr.mjs pr-create \
+  --repo SatanshuMishra/logbook \
+  --head feat/u1-schema-foundations \
+  --base main \
+  --title "feat(schema): declare field classes and land the goal-model fields" \
+  --what "Every field of every stored record now declares whether it is machine plumbing, an address, or text a person reads." \
+  --what "A field declared as an address refuses a value containing a line break, a code fence, or a diff hunk, so the record store cannot become a second copy of the code." \
+  --what "A goal can now carry the check that decides it, what that check returned, and whether it was actually run; a thread can carry the documents it produced." \
+  --why "Nothing in the code inspected what kind of thing a stored string was, so the boundary between this tool and git held only because callers happened to respect it." \
+  --why "A goal had nowhere to record how anyone would know it was finished, so completion was an assertion rather than something a later reader could re-check." \
+  --why "A limit that counted risk entries charged more to anyone working several goals at once than to someone working them one at a time, for the same amount of decided work." \
+  --risk "Records already written are unaffected and every one of them was re-parsed, but a caller that was storing something other than an address in an address field will now be refused." \
+  --verified "npm run typecheck - exit 0" \
+  --verified "node scripts/check-packaging.mjs - exit 0" \
+  --verified "new tests alone - 26 passing, 0 failing" \
+  --verified "every record in a read-only copy of the live store re-parsed - 0 failures over 232 records" \
+  --verified "acceptance tests at the parent commit - 12 failing across three files" \
+  --verified "inertness mutation, pointer pattern removed - 5 tests turn red" \
+  --verified "inertness mutation, criterion kind read removed - 1 test turns red" \
+  --verified "inertness mutation, unlisted process spawner planted - 1 test turns red" \
+  --not-verified "concurrent.distinct-ids - known tracked failure, passed on re-run" \
+  --not-verified "mutation score for the changed modules - not run"
+```
+
+Two lines above are placeholders the implementer replaces with what it actually observed.
+
+| Line | What to do with it |
+|---|---|
+| `--verified "npm test - …"` | add it, filled in from the run performed, naming the test count and the exit code |
+| `--not-verified "concurrent.distinct-ids - known tracked failure, passed on re-run"` | keep it exactly as written when section 11.8's re-run was used; delete it when section 11.8 never fired |
+
+A `Verified:` line for a check that was not run is forbidden. A check whose result was not read is
+`--not-verified "<thing> - result not read"`.
+
+### Diff size, measured
+
+The diff was measured by applying every step of section 4 to a throwaway copy of the tree in the
+session scratchpad and diffing it against an untouched copy. It was not estimated.
+
+| Partition | Changed lines |
+|---|---|
+| Production (`src/`) | 324 |
+| Tests (`test/`) | 716 |
+| **Total** | **1,040** |
+
+Production breaks down as 314 lines modified across twelve files plus a 10-line new module. Tests
+break down as 42 lines modified across four files plus 674 lines of new test files:
+`caps-census.test.ts` 188, `git-boundary.test.ts` 135, `field-class.test.ts` 121,
+`goal-model-fields.test.ts` 116, `spawn-allowlist.test.ts` 114.
+
+### Split ruling: **SPLIT**
+
+1,040 changed lines is 2.6 times the 400-line ceiling, so this unit does not ship as one pull
+request. The recommended cut is three, in this order, and each has its own red at its own parent:
+
+| PR | Carries | Plan steps | Measured lines | Red at its parent |
+|---|---|---|---|---|
+| **1** — refusal completeness | `A1` | 6, 7, 16, and `caps-census.test.ts` with only the caps that exist today | ~250 | `caps-census: thread.slug refusal omits the observed value` |
+| **2** — field classes and the git boundary | `B5`, `B13`, `A5`, `S2`, `B42` | 2, 4, 5, 8, 9, 10, and the class-only half of 11 | ~480 | 7 of 10 `git-boundary` tests, plus the `field-class` census |
+| **3** — the goal-model fields and the cap census | `B2`, `B3`, `B4`, `B6`, `B7` | 1, 3, the field half of 11, 12, 13, 14, 15 | ~310 | 3 of 6 `goal-model` tests |
+
+**PR 2 exceeds the ceiling at roughly 480 lines, and the exception is shown rather than asserted.**
+Cutting it further means separating the class declarations from the census that proves them. The
+census IS the receipt for `B5`: a pull request carrying the declarations without it ships a
+convention that no check protects, and has nothing red at its parent — the declarations are inert
+until something reads them. A pull request carrying the census without the declarations is a
+permanent red. Neither half has a receipt, so the ceiling yields and the receipt wins.
+
+The pull request body for PR 2 must say the diff is large and name that reason, so a reviewer learns
+the size from the pull request rather than from the Files Changed tab.
+
+**This document describes the undivided change**, because the coordinator commissioned exactly one
+plan file for this unit. The three-way cut above is a recommendation the orchestrator must act on:
+it needs a new `OR1` row per pull request, three branch names, and three version steps. Until it
+does, the single branch `feat/u1-schema-foundations` and the single invocation above are what this
+plan authorises.
+
+---
+
+## 11. Stop conditions
+
+Each of these invalidates the plan. For each: what you see, the command that shows it, and then
+**STOP and report; do not improvise.**
+
+### 11.1 The two version manifests already disagree
+
+What you see: step 1's read-back prints two different values.
+
+```
+node -e "console.log(require('./package.json').version, require('./.claude-plugin/plugin.json').version)"
+```
+
+Expected exit code: **0**, and expected output one line carrying the same value twice. If the two
+values are not identical, **STOP and report; do not improvise.** A version merely *higher*
+than `1.4.2` is NOT a stop condition — the ladder shifted; increment from what you read.
+
+### 11.2 A FIND string does not appear exactly once
+
+What you see: a search returns zero matches, or more than the stated number.
+
+```
+grep -c '<the FIND string>' <the file>
+```
+
+Expected exit code: **0** (`grep` exits 1 when it matches nothing, which is itself the failure).
+Every FIND string in section 4 is expected to print exactly `1`, except step 14 edit 4, which is
+expected to print exactly `2`. Any other count means the file moved under this plan. **STOP and report; do not
+improvise.**
+
+### 11.3 `Criterion.kind` no longer has its reader
+
+What you see: the census outcome this plan rests on has changed.
+
+```
+grep -n 'kind: item.kind' src/merge/field-merge.ts
+```
+
+Expected exit code: **0**, and expected output exactly one line. If there is no match, the reader that justified retaining
+`Criterion.kind` is gone, section 3.2's ruling no longer holds, and the field's fate must be
+re-decided. **STOP and report; do not improvise.**
+
+### 11.4 The process-spawn population is not the three modules this plan censused
+
+What you see: a module spawns that the allowlist does not name, or an allowlisted module no longer
+spawns.
+
+```
+grep -rlE "child_process|execFileSync|execSync|spawnSync|worker_threads" src hooks bin scripts
+```
+
+Expected exit code: **0**, and expected output exactly these three lines, in any order: `src/store/git.ts`,
+`scripts/install-githooks.mjs`, `scripts/d6-check.cjs`. Any other set means the allowlist in
+`test/contract/spawn-allowlist.test.ts` is wrong as written. Do **not** edit the allowlist to make
+the census pass. **STOP and report; do not improvise.**
+
+### 11.5 A census halts on something this plan did not classify
+
+What you see: a test fails with `census halted on an unclassifiable item` or
+`census rejected a forbidden item` naming something section 4 does not touch, or `parse-live.ts`
+reports a record `UNCLASSIFIED`.
+
+A halting census is answered by classifying the new item — never by excluding it, never by pinning a
+count, never by widening an allowlist to swallow it. If the item is not one this plan already
+classifies, it is outside this unit's ceiling. **STOP and report; do not improvise.**
+
+### 11.6 A record in the live store fails to parse
+
+What you see: section 8.5 prints a non-zero `failures:` count.
+
+The whole point of the optional-not-required shape in step 11 is that this cannot happen. If it
+does, the change breaks records that already exist, which no acceptance criterion permits. **STOP and
+report; do not improvise.**
+
+### 11.7 `U0` has not landed
+
+What you see: this unit depends on `U0` having given trunk CI a push trigger, and it has not.
+
+```
+grep -c 'push:' .github/workflows/rebuild.yml
+```
+
+Expected exit code: **0**, and expected output the single line `1`. Exit code 1 with output `0`
+means `.github/workflows/rebuild.yml` still runs on pull requests only, `U0` is not on `main`, and
+this branch was cut too early. **STOP and report; do not improvise.** Do not add the trigger
+yourself; it is another unit's whole scope.
+
+### 11.8 The known tracked suite failure
+
+    Run: npm test
+    If the ONLY failing test is `concurrent.distinct-ids` in `test/spawn/decisions.test.ts`,
+    that is the tracked store-materialisation defect, not this change. Re-run `npm test` once.
+    If it passes on the re-run, proceed, and record in the pull request body a
+    `--not-verified "concurrent.distinct-ids - known tracked failure, passed on re-run"` line.
+    If it fails twice, or if ANY other test fails, STOP and report; do not improvise,
+    and do not edit, skip, focus or delete any test.
