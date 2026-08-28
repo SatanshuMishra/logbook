@@ -421,3 +421,130 @@ which `PLANNING-BRIEF.md` section 2 forbids passing to the implementer.
 
 Rejected: deferring the `binding` branch to `U2`. `A5` is `U1`'s invariant; a unit that ships an
 invariant it cannot hold over one record type has not shipped it.
+
+## OR18 — Gate zero: what it requires, and what it explicitly does not
+
+SPEC section 10 requires, before `U1` is cut: "trunk gets CI on push, and the red `test (24.x)` job
+is either fixed or explicitly downgraded on the honesty ladder with its reason recorded."
+
+The evidence below was measured during planning, not inferred. It is worse than the thread's
+next-step line recorded, and the ruling is written against the measurements rather than against the
+summary.
+
+### Measured facts
+
+- **`main` has never been tested at all.** Every run of workflow `ci` in the queried window carries
+  `"event":"pull_request"`; no run exists whose head is `e5f0195`. The red under discussion is on
+  `b01bf87`, the branch head that was merged.
+- **`concurrent.distinct-ids` is a genuine defect, not a flake in the test.** Reproduced by probe:
+  46 of 60 iterations at 24 concurrent children ended with a record present in
+  `git ls-tree refs/logbook/ledger` and absent from `records/` on disk, with
+  `state/last-materialised` equal to the ledger ref in every one of the 46 — the unrecoverable
+  state. All children reported success, so the lost record's own writer completed and returned
+  `ok`, and the lost record was not the one the tip commit introduced.
+- **The mechanism spans three sites.** `writeTargetsToDisk` writes only its own call's record files
+  (`src/store/write-path.ts:149-160`, called at `:192`); `markMaterialised(storeLayout, result.after)`
+  then stamps the store as materialised at the WHOLE new ref (`src/store/records.ts:171`), a claim
+  wider than the write; and `syncWorkingCopy` short-circuits forever once stamp equals ref
+  (`src/store/read-path.ts:204`), so the hole is permanent. `swapRecordsTreeIntoPlace`
+  (`src/store/read-path.ts:110-151`) is what erases a record another process just wrote.
+- **It is NOT covered by either accepted race as worded.** SPEC section 10 accepts
+  `01M13F4HW3YQWJSF7T4GM47GP8` (post-CAS `mkdirSync` producing `ENOTEMPTY`) and
+  `01M13F4HW3552M57R3SZ4B5V5P` (`write-path.ts:228` adopting the winner's ref ON RETRY). The
+  reproduction shows the sealing stamp on the ORDINARY SUCCESS path, requiring no retry by any
+  process. Treating the current red as already accepted would accept something wider than either
+  decision's text describes.
+- **CI rate: 3 failures in 60 pooled `test` job runs across the last 20 workflow runs — 5.0%.** All
+  three are this same test. `test (24.x)` 2/20, `test (22.19.x)` 1/20, `test (26.x)` 0/20. No other
+  test has failed in that window. Two of the three are an older assertion (a child exiting non-zero
+  on `thread_id`); the read-back assertion is first observed on `b01bf87`. Whether the store fix
+  shifted the mode distribution is UNKNOWN on one post-fix observation, and is recorded as unknown.
+- **Locally the test passes 25 of 25** in isolation on Node `v26.4.0` with 14 cores, against the
+  test's hardcoded `CHILD_COUNT = 8` (`test/spawn/decisions.test.ts:819`). That null result does not
+  bound the CI rate and is not evidence the defect is absent.
+- **The full local suite is GREEN: 436 tests, 0 fail, exit 0.** The `yaml` devDependency gap that
+  affected the predecessor ladder is closed in this checkout. No planner needs to work around it,
+  and no plan may weaken a pass condition for it.
+- **`main` has no branch protection and no rulesets.** `gh api repos/:owner/:repo/branches/main/protection`
+  returns `404 Branch not protected`; `.../rulesets` and `.../rules/branches/main` both return `[]`.
+  These are positive answers, not access failures. Nothing is a required status check.
+
+### Ruled
+
+**1. Trunk CI on push lands in `U0`, on `rebuild.yml` only.** `receipts.yml` stays `pull_request`-only:
+its enforcer step self-skips on a non-pull_request event by construction, and its other two units —
+the D6 check (`scripts/d6-check.cjs:251-253` requires `--base` and `--head`) and `pr-title-lint`
+(reads `github.event.pull_request.title`) — hard-fail without pull-request context. A push trigger
+there buys nothing and costs a permanent red.
+
+**2. The `mutation` job is excluded from the push trigger.** It reads
+`github.event.pull_request.base.sha` and `.head.sha` (`.github/workflows/rebuild.yml:86-87`) and
+hard-fails when both are empty. It also took 151.9 minutes on the run in question, against under
+3 minutes for every other job. It is diff-scoped, which is a pull-request concept; on a merge into
+`main` it would re-run what already ran, or need new logic, which is not a trigger change.
+
+**3. The `mutation` red is NOT a gate-zero blocker, and this is a recorded downgrade, not a pass.**
+A sub-threshold score is not unique to the store fix — an unrelated run scored `42.35` two days
+earlier. Of 196 surviving mutants, **87 sit on lines the fix added and 109 on lines that predate
+it**, so attributing the whole red to the fix would overstate it; killing only the 87 would put the
+score at `(270+1+87)/467 = 76.66%`, which is arithmetic on measured counts and not a measured run.
+No pre-fix mutation baseline exists for `read-path.ts` or `write-path.ts` in the queried window.
+Status on the honesty ladder: **`unverified-reasoned`** — the mutation surface of the store modules
+has never been measured before this change, so the score cannot be attributed, and measuring it
+means a ~152-minute run on the parent commit that was not performed.
+
+**4. `U0` does NOT fix the store defect, and does not hide it either.** It is a NEW finding above the
+SPEC's ceiling: the SPEC accepted two specific races as worded, and this is a third, wider one on the
+ordinary success path. Acceptance is a ceiling, so it is filed as a new item and carried as a NEW
+thread criterion with its own decision record — never folded into `U0`, never folded into `U2`.
+`U0` neither fixes it, nor skips it, nor deletes it, nor quarantines it. Deleting, skipping or
+focusing the test is the canonical reward-hack the receipts standard blocks at `G11` and is
+forbidden outright.
+
+Status on the honesty ladder for "trunk is verified green": **`unverified-reasoned`**, because a
+5% per-run false red is live on a defect that is understood, reproduced and tracked but not fixed
+in this ladder.
+
+**5. CI on push is observational until `main` has required status checks.** Adding branch protection
+is a repository-administration act, not a plan step, and no unit performs it. It is filed as a new
+item. `U0`'s plan states plainly, in its own body, that the check it adds blocks nothing — a plan
+that implies otherwise is a defect in the plan.
+
+### `U0`'s complete scope, and nothing else
+
+1. `.github/workflows/rebuild.yml` gains `push: branches: [main]` alongside the existing
+   `pull_request:`.
+2. The `mutation` job gains `if: github.event_name == 'pull_request'`.
+3. Nothing else. Not the store defect, not `receipts.config.json`, not branch protection, not the
+   mutation score.
+
+## OR19 — The one known red, and how a plan may respond to it without hiding it
+
+`concurrent.distinct-ids` (`test/spawn/decisions.test.ts:797`) fails at a measured 5% per `test` job
+run for a tracked, reproduced, unfixed defect (`OR18`). Every unit in this ladder declares a green
+suite. Without a rule, each planner invents its own response, and the likely invention is to weaken
+the pass condition — which is the exact defect this SPEC exists to remove, applied to its own
+delivery.
+
+Ruled. Every plan's section 11 carries this stop condition **verbatim**, except `U2`:
+
+    Run: npm test
+    If the ONLY failing test is `concurrent.distinct-ids` in `test/spawn/decisions.test.ts`,
+    that is the tracked store-materialisation defect, not this change. Re-run `npm test` once.
+    If it passes on the re-run, proceed, and record in the pull request body a
+    `--not-verified "concurrent.distinct-ids - known tracked failure, passed on re-run"` line.
+    If it fails twice, or if ANY other test fails, STOP and report; do not improvise,
+    and do not edit, skip, focus or delete any test.
+
+**`U2` is carved out and gets the opposite instruction.** `U2` owns `src/store/read-path.ts` and
+`src/store/records.ts` — the modules the defect lives in, and `B38` changes materialisation itself.
+For `U2` a `concurrent.distinct-ids` failure is signal, not noise. `U2`'s section 11 carries instead:
+
+    Run: npm test
+    Any failure of `concurrent.distinct-ids` in `test/spawn/decisions.test.ts` is IN SCOPE for
+    this unit's surface and must be reported, never re-run away. STOP and report; do not
+    improvise, and do not edit, skip, focus or delete any test.
+
+No plan may write a re-run into an acceptance criterion, into a receipt, or into `## 6. Red on the
+parent`. A receipt is decided by one run. The re-run above governs only the full-suite gate in
+`## 8. Full verification`, and it is disclosed in the pull request body every time it is used.
