@@ -612,3 +612,42 @@ Two consequences that are already absorbed by existing rulings, stated so nobody
   only, so `src/`, `test/`, `hooks/`, `bin/`, `skills/` and `scripts/` remain byte-identical between
   `main` and this branch, and every SPEC line citation still applies. A planner whose plan states the
   older tip has stated a cosmetic fact, not a defect, and its plan is not re-authored for it.
+
+## OR22 — `LG5` is published with its measured exception, not as an unqualified promise
+
+Surfaced by U10 planning as `F10a`, and it collides with `U3`, which publishes `LG1`-`LG17` to users
+in the README three waves earlier.
+
+`LG5` promises: "What you write is what is stored, or the write is refused. Any transform applied on
+the way in is declared and reversible."
+
+`escapeStored` is idempotent by shipped test (`test/unit/escape.test.ts:81`), and an idempotent map
+that is not the identity cannot be injective — `f(f(x)) = f(x)` with injectivity forces `f(x) = x`.
+Measured: `escapeStored('\n')` and `escapeStored('U+000A')` both return `'U+000A'`, so two distinct
+inputs share one stored form, and this holds for all 263 code points the encoder can emit a token
+for. A value whose raw text already contains `U+` followed by the canonical hex of one of those code
+points does not survive escape-then-unescape.
+
+`OR15`'s `POINTER_PATTERN` refuses the literal text `U+000A` and `U+000D`, which closes 2 of the 263
+cases, and only on `pointer`-class fields.
+
+Ruled: **`U3` publishes `LG5` together with its exception, in the same breath, in user language.**
+Publishing an unqualified promise that is measurably false is a defect in the deliverable, not an
+addition above `U3`'s ceiling — `B36` requires the README to carry the promises, and a false promise
+does not carry one. `U3`'s plan is amended rather than re-authored.
+
+Rejected: publishing `LG5` unqualified and correcting it after `U10`. That ships a false public
+promise for the whole length of the ladder, and `LG3` — "never fabricates" — is the one property this
+system may least afford to break in its own README.
+
+Rejected: holding `U3` until the encoding is made injective. That is `F10b`-scale work across ten
+modules this ladder does not own, it is not `B43`, and it would block a wave-1 unit behind
+undesigned work.
+
+Rejected: weakening `LG5`'s wording in the SPEC. The SPEC is approved and frozen (`OR0`); the goal is
+right and the implementation is short of it. Recording the shortfall is the honest form, and it is
+what the tracked criterion exists for.
+
+**The full discharge of `LG5` — moving escaping off the write path so the stored bytes equal the
+supplied bytes — is `F10b`, is new material this SPEC does not cover, and becomes a NEW thread
+criterion.** It is never folded into `U10`, `U4`, `U8` or `U9`.
