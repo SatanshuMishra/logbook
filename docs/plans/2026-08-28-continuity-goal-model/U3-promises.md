@@ -162,7 +162,7 @@ The case for Logbook is **continuity and auditability** — that a later session
 | **LG2** | **However you work, you can record.** Anything holding a thread's identifier can write to it. No kind of record is reachable only through one working style, and for the same recorded content no style reaches a limit sooner than another |
 | **LG3** | **Logbook never invents a value you did not give it.** Anything you left out — including which goal an item belongs to — is stored as absent and reported back as absent, and no stored link points at something that does not resolve |
 | **LG4** | **Your code is never stored.** No file contents, no diffs, no source. Git already holds those, and Logbook hands you back to git rather than copying it |
-| **LG5** | **What you write is what is stored, or the write is refused.** Where a value must be transformed on the way in, the transform is declared and can be undone |
+| **LG5** | **What you write is what is stored, or the write is refused.** Where a value has to be transformed on the way in, the transform is declared and can be undone. **One exception, which this build does not yet close:** a line break, and certain other characters, are stored as a written-out token such as `U+000A` — and text that already contained that token as ordinary characters is stored in exactly the same way, so when the value is read back the two cannot be told apart. That overlap is known and tracked |
 | **LG6** | **When you read a record you see all of it.** No piece of text is stored that no surface ever shows you |
 | **LG7** | **You can find any record without guessing.** Every kind of record has an identifier you can list and then ask for directly |
 | **LG8** | **No display rule drops an item in silence.** Where something is left out, the output says how many were left out and gives the address that fetches them |
@@ -211,6 +211,15 @@ Three authoring choices were made here rather than passed on, each with the reje
   evidence by `path:line` throughout, and the figures behind the rejected approaches live in decision
   records that a reader of this repository cannot open. Rejected: quoting the numbers, which would
   put uncited quantities into the one file that consistently cites everything.
+- **`LG5` is published together with its exception, in the same table cell rather than in a
+  footnote.** The escaping applied on the way in is idempotent, and an idempotent transform that is
+  not the identity cannot be reversible, so an unqualified `LG5` would be a promise this build
+  measurably does not keep. A reader who reads only the promise must not come away with a false
+  belief. Rejected: publishing `LG5` unqualified and correcting it once the encoding is fixed, which
+  would ship a false public promise for the length of the ladder in the one file that must not carry
+  one. The exception's wording deliberately claims no partial mitigation, because any such claim
+  would depend on another unit having landed first and this unit is parallel with every other unit
+  in its wave.
 - **Line 59's compare-and-swap paragraph is left untouched.** It is about two writing processes at
   one git ref, not about two sessions on one project. Rejected: extending that paragraph to carry the
   single-session limit, which would attach a product-level limit to a storage-mechanism sentence.
