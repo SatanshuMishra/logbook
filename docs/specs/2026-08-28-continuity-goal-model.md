@@ -169,7 +169,17 @@ Marking a criterion done requires two values:
 
 `close_thread` reports the split and refuses on neither. Blocking an honest downgrade makes the honest path more expensive than the dishonest one, which only incentivises claiming `verified` instead. What prevents `unverified-reasoned` becoming the default is aggregation, not refusal: the count is rendered, and a reason that recurs surfaces as a named capability gap in the surrounding tooling.
 
-### D-3 — Identifier scheme
+### D-3 — The git boundary, stated as a rule
+
+> **Git answers what changed, when, and the diff. Logbook answers why, what was decided, what is next and what is at risk — plus the pointer that hands you back to git.**
+
+Logbook stores its records inside git, so it must not duplicate what git already holds. Measured, the discipline is currently perfect: all 203 records scanned contain zero code fences and zero diff hunks, and every stored field is a pointer or a judgement. But nothing in the code inspects what kind of thing a string is — caps limit length, never content class.
+
+The boundary is what stops Logbook becoming a second and worse git, and it currently holds only because callers happen to respect it. This spec gives it three mechanisms: content-class validation on write (`B5`, `A5`), a cap and pattern on the commit field (`B13`), and closure of the sync passthrough that re-commits unvalidated remote bytes (`B40`).
+
+It also constrains the recording-timing change: **recording earlier must never drift into hook-driven capture of edits.** That is why automatic capture of file edits, diffs, tool calls and test runs is a non-goal (section 3.2), and why `B33` deletes the one automatic write that already existed.
+
+### D-4 — Identifier scheme
 
 | Prefix | Meaning |
 |---|---|
