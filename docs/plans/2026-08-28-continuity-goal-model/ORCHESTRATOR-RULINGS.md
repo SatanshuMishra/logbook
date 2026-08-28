@@ -573,3 +573,42 @@ Two knock-on facts, recorded so they are not rediscovered: the same deletion rem
 repositories — this repository already has its own `.github/workflows/receipts.yml`, so nothing in
 this ladder needs the template. And any agent whose definition instructs it to read that skill first
 will block identically; the instruction above is the standing answer.
+
+## OR21 — The documentation lands on `main` before `U0` is cut
+
+Surfaced by U3 planning and verified at the orchestrator: **the spec does not exist on `main`.**
+
+    $ git ls-tree --name-only main docs/specs/
+    docs/specs/2026-08-02-preflight-briefing-redesign.md
+    docs/specs/2026-08-04-mcp-server-hardening.md
+    docs/specs/2026-08-25-post-cutover-repair.md
+    docs/specs/2026-08-26-briefing-scoping-repair.md
+
+`docs/specs/2026-08-28-continuity-goal-model.md` is absent, and so is
+`docs/plans/2026-08-28-continuity-goal-model/`. Both live only on the branch
+`docs/continuity-goal-model-spec`.
+
+That breaks two things. `U3`'s census reads the spec file at test time to derive the `LG` population,
+so on a branch cut from `main` it halts on `ENOENT` — correctly, but the unit could never go green.
+And every implementer is handed a plan file that is not in the repository it is working in.
+
+Ruled: **the spec and every planning document under
+`docs/plans/2026-08-28-continuity-goal-model/` merge to `main` as ONE documentation pull request
+before `U0` is cut.** It is a ladder prerequisite, not a unit: it carries no `B#`, no acceptance
+criteria beyond the files being present, and **no version bump** — documentation describing work that
+has not shipped does not change the plugin, and `P4` governs changes to the plugin.
+
+Ordering, complete: documentation pull request, then `U0`, then `U1`, then the rest of `OR1`.
+
+Two consequences that are already absorbed by existing rulings, stated so nobody chases them:
+
+- `OR4` fixes `main` at `e5f0195` "at planning time" and defines red-on-parent as "the tip of `main`
+  at branch-cut time". After this documentation merge that tip is a new commit. Nothing needs
+  re-authoring: every unit's parent is defined relationally, and `OR6` already makes every version
+  step a read-then-increment.
+- The planning branch tip advances as planning documents are committed — it was `4203de9` when
+  `PLANNING-BRIEF.md` section 7 was written and has moved since. **The load-bearing half of that fact
+  is unchanged and re-verified:** `git diff --name-only main...HEAD` returns paths under `docs/`
+  only, so `src/`, `test/`, `hooks/`, `bin/`, `skills/` and `scripts/` remain byte-identical between
+  `main` and this branch, and every SPEC line citation still applies. A planner whose plan states the
+  older tip has stated a cosmetic fact, not a defect, and its plan is not re-authored for it.
