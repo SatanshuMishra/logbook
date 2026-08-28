@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readFileSync, unlinkSync } from 'node:fs'
+import { mkdirSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Decision } from '../schema/decision.ts'
@@ -110,34 +110,6 @@ const buildTree = (
     return { ok: true, tree: writeTree.stdout.trim() }
   })
 
-type Backup = { target: string; existed: boolean; content: string }
-
-const captureBackup = (target: string): Backup => {
-  try {
-    return { target, existed: true, content: readFileSync(target, 'utf8') }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { target, existed: false, content: '' }
-    }
-    throw error
-  }
-}
-
-const restoreBackup = (rt: Runtime, backup: Backup): void => {
-  if (backup.existed) {
-    mkdirSync(path.dirname(backup.target), { recursive: true })
-    durableWrite(backup.target, backup.content, { log: rt.log })
-    return
-  }
-  try {
-    unlinkSync(backup.target)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error
-    }
-  }
-}
-
 const blobAt = (
   rt: Runtime,
   layout: StoreLayout,
@@ -169,16 +141,22 @@ export const writeRecords = (
     target: path.join(layout.records, relativePathFor(change))
   }))
 
-  const backups = targets.map(({ target }) => captureBackup(target))
-  const rollback = (): void => {
-    for (const backup of backups) {
-      restoreBackup(rt, backup)
-    }
-  }
-
   const readCurrentRef = (): string | null => {
     const result = runGit(rt, layout.projectRoot, ['rev-parse', LEDGER_REF])
     return result.ok ? result.stdout.trim() : null
+  }
+
+  const writeTargetsToDisk = (): { ok: true } | { ok: false; detail: string } => {
+    try {
+      for (const { change, target } of targets) {
+        mkdirSync(path.dirname(target), { recursive: true })
+        durableWrite(target, contentFor(change), { log: rt.log })
+      }
+      return { ok: true }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      return { ok: false, detail }
+    }
   }
 
   let oldRef = readCurrentRef()
@@ -187,14 +165,8 @@ export const writeRecords = (
   while (attempt < MAX_ATTEMPTS) {
     attempt += 1
 
-    for (const { change, target } of targets) {
-      mkdirSync(path.dirname(target), { recursive: true })
-      durableWrite(target, contentFor(change), { log: rt.log })
-    }
-
     const treeResult = buildTree(rt, layout, runGit, oldRef, targets)
     if (!treeResult.ok) {
-      rollback()
       return { ok: false, reason: 'io', detail: treeResult.detail }
     }
     const tree = treeResult.tree
@@ -206,7 +178,6 @@ export const writeRecords = (
         : ['commit-tree', tree, ...parentRefs.flatMap((parent) => ['-p', parent]), '-m', message]
     const commitResult: GitResult = runGit(rt, layout.projectRoot, commitArgs, { identity: identity.value })
     if (!commitResult.ok) {
-      rollback()
       return { ok: false, reason: 'io', detail: `commit-tree: ${commitResult.stderr}` }
     }
     const newCommit = commitResult.stdout.trim()
@@ -217,6 +188,21 @@ export const writeRecords = (
 
     const cas = casUpdateRef(rt, layout.projectRoot, LEDGER_REF, newCommit, oldRef)
     if (cas.ok) {
+      const diskWrite = writeTargetsToDisk()
+      if (!diskWrite.ok) {
+        rt.log({
+          level: 'error',
+          event: 'store.post-cas-durable-write-failed',
+          ref: LEDGER_REF,
+          after: newCommit,
+          detail: diskWrite.detail
+        })
+        return {
+          ok: false,
+          reason: 'io',
+          detail: `${LEDGER_REF} advanced to ${newCommit} but the on-disk record copy could not be durably written: ${diskWrite.detail}; the store is now behind the ledger ref and will repair itself on the next read`
+        }
+      }
       return { ok: true, ref: LEDGER_REF, before: oldRef, after: newCommit }
     }
 
@@ -233,7 +219,6 @@ export const writeRecords = (
           ref: LEDGER_REF,
           contested_records: changedUnderneath.length
         })
-        rollback()
         return {
           ok: false,
           reason: 'ref-moved',
@@ -244,10 +229,8 @@ export const writeRecords = (
       continue
     }
 
-    rollback()
     return { ok: false, reason: 'io', detail: cas.message }
   }
 
-  rollback()
   return { ok: false, reason: 'ref-moved', detail: `${LEDGER_REF} moved ${MAX_ATTEMPTS} times; giving up` }
 }
