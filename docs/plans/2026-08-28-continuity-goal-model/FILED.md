@@ -79,3 +79,52 @@ Appends only. Never edit an item another planner wrote.
   U10 does not own and which SPEC section 9 assigns to U4, U8 and U9. `B43` asks for the inverse,
   not for the relocation.
 - **Not folded in.**
+
+## F1a — a key decision may name a criterion that does not exist on the thread
+
+- **Surfaced by:** U1 planning
+- **Evidence:** `src/server/tools/update_thread.ts:208-215` validates `criterion_id` on every risk in
+  `risks_add` and refuses a dangling one via `danglingRiskCriterionRefusal`. The sibling block at
+  `src/server/tools/update_thread.ts:223-228` builds `newKeyDecisions` and copies only
+  `decision_id`, `title` and `scope` — it neither carries `criterion_id` through nor validates it.
+  The schema field exists and parses (`src/schema/thread.ts:81`).
+- **Why it is above the ceiling:** U1's ceiling is the schema. SPEC rule `B1` names
+  `src/server/tools/update_thread.ts:209-215` as the refusal shape to reuse, and that file is owned
+  by U4 in wave 2. Invariant `A2` is shared across U1, U4 and U9; this is the U4 share.
+- **Not folded in.**
+
+## F1b — a binding record reaches the ledger ref without passing the store's own validator
+
+- **Surfaced by:** U1 planning
+- **Evidence:** `src/server/tools/bind_branch.ts:104` commits a binding as
+  `{ kind: 'raw', relPath: …, content: JSON.stringify(validated.value) }`. `RecordChange`
+  (`src/store/write-path.ts:13-17`) has no `binding` member, and `validateChange`
+  (`src/store/records.ts:34`) returns `null` immediately for `kind === 'raw'`. `bind_branch` does
+  parse the record itself first (`src/server/tools/bind_branch.ts:100-103`), so the shipped path is
+  validated; any future writer of a raw binding blob would not be.
+- **Why it is above the ceiling:** U1's invariant `A5` is a Job-A invariant whose enforcer the SPEC
+  fixes as the tool (SPEC section 6.2), and the tool already parses. Closing the store-level gap
+  needs `src/store/write-path.ts` and `src/server/tools/bind_branch.ts`, which the tree does not
+  require in order to typecheck or pass, so `OR11` does not permit U1 to reach them. It overlaps the
+  surface `B40` opens in U2.
+- **Not folded in.**
+
+## F1c — `OPEN_RISKS_MAX_ELEMENTS` is now named for something wider than it bounds
+
+- **Surfaced by:** U1 planning
+- **Evidence:** after U1, the constant's only remaining uses are
+  `src/server/tools/update_thread.ts:71` and `:76`, where it bounds one call's `risks_add` and
+  `risks_retire` payload. It no longer bounds the stored `spine.open_risks` collection: U1 removes
+  that use from `src/schema/thread.ts:93` and from `src/domain/spine.ts:28`. A name that says
+  `OPEN_RISKS` for a per-call batch bound will be read as an accumulation cap by the next reader.
+- **Why it is above the ceiling:** renaming it requires editing
+  `src/server/tools/update_thread.ts`, which SPEC section 9 assigns to U4 in wave 2. U4 is already
+  editing that file. Suggested name: `RISKS_PER_CALL_MAX_ELEMENTS`.
+- **Not folded in.**
+
+## F10c — correction to F10a's module count
+
+- **Surfaced by:** U10 planning, during the conformance audit of the U10 plan
+- **Evidence:** `F10a` above says "six modules outside U10's ownership" re-escape already-stored text. The measured number is **ten**, each verified by reading the call site: `src/render/briefing.ts:68`, `src/render/roster.ts:67`, `src/server/resource-render.ts:18`, `src/server/resources.ts:52`, `src/server/prompts.ts:22`, `src/cli/session-start.ts:24`, `src/domain/lifecycle.ts:9`, `src/domain/spine.ts:188-207`, `src/schema/refusal.ts:37`, `src/server/tools/resolve_conflict.ts:343-382`. Filed items are append-only, so `F10a` is corrected here rather than edited.
+- **Why it is above the ceiling:** it corrects the record of an item that is itself above the ceiling. `F10a`'s conclusion is unchanged — the count only strengthens it.
+- **Not folded in.**

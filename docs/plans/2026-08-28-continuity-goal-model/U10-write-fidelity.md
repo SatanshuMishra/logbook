@@ -34,14 +34,14 @@ Defined here because the implementer is not assumed to know them.
 
 1. **`unescapeStored` exists and is exported from `src/render/escape.ts`.** It takes the escaped text and returns the original text. Discharges `B43`, first clause. Proven by `escape.line-break-structure-survives-the-round-trip`.
 2. **A round-trip census derives its own population from the shipped module and proves every transform reversible.** The census reads the set of characters the module actually escapes at the moment it runs, escapes each one in five different positions, inverts the result, and requires the original back. Discharges `B43`, second clause, and the Green cell clause "A round-trip census over the final escaped character set proves every transform reversible". Proven by `escape.round-trip-census-over-the-emitted-escape-set`.
-3. **The census halts rather than skipping.** A character in the derived population that the escape does not transform in any of the five positions is classified `unclassifiable`, which stops the census with an error. A character that the inverse fails to restore is classified `forbidden`, which stops the census with an error. No count is written into the test and no character is listed by hand. Discharges plan invariant `P8`. Proven by `escape.round-trip-census-over-the-emitted-escape-set` together with the inertness mutation in section 7.
+3. **The census halts rather than skipping.** A character in the derived population that the escape does not transform in any of the five positions is classified `unclassifiable`, which stops the census with an error. A character that the inverse fails to restore is classified `forbidden`, which stops the census with an error. No count is written into the test and no character is listed by hand. Discharges `B43`'s clause "a round-trip census over the final escaped character set", whose population must be the final set rather than a set frozen at authoring time. Also discharges plan invariant `P8`. Proven by `escape.round-trip-census-over-the-emitted-escape-set` together with the inertness mutation in section 7.
 4. **The token alphabet is proven unambiguous.** No token the escape can produce is the leading part of another token it can produce. This is the precondition the inverse depends on to decide where a token ends. Discharges the Green cell clause "proves every transform reversible", because without it the inverse cannot be shown correct. Proven by `escape.emitted-token-alphabet-is-prefix-free`.
-5. **The inverse touches only text the escape could have produced.** Text that looks like a token but names a character the escape never escapes is returned unchanged. Discharges `LG5`'s "what you write is what is stored" for every value outside the escape's own output alphabet. Proven by `escape.unescape-leaves-text-outside-the-emitted-token-alphabet-untouched`.
+5. **The inverse touches only text the escape could have produced.** Text that looks like a token but names a character the escape never escapes is returned unchanged. Discharges `B43`'s clause "proves every transform reversible", which is false unless the inverse is confined to the transforms the escape actually applies. Also discharges goal `LG5`'s "what you write is what is stored" for every value outside the escape's own output alphabet. Proven by `escape.unescape-leaves-text-outside-the-emitted-token-alphabet-untouched`.
 6. **Structure that `D12` names as destroyed is restored.** Line breaks, four-space indents and ordered-list markers survive escape-then-invert byte for byte. Closes `D12`. Proven by `escape.line-break-structure-survives-the-round-trip` and `escape.leading-space-and-ordered-list-markers-survive-the-round-trip`.
 7. **The number of transforms that cannot be inverted is zero, and that number is produced by the census rather than asserted.** `B43`'s third clause — "A transform that cannot be inverted becomes a refusal instead" — therefore does not fire, and no refusal ships in this unit. The finding and its measurement are in section 3. Discharges `B43`, third clause.
-8. **The one input class that cannot round-trip is asserted rather than left silent.** A raw value that already contains a token is pinned by a test, so the limitation cannot change without a test changing. Discharges plan invariant `P2` in its "returns a success naming exactly what it did and did not do" form. Proven by `escape.round-trip-is-exact-only-outside-the-emitted-token-alphabet`.
-9. **`package.json` and `.claude-plugin/plugin.json` carry the same new version in one commit, and `node scripts/check-packaging.mjs` exits 0.** Discharges plan invariant `P4`.
-10. **`npm test` and `npm run typecheck` both exit 0 on the merge commit.** Discharges plan invariant `P1`.
+8. **The one input class that cannot round-trip is asserted rather than left silent.** A raw value that already contains a token is pinned by a test, so the limitation cannot change without a test changing. Discharges `B43`'s clause "A transform that cannot be inverted becomes a refusal instead" by recording, with evidence, that the set of such transforms is empty and that the residue is an input class rather than a transform. Also discharges plan invariant `P2` in its "returns a success naming exactly what it did and did not do" form. Proven by `escape.round-trip-is-exact-only-outside-the-emitted-token-alphabet`.
+9. **`package.json` and `.claude-plugin/plugin.json` carry the same new version in one commit, and `node scripts/check-packaging.mjs` exits 0.** Carries no `B#`, `A#`, `O#` or `S#`: it is the delivery obligation plan invariant `P4` places on every unit in this ladder, and it is listed here because it is part of this unit's definition of done.
+10. **`npm test` and `npm run typecheck` both exit 0 on the merge commit.** Carries no `B#`, `A#`, `O#` or `S#`: it is the delivery obligation plan invariant `P1` places on every unit in this ladder, and it is listed here for the same reason.
 
 Anything discovered above this list is appended to `docs/plans/2026-08-28-continuity-goal-model/FILED.md` as a new item with its evidence, and is not folded into this plan.
 
@@ -177,6 +177,22 @@ test('clip.is-grapheme-safe', () => {
 
 Nothing is wrong with it. It is the insertion anchor for step 5.
 
+### 2.7 `package.json` line 3 — the version field
+
+```
+  "version": "1.4.1",
+```
+
+What is wrong with it: nothing. It is quoted because step 6 edits this line, and because the value on disk at authoring time is **below** this unit's `2.5.0` baseline — nine units bump it before this one runs. That is why step 6 reads the value rather than matching a literal, and why stop condition 11.5 treats a differing value as normal.
+
+### 2.8 `.claude-plugin/plugin.json` line 3 — the version field
+
+```
+  "version": "1.4.1",
+```
+
+What is wrong with it: nothing. It is quoted for the same reason as 2.7. These two lines must always hold the same value, which is the whole of the packaging check step 6e runs.
+
 ---
 
 ## 3. Divergences from the SPEC
@@ -197,7 +213,7 @@ The ruling this plan applies: `D12` is closed by **writing the missing inverse**
 
 Two different inputs can produce one stored value: `escapeStored('\n')` returns `U+000A`, and `escapeStored('U+000A')` also returns `U+000A`. So a value whose raw text already contains a token cannot be told apart from the character that token names, and cannot round-trip.
 
-This is not fixable inside this unit. The repository ships a test named `escape.stored-is-idempotent-over-the-escapable-and-markdown-leading-population` at `test/unit/escape.test.ts:81`, which requires that escaping an already-escaped value changes nothing. A map that is idempotent and is not the identity cannot be injective — if `f(f(x))` equals `f(x)` and `f` never merges two inputs, then `f(x)` equals `x` everywhere, which `escapeStored` plainly is not. Making the escape injective therefore means deleting that shipped test, and ten modules outside this unit's ownership re-escape already-stored text and rely on the property it pins.
+This is not fixable inside this unit. The repository ships a test named `escape.stored-is-idempotent-over-the-escapable-and-markdown-leading-population` at `test/unit/escape.test.ts:81`, which requires that escaping an already-escaped value changes nothing. A map that is idempotent and is not the identity cannot be injective — if `f(f(x))` equals `f(x)` and `f` never merges two inputs, then `f(x)` equals `x` everywhere, which `escapeStored` plainly is not. Making the escape injective therefore means deleting that shipped test. Ten modules outside this unit's ownership pass already-escaped text back through `escapeStored` and so rely on the property that test pins: `src/render/briefing.ts`, `src/render/roster.ts`, `src/server/resource-render.ts`, `src/server/resources.ts`, `src/server/prompts.ts`, `src/cli/session-start.ts`, `src/domain/lifecycle.ts`, `src/domain/spine.ts`, `src/schema/refusal.ts` and `src/server/tools/resolve_conflict.ts`.
 
 Filed as `F10a` in `docs/plans/2026-08-28-continuity-goal-model/FILED.md`. Acceptance criterion 8 pins the limitation with a test so it cannot drift silently.
 
@@ -268,7 +284,7 @@ export const toEscaped = (char: string): string => {
 
 Rationale: the inverse and the census both need the canonical token for a code point, and a second copy of that arithmetic would drift from this one. Adding the keyword `export` changes no behaviour.
 
-### Step 3 — `src/render/escape.ts`, INSERT-AFTER
+### Step 3 — `src/render/escape.ts`, REPLACE
 
 Adds the inverse. This is the whole of acceptance criterion 1.
 
@@ -351,7 +367,7 @@ import { escapeStored, clipGraphemes, unescapeStored, isEmittedEscape, toEscaped
 
 Rationale: the new tests need the inverse, the population predicate and the token builder.
 
-### Step 5 — `test/unit/escape.test.ts`, INSERT-AFTER
+### Step 5 — `test/unit/escape.test.ts`, REPLACE
 
 FIND (exact, appears once) — the new text goes immediately **before** this line:
 
@@ -361,7 +377,11 @@ test('clip.is-grapheme-safe', () => {
 
 REPLACE: the entire fenced block of section 5.1 below, followed by that same `test('clip.is-grapheme-safe', () => {` line, unchanged.
 
+Rationale: these are the tests that prove the inverse, and `B43` is discharged by the round-trip census among them. They are placed before the existing final test so the escape tests stay together in the file.
+
 ### Step 6 — the version, as a read-then-increment
+
+**No literal version string appears as a FIND in this step.** Nine units bump the version before this one runs, so the value on disk at execution time is not knowable at authoring time. Every command below derives the value it writes from the value it read.
 
 6a. Read the two current values:
 
@@ -370,33 +390,26 @@ node -p "require('./package.json').version"
 node -p "require('./.claude-plugin/plugin.json').version"
 ```
 
-Both print the same value. The baseline for this unit is `2.5.0`.
+Each exits 0 and prints one plain semantic version such as `2.5.0`. Both must print the same value; stop condition 11.5 governs the case where they do not.
 
-6b. This unit's Conventional Commits type is `fix`, which increments the third number and leaves the first two alone. `2.5.0` becomes `2.5.1`.
+6b. This unit's Conventional Commits type is `fix`, which increments the third number and leaves the first two alone. The `2.5.0` baseline recorded in section 0 makes the expected result `2.5.1`; the commands below produce the correct result whatever the two files actually hold.
 
-6c. `package.json`, REPLACE. FIND (exact, appears once):
-
-```
-  "version": "2.5.0",
-```
-
-REPLACE:
+6c. Write the incremented value into both files, derived from what is on disk:
 
 ```
-  "version": "2.5.1",
+node -e 'const fs=require("fs");const cur=JSON.parse(fs.readFileSync("package.json","utf8")).version;const p=JSON.parse(fs.readFileSync(".claude-plugin/plugin.json","utf8")).version;if(cur!==p){console.error("version mismatch: "+cur+" vs "+p);process.exit(1)}const m=/^(\d+)\.(\d+)\.(\d+)$/.exec(cur);if(!m){console.error("not a plain semver: "+cur);process.exit(1)}const next=m[1]+"."+m[2]+"."+(Number(m[3])+1);for(const f of ["package.json",".claude-plugin/plugin.json"]){const t=fs.readFileSync(f,"utf8");const from="\"version\": \""+cur+"\"";const to="\"version\": \""+next+"\"";if(t.split(from).length-1!==1){console.error("expected exactly one version line in "+f);process.exit(1)}fs.writeFileSync(f,t.replace(from,to))}console.log("version "+cur+" -> "+next)'
 ```
 
-6d. `.claude-plugin/plugin.json`, REPLACE. FIND (exact, appears once):
+Expect exit code 0 and one line of output of the form `version 2.5.0 -> 2.5.1`, naming the value 6a printed and that value with its third number incremented by one. A non-zero exit means the two files disagreed, the value was not a plain semantic version, or a file did not carry exactly one version line; all three are stop condition 11.5.
+
+6d. Confirm both files now hold the same new value:
 
 ```
-  "version": "2.5.0",
+node -p "require('./package.json').version"
+node -p "require('./.claude-plugin/plugin.json').version"
 ```
 
-REPLACE:
-
-```
-  "version": "2.5.1",
-```
+Each exits 0, and the two printed values are identical to each other and to the value after the arrow in 6c's output.
 
 6e. Run:
 
@@ -405,6 +418,8 @@ node scripts/check-packaging.mjs
 ```
 
 Expect exit code 0 and the output `check-packaging: ok`.
+
+Rationale: plan invariant `P4` requires the two files to hold one value and to move in one commit, and orchestrator ruling OR6 requires the step to read the current value rather than match a hard-coded one.
 
 ---
 
@@ -527,7 +542,15 @@ Each position exists to make one of the four transforms fire, and the census hal
 
 ## 6. Red on the parent
 
-The parent commit is the tip of `main` at branch-cut time.
+The parent commit is the tip of `main` at branch-cut time. No sha can be written here: this unit is cut after nine other units have merged, so the value does not exist at authoring time.
+
+Record it once, immediately after cutting the branch, and use the value it prints wherever this section says "the parent":
+
+```
+git rev-parse HEAD
+```
+
+Expect exit code 0 and one 40-character hexadecimal sha.
 
 ### 6.1 The honest statement first
 
@@ -541,7 +564,7 @@ Apply step 4 and step 5 only — the two test edits — to a checkout of the par
 node --test test/unit/escape.test.ts
 ```
 
-Expect the run to report `fail 1` and to print:
+Expect exit code 1. The run reports `fail 1` and prints:
 
 ```
 SyntaxError: The requested module '../../src/render/escape.ts' does not provide an export named 'isEmittedEscape'
@@ -566,6 +589,8 @@ Then restore the test file before continuing:
 ```
 git checkout -- test/unit/escape.test.ts
 ```
+
+Expect exit code 0 and no output. Confirm with `git status --short test/unit/escape.test.ts`, which exits 0 and prints nothing.
 
 ### 6.3 The substitute procedure — a genuine red with a real assertion
 
@@ -792,7 +817,7 @@ grep -Fxc "import { escapeStored, clipGraphemes } from '../../src/render/escape.
 grep -Fxc "test('clip.is-grapheme-safe', () => {" test/unit/escape.test.ts
 ```
 
-Every one of the five must print exactly `1`.
+Every one of the five must exit 0 and print exactly `1`. Note that `grep -Fxc` exits 1 when its count is `0`, which is the failure path this stop condition exists for.
 
 If any prints `0`, or a number above `1`, the file has moved under this plan and the FIND strings in section 4 no longer apply. **STOP and report; do not improvise.** Say which of the five commands printed what. Do not adjust a FIND string to make it match.
 
@@ -841,6 +866,6 @@ node -p "require('./package.json').version"
 node -p "require('./.claude-plugin/plugin.json').version"
 ```
 
-If the two values differ from each other, **STOP and report; do not improvise.**
+Each exits 0 and prints one plain semantic version. If the two values differ from each other, **STOP and report; do not improvise.**
 
 A value merely higher than the `2.5.0` baseline is **not** a stop condition — it means the ladder shifted. Take the value the two files agree on, increment its third number by one, and use that.
