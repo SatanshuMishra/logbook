@@ -26,7 +26,9 @@
 2. `logbook://index` lists `logbook://sessions/{thread_id}` alongside the five addresses it already
    lists. (Discharges `B26`.)
 3. The thread resource renders every binding bound to that thread, each with its binding id and its
-   branch name. (Discharges `B27` and defect `D8`.)
+   branch name, and it never claims a thread has no bindings when it could not read them: a failed
+   read prints a line saying so, and a binding record that would not parse is counted. (Discharges
+   `B27` and defect `D8`.)
 4. The thread resource template gains a `list` callback, so `resources/list` returns more than the
    two entries it returns today. The decision template and the single-session-entry template do NOT
    gain one, and neither does the new sessions template. (Discharges `B28`.)
@@ -40,8 +42,14 @@
    (Discharges the unit's `Green` clause.)
 7. The content-to-surface census `content.every-content-field-reaches-a-rendered-surface` stays
    green after this change. (Preserves `O4`, which `U6-A` closed.)
-8. `npm run typecheck` exits 0 and `node scripts/check-packaging.mjs` exits 0, with `package.json`
-   and `.claude-plugin/plugin.json` carrying the same version. (Discharges `P1` and `P4`.)
+Criteria 1 to 5 come from SPEC rules `B25`, `B26`, `B27` and `B28`. Criterion 6 is the unit's `Green`
+clause. Criterion 7 preserves invariant `O4`, which SPEC section 11.4 assigns to `U6`. Nothing else is
+on this list.
+
+Plan invariants `P1` (the suite and the typecheck pass) and `P4` (the two manifests bump together and
+the packaging check passes) bind this unit as they bind every unit. They are verified in section 8
+and are deliberately NOT acceptance criteria, because a ceiling is built only from the unit's own
+rules, `Green` clauses and invariants.
 
 Anything discovered above this list is appended to
 `docs/plans/2026-08-28-continuity-goal-model/FILED.md` as a new item and is NOT folded into this plan.
@@ -117,7 +125,7 @@ Current source, read at the tip of `main`, as `U6-A` leaves it:
 What is wrong with it: it never reads bindings. SPEC defect `D8` records the state this produces —
 "the binding record type is written and read by nothing".
 
-### 2.4 `src/server/tools/bind_branch.ts` lines 78-80 — how a binding is found today
+### 2.4 `src/server/tools/bind_branch.ts` lines 80-81 — how a binding is found today
 
 Current source, read at the tip of `main`:
 
@@ -143,7 +151,101 @@ every line break to the literal six-character text `U+000A`, so a stored body co
 break at all. Splitting a stored body on `\n` therefore returns the whole body. The listing splits
 on the literal `U+000A` instead, because that is what a line break looks like once stored.
 
-### 2.6 `test/spawn/resources.test.ts` lines 211-214 — the registered-against-index census
+### 2.6 `src/server/resource-render.ts` lines 1-8 and 84-107, as `U6-A` leaves them — the renderer this unit extends
+
+`U6-A` is already merged into this branch's base, so the current text of this file is not the text at
+`e5f0195`. Its head reads:
+
+```ts
+import { escapeStored } from '../render/escape.ts'
+import type { Decision } from '../schema/decision.ts'
+import type { SessionEntry } from '../schema/session.ts'
+import type { Artifact, Criterion, KeyDecision, OutOfScope, Risk, Thread } from '../schema/thread.ts'
+import type { Pointer } from '../domain/pointer.ts'
+import type { DecisionIntegrity } from '../render/briefing.ts'
+
+const NOT_RECORDED = 'not recorded'
+```
+
+and the quarantined-line renderer and the thread-detail signature read:
+
+```ts
+const renderDetailDanglingLine = (decisionId: string): string => `dangling: ${escapeStored(decisionId)}`
+
+const renderDetailQuarantinedLine = (decisionId: string): string => `quarantined: ${escapeStored(decisionId)}`
+
+const renderDetailRelatedLine = (predecessor: Thread): string =>
+  `- succeeds: ${escapeStored(predecessor.title)} (${escapeStored(predecessor.slug)})`
+```
+
+```ts
+export const renderThreadDetail = (
+  thread: Thread,
+  decisionIntegrity: DecisionIntegrity,
+  pointer: Pointer | null,
+  predecessor: Thread | null
+): string => {
+```
+
+What is wrong with them: the file imports neither `clipGraphemes` nor the `Binding` type, so it can
+neither shorten a session entry's first line nor render a binding. `renderThreadDetail` takes no
+bindings argument, so SPEC defect `D8` — "the binding record type is written and read by nothing" —
+stands. And `renderDetailQuarantinedLine` is defined below the point where this unit's new session
+listing first uses it, so it must move before the listing can call it.
+
+### 2.7 `test/contract/content-rendered.test.ts` lines 137-142, as `U6-A` leaves them — the census call site
+
+`U6-A` created this file. Its call into the renderer reads:
+
+```ts
+  return [
+    renderThreadDetail(thread, { resolved: 0, dangling: [], quarantined: [] }, null, null),
+    renderDecisionResource(decision),
+    renderSessionEntryResource(entry)
+  ].join('\n')
+```
+
+What is wrong with it: nothing yet. It is quoted because this unit adds a fifth parameter to
+`renderThreadDetail`, so this call must change with it or the tree stops typechecking. There is no
+SPEC defect here; the edit is the cost of `B27`.
+
+### 2.8 `test/unit/resource-render.test.ts` lines 1-4 — the unit test file this unit extends
+
+Current source, read at the tip of `main`:
+
+```ts
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import type { Decision } from '../../src/schema/decision.ts'
+import { renderDecisionResource } from '../../src/server/resource-render.ts'
+```
+
+What is wrong with it: it exercises `renderDecisionResource` only. `renderThreadDetail` has no
+unit-level test at all, so the bindings block this unit adds — including what it prints when the
+bindings could not be read — would ship with no assertion below the spawn layer.
+
+### 2.9 `test/spawn/resources.test.ts` lines 156-165 and 211-214 — the two places the index census reads
+
+The shape resolver reads:
+
+```ts
+const resolveShapeToUri = (shape: string, ids: SeededIds): string | null => {
+  if (shape === 'logbook://index') return 'logbook://index'
+  if (shape === 'logbook://roster') return 'logbook://roster'
+  if (shape === 'logbook://thread/{id}') return `logbook://thread/${ids.threadId}`
+  if (shape === 'logbook://decision/{id}') return `logbook://decision/${ids.decisionId}`
+  if (shape === 'logbook://session/{thread_id}/{entry_id}') {
+    return `logbook://session/${ids.sessionThreadId}/${ids.sessionEntryId}`
+  }
+  return null
+}
+```
+
+What is wrong with it once this unit lands: it returns `null` for any shape it does not name, and
+`resource.index-addresses-resolve` classifies a `null` as `unclassifiable` and halts. The new
+`logbook://sessions/{thread_id}` address would halt it.
+
+### 2.10 `test/spawn/resources.test.ts` lines 211-214 — the registered-against-index census
 
 Current source, read at the tip of `main`:
 
@@ -189,7 +291,17 @@ is a design act `B28` does not authorise, and the thread ids that address it alr
 the thread list. Rejected: giving it a `list` callback, which would duplicate the thread list under a
 second name for no reader that lacks the first.
 
-### 3.4 Quarantined bindings are counted, not named
+### 3.4 A binding read this unit cannot perform says so, rather than rendering an empty block
+
+`readBindingsForThread` resolves the store layout before it reads anything, and that resolution can
+fail. Returning an empty binding list on that path would render a `Bindings:` heading with nothing
+under it, which is byte-identical to a thread that genuinely has no bindings — a success claiming a
+fact ("this thread has no bindings") that was never established, which plan invariant `P2` forbids.
+The returned shape therefore carries a third field, `unread`, and the renderer prints an explicit
+line when it is set. Rejected: logging the failure and returning an empty list, which names the
+problem only in a log the reader of the resource never sees.
+
+### 3.5 Quarantined bindings are counted, not named
 
 A binding record that fails to parse cannot be attributed to a thread, because the field naming its
 thread is exactly the field that did not parse. Naming its id under one thread's `Bindings:` block
@@ -198,13 +310,13 @@ therefore prints `unreadable binding records: N` when N is above zero and prints
 zero. Rejected: listing the record ids under the thread, which fabricates the attribution; and
 rejected: dropping them silently, which hides an omission.
 
-### 3.5 This unit's own line citations
+### 3.6 This unit's own line citations
 
 SPEC line citations were taken at `e5f0195`. Every line range quoted in section 2 was read from the
 working tree while authoring. `src/server/resources.ts` is 244 lines, `src/server/resource-render.ts`
 is 108 lines before `U6-A` and `test/spawn/resources.test.ts` is 319 lines.
 
-### 3.6 `src/server/tools/resolve_conflict.ts` contains a byte that is not valid UTF-8
+### 3.7 `src/server/tools/resolve_conflict.ts` contains a byte that is not valid UTF-8
 
 That file may be invisible to `grep`. No census in this unit reads any file under `src/` as text, so
 the file is neither missed nor mis-read by anything this unit adds.
@@ -213,47 +325,89 @@ the file is neither missed nor mis-read by anything this unit adds.
 
 ### Step 1 — bump the version
 
-File: `package.json`, and `.claude-plugin/plugin.json`.
+Files: `package.json` and `.claude-plugin/plugin.json`.
 
-1. Read the current version:
+This unit's Conventional Commits type is `feat`, so the MINOR component increments and the PATCH
+component is set to 0. The baseline is `2.2.0`, which increments to `2.3.0`. The step is written as a
+read-then-increment so that a shifted ladder does not break it.
 
-   ```
-   node -p "require('./package.json').version"
-   ```
+Run this exact command from the repository root:
 
-2. This unit's Conventional Commits type is `feat`, so increment MINOR and set PATCH to 0. If the
-   command above printed `2.2.0`, the new version is `2.3.0`.
+```
+node -e "const fs=require('fs');const [maj,min]=require('./package.json').version.split('.');const next=[maj,String(Number(min)+1),'0'].join('.');for (const f of ['package.json','.claude-plugin/plugin.json']) {const t=fs.readFileSync(f,'utf8');fs.writeFileSync(f,t.replace(/\"version\": \"[0-9]+\.[0-9]+\.[0-9]+\"/, '\"version\": \"'+next+'\"'))};console.log(next)"
+```
 
-3. REPLACE in `package.json`. FIND (the third line of the file):
+It reads the current version from `package.json`, increments MINOR, sets PATCH to 0, writes the same
+value into the `"version"` line of both files, and prints the value it wrote. It replaces the first
+`"version"` match in each file, which is the top-level key on line 3, and leaves every other byte of
+both files unchanged.
 
-   ```json
-     "version": "2.2.0",
-   ```
+Expect the printed value to be `2.3.0`, and expect exactly one changed line in each file:
 
-   REPLACE with:
+```
+git diff --numstat package.json .claude-plugin/plugin.json
+```
 
-   ```json
-     "version": "2.3.0",
-   ```
+Expect exit code 0 and this output:
 
-4. REPLACE in `.claude-plugin/plugin.json`. FIND (the third line of the file, indented by two
-   spaces):
+```
+1	1	.claude-plugin/plugin.json
+1	1	package.json
+```
 
-   ```json
-     "version": "2.2.0",
-   ```
+Then run:
 
-   REPLACE with:
+```
+node scripts/check-packaging.mjs
+```
 
-   ```json
-     "version": "2.3.0",
-   ```
-
-5. Run `node scripts/check-packaging.mjs` and expect exit code 0 with no output.
+Expect exit code 0 and no output.
 
 Rationale: plan invariant `P4`.
 
-### Step 2 — add the sessions renderer and the binding line to the resource renderer
+### Step 2 — move the quarantined-line renderer above its new first use
+
+File: `src/server/resource-render.ts`. Two edits. This step changes no behaviour: it relocates one
+function and renames its parameter, because from step 4 onward two renderers call it and its argument
+is no longer always a decision id.
+
+Edit 1 — REPLACE. FIND (exact, unique):
+
+```ts
+const renderDetailDanglingLine = (decisionId: string): string => `dangling: ${escapeStored(decisionId)}`
+
+const renderDetailQuarantinedLine = (decisionId: string): string => `quarantined: ${escapeStored(decisionId)}`
+
+const renderDetailRelatedLine = (predecessor: Thread): string =>
+```
+
+REPLACE with:
+
+```ts
+const renderDetailDanglingLine = (decisionId: string): string => `dangling: ${escapeStored(decisionId)}`
+
+const renderDetailRelatedLine = (predecessor: Thread): string =>
+```
+
+Edit 2 — REPLACE. FIND (exact, unique):
+
+```ts
+const detailCriterionStatus = (criterion: Criterion): string => {
+```
+
+REPLACE with:
+
+```ts
+const renderDetailQuarantinedLine = (id: string): string => `quarantined: ${escapeStored(id)}`
+
+const detailCriterionStatus = (criterion: Criterion): string => {
+```
+
+Rationale: this is the only move in this unit, and it ships as its own commit so that no commit mixes
+a relocation with a behaviour change. Applying both edits leaves the tree compiling and the suite
+green, because nothing referenced the function above its old position.
+
+### Step 3 — add the imports, the exported types and the module constants
 
 File: `src/server/resource-render.ts`. REPLACE.
 
@@ -281,7 +435,7 @@ import type { Artifact, Criterion, KeyDecision, OutOfScope, Risk, Thread } from 
 import type { Pointer } from '../domain/pointer.ts'
 import type { DecisionIntegrity } from '../render/briefing.ts'
 
-export type BindingIntegrity = { bound: Binding[]; unreadable: number }
+export type BindingIntegrity = { bound: Binding[]; unreadable: number; unread: boolean }
 
 export type SessionsListing = { threadId: string; entries: SessionEntry[]; quarantined: string[] }
 
@@ -290,23 +444,29 @@ const STORED_LINE_BREAK = 'U+000A'
 const SESSION_FIRST_LINE_MAX = 200
 const SESSION_FIRST_LINE_CLIPPED_NOTE =
   'some entry first lines were shortened to fit this listing; read the entry in full for the rest'
+const BINDINGS_UNREAD_NOTE = 'bindings could not be read; none is claimed either way'
 ```
 
-Rationale: `B25` needs a listing type and a first-line budget; `B27` needs a binding-integrity type.
+Rationale: `B25` needs a listing type and a first-line budget; `B27` needs a binding-integrity type,
+and its `unread` field is what divergence 3.4 requires.
 
-### Step 3 — add the sessions listing renderer
+### Step 4 — add the sessions listing renderer
 
 File: `src/server/resource-render.ts`. REPLACE.
 
 FIND (exact, unique):
 
 ```ts
+const renderDetailQuarantinedLine = (id: string): string => `quarantined: ${escapeStored(id)}`
+
 const detailCriterionStatus = (criterion: Criterion): string => {
 ```
 
 REPLACE with:
 
 ```ts
+const renderDetailQuarantinedLine = (id: string): string => `quarantined: ${escapeStored(id)}`
+
 const firstStoredLine = (body: string): string => body.split(STORED_LINE_BREAK)[0] ?? ''
 
 const renderSessionsEntryLine = (entry: SessionEntry): string =>
@@ -314,8 +474,6 @@ const renderSessionsEntryLine = (entry: SessionEntry): string =>
 
 const firstLineWasClipped = (entry: SessionEntry): boolean =>
   escapeStored(firstStoredLine(entry.body)).length > SESSION_FIRST_LINE_MAX
-
-const renderDetailQuarantinedLine = (id: string): string => `quarantined: ${escapeStored(id)}`
 
 export const renderSessionsResource = (listing: SessionsListing): string => {
   const count = listing.entries.length
@@ -331,15 +489,14 @@ export const renderSessionsResource = (listing: SessionsListing): string => {
 const detailCriterionStatus = (criterion: Criterion): string => {
 ```
 
-Rationale: `B25`. `renderDetailQuarantinedLine` moves up here because it is now used by two
-renderers; step 5 deletes its old definition, so the file still holds exactly one.
+Rationale: `B25`.
 
 The clipped note is emitted through `.filter(...).slice(0, 1).map(...)` rather than a conditional,
 because `test/contract/render-census.test.ts` resolves a mapped array's elements and cannot resolve a
 conditional that yields an array. `src/render/briefing.ts:250` already uses the same shape for the
 same reason. Rejected: a ternary yielding `[]` or `[note]` — measured to halt that census.
 
-### Step 4 — add the binding line
+### Step 5 — add the binding line
 
 File: `src/server/resource-render.ts`. REPLACE.
 
@@ -360,35 +517,11 @@ const renderDetailRiskLine = (risk: Risk): string =>
 
 Rationale: `B27`.
 
-### Step 5 — remove the old quarantined-line definition
-
-File: `src/server/resource-render.ts`. REPLACE.
-
-FIND (exact, unique):
-
-```ts
-const renderDetailDanglingLine = (decisionId: string): string => `dangling: ${escapeStored(decisionId)}`
-
-const renderDetailQuarantinedLine = (decisionId: string): string => `quarantined: ${escapeStored(decisionId)}`
-
-const renderDetailRelatedLine = (predecessor: Thread): string =>
-```
-
-REPLACE with:
-
-```ts
-const renderDetailDanglingLine = (decisionId: string): string => `dangling: ${escapeStored(decisionId)}`
-
-const renderDetailRelatedLine = (predecessor: Thread): string =>
-```
-
-Rationale: step 3 moved this function above its first use; leaving both copies would not compile.
-
 ### Step 6 — take bindings on the thread resource renderer
 
-File: `src/server/resource-render.ts`. REPLACE.
+File: `src/server/resource-render.ts`. Three edits.
 
-FIND (exact, unique):
+Edit 1 — REPLACE. FIND (exact, unique):
 
 ```ts
   predecessor: Thread | null
@@ -405,9 +538,7 @@ REPLACE with:
   const criteriaLines = thread.completion_criteria.map(renderDetailCriterionLine)
 ```
 
-Then, in the same file, REPLACE.
-
-FIND (exact, unique):
+Edit 2 — REPLACE. FIND (exact, unique):
 
 ```ts
   const quarantinedLines = decisionIntegrity.quarantined.map(renderDetailQuarantinedLine)
@@ -422,12 +553,11 @@ REPLACE with:
   const bindingUnreadableLines = [bindings.unreadable]
     .filter((count) => count > 0)
     .map((count) => `unreadable binding records: ${count}`)
+  const bindingUnreadLines = [bindings.unread].filter(Boolean).map(() => BINDINGS_UNREAD_NOTE)
   const relatedThreads = predecessor === null ? [] : [predecessor]
 ```
 
-Then, in the same file, REPLACE.
-
-FIND (exact, unique):
+Edit 3 — REPLACE. FIND (exact, unique):
 
 ```ts
     'Out of scope:',
@@ -443,10 +573,16 @@ REPLACE with:
     'Bindings:',
     ...bindingLines,
     ...bindingUnreadableLines,
+    ...bindingUnreadLines,
     'Decisions:',
 ```
 
-Rationale: `B27`, and divergence 3.4 for the unreadable count.
+Rationale: `B27`, and divergences 3.4 and 3.5 for the two lines that report what was not read.
+
+`bindingUnreadLines` uses `[flag].filter(Boolean).map(...)`, which is the shape
+`src/render/briefing.ts:257` already uses for its clip marker and which
+`test/contract/render-census.test.ts` resolves. Rejected: a ternary yielding `[]` or `[note]` — the
+same census halt measured at step 4.
 
 ### Step 7 — import what the resource layer needs
 
@@ -542,7 +678,7 @@ const readBindingsForThread = (rt: Runtime, threadId: string): BindingIntegrity 
   const layout = layoutFor(rt, rt.cwd)
   if (!layout.ok) {
     rt.log({ level: 'error', event: 'resource.thread-bindings-unreadable', detail: layout.message })
-    return { bound: [], unreadable: 0 }
+    return { bound: [], unreadable: 0, unread: true }
   }
   const slots = readAllRecordFiles<Binding>(path.join(layout.value.records, 'bindings'), BindingRecord)
   const bound: Binding[] = []
@@ -555,15 +691,15 @@ const readBindingsForThread = (rt: Runtime, threadId: string): BindingIntegrity 
     }
     if (slot.record.thread_id === threadId) bound.push(slot.record)
   }
-  return { bound, unreadable }
+  return { bound, unreadable, unread: false }
 }
 
 const readThreadResourceBody = (rt: Runtime, id: string): string => {
 ```
 
-Rationale: `B27`. Reading through `readAllRecordFiles` rather than through the `Store` type keeps
-this unit inside its own files; `src/server/tools/bind_branch.ts:80` already reads bindings the same
-way.
+Rationale: `B27`, and divergence 3.4 for the `unread` value on the layout-failure path. Reading
+through `readAllRecordFiles` rather than through the `Store` type keeps this unit inside its own
+files; `src/server/tools/bind_branch.ts:81` already reads bindings the same way.
 
 ### Step 10 — pass the bindings, and add the sessions body and the thread list
 
@@ -733,18 +869,19 @@ REPLACE with:
 ```ts
     renderThreadDetail(thread, { resolved: 0, dangling: [], quarantined: [] }, null, null, {
       bound: [],
-      unreadable: 0
+      unreadable: 0,
+      unread: false
     }),
 ```
 
 Rationale: acceptance criterion 7 — step 6 added a fifth parameter to `renderThreadDetail`, and the
 census calls it.
 
-### Step 14 — widen the registered-against-index classifier
+### Step 14 — import the URI template matcher into the spawn test
 
-File: `test/spawn/resources.test.ts`. Two edits.
+File: `test/spawn/resources.test.ts`. REPLACE.
 
-Edit 1 — REPLACE. FIND (exact, unique):
+FIND (exact, unique):
 
 ```ts
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
@@ -759,7 +896,13 @@ import { UriTemplate } from '@modelcontextprotocol/sdk/shared/uriTemplate.js'
 import { rawGit } from '../support/git-fixture.ts'
 ```
 
-Edit 2 — REPLACE. FIND (exact, unique):
+Rationale: ground truth 2.10 — the widened classifier needs it.
+
+### Step 15 — widen the registered-against-index classifier
+
+File: `test/spawn/resources.test.ts`. REPLACE.
+
+FIND (exact, unique):
 
 ```ts
     const indexShapeSet = new Set(shapes)
@@ -778,10 +921,10 @@ REPLACE with:
     }
 ```
 
-Rationale: ground truth 2.6. The census still halts on an address that matches neither a shape nor a
+Rationale: ground truth 2.10. The census still halts on an address that matches neither a shape nor a
 template, which is the property it exists for.
 
-### Step 15 — resolve the new index shape to a readable URI
+### Step 16 — resolve the new index shape to a readable URI
 
 File: `test/spawn/resources.test.ts`. REPLACE.
 
@@ -789,6 +932,7 @@ FIND (exact, unique):
 
 ```ts
   if (shape === 'logbook://decision/{id}') return `logbook://decision/${ids.decisionId}`
+  if (shape === 'logbook://session/{thread_id}/{entry_id}') {
 ```
 
 REPLACE with:
@@ -796,17 +940,43 @@ REPLACE with:
 ```ts
   if (shape === 'logbook://decision/{id}') return `logbook://decision/${ids.decisionId}`
   if (shape === 'logbook://sessions/{thread_id}') return `logbook://sessions/${ids.sessionThreadId}`
+  if (shape === 'logbook://session/{thread_id}/{entry_id}') {
 ```
 
-Rationale: `resource.index-addresses-resolve` reads every shape the index publishes and halts on one
-it cannot turn into a URI. Without this line the new address halts it.
+Rationale: ground truth 2.9 — `resource.index-addresses-resolve` halts on a shape it cannot turn into
+a URI.
 
-### Step 16 — add the four acceptance tests
+### Step 17 — add the four acceptance tests
 
 File: `test/spawn/resources.test.ts`. The block to APPEND at the end of the file is given in section
 5.1.
 
 Rationale: acceptance criteria 1, 2, 3, 4, 5 and 6.
+
+### Step 18 — add the unit tests for the bindings block
+
+File: `test/unit/resource-render.test.ts`. One REPLACE and one APPEND.
+
+REPLACE. FIND (exact, unique):
+
+```ts
+import type { Decision } from '../../src/schema/decision.ts'
+import { renderDecisionResource } from '../../src/server/resource-render.ts'
+```
+
+REPLACE with:
+
+```ts
+import type { Decision } from '../../src/schema/decision.ts'
+import type { Thread } from '../../src/schema/thread.ts'
+import type { DecisionIntegrity } from '../../src/render/briefing.ts'
+import { renderDecisionResource, renderThreadDetail } from '../../src/server/resource-render.ts'
+```
+
+Then APPEND the block given in section 5.2 at the end of the file.
+
+Rationale: acceptance criterion 3 — the three states the bindings block can be in, asserted below the
+spawn layer.
 
 ## 5. Tests
 
@@ -927,22 +1097,88 @@ Every helper this block uses — `withFixture`, `seedStore`, `assertOkResult`, `
 `parseIndexShapes`, `readThreadResourceText`, `SpawnedServer`, `CallToolResult` — is already defined
 or imported earlier in the same file. Nothing new is imported except `UriTemplate`, added by step 14.
 
-### 5.2 Which test discharges which criterion
+### 5.2 `test/unit/resource-render.test.ts` — APPEND
+
+Append this block, exactly, at the end of the file:
+
+```ts
+
+const THREAD_WITHOUT_BINDINGS: Thread = {
+  id: '01ARZ3NDEKTSV4RRFFQ69G5FB0',
+  slug: 'binding-render-fixture',
+  title: 'binding render fixture',
+  status: 'open',
+  blocked_by: null,
+  completion_criteria: [],
+  spine: {
+    active_goal: 'render the bindings block',
+    next_step: 'assert the unread marker',
+    last_session: 'none',
+    open_risks: [],
+    key_decisions: [],
+    out_of_scope: []
+  },
+  created_at: '2026-08-24T00:00:00.000Z',
+  updated_at: '2026-08-24T00:00:00.000Z'
+}
+
+const NO_DECISIONS: DecisionIntegrity = { resolved: 0, dangling: [], quarantined: [] }
+
+const bindingLinesOf = (rendered: string): string[] => {
+  const lines = rendered.split('\n')
+  const start = lines.indexOf('Bindings:')
+  const end = lines.indexOf('Decisions:')
+  return lines.slice(start + 1, end)
+}
+
+test('resource-render.thread.says-nothing-about-bindings-it-could-not-read', () => {
+  const rendered = renderThreadDetail(THREAD_WITHOUT_BINDINGS, NO_DECISIONS, null, null, {
+    bound: [],
+    unreadable: 0,
+    unread: true
+  })
+  assert.deepEqual(bindingLinesOf(rendered), ['bindings could not be read; none is claimed either way'])
+})
+
+test('resource-render.thread.claims-no-bindings-only-when-it-read-them', () => {
+  const rendered = renderThreadDetail(THREAD_WITHOUT_BINDINGS, NO_DECISIONS, null, null, {
+    bound: [],
+    unreadable: 0,
+    unread: false
+  })
+  assert.deepEqual(bindingLinesOf(rendered), [])
+})
+
+test('resource-render.thread.counts-binding-records-it-could-not-parse', () => {
+  const rendered = renderThreadDetail(THREAD_WITHOUT_BINDINGS, NO_DECISIONS, null, null, {
+    bound: [],
+    unreadable: 2,
+    unread: false
+  })
+  assert.deepEqual(bindingLinesOf(rendered), ['unreadable binding records: 2'])
+})
+```
+
+### 5.3 Which test discharges which criterion
 
 | Criterion | Test that discharges it |
 |---|---|
 | 1 — the sessions resource | `resource.sessions-lists-every-entry-id-with-its-first-line` |
 | 2 — the index lists it | `resource.index-lists-the-sessions-address`, plus `resource.index-addresses-resolve` |
-| 3 — bindings render | `resource.thread-detail-shows-every-binding` |
+| 3 — bindings render, and an unread read says so | `resource.thread-detail-shows-every-binding`, plus the three `resource-render.thread.` tests in 5.2 |
 | 4 — the thread template lists, the others do not | `resource.list-enumerates-open-threads-and-not-decisions-or-session-entries` |
 | 5 — terminal threads drop out | the final two assertions of that same test |
-| 6 — four ids reachable without guessing | thread id and binding id: the two tests above; decision id: `resource.thread-detail-shows-every-risk-and-criterion-id` together with the shipped `Key decisions:` line at `src/server/resource-render.ts`; session entry id: the sessions test |
+| 6 — four ids reachable without guessing | thread id and binding id: the two tests above; decision id: `resource.thread-detail-shows-every-risk-and-criterion-id` together with the shipped `Key decisions:` line in `src/server/resource-render.ts`; session entry id: the sessions test |
 | 7 — the content census stays green | `content.every-content-field-reaches-a-rendered-surface` |
-| 8 — typecheck and packaging | `npm run typecheck`, `node scripts/check-packaging.mjs` |
 
-### 5.3 No test is deleted, skipped or weakened
+Invariant `O4` is assigned to `U6` by SPEC section 11.4. `U6-A` closed it; criterion 7 and the test
+named against it are what keep it closed here.
 
-`resource.index-addresses-resolve` is widened by step 14 to classify a concrete instance URI against
+Plan invariants `P1` and `P4` are verified in section 8 and by step 1, and are not acceptance criteria.
+
+### 5.4 No test is deleted, skipped or weakened
+
+`resource.index-addresses-resolve` is widened by step 15 to classify a concrete instance URI against
 the index's templates. It still halts on an address that matches nothing. Its two other assertions
 are untouched, and its name does not change.
 
@@ -956,8 +1192,10 @@ down:
 git rev-parse HEAD
 ```
 
-Apply steps 14, 15 and 16 only — the three test edits. Do not apply any of steps 1 through 13. Then
-run:
+Expect exit code 0 and one line of 40 hexadecimal characters. That line is the parent sha.
+
+Apply steps 14, 15, 16 and 17 only — the four edits to `test/spawn/resources.test.ts`. Do not apply
+any of steps 1 through 13, and do not apply step 18. Then run:
 
 ```
 node --experimental-strip-types --test test/spawn/resources.test.ts
@@ -983,11 +1221,29 @@ expected resources/list to return more than two entries, got 2
 
 The three pre-existing tests in that file — `resource.index-addresses-resolve`,
 `resource.read-is-pure` and `resource.thread-detail-shows-every-risk-and-criterion-id` — pass at the
-parent and must still pass. Step 14 widens the first of them, and a widened classifier does not
+parent and must still pass. Step 15 widens the first of them, and a widened classifier does not
 change its verdict on the addresses that already existed.
 
-Then apply steps 1 through 13 and re-run the same command. Expect exit code 0 with `pass 7` and
-`fail 0`.
+Then apply step 18's two edits only, leaving steps 1 through 13 unapplied, and run:
+
+```
+node --experimental-strip-types --test test/unit/resource-render.test.ts
+```
+
+Expect exit code 1, with `pass 3` and `fail 3`. All three new tests fail, because
+`renderThreadDetail` at the parent renders no `Bindings:` heading, so the slice between `Bindings:`
+and `Decisions:` cannot be taken. The three failing names are:
+
+```
+resource-render.thread.says-nothing-about-bindings-it-could-not-read
+resource-render.thread.claims-no-bindings-only-when-it-read-them
+resource-render.thread.counts-binding-records-it-could-not-parse
+```
+
+The three pre-existing `resource-render.decision.` tests pass at the parent and must still pass.
+
+Then apply steps 1 through 13 and run both commands again. Expect exit code 0 from each, with
+`pass 7` and `fail 0` from the first and `pass 6` and `fail 0` from the second.
 
 ## 7. Inertness mutation
 
@@ -1052,7 +1308,7 @@ Revert: in `src/server/resources.ts`, inside `readThreadResourceBody`, replace t
 with
 
 ```ts
-    { bound: [], unreadable: 0 }
+    { bound: [], unreadable: 0, unread: false }
 ```
 
 Run the same command. Expect exit code 1, one failing test, and this text:
@@ -1063,7 +1319,30 @@ expected the thread resource to name binding
 
 Restore: put `readBindingsForThread(rt, thread.id)` back.
 
-### 7.4 The thread list callback (criteria 4 and 5)
+### 7.4 The unread marker (criterion 3)
+
+Revert: in `src/server/resource-render.ts`, delete this line from `renderThreadDetail`:
+
+```ts
+  const bindingUnreadLines = [bindings.unread].filter(Boolean).map(() => BINDINGS_UNREAD_NOTE)
+```
+
+and delete `    ...bindingUnreadLines,` from the returned array. Run:
+
+```
+node --experimental-strip-types --test test/unit/resource-render.test.ts
+```
+
+Expect exit code 1, one failing test, and this text:
+
+```
+resource-render.thread.says-nothing-about-bindings-it-could-not-read
+```
+
+Restore: put both lines back, the first immediately after `bindingUnreadableLines` and the second
+immediately after `...bindingUnreadableLines,`.
+
+### 7.5 The thread list callback (criteria 4 and 5)
 
 Revert: in `src/server/resources.ts`, in the `logbook://thread/{id}` template, replace
 
@@ -1077,7 +1356,8 @@ with
       list: undefined,
 ```
 
-Run the same command. Expect exit code 1, one failing test, and this text:
+Run `node --experimental-strip-types --test test/spawn/resources.test.ts`. Expect exit code 1, one
+failing test, and this text:
 
 ```
 expected resources/list to return more than two entries, got 2
@@ -1085,7 +1365,7 @@ expected resources/list to return more than two entries, got 2
 
 Restore: put `list: () => listThreadResources(rt),` back.
 
-### 7.5 The content census still binds (criterion 7)
+### 7.6 The content census still binds (criterion 7)
 
 Revert: in `src/server/resource-render.ts`, delete the line
 
@@ -1120,17 +1400,17 @@ Run each command from the repository root, in this order.
 3. ```
    node --experimental-strip-types --test test/spawn/resources.test.ts test/spawn/forgery.test.ts test/spawn/completions.test.ts
    ```
-   Expect exit code 0 and `# fail 0`.
+   Expect exit code 0, and the summary line reporting the failure count reads `fail 0`.
 
 4. ```
    node --experimental-strip-types --test test/contract/content-rendered.test.ts test/contract/render-census.test.ts test/contract/described.test.ts test/unit/resource-render.test.ts
    ```
-   Expect exit code 0 and `# fail 0`.
+   Expect exit code 0, and the summary line reporting the failure count reads `fail 0`.
 
 5. ```
    npm test
    ```
-   Expect exit code 0 and `# fail 0`.
+   Expect exit code 0, and the summary line reporting the failure count reads `fail 0`.
 
    If the ONLY failing test is `concurrent.distinct-ids` in `test/spawn/decisions.test.ts`,
    that is the tracked store-materialisation defect, not this change. Re-run `npm test` once.
@@ -1144,16 +1424,25 @@ rewrites tracked files.
 
 ## 9. Commits
 
-### Commit 1 — the renderers
+### Commit 1 — the move
+
+```
+refactor(discovery): move the quarantined-line renderer above its new first use
+```
+
+Files: `src/server/resource-render.ts`.
+Plan step: 2.
+
+### Commit 2 — the renderers
 
 ```
 feat(discovery): render a thread's session log listing and its bindings
 ```
 
 Files: `src/server/resource-render.ts`.
-Plan steps: 2, 3, 4, 5, 6.
+Plan steps: 3, 4, 5, 6.
 
-### Commit 2 — the resource layer
+### Commit 3 — the resource layer
 
 ```
 feat(discovery): publish a sessions address and list open threads
@@ -1162,16 +1451,17 @@ feat(discovery): publish a sessions address and list open threads
 Files: `src/server/resources.ts`.
 Plan steps: 7, 8, 9, 10, 11, 12.
 
-### Commit 3 — the tests
+### Commit 4 — the tests
 
 ```
 test(discovery): assert the four published ids reach a model without guessing
 ```
 
-Files: `test/contract/content-rendered.test.ts`, `test/spawn/resources.test.ts`.
-Plan steps: 13, 14, 15, 16.
+Files: `test/contract/content-rendered.test.ts`, `test/spawn/resources.test.ts`,
+`test/unit/resource-render.test.ts`.
+Plan steps: 13, 14, 15, 16, 17, 18.
 
-### Commit 4 — the version
+### Commit 5 — the version
 
 ```
 chore(release): bump the minor version for the discovery addresses
@@ -1180,19 +1470,17 @@ chore(release): bump the minor version for the discovery addresses
 Files: `package.json`, `.claude-plugin/plugin.json`.
 Plan step: 1.
 
-Commit 1 and commit 2 are both behaviour changes on two different surfaces. No commit mixes a
-refactor with a behaviour change: the only move in this unit, `renderDetailQuarantinedLine` shifting
-up the file, lands in commit 1 alongside the new renderer that forced it, and it changes no
-behaviour because the function body is identical.
+Commit 1 is the only relocation in this unit and carries nothing else. No other commit contains a
+move, and no commit mixes a refactor with a behaviour change.
 
 ## 10. Pull request
 
-Measured diff size: **278 changed lines** — 266 insertions and 12 deletions across 6 files, measured
+Measured diff size: **341 changed lines** — 328 insertions and 13 deletions across 7 files, measured
 by applying every step of this plan to a throwaway copy of a tree that already contained `U6-A`, and
 running `git diff --cached --shortstat`. Of those, 159 lines are production code and manifests
-(`src/server/resources.ts` 108, `src/server/resource-render.ts` 47, the two version lines 4) and 119
-are tests (`test/spawn/resources.test.ts` 114, `test/contract/content-rendered.test.ts` 5). That is
-below the 400-line ceiling; no further split.
+(`src/server/resources.ts` 108, `src/server/resource-render.ts` 47, the two version lines 4) and 182
+are tests (`test/spawn/resources.test.ts` 114, `test/unit/resource-render.test.ts` 59,
+`test/contract/content-rendered.test.ts` 6). That is below the 400-line ceiling; no further split.
 
 ```
 node ~/.claude/lib/git/pr.mjs pr-create \
@@ -1205,6 +1493,7 @@ node ~/.claude/lib/git/pr.mjs pr-create \
   --why "Branch bindings were written and read back by nothing, so a value a user supplied was stored and never shown." \
   --risk "The list of what the server can show grows with the number of threads still open, so a project with many open threads returns a longer list." \
   --verified "node --experimental-strip-types --test test/spawn/resources.test.ts - 7 pass, 0 fail" \
+  --verified "node --experimental-strip-types --test test/unit/resource-render.test.ts - 6 pass, 0 fail" \
   --verified "npm run typecheck - exit 0" \
   --verified "node scripts/check-packaging.mjs - exit 0" \
   --verified "npm test - fail 0" \
@@ -1220,37 +1509,53 @@ actually run. Never write a `Verified:` line for a check that was not run.
 Each condition below is checked before the step it guards. When one triggers: STOP and report; do
 not improvise.
 
+Read this once before running any of them. Every probe below is a `node --experimental-strip-types -e`
+command whose **exit code is not the discriminator**: a module that exists but lacks the export
+prints `undefined` and exits 0. The printed line is what decides. A module that does not exist at all
+exits non-zero with an `ERR_MODULE_NOT_FOUND` stack trace. Both outcomes are a STOP.
+
 ### 11.1 `U6-A` has not landed on this branch's base
 
+What the implementer sees: the FIND strings in steps 2, 3 and 6 do not match, because they were
+written against the file as `U6-A` leaves it.
+
 Run:
-
-```
-node -e "import('./src/server/resource-render.ts').then((m) => console.log(m.renderThreadDetail.length))"
-```
-
-If the output is not `4`, `U6-A` is either absent or already superseded, and every FIND string in
-section 4 was written against a file this base does not carry. STOP and report; do not improvise.
-
-Then run:
 
 ```
 ls test/support/schema-nodes.ts test/contract/content-rendered.test.ts
 ```
 
-If either path is reported missing, `U6-A` has not landed. STOP and report; do not improvise.
+Expect exit code 0 and both paths echoed back. A non-zero exit code, or any `No such file` line,
+means `U6-A` has not landed. STOP and report; do not improvise.
+
+Then run:
+
+```
+node --experimental-strip-types -e "import('./src/server/resource-render.ts').then((m) => console.log(m.renderThreadDetail.length, typeof m.renderSessionsResource))"
+```
+
+Expect exit code 0 and the single output line `4 undefined`. `5 function` means this unit is already
+applied. Anything else means the renderer is in neither state this plan understands. STOP and report;
+do not improvise.
 
 ### 11.2 The field-class module has not landed
+
+What the implementer sees: step 13 edits a census that cannot run, so nothing proves `O4` still holds.
 
 Run:
 
 ```
-node -e "import('./src/schema/field-class.ts').then((m) => console.log(typeof m.POINTER_PATTERN))"
+node --experimental-strip-types -e "import('./src/schema/field-class.ts').then((m) => console.log(typeof m.POINTER_PATTERN))"
 ```
 
-If the output is not `object`, the schema change the content census depends on is not on this
-branch's base. STOP and report; do not improvise.
+Expect exit code 0 and the single output line `object`. Any other exit code, and any other output,
+means the schema change the content census depends on is not on this branch's base. STOP and report;
+do not improvise.
 
 ### 11.3 The two manifests disagree before the change
+
+What the implementer sees: step 1's command writes one version into two files that were already
+inconsistent, silently masking the inconsistency.
 
 Run:
 
@@ -1258,27 +1563,60 @@ Run:
 node -p "[require('./package.json').version, require('./.claude-plugin/plugin.json').version].join(' ')"
 ```
 
-If the two values are not equal, STOP and report; do not improvise. A version merely HIGHER than the
-`2.2.0` baseline means the ladder shifted and is NOT a stop condition — increment from what you read.
+Expect exit code 0 and one line carrying the same value twice. Two different values mean the two
+manifests are already out of step. STOP and report; do not improvise. A version merely HIGHER than the
+`2.2.0` baseline means the ladder shifted and is NOT a stop condition — step 1's command increments
+from whatever it reads.
 
 ### 11.4 A FIND string does not appear exactly once
 
-For every FIND block in section 4, the text must occur exactly once in the named file. If it occurs
-zero times or more than once, STOP and report; do not improvise, and do not guess at a nearby match.
+What the implementer sees: an edit applies to the wrong place, or silently applies nowhere.
+
+For every FIND block in section 4, run this before applying its REPLACE. Substitute the block's own
+text for the placeholder line, and the step's own file for `<target>`:
+
+```
+FIND_FILE="$(mktemp)"
+cat > "$FIND_FILE" <<'FIND_EOF'
+<paste the FIND block here, exactly, including its final newline>
+FIND_EOF
+node -e "const fs=require('fs');const hay=fs.readFileSync(process.argv[1],'utf8');const needle=fs.readFileSync(process.argv[2],'utf8');console.log(hay.split(needle).length-1)" <target> "$FIND_FILE"
+rm "$FIND_FILE"
+```
+
+Expect exit code 0 and the single output line `1`. Any other number — `0` for absent, `2` or more for
+ambiguous — means the file differs from the one this plan was written against. STOP and report; do
+not improvise, and do not guess at a nearby match.
 
 ### 11.5 More than one template gains a list callback
 
-After step 11, run:
+What the implementer sees: nothing, until a client that lists resources loads every decision record
+ever written.
+
+After step 11, run both commands:
 
 ```
 grep -c "list: undefined" src/server/resources.ts
 ```
 
-Expect exactly `3` — the decision template, the single-session-entry template, and the new sessions
-template. If the count is lower, a template gained a `list` callback that must not have one. STOP and
-report; do not improvise.
+Expect exit code 0 and the single output line `3` — the decision template, the single-session-entry
+template, and the new sessions template.
+
+```
+grep -c "list: () =>" src/server/resources.ts
+```
+
+Expect exit code 0 and the single output line `1` — the thread template. Any other pair of numbers
+means a template gained a `list` callback that must not have one, or the thread template lost the one
+it must have. STOP and report; do not improvise.
 
 ### 11.6 The suite
+
+What the implementer sees: `npm test` reports a failure.
+
+`npm test` exits 0 when every test passed and non-zero when any test failed. Read that exit code
+first, then apply the block below, which is quoted verbatim from the ruling that governs this
+repository's one known intermittent failure and must not be reworded:
 
 ```
 Run: npm test

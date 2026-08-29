@@ -190,3 +190,82 @@ Appends only. Never edit an item another planner wrote.
 - **Why it is above the ceiling:** widening the forgery population is not named by `B25`, `B26`,
   `B27` or `B28`, and it is not a clause of U6's `Green` cell.
 - **Not folded in.**
+
+## F2a — after `B37`, the store-open path's remaining cost is one git subprocess, and it dominates everything else
+
+- **Surfaced by:** U2 planning
+- **Evidence:** measured by loading the parent's and the change's `openStore` into one process and alternating, median of 31 repetitions, Node v26.4.0. Warm store open: 6.51 ms at 200 records and 6.61 ms at 800 on the parent; 6.66 ms and 6.82 ms after the change. The directory walk `B37` removes, measured in isolation over 21 repetitions, is 0.131 ms at 200 records and 5.289 ms at 12 800. The remainder is the single `git rev-parse refs/logbook/ledger` that `syncWorkingCopy` performs at `src/store/read-path.ts:200` on every open, at roughly 6.5 ms per call on this machine.
+- **Why it is above the ceiling:** U2's acceptance criteria 1 and 2 require that the open path stop reading every record, which the change does — the entries examined go from N+4 to a constant 5. Removing the `rev-parse` itself would mean caching or otherwise avoiding the ref read, which is the stamp-versus-ref comparison the SPEC's `B37` explicitly keeps as the thing that stands in for the walk. It is a different change against a different rule.
+- **Not folded in.**
+
+## F2b — the widened duplicate-store guard costs ~4 ms per store open when the plugin-data root sits in a large directory
+
+- **Surfaced by:** U2 planning
+- **Evidence:** same paired measurement as F2a. With the plugin-data root placed directly inside a directory holding 1 175 sibling directories, warm store open goes from 6.51 ms to 10.61 ms at 200 records and 6.61 ms to 10.13 ms at 800. With the plugin-data root placed inside a directory holding one sibling, it goes from 6.69 ms to 6.66 ms and from 6.94 ms to 6.82 ms — no measurable cost. On this machine's real installed layout the parent holds 23 sibling directories and the scan measures 0.06 ms.
+- **Why it is above the ceiling:** U2's criteria 1 through 5 require the guard to detect the cross-root duplicate, which it does. Removing the residual cost means caching the negative result for the lifetime of the process, which was considered and rejected inside the plan because it would let a duplicate appearing while a server runs go undetected until restart. Trading a safety guard for four milliseconds is a decision, not an optimisation, and belongs to whoever owns that guard's contract.
+- **Not folded in.**
+
+## F2c — every store test fixture places `CLAUDE_PLUGIN_DATA` directly inside the system temporary directory
+
+- **Surfaced by:** U2 planning
+- **Evidence:** `test/store/read-path.test.ts:23`, `test/store/materialisation.test.ts:23`, `test/store/roster.test.ts:19-20` and `test/store/single-store.test.ts:21` all build the plugin-data root with `mkdtempSync(join(tmpdir(), '...'))`. On this machine `tmpdir()` holds 1 202 entries, of which 1 175 are directories. Any check that reasons about the plugin-data root's *parent* therefore sees a junk drawer in tests and a small, curated directory in an install — a 1 175-to-23 difference that makes suite timing depend on how full the developer's temporary directory happens to be.
+- **Why it is above the ceiling:** U2's criteria say nothing about fixture layout, and correcting it means editing four test files that U2 does not otherwise touch. One line each — nest the plugin-data root one directory deeper — would make the fixtures resemble an install and remove the machine-dependent timing.
+- **Not folded in.**
+
+## F2d — the shared git helper reads command output through `spawnSync`'s default 1 MiB buffer, with no `maxBuffer` set
+
+- **Surfaced by:** U2 planning
+- **Evidence:** `src/store/git.ts:68-72` calls `spawnSync('git', [...], { env, encoding: 'utf8', ...input })` and never sets `maxBuffer`, so Node's 1 MiB default applies. Any git command whose standard output exceeds that is truncated and the call reports an error. Commands on the current read path that scale with stored history include `git ls-tree -r --full-tree` over the whole ledger; `git cat-file --batch`, the obvious batching alternative to the per-blob loop, would have put the entire store's contents through that same buffer, which is one reason U2's plan writes the tree out with `git checkout-index` instead of reading it through standard output.
+- **Why it is above the ceiling:** U2's criteria concern the number of subprocesses materialisation spawns, not the buffer the shared helper reads them through. Changing it means editing `src/store/git.ts`, which SPEC section 9 assigns to no unit in this ladder.
+- **Not folded in.**
+
+## F5a — the roster drops every terminal thread with no count and no address
+
+- **Surfaced by:** U5 planning
+- **Evidence:** `src/render/roster.ts:19-28` — `const TERMINAL_STATUSES = new Set<Thread['status']>(['done', 'abandoned'])`
+  and `selectRosterThreads` filters those threads out before `paginateRoster` computes `total`, so
+  `renderRoster`'s header `Roster: N of M resumable threads.` counts only the survivors. A person
+  reading the roster is not told how many threads were excluded, and no address in the output resolves
+  to them. `O2` reads "For every item omitted by any display rule — cap, lane or **relevance** — the
+  output carries a count of what was omitted and an address that resolves to it", and this is a
+  relevance rule.
+- **Why it is above the ceiling:** U5's `Carries` cell is `B16`-`B22` and `B24`, every one of which is
+  a rule about `src/render/briefing.ts`. No behavioural rule in this SPEC touches the roster's
+  terminal-thread exclusion, and closing it needs a way to address terminal threads that
+  `list_threads` does not currently offer. It also collides directly with `LG14` ("what Logbook loads
+  is bounded by open work") and would need its own decision.
+- **Not folded in.**
+
+## F5b — `backfillCriterionIds` infers a goal attachment from a scope string and has no production caller
+
+- **Surfaced by:** U5 planning
+- **Evidence:** `src/domain/criterion-backfill.ts:11` — `const criterion = criteria.find((candidate) => candidate.ordinal === ordinal)`.
+  It parses a scope string of the form `criterion N` and resolves `N` against a criterion's position,
+  then writes the resulting id into `Risk.criterion_id` and `KeyDecision.criterion_id`. That is a read
+  of `Criterion.ordinal` that is neither a display label nor a display sort, which `S3` forbids, and
+  it manufactures an attachment the caller never supplied, which `LG3` forbids. Measured with
+  `grep -rn "backfillCriterionIds\|criterionIdForScope" src/ test/`: the only references outside the
+  module itself are in `test/unit/criterion-backfill.test.ts`. No production code path calls it.
+- **Why it is above the ceiling:** the file is `src/domain/`, which U5 does not own, and no `B#` in
+  U5's `Carries` cell names it. U5's `S3` census is therefore scoped to `src/render` and records this
+  read as out of scope. A separate read at `src/server/tools/record_decision.ts:57,60` is already
+  covered by `B12` in a later unit; this one is covered by nothing.
+- **Not folded in.**
+
+## F5c — with the display caps gone, a near-maximal thread returns a reply more than twice its declared byte budget
+
+- **Surfaced by:** U5 planning
+- **Evidence:** measured by rendering the suite's own record-byte-maximal fixture
+  (`test/unit/briefing.test.ts`, `decisionRecordSizedThread`, 65528 stored bytes) against the changed
+  renderer: `passes 10 chars 26834 bytes 55130 withinBudget false`, against
+  `BRIEFING_MAX_CHARS = 12000` and `RESUME_PAYLOAD_MAX_BYTES = 24000`. Across the 733-record frontier
+  sweep, 227 records exceed a cap. Every one of them reports `withinBudget: false` and
+  `src/server/tools/resume_thread.ts:95-102` logs `briefing.budget-exceeded`, so nothing is silent —
+  but the reply is still returned at that size. The write-time limit the SPEC's section 10 names as
+  the replacement was sized at 65536 bytes and left unchanged, so it does not bound this.
+- **Why it is above the ceiling:** U5's criterion 2 is that the budget and its search are untouched,
+  which `B16` states in its own words. Bounding the reply means either lowering
+  `THREAD_RECORD_SERIALISED_MAX_BYTES` — a schema file another unit owns, already merged — or adding a
+  bounded-growth display mechanism this SPEC does not specify. Hiding an item to fit is forbidden: it
+  is the exact defect U5 exists to remove.
+- **Not folded in.**

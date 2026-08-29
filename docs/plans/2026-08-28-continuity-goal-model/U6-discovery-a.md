@@ -4,10 +4,12 @@
 
 - **Closes:** invariant `O4` — for every field declared `content` in the record schemas, that field
   appears on at least one rendered surface.
-- **Depends on:** the schema change that gives every record field a declared class. Concretely, the
-  file `src/schema/field-class.ts` must exist and export `POINTER_PATTERN`, and `src/schema/thread.ts`
-  must export a `Thread` type carrying `artifacts`, and a `Criterion` type carrying `check`, `result`
-  and `result_status`. Section 11 turns this into a checkable stop condition.
+- **Depends on:** the schema change that gives every record field a declared class. Concretely, and
+  each of these four is a checkable stop condition in section 11:
+  - `src/schema/field-class.ts` exists and exports `POINTER_PATTERN` (stop condition 11.1);
+  - `src/schema/ids.ts` exports `SHA_PATTERN` (stop condition 11.2), which the new census imports;
+  - `src/schema/thread.ts`'s thread record carries an `artifacts` property (stop condition 11.3);
+  - its criterion element carries `check`, `result` and `result_status` (stop condition 11.3).
 - **Required by:** `U6-B`, which extends the same census and the same renderer.
 - **Wave:** 2. Cut from the tip of `main` at branch-cut time.
 - **Branch name:** `feat/u6a-content-rendered`
@@ -22,25 +24,35 @@
 
 ## 1. Acceptance criteria (the ceiling)
 
-1. `test/support/schema-nodes.ts` exists and exports `SchemaNode`, `isPlainObject` and
-   `flattenSchemaNodes`, with bodies identical to the ones removed from
-   `test/contract/described.test.ts`. `test/contract/described.test.ts` imports them and defines
-   none of them itself. (Discharges the lift the orchestrator assigned to this unit.)
-2. A census named `content.every-content-field-reaches-a-rendered-surface` runs over every node of
+1. A census named `content.every-content-field-reaches-a-rendered-surface` runs over every node of
    the four record schemas — thread, decision, session, binding — and halts on any node that is not
    a plain object, that carries `$ref`, whose `class` key is absent, or whose `class` is not one of
    the three strings `structural`, `pointer`, `content`. (Discharges `O4`'s safe-read precondition.)
-3. That same census decides, for every node whose declared class is `content`, whether the field
+2. That same census decides, for every node whose declared class is `content`, whether the field
    reaches a rendered surface, and it decides it by rendering rather than by consulting a written
    list. (Discharges `O4`.)
-4. The census is green. Concretely, `thread.slug`, `thread.completion_criteria[].check`,
+3. The census is green. Concretely, `thread.slug`, `thread.completion_criteria[].check`,
    `thread.completion_criteria[].result` and `thread.artifacts[].label` — the four content fields
    that reach no rendered surface before this change — reach one after it. (Discharges `O4`.)
-5. Two control tests prove the census halts rather than passing silently: one over a synthetic node
-   whose sentinel appears nowhere, and one over a synthetic node the record builder cannot construct
-   a value for. (Discharges plan invariant `P8`.)
-6. `npm run typecheck` exits 0 and `node scripts/check-packaging.mjs` exits 0, with `package.json`
-   and `.claude-plugin/plugin.json` carrying the same version. (Discharges `P1` and `P4`.)
+
+All three come from invariant `O4`, which SPEC section 11.4 assigns to `U6`, and from the unit's
+`Green` clause "`O4` asserted over content-class fields". Nothing else is on this list. `U6-B` carries
+the unit's four behavioural rules and its other `Green` clause.
+
+**Obligations this unit must also satisfy, which are NOT acceptance criteria.** They come from the
+plan invariants and the orchestrator rulings rather than from the SPEC, so they do not belong on a
+ceiling built from a unit's own rules, `Green` clauses and invariants. They are nonetheless binding,
+and each is verified where named:
+
+- The lift of `flattenSchemaNodes` into `test/support/schema-nodes.ts`, so that
+  `test/contract/described.test.ts` and the new census import one copy. Assigned by orchestrator
+  ruling. Verified by step 2, step 3, and `npm run typecheck` in section 8.
+- Two control tests proving the census halts rather than passing silently: one over a synthetic node
+  whose sentinel appears nowhere, and one over a synthetic node the record builder cannot construct a
+  value for. Required by plan invariant `P8`. Verified by the two `.control.` tests in section 5.1.
+- `P1` — `npm test` and `npm run typecheck` pass. Verified in section 8.
+- `P4` — both manifests bump in one commit and `node scripts/check-packaging.mjs` passes. Verified by
+  step 1 and section 8.
 
 Anything discovered above this list is appended to
 `docs/plans/2026-08-28-continuity-goal-model/FILED.md` as a new item and is NOT folded into this plan.
@@ -190,7 +202,20 @@ against the planning brief and the orchestrator rulings alone, which are jointly
 The absence is recorded here because the orchestrator asked for it to be recorded, and it changes
 nothing in this plan.
 
-### 3.2 `O4` is proven over a subset of the rendered surfaces, and that is stricter, not weaker
+### 3.2 `U6` is split into two pull requests, and this is the first half
+
+SPEC section 9 names one unit `U6` carrying rules `B25`, `B26`, `B27` and `B28` and two `Green`
+clauses. The whole change was applied to a throwaway copy of the tree and measured at **596 changed
+lines**, above the 400-line ceiling a reviewable pull request is held to. Splitting it destroys no
+receipt: each half is red at its own parent and green after its own change.
+
+It is therefore two pull requests. **This document, `U6-A`, ships the content-to-surface census and
+the renderer lines that make it green**, closing invariant `O4`. The sibling pull request ships the
+four discovery rules — a session-log address, its index entry, bindings on the thread resource, and a
+`list` callback on the thread resource template. `U6-A` merges first. An implementer of this document
+needs nothing from the sibling and must not attempt any part of it.
+
+### 3.3 `O4` is proven over a subset of the rendered surfaces, and that is stricter, not weaker
 
 SPEC invariant `O4` reads "for every field declared `content` in the schema, that field appears on
 **at least one** rendered surface". This unit's census reads exactly three surfaces, all three in one
@@ -205,7 +230,7 @@ red — a false red, never a false pass. Plan invariant `P8` forbids narrowing a
 green; this narrows it in the opposite direction, and the reason is stated rather than assumed: it
 removes every dependency on a renderer another unit owns and is editing in the same wave.
 
-### 3.3 SPEC section 8 places artifact rendering on the briefing; this unit also renders it on the resource
+### 3.4 SPEC section 8 places artifact rendering on the briefing; this unit also renders it on the resource
 
 SPEC rule `B22` reads "the thread renders its `artifacts` near the top, before the spine", under the
 heading `Renderer — src/render/`. That is the briefing, and it belongs to another unit. This unit
@@ -214,13 +239,13 @@ not conflict: they are different files and different surfaces, and `O4` asks for
 Rendering it here is what makes this unit's declared green — "`O4` asserted over content-class
 fields" — true without waiting on another unit's file.
 
-### 3.4 This unit's own line citations
+### 3.5 This unit's own line citations
 
 SPEC line citations were taken at `e5f0195`. Every line range quoted in section 2 was read from the
 working tree while authoring, and every one matched. `src/server/resource-render.ts` is 108 lines and
 `test/contract/described.test.ts` is 113 lines.
 
-### 3.5 `src/server/tools/resolve_conflict.ts` contains a byte that is not valid UTF-8
+### 3.6 `src/server/tools/resolve_conflict.ts` contains a byte that is not valid UTF-8
 
 That file may be invisible to `grep`. No census in this unit reads any file under `src/` as text:
 the census population is the four generated JSON Schemas, and the surfaces are called as functions,
@@ -230,46 +255,43 @@ not scanned. The file is therefore neither missed nor mis-read by anything this 
 
 ### Step 1 — bump the version
 
-File: `package.json`, and `.claude-plugin/plugin.json`.
+Files: `package.json` and `.claude-plugin/plugin.json`.
 
-1. Read the current version:
+This unit's Conventional Commits type is `feat`, so the MINOR component increments and the PATCH
+component is set to 0. The baseline is `2.1.0`, which increments to `2.2.0`. The step is written as a
+read-then-increment so that a shifted ladder does not break it.
 
-   ```
-   node -p "require('./package.json').version"
-   ```
+Run this exact command from the repository root:
 
-2. This unit's Conventional Commits type is `feat`, so increment MINOR and set PATCH to 0. If the
-   command above printed `2.1.0`, the new version is `2.2.0`.
+```
+node -e "const fs=require('fs');const [maj,min]=require('./package.json').version.split('.');const next=[maj,String(Number(min)+1),'0'].join('.');for (const f of ['package.json','.claude-plugin/plugin.json']) {const t=fs.readFileSync(f,'utf8');fs.writeFileSync(f,t.replace(/\"version\": \"[0-9]+\.[0-9]+\.[0-9]+\"/, '\"version\": \"'+next+'\"'))};console.log(next)"
+```
 
-3. REPLACE in `package.json`. FIND (the third line of the file):
+It reads the current version from `package.json`, increments MINOR, sets PATCH to 0, writes the same
+value into the `"version"` line of both files, and prints the value it wrote. It replaces the first
+`"version"` match in each file, which is the top-level key on line 3, and leaves every other byte of
+both files unchanged.
 
-   ```json
-     "version": "2.1.0",
-   ```
+Expect the printed value to be `2.2.0`, and expect exactly one changed line in each file:
 
-   REPLACE with:
+```
+git diff --numstat package.json .claude-plugin/plugin.json
+```
 
-   ```json
-     "version": "2.2.0",
-   ```
+Expect exit code 0 and this output:
 
-4. REPLACE in `.claude-plugin/plugin.json`. FIND (the third line of the file, indented by two
-   spaces):
+```
+1	1	.claude-plugin/plugin.json
+1	1	package.json
+```
 
-   ```json
-     "version": "2.1.0",
-   ```
+Then run:
 
-   REPLACE with:
+```
+node scripts/check-packaging.mjs
+```
 
-   ```json
-     "version": "2.2.0",
-   ```
-
-   Both files carry the same key and the same old value; edit the `"version"` line in each and
-   nothing else.
-
-5. Run `node scripts/check-packaging.mjs` and expect exit code 0 with no output.
+Expect exit code 0 and no output.
 
 Rationale: plan invariant `P4` — the two manifests bump in the same commit.
 
@@ -777,8 +799,8 @@ in four steps:
    that node's sentinel occurs anywhere in the rendered text.
 
 A `content` node that is an **array** rather than a string carries no sentinel of its own; it is
-decided by its element node, whose path is the array's path plus `[]`. If that element node does not
-exist, the census halts as `unclassifiable` rather than guessing.
+decided by its element node, whose path is the array's path plus `[]`. An array whose element node is
+missing halts the census as `unclassifiable` rather than being guessed at.
 
 Three limits are real, and all three fail in the same safe direction — they can produce a false
 **red**, never a false green, because "rendered" is defined as "this exact text came out of the
@@ -801,13 +823,15 @@ What the sweep cannot do is pass a field that no renderer emits. That is the pro
 
 | Criterion | Test that discharges it |
 |---|---|
-| 1 — the shared walker | `contract.every-property-described` (it imports the walker and still passes) plus `npm run typecheck` |
-| 2 — the census halts on an undeclared or unrecognised class | `content.every-content-field-reaches-a-rendered-surface.control.halts-on-an-unrendered-or-undeclared-field` |
-| 3 — the decision is made by rendering | `content.every-content-field-reaches-a-rendered-surface` |
-| 4 — the census is green | `content.every-content-field-reaches-a-rendered-surface` |
-| 5 — the controls | both `.control.` tests named in 5.1 |
-| 6 — typecheck and packaging | `npm run typecheck`, `node scripts/check-packaging.mjs` |
+| 1 — the census halts on an undeclared or unrecognised class | `content.every-content-field-reaches-a-rendered-surface.control.halts-on-an-unrendered-or-undeclared-field` |
+| 2 — the decision is made by rendering | `content.every-content-field-reaches-a-rendered-surface` |
+| 3 — the census is green | `content.every-content-field-reaches-a-rendered-surface` |
 | SPEC invariant `O4` | `content.every-content-field-reaches-a-rendered-surface` |
+
+The non-ceiling obligations named in section 1 are discharged as follows. The lift: by
+`contract.every-property-described`, which imports the moved function and still passes, and by
+`npm run typecheck`. `P8`'s controls: by both `.control.` tests in section 5.1. `P1` and `P4`: by
+section 8.
 
 ## 6. Red on the parent
 
@@ -817,6 +841,8 @@ was cut from. Print it and write it down:
 ```
 git rev-parse HEAD
 ```
+
+Expect exit code 0 and one line of 40 hexadecimal characters. That line is the parent sha.
 
 Apply step 2 and step 7 only — create `test/support/schema-nodes.ts` and
 `test/contract/content-rendered.test.ts`. Do not apply steps 4, 5 or 6. Then run:
@@ -848,8 +874,8 @@ halts either way.
 before the move and after it. That is stated here rather than left as a gap: plan invariant `P11`
 asks for a receipt on a behavioural change, and moving a function between files is not one.
 
-Then apply steps 1, 4, 5 and 6 and re-run the same command. Expect exit code 0 with `pass 3` and
-`fail 0`.
+Then apply steps 1, 4, 5 and 6 and run the same command a second time. Expect exit code 0 with
+`pass 3` and `fail 0`.
 
 ## 7. Inertness mutation
 
@@ -948,15 +974,12 @@ Run each command from the repository root, in this order.
 3. ```
    node --experimental-strip-types --test test/contract/content-rendered.test.ts test/contract/described.test.ts test/contract/render-census.test.ts test/unit/resource-render.test.ts
    ```
-   Expect exit code 0 and this text in the output:
-   ```
-   # fail 0
-   ```
+   Expect exit code 0, and the summary line reporting the failure count reads `fail 0`.
 
 4. ```
    npm test
    ```
-   Expect exit code 0 and `# fail 0`.
+   Expect exit code 0, and the summary line reporting the failure count reads `fail 0`.
 
    If the ONLY failing test is `concurrent.distinct-ids` in `test/spawn/decisions.test.ts`,
    that is the tracked store-materialisation defect, not this change. Re-run `npm test` once.
@@ -1043,29 +1066,67 @@ actually run. Never write a `Verified:` line for a check that was not run.
 Each condition below is checked before the step it guards. When one triggers: STOP and report; do
 not improvise.
 
+Read this once before running any of them. Every probe below is a `node --experimental-strip-types -e`
+command whose **exit code is not the discriminator**: a module that exists but lacks the export
+prints `undefined` and exits 0. The printed line is what decides. A module that does not exist at all
+exits non-zero with an `ERR_MODULE_NOT_FOUND` stack trace. Both outcomes are a STOP.
+
 ### 11.1 The field-class module has not landed
 
-Run:
-
-```
-node -e "import('./src/schema/field-class.ts').then((m) => console.log(typeof m.POINTER_PATTERN))"
-```
-
-If the output is not `object`, the schema change this unit depends on is not on this branch's base.
-STOP and report; do not improvise.
-
-### 11.2 The goal-model fields have not landed
+What the implementer sees: the census's import of `POINTER_PATTERN` resolves to nothing, and the new
+test fails on a pattern it cannot recognise instead of on a content field.
 
 Run:
 
 ```
-node -e "import('./src/schema/thread.ts').then((m) => console.log(Object.keys(m.ThreadRecord.jsonSchema.properties).join(',')))"
+node --experimental-strip-types -e "import('./src/schema/field-class.ts').then((m) => console.log(typeof m.POINTER_PATTERN))"
 ```
 
-If the output does not contain `artifacts`, the thread schema this unit renders is not on this
-branch's base. STOP and report; do not improvise.
+Expect exit code 0 and the single output line `object`. Any other exit code, and any other output,
+means the schema change this unit depends on is not on this branch's base. STOP and report; do not
+improvise.
 
-### 11.3 The census population is not 67 nodes
+### 11.2 The sha pattern has not landed
+
+What the implementer sees: `test/contract/content-rendered.test.ts` imports `SHA_PATTERN` from
+`src/schema/ids.ts`, and the import resolves to `undefined`, so the record builder cannot synthesise
+a value for the decision record's commit field.
+
+Run:
+
+```
+node --experimental-strip-types -e "import('./src/schema/ids.ts').then((m) => console.log(typeof m.SHA_PATTERN))"
+```
+
+Expect exit code 0 and the single output line `object`. Any other exit code, and any other output,
+means the sha pattern this unit's census imports is not on this branch's base. STOP and report; do
+not improvise.
+
+### 11.3 The goal-model fields have not landed
+
+What the implementer sees: steps 5 and 6 render `criterion.check`, `criterion.result`,
+`criterion.result_status` and `thread.artifacts`, and every one of them is `undefined` at runtime, so
+the census still reports fields it cannot reach.
+
+Run both commands:
+
+```
+node --experimental-strip-types -e "import('./src/schema/thread.ts').then((m) => console.log(Object.keys(m.ThreadRecord.jsonSchema.properties).join(',')))"
+```
+
+Expect exit code 0 and one output line containing `artifacts`.
+
+```
+node --experimental-strip-types -e "import('./src/schema/thread.ts').then((m) => console.log(Object.keys(m.ThreadRecord.jsonSchema.properties.completion_criteria.items.properties).join(',')))"
+```
+
+Expect exit code 0 and one output line containing all three of `check`, `result` and `result_status`.
+Any other exit code, and any output missing any one of the four names, means the thread schema this
+unit renders is not on this branch's base. STOP and report; do not improvise.
+
+### 11.4 The census population is not 67 nodes
+
+What the implementer sees: the red-on-parent run in section 6 reports a total other than 67.
 
 Run, after applying step 2 and step 7 only:
 
@@ -1073,11 +1134,14 @@ Run, after applying step 2 and step 7 only:
 node --experimental-strip-types --test test/contract/content-rendered.test.ts
 ```
 
-If the failure message names a total other than `of 67 record schema nodes`, the record schemas
-differ from the ones this plan was written against. STOP and report; do not improvise. Do not adjust
-the number in this document, and do not narrow the census to reach it.
+Expect exit code 1 and a failure message naming `of 67 record schema nodes`. Any other total means
+the record schemas differ from the ones this plan was written against. STOP and report; do not
+improvise. Do not adjust the number in this document, and do not narrow the census to reach it.
 
-### 11.4 The two manifests disagree before the change
+### 11.5 The two manifests disagree before the change
+
+What the implementer sees: step 1's command writes one version into two files that were already
+inconsistent, silently masking the inconsistency.
 
 Run:
 
@@ -1085,15 +1149,38 @@ Run:
 node -p "[require('./package.json').version, require('./.claude-plugin/plugin.json').version].join(' ')"
 ```
 
-If the two values are not equal, STOP and report; do not improvise. A version merely HIGHER than the
-`2.1.0` baseline means the ladder shifted and is NOT a stop condition — increment from what you read.
+Expect exit code 0 and one line carrying the same value twice. Two different values mean the two
+manifests are already out of step. STOP and report; do not improvise. A version merely HIGHER than the
+`2.1.0` baseline means the ladder shifted and is NOT a stop condition — step 1's command increments
+from whatever it reads.
 
-### 11.5 A FIND string does not appear exactly once
+### 11.6 A FIND string does not appear exactly once
 
-For every FIND block in section 4, the text must occur exactly once in the named file. If it occurs
-zero times or more than once, STOP and report; do not improvise, and do not guess at a nearby match.
+What the implementer sees: an edit applies to the wrong place, or silently applies nowhere.
 
-### 11.6 The suite
+For every FIND block in section 4, run this before applying its REPLACE. Substitute the block's own
+text for the placeholder line, and the step's own file for `<target>`:
+
+```
+FIND_FILE="$(mktemp)"
+cat > "$FIND_FILE" <<'FIND_EOF'
+<paste the FIND block here, exactly, including its final newline>
+FIND_EOF
+node -e "const fs=require('fs');const hay=fs.readFileSync(process.argv[1],'utf8');const needle=fs.readFileSync(process.argv[2],'utf8');console.log(hay.split(needle).length-1)" <target> "$FIND_FILE"
+rm "$FIND_FILE"
+```
+
+Expect exit code 0 and the single output line `1`. Any other number — `0` for absent, `2` or more for
+ambiguous — means the file differs from the one this plan was written against. STOP and report; do
+not improvise, and do not guess at a nearby match.
+
+### 11.7 The suite
+
+What the implementer sees: `npm test` reports a failure.
+
+`npm test` exits 0 when every test passed and non-zero when any test failed. Read that exit code
+first, then apply the block below, which is quoted verbatim from the ruling that governs this
+repository's one known intermittent failure and must not be reworded:
 
 ```
 Run: npm test
