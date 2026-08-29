@@ -75,3 +75,31 @@ absent and therefore 1, against a suite with a live 5% flake. Two internal disag
 
 This ladder deletes a great deal of code (`B12`, `B16`, `B18`, `B33`), which is exactly the surface
 `G11` guards. Above every unit's ceiling; carried here.
+
+## N7 — Removing the display caps pushes real briefings past the whole-briefing budget
+
+Measured by `U5` while planning: after the display-time item caps are deleted, a near-maximal thread
+record renders to **26,834 characters / 55,130 bytes**, and **227 of 733 swept records** render past
+the budget. The budget and its clip search are deliberately untouched by `B16`, so those briefings
+are clipped rather than truncated silently — the marker, the count and the address all render, which
+is `LG8` and `LG9` holding.
+
+That is correct behaviour, not a defect, and `U5` handles it inside its ceiling. What is NEW is the
+question nobody has answered: **whether the budget is still the right number once nothing is hidden
+behind it.** Caps and budget were two filters in series; removing one changes what the other is for.
+Deciding that needs a measurement of how much of a clipped briefing a reader actually loses, which
+does not exist.
+
+Related and unresolved: `U1` measured the largest live thread record at 39,079 **bytes**, but a byte
+size is not a render, and `P7` forbade `U5` from rendering the live store to find out. So whether
+today's largest real record fits is genuinely unknown.
+
+## N8 — `S3` may ship partly undischarged, and the register says so if it does
+
+`src/domain/criterion-backfill.ts` infers a criterion's attachment from its ordinal, which `S3`
+forbids. Filed by `U5` as `F5b`. `OR28` rules the census tree-wide and requires the module to be
+classified: deleted if it has no caller, with the deletion inside `U5`'s ceiling; or, if it does have
+a caller, the residue filed here with its specific reason.
+
+This entry exists so that outcome 4 has somewhere to land. If `U5` reports the module deleted, this
+entry closes with it and becomes no criterion at all.

@@ -808,3 +808,72 @@ classifying it and the census must halt:
 That is `OR13` working as intended: a unit that cannot produce a red-on-parent says so and names what
 proves it instead, rather than substituting a proxy and calling it a receipt. `U1-D` ships under an
 `unverified-reasoned` status for the red-on-parent obligation specifically, with that reason.
+
+## OR27 — the one-document waiver is generalised, and `U5` splits into three
+
+`OR23` waived `OR16`'s one-document-per-pull-request rule "once", for `U1`. `U5` now needs the same
+thing, and a waiver granted case by case is a waiver with no rule behind it.
+
+Ruled, generally: **`OR16`'s one-document rule is satisfied by a per-pull-request execution appendix
+whenever a unit's parts share one ground-truth section and are executed by one implementer in
+sequence on one surface.** It is NOT satisfied that way when the parts would go to different
+implementers, or when their ground truth genuinely differs.
+
+The appendix carries, per part: branch, version step, the ordered step list by number, the tests by
+file and exact name, its own red-on-parent with expected failure text, its own inertness mutation,
+its own full verification, its own `pr-create` invocation, and its own stop conditions. **No block may
+reference another block.** The shared sections stay the single source for ground truth, edits and
+tests, and each block names the exact step and test numbers it consumes.
+
+The reason this is safe: triplicating a ground-truth section is not free. Three copies of the same
+edit-site inventory drift, and a drifted copy is worse than a cross-reference because nothing detects
+it. One implementer reading one document has no cross-plan isolation to protect.
+
+### `U5`'s rows
+
+Measured by applying each part's own steps to throwaway trees; unsplit 1,195.
+
+| Part | Carries | Branch | Lines (prod/test) |
+| --- | --- | --- | --- |
+| U5-A The caps go | `B16`, `B17`, `B18`, `B19`, `B20` | `feat/u5a-briefing-caps-go` | 683 (177/506) |
+| U5-B The shared clip marker | `B24` (helper), `O3` | `feat/u5b-clip-marker` | 310 (95/215) |
+| U5-C Item detail | `B21`, `B22`, `B24` (criteria render) | `feat/u5c-item-detail` | 202 (91/111) |
+
+`U5-A` exceeds the ceiling at 683 and takes the `OR16` exception on a shown ground: every smaller cut
+leaves the item-completeness receipt permanently red. Its composition is 177 production against 506
+test, disclosed in its pull request body.
+
+**`U5-B` ships `src/render/clip.ts`, exporting `CLIP_MARKER`, `CLIP_MARKER_GRAPHEMES` and
+`clipWithMarker`. `U7` imports that exact path and writes no second implementation.**
+
+## OR28 — DIVERGENCE: `S3`'s census is tree-wide, and the backfill module is classified, not scoped out
+
+`U5` scoped its `S3` census to `src/render` (its divergence 3.5) and filed `F5b`: `src/domain/criterion-backfill.ts`
+infers a criterion's attachment from its ordinal, has no caller and no owner, and therefore **`S3`
+ships partly undischarged**.
+
+`S3` reads: "`Criterion.ordinal` is read only to render a display label and to stable-sort for
+display. Every other read is forbidden." Its subject is every read of that field, not every read
+inside one directory. **Scoping the census to `src/render` is narrowing it, which `P8` forbids
+outright** — a census is never narrowed to obtain a green, and a halting census is answered by
+classifying the item, never by excluding it.
+
+Ruled:
+
+1. **`S3`'s census population is every read of `Criterion.ordinal` across the whole tree** — `src/`,
+   `hooks/`, `bin/`, `scripts/` and `test/` — and it halts on any read it cannot classify as a
+   display label or a display stable-sort.
+2. **`src/domain/criterion-backfill.ts` is classified, not excluded.** `U5` establishes by census
+   whether anything reaches it, including `scripts/backfill-criterion-id.mjs`, which is a plausible
+   caller its `src/`-only sweep would not have seen.
+3. **If it has no caller, `U5` deletes it**, and the deletion is INSIDE `U5`'s ceiling rather than
+   above it. SPEC section 11.4 assigns `S3` to `U5`; a unit that ships an invariant it knows to be
+   violated has not shipped that invariant, and `OR13` does not offer a downgrade for a violation the
+   unit can simply remove. `U5` enumerates the file under an `Also edits (to keep the tree green):`
+   line per `OR11`. No other unit owns it.
+4. **If it does have a caller**, deleting it is out of scope, the caller's read is classified on its
+   merits, and whatever remains undischarged is filed and registered as new material with the
+   specific reason — never left as a silently narrowed census.
+
+`U5` decides which of 3 or 4 applies by running the census. `PLANNING-BRIEF.md` section 2 forbids
+passing that to the implementer: the plan says which, and why.
