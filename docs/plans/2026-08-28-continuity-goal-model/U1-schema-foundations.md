@@ -15,11 +15,11 @@ are all cut from a `main` that already contains this unit.
 **Branch name:** `feat/u1-schema-foundations`. This is the branch this plan authorises, and section
 4 is one undivided change on it.
 
-Section 10 measures the diff at 1,040 changed lines and **rules a split into three pull requests**.
-That ruling needs the orchestrator to add three rows to `OR1` — three branch names, three version
-steps — before it can be executed. Until that happens, the single branch above and the single
-invocation in section 10 are what this plan authorises. The split is a recommendation with its
-measured basis, not an instruction the implementer acts on alone.
+Section 10 measures the diff at 1,040 changed lines and the split is **ruled and its ladder rows
+exist**: this unit ships as four pull requests, `U1-A` through `U1-D`. Section 12 carries one
+executable block per pull request, with its own branch, version step, receipt and stop conditions.
+**Section 12 is what an implementer follows**; the single branch above and the single invocation in
+section 10 are retained only as the undivided form.
 
 **PR title scope:** `schema`.
 
@@ -532,9 +532,9 @@ The tree does not typecheck between steps 11b and 12 — adding a field to `Thre
 rule table incomplete until step 12 lands, so those two steps are applied together and share a
 commit. Apply every step in order, then verify.
 
-Section 12 assigns each step to one of the three pull requests this unit ships as. Read section 12
-if you are executing one pull request rather than the whole unit; the steps themselves are here and
-are not repeated there.
+Section 12 assigns each step to one of the four pull requests this unit ships as. Read section 12
+when executing one pull request rather than the whole unit; the steps themselves are here and are
+not repeated there.
 
 Section 9 groups these steps into commits. Section 10 records the measured diff size and the split
 ruling.
@@ -2814,8 +2814,8 @@ failure; `tsc -p tsconfig.json --noEmit` prints only errors.
 node scripts/check-packaging.mjs
 ```
 
-Expected exit code: **0**. Expected output: no line containing `version mismatch` and no line
-containing `must be a plain semver`. This is what proves step 1 moved both manifests to the same
+Expected exit code: **0**. Expected output contains `check-packaging: ok`. That line is printed only
+when every check in the script passed, so it is what proves step 1 moved both manifests to the same
 value.
 
 ### 8.3 The new tests alone
@@ -3089,28 +3089,35 @@ break down as 42 lines modified across four files plus 674 lines of new test fil
 ### Split ruling: **SPLIT**
 
 1,040 changed lines is 2.6 times the 400-line ceiling, so this unit does not ship as one pull
-request. The recommended cut is three, in this order, and each has its own red at its own parent:
+request. The cut is four, in this order, and each has its own receipt at its own parent:
 
 | PR | Carries | Plan steps | Measured lines | Red at its parent |
 |---|---|---|---|---|
 | **U1-A** — refusal completeness | `A1` | 6, 7 | **243** | `caps-census: thread.slug refusal omits the observed value` |
-| **U1-B** — field classes and the git boundary | `B5`, `B13`, `B42`, `A5`, `S2` | 2, 3a, 4, 5, 8, 9, 10, 11a, 16 | **590** | 7 of 9 `git-boundary` tests |
+| **U1-B** — field classes and the git boundary | `B5`, `B13`, `A5` | 2, 3a, 4, 5, 8, 9, 10, 11a, 16 | **476** | 7 of 9 `git-boundary` tests |
 | **U1-C** — goal-model fields and the cap census | `B2`, `B3`, `B4`, `B6`, `B7`, `A7` | 3b, 11b, 12, 13, 14, 15 | **244** | 3 of 6 `goal-model` tests |
+| **U1-D** — spawn allowlist | `B42`, `S2` | none | **114** | none reachable; proved by mutation |
 
 Each figure was measured by building that part's tree from its own parent and diffing, not by
 apportioning the undivided total. They sum to 1,077 rather than 1,040 because `src/schema/thread.ts`
 is edited by both `U1-B` and `U1-C`, so its change is counted once in each.
 
-**`U1-B` exceeds the ceiling at a measured 590 lines, and the exception is shown rather than
-asserted.**
+`U1-D` was separated from `U1-B` after measurement: `U1-B` came in at 590 rather than the ~480 the
+ceiling exception was granted against, and `test/contract/spawn-allowlist.test.ts` accounts for
+exactly 114 of that. It shares no file and no invariant with the class work, so the showing that
+licenses `U1-B`'s overage does not cover it. Pulled out, `U1-B` measures 476 and `U1-D` 114.
+
+**`U1-B` exceeds the ceiling at a measured 476 lines — 228 production against 248 test — and the
+exception is shown rather than asserted.**
 Cutting it further means separating the class declarations from the census that proves them. The
 census IS the receipt for `B5`: a pull request carrying the declarations without it ships a
 convention that no check protects, and has nothing red at its parent — the declarations are inert
 until something reads them. A pull request carrying the census without the declarations is a
 permanent red. Neither half has a receipt, so the ceiling yields and the receipt wins.
 
-`U1-B`'s pull request body says the diff is large and names that reason, so a reviewer learns the
-size from the pull request rather than from the Files Changed tab.
+`U1-B`'s pull request body says the diff is large, gives its production-against-test composition,
+and names that reason, so a reviewer learns the size from the pull request rather than from the
+Files Changed tab.
 
 **The split is ruled and its ladder rows exist.** Section 12 carries one executable block per pull
 request — branch, version step, step list, red-on-parent, inertness mutation, verification, the
@@ -3167,7 +3174,7 @@ What you see: a module spawns that the allowlist does not name, or an allowliste
 spawns.
 
 ```
-grep -rlE "child_process|execFileSync|execSync|spawnSync|worker_threads" src hooks bin scripts
+grep -rlE "child_process|execFile|execSync|spawnSync|spawn\(|fork\(|worker_threads" src hooks bin scripts
 ```
 
 Expected exit code: **0**, and expected output exactly these three lines, in any order: `src/store/git.ts`,
@@ -3220,7 +3227,7 @@ yourself; it is another unit's whole scope.
 
 ## 12. Per-pull-request execution
 
-This unit ships as three pull requests, merged in the order below. Each block is executable start to
+This unit ships as four pull requests, merged in the order below. Each block is executable start to
 finish by someone reading that block plus the shared sections of this document — sections 2 to 5 for
 ground truth, edits and test bodies, section 8.5 for the live-store parse procedure, and section 3.2
 for the census outcome `C.8.3` guards. **No block requires reading another block.** Sections 4 and 5 remain
@@ -3228,8 +3235,10 @@ the single source for every edit and every test body; each block names the exact
 test names it consumes and repeats none of them.
 
 **Every step of section 4 is assigned to exactly one block, except step 1.** Step 1 is the version
-bump, and it is superseded: each part bumps once, from its own baseline, in its own A.1, B.1 or C.1.
-Do not apply section 4 step 1 when executing a block; apply that block's version step instead.
+bump, and it is superseded: each part bumps once, from its own baseline, in its own A.1, B.1, C.1 or
+D.1. Do not apply section 4 step 1 when executing a block; apply that block's version step instead.
+`U1-D` consumes no section-4 step at all: it ships one test file and the version bump, and nothing
+else.
 
 ### 12.A — `U1-A` Refusal completeness
 
@@ -3252,7 +3261,7 @@ both `package.json` and `.claude-plugin/plugin.json`, using the value you read, 
 node scripts/check-packaging.mjs
 ```
 
-Expected exit code: **0**. Expected output: no line containing `version mismatch`.
+Expected exit code: **0**. Expected output contains `check-packaging: ok`.
 
 #### A.2 Steps consumed, in order
 
@@ -3323,7 +3332,7 @@ Expected exit code **0**, no output.
 ```
 node scripts/check-packaging.mjs
 ```
-Expected exit code **0**, no line containing `version mismatch`.
+Expected exit code **0**, output contains `check-packaging: ok`.
 
 ```
 node --test --experimental-strip-types test/unit/caps-census.test.ts
@@ -3396,13 +3405,14 @@ improvise.**
 ### 12.B — `U1-B` Field classes and the git boundary
 
 **Branch:** `feat/u1b-field-classes`. Cut from a `main` that already contains `U1-A`.
-**Carries:** `B5`, `B13`, `B42`, and invariants `A5` and `S2`.
-**Measured size:** 590 changed lines (228 production, 362 test). This exceeds the 400-line ceiling
-and the exception is granted: cutting it further separates the class declarations from the census
-that proves them, and the census is the receipt for `B5`. Declarations without the census ship a
-convention no check protects and have nothing red at their parent, because declarations are inert
-until something reads them; the census without the declarations is a permanent red. The pull request
-body states the size and names that reason.
+**Carries:** `B5`, `B13`, and invariant `A5`.
+**Measured size:** 476 changed lines (228 production, 248 test). This exceeds the 400-line ceiling
+and the exception is granted on one specific showing: cutting it further separates the class
+declarations from the census that proves them, and the census is the receipt for `B5`. Declarations
+without the census ship a convention no check protects and have nothing red at their parent, because
+declarations are inert until something reads them; the census without the declarations is a
+permanent red. Neither half could carry a receipt, so the ceiling yields. The pull request body
+states the size, its production-against-test composition, and that reason.
 
 #### B.1 Version step
 
@@ -3415,7 +3425,7 @@ node -e "console.log(require('./package.json').version, require('./.claude-plugi
 Expected exit code: **0**. Expected output: one line carrying the same plain semver value twice; at
 ladder position 3 that is `1.4.3 1.4.3`. Write `MAJOR.(MINOR+1).0` into the `"version"` line of both
 `package.json` and `.claude-plugin/plugin.json`, using the value you read, then run
-`node scripts/check-packaging.mjs`; expected exit code **0**, no line containing `version mismatch`.
+`node scripts/check-packaging.mjs`; expected exit code **0**, output contains `check-packaging: ok`.
 
 #### B.2 Steps consumed, in order
 
@@ -3426,7 +3436,7 @@ field and removes no cap.
 
 #### B.3 Tests
 
-Adds three files, each given in full in section 5:
+Adds two files, each given in full in section 5:
 
 - `test/unit/field-class.test.ts` — section 5.1, unmodified. Test names:
   `field-class.every-record-field-declares-a-class`,
@@ -3437,9 +3447,6 @@ Adds three files, each given in full in section 5:
 - `test/unit/git-boundary.test.ts` — section 5.2, with **one modification**: omit the test
   `git-boundary.an-artifact-pointer-carrying-a-code-fence-is-refused`, because `Thread.artifacts`
   does not exist until `U1-C`. Ship the other nine tests exactly as section 5.2 gives them.
-- `test/contract/spawn-allowlist.test.ts` — section 5.5, unmodified. Test names:
-  `spawn-allowlist.only-allowlisted-modules-spawn-and-none-imports-a-record-type`,
-  `spawn-allowlist.control.an-unlisted-spawner-and-a-tainted-allowlisted-module-are-forbidden`.
 
 Modifies one file: `test/unit/caps-census.test.ts`, adding the single line
 `  DECISION_COMMIT_MAX: 'record-field',` to the `CAP_ROLES` table immediately after the
@@ -3485,18 +3492,11 @@ Exit code 1, with `field-class.every-record-field-declares-a-class` failing on
 `census rejected a forbidden item` naming a node that carries no `class` key. Then revert step 5 and
 apply steps 2, 3a, 4, 5, 8, 9, 10, 11a and 16 in order.
 
-`test/contract/spawn-allowlist.test.ts` — **green at the parent, and disclosed rather than hidden.**
-Both its tests pass there. `S2` is a drift guard: only three modules spawn a process and none
-imports a record type, and that is already true. Reaching a red would mean introducing a violation
-into the parent commit, which is vandalism rather than a receipt. Honesty-ladder status for the
-red-on-parent obligation on `B42` and `S2`: **`unverified-reasoned`**, for that specific reason. Its
-proof is the inertness mutation in B.5.
-
 #### B.5 Inertness mutation
 
-Two mutations, both measured.
+One mutation, measured.
 
-**Mutation 1 — remove the pointer pattern.** Edit `src/schema/field-class.ts`. FIND:
+**Remove the pointer pattern.** Edit `src/schema/field-class.ts`. FIND:
 
 ```ts
   z.string().max(max).regex(POINTER_PATTERN).describe(description).meta({ class: 'pointer' })
@@ -3514,23 +3514,6 @@ the three `git-boundary.a-risk-ref-carrying-*` tests, and
 `git-boundary.a-binding-branch-carrying-a-line-break-is-refused-by-its-record-schema`. Restore the
 `.regex(POINTER_PATTERN)` call and re-run; expect exit code 0.
 
-**Mutation 2 — plant an unlisted spawner.** Create `src/probe/unlisted-spawner.ts` with exactly:
-
-```ts
-import { execFileSync } from 'node:child_process'
-export const run = () => execFileSync('git', ['status'])
-```
-
-Run `node --test --experimental-strip-types test/contract/spawn-allowlist.test.ts`. Observed: exit
-code 1 with
-
-```
-✖ spawn-allowlist.only-allowlisted-modules-spawn-and-none-imports-a-record-type
-  AssertionError [ERR_ASSERTION]: spawn-allowlist: the set of modules that spawn a process must equal the allowlist exactly
-```
-
-Restore with `rm -rf src/probe` and re-run; expect exit code 0 and 2 passing.
-
 #### B.6 Full verification
 
 Never run `npm ci` or `npm install`.
@@ -3543,12 +3526,12 @@ Expected exit code **0**, no output.
 ```
 node scripts/check-packaging.mjs
 ```
-Expected exit code **0**, no line containing `version mismatch`.
+Expected exit code **0**, output contains `check-packaging: ok`.
 
 ```
-node --test --experimental-strip-types test/unit/field-class.test.ts test/unit/git-boundary.test.ts test/unit/caps-census.test.ts test/contract/spawn-allowlist.test.ts
+node --test --experimental-strip-types test/unit/field-class.test.ts test/unit/git-boundary.test.ts test/unit/caps-census.test.ts
 ```
-Expected exit code **0**. The pass condition is `ℹ fail 0`. Measured at authoring time: `ℹ pass 19`.
+Expected exit code **0**. The pass condition is `ℹ fail 0`. Measured at authoring time: `ℹ pass 17`.
 
 Then run the live-store parse check, whose script and copy procedure section 8.5 gives in full,
 against a read-only copy of the store:
@@ -3562,8 +3545,8 @@ Expected exit code: **0**. Expected output contains `failures: 0`. Never write t
 ```
 npm test
 ```
-Expected exit code **0**, output contains `ℹ fail 0`, subject to stop condition B.8.5. Measured at
-authoring time on a copy of this tree: 455 tests, 452 passing, with the only three failures being
+Expected exit code **0**, output contains `ℹ fail 0`, subject to stop condition B.8.4. Measured at
+authoring time on a copy of this tree: 453 tests, 450 passing, with the only three failures being
 `cutover.old-tree-absent`, `install.serves-new-server` and `install.no-build-output-was-materialised`,
 which fail identically on an unmodified copy because they need the repository's real git history and
 a real plugin installation. In the repository itself they pass.
@@ -3582,15 +3565,13 @@ node ~/.claude/lib/git/pr.mjs pr-create \
   --why "Nothing in the code inspected what kind of thing a stored string was, so the boundary between this tool and git held only because callers happened to respect it." \
   --why "The commit field had no limit and no shape, so a caller could store an entire diff in it and nothing would object." \
   --why "There was no way to ask which stored fields are meant to be read by a person, which a later change needs in order to prove nothing is stored that no surface shows." \
-  --risk "At 590 lines this is larger than usual and not divisible: split the declarations from the census proving them and neither half carries a receipt. A non-address in an address field is now refused." \
+  --risk "At 476 lines (228 code, 248 test) this is larger than usual and not divisible: split the declarations from the census proving them and neither half carries a receipt." \
   --verified "npm run typecheck - exit 0" \
   --verified "node scripts/check-packaging.mjs - exit 0" \
-  --verified "new tests alone - 19 passing, 0 failing" \
+  --verified "new tests alone - 17 passing, 0 failing" \
   --verified "acceptance tests at the parent commit - 7 failing of 9 in the boundary suite" \
   --verified "every record in a read-only copy of the live store re-parsed - 0 failures" \
   --verified "inertness mutation, pointer pattern removed - 5 tests turn red" \
-  --verified "inertness mutation, unlisted process spawner planted - 1 test turns red" \
-  --not-verified "process-spawn allowlist red at the parent - not reachable; the invariant already holds, proved by mutation instead" \
   --not-verified "mutation score for the changed modules - not run"
 ```
 
@@ -3621,24 +3602,13 @@ Expected exit code **0**, and expected output one line carrying the same value t
 position 3 that is `1.4.3 1.4.3`. If the two values are not identical, **STOP and report; do not
 improvise.** A value higher than `1.4.3` is not a stop condition; increment from what you read.
 
-**B.8.3 — the process-spawn population is not the three modules this plan censused.**
-
-```
-grep -rlE "child_process|execFileSync|execSync|spawnSync|worker_threads" src hooks bin scripts
-```
-
-Expected exit code **0** and exactly these three lines in any order: `src/store/git.ts`,
-`scripts/install-githooks.mjs`, `scripts/d6-check.cjs`. Any other set means the allowlist in
-`test/contract/spawn-allowlist.test.ts` is wrong as written. Do **not** edit the allowlist to make
-the census pass. **STOP and report; do not improvise.**
-
-**B.8.4 — a census halts on something this plan did not classify.** A test failing with
+**B.8.3 — a census halts on something this plan did not classify.** A test failing with
 `census halted on an unclassifiable item` or `census rejected a forbidden item` naming something
 steps 2 through 16 do not touch is outside this part's ceiling. Answer a halting census by
 classifying the item, never by excluding it, pinning a count, or widening an allowlist. **STOP and
 report; do not improvise.**
 
-**B.8.5 — the known tracked suite failure.**
+**B.8.4 — the known tracked suite failure.**
 
     Run: npm test
     If the ONLY failing test is `concurrent.distinct-ids` in `test/spawn/decisions.test.ts`,
@@ -3667,7 +3637,7 @@ node -e "console.log(require('./package.json').version, require('./.claude-plugi
 Expected exit code: **0**. Expected output: one line carrying the same plain semver value twice; at
 ladder position 4 that is `1.5.0 1.5.0`. Write `MAJOR.(MINOR+1).0` into the `"version"` line of both
 `package.json` and `.claude-plugin/plugin.json`, using the value you read, then run
-`node scripts/check-packaging.mjs`; expected exit code **0**, no line containing `version mismatch`.
+`node scripts/check-packaging.mjs`; expected exit code **0**, output contains `check-packaging: ok`.
 
 #### C.2 Steps consumed, in order
 
@@ -3798,7 +3768,7 @@ Expected exit code **0**, no output.
 ```
 node scripts/check-packaging.mjs
 ```
-Expected exit code **0**, no line containing `version mismatch`.
+Expected exit code **0**, output contains `check-packaging: ok`.
 
 ```
 node --test --experimental-strip-types test/unit/goal-model-fields.test.ts test/unit/caps.test.ts test/unit/caps-census.test.ts test/unit/git-boundary.test.ts
@@ -3900,6 +3870,227 @@ classifying the item, never by excluding it, pinning a count, or widening an all
 report; do not improvise.**
 
 **C.8.5 — the known tracked suite failure.**
+
+    Run: npm test
+    If the ONLY failing test is `concurrent.distinct-ids` in `test/spawn/decisions.test.ts`,
+    that is the tracked store-materialisation defect, not this change. Re-run `npm test` once.
+    If it passes on the re-run, proceed, and record in the pull request body a
+    `--not-verified "concurrent.distinct-ids - known tracked failure, passed on re-run"` line.
+    If it fails twice, or if ANY other test fails, STOP and report; do not improvise,
+    and do not edit, skip, focus or delete any test.
+
+---
+
+### 12.D — `U1-D` Spawn allowlist
+
+**Branch:** `test/u1d-spawn-allowlist`. Cut from a `main` that already contains `U1-C`.
+**Carries:** `B42` and invariant `S2`.
+**Measured size:** 114 changed lines (0 production, 114 test).
+
+This part ships one new test file and the version bump. It changes no production code, because the
+property it asserts is already true of the tree: exactly three modules spawn a process and none of
+them imports a record type. What is missing is any check that keeps it true, and that is what this
+adds.
+
+It is separated from `U1-B` deliberately. `U1-B`'s ceiling exception rests on one showing — that
+splitting the field-class declarations from the census proving them leaves neither half with a
+receipt. That showing does not cover `B42` and `S2`, which share no file and no invariant with the
+class work, so this part carries no exception and needs none.
+
+#### D.1 Version step
+
+Read, then increment. This part is a `test`, so it increments PATCH and leaves MAJOR and MINOR alone.
+
+```
+node -e "console.log(require('./package.json').version, require('./.claude-plugin/plugin.json').version)"
+```
+
+Expected exit code: **0**. Expected output: one line carrying the same plain semver value twice; at
+ladder position 5 that is `1.6.0 1.6.0`. Write `MAJOR.MINOR.(PATCH+1)` into the `"version"` line of
+both `package.json` and `.claude-plugin/plugin.json`, using the value you read, then run:
+
+```
+node scripts/check-packaging.mjs
+```
+
+Expected exit code: **0**. Expected output contains `check-packaging: ok`.
+
+#### D.2 Steps consumed, in order
+
+**None.** This part consumes no step from section 4. Its whole production content is the version
+bump in D.1, and its whole test content is the file named in D.3.
+
+#### D.3 Tests
+
+Adds one file: `test/contract/spawn-allowlist.test.ts`, given in full in section 5.5, unmodified.
+Test names: `spawn-allowlist.only-allowlisted-modules-spawn-and-none-imports-a-record-type` and
+`spawn-allowlist.control.an-unlisted-spawner-and-a-tainted-allowlisted-module-are-forbidden`.
+
+Modifies no existing test.
+
+#### D.4 Red on the parent
+
+**There is no red at the parent, and none is manufactured.** Measured on the parent: the file runs
+there and both tests pass.
+
+```
+node --test --experimental-strip-types test/contract/spawn-allowlist.test.ts
+```
+
+Exit code **0**, output `ℹ pass 2` and `ℹ fail 0`.
+
+Two things are true and both are stated rather than one being hidden:
+
+- The test **can** be run at the parent. It imports only node builtins and
+  `test/support/census.ts`, which already exists, so there is no compile-time substitute to offer
+  and no `ERR_MODULE_NOT_FOUND` to report. Anything claiming otherwise about this file is wrong.
+- It **passes** there, because `S2` is a drift guard over a property the tree already has. Reaching
+  a red would mean planting a violating module in the parent commit, which is vandalism rather than
+  a receipt.
+
+Honesty-ladder status for the red-on-parent obligation on `B42` and `S2`: **`unverified-reasoned`**.
+The specific reason is that this part adds a check rather than changing a behaviour, so no prior
+state of the code fails it. **The inertness mutations in D.5 are the receipt for this part**, and
+both were run.
+
+#### D.5 Inertness mutation
+
+Two mutations. The first proves the population assertion is live; the second proves the census
+actually halts rather than silently skipping. Both were run and both were restored.
+
+**Mutation 1 — plant a spawning module that the allowlist does not name.** Create
+`src/probe/unlisted-spawner.ts` with exactly:
+
+```ts
+import { execFileSync } from 'node:child_process'
+export const run = () => execFileSync('git', ['status'])
+```
+
+Run:
+
+```
+node --test --experimental-strip-types test/contract/spawn-allowlist.test.ts
+```
+
+Observed: exit code **1**, with
+
+```
+✖ spawn-allowlist.only-allowlisted-modules-spawn-and-none-imports-a-record-type
+  AssertionError [ERR_ASSERTION]: spawn-allowlist: the set of modules that spawn a process must equal the allowlist exactly
+  + actual - expected
+    [
+      'scripts/d6-check.cjs',
+      'scripts/install-githooks.mjs',
+  +   'src/probe/unlisted-spawner.ts',
+      'src/store/git.ts'
+    ]
+```
+
+Restore with `rm -rf src/probe`, then re-run the same command; expected exit code **0** and
+`ℹ pass 2`.
+
+**Mutation 2 — plant a file whose kind the census cannot classify.** Create `src/probe/helper.py`
+containing exactly the single line `import os`. Run the same command. Observed: exit code **1**, with
+
+```
+✖ spawn-allowlist.only-allowlisted-modules-spawn-and-none-imports-a-record-type
+  AssertionError [ERR_ASSERTION]: Got unwanted exception.
+  Actual message: "census halted on an unclassifiable item: {"relPath":"src/probe/helper.py","extension":".py","text":"import os\n"}"
+```
+
+That is the census halting on a file kind it has no rule for, which is what `P8` requires of it: a
+new file type must be classified deliberately, never silently skipped. Restore with
+`rm -rf src/probe`, then re-run; expected exit code **0** and `ℹ pass 2`.
+
+#### D.6 Full verification
+
+Never run `npm ci` or `npm install`; `node_modules` is tracked and an install rewrites tracked files.
+
+```
+npm run typecheck
+```
+Expected exit code **0**, no output.
+
+```
+node scripts/check-packaging.mjs
+```
+Expected exit code **0**, output contains `check-packaging: ok`.
+
+```
+node --test --experimental-strip-types test/contract/spawn-allowlist.test.ts
+```
+Expected exit code **0**, output contains `ℹ pass 2` and `ℹ fail 0`.
+
+```
+npm test
+```
+Expected exit code **0**, output contains `ℹ fail 0`, subject to stop condition D.8.4.
+
+#### D.7 Pull request
+
+```
+node ~/.claude/lib/git/pr.mjs pr-create \
+  --repo SatanshuMishra/logbook \
+  --head test/u1d-spawn-allowlist \
+  --base main \
+  --title "test(spawn): pin which modules may start a process" \
+  --what "A check now fails the build if a module starts an operating-system process without being on the short list allowed to." \
+  --what "The same check fails if any module on that list starts importing one of the stored record types." \
+  --what "A file whose kind the check has no rule for stops the build rather than being skipped, so a new sort of file must be classified on purpose." \
+  --why "Only three modules start processes and none of them touches stored records, but nothing enforced that, so the property held by habit and could be lost without anyone noticing." \
+  --why "Records arrive from a shared remote, so a path from a record into something that starts a process is the route by which a shared record could run on your machine." \
+  --risk "No production code changes, so nothing behaves differently; a later change that adds a process-starting module will now have to name it in the list on purpose." \
+  --verified "npm run typecheck - exit 0" \
+  --verified "node scripts/check-packaging.mjs - exit 0" \
+  --verified "the new test alone - 2 passing, 0 failing" \
+  --verified "inertness mutation, unlisted process starter planted - 1 test turns red" \
+  --verified "inertness mutation, unclassifiable file kind planted - the census halts" \
+  --not-verified "red at the parent commit - not reachable; the property already holds, so the check is proved by mutation instead" \
+  --not-verified "mutation score for the changed modules - not run"
+```
+
+Expected exit code: **0**. Expected output: the URL of the opened pull request. A non-zero exit is a
+usage rejection naming the flag it refused; correct that flag and re-run. Never substitute
+`gh pr create`, a `gh api` POST, or the GitHub MCP create tool — all three are denied at the gate.
+
+Add a `--verified "npm test - <count> passing, exit 0"` line filled in from the run performed.
+
+#### D.8 Stop conditions
+
+**D.8.1 — `U1-C` has not merged.**
+
+```
+grep -c 'ARTIFACT_POINTER_MAX' src/schema/caps.ts
+```
+
+Expected exit code **0** and output `1`. Exit code 1 with output `0` means `U1-C` is not on `main`
+and this branch was cut too early. **STOP and report; do not improvise.**
+
+**D.8.2 — the two version manifests already disagree.**
+
+```
+node -e "console.log(require('./package.json').version, require('./.claude-plugin/plugin.json').version)"
+```
+
+Expected exit code **0**, and expected output one line carrying the same value twice; at ladder
+position 5 that is `1.6.0 1.6.0`. If the two values are not identical, **STOP and report; do not
+improvise.** A value higher than `1.6.0` is not a stop condition; increment from what you read.
+
+**D.8.3 — the process-spawn population is not the three modules this plan censused.**
+
+```
+grep -rlE "child_process|execFile|execSync|spawnSync|spawn\(|fork\(|worker_threads" src hooks bin scripts
+```
+
+Expected exit code **0** and exactly these three lines in any order: `src/store/git.ts`,
+`scripts/install-githooks.mjs`, `scripts/d6-check.cjs`. This token set is the one section 5.5's
+`SPAWN_TOKENS` uses, so a module the test would catch cannot slip past this check. Any other set
+means the allowlist written into `test/contract/spawn-allowlist.test.ts` in section 5.5 is wrong as
+written. Do **not** edit the
+allowlist to make the census pass, and do **not** add an extension to the non-module list to make a
+halt go away. **STOP and report; do not improvise.**
+
+**D.8.4 — the known tracked suite failure.**
 
     Run: npm test
     If the ONLY failing test is `concurrent.distinct-ids` in `test/spawn/decisions.test.ts`,

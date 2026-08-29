@@ -768,3 +768,43 @@ must halt.
 
 **Consequence for `U7`:** `B42`/`S2` is asserted from `U1-D`, not `U1-B`. `U7`'s stop condition for
 the allowlist names `U1-D`.
+
+## OR26 — two corrections to `OR25`, both raised against it by the plan
+
+`U1`'s plan disputed two statements in `OR25` and was right on both. Recorded here rather than by
+editing `OR25`, so the disagreement stays legible.
+
+**1. `U1-B`'s composition.** `OR25` gives it as "228 production lines against 362 test". Those sum to
+590, which is the PRE-split figure — `OR25` carried the old composition under the new total. The
+measured post-split figures are **`U1-B` 476 = 228 production / 248 test**. The full set, each
+measured by applying the plan's own blocks to a throwaway tree:
+
+| Part | Lines | Production | Test |
+|---|---|---|---|
+| U1-A | 243 | 60 | 183 |
+| U1-B | 476 | 228 | 248 |
+| U1-C | 244 | 66 | 178 |
+| U1-D | 114 | 0 | 114 |
+
+The sum, 1,077, exceeds the unit's measured 1,040 because `src/schema/thread.ts` is edited by both
+`B` and `C`. `U1-B` keeps its `OR16` exception, and its pull request body discloses 228 production
+against 248 test.
+
+**2. `U1-D`'s substitute receipt, as `OR25` worded it, is false.** `OR25` said the census "cannot run
+at the parent because the allowlist it reads does not exist there". It can. The allowlist is declared
+inside the test file itself, so at the parent the census runs, compiles and **passes** — the code
+already complies. The plan refuses that substitute in its own block `12.D` and says why, and the
+conformance auditor confirmed it independently.
+
+The honest statement, which the plan carries instead: `U1-D` has **no red at its parent**, because a
+census over already-compliant code is green there and manufacturing a red would mean breaking the
+code to prove the check. Its receipt is the **inertness mutation** — add a spawning module without
+classifying it and the census must halt:
+
+    AssertionError [ERR_ASSERTION]: Got unwanted exception.
+    Actual message: "census halted on an unclassifiable item:
+    {"relPath":"src/probe/helper.py","extension":".py","text":"import os\n"}"
+
+That is `OR13` working as intended: a unit that cannot produce a red-on-parent says so and names what
+proves it instead, rather than substituting a proxy and calling it a receipt. `U1-D` ships under an
+`unverified-reasoned` status for the red-on-parent obligation specifically, with that reason.

@@ -128,3 +128,65 @@ Appends only. Never edit an item another planner wrote.
 - **Evidence:** `F10a` above says "six modules outside U10's ownership" re-escape already-stored text. The measured number is **ten**, each verified by reading the call site: `src/render/briefing.ts:68`, `src/render/roster.ts:67`, `src/server/resource-render.ts:18`, `src/server/resources.ts:52`, `src/server/prompts.ts:22`, `src/cli/session-start.ts:24`, `src/domain/lifecycle.ts:9`, `src/domain/spine.ts:188-207`, `src/schema/refusal.ts:37`, `src/server/tools/resolve_conflict.ts:343-382`. Filed items are append-only, so `F10a` is corrected here rather than edited.
 - **Why it is above the ceiling:** it corrects the record of an item that is itself above the ceiling. `F10a`'s conclusion is unchanged — the count only strengthens it.
 - **Not folded in.**
+
+## F6a — a third private copy of the schema flattener ships in `test/unit/field-class.test.ts`
+
+- **Surfaced by:** U6 planning
+- **Evidence:** `docs/plans/2026-08-28-continuity-goal-model/U1-schema-foundations.md:1626` gives
+  `test/unit/field-class.test.ts` its own `const flattenSchemaNodes = (value: unknown, path: string): SchemaNode[] => {`,
+  byte-identical in behaviour to the one at `test/contract/described.test.ts:20-46`. `OR15` rules
+  that U6 lifts that function into `test/support/schema-nodes.ts` "so both tests import one copy";
+  the third copy did not exist when `OR15` was written.
+- **Why it is above the ceiling:** U6's acceptance criterion for the lift names exactly two importers,
+  `test/contract/described.test.ts` and U6's own census. Converting a test file that U1-B ships is an
+  edit to another unit's shipped artifact and is not required for any U6 criterion.
+- **Not folded in.**
+
+## F6b — the thread resource reads every binding record in the store to render one thread's bindings
+
+- **Surfaced by:** U6 planning
+- **Evidence:** there is no per-thread binding index. `src/server/tools/bind_branch.ts:80` already
+  scans the whole directory the same way: `const existingSlots = readAllRecordFiles<Binding>(bindingsDir, BindingRecord)`.
+  `B27` gives the thread resource the same scan, so the cost of reading one thread record grows with
+  the total number of bindings ever written, including bindings for terminal threads.
+- **Why it is above the ceiling:** `B27` mandates that bindings render, and U6's acceptance criteria
+  assert that they do. Read cost is `LG13`, discharged by `B37`, `B38` and `B39`, which are U2's.
+- **Not folded in.**
+
+## F6c — two clip markers will exist, one in `src/render/` and one in `src/server/resource-render.ts`
+
+- **Surfaced by:** U6 planning
+- **Evidence:** `src/render/briefing.ts:65-66` already carries `TEXT_CLIPPED_BULLET`, and SPEC rule
+  `B24` says "The clip-marker helper is extracted so every surface shares one implementation" — that
+  extraction lands in `src/render/`, which U5 owns. The sessions listing U6 adds clips each entry's
+  first line and therefore needs a marker of its own before that helper exists.
+- **Why it is above the ceiling:** U6 may not edit `src/render/`; converging the two markers is a
+  change to a file U5 owns and is not named by `B25`, `B26`, `B27` or `B28`.
+- **Not folded in.**
+
+## F6d — the sessions listing inherits the `U+000A` escape collision when it takes a first line
+
+- **Surfaced by:** U6 planning
+- **Evidence:** `src/server/tools/log_session_event.ts:89` stores `escapeStored(input.body)`, and
+  `src/render/escape.ts:39-82` rewrites every line break to the literal text `U+000A`, so a stored
+  body contains no raw line break. The sessions listing therefore splits on the literal token
+  `U+000A` to find a first line. `OR22` records that `escapeStored('U+000A')` and
+  `escapeStored('\n')` both return `'U+000A'`, so a body whose raw text already contained the
+  characters `U+000A` splits at a place the author never wrote a line break.
+- **Why it is above the ceiling:** the collision is `LG5`, discharged by `B43` in U10 and by the
+  new-criterion work `OR22` names `F10b`. `B25` asks for a first line, not for an injective encoding.
+- **Not folded in.**
+
+## F6e — `resources/list` becomes a sixth model-facing surface the forgery census does not cover
+
+- **Surfaced by:** U6 planning
+- **Evidence:** `test/spawn/forgery.test.ts:228-234` declares its population as exactly five surfaces:
+  `type Surfaces = { briefingTool: string; briefingResource: string; rosterTool: string; rosterResource: string; sessionStartRoster: string }`.
+  `B28` gives the thread resource template a `list` callback, and the entries it returns carry the
+  thread's title and slug into `resources/list`, which the model reads. Every such value passes
+  through `escapeStored`, which `test/contract/render-census.test.ts` proves for
+  `src/server/resources.ts`, so the defence is present; the forgery test does not assert it on this
+  surface.
+- **Why it is above the ceiling:** widening the forgery population is not named by `B25`, `B26`,
+  `B27` or `B28`, and it is not a clause of U6's `Green` cell.
+- **Not folded in.**
