@@ -269,3 +269,63 @@ Appends only. Never edit an item another planner wrote.
   bounded-growth display mechanism this SPEC does not specify. Hiding an item to fit is forbidden: it
   is the exact defect U5 exists to remove.
 - **Not folded in.**
+
+## F4a — the criteria-writers census identifies criterion text by property name, and admits any other leaf name
+
+- **Surfaced by:** U4 planning
+- **Evidence:** `test/contract/criteria-writers.test.ts:59-62` classifies as `forbidden` any free-text string property whose TOP-LEVEL argument name matches `/criteri/i` on a tool that also takes `thread_id`. Verbatim: `  if (!CRITERIA_DOMAIN_PATTERN.test(entry.topLevelName)) return 'allowed'` / `  if ('pattern' in node || 'enum' in node || 'const' in node) return 'allowed'` / `  return toolHasThreadId ? 'forbidden' : 'allowed'`. U4-B's new `criteria_done[].result` is exactly that shape and is not criterion text, so the census halts on it; U4-B answers the halt by teaching the classifier that a criterion's statement is the leaf named `text` or the bare array element. After that refinement a criteria-domain free-text leaf named anything else — a hypothetical `criteria_rewrite[].wording` — is classified `allowed` on a thread-bearing tool and would not be caught.
+- **Why it is above the ceiling:** U4's acceptance ceiling covers `B8`, `B9`, `B10`, `B41`, `A3` and `A4`. Making the "only amend_criteria writes criterion text" census decide by something other than a property name is a new mechanism for an invariant no U4 rule carries.
+- **Not folded in.**
+
+## F4b — the whole-record byte-cap refusal names the heaviest field and the observed byte count
+
+- **Surfaced by:** U4 planning
+- **Evidence:** `src/server/tool-support.ts:90-100`, read at the tip of `main`. `overByteCapRefusal` calls `heaviestFieldOf(thread)` and emits `message: \`the thread record after this change is ${observed} bytes, over its cap of ${caps.THREAD_RECORD_SERIALISED_MAX_BYTES} bytes; its largest field is ${heaviest.field} at ${heaviest.bytes} bytes; remedy: remove or shorten an entry in ${heaviest.field} and retry.\``. Any description of the whole-record cap as refusing "without naming which field overflowed and without naming the number" is wrong about the shipped code.
+- **Why it is above the ceiling:** `A1` belongs to the schema unit, not to U4. U4 neither changes nor asserts this refusal; it only records what a caller sees when a `result` pushes a thread record over the cap.
+- **Not folded in.**
+
+## F4c — a required tool argument can ship undocumented without the published-claim census noticing
+
+- **Surfaced by:** U4 planning
+- **Evidence:** `test/support/published.ts:63-104` declares `PUBLISHED_CLAIMS` as a fixed map of description phrases to the arguments that back them, and `classifyPublishedClaim` (`:191-198`) only checks that each declared phrase appears in the description and that its named arguments exist. It never checks the other direction. U4-A adds a required `check` argument to `open_thread` and to `amend_criteria`, and U4-B adds two required sub-fields to `update_thread.criteria_done`; the whole suite stays green with no claim entry naming any of them. Observed: `npm test` reported `ℹ fail 0` on a throwaway tree carrying all of U4 with `PUBLISHED_CLAIMS` untouched.
+- **Why it is above the ceiling:** no `B#` in U4 requires a claim entry, and closing the gap means changing the census to enumerate published arguments rather than published phrases — a change to a shared test-support module that no unit in this ladder owns.
+- **Not folded in.**
+
+## F7a — a sync that fast-forwards the ledger ref clears the Stop-hook presence verdict without this session recording anything
+
+- **Surfaced by:** U7 planning
+- **Evidence:** `src/merge/sync.ts:260-266` advances `refs/logbook/ledger` to the remote value and returns `action: 'fast-forwarded'`. The `B30` verdict this unit ships compares the ref sha against a per-session baseline, so any commit that reaches the ref clears it, including commits authored by another machine and merely fetched here.
+- **Why it is above the ceiling:** `B30` names exactly one exclusion — "excluding commits authored by the post-tool-use hook" — and this unit closes that exclusion by deleting the writer (`B33`). A second exclusion for remote-origin commits is new material the SPEC does not mandate, and it needs its own decision about what "reached the ref" means when a shared remote is involved.
+- **Not folded in.**
+
+## F7b — the render census does not collect the session-start banner's own composition site
+
+- **Surfaced by:** U7 planning
+- **Evidence:** `test/contract/render-census.test.ts` censuses `src/cli/session-start.ts` (`:21`), but `arrayProducerElements` resolves only array literals, call expressions and identifiers (`:161-180`); `sections` initialises to a conditional expression (`src/cli/session-start.ts:60`), so `joinedElements` returns null and `sections.join('\n\n')` yields no site. Probe run on a pristine copy of `main` in the session scratchpad: replacing that line with `const sections = crashReport === null ? [listing, rt.cwd] : [crashReport, listing]` left `render.no-unescaped-site` GREEN (`✔ render.no-unescaped-site (494.48125ms)`), so an unescaped runtime value reaches the model through that surface unclassified.
+- **Why it is above the ceiling:** U7's acceptance ceiling covers `B29`-`B34` and invariant `O3`. Widening a shipped census's expression resolver is neither, and it touches a contract test that no unit in this ladder owns.
+- **Not folded in.**
+
+## F7c — three copies of the same thread-record fixture across the test suite
+
+- **Surfaced by:** U7 planning
+- **Evidence:** `test/unit/session-start.test.ts:25-45` declares `makeThread`; U7 adds two more near-identical copies in `test/hooks/stop-gate-ledger-presence.test.ts` and `test/hooks/post-tool-use-writes-nothing.test.ts`. `test/support/` holds twelve shared helpers but none for a thread record.
+- **Why it is above the ceiling:** extracting it is a refactor across test files this unit does not own, and `test/support/` is a shared surface several units in this ladder write into concurrently.
+- **Not folded in.**
+
+## F5d — correction to F5b: the backfill module does have a caller, and `S3` needs an owner for it
+
+- **Surfaced by:** U5 planning, under `OR28`
+- **Evidence:** `F5b` stated that `backfillCriterionIds` has "no production caller", from a grep over
+  `src/` and `test/` only. Widening the sweep to `scripts/` finds one:
+  `scripts/backfill-criterion-id.mjs:5` — `import { backfillCriterionIds } from '../src/domain/criterion-backfill.ts'`
+  — and `:22` — `const migrated = backfillCriterionIds(parsedInput.value)`. That file is absent from
+  `scripts/check-packaging.mjs`'s `REQUIRED_FILES`, so it is a repository-local migration tool rather
+  than something the plugin ships, but it is a caller. `OR28` point 4 therefore applies and U5 does not
+  delete the module.
+- **Why it is above the ceiling:** the tree-wide `S3` census U5 now ships classifies three reads as
+  forbidden — `src/server/tools/record_decision.ts:57` (two) and `src/domain/criterion-backfill.ts:11`.
+  The first is removed by `B12` in a later unit. The second is removed by no unit, sits in
+  `src/domain/`, and has a caller, so removing it means deciding what happens to that caller. Until
+  that is owned, `S3` is partly undischarged after this ladder finishes, and U5 records that in its
+  divergence 3.5 rather than narrowing its census.
+- **Not folded in.**

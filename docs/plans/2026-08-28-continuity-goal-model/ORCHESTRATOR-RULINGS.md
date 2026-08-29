@@ -877,3 +877,50 @@ Ruled:
 
 `U5` decides which of 3 or 4 applies by running the census. `PLANNING-BRIEF.md` section 2 forbids
 passing that to the implementer: the plan says which, and why.
+
+## OR29 — `S3`'s outcome: population tree-wide, assertion scoped, residue named and owned
+
+`OR28` sent `S3`'s census tree-wide and required `src/domain/criterion-backfill.ts` to be classified
+rather than excluded. The result is **outcome 4**, and it vindicates the widening: the module DOES
+have a caller — `scripts/backfill-criterion-id.mjs:5,22` imports and calls `backfillCriterionIds`.
+`U5`'s original `F5b` claim of "no production caller" came from an `src/`-and-`test/`-only sweep that
+could not see a `.mjs` file the program does not compile. Corrected as `F5d`. **The module is not
+deleted.**
+
+The census as authored: population is every read of `Criterion.ordinal` across `src/`, `hooks/`,
+`bin/`, `scripts/` and `test/` — every file in the compiled program, plus a text sweep of the five
+`.mjs`/`.cjs` files it does not compile. Ten reads, each classified by rule and all printed: a
+template literal is a display label; a copy into a field named `ordinal` is a field copy; a read
+inside a test is an observation; a comparison against another ordinal or a parsed number is
+**forbidden**; anything else halts. Two controls prove both halt paths.
+
+**Three forbidden reads, in two files, neither owned by `U5`:**
+
+- `src/server/tools/record_decision.ts:57` — two reads, inside `deriveScope`, which **`B12` deletes in
+  `U9`**.
+- `src/domain/criterion-backfill.ts:11` — no owning unit, and it has a caller.
+
+Ruled: **the population stays tree-wide and every forbidden read is PRINTED, but the blocking
+assertion covers `src/render` only.** The three are reported under `unasserted here, owned elsewhere`,
+so nothing is silent.
+
+This is not the narrowing `OR28` refused. The distinction is exact and worth stating, because the two
+look alike: `P8` forbids narrowing a census **population** to obtain a green, which is what hides a
+violation. A tree-wide *blocking* assertion at `U5`'s commit would be a knowingly-false invariant and
+a permanent red, which SPEC section 6.1 rule 3 forbids outright — "a permanent red eventually gets
+'fixed' by damaging correct code". Reporting every member while asserting only what this unit can
+make true satisfies both.
+
+`U5`'s criterion for `S3` ships **`unverified-reasoned`** with both reasons named.
+
+**Obligation this creates on `U9`, and it is not optional:** `B12` deletes `deriveScope` and with it
+two of the three forbidden reads. `U9`'s plan therefore **widens the blocking assertion to include
+`src/server/tools/`** and proves the two reads are gone. A unit that removes the reason for a scoped
+assertion and leaves the scope in place has left a permanent excuse behind.
+
+**Residue after the whole ladder: one read, `criterion-backfill.ts:11`.** It has an owner problem,
+not a technical one — no unit owns the file and its caller is a maintenance script. Registered as
+`N8`.
+
+`U5-A` remeasured at **762 lines** (177 production / 585 test), up from 683, and keeps its `OR16`
+exception on the unchanged shown ground. `U5-B` 310 and `U5-C` 202 are unmoved.

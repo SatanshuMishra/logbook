@@ -94,7 +94,7 @@ Numbered, each naming the rule or invariant it discharges. **P** marks the part 
 | 4 | `currentCriterionId` is deleted. With no focus recorded there is no lane A: risks and key decisions on unfinished goals render as one group, in the order they were recorded, and the briefing prints one line saying focus is not set | B18, D1 | A |
 | 5 | Entries attached to a goal that is met or struck render **last**, **compactly** — identifier and text only — under their own heading naming them settled. They are never withheld | B19, D5 | A |
 | 6 | The `Not shown` block carries exactly two possible entries: a count of linked decision records that could not be read, and one line saying that some text was shortened. The four per-list count lines are gone. The address line renders whenever the block renders | B20, O2 | A |
-| 7 | Under `src/render`, `Criterion.ordinal` is read only inside a rendered label. A halting census over every `.ordinal` read in those modules proves it, and a control proves the census halts | S3 | A |
+| 7 | A halting census whose population is every read of `Criterion.ordinal` across `src/`, `hooks/`, `bin/`, `scripts/` and `test/` classifies each read, prints all of them, and asserts that every read under `src/render` renders a display label. A control proves it halts. Section 3.5 records the three reads it prints but does not assert, and why | S3, partly | A |
 | 8 | A briefing whose full render fits the budget renders in full: no value is shortened, no marker appears, and no `Not shown` block appears — including for a record whose stored text expands sixfold when escaped | O1 | B |
 | 9 | Every shortened value ends with the marker, the marker fits inside that value's own limit, and the marker never appears more than once on a line | O3 | B |
 | 10 | One module, `src/render/clip.ts`, holds the clip-marker implementation, and the briefing calls it. No second implementation exists | B24 | B |
@@ -397,7 +397,36 @@ more entries. Measured on the changed renderer: 37 characters survive. That numb
 not lowered to a new pin; section 5 replaces it with a property that does not depend on how many
 entries print.
 
-### 2.13 `test/spawn/decisions.test.ts:307-311` — the end-to-end assertion on a key-decision line
+### 2.13 `src/server/tools/record_decision.ts:55-60` and `src/domain/criterion-backfill.ts:5-13` — the two reads of `Criterion.ordinal` this unit cannot remove
+
+```ts
+  const lowest = open.reduce<Criterion | null>(
+    (best, candidate) => (best === null || candidate.ordinal < best.ordinal ? candidate : best),
+    null
+  )
+  return lowest === null ? null : `criterion ${lowest.ordinal}`
+```
+
+```ts
+export const criterionIdForScope = (scope: string, criteria: readonly Criterion[]): Criterion['id'] | undefined => {
+  const match = SCOPE_ORDINAL_PATTERN.exec(scope.trim())
+  if (match === null) return undefined
+  const ordinalText = match[1]
+  if (ordinalText === undefined) return undefined
+  const ordinal = Number(ordinalText)
+  const criterion = criteria.find((candidate) => candidate.ordinal === ordinal)
+  return criterion?.id
+}
+```
+
+What is wrong with them: both compare one criterion's position against a number to pick a criterion,
+which is reading position to infer sequence. The first fabricates a decision's scope from the
+lowest-numbered open goal, which is SPEC defect D2. The second resolves a stored scope string back to
+a goal, so a thread whose goals are reordered — and ordinals recompute, asserted today by
+`criteria.ordinals-recompute` — resolves that string to a different goal than the one it was written
+against. Neither file belongs to this unit; section 3.5 records what that means for `S3`.
+
+### 2.14 `test/spawn/decisions.test.ts:307-311` — the end-to-end assertion on a key-decision line
 
 ```ts
     assert.equal(
@@ -411,7 +440,7 @@ What is wrong with it: it pins the key-decision line as a bare title, through a 
 holds SPEC defect D6 — the decision identifier being dropped though it sits in the same object — in
 place from the far end of the system.
 
-### 2.14 `test/unit/briefing-frontier-sweep.test.ts:324-332` — the sweep's closing assertion
+### 2.15 `test/unit/briefing-frontier-sweep.test.ts:324-332` — the sweep's closing assertion
 
 ```ts
   assert.equal(
@@ -507,27 +536,50 @@ names two. **Rejected:** moving the `- dangling:` and `- quarantined:` lines out
 block into `Not shown`, which is a larger change to a block three shipped tests assert and which B20
 does not ask for.
 
-### 3.5 `S3` is asserted over `src/render`, not over the whole tree
+### 3.5 `S3`'s census is tree-wide; two reads it finds are owned outside this unit
 
-The approved specification assigns `S3` — "`Criterion.ordinal` is read only to render a display label
-and to stable-sort for display. Every other read is forbidden" — to this unit. A census over the whole
-source tree would be red at this unit's parent and would stay red until a later unit lands:
-`src/server/tools/record_decision.ts:57,60` reads `criterion.ordinal` to derive a decision's scope from
-the lowest open goal, and a later unit in this ladder deletes that, not this one. The specification's
-own rule on invariants — "True of the system as it will be when its unit lands, never aspirationally.
-A knowingly-false invariant is a permanent red, and a permanent red eventually gets fixed by damaging
-correct code" — forbids shipping it in that state.
+`S3` reads: "`Criterion.ordinal` is read only to render a display label and to stable-sort for
+display. Every other read is forbidden." Its subject is every read of that field, so the census
+population is every read across `src/`, `hooks/`, `bin/`, `scripts/` and `test/`, and it halts on any
+read it cannot classify. Scoping the population to one directory would be narrowing a census, which is
+forbidden outright.
 
-The census is therefore scoped to the modules under `src/render`, which is the surface this unit owns
-and where the defect `S3` guards against actually lived. The two reads outside that surface are named
-in `FILED.md` as `F5b` and are not touched here.
+**What the census found, run over the tree.** Ten reads, classified by rule:
 
-**One of those two is currently owned by nobody, and that is stated rather than left implicit.** The
-read at `src/server/tools/record_decision.ts:57,60` is deleted by a later unit in this ladder. The read
-at `src/domain/criterion-backfill.ts:11` is deleted by no unit, is reached by no production caller, and
-therefore leaves `S3` partly undischarged after this ladder finishes. Closing it is a change to a file
-this unit does not own and is named by no behavioural rule, so it is filed, not folded in, and it needs
-an owner.
+| Read | Use | Verdict |
+| --- | --- | --- |
+| `src/render/briefing.ts:77` | inside a template literal — a display label | allowed |
+| `src/server/resource-render.ts:45` | inside a template literal — a display label | allowed |
+| `src/server/tools/open_thread.ts:157` | copied into a response field itself named `ordinal` | allowed |
+| `src/server/tools/record_decision.ts:60` | inside a template literal — a display label | allowed |
+| `src/server/tools/record_decision.ts:57` (two reads) | `candidate.ordinal < best.ordinal` — picks a goal by position | **forbidden** |
+| `src/domain/criterion-backfill.ts:11` | `candidate.ordinal === ordinal` — picks a goal by position | **forbidden** |
+| `test/unit/criteria.test.ts:220`, `test/unit/field-merge.test.ts:147`, `test/spawn/decisions.test.ts:342` | a test observing a value | allowed |
+
+The five non-TypeScript files under those roots are swept as text; none contains a read.
+
+**`src/domain/criterion-backfill.ts` has a caller, so this unit does not delete it.** The caller is
+`scripts/backfill-criterion-id.mjs:5,22`, which imports `backfillCriterionIds` and runs it over a
+thread record on disk. That file is not listed in `scripts/check-packaging.mjs`'s required-file set, so
+it is a repository-local migration tool rather than something the plugin ships — but it is a caller,
+and deleting a module something calls is out of this unit's scope.
+
+**`src/server/tools/record_decision.ts` is deleted by a later unit in this ladder**, which removes the
+scope derivation outright. That file belongs to that unit, not this one.
+
+**What this unit therefore asserts, and what it does not.** The census enumerates every read in the
+tree and prints all ten with their classification, so nothing it declines to assert is silent. Its
+blocking assertion covers the reads under `src/render`, which is this unit's surface and where the
+guessed-goal defect lived. The three forbidden reads in the two files above are printed under
+`unasserted here, owned elsewhere` with their path and expression.
+
+`S3` is therefore **not fully discharged when this unit lands**, and the reason is specific rather than
+general: two of its violations sit in files this unit does not own, one of them is removed by a later
+unit in this ladder, and the other has a caller so it cannot simply be removed. Making the assertion
+tree-wide and blocking would be a permanent red at this unit's commit, which the specification's own
+rule on invariants forbids — "True of the system as it will be when its unit lands, never
+aspirationally." The residue is reported for registration as new material; it is not left as a
+narrowed census.
 
 ### 3.6 No decomposition procedure was read
 
@@ -2074,23 +2126,16 @@ cap reports itself as fitting.
 
 #### Step A5 — add the two censuses that keep the caps deleted
 
-
 File: `test/unit/briefing-hides-nothing.test.ts`. CREATE. Entire contents:
 
 ```ts
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import * as ts from 'typescript'
 import { census, type Classified } from '../support/census.ts'
 import { REBUILD_ROOT, forEachDescendant, lineOf, loadSourceProgram, relativeToRoot, sourceFileFor } from '../support/source-census.ts'
-
-const RENDER_DIR_PREFIX = `src${path.sep}render${path.sep}`
-
-const renderSourceFiles = (program: ts.Program, productionFiles: readonly string[]): ts.SourceFile[] =>
-  productionFiles
-    .filter((file) => relativeToRoot(file).startsWith(RENDER_DIR_PREFIX))
-    .map((file) => sourceFileFor(program, file))
 
 type SliceSite = { file: string; line: number; expression: string; discardsElements: boolean }
 
@@ -2148,7 +2193,13 @@ test('briefing.no-display-time-item-cap-remains-in-the-briefing-renderer.control
   assert.throws(() => census(synthetic, classifySliceSite))
 })
 
-type OrdinalSite = { file: string; line: number; expression: string; insideTemplate: boolean }
+const ORDINAL_FIELD = 'ordinal'
+const ORDINAL_ROOTS = ['src', 'hooks', 'bin', 'scripts', 'test']
+const NON_PROGRAM_SOURCE_EXTENSIONS = ['.mjs', '.cjs', '.js']
+
+type OrdinalUse = 'display-label' | 'field-copy' | 'test-observation' | 'position-comparison' | 'unknown'
+
+type OrdinalSite = { file: string; line: number; expression: string; use: OrdinalUse }
 
 const insideTemplateExpression = (node: ts.Node): boolean => {
   let current: ts.Node | undefined = node.parent
@@ -2159,55 +2210,144 @@ const insideTemplateExpression = (node: ts.Node): boolean => {
   return false
 }
 
+const POSITION_COMPARISON_OPERATORS = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.LessThanToken,
+  ts.SyntaxKind.GreaterThanToken,
+  ts.SyntaxKind.LessThanEqualsToken,
+  ts.SyntaxKind.GreaterThanEqualsToken,
+  ts.SyntaxKind.EqualsEqualsToken,
+  ts.SyntaxKind.EqualsEqualsEqualsToken
+])
+
+const isPositionComparison = (node: ts.Node): boolean => {
+  const parent = node.parent
+  if (!ts.isBinaryExpression(parent)) return false
+  return POSITION_COMPARISON_OPERATORS.has(parent.operatorToken.kind)
+}
+
+const isFieldCopy = (node: ts.Node): boolean => {
+  const parent = node.parent
+  if (!ts.isPropertyAssignment(parent) || parent.initializer !== node) return false
+  const name = parent.name
+  return (ts.isIdentifier(name) || ts.isStringLiteral(name)) && name.text === ORDINAL_FIELD
+}
+
+const isTestObservation = (file: string): boolean => file.startsWith(`test${path.sep}`)
+
+const useOf = (node: ts.Node, file: string): OrdinalUse => {
+  if (insideTemplateExpression(node)) return 'display-label'
+  if (isFieldCopy(node)) return 'field-copy'
+  if (isTestObservation(file)) return 'test-observation'
+  if (isPositionComparison(node)) return 'position-comparison'
+  return 'unknown'
+}
+
 const collectOrdinalSites = (sourceFile: ts.SourceFile): OrdinalSite[] => {
+  const file = relativeToRoot(sourceFile.fileName)
   const found: OrdinalSite[] = []
   forEachDescendant(sourceFile, (node) => {
-    if (!ts.isPropertyAccessExpression(node) || node.name.text !== 'ordinal') return
-    found.push({
-      file: relativeToRoot(sourceFile.fileName),
-      line: lineOf(sourceFile, node),
-      expression: node.getText(sourceFile),
-      insideTemplate: insideTemplateExpression(node)
-    })
+    if (!ts.isPropertyAccessExpression(node) || node.name.text !== ORDINAL_FIELD) return
+    found.push({ file, line: lineOf(sourceFile, node), expression: node.getText(sourceFile), use: useOf(node, file) })
   })
   return found
 }
 
-const classifyOrdinalSite = (site: OrdinalSite): Classified<OrdinalSite>['verdict'] | 'unclassifiable' =>
-  site.insideTemplate ? 'allowed' : 'forbidden'
+const classifyOrdinalSite = (site: OrdinalSite): Classified<OrdinalSite>['verdict'] | 'unclassifiable' => {
+  if (site.use === 'display-label' || site.use === 'field-copy' || site.use === 'test-observation') return 'allowed'
+  if (site.use === 'position-comparison') return 'forbidden'
+  return 'unclassifiable'
+}
 
-test('briefing.criterion-ordinal-is-read-only-to-render-a-display-label', () => {
-  const { program, productionFiles } = loadSourceProgram()
-  const sites = renderSourceFiles(program, productionFiles).flatMap(collectOrdinalSites)
+const listSourceFilesUnder = (root: string): string[] => {
+  const absoluteRoot = path.join(REBUILD_ROOT, root)
+  if (!existsSync(absoluteRoot)) return []
+  const out: string[] = []
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(full)
+        continue
+      }
+      if (NON_PROGRAM_SOURCE_EXTENSIONS.includes(path.extname(entry.name))) out.push(full)
+    }
+  }
+  walk(absoluteRoot)
+  return out
+}
+
+const nonProgramOrdinalSites = (): OrdinalSite[] =>
+  ORDINAL_ROOTS.flatMap(listSourceFilesUnder).flatMap((file) =>
+    readFileSync(file, 'utf8')
+      .split('\n')
+      .flatMap((line, index) =>
+        line.includes(`.${ORDINAL_FIELD}`)
+          ? [{ file: relativeToRoot(file), line: index + 1, expression: line.trim(), use: 'unknown' as OrdinalUse }]
+          : []
+      )
+  )
+
+const UNASSERTED_ORDINAL_ROOT = `src${path.sep}render${path.sep}`
+
+test('briefing.criterion-ordinal-is-read-only-to-render-a-display-label', (t) => {
+  const { program, productionFiles, testFiles } = loadSourceProgram()
+  const everyRead = [...productionFiles, ...testFiles]
+    .map((file) => sourceFileFor(program, file))
+    .flatMap(collectOrdinalSites)
+  const outsideTheProgram = nonProgramOrdinalSites()
+  const population = [...everyRead, ...outsideTheProgram]
 
   assert.ok(
-    sites.length > 0,
-    'the render modules must read criterion.ordinal at least once, or this census is running over an empty population'
+    population.length > 0,
+    'the tree must read criterion.ordinal at least once, or this census is running over an empty population'
   )
+  for (const site of population) t.diagnostic(`${site.file}:${site.line} [${site.use}] ${site.expression}`)
+
+  const forbidden = population.filter((site) => classifyOrdinalSite(site) !== 'allowed')
+  for (const site of forbidden) {
+    t.diagnostic(`unasserted here, owned elsewhere: ${site.file}:${site.line} ${site.expression}`)
+  }
+
+  const underRender = population.filter((site) => site.file.startsWith(UNASSERTED_ORDINAL_ROOT))
+  assert.ok(underRender.length > 0, 'the render modules must read criterion.ordinal, or this assertion is vacuous')
   assert.doesNotThrow(
-    () => census(sites, classifyOrdinalSite),
-    `every read of criterion.ordinal under src/render must sit inside the display label; any other read infers sequence from position:\n${sites
-      .filter((site) => !site.insideTemplate)
+    () => census(underRender, classifyOrdinalSite),
+    `every read of criterion.ordinal under src/render must render a display label; any other read infers sequence from position:\n${underRender
+      .filter((site) => classifyOrdinalSite(site) !== 'allowed')
       .map((site) => `${site.file}:${site.line} ${site.expression}`)
       .join('\n')}`
   )
 })
 
 test('briefing.criterion-ordinal-is-read-only-to-render-a-display-label.control.a-read-outside-a-label-is-forbidden', () => {
-  const synthetic: OrdinalSite[] = [
-    { file: 'src/render/briefing.ts', line: 1, expression: 'candidate.ordinal', insideTemplate: false }
+  const comparison: OrdinalSite[] = [
+    { file: 'src/render/briefing.ts', line: 1, expression: 'candidate.ordinal < best.ordinal', use: 'position-comparison' }
   ]
-  assert.throws(() => census(synthetic, classifyOrdinalSite))
+  assert.throws(() => census(comparison, classifyOrdinalSite))
+  const unknown: OrdinalSite[] = [
+    { file: 'src/render/briefing.ts', line: 1, expression: 'sortBy(candidate.ordinal)', use: 'unknown' }
+  ]
+  assert.throws(() => census(unknown, classifyOrdinalSite))
 })
 ```
-
 
 Rationale: the first census is the standing guard for criterion 1 — it walks every `slice` call in the
 briefing renderer and requires each to discard the entries it selects, which is the heading idiom and
 is not a cap. A `slice` that keeps its entries is a display-time item cap, and the census halts on it
-and names the file, line and expression. The second census is `S3`: every read of `Criterion.ordinal`
-under `src/render` must sit inside a rendered label. Each carries a control proving it halts, in the
-idiom `briefing.blocked-renders-its-reason` already uses in this suite.
+and names the file, line and expression.
+
+The second census is `S3`. Its population is every read of `Criterion.ordinal` in the tree: every file
+in the compiled program, production and test, plus a text sweep of the `.mjs`, `.cjs` and `.js` files
+under `src`, `hooks`, `bin`, `scripts` and `test` that the program does not compile. Each read is
+classified by rule — a read inside a template literal is a display label, a read copied into a field
+named `ordinal` is a field copy, a read in a test file is an observation, a read compared against
+another ordinal or against a parsed number picks a goal by position and is forbidden, and anything else
+halts the census. Every read is printed with its classification, and the reads this unit declines to
+assert are printed again under `unasserted here, owned elsewhere`, so the population is visible in the
+test's own output rather than only in this plan. Section 3.5 records which reads those are and why.
+
+Each census carries a control proving it halts, in the idiom `briefing.blocked-renders-its-reason`
+already uses in this suite.
 
 ### Part B — every shortened value says so
 
@@ -2850,28 +2990,27 @@ REPLACE with:
 
 #### Step B7 — add the `O1` and `O3` receipts
 
-
 File: `test/unit/briefing-hides-nothing.test.ts`. 2 edits, applied in this order.
 
 **Edit B7.1** — FIND:
 
 ```ts
-import assert from 'node:assert/strict'
 import path from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import * as ts from 'typescript'
 import { census, type Classified } from '../support/census.ts'
 import { REBUILD_ROOT, forEachDescendant, lineOf, loadSourceProgram, relativeToRoot, sourceFileFor } from '../support/source-census.ts'
 
-const RENDER_DIR_PREFIX = `src${path.sep}render${path.sep}`
+type SliceSite = { file: string; line: number; expression: string; discardsElements: boolean }
 
-const renderSourceFiles = (program: ts.Program, productionFiles: readonly string[]): ts.SourceFile[] =>
+const discardsSlicedElements = (call: ts.CallExpression): boolean => {
 ```
 
 REPLACE with:
 
 ```ts
-import assert from 'node:assert/strict'
 import path from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import * as ts from 'typescript'
 import { renderBriefingWithPasses, type DecisionIntegrity } from '../../src/render/briefing.ts'
 import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
@@ -2886,16 +3025,16 @@ const rt = testRuntime()
 
 const EMPTY_INTEGRITY: DecisionIntegrity = { resolved: 0, dangling: [], quarantined: [] }
 
-const RENDER_DIR_PREFIX = `src${path.sep}render${path.sep}`
+type SliceSite = { file: string; line: number; expression: string; discardsElements: boolean }
 
-const renderSourceFiles = (program: ts.Program, productionFiles: readonly string[]): ts.SourceFile[] =>
+const discardsSlicedElements = (call: ts.CallExpression): boolean => {
 ```
 
 **Edit B7.2** — FIND:
 
 ```ts
   ]
-  assert.throws(() => census(synthetic, classifyOrdinalSite))
+  assert.throws(() => census(unknown, classifyOrdinalSite))
 })
 ```
 
@@ -2903,7 +3042,7 @@ REPLACE with:
 
 ```ts
   ]
-  assert.throws(() => census(synthetic, classifyOrdinalSite))
+  assert.throws(() => census(unknown, classifyOrdinalSite))
 })
 
 const ESCAPE_EXPANDING_CHAR = '#'
@@ -3049,7 +3188,6 @@ test('briefing.every-shortened-value-carries-the-marker-inside-its-own-limit', (
   )
 })
 ```
-
 
 Rationale: the first new test is `O1`. Every stored value in its fixture is the character `#`, which
 the stored-text escape rewrites to the six characters `U+0023`, so the escaped text is six times the
@@ -3710,14 +3848,13 @@ REPLACE with:
 
 #### Step C4 — add the receipts for the new fields
 
-
 File: `test/unit/briefing-hides-nothing.test.ts`. 4 edits, applied in this order.
 
 **Edit C4.1** — FIND:
 
 ```ts
-import assert from 'node:assert/strict'
 import path from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import * as ts from 'typescript'
 import { renderBriefingWithPasses, type DecisionIntegrity } from '../../src/render/briefing.ts'
 import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
@@ -3728,8 +3865,8 @@ import { ThreadRecord, type Thread, type Criterion } from '../../src/schema/thre
 REPLACE with:
 
 ```ts
-import assert from 'node:assert/strict'
 import path from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import * as ts from 'typescript'
 import { renderBriefing, renderBriefingWithPasses, type DecisionIntegrity } from '../../src/render/briefing.ts'
 import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
@@ -3849,7 +3986,6 @@ test('briefing.a-criterion-with-no-check-or-result-renders-not-recorded-never-bl
   assert.ok(lines.includes('  - result: not recorded (not recorded)'))
 })
 ```
-
 
 #### Step C5 — census the check line across the whole sweep
 
@@ -4127,8 +4263,8 @@ Created whole in step A5, extended in steps B7 and C4. Every body appears in sec
 | --- | --- | --- |
 | `briefing.no-display-time-item-cap-remains-in-the-briefing-renderer` | 1 | A |
 | `briefing.no-display-time-item-cap-remains-in-the-briefing-renderer.control.a-slice-that-keeps-its-elements-is-forbidden` | 1 — proves the census halts rather than passing vacuously | A |
-| `briefing.criterion-ordinal-is-read-only-to-render-a-display-label` | 7 (`S3`) | A |
-| `briefing.criterion-ordinal-is-read-only-to-render-a-display-label.control.a-read-outside-a-label-is-forbidden` | 7 — proves the census halts | A |
+| `briefing.criterion-ordinal-is-read-only-to-render-a-display-label` | 7 (`S3`), partly — population tree-wide, assertion over `src/render`, residue printed; section 3.5 | A |
+| `briefing.criterion-ordinal-is-read-only-to-render-a-display-label.control.a-read-outside-a-label-is-forbidden` | 7 — proves the census halts on a position comparison and on an unclassifiable read | A |
 | `briefing.a-render-that-fits-its-budget-is-clipped-nowhere` | 8 (`O1`) | B |
 | `briefing.every-shortened-value-carries-the-marker-inside-its-own-limit` | 9 (`O3`), 6 | B |
 | `briefing.artifacts-render-before-the-spine` | 12 | C |
@@ -4254,19 +4390,23 @@ Expect a non-zero exit and one failure:
 ```
 
 **`briefing.criterion-ordinal-is-read-only-to-render-a-display-label` passes at the parent, and that
-is expected and stated rather than hidden.** `S3` already holds inside `src/render` before this change:
-the only reads of `Criterion.ordinal` there are already inside a rendered label. The census is a
-standing guard against the property being lost, not a receipt for restoring it, so its red cannot be
-reached at the parent. Its control test proves it halts on a violation rather than passing vacuously,
+is expected and stated rather than hidden.** Its population is every read of `Criterion.ordinal` in the
+tree and it prints all ten with their classification, but the reads it asserts over — those under
+`src/render` — are already display labels before this change. The census is a standing guard against
+the property being lost, not a receipt for restoring it, so its red cannot be reached at the parent.
+Section 3.5 records the three reads it prints but does not assert, and why neither file is this unit's
+to change. Its control test proves it halts on a violation rather than passing vacuously,
 and its inertness mutation in section 7.7 turns it red on demand.
 
-**Criterion 7 therefore ships under the honesty-ladder status `unverified-reasoned`, scoped to the
-red-on-parent obligation only.** The specific reason: the property the census asserts is already true
-at the parent, so no run at the parent can produce a red for it, and manufacturing one would mean
-introducing the violation first. No proxy assertion is substituted and the criterion is not weakened;
-what is missing is the red, and only the red. Every other part of the receipt — the census over a
-closed population, the control that proves it halts, and the mutation that turns it red — is present
-and is run.
+**Criterion 7 therefore ships under the honesty-ladder status `unverified-reasoned`, for two specific
+reasons.** First, the property the census asserts is already true at the parent, so no run at the
+parent can produce a red for it, and manufacturing one would mean introducing the violation first.
+Second, `S3` is not fully discharged when this unit lands: three of the ten reads the census finds are
+position comparisons, in `src/server/tools/record_decision.ts` and `src/domain/criterion-backfill.ts`,
+and neither file belongs to this unit — the first is removed by a later unit in this ladder, and the
+second has a caller in `scripts/backfill-criterion-id.mjs` so it cannot simply be removed. No proxy
+assertion is substituted, no population is narrowed, and every read is printed in the test's own
+output. Section 3.5 carries the full table.
 
 ### 6.2 Part B
 
@@ -4503,7 +4643,7 @@ Run `node --test --experimental-strip-types test/unit/briefing-hides-nothing.tes
 ```
 ✖ briefing.criterion-ordinal-is-read-only-to-render-a-display-label
   AssertionError [ERR_ASSERTION]: Got unwanted exception: every read of criterion.ordinal under
-  src/render must sit inside the display label; any other read infers sequence from position
+  src/render must render a display label; any other read infers sequence from position
 ```
 
 ### 7.8 Criterion 11 — the decision identifier
@@ -4728,12 +4868,12 @@ tree and diffing it, never estimated.
 
 | Part | Production | Test | Total |
 | --- | --- | --- | --- |
-| A | 177 | 506 | **683** |
+| A | 177 | 585 | **762** |
 | B | 95 | 215 | **310** |
 | C | 91 | 111 | **202** |
-| Whole unit, unsplit | 363 | 832 | **1195** |
+| Whole unit, unsplit | 363 | 911 | **1274** |
 
-**Ruled: split into three.** 1195 changed lines is 3.0 times the 400-line ceiling. Parts B and C sit
+**Ruled: split into three.** 1274 changed lines is 3.2 times the 400-line ceiling. Parts B and C sit
 under the ceiling. Part A does not, and the exception is claimed and shown rather than asserted:
 
 - Part A's receipt is that no swept record renders fewer entries than it holds. That is red until the
@@ -4749,7 +4889,8 @@ under the ceiling. Part A does not, and the exception is claimed and shown rathe
 
 So every smaller cut of part A leaves a permanent red, which is what the ceiling's exception is for.
 Part A's pull request body states its size and names that reason, so a reviewer learns it from the
-pull request rather than from the Files Changed tab.
+pull request rather than from the Files Changed tab. Its composition is 177 production lines against
+585 test lines.
 
 **Rejected:** four or more parts. The only further cut inside part A is the one shown above to destroy
 the receipt. **Rejected:** one pull request for the whole unit, on the grounds that it is all one
@@ -4783,7 +4924,7 @@ node ~/.claude/lib/git/pr.mjs pr-create \
   --verified "frontier sweep over 733 generated threads - no thread printed fewer items than it holds" \
   --not-verified "concurrent.distinct-ids - known tracked failure, passed on re-run" \
   --not-verified "npm run mutate - not run" \
-  --not-verified "diff size against the 400-line review target - 683 lines, not divisible without leaving a test permanently red"
+  --not-verified "diff size against the 400-line review target - 762 lines, not divisible without leaving a test permanently red"
 ```
 
 The `--not-verified "concurrent.distinct-ids - known tracked failure, passed on re-run"` line belongs

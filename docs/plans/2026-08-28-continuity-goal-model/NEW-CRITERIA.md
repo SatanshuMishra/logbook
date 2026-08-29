@@ -94,12 +94,18 @@ Related and unresolved: `U1` measured the largest live thread record at 39,079 *
 size is not a render, and `P7` forbade `U5` from rendering the live store to find out. So whether
 today's largest real record fits is genuinely unknown.
 
-## N8 — `S3` may ship partly undischarged, and the register says so if it does
+## N8 — One read of `Criterion.ordinal` survives the ladder, and nothing owns it
 
-`src/domain/criterion-backfill.ts` infers a criterion's attachment from its ordinal, which `S3`
-forbids. Filed by `U5` as `F5b`. `OR28` rules the census tree-wide and requires the module to be
-classified: deleted if it has no caller, with the deletion inside `U5`'s ceiling; or, if it does have
-a caller, the residue filed here with its specific reason.
+`S3` forbids reading `Criterion.ordinal` for anything but a display label or a display stable-sort.
+`U5`'s tree-wide census (`OR29`) found ten reads and three forbidden ones. Two are in `deriveScope`
+at `src/server/tools/record_decision.ts:57` and are deleted by `B12` in `U9`, which is also obliged
+to widen the blocking assertion once they are gone.
 
-This entry exists so that outcome 4 has somewhere to land. If `U5` reports the module deleted, this
-entry closes with it and becomes no criterion at all.
+**The third survives: `src/domain/criterion-backfill.ts:11`**, which infers a criterion's attachment
+from its ordinal. It is not dead code — `scripts/backfill-criterion-id.mjs:5,22` imports and calls it,
+a fact an `src/`-only sweep missed and `F5d` corrects. No unit in this ladder owns the file.
+
+So the question is ownership, not technique: does a maintenance script that infers attachment from
+position still have a job once attachment is declared (`B1`, `B11`), and if it does, what should it
+read instead? Deleting it blind would break a caller; leaving it leaves `S3` permanently
+part-asserted with a standing excuse.

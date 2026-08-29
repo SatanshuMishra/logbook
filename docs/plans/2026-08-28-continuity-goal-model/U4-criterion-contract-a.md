@@ -19,7 +19,7 @@
 
 ### Terms used in this document, defined once
 
-- **Criterion.** One statement of what must be true before a thread of work can be called finished. A thread is refused if it is opened with none.
+- **Criterion.** One statement of what must be true before a thread of work can be called finished. Opening a thread with none is refused.
 - **Check.** The re-runnable thing that decides whether a criterion is true — a command, a query, an observation someone other than the claimant can repeat. This unit makes it a required argument wherever a criterion is created.
 - **Refusal.** This project's structured rejection. It always carries four parts: the field that was wrong, what that field accepts, a valid example, and whether a retry can succeed.
 - **Escaping.** `escapeStored` rewrites control characters into printable tokens before a value is stored. Every character cap in this repository is measured on the escaped form, never on the raw input.
@@ -28,11 +28,11 @@
 
 1. `open_thread` refuses a criterion carrying no `check`, and the refusal names the field `completion_criteria.0.check`. — `B8`, `A4`
 2. `open_thread` stores, on each criterion it creates, the escaped `check` it was given, and stores `result` and `result_status` as `null`. — `B8`
-3. `open_thread` refuses a `check` whose escaped form exceeds `CRITERION_CHECK_MAX`, naming `completion_criteria`, the limit, the observed length and a remedy, and stores nothing. — `B8`
+3. `open_thread` refuses a `check` whose escaped form exceeds `CRITERION_CHECK_MAX`, naming `completion_criteria`, the limit, the observed length and a remedy, and stores nothing. — `B8`, and plan invariant `P2`: a path that cannot do what was asked refuses rather than shortening the value to fit
 4. `amend_criteria` refuses an `insert` carrying no `check`, and the refusal names the field `check`. — `B10`, `A4`
 5. `amend_criteria` stores, on an inserted criterion, the escaped `check` it was given. — `B10`
-6. `npm test` reports `fail 0` and exits 0; `npm run typecheck` exits 0; `node scripts/check-packaging.mjs` prints `check-packaging: ok` and exits 0. — the unit's green
-7. `package.json` and `.claude-plugin/plugin.json` carry the same version, one MAJOR step above the version read at the start of the work. — the unit's green
+6. `npm test` reports `fail 0` and exits 0; `npm run typecheck` exits 0; `node scripts/check-packaging.mjs` prints `check-packaging: ok` and exits 0. — plan invariants `P1` and `P4`
+7. `package.json` and `.claude-plugin/plugin.json` carry the same version, one MAJOR step above the version read at the start of the work. — plan invariant `P4`
 
 Anything discovered above this list is appended to `docs/plans/2026-08-28-continuity-goal-model/FILED.md` as a new item with its evidence, and is not folded into this plan.
 
@@ -198,7 +198,7 @@ This is the only place an inserted criterion is built. A check cannot reach the 
 
 ### 2.12 `src/server/tools/open_thread.ts:85` — the published description
 
-The full current value, which step 4 replaces:
+The full current value, whose relevant fragment step 4 replaces:
 
 ```
 'Creates a new thread of work and returns its id. A thread needs a one-line title, a short slug that is unique in this project, and at least one completion criterion stating what finishing looks like; a thread with no criterion can never be closed, so the call is refused without one. Criteria are supplied as plain strings and the server assigns each one a stable id and its display ordinal, so ["the merge test passes in both push orders", "the plan is committed"] is a complete value. The slug is lowercase letters, digits and hyphens, up to 64 characters, for example merge-and-sync.'
@@ -206,7 +206,7 @@ The full current value, which step 4 replaces:
 
 ### 2.13 `src/server/tools/amend_criteria.ts:59` — the published description
 
-The full current value, which step 8 replaces:
+The full current value, whose relevant fragment step 14 replaces:
 
 ```
 'Amends one completion criterion on a thread by inserting a new one, rewriting the text of an existing one, or striking it, and no other kind of edit reaches a criterion once it exists. Every amendment carries a decision_id that must resolve to a decision record already stored on this project; an id that resolves to nothing is refused. Striking a criterion keeps it on the thread marked struck rather than deleting it, so a struck criterion still renders in the history it came from. Insert also takes an optional zero-based position: {"operation": "insert", "text": "the merge test passes in both push orders", "kind": "detour", "decision_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV", "position": 0} inserts a criterion at the very front of the list, and omitting position appends it at the end instead.'
@@ -223,12 +223,12 @@ Measured headroom: the largest thread record in the live store is 39,079 bytes, 
 - **`DIV-A1` — the external decomposition procedure is absent, and nothing here depends on it.** `~/.claude/skills/mitosis/SKILL.md` does not exist on disk. This plan was written from the planning brief and the orchestrator rulings alone, which are jointly self-contained.
 - **`DIV-A2` — this unit edits `src/domain/criteria.ts`, which the SPEC's file ownership does not assign to it.** The SPEC gives U4 `src/server/tools/{open_thread,update_thread,amend_criteria,close_thread}.ts`. `amend_criteria` does not construct the criterion it inserts; `insertCriterion` in `src/domain/criteria.ts:114-169` does, and it is also where criterion text is escaped and cap-refused. Requiring a check on insert without touching that file would mean re-implementing escaping and the cap refusal inside the tool, a second copy of logic that already has one home. Ruling applied: this unit also edits `src/domain/criteria.ts` and enumerates it in section 0. No other unit in this wave owns or edits that file — checked against the wave's four units, which own `src/render/briefing.ts` and `roster.ts`, `src/server/{resources,resource-render,completions}.ts`, and the hooks tree respectively.
 - **`DIV-A3` — the unit is split, and this is part A.** Applied to a throwaway copy of the tree and measured, the whole unit is 760 changed lines, 1.9 times the 400-line review ceiling. It is split at the seam between creating a criterion and completing one. This document is part A and lands first. Part B is `docs/plans/2026-08-28-continuity-goal-model/U4-criterion-contract-b.md`.
-- **`DIV-A4` — this is a breaking input change, and the SPEC names only the other half as one.** The SPEC states explicitly that changing `update_thread.criteria_done` is a breaking input change and says nothing of the kind about `open_thread`. Requiring a check changes the published type of `open_thread.completion_criteria` from an array of strings to an array of objects, which breaks every external caller exactly as the other change does. Recorded here, and covered by the MAJOR version bump in step 9.
+- **`DIV-A4` — this is a breaking input change, and the SPEC names only the other half as one.** The SPEC states explicitly that changing `update_thread.criteria_done` is a breaking input change and says nothing of the kind about `open_thread`. Requiring a check changes the published type of `open_thread.completion_criteria` from an array of strings to an array of objects, which breaks every external caller exactly as the other change does. Recorded here, and covered by the MAJOR version bump in step 15.
 - **`DIV-A5` — `Criterion.kind` is retained.** The schema unit's census found a live reader at `src/merge/field-merge.ts:151`, consumed at `:168-170`, where a divergence raises a merge conflict. `amend_criteria`'s `kind` argument is therefore left exactly as it is by this unit.
 
 ## 4. The change, step by step
 
-Apply the steps in the order given. The tree typechecks after step 9.
+Apply the steps in the order given. Production code is type-correct after step 14; the whole tree, tests included, typechecks and the suite passes only after section 5 has also been applied. Step 15 is the version bump and touches no code.
 
 ### Step 1 — `src/server/tools/open_thread.ts` — INSERT-AFTER
 
@@ -781,11 +781,11 @@ test('criterion.amend-criteria-stores-the-check-on-an-inserted-criterion', async
 |---|---|
 | 1 — refuses a criterion with no check (`B8`, `A4`) | `criterion.open-thread-refuses-a-criterion-carrying-no-check` |
 | 2 — stores the check (`B8`) | `criterion.open-thread-stores-the-check-it-was-given` |
-| 3 — refuses an over-cap check (`B8`) | `criterion.text-cap-refusal-is-complete` in `test/unit/criteria.test.ts` covers the sibling cap through the same helper; the `open_thread` branch added by step 6 is covered by the mutation in section 7, item `M-A2b`. See the honesty note below |
+| 3 — refuses an over-cap check (`B8`, `P2`) | `criterion.text-cap-refusal-is-complete` in `test/unit/criteria.test.ts` covers the sibling cap through the same helper; the `open_thread` branch added by step 6 is covered by the mutation in section 7, item `M-A2b`. See the honesty note below |
 | 4 — refuses an insert with no check (`B10`, `A4`) | `criterion.amend-criteria-refuses-an-insert-carrying-no-check` |
 | 5 — stores the check on insert (`B10`) | `criterion.amend-criteria-stores-the-check-on-an-inserted-criterion` |
-| 6 — the suite, the typecheck and the packaging check | section 8 |
-| 7 — the two manifests agree | `node scripts/check-packaging.mjs` in section 8 |
+| 6 — the suite, the typecheck and the packaging check (`P1`, `P4`) | section 8 |
+| 7 — the two manifests agree (`P4`) | `node scripts/check-packaging.mjs` in section 8 |
 
 **Honesty note on acceptance criterion 3.** No new test asserts the over-cap check refusal from `open_thread`. The reason is that the whole-call refusal on an over-cap value is already asserted for the sibling field by `open_thread.title-cap-is-checked-after-escaping` (`test/spawn/lifecycle.test.ts:617`) and for the insert path by `criteria.text-cap-refusal-is-complete` (`test/unit/criteria.test.ts:115`), and adding a third assertion of the same mechanism would duplicate a shipped test rather than add trust. The criterion ships with honesty-ladder status **`unverified-reasoned`** for the `open_thread` branch specifically: the code is written and reviewed, and it is not covered by a test of its own. It is not weakened, and no proxy assertion is substituted for it.
 
