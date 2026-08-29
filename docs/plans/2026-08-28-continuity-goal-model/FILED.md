@@ -357,3 +357,91 @@ Appends only. Never edit an item another planner wrote.
 - **Evidence:** the derivation is fed from `store.readSessionEntries(thread.id)`, which returns `Slot<SessionEntry>[]` where a slot is `{ quarantined: true; path; reason }` or `{ quarantined: false; record }` (`src/store/read-path.ts:10-12`). U8 passes only the readable records, so a quarantined entry disappears from the `Last session` section with no count and no address, while the equivalent omission for a decision is counted by the line `- <n> linked decision records could not be read; their ids are listed under Decisions above`.
 - **Why it is above the ceiling:** SPEC `B20` fixes the `Not shown` block at exactly two members — the text-clip marker, and dangling or quarantined decision ids — and the briefing unit shipped it that way. Adding a third member is new material, and `O2` speaks of items omitted by a display rule, which an unreadable record is not.
 - **Not folded in.**
+
+## F9a — `S4`'s wording is false for `park_thread` under some argument sets, and a shipped test pins the opposite
+
+- **Surfaced by:** U9 planning
+- **Evidence:** `src/server/tools/park_thread.ts:370` returns
+  `{ ok: false, refusal: otherSessionRefusal(pointer.thread_id) }` when a foreign session holds the
+  pointer and an `outcome` was supplied. The shipped test
+  `park.refuses-when-another-session-took-the-pointer` (`test/spawn/resume.test.ts:884`) pins that
+  refusal. SPEC section 6.4 states `S4` as "Every write tool succeeds when no pointer exists and when
+  a foreign session holds one", with no argument qualifier.
+- **Why it is above the ceiling:** `S4` is U9's invariant, and U9 discharges it by driving each write
+  tool with a recipe that carries no dependency on pointer state — for `park_thread` the no-argument
+  call, which returns `ok` with `status: 'nothing-to-park'` and `status: 'not-the-worked-thread'` in
+  the two states. Asserting the stronger reading would put two invariants on one event with different
+  verdicts, which SPEC section 6.1 rule 2 forbids outright. Correcting `S4`'s wording is an edit to an
+  approved and frozen SPEC, which `OR0` forbids a planner from making.
+- **Not folded in.**
+
+## F9b — a decision recorded with no scope renders as empty brackets on the thread resource
+
+- **Surfaced by:** U9 planning
+- **Evidence:** `src/server/resource-render.ts:50-51` renders every spine key decision as
+  `` `- ${escapeStored(keyDecision.id)} -> ${escapeStored(keyDecision.decision_id)} [${escapeStored(keyDecision.scope)}] ${escapeStored(keyDecision.title)}` ``.
+  `KeyDecision.scope` is a required string in the record schema (`src/schema/thread.ts`, the
+  `KeyDecisionSchema` `scope` field, `content(z.string().max(caps.KEY_DECISION_SCOPE_MAX)...)`), with no
+  `.min(1)`, so an absent scope is stored as the empty string and this line renders `[]`.
+- **Why it is above the ceiling:** `B12` requires an omitted scope to be "stored absent and reported
+  absent". U9 discharges the reporting half on the surface it owns — `record_decision`'s response
+  reports `scope: null`. The thread resource is `src/server/resource-render.ts`, which SPEC section 9
+  assigns to `U6`, and rendering `[]` instead of omitting the bracket pair is a display choice on
+  another unit's surface, not a defect U9's acceptance list names.
+- **Not folded in.**
+
+## F9c — `U8-A` turns two shipped golden briefing tests red and does not update them
+
+- **Surfaced by:** U9 planning, while reconstructing its own parent commit.
+- **Evidence:** A tree carrying `main` plus `U1`, `U4`, `U5` and `U8`, built by applying those
+  plans' own FIND/REPLACE blocks with zero mismatches, runs
+  `node --test --experimental-strip-types test/unit/briefing.test.ts` and reports
+  `tests 22, pass 20, fail 2, exit 1`. Both failures are golden whole-output assertions, and both
+  differ from their expectation by exactly one line, which `actual` carries and `expected` does not:
+
+      + '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead\n'
+
+  `briefing.renders-exact-output-for-a-full-thread` fails at `test/unit/briefing.test.ts:209`;
+  `briefing.omits-empty-list-sections-entirely` fails at `test/unit/briefing.test.ts:239`.
+
+  The cause: `U8-A` renders that marker whenever the previous session contributed no log entries and
+  the stored `spine.last_session` is non-empty. Both fixtures are pure renderer calls that pass no
+  session entries and set `last_session` to a non-empty string, so both take the legacy branch.
+
+  Ownership is the gap. `U5` creates and updates both tests — it names them at
+  `U5-briefing-hides-nothing.md:382-383` and rewrites both at `:1006` and `:3648`. `U8`'s section 5
+  lists only `test/unit/session-log.test.ts`, `test/unit/briefing-last-session.test.ts` and
+  `test/spawn/resume.test.ts`; `grep -n "renders-exact-output\|omits-empty-list"` over
+  `U8-derived-last-session.md` returns nothing.
+
+- **Why it is above the ceiling:** the defect is in `U8-A`'s test list, and `U8` merges before `U9`
+  is cut. `U9` cannot fix it without editing another unit's plan, which `OR9` forbids, or without
+  editing tests that unit owns. It is not a reconstruction artefact: both plans applied cleanly and
+  the other 20 tests in the file pass.
+- **Consequence if unaddressed:** `U8-A`'s own `## 8. Full verification` runs `npm test` and will go
+  red on two tests that are not `concurrent.distinct-ids`, so `OR19`'s stop condition halts its
+  implementer. `U9`'s parent would then be a red trunk.
+- **Not folded in.**
+
+## F9d — `A6`'s census cannot see whether supplying an optional argument does anything
+
+- **Surfaced by:** U9 planning, by running the invariant's own inertness mutation against it.
+- **Evidence:** the census drives each optional argument twice on equivalent fresh fixtures — once
+  omitted, once with a sentinel — and diffs the two results to derive where the argument lands. That
+  shape detects a value the caller never supplied appearing when the argument is omitted, which is
+  what `A6`'s "no code derives a substitute" clause forbids, and it produced a genuine red at the
+  parent naming the fabricated value `criterion 1`. But the mutation that drops the WRITE of a
+  newly-added optional argument, while leaving the argument published, left the census silent: both
+  runs then land nothing, the derived landing-site set is empty, and there is nothing to classify.
+  Measured directly — reverting `B11`'s `criterion_id` write turned no assertion in the census red,
+  and only the dedicated behavioural test
+  `decision.criterion_id-is-stored-on-the-key-decision-when-supplied` caught it.
+- **Why it is above the ceiling:** `A6` as the SPEC states it covers omission only — "a call
+  omitting it stores null and the response reports it absent. No code derives a substitute." The
+  census discharges exactly that. Whether every published optional argument is also honoured when
+  supplied is a second, wider property the SPEC does not state, and inventing it here would be
+  promoting a finding into a verification mandate.
+- **Consequence if unaddressed:** a future optional argument could ship published and inert, and
+  this census would not notice. Today each such argument has its own behavioural test; nothing
+  enforces that it must.
+- **Not folded in.**

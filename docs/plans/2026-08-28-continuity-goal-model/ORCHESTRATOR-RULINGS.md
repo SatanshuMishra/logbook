@@ -1076,3 +1076,67 @@ An empty field meant no section at all. `U8-A` closes that before `U8-B` removes
 `resume_thread.logs-a-budget-breach-only-for-a-render-that-does-not-fit` red. Leaving it unshortened
 is correct: the legacy path renders stored text exactly as stored, and a shipped assertion about
 budget-breach honesty is a better guide than a tidier render.
+
+## OR33 — `U8-A` repairs the two golden tests it reddens; `S4` is discharged as written, not as worded
+
+Four findings from `U9` planning. One is a defect in a committed plan and is repaired; three are
+recorded, because `OR0` forbids a planner promoting a finding into a mandate and forbids me editing
+an approved SPEC to make an invariant true.
+
+### 1. `F9c` is a real defect in `U8-A`, and `U8-A` fixes it
+
+`U9` reconstructed its own parent — `main` plus `U1`, `U4`, `U5` and `U8`, applied from those plans'
+own FIND/REPLACE blocks with zero mismatches — and ran the briefing suite: **`tests 22, pass 20,
+fail 2, exit 1`.** Both failures are golden whole-output assertions differing from expectation by
+exactly one line that `actual` carries:
+
+    + '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead\n'
+
+`briefing.renders-exact-output-for-a-full-thread` (`test/unit/briefing.test.ts:209`) and
+`briefing.omits-empty-list-sections-entirely` (`:239`). Both fixtures are pure renderer calls that
+pass no session entries and set `last_session` to a non-empty string, so both take `U8-A`'s legacy
+branch. `U8`'s section 5 never names either test.
+
+Ruled: **`U8-A` updates both, and it is inside its ceiling, not above it.** `P1` requires `npm test`
+green on every merge commit and `U8-A`'s own acceptance declares a green suite; a plan that reddens a
+shipped test and does not update it has not met its own criterion. `U5` merges a whole wave earlier,
+so `U8` edits the post-`U5` versions with no simultaneous writer — this is `OR2`'s ordering working,
+not an ownership breach.
+
+Left unrepaired this would have halted `U8-A`'s implementer at `OR19`'s stop condition — two failures
+that are not `concurrent.distinct-ids` — and left `U9`'s parent a red trunk. **That is the stop
+condition doing its job**: it converted a silent cross-plan gap into a loud halt. It is better still
+to fix the plan.
+
+### 2. `F9a` — `S4` is false as worded, and `U9` discharges what is true
+
+SPEC section 6.4 states `S4` as "Every write tool succeeds when no pointer exists and when a foreign
+session holds one", with no argument qualifier. That is **false for `park_thread`**:
+`src/server/tools/park_thread.ts:370` returns `otherSessionRefusal` when a foreign session holds the
+pointer AND an `outcome` was supplied, and the shipped test
+`park.refuses-when-another-session-took-the-pointer` (`test/spawn/resume.test.ts:884`) pins exactly
+that refusal.
+
+Ruled: **`U9` discharges `S4` by driving each write tool with a recipe carrying no dependency on
+pointer state** — for `park_thread`, the no-argument call, which returns `ok` with
+`status: 'nothing-to-park'` and `status: 'not-the-worked-thread'` in the two states. That is the
+correct reading, and it is the only one available: asserting the stronger wording would put two
+invariants on one event with different verdicts, which SPEC section 6.1 rule 2 forbids outright, and
+would contradict a shipped test that encodes a deliberate safety refusal.
+
+I do not edit the SPEC to fix the wording. `OR0` freezes it, and a wording correction is a SPEC
+revision, not a planning act. Registered as `N10`.
+
+### 3. `F9b` and `F9d` are registered, not folded in
+
+`F9b`: a decision recorded with no scope renders as `[]` on the thread resource
+(`src/server/resource-render.ts:50-51`), because `KeyDecision.scope` has no `.min(1)` and an absent
+scope stores as the empty string. `B12` requires an omitted scope to be "reported absent"; `U9`
+discharges that on the surface it owns — `record_decision`'s response reports `scope: null` — but the
+thread resource is `U6`'s surface and is above both units' ceilings. Registered as `N11`.
+
+`F9d`: `A6`'s census detects a fabricated value appearing when an argument is omitted, which is
+exactly what the SPEC states. It does NOT detect a published optional argument that is inert when
+supplied — measured: reverting `B11`'s `criterion_id` write turned no census assertion red, and only
+a dedicated behavioural test caught it. Widening `A6` to cover it would be promoting a finding into a
+verification mandate, which `receipts.md` forbids. Registered as `N12`.

@@ -129,3 +129,37 @@ rendered field is exactly the drift `DG6` exists to prevent, and the ladder ends
 Related, and filed alongside: `F8b` the thread resource still shows the legacy field; `F8c` a session
 entry carries no session id, which is why the previous session has to be inferred at all; `F8d` a
 quarantined entry is dropped uncounted, which `LG8` would ordinarily forbid.
+
+## N10 — `S4`'s wording overstates what the system does, and the SPEC cannot be edited to fix it
+
+`S4` reads "Every write tool succeeds when no pointer exists and when a foreign session holds one."
+`park_thread` refuses in the foreign-pointer case when an `outcome` is supplied
+(`src/server/tools/park_thread.ts:370`), and a shipped test pins that refusal — deliberately, because
+silently parking over another session's pointer would lose that session's outcome text.
+
+So the invariant as worded is false of a system that is behaving correctly. `U9` discharges the true
+reading (`OR33`), and the residue is editorial: a future SPEC revision states `S4` with its argument
+qualifier, so that the written invariant and the enforced one are the same statement. Filed as `F9a`.
+
+Nothing is broken today. What is unresolved is that a reader of the SPEC would conclude something
+about `park_thread` that is not so.
+
+## N11 — An absent decision scope renders as empty brackets
+
+`src/server/resource-render.ts:50-51` renders every spine key decision with `[${scope}]`, and
+`KeyDecision.scope` carries no `.min(1)`, so an absent scope stores as the empty string and renders
+`[]`. `B12` requires an omitted scope to be "stored absent and reported absent"; the tool response
+does report `scope: null`, but this surface shows an empty bracket pair rather than omitting it.
+Filed as `F9b`. Above both `U9`'s and `U6`'s ceilings.
+
+## N12 — Nothing enforces that a published optional argument does anything
+
+`A6`'s census drives each optional argument omitted and supplied, and diffs the results, which
+catches a value the caller never supplied appearing anyway — the SPEC's actual clause. It does not
+catch the opposite: an argument published in the schema whose write is missing. Measured by `U9`
+against its own census: reverting `B11`'s `criterion_id` write reddened no census assertion, and only
+a dedicated behavioural test caught it. Filed as `F9d`.
+
+Today every such argument happens to have its own behavioural test. Nothing requires the next one to.
+Widening `A6` here would be promoting a finding into a verification mandate, so it is carried as work
+rather than invented as a rule.
