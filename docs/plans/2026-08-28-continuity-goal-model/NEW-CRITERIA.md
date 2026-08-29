@@ -109,3 +109,23 @@ So the question is ownership, not technique: does a maintenance script that infe
 position still have a job once attachment is declared (`B1`, `B11`), and if it does, what should it
 read instead? Deleting it blind would break a caller; leaving it leaves `S3` permanently
 part-asserted with a standing excuse.
+
+## N9 — Two tools still write `last_session` by hand after it becomes derived
+
+`DG6` says store by hand only what cannot be derived from records already written. `B14` and `B23`
+stop `park_thread` accepting the field and derive it from the thread's own session log entries
+instead. But `U8` established that two other paths still write it: `update_thread`
+(`src/server/tools/update_thread.ts:54-58,237,243-246`) and `resolve_conflict` (`:399-400`). Filed as
+`F8a`.
+
+`update_thread`'s acceptance is load-bearing for now — the legacy-fallback receipt depends on it, so
+removing it in this ladder would remove the ability to prove the fallback works. `resolve_conflict`'s
+is a repair path.
+
+So the question is not "delete them" but: once the derivation is shipped and proven, what should
+either path do with a hand-written value that now competes with a derived one? Two sources for one
+rendered field is exactly the drift `DG6` exists to prevent, and the ladder ends with two.
+
+Related, and filed alongside: `F8b` the thread resource still shows the legacy field; `F8c` a session
+entry carries no session id, which is why the previous session has to be inferred at all; `F8d` a
+quarantined entry is dropped uncounted, which `LG8` would ordinarily forbid.

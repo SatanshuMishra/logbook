@@ -128,15 +128,26 @@ Numbered, each naming the rule it discharges. **P** marks the part that ships it
 | 3 | Where the previous session has no entries, the stored `spine.last_session` text renders instead, on its own line, preceded by one fixed line marking it as legacy | B23 | A |
 | 4 | Nothing is deleted. `spine.last_session` keeps its schema declaration and its stored value, and a render leaves the record byte-identical | B23 | A |
 | 5 | Where the previous session has no entries and `spine.last_session` is empty, the whole section is omitted — no heading, no legacy line | B23 | A |
-| 6 | A derived entry line that does not fit the briefing's budget is shortened through the one shared clip helper and ends with its marker; a briefing that fits its budget renders every entry whole and carries no marker | B23 | A |
+| 6 | Every entry of the previous session renders however tight the briefing's budget — none is dropped to make the briefing fit — and a line the budget forced shorter ends with the marker from the one shared clip helper. A briefing that fits its budget renders every entry whole and carries no marker | B23, and the Green clause *Nothing is deleted* | A |
 | 7 | `park_thread` no longer publishes a `last_session` argument, and a call carrying one is refused with a refusal naming the field `last_session` and setting `retryable` to `true`. The thread record is not written by that refused call | B14 | B |
 | 8 | `park_thread`'s `spine_fields_updated` reply can report only `next_step`, and its published description no longer claims it refreshes `last_session` | B14 | B |
-| 9 | The one actor string that marks a session boundary has exactly one definition in the source tree, and `park_thread` stamps its session log entry from it | B23 | A, B |
+| 9 | The derivation and `park_thread` agree on the value that marks a session boundary: `park_thread` stamps its session log entry with the same value the derivation looks for | B23 | A, B |
 
 **No SPEC invariant is assigned to this unit.** SPEC section 11.4 maps `A1`-`A7`, `O1`-`O5` and
-`S1`-`S4` to other units and names none for U8. Criterion 6 nonetheless asserts the two output
-properties this unit could plausibly break — a fitting briefing renders whole, and a shortened value
-says so — because the unit adds a new list of stored text to a surface that has a budget.
+`S1`-`S4` to other units and names none for U8, so no row above discharges one.
+
+**Where criteria 6 and 9 come from, since neither is obvious.** Both trace to `B23` and to the Green
+clause *Nothing is deleted*. Criterion 6: the briefing is a budgeted surface, so a list added to it
+either participates in the budget search or is dropped from the render to make room, and dropping an
+entry is deleting it from what the reader sees. Criterion 9: `B23` says the section is derived from
+*the previous session's* entries, which is undecidable unless the writer of the boundary marker and
+the reader of it agree on its value. Neither criterion adds a property above the two sources; each
+states what those two sources already require of a rendered list.
+
+**Deliberately NOT a criterion, and recorded so it is not mistaken for one.** "The boundary value has
+exactly one definition in the source tree" is a code-organisation preference, not a behaviour any of
+the three permitted sources mandates. Step B4 takes it because it is cheap and it removes a drift
+risk, and its rationale says so; nothing in section 1 claims it.
 
 Anything discovered above this list is appended to
 `docs/plans/2026-08-28-continuity-goal-model/FILED.md` as a new item, and is not folded into this
@@ -423,7 +434,7 @@ What is wrong with it: it holds an open store that can list a thread's session e
 
 What is wrong with it: nothing today. It is quoted because the census that reads it halts on any
 sentence of a tool's published description that no published argument provides
-(`test/support/published.ts:189-197`, `classifyPublishedClaim`), so the description and this entry
+(`test/support/published.ts:191-197`, `classifyPublishedClaim`), so the description and this entry
 have to change in the same commit.
 
 ### 2.18 `test/spawn/resume.test.ts:543-572` — the shipped test that asserts the write
@@ -525,6 +536,20 @@ is derived from records the system already writes. Part B then removes the hand-
 is safe only because the replacement is already live. Shipping part B first would extend the stale
 window instead of closing it, which is why the order in section 0 is not reversible.
 
+**What still writes `spine.last_session` after this unit, named rather than left implied.** Two tools
+do, and neither is touched here because `B14` names only `park_thread`:
+
+- `update_thread` publishes and accepts the same argument (`src/server/tools/update_thread.ts:54-58`),
+  writes it (`:237`) and reports it (`:243-246`).
+- `resolve_conflict` can overwrite the field when the same record differs on two sides of a sync
+  (`src/server/tools/resolve_conflict.ts:399-400`).
+
+This is load-bearing rather than incidental in two ways. It is why the stored field can still be
+non-empty on a thread that never called `park_thread`, which is the state the legacy fallback exists
+for. And the end-to-end legacy receipt in section 5.3 sets that field **through `update_thread`**, so
+that test depends on `update_thread` continuing to accept the argument after part B merges. Filed as
+`F8a`; closing it is a separate decision and is not folded in here.
+
 ### 3.5 The legacy text renders unshortened, exactly as the field rendered before this unit
 
 The derived entry lines enter the budget search, because a session entry body may be 8000 characters
@@ -556,13 +581,30 @@ omission for a decision is counted in the `Not shown` block; for a session entry
 `B20` fixes that block at exactly two members and the item-completeness unit shipped it that way, so a
 third member is new material. Filed as `F8d` and not folded in.
 
-### 3.7 No decomposition procedure was read
+### 3.7 Part B takes a MAJOR bump, which the ladder's version rule reserves for one other unit
+
+The ladder's mechanical version rule says a `feat` unit increments MINOR and names one other unit as
+the only one that increments MAJOR. Part B is a `feat` unit and takes a MAJOR anyway, for the reason
+section 0 gives and a probe measures: removing an accepted argument from a `z.strictObject` input
+schema turns a call that succeeds today into a refusal, and semantic versioning answers to the
+published contract rather than to the in-repo caller count — the same principle the ladder already
+applied to the criterion-contract unit, which itself took two MAJOR bumps rather than one.
+
+**Ruling applied.** Part B increments MAJOR. Recorded here as a divergence rather than left inside
+section 0, because it shifts every later row of the ladder's version table, which is an
+orchestrator-level consequence and not a planner's to absorb silently. The read-then-increment in
+steps A1 and B1 means no plan needs re-authoring for the shift.
+
+**Rejected:** a MINOR for part B, on the ground that the mechanical rule names only one MAJOR unit.
+That would ship a breaking contract change under a version signal that says nothing broke.
+
+### 3.8 No decomposition procedure was read
 
 The decomposition skill some agent definitions name as a first read does not exist on disk. This
 ladder does not depend on it; this plan was authored from the approved specification, the planning
 brief and the orchestrator rulings alone.
 
-### 3.8 The unit brief pointed at a section 12 of the item-completeness plan, which has no section 12
+### 3.9 The unit brief pointed at a section 12 of the item-completeness plan, which has no section 12
 
 That plan runs to section 11 and folds its three parts into sections 4, 6, 7, 9, 10 and 11 rather than
 into a trailing appendix. The material needed here — the whole-file renderer its third part leaves,
@@ -992,7 +1034,7 @@ REPLACE with:
 
 Rationale: `B23` — without this the derivation is unreachable. `readSessionEntries` returns a list of
 slots, each either a parsed record or a note that the file on disk failed to parse
-(`src/store/read-path.ts:10-12`), and only the parsed records are rendered. An entry that failed to
+(`src/store/read-path.ts:11-13`), and only the parsed records are rendered. An entry that failed to
 parse is dropped without a count, which is filed as `F8d` and not closed here.
 
 ### Part B — `park_thread` stops accepting the field
@@ -1167,7 +1209,7 @@ REPLACE with:
 
 Rationale: the census halts on any registered claim whose phrase is absent from the published
 description, and marks as forbidden any claim whose named provider is not a published argument
-(`test/support/published.ts:189-197`). Both halves of the claim are updated in the same commit as the
+(`test/support/published.ts:191-197`). Both halves of the claim are updated in the same commit as the
 description they describe. The second entry has no providers because the sentence describes an
 argument that is deliberately absent, which the census's own `providers.length === 0` branch already
 treats as `allowed`. This is classifying a changed item, not narrowing the census.
@@ -1412,7 +1454,8 @@ test('briefing.a-session-entry-that-fits-renders-whole-with-no-marker', () => {
 
 ### 5.3 `test/spawn/resume.test.ts` — modified
 
-Three edits. The first belongs to part A, the last two to part B. Each drives a spawned server against
+Four edits. The first belongs to part A, the last three to part B. Within part B they are applied in
+the order T2, T3, T4. Each drives a spawned server against
 a fixture git repository and a fixture plugin-data directory under the system temporary directory;
 none observes this session's own ledger.
 
@@ -1548,6 +1591,39 @@ REPLACE with:
     assert.equal(after.spine.active_goal, before.spine.active_goal, 'active_goal must be byte-identical when only next_step was supplied')
 ```
 
+**Edit T4 (part B)** — REPLACE, applied after edit T3. FIND:
+
+```ts
+    const after = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
+    assert.equal(after.spine.last_session, '', 'a refused park call must write nothing')
+  })
+})
+```
+
+REPLACE with:
+
+```ts
+    const after = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
+    assert.equal(after.spine.last_session, '', 'a refused park call must write nothing')
+
+    const outputSchema = outputSchemaFor(fx.outputSchemas, 'park_thread')
+    const outputProperties = outputSchema.properties as Record<string, unknown>
+    const updated = outputProperties.spine_fields_updated as { items?: { enum?: unknown } }
+    assert.deepEqual(
+      updated.items?.enum,
+      ['next_step'],
+      'park_thread must publish next_step as the only spine field its reply can report'
+    )
+  })
+})
+```
+
+This closes the half of criterion 8 that the narrowed reply enum carries. Without it, restoring the
+old enum leaves every test green: after step B2 removes the argument, `input.last_session` is always
+`undefined`, so the reply never reports `last_session` whatever the enum permits, and only the
+published schema itself records the difference. `outputSchemaFor` and `fx.outputSchemas` already exist
+in this file (`test/spawn/resume.test.ts:114-118` and `:77-82`).
+
 **Edit T3 (part B)** — INSERT-AFTER. FIND:
 
 ```ts
@@ -1603,7 +1679,832 @@ test('resume.last-session-renders-the-previous-sessions-entries-newest-first', a
 | 5 | `briefing.last-session-is-omitted-when-there-are-no-entries-and-no-stored-text` | 5.2 |
 | 6 | `briefing.a-session-entry-that-does-not-fit-the-budget-carries-the-clip-marker` and `briefing.a-session-entry-that-fits-renders-whole-with-no-marker` | 5.2 |
 | 7 | `park.refuses-a-last-session-argument` | 5.3 |
-| 8 | `park.refreshes-the-spine` as edit T2 leaves it, plus the shipped claim census in `test/contract/published-schema.test.ts` reading step B6's entry | 5.3, shipped |
-| 9 | `session-log.the-park-actor-is-the-one-park_thread-writes`, plus `resume.last-session-renders-the-previous-sessions-entries-newest-first`, whose expected first line is produced only if `park_thread` stamped the actor the derivation looks for | 5.1, 5.3 |
+| 8 | `park.refuses-a-last-session-argument` as edit T4 leaves it, for the narrowed reply enum; `park.refreshes-the-spine` as edit T2 leaves it, for what the reply actually reports; and the shipped `contract.published-schema-matches-enforced.claims.park-thread-summary-fields-are-reachable` reading step B6's entry, for the published description | 5.3, shipped |
+| 9 | `session-log.the-park-actor-is-the-one-park_thread-writes`, plus `resume.last-session-renders-the-previous-sessions-entries-newest-first`, whose expected first line is produced only when `park_thread` stamped the actor the derivation looks for | 5.1, 5.3 |
 
 No SPEC invariant is assigned to this unit, so no row is owed for one.
+
+---
+
+## 6. Red on the parent
+
+"The parent" means the tip of `main` the part's branch was cut from: for part A, a `main` containing
+all of waves 1 and 2; for part B, a `main` containing part A. Both reds below were produced by running
+the command against a reconstruction of that parent in the session scratchpad, and the failure text is
+copied from the run rather than predicted.
+
+### 6.1 Part A
+
+On the parent, with only test edit T1 applied and no production change, run from the repository root:
+
+```
+node --test --experimental-strip-types test/spawn/resume.test.ts
+```
+
+Expect a non-zero exit code, `ℹ tests 24`, `ℹ pass 22`, `ℹ fail 2`, and exactly these two failures.
+
+From `resume.last-session-renders-the-previous-sessions-entries-newest-first`:
+
+    AssertionError [ERR_ASSERTION]: the briefing must carry a Last session heading
+      actual: -1
+      expected: -1
+      operator: 'notStrictEqual'
+
+The parent renders that section only when the stored hand-written string is non-empty, and a freshly
+opened thread stores an empty one, so the heading is absent even though the thread has three session
+log entries.
+
+From `resume.last-session-falls-back-to-the-stored-text-marked-as-legacy`:
+
+    AssertionError [ERR_ASSERTION]: with no session log entries the stored text must render, marked as legacy
+    + actual - expected
+
+      [
+    -   '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead',
+        'MARKER-LEGACY a summary typed by hand before the derivation existed',
+    +   ''
+      ]
+
+**The two unit test files do not compile on the parent** and cannot be run red there.
+`test/unit/session-log.test.ts` imports `../../src/domain/session-log.ts`, which does not exist on the
+parent, and `test/unit/briefing-last-session.test.ts` calls `renderBriefing` with six arguments where
+the parent declares five. `npx tsc -p tsconfig.json --noEmit` on the parent with both files present
+exits non-zero with `Cannot find module '../../src/domain/session-log.ts'` and
+`Expected 1-5 arguments, but got 6`.
+
+**Substitute procedure, and why no proxy is used instead.** The two spawn tests above are part A's
+receipt: they compile on the parent, run on the parent, and fail on the parent for the behaviour `B23`
+mandates rather than for a proxy of it. The unit tests are the finer-grained statement of the same
+behaviour, and section 7 proves each of them with an inertness mutation instead. No assertion is
+weakened to obtain a red, and no test is deleted, skipped or focused.
+
+### 6.2 Part B
+
+On the parent — a `main` containing part A — with only test edit T3 applied and no production change,
+run from the repository root:
+
+```
+node --test --experimental-strip-types test/spawn/resume.test.ts
+```
+
+Expect a non-zero exit code, `ℹ tests 25`, `ℹ pass 24`, `ℹ fail 1`, and exactly this failure, from
+`park.refuses-a-last-session-argument`:
+
+    AssertionError [ERR_ASSERTION]: park_thread must no longer publish a last_session argument
+
+    true !== false
+
+That is the test's first assertion, and it fails on the parent because the published input schema still
+carries the argument.
+
+---
+
+## 7. Inertness mutation
+
+Each mutation below was applied to the merged change in the session scratchpad, run, and reverted; the
+failure text is copied from that run. Apply the edit, run the command, confirm the failure, then
+restore by reversing the edit exactly.
+
+### 7.1 Criterion 1 — the derived lines render
+
+**Mutate.** In `src/render/briefing.ts`, FIND:
+
+```ts
+    ...previousEntries.map((entry) => renderSessionEntryLine(entry, renderClip.lastSession)),
+```
+
+REPLACE with:
+
+```ts
+    ...previousEntries.slice(0, 0).map((entry) => renderSessionEntryLine(entry, renderClip.lastSession)),
+```
+
+**Run.** `node --test --experimental-strip-types test/unit/briefing-last-session.test.ts`
+
+**Expect** a non-zero exit code and three failures —
+`briefing.last-session-renders-the-previous-sessions-entries-newest-first-with-their-ids`,
+`briefing.a-session-entry-that-does-not-fit-the-budget-carries-the-clip-marker` and
+`briefing.a-session-entry-that-fits-renders-whole-with-no-marker` — the first of them reporting
+
+    AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal
+
+with an actual value of `[]`.
+
+**Restore.** Reverse the edit exactly.
+
+### 7.2 Criterion 1 — the entry identifier is on the line
+
+**Mutate.** In `src/render/briefing.ts`, FIND:
+
+```ts
+  `- ${escapeStored(entry.id)} ${clip(entry.body, textClip)}`
+```
+
+REPLACE with:
+
+```ts
+  `- ${clip(entry.body, textClip)}`
+```
+
+**Run.** `node --test --experimental-strip-types test/unit/briefing-last-session.test.ts`
+
+**Expect** a non-zero exit code and, from
+`briefing.last-session-renders-the-previous-sessions-entries-newest-first-with-their-ids`
+
+    AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal
+
+with actual lines carrying the body text and no identifier.
+
+**Restore.** Reverse the edit exactly.
+
+### 7.3 Criterion 2 — the segment boundary is the park entry
+
+**Mutate.** In `src/domain/session-log.ts`, FIND:
+
+```ts
+    .reduce((found, entry, index) => (entry.actor === PARK_THREAD_ACTOR ? index + 1 : found), 0)
+```
+
+REPLACE with:
+
+```ts
+    .reduce((found) => found, 0)
+```
+
+**Run.** `node --test --experimental-strip-types test/unit/session-log.test.ts`
+
+**Expect** a non-zero exit code and, from
+`session-log.the-previous-session-is-the-run-of-entries-after-the-last-completed-park`
+
+    AssertionError [ERR_ASSERTION]: the previous session is the entries after the first park entry, newest first
+
+with an actual value of five bodies rather than two.
+`session-log.entries-written-after-the-last-park-are-the-previous-session` fails alongside it.
+
+**Restore.** Reverse the edit exactly.
+
+### 7.4 Criterion 1 — newest first
+
+**Mutate.** In `src/domain/session-log.ts`, FIND:
+
+```ts
+  return ordered.slice(boundary).reverse()
+```
+
+REPLACE with:
+
+```ts
+  return ordered.slice(boundary)
+```
+
+**Run.** `node --test --experimental-strip-types test/unit/session-log.test.ts`
+
+**Expect** a non-zero exit code and three failures, including
+`session-log.a-log-with-no-park-entry-is-one-session` reporting
+
+    AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal
+
+with an actual value of `[ 'one', 'two' ]` against an expected `[ 'two', 'one' ]`.
+
+**Restore.** Reverse the edit exactly.
+
+### 7.5 Criterion 3 — the legacy marker
+
+**Mutate.** In `src/render/briefing.ts`, FIND:
+
+```ts
+    ...legacyLastSessionText.slice(0, 1).map(() => LEGACY_LAST_SESSION_MARKER),
+```
+
+REPLACE with:
+
+```ts
+    ...legacyLastSessionText.slice(0, 0).map(() => LEGACY_LAST_SESSION_MARKER),
+```
+
+**Run.** `node --test --experimental-strip-types test/unit/briefing-last-session.test.ts`
+
+**Expect** a non-zero exit code and exactly one failure,
+`briefing.last-session-falls-back-to-the-stored-text-marked-as-legacy`, reporting
+
+    AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal
+
+with an actual value holding the stored text alone.
+
+**Restore.** Reverse the edit exactly.
+
+### 7.6 Criterion 5 — the section is omitted when there is nothing to show
+
+**Mutate.** In `src/render/briefing.ts`, FIND:
+
+```ts
+  const lastSessionHeading =
+    previousEntries.length + legacyLastSessionText.length === 0 ? [] : [LAST_SESSION_HEADING]
+```
+
+REPLACE with:
+
+```ts
+  const lastSessionHeading = [LAST_SESSION_HEADING]
+```
+
+**Run.** `node --test --experimental-strip-types test/unit/briefing-last-session.test.ts`
+
+**Expect** a non-zero exit code and exactly one failure,
+`briefing.last-session-is-omitted-when-there-are-no-entries-and-no-stored-text`, reporting
+
+    AssertionError [ERR_ASSERTION]: Expected values to be strictly equal
+
+with `true !== false`.
+
+**Restore.** Reverse the edit exactly.
+
+### 7.7 Criterion 6 — the derived lines are inside the budget search
+
+**Mutate.** In `src/render/briefing.ts`, FIND:
+
+```ts
+  lastSession: Math.min(perItemClip, LAST_SESSION_TEXT_NATURAL_MAX),
+```
+
+REPLACE with:
+
+```ts
+  lastSession: LAST_SESSION_TEXT_NATURAL_MAX,
+```
+
+**Run.** `node --test --experimental-strip-types test/unit/briefing-last-session.test.ts`
+
+**Expect** a non-zero exit code and exactly one failure,
+`briefing.a-session-entry-that-does-not-fit-the-budget-carries-the-clip-marker`, reporting
+
+    AssertionError [ERR_ASSERTION]: the briefing must be searched down into its character budget
+
+with `false !== true`, because a limit the search cannot lower leaves the render above 12000
+characters.
+
+**Restore.** Reverse the edit exactly.
+
+### 7.8 Criterion 7 — the argument is refused
+
+**Mutate.** In `src/server/tools/park_thread.ts`, FIND:
+
+```ts
+  next_step: z
+```
+
+REPLACE with:
+
+```ts
+  last_session: z
+    .string()
+    .max(caps.SPINE_LAST_SESSION_MAX)
+    .optional()
+    .describe('replaces the spine last_session field when supplied; omit to leave it unchanged'),
+  next_step: z
+```
+
+**Run.** `node --test --experimental-strip-types test/spawn/resume.test.ts`
+
+**Expect** a non-zero exit code and exactly one failure, `park.refuses-a-last-session-argument`,
+reporting
+
+    AssertionError [ERR_ASSERTION]: park_thread must no longer publish a last_session argument
+
+    true !== false
+
+**Restore.** Reverse the edit exactly. `  next_step: z` occurs once in the file both before and after
+the mutation.
+
+### 7.9 Criterion 9 — one definition of the boundary actor
+
+**Mutate.** In `src/domain/session-log.ts`, FIND:
+
+```ts
+export const PARK_THREAD_ACTOR = 'logbook:park_thread'
+```
+
+REPLACE with:
+
+```ts
+export const PARK_THREAD_ACTOR = 'logbook:parked'
+```
+
+**Run.** `node --test --experimental-strip-types test/unit/session-log.test.ts`
+
+**Expect** a non-zero exit code and exactly one failure,
+`session-log.the-park-actor-is-the-one-park_thread-writes`, reporting
+
+    AssertionError [ERR_ASSERTION]: Expected values to be strictly equal
+
+**Restore.** Reverse the edit exactly.
+
+**What this mutation does and does not prove, stated plainly.** It proves the constant's value is
+asserted rather than assumed. It cannot prove "there is only one copy", because after step B4 both the
+writer and the reader take the value from this one declaration, so changing it moves them together and
+the end-to-end test still passes — which is the property, not a gap. The count itself is checked by running
+`grep -rn "logbook:park_thread" src`, which after part B exits `0` and prints exactly one line, naming
+`src/domain/session-log.ts`. Measured against the tree today, before part B, the same command exits `0`
+and prints exactly one line, naming `src/server/tools/park_thread.ts:283`.
+
+### 7.10 Criterion 8 — the reply enum is narrowed
+
+**Mutate.** In `src/server/tools/park_thread.ts`, FIND:
+
+```ts
+    .array(z.enum(['next_step']))
+```
+
+REPLACE with:
+
+```ts
+    .array(z.enum(['last_session', 'next_step']))
+```
+
+**Run.** `node --test --experimental-strip-types test/spawn/resume.test.ts`
+
+**Expect** a non-zero exit code and exactly one failure, `park.refuses-a-last-session-argument`,
+reporting
+
+    AssertionError [ERR_ASSERTION]: park_thread must publish next_step as the only spine field its reply can report
+    + actual - expected
+
+      [
+    +   'last_session',
+        'next_step'
+      ]
+
+**Restore.** Reverse the edit exactly.
+
+### 7.11 Criterion 8 — the published description stops claiming the field
+
+**Mutate.** In `src/server/tools/park_thread.ts`, FIND:
+
+```ts
+it writes the session log entry, refreshes the next_step field, and releases the record of what is being worked. The last_session field is no longer accepted here; it is derived from the session log. Send the outcome as text plus the next step;
+```
+
+REPLACE with:
+
+```ts
+it writes the session log entry, refreshes the last_session and next_step fields, and releases the record of what is being worked. Send the outcome as text plus either of those two fields;
+```
+
+**Run.** `node --test --experimental-strip-types test/contract/published-schema.test.ts`
+
+**Expect** a non-zero exit code and three failures, of which the narrowest is
+`contract.published-schema-matches-enforced.claims.park-thread-summary-fields-are-reachable`
+(`test/contract/published-schema.test.ts:459`), reporting
+
+    AssertionError [ERR_ASSERTION]: Got unwanted exception.
+    Actual message: "census halted on an unclassifiable item: {"tool":"park_thread","description":"Ends work
+    on the thread being worked right now, in a single call: it writes the session log entry, refreshes the
+    last_session and next_step fields, ...","phrase":"refreshes the next_step field","providers":["park_thread.next_step"]}"
+
+The census halts because step B6's registered phrase is no longer present in the description, which is
+the census working as designed rather than a gap in it.
+
+**Restore.** Reverse the edit exactly.
+
+---
+
+## 8. Full verification
+
+Run every command from the repository root, in this order, for each part.
+
+| # | Command | Expected exit code | Output substring that proves it |
+| --- | --- | --- | --- |
+| 1 | `npx tsc -p tsconfig.json --noEmit` | 0 | no output at all |
+| 2 | `node scripts/check-packaging.mjs` | 0 | no output at all |
+| 3 | `node --test --experimental-strip-types test/unit/session-log.test.ts` | 0 | `ℹ pass 7` and `ℹ fail 0` |
+| 4 | `node --test --experimental-strip-types test/unit/briefing-last-session.test.ts` | 0 | `ℹ pass 6` and `ℹ fail 0` |
+| 5 | `node --test --experimental-strip-types test/contract/render-census.test.ts` | 0 | `✔ render.no-unescaped-site` and `ℹ fail 0` |
+| 6 | `node --test --experimental-strip-types "test/contract/**/*.test.ts"` | 0 | `ℹ fail 0` |
+| 7 | `node --test --experimental-strip-types test/spawn/resume.test.ts` | 0 | `ℹ fail 0`, with `ℹ tests 24` for part A and `ℹ tests 25` for part B |
+| 8 | `npm test` | 0 | `ℹ fail 0` |
+
+Rows 3 and 4 apply to both parts: part A creates those two files and part B must leave them green.
+
+**Never run `npm ci` or `npm install`.** `node_modules` is tracked in this repository and an install
+rewrites tracked files.
+
+Command 8 is the full-suite gate, and it carries this rule:
+
+    Run: npm test
+    If the ONLY failing test is `concurrent.distinct-ids` in `test/spawn/decisions.test.ts`,
+    that is the tracked store-materialisation defect, not this change. Re-run `npm test` once.
+    If it passes on the re-run, proceed, and record in the pull request body a
+    `--not-verified "concurrent.distinct-ids - known tracked failure, passed on re-run"` line.
+    If it fails twice, or if ANY other test fails, STOP and report; do not improvise,
+    and do not edit, skip, focus or delete any test.
+
+That re-run governs command 8 only. It is not part of any acceptance criterion, it is not part of any
+receipt, and it is not part of section 6. It is restated as stop condition 11.10.
+
+---
+
+## 9. Commits
+
+Refactor and behaviour change never share a commit. Part A contains no refactor. Part B contains
+exactly one — step B4 replaces a string literal with an imported constant of the identical value, so
+no behaviour changes — and it gets its own commit, ahead of the behaviour change that depends on it.
+
+### Part A, on `feat/u8-derived-last-session-a`
+
+**Commit A1** — `chore(briefing): bump the plugin version for the derived last session`
+
+Files: `package.json`, `.claude-plugin/plugin.json`. Contains step A1.
+
+**Commit A2** — `feat(briefing): derive the last session from the previous session log entries`
+
+Files: `src/domain/session-log.ts`, `src/render/briefing.ts`, `src/server/tools/resume_thread.ts`,
+`test/unit/session-log.test.ts`, `test/unit/briefing-last-session.test.ts`,
+`test/spawn/resume.test.ts`. Contains steps A2, A3, A4, A5, A6 and test edit T1.
+
+### Part B, on `feat/u8-derived-last-session-b`
+
+**Commit B1** — `chore(park-thread): bump the plugin version for the removed argument`
+
+Files: `package.json`, `.claude-plugin/plugin.json`. Contains step B1.
+
+**Commit B2** — `refactor(park-thread): stamp the park entry from the shared boundary constant`
+
+Files: `src/server/tools/park_thread.ts`. Contains step B4 and nothing else. The stored value is
+identical before and after, so the suite is green at this commit without any test change.
+
+**Commit B3** — `feat(park-thread): stop accepting a hand-written last session`
+
+Files: `src/server/tools/park_thread.ts`, `test/support/published.ts`, `test/spawn/resume.test.ts`.
+Contains steps B2, B3, B5, B6 and test edits T2, T3 and T4.
+
+---
+
+## 10. Pull request
+
+### 10.1 The split, decided here and measured
+
+Measured by applying this plan's own blocks to a throwaway copy of the tree in the session scratchpad —
+a copy of `main` carrying the item-completeness unit's whole-file renderer and its clip module — and
+reading `git diff --numstat`. Never estimated.
+
+| Cut | Changed lines | Production | Test | Version manifests |
+| --- | --- | --- | --- | --- |
+| Unsplit | 421 | 82 | 335 | 4 |
+| **U8-A** | **356** | 64 | 288 | 4 |
+| **U8-B** | **69** | 18 | 47 | 4 |
+
+The two parts sum to 425 rather than 421 because each bumps the version, which is four lines counted
+twice.
+
+**Ruled: split.** Unsplit the unit is 421 changed lines against a 400-line ceiling. The exception the
+ceiling allows applies only where splitting would destroy a red-on-parent receipt, and it does not
+apply here: section 6 shows each part reaching its own red at its own parent — part A through two
+end-to-end tests that compile and run there, part B through one. Both parts are then under the ceiling
+with room to spare.
+
+**The order is not reversible.** Part A must land first, because part B removes the hand-written write
+and the SPEC's section 10 attaches to this unit the risk that a spine field is dropped before its
+replacement exists. Shipping B first would widen the stale window that divergence 3.4 describes;
+shipping A first closes it.
+
+**Rejected:** splitting the derivation itself into a rendering half and a wiring half. The rendering
+half would have no reachable behaviour and therefore no red at its parent, which is the exact case the
+ceiling's exception exists to protect.
+
+### 10.2 Part A
+
+```
+node ~/.claude/lib/git/pr.mjs pr-create \
+  --repo SatanshuMishra/logbook --head feat/u8-derived-last-session-a --base main \
+  --title "feat(briefing): derive the last session from the session log" \
+  --what "The Last session section of a resumption briefing now lists the previous session's log entries, newest first, each with the identifier that reaches the entry itself." \
+  --what "A thread with no session log entries still shows its stored hand-written summary, on a line that says it is a legacy value." \
+  --what "A thread with neither entries nor a stored summary shows no Last session section at all, where before it showed nothing under a heading it still printed." \
+  --why "Nothing refreshed the stored summary, so it was only as current as the last person who remembered to type it, and the end-of-session step meant to type it never passed the field." \
+  --why "The entries describing the previous session were already recorded and already addressable, so the summary was being stored by hand when it could be derived." \
+  --risk "A briefing for a thread with a long session log now carries more text, so the size search that fits a briefing into its budget shortens more values than before; every shortened value ends with the marker that says so." \
+  --verified "npx tsc -p tsconfig.json --noEmit - exit 0" \
+  --verified "node --test test/unit/session-log.test.ts - 7 pass, 0 fail" \
+  --verified "node --test test/unit/briefing-last-session.test.ts - 6 pass, 0 fail" \
+  --verified "node --test test/spawn/resume.test.ts - 24 pass, 0 fail" \
+  --verified "node --test test/contract/render-census.test.ts - render.no-unescaped-site passed, 0 fail" \
+  --verified "npm test - 0 fail" \
+  --not-verified "the derived section against a real project store - not run; every test drives a fixture store in a temporary directory"
+```
+
+Expect exit code `0` and a printed pull request URL beginning `https://github.com/SatanshuMishra/logbook/pull/`.
+A non-zero exit code means the tool rejected a field value: read the rejection, correct that one value,
+and run it again. Never fall back to another way of opening a pull request.
+
+Diff size, which the implementer states from the value it measured: 356 changed lines, 64 production
+and 288 test, plus 4 lines of version manifest. Under the reviewable ceiling; no exception claimed.
+
+### 10.3 Part B
+
+```
+node ~/.claude/lib/git/pr.mjs pr-create \
+  --repo SatanshuMishra/logbook --head feat/u8-derived-last-session-b --base main \
+  --title "feat(park-thread): stop accepting a hand-written last session" \
+  --what "park_thread no longer accepts a last_session argument, and a call that still sends one is refused with a message naming that field." \
+  --what "The reply from park_thread can now report only next_step as a changed summary field, and its published description no longer claims it refreshes the last session." \
+  --why "The last session summary is now built from the session log, so a second hand-written copy of it could only ever disagree with the derived one." \
+  --risk "This is a breaking change to a published tool contract: a caller outside this repository that sends last_session to park_thread will start receiving a refusal and must drop the argument." \
+  --verified "npx tsc -p tsconfig.json --noEmit - exit 0" \
+  --verified "node scripts/check-packaging.mjs - exit 0" \
+  --verified "node --test test/spawn/resume.test.ts - 25 pass, 0 fail" \
+  --verified "node --test over test/contract - 0 fail" \
+  --verified "npm test - 0 fail" \
+  --not-verified "callers outside this repository - not run; no inventory of external callers exists"
+```
+
+Expect exit code `0` and a printed pull request URL beginning `https://github.com/SatanshuMishra/logbook/pull/`.
+A non-zero exit code means the tool rejected a field value: read the rejection, correct that one value,
+and run it again. Never fall back to another way of opening a pull request.
+
+Diff size, which the implementer states from the value it measured: 69 changed lines, 18 production and
+47 test, plus 4 lines of version manifest. Well under the reviewable ceiling.
+
+### 10.4 Rules that bind both
+
+- The pull request is opened only through `node ~/.claude/lib/git/pr.mjs pr-create`. Ad-hoc
+  `gh pr create`, `gh api` POSTs to the pulls endpoint and the GitHub tool that creates pull requests
+  are denied at the gate.
+- A title and body are fixed at creation. Never run `gh pr edit`.
+- Never write a `--verified` line for a check that was not run. A check that was not run is
+  `--not-verified "<thing> - not run"`; a check whose result was not read is
+  `--not-verified "<thing> - result not read"`. Substitute the real numbers you observed for the ones
+  above, and drop any `--verified` line whose check you did not run.
+- Merging is human-gated. Do not merge.
+
+---
+
+## 11. Stop conditions
+
+Each names what the implementer sees, the exact command that shows it, and what to do.
+
+### 11.1 The item-completeness unit's first part has not landed
+
+Run:
+
+```
+grep -c "LANE_A_RISKS_MAX\|currentCriterionId" src/render/briefing.ts
+```
+
+Expect `0`, with the command exiting `1` because `grep -c` exits `1` when it counts zero. Any other
+number, with exit code `0`, means the display-time item caps or the guessed current criterion are still
+in the file, so every FIND string in section 4 that touches `src/render/briefing.ts` was written
+against a file that does not exist yet. STOP and report; do not improvise.
+
+### 11.2 The item-completeness unit's second part has not landed
+
+Run:
+
+```
+grep -c "clipWithMarker" src/render/clip.ts
+```
+
+Expect a number of at least `1`, with the command exiting `0`. An exit code of `2` with
+`No such file or directory` means `src/render/clip.ts` does not exist, so the shared clip helper this
+unit's rendered lines depend on has not shipped. STOP and report; do not improvise.
+
+### 11.3 The item-completeness unit's third part has not landed
+
+Run:
+
+```
+grep -c "renderCriterionBlock\|artifactPointer" src/render/briefing.ts
+```
+
+Expect a number of at least `2`, with the command exiting `0`. Measured `6` against the reconstruction
+this plan was authored on. A smaller number, or exit code `1`, means the renderer is not in the state
+edits A3.1 to A3.10 and step A4 were written against. STOP and report; do not improvise.
+
+### 11.4 The capture unit has not landed
+
+Run:
+
+```
+grep -c "last_session" skills/debrief/SKILL.md
+```
+
+Expect `0`, with the command exiting `1` because `grep -c` exits `1` when it counts zero. Any other
+number means the end-of-session skill still passes a field this unit is about to derive, and the two
+would disagree. STOP and report; do not improvise.
+
+### 11.5 Part B's parent does not contain part A
+
+Before starting any step numbered `B`, run:
+
+```
+grep -c "previousSessionEntries" src/render/briefing.ts
+```
+
+Expect a number of at least `1`, with the command exiting `0`. Measured `2` against the tree part A
+leaves. `0` with exit code `1` means part A has not merged, and removing the hand-written write before
+its replacement exists is the exact risk this unit was ordered to avoid. STOP and report; do not
+improvise.
+
+### 11.6 The two version manifests disagree with each other
+
+Run:
+
+```
+node -p "require('./package.json').version"
+node -p "require('./.claude-plugin/plugin.json').version"
+```
+
+Expect exit code `0` from each, and expect the two to print the same string. If they differ, STOP and
+report; do not improvise. A version merely HIGHER than the baseline this plan names is NOT a stop
+condition — it means the ladder shifted, and the read-then-increment in steps A1 and B1 absorbs that
+without any change to this plan.
+
+### 11.7 A FIND string does not match
+
+Before applying each edit, take the first line of that edit's FIND block, and run, with `<line>` and
+`<file>` substituted:
+
+```
+grep -c -F -- '<line>' <file>
+```
+
+Expect `1`, with the command exiting `0`. `0` with exit code `1` means the FIND block is not in the
+file. Any number above `1` means it is not unique. In either case STOP and report; do not improvise,
+and do not adjust the FIND string to make it match.
+
+Two edits take a different first line, because theirs begins with whitespace that `grep -F` still
+matches exactly: edit A3.5's is `  criterionResult: number` and edit B3.1's is
+`  spine_fields_updated: z`. Both are checked the same way.
+
+### 11.8 A test outside this plan's list was touched
+
+After the last step of a part, run:
+
+```
+git diff --name-only main -- test/
+```
+
+For part A expect exactly these three paths and no others:
+
+```
+test/spawn/resume.test.ts
+test/unit/briefing-last-session.test.ts
+test/unit/session-log.test.ts
+```
+
+For part B expect exactly these two and no others:
+
+```
+test/spawn/resume.test.ts
+test/support/published.ts
+```
+
+Any other path means a test this plan does not name was changed. STOP and report; do not improvise.
+
+### 11.9 The render census halts
+
+Run:
+
+```
+node --test --experimental-strip-types test/contract/render-census.test.ts
+```
+
+Expect exit code `0`. A failure naming `src/render/briefing.ts` and an expression from this unit's new
+lines means the census cannot prove one of those values is escaped. STOP and report; do not improvise,
+and in particular do not add the new expression to any allowlist.
+
+### 11.10 The suite is red for anything other than the one tracked failure
+
+    Run: npm test
+    If the ONLY failing test is `concurrent.distinct-ids` in `test/spawn/decisions.test.ts`,
+    that is the tracked store-materialisation defect, not this change. Re-run `npm test` once.
+    If it passes on the re-run, proceed, and record in the pull request body a
+    `--not-verified "concurrent.distinct-ids - known tracked failure, passed on re-run"` line.
+    If it fails twice, or if ANY other test fails, STOP and report; do not improvise,
+    and do not edit, skip, focus or delete any test.
+
+### 11.11 A test would have to be weakened to go green
+
+After the last step of a part, run:
+
+```
+grep -rn "\.skip(\|\.only(\|\.todo(" test/
+```
+
+Expect no output and exit code `1`. Any output means a test was skipped, focused or marked to-do, all
+of which are forbidden here.
+
+Then run:
+
+```
+git diff main -- test/ | grep -c "^-.*assert\."
+```
+
+For part A expect `0`, with the command exiting `1` because `grep -c` exits `1` when it counts zero:
+part A deletes no assertion. For part B expect `4`, with the command exiting `0`: edit T2 removes the
+four assertions of `park.refreshes-the-spine` that named the removed argument and replaces them, which
+section 5.3 gives in full. Any other number means an assertion this plan does not replace was removed.
+STOP and report; do not improvise.
+
+One shipped test is explicitly replaced and it is named: `park.refreshes-the-spine` at
+`test/spawn/resume.test.ts:543-572`, replaced by edit T2, which asserts the same surrounding property —
+that a park call touches nothing it was not asked to touch. Nothing else is touched.
+
+---
+
+## 12. Per-pull-request execution
+
+Two blocks. Each is executable start to finish and references no other block.
+
+### 12.A — `feat/u8-derived-last-session-a`, the briefing derives the last session
+
+**Branch.** Cut `feat/u8-derived-last-session-a` from the current tip of `main`.
+
+**Before any edit,** run the stop conditions in sections 11.1, 11.2, 11.3, 11.4 and 11.6 and act on
+each as written. Section 11.7 is run once per edit, immediately before that edit is applied.
+
+**Version step.** Section 4 step A1, in full: read `package.json`'s version, confirm
+`.claude-plugin/plugin.json` prints the same string, increment MINOR and set PATCH to `0`, write the
+new value into both files, and run `node scripts/check-packaging.mjs` expecting exit code 0 and no
+output. The Conventional Commits type is `feat`.
+
+**Steps, in order.** A1, A2, A3 (edits A3.1 through A3.10), A4, A5 (edits A5.1 through A5.3), A6.
+
+**Tests.** Create `test/unit/session-log.test.ts` in full from section 5.1. Create
+`test/unit/briefing-last-session.test.ts` in full from section 5.2. Apply test edit T1 from section 5.3
+to `test/spawn/resume.test.ts`.
+
+**Red on the parent.** Section 6.1. On the parent, with only test edit T1 applied,
+`node --test --experimental-strip-types test/spawn/resume.test.ts` exits non-zero with `ℹ fail 2` and
+
+    AssertionError [ERR_ASSERTION]: the briefing must carry a Last session heading
+
+    AssertionError [ERR_ASSERTION]: with no session log entries the stored text must render, marked as legacy
+
+The two unit test files do not compile on the parent and are not run there; section 6.1 states that
+plainly and section 7 supplies their proof instead.
+
+**Inertness mutations.** Sections 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7 and 7.9. Apply each, run its named
+command, confirm its named failure, then restore exactly.
+
+**Full verification.** Section 8, rows 1, 3, 4, 5, 6, 7 and 8. Row 7 expects `ℹ tests 24` and
+`ℹ fail 0`. Row 8 carries the full-suite rule quoted in section 11.10. Never run `npm ci` or
+`npm install`.
+
+**Commits.** Section 9, commits A1 and A2.
+
+**Pull request.** Section 10.2, with `--verified` lines kept only for checks that were actually run and
+their real numbers substituted. Do not merge.
+
+**Stop conditions.** Before starting, sections 11.1, 11.2, 11.3, 11.4 and 11.6. Before each individual
+edit, section 11.7. After the last step, sections 11.8, 11.9, 11.10 and 11.11.
+
+### 12.B — `feat/u8-derived-last-session-b`, `park_thread` stops accepting the field
+
+**Branch.** Cut `feat/u8-derived-last-session-b` from a tip of `main` that already contains
+`feat/u8-derived-last-session-a`. Confirm the content arrived rather than trusting a merged status, by
+running with part A's merged head substituted for the placeholder:
+
+```
+git merge-base --is-ancestor <the merged head of part A> origin/main
+```
+
+Expect exit code 0. A non-zero exit code means part A's content is not on `main` whatever the pull
+request status says: STOP and report; do not improvise.
+
+**Before any edit,** run the stop conditions in sections 11.5 and 11.6 and act on each as written.
+Section 11.7 is run once per edit, immediately before that edit is applied.
+
+**Version step.** Section 4 step B1, in full: read `package.json`'s version, confirm
+`.claude-plugin/plugin.json` prints the same string, increment MAJOR and set MINOR and PATCH to `0`,
+write the new value into both files, and run `node scripts/check-packaging.mjs` expecting exit code 0
+and no output. The Conventional Commits type is `feat`; the MAJOR bump is because removing an accepted
+argument from a tool published over the Model Context Protocol turns a call that succeeds today into a
+refusal.
+
+**Steps, in order.** B1, B4 (edits B4.1 and B4.2), B2, B3 (edits B3.1 and B3.2), B5, B6. Step B4 moves
+ahead of the rest because it is the part's only refactor and commit B2 carries it alone.
+
+**Tests.** Apply test edits T2, T3 and T4 from section 5.3 to `test/spawn/resume.test.ts`, in that
+order.
+
+**Red on the parent.** Section 6.2. On the parent, with only test edit T3 applied,
+`node --test --experimental-strip-types test/spawn/resume.test.ts` exits non-zero with `ℹ fail 1` and
+
+    AssertionError [ERR_ASSERTION]: park_thread must no longer publish a last_session argument
+
+    true !== false
+
+**Inertness mutations.** Sections 7.8, 7.9, 7.10 and 7.11. Apply each, run its named command, confirm
+its named failure, then restore exactly.
+
+**Full verification.** Section 8, rows 1, 2, 3, 4, 5, 6, 7 and 8. Row 7 expects `ℹ tests 25` and
+`ℹ fail 0`. Row 8 carries the full-suite rule quoted in section 11.10. Never run `npm ci` or
+`npm install`.
+
+**Commits.** Section 9, commits B1, B2 and B3.
+
+**Pull request.** Section 10.3, with `--verified` lines kept only for checks that were actually run and
+their real numbers substituted. Do not merge.
+
+**Stop conditions.** Before starting, sections 11.5 and 11.6. Before each individual edit, section
+11.7. After the last step, sections 11.8, 11.9, 11.10 and 11.11.

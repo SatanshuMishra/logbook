@@ -1026,3 +1026,53 @@ it. So `next_step` is refreshed every debrief where previously nothing was, and 
 exactly as stale as it already was. The interval strictly improves. The SPEC's risk "a spine field is
 dropped before its replacement exists" is real in principle and empty in fact here; `U8` still closes
 it.
+
+## OR32 — `U8` splits into two, `B14` is breaking, and `U8` takes four lines of `U9`'s file
+
+`U8` measured **421 lines** unsplit, over the ceiling, and split with no exception claimed.
+
+| Part | Carries | Branch | Scope | Type | Lines (prod/test) |
+| --- | --- | --- | --- | --- | --- |
+| U8-A The derivation | `B23` | `feat/u8-derived-last-session-a` | `briefing` | feat, MINOR | 356 (64/288) |
+| U8-B The field stops being accepted | `B14` | `feat/u8-derived-last-session-b` | `park-thread` | feat, **MAJOR** | 69 (18/47) |
+
+**`A` lands first.** `B` first would widen the stale window rather than close it, which is the exact
+risk SPEC section 10 attaches to this unit.
+
+**`B14` is a breaking change, established by probe rather than by argument.** `park_thread`'s input is
+a `z.strictObject`, so removing the key turns a call that succeeds today into a refusal:
+`{"ok":false,"field":"last_session","accepted":"object","example":"{}","retryable":true}`. That is a
+published MCP contract change, and `OR1` and `OR30` already settled that the published contract
+governs. `U8-B` takes MAJOR. The ladder's version table shifts again; `OR6`'s read-then-increment
+absorbs it and no plan is re-authored.
+
+**`U8-B`'s pull request title scope is `park-thread`, not `briefing`.** `OR1` assigned `briefing` to
+the whole unit before the split existed; part B does not touch the briefing. The scope names the
+surface a reviewer will actually see, and `park-thread` is 11 characters, inside the 16-character
+class.
+
+**`U8` takes four lines of `src/server/tools/resume_thread.ts`, which `U9` owns.** It is the
+renderer's only production caller, so `B23` is unauthorable without it. `OR2` already orders wave 3
+with `U8` first, so there is no simultaneous-writer problem — but `U9`'s FIND strings must be authored
+against the file as `U8` leaves it. `U9`'s dispatch carries that.
+
+### Two findings that stand
+
+**The rule identifying "the previous session" is derived, not stored, and that is the interesting
+part.** A session entry carries no session id (`src/schema/session.ts:9-15`), and the only record that
+does — the pointer — is released by `park_thread`. So the rule is: sort a thread's entries ascending
+by entry id, and take the run beginning immediately after the newest entry whose `actor` is
+`logbook:park_thread`, **excluding that newest entry itself**, through the end, rendered reversed.
+Excluding it is what makes the parked case and the crashed-without-parking case correct under ONE
+rule rather than two. Verified by probe over five cases.
+
+**The `U7` -> `U8` window loses nothing.** Before `U8-A`, the briefing rendered `spine.last_session`
+verbatim — the last string anyone typed, describing some earlier session, with nothing saying which.
+An empty field meant no section at all. `U8-A` closes that before `U8-B` removes the write.
+
+### Legacy text is not clipped, and the reason is a receipt
+
+`U8` found that clipping the legacy fallback made the shipped over-budget fixture fit, turning
+`resume_thread.logs-a-budget-breach-only-for-a-render-that-does-not-fit` red. Leaving it unshortened
+is correct: the legacy path renders stored text exactly as stored, and a shipped assertion about
+budget-breach honesty is a better guide than a tidier render.
