@@ -9,10 +9,11 @@
 | **Required by** | `U2 …-b` (the safety half) edits `src/merge/sync.ts`, which this plan also edits. `…-b` is cut only after this one merges |
 | **Wave** | 1, second position |
 | **Branch name** | `perf/u2-store-cost-and-safety-a`, cut from `main` |
-| **Version bump** | Baseline `1.5.0` -> `1.5.1` per orchestrator ruling OR1. Applied as a read-then-increment in step 8, never as a hard-coded pair |
+| **Version bump** | Baseline `1.6.1` -> `1.6.2` per orchestrator rulings OR1, OR23 and OR25. Applied as a read-then-increment in step 9, never as a hard-coded pair |
 | **Owns** | `src/store/records.ts`, `src/store/read-path.ts`, `src/merge/sync.ts` |
 | **Creates** | `test/store/open-cost.test.ts`, `test/store/materialise-cost.test.ts` |
 | **Does not touch** | `src/store/single-store.ts`, `src/store/write-path.ts`, `src/schema/`, `src/server/`, `README.md` |
+| **SPEC anchors** | Section 9 unit U2; section 8 rules B37 and B38; section 6 invariants O5 and S1; section 7 defects D13 and D14 |
 
 This document is self-contained. The implementer reads this file and the repository, and nothing else.
 
@@ -33,7 +34,7 @@ This document is self-contained. The implementer reads this file and the reposit
 6. **Sync materialisation costs a fixed number of subprocesses too.** The merge path's copy of the ledger tree is read the same batched way. Discharges `B38` across both materialising call sites.
 7. **The number of records a discovery surface reads does not grow as records accumulate.** This is invariant `O5`. Proven jointly by `store.open-does-not-read-every-record` and the already-shipped `roster.subprocess-census`.
 8. **No caller can observe records on disk that differ from the tree in the ref, for any write that has returned.** This is invariant `S1`. Proven by the already-shipped concurrency receipts in `test/store/concurrency.test.ts`.
-9. **Before-and-after timings are recorded.** The measurement procedure in section 8 is run and its numbers are written into the pull request body.
+9. **Before-and-after timings are recorded.** The measurement procedure in section 8 is run and its numbers are written into the pull request body. This is the SPEC Green-cell clause "Store-open and materialisation timings recorded before and after", and it is the evidence for the cost claims `B37` and `B38` make.
 
 Anything discovered above this list is appended to `docs/plans/2026-08-28-continuity-goal-model/FILED.md` as a new item with its evidence, and is NOT folded into this plan.
 
@@ -47,7 +48,7 @@ Anything discovered above this list is appended to `docs/plans/2026-08-28-contin
 import { readdirSync } from 'node:fs'
 ```
 
-Only `readdirSync` is imported. The new early-exit scan needs `opendirSync`, which reads a directory incrementally instead of materialising every entry at once.
+Only `readdirSync` is imported, and it returns every entry in a directory at once. The early-exit scan that closes defect `D13` needs `opendirSync`, which reads a directory incrementally and can stop at the first record.
 
 ### 2.2 `src/store/records.ts:81-96` — the recursive count
 
@@ -111,7 +112,7 @@ const parseLsTreeLine = (line: string): { blobId: string; relPath: string } | nu
 }
 ```
 
-Its only caller is `materialiseTree`. Once the per-blob loop goes, nothing reads git's tree listing line by line and this function has no caller.
+Its only caller is `materialiseTree`, whose per-blob loop is defect `D14`. Once that loop goes, nothing reads git's tree listing line by line and this function has no caller left.
 
 ### 2.5 `src/store/read-path.ts:153-191` — one subprocess per record
 
@@ -451,6 +452,8 @@ const materialiseTree = (rt: Runtime, layout: StoreLayout, ref: string): Materia
 ```
 
 Rationale: `B38` — `git read-tree` loads the whole ledger tree into a private index and `git checkout-index -a` writes every file out of it in one process, creating intermediate directories itself. Two subprocesses, whatever the record count.
+
+Rejected: `git cat-file --batch`, one long-lived process fed every blob id on standard input. It is the smaller edit and needs no index file, but it returns the whole store's contents through the shared git helper's standard-output buffer, which `src/store/git.ts:68-72` leaves at Node's 1 MiB default; and its output frames each blob by BYTE length while that helper decodes to a string, so slicing the frames apart is wrong for any record containing a character outside ASCII. `checkout-index` writes to disk and never puts record content through a buffer at all.
 
 Four properties of this pair were confirmed by running them against a fixture repository at git 2.55.0 before this plan was written, because each one is load-bearing:
 
@@ -847,7 +850,7 @@ Substitute procedure, run on the parent commit, before applying any step:
    git checkout -- src/store/records.ts
    ```
 
-This substitute was run on the parent while authoring. `npx tsc -p tsconfig.json --noEmit` exited 0 with the temporary edit applied, and the assertion message above is the one it produced.
+This substitute was run on the parent while authoring. `npm run typecheck` exited 0 with the temporary edit applied, and the assertion message above is the one it produced.
 
 ---
 
@@ -908,7 +911,7 @@ Run in this order.
 ### 8.1 Typecheck
 
 ```
-npx tsc -p tsconfig.json --noEmit
+npm run typecheck
 ```
 
 Expect exit code 0 and no output.
@@ -935,9 +938,11 @@ Expect exit code 0 and the output to contain `pass 2` and `fail 0`.
 npm test
 ```
 
-Expect exit code 0 and the output to contain `fail 0`.
+Expect exit code 0 and the output to contain `fail 0`. The expected test count is 438: the 436 already on the parent plus the two this half adds. Write the count the run actually printed into the pull request body rather than the one written here.
 
-Any failure of `concurrent.distinct-ids` in `test/spawn/decisions.test.ts` is IN SCOPE for this unit's surface and must be reported, never re-run away. STOP and report; do not improvise, and do not edit, skip, focus or delete any test.
+Any failure of `concurrent.distinct-ids` in `test/spawn/decisions.test.ts` is IN SCOPE for
+this unit's surface and must be reported, never re-run away. STOP and report; do not
+improvise, and do not edit, skip, focus or delete any test.
 
 ### 8.5 The measurement, before and after
 
@@ -1124,6 +1129,8 @@ The reasoning, in three parts:
 
 `B37` does not change the defect's reachability at all. The only detection it could have removed is the anomaly report, and step 3 keeps that report firing in exactly the case that produces the defect's signature — a current stamp over a records directory holding nothing.
 
+**This finding is a stop condition, not a note.** Should any evidence appear that this change makes the defect MORE reachable rather than less — a `concurrent.distinct-ids` failure, a new interleaving, or a measurement contradicting the reasoning above — STOP and report; do not improvise, and do not absorb it into this unit. Section 11.5 carries the same instruction.
+
 ---
 
 ## 9. Commits
@@ -1166,7 +1173,7 @@ Contains plan step 9.
 
 Opened with the operator's global tool. Ad-hoc `gh pr create`, `gh api` posts to the pulls endpoint and the GitHub pull-request tool are refused at the gate. A title and body are fixed at creation and never rewritten afterwards, so `gh pr edit` is never run.
 
-Replace the four numbers in the `--verified` lines with the numbers actually produced by section 8.5 on this machine. If a check was not run, change its line to `--not-verified "<thing> - not run"`.
+Replace each number in the `--verified` lines below with the number section 8 actually printed on this machine. Every `--verified` line names a check listed in section 8; a line whose check you did not run becomes `--not-verified "<thing> - not run"` instead.
 
 ```
 node ~/.claude/lib/git/pr.mjs pr-create \
@@ -1178,12 +1185,12 @@ node ~/.claude/lib/git/pr.mjs pr-create \
   --what "Opening the store stops reading every record file just to find out whether any exist." \
   --why "Every store open walked the whole record tree to compute a count that was only ever compared against zero, and every rebuild started a separate git process for each record, so both got slower as history grew." \
   --risk "Records are now written to disk by git itself rather than by this code, so a failure mode inside that command surfaces as a whole-rebuild failure rather than a per-record one." \
-  --verified "npm test - 440 tests, 0 fail, exit 0" \
-  --verified "npx tsc -p tsconfig.json --noEmit - exit 0" \
+  --verified "npm test - 438 tests, 0 fail, exit 0" \
+  --verified "npm run typecheck - exit 0" \
   --verified "node scripts/check-packaging.mjs - check-packaging: ok, exit 0" \
   --verified "rebuild of a 200-record store - 1742 ms before, 110 ms after" \
   --verified "git processes to rebuild a 200-record store - 201 before, 2 after" \
-  --verified "directory entries read when opening a 12800-record store - 12804 before, 5 after" \
+  --not-verified "directory entries read when opening a 12800-record store - 12804 before and 5 after, measured during planning and not re-run here" \
   --not-verified "the tracked concurrent-write defect - not fixed here and not measured; this change shortens the window it needs, which makes it rarer, not absent"
 ```
 
@@ -1199,7 +1206,7 @@ node ~/.claude/lib/git/pr.mjs pr-create \
 | version bump | 2 | 2 | 4 |
 | **Total** | **249** | **79** | **328** |
 
-Production code is 151 of those lines and tests are 173. The number is above the 200-line target and below the 400-line ceiling, so this half is not split further.
+Production code is 151 of those lines, tests are 173, and the version bump is the remaining 4. The number is above the 200-line target and below the 400-line ceiling, so this half is not split further.
 
 ---
 
@@ -1212,10 +1219,12 @@ Each of these invalidates the plan. In every case: **STOP and report; do not imp
 Before editing `src/store/records.ts`, run:
 
 ```
-git log --oneline main | grep -c "u1-schema-foundations\|schema foundations"
+test -f src/schema/field-class.ts && grep -c "POINTER_PATTERN" src/schema/field-class.ts
 ```
 
-If the count is `0`, `U1` has not merged and this branch was cut too early. STOP and report; do not improvise.
+This must print a number of `1` or greater. `src/schema/field-class.ts` is the module `U1` creates to declare every record field's class, and it is what may add a `binding` branch to `validateChange` in `src/store/records.ts`. A missing file or a non-zero exit means `U1` has not merged and this branch was cut too early. STOP and report; do not improvise.
+
+The check is anchored on that file rather than on a commit subject because `U1` ships as four separate pull requests whose subjects do not share a common string, so a subject search would report zero even after `U1` had fully landed.
 
 Then confirm the content arrived rather than trusting a merge status:
 
@@ -1248,7 +1257,7 @@ If any prints anything other than `1`, the file has moved under this plan. STOP 
 node -e "const a=require('./package.json').version;const b=require('./.claude-plugin/plugin.json').version;console.log(a===b?'match':'MISMATCH '+a+' '+b)"
 ```
 
-If this prints anything other than `match`, STOP and report; do not improvise. A version merely higher than `1.5.0` is not a stop condition — it means the ladder shifted, and step 9 reads whatever is there and increments it.
+If this prints anything other than `match`, STOP and report; do not improvise. A version merely higher than `1.6.1` is not a stop condition — it means the ladder shifted, and step 9 reads whatever is there and increments it.
 
 ### 11.4 The suite
 
@@ -1259,6 +1268,10 @@ this unit's surface and must be reported, never re-run away. STOP and report; do
 improvise, and do not edit, skip, focus or delete any test.
 ```
 
-### 11.5 Never run an install
+### 11.5 The tracked store defect becomes more reachable
+
+Section 8.6 reasons that this change makes the tracked concurrent-write defect less reachable, never more. That reasoning is the thing being relied on. Should anything contradict it — a `concurrent.distinct-ids` failure, or any measurement showing the defect is easier to reach after this change than before — STOP and report; do not improvise, and do not fix, skip, delete, focus or quarantine the defect or its test. Fixing it is outside this unit.
+
+### 11.6 Never run an install
 
 `node_modules` is tracked in this repository and an install rewrites tracked files. Never run `npm ci` or `npm install`, for any reason, including a dependency that appears to be missing. If anything appears to require one, STOP and report; do not improvise.

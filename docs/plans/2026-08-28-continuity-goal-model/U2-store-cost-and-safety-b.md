@@ -9,10 +9,11 @@
 | **Required by** | Nothing in wave 1 |
 | **Wave** | 1, second position, second half |
 | **Branch name** | `perf/u2-store-cost-and-safety-b`, cut from `main` |
-| **Version bump** | Baseline `1.5.1` -> `1.5.2` per orchestrator ruling OR1, as adjusted for the split recorded in section 3. Applied as a read-then-increment in step 5, never as a hard-coded pair |
+| **Version bump** | Baseline `1.6.2` -> `1.6.3` per orchestrator rulings OR1, OR23 and OR25, as further adjusted for the split recorded in section 3. Applied as a read-then-increment in step 7, never as a hard-coded pair |
 | **Owns** | `src/store/single-store.ts`, `src/merge/sync.ts` |
 | **Creates** | No new source or test files |
 | **Does not touch** | `src/store/records.ts`, `src/store/read-path.ts`, `src/store/write-path.ts`, `src/server/`, `src/schema/` |
+| **SPEC anchors** | Section 9 unit U2; section 8 rule B40; section 7 defect D16 and the sync half of defect D20 |
 
 This document is self-contained. The implementer reads this file and the repository, and nothing else.
 
@@ -89,7 +90,7 @@ export const ensureSingleStore = (rt: Runtime, layout: StoreLayout): Ok<StoreLay
 
 Both files record the same `project_root`. Two further projects on this machine are duplicated the same way. The shape the widened guard must detect is therefore: **the same key, under a sibling of the plugin-data root, whose `origin.json` names the same project.** Nothing on disk was modified, moved or deleted.
 
-### 2.4 `src/merge/sync.ts` — the reads that precede the merge
+### 2.4 `src/merge/sync.ts:303-307` — the reads that precede the merge
 
 ```ts
       const ours = readOursRecordSet(store, layout)
@@ -101,7 +102,7 @@ Both files record the same `project_root`. Two further projects on this machine 
 
 `readScratchRecordSet` sorts the remote's files into two piles: records it could parse, and a `passthrough` pile of files it could not.
 
-### 2.5 `src/merge/sync.ts` — the passthrough
+### 2.5 `src/merge/sync.ts:319-322` — the passthrough
 
 ```ts
       const changes: RecordChange[] = [
@@ -112,11 +113,13 @@ Both files record the same `project_root`. Two further projects on this machine 
 
 Every unparseable remote file is turned into a `raw` change. The store's own validation opens with `if (change.kind === 'raw') return null`, so a `raw` change is written into this machine's ledger without being checked at all. This is the sync half of defect `D20`: the one path on which bytes from a shared remote enter the local ledger with no validation of any kind.
 
-### 2.6 `src/merge/sync.ts` — where those changes are written
+### 2.6 `src/merge/sync.ts:329` — where those changes are written
 
 ```ts
       const commitResult = writeRecords(rt, layout, changes, message, writeOps)
 ```
+
+This is the call that commits the array section 2.5 built, so it is the point at which the unvalidated remote bytes of defect `D20` actually enter this machine's ledger.
 
 ---
 
@@ -320,7 +323,7 @@ REPLACE:
       const commitResult = writeRecords(rt, layout, mergedChanges, message, writeOps)
 ```
 
-Rationale: step 5 removed the local the call was reading.
+Rationale: `B40` — step 5 removed the `changes` array this call was reading, so it reads the merged changes directly.
 
 ### Step 7 — the version bump, as a read-then-increment
 
@@ -557,7 +560,7 @@ test('sync.refuses-a-remote-record-it-cannot-parse', () => {
 
 ## 6. Red on the parent
 
-The parent commit is the tip of `main` at branch-cut time, which contains `U1` and `U2 …-a`.
+The parent commit is the tip of `main` at branch-cut time, which contains all of `U1` and the cost half of this unit. No commit hash can be named here, and that is a stated answer rather than an omission: this parent does not exist yet, because it is created by merges that have not happened when this plan is written.
 
 Both new assertions compile on the parent, because neither adds a new export. Copy both test files in and run them before applying any step.
 
@@ -587,7 +590,7 @@ Expected: exit code 1, with this exact assertion message:
 a merge carrying remote bytes this version cannot parse must be refused
 ```
 
-Both were run on the parent while authoring, and those are the messages they produced. `npx tsc -p tsconfig.json --noEmit` exited 0 on the parent with both test files in place.
+Both were run on the parent while authoring, and those are the messages they produced. `npm run typecheck` exited 0 on the parent with both test files in place.
 
 ---
 
@@ -642,7 +645,7 @@ Restore: re-apply steps 4, 5 and 6 and re-run; the test must pass.
 ### 8.1 Typecheck
 
 ```
-npx tsc -p tsconfig.json --noEmit
+npm run typecheck
 ```
 
 Expect exit code 0 and no output.
@@ -669,9 +672,11 @@ Expect exit code 0 and the output to contain `fail 0`.
 npm test
 ```
 
-Expect exit code 0 and the output to contain `fail 0`.
+Expect exit code 0 and the output to contain `fail 0`. The expected test count is 440: the 438 on the parent plus the two this half adds, the replaced sync test being one for one. Write the count the run actually printed into the pull request body rather than the one written here.
 
-Any failure of `concurrent.distinct-ids` in `test/spawn/decisions.test.ts` is IN SCOPE for this unit's surface and must be reported, never re-run away. STOP and report; do not improvise, and do not edit, skip, focus or delete any test.
+Any failure of `concurrent.distinct-ids` in `test/spawn/decisions.test.ts` is IN SCOPE for
+this unit's surface and must be reported, never re-run away. STOP and report; do not
+improvise, and do not edit, skip, focus or delete any test.
 
 ### 8.5 The cost the widened guard adds, measured
 
@@ -742,7 +747,7 @@ Contains plan step 7.
 
 Opened with the operator's global tool. Ad-hoc `gh pr create`, `gh api` posts to the pulls endpoint and the GitHub pull-request tool are refused at the gate. A title and body are fixed at creation and never rewritten afterwards, so `gh pr edit` is never run.
 
-If a check was not run, change its line to `--not-verified "<thing> - not run"`.
+Every `--verified` line below names a check listed in section 8; a line whose check you did not run becomes `--not-verified "<thing> - not run"` instead.
 
 ```
 node ~/.claude/lib/git/pr.mjs pr-create \
@@ -756,9 +761,9 @@ node ~/.claude/lib/git/pr.mjs pr-create \
   --why "One merge path wrote unreadable remote files straight into the local history without any validation, which was the only way unchecked outside data could get in." \
   --risk "A machine that already has two stores for one project will stop opening that project until a human deletes one of them; the refusal names both." \
   --verified "npm test - 440 tests, 0 fail, exit 0" \
-  --verified "npx tsc -p tsconfig.json --noEmit - exit 0" \
+  --verified "npm run typecheck - exit 0" \
   --verified "node scripts/check-packaging.mjs - check-packaging: ok, exit 0" \
-  --verified "store open with the widened check, plugin-data root holding 23 siblings - 0.06 ms added" \
+  --not-verified "store open with the widened check - 0.06 ms added at 23 sibling roots, measured during planning and not re-run here" \
   --not-verified "the duplicate this machine actually has - observed read-only, not resolved and not opened"
 ```
 
@@ -773,7 +778,7 @@ node ~/.claude/lib/git/pr.mjs pr-create \
 | version bump | 2 | 2 | 4 |
 | **Total** | **125** | **24** | **149** |
 
-Production code is 64 of those lines and tests are 85. The number is below the 200-line target, so this half is not split further.
+Production code is 64 of those lines, tests are 81, and the version bump is the remaining 4. The number is below the 200-line target, so this half is not split further.
 
 ---
 
@@ -784,10 +789,12 @@ Each of these invalidates the plan. In every case: **STOP and report; do not imp
 ### 11.1 `U1` has not landed
 
 ```
-git log --oneline main | grep -c "u1-schema-foundations\|schema foundations"
+test -f src/schema/field-class.ts && grep -c "POINTER_PATTERN" src/schema/field-class.ts
 ```
 
-If the count is `0`, STOP and report; do not improvise.
+This must print a number of `1` or greater. A missing file or a non-zero exit means `U1` has not merged and this branch was cut too early. STOP and report; do not improvise.
+
+The check is anchored on that file rather than on a commit subject because `U1` ships as four separate pull requests whose subjects do not share a common string, so a subject search would report zero even after `U1` had fully landed.
 
 ### 11.2 The first half of this unit has not landed
 
@@ -830,7 +837,7 @@ If any prints anything other than `1`, a file has moved under this plan. STOP an
 node -e "const a=require('./package.json').version;const b=require('./.claude-plugin/plugin.json').version;console.log(a===b?'match':'MISMATCH '+a+' '+b)"
 ```
 
-If this prints anything other than `match`, STOP and report; do not improvise. A version merely higher than `1.5.1` is not a stop condition — it means the ladder shifted, and step 7 reads whatever is there and increments it.
+If this prints anything other than `match`, STOP and report; do not improvise. A version merely higher than `1.6.2` is not a stop condition — it means the ladder shifted, and step 7 reads whatever is there and increments it.
 
 ### 11.5 The suite
 
