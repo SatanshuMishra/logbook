@@ -329,3 +329,31 @@ Appends only. Never edit an item another planner wrote.
   that is owned, `S3` is partly undischarged after this ladder finishes, and U5 records that in its
   divergence 3.5 rather than narrowing its census.
 - **Not folded in.**
+
+## F8a — `last_session` is still written by hand after `B14`, by two other tools
+
+- **Surfaced by:** U8 planning
+- **Evidence:** `src/server/tools/update_thread.ts:54-58` publishes `last_session: z.string().max(caps.SPINE_LAST_SESSION_MAX).optional().describe('replaces the spine last_session field when supplied; omit to leave it unchanged')`, writes it at `:237` and reports it at `:243-246`. `src/server/tools/resolve_conflict.ts:399-400` rewrites the same field: `case 'spine.last_session': return { ...thread, spine: { ...thread.spine, last_session: value as string } }`.
+- **Why it is above the ceiling:** SPEC `B14` names exactly one tool — "`park_thread` stops accepting `last_session`; it is derived (B23)". `src/server/tools/update_thread.ts` belongs to the declared-focus unit and `resolve_conflict.ts` belongs to no unit in this ladder. Closing `DG6` fully for this field means deciding what a repair path does when the field it repairs no longer has a hand-written writer, which is a new decision.
+- **Not folded in.**
+
+## F8b — the thread resource still renders the stored `last_session`, so the two surfaces disagree
+
+- **Surfaced by:** U8 planning
+- **Evidence:** `src/server/resource-render.ts:92` renders ``  `Last session: ${escapeStored(thread.spine.last_session)}`  ``. After U8 the briefing renders the previous session's log entries while the thread resource still renders the hand-written string, so one model-facing surface shows derived content and the other shows the legacy field, with nothing saying which is which.
+- **Why it is above the ceiling:** SPEC section 9 gives U8 `src/render/briefing.ts` and `src/server/tools/park_thread.ts`. `src/server/resource-render.ts` is the discovery unit's file, and `B23` names only the briefing.
+- **Not folded in.**
+
+## F8c — a session entry carries no session identifier, so the session boundary is inferred rather than recorded
+
+- **Surfaced by:** U8 planning
+- **Evidence:** `src/schema/session.ts:9-15` declares `SessionEntry` as `{ id, thread_id, actor, body, created_at }` — no session id. The pointer is the only record that carries one (`pointer.session_id`), and `park_thread` releases it (`src/server/tools/park_thread.ts:301`). U8 therefore identifies "the previous session" as the run of entries after the last entry whose `actor` is `logbook:park_thread`. Consequence, measured by probe: an entry a session logs on a thread *before* it calls `resume_thread` is attributed to the previous session.
+- **Why it is above the ceiling:** `B23` says only "derived from the previous session's log entries". Stamping a session id onto a session entry is a schema change to `src/schema/session.ts`, which belongs to the schema unit and has already shipped, and it would not repair the entries already written. It is also the "automatic capture of coordinates" the SPEC's section 3.3 records as opened and deliberately not taken.
+- **Not folded in.**
+
+## F8d — a session entry whose record failed to parse is dropped from the derived summary, uncounted and unaddressed
+
+- **Surfaced by:** U8 planning
+- **Evidence:** the derivation is fed from `store.readSessionEntries(thread.id)`, which returns `Slot<SessionEntry>[]` where a slot is `{ quarantined: true; path; reason }` or `{ quarantined: false; record }` (`src/store/read-path.ts:10-12`). U8 passes only the readable records, so a quarantined entry disappears from the `Last session` section with no count and no address, while the equivalent omission for a decision is counted by the line `- <n> linked decision records could not be read; their ids are listed under Decisions above`.
+- **Why it is above the ceiling:** SPEC `B20` fixes the `Not shown` block at exactly two members — the text-clip marker, and dangling or quarantined decision ids — and the briefing unit shipped it that way. Adding a third member is new material, and `O2` speaks of items omitted by a display rule, which an unreadable record is not.
+- **Not folded in.**

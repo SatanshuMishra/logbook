@@ -966,3 +966,63 @@ right: a handler refusal for the bare id array is unreachable without publishing
 claims to accept a string it will always reject. A published schema that lies is worse than a
 narrower one. The refusal still carries all four parts — the field `criteria_done.0`, what is
 accepted, a valid example, and `retryable: true` — which is what `P2` actually requires.
+
+## OR31 — `U7` splits into three, takes `src/server/instructions.ts`, and its clip contract is reconciled
+
+`U7` measured at **798 changed lines** by applying its blocks to a throwaway tree. The best two-way
+cut is 430/372, still over the ceiling, so it splits three ways. Each part verified green standalone.
+
+| Part | Carries | Branch | Lines (prod/test) |
+| --- | --- | --- | --- |
+| U7-A The ledger-presence verdict | `B30` | `feat/u7a-ledger-presence` | 336 (119/217) |
+| U7-B The banner marker | `B32`, `O3` share | `feat/u7b-banner-marker` | 98 (9/89) |
+| U7-C Capture guidance and the second writer | `B31`, `B33`, `B34` | `feat/u7c-capture-guidance` | 372 (88/284) |
+
+All three under the ceiling. No exception needed. `B29` is carried across the unit as verification
+that both shipped instances still exist; it authors no change.
+
+### The clip contract is reconciled, and it matches
+
+`U7` reported it could not see `U5`'s plan and asked for reconciliation. Checked at the orchestrator,
+which is the only place a cross-plan contract can be checked:
+
+- `U5-B` creates `src/render/clip.ts` exporting `CLIP_MARKER = '...[shortened]'`,
+  `CLIP_MARKER_GRAPHEMES` and `clipWithMarker(text, max)`.
+- `U7` imports `clipWithMarker` and `CLIP_MARKER` from exactly that path, and calls it as
+  `clipWithMarker(sections.join('\n\n'), BANNER_MAX_GRAPHEMES)`.
+
+Path, names and arity agree. So does the semantics, which is the part that actually matters for `O3`:
+`U5`'s implementation computes `budget = max - CLIP_MARKER_GRAPHEMES`, and `U7`'s rationale
+independently states "the marker's room is reserved inside the limit, not added on top of it". Two
+authors who could not read each other landed on the same rule because `O3` states it. **No change to
+either plan.** `U7`'s stop condition on the module's existence stays — it is the right instrument.
+
+### Ownership: `U7` takes `src/server/instructions.ts`
+
+`B31` is guidance, and `U7` established that skill text cannot hold it: the shipped skills census
+halts on any prose line and rejects `may`, `must` and `when`. It lands in the published MCP server
+instructions instead, growing them 1,364 -> 1,654 bytes against a 2,048-byte ceiling. That file is
+owned by no unit — `U6` owns `resources.ts`, `resource-render.ts` and `completions.ts`, not
+`instructions.ts` — so `U7` takes it under `OR11`, enumerated in its section 0.
+
+### Two rulings `U7` made that stand
+
+**The post-tool-use exclusion is not authored.** `B30` says the verdict excludes commits authored by
+the post-tool-use hook, but `B33` deletes that hook's write in the same unit. After `B33` it can
+author no future commit, and historical ones sit at or before the per-session baseline sha and are
+excluded by construction. Authoring the filter would ship an unreachable predicate, which `DG1`
+forbids. Correct, and the SPEC's clause is satisfied by construction rather than by code.
+
+**No module joins the spawn allowlist, and `S2` holds.** The new `src/hooklib/ledger-presence.ts`
+calls `git()` from the already-allowlisted `src/store/git.ts` and contains no spawn token itself. No
+record type reaches `src/store/git.ts` — the ref is read as a sha string and never parsed. `U7`'s
+stop condition correctly names `U1-D` per `OR25`.
+
+### The `U7` -> `U8` window is not a regression
+
+`B34` stops `debrief` passing `last_session` before `U8` derives it. `U7` established that the
+shipped skill never passed it in the first place — that is `D10` — and `park_thread` still accepts
+it. So `next_step` is refreshed every debrief where previously nothing was, and `last_session` is
+exactly as stale as it already was. The interval strictly improves. The SPEC's risk "a spine field is
+dropped before its replacement exists" is real in principle and empty in fact here; `U8` still closes
+it.
