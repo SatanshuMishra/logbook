@@ -12,7 +12,7 @@
 | **Wave** | 2 |
 | **Branch** | `feat/u4-criterion-contract-a`, cut from `main`, pull request targets `main` |
 | **PR title scope** | `criteria` |
-| **Version bump** | Baseline `1.6.2` -> `2.0.0` per orchestrator ruling OR1. MAJOR, because the published `open_thread.completion_criteria` argument changes from an array of strings to an array of objects. Step 9 performs it as a read-then-increment |
+| **Version bump** | Baseline `1.6.2` -> `2.0.0` per orchestrator ruling OR1 as revised by OR23. MAJOR, because the published `open_thread.completion_criteria` argument changes from an array of strings to an array of objects. Step 15 performs it as a read-then-increment |
 | **Owns** | `src/server/tools/open_thread.ts`, `src/server/tools/amend_criteria.ts` |
 | **Also edits (to keep the tree green)** | `src/domain/criteria.ts` — see section 3, divergence `DIV-A2`. It is edited by no other unit in this wave |
 | **Creates** | `test/contract/criterion-contract.test.ts` |
@@ -21,6 +21,7 @@
 
 - **Criterion.** One statement of what must be true before a thread of work can be called finished. Opening a thread with none is refused.
 - **Check.** The re-runnable thing that decides whether a criterion is true — a command, a query, an observation someone other than the claimant can repeat. This unit makes it a required argument wherever a criterion is created.
+- **`result` and `result_status`.** The two values recorded when a criterion is later marked done. `result_status` has exactly two values: `verified` means the check was run and `result` is what it returned; `unverified-reasoned` means the check could not be run and `result` states specifically why. It describes **this run**, never the quality of the check. This unit writes both as `null` at creation time, because nothing has been observed yet.
 - **Refusal.** This project's structured rejection. It always carries four parts: the field that was wrong, what that field accepts, a valid example, and whether a retry can succeed.
 - **Escaping.** `escapeStored` rewrites control characters into printable tokens before a value is stored. Every character cap in this repository is measured on the escaped form, never on the raw input.
 
@@ -28,11 +29,11 @@
 
 1. `open_thread` refuses a criterion carrying no `check`, and the refusal names the field `completion_criteria.0.check`. — `B8`, `A4`
 2. `open_thread` stores, on each criterion it creates, the escaped `check` it was given, and stores `result` and `result_status` as `null`. — `B8`
-3. `open_thread` refuses a `check` whose escaped form exceeds `CRITERION_CHECK_MAX`, naming `completion_criteria`, the limit, the observed length and a remedy, and stores nothing. — `B8`, and plan invariant `P2`: a path that cannot do what was asked refuses rather than shortening the value to fit
+3. `open_thread` refuses a `check` whose escaped form exceeds `CRITERION_CHECK_MAX`, naming `completion_criteria`, the limit, the observed length and a remedy, and stores nothing. — `B8`
 4. `amend_criteria` refuses an `insert` carrying no `check`, and the refusal names the field `check`. — `B10`, `A4`
 5. `amend_criteria` stores, on an inserted criterion, the escaped `check` it was given. — `B10`
-6. `npm test` reports `fail 0` and exits 0; `npm run typecheck` exits 0; `node scripts/check-packaging.mjs` prints `check-packaging: ok` and exits 0. — plan invariants `P1` and `P4`
-7. `package.json` and `.claude-plugin/plugin.json` carry the same version, one MAJOR step above the version read at the start of the work. — plan invariant `P4`
+
+Two standing plan invariants bind this unit as well. They are not numbered above, because the ceiling is built from the unit's behavioural rules, the clauses of its green criteria and its assigned invariants, and from nothing else. They are verified in section 8 and enforced by section 11: `P1`, `npm test` and `npm run typecheck` pass on every merge commit; and `P4`, `package.json` and `.claude-plugin/plugin.json` bump in the same commit and `node scripts/check-packaging.mjs` passes.
 
 Anything discovered above this list is appended to `docs/plans/2026-08-28-continuity-goal-model/FILED.md` as a new item with its evidence, and is not folded into this plan.
 
@@ -222,9 +223,10 @@ Measured headroom: the largest thread record in the live store is 39,079 bytes, 
 
 - **`DIV-A1` — the external decomposition procedure is absent, and nothing here depends on it.** `~/.claude/skills/mitosis/SKILL.md` does not exist on disk. This plan was written from the planning brief and the orchestrator rulings alone, which are jointly self-contained.
 - **`DIV-A2` — this unit edits `src/domain/criteria.ts`, which the SPEC's file ownership does not assign to it.** The SPEC gives U4 `src/server/tools/{open_thread,update_thread,amend_criteria,close_thread}.ts`. `amend_criteria` does not construct the criterion it inserts; `insertCriterion` in `src/domain/criteria.ts:114-169` does, and it is also where criterion text is escaped and cap-refused. Requiring a check on insert without touching that file would mean re-implementing escaping and the cap refusal inside the tool, a second copy of logic that already has one home. Ruling applied: this unit also edits `src/domain/criteria.ts` and enumerates it in section 0. No other unit in this wave owns or edits that file — checked against the wave's four units, which own `src/render/briefing.ts` and `roster.ts`, `src/server/{resources,resource-render,completions}.ts`, and the hooks tree respectively.
-- **`DIV-A3` — the unit is split, and this is part A.** Applied to a throwaway copy of the tree and measured, the whole unit is 760 changed lines, 1.9 times the 400-line review ceiling. It is split at the seam between creating a criterion and completing one. This document is part A and lands first. Part B is `docs/plans/2026-08-28-continuity-goal-model/U4-criterion-contract-b.md`.
+- **`DIV-A3` — the unit is split, and this is part A.** Applied to a throwaway copy of the tree and measured, the two halves together are 771 changed lines against one base, which is 1.9 times the 400-line review ceiling. The unit is split at the seam between creating a criterion and completing one. This document is part A and lands first; the second half is a separate unit, cut from a `main` that already contains this one.
 - **`DIV-A4` — this is a breaking input change, and the SPEC names only the other half as one.** The SPEC states explicitly that changing `update_thread.criteria_done` is a breaking input change and says nothing of the kind about `open_thread`. Requiring a check changes the published type of `open_thread.completion_criteria` from an array of strings to an array of objects, which breaks every external caller exactly as the other change does. Recorded here, and covered by the MAJOR version bump in step 15.
 - **`DIV-A5` — `Criterion.kind` is retained.** The schema unit's census found a live reader at `src/merge/field-merge.ts:151`, consumed at `:168-170`, where a divergence raises a merge conflict. `amend_criteria`'s `kind` argument is therefore left exactly as it is by this unit.
+- **`DIV-A6` — this document names the unit that follows it in a third place, beyond the two that the self-containment ruling allows.** The two allowed places are the `Required by` field in section 0 and the stop conditions in section 11. The third is the split ruling immediately above, which the review-size ruling requires the plan itself to make. No occurrence instructs the implementer to read another plan; each states a fact about the repository or about this unit's own scope.
 
 ## 4. The change, step by step
 
@@ -608,6 +610,8 @@ Rationale: `B10`. The worked example in the description must be a call that succ
    node -p "require('./package.json').version"
    ```
 
+   Expect exit 0. The output is the current version string, for example `1.6.2`; it is read, not compared against a number written here.
+
 2. Compute the next version by setting MAJOR to MAJOR plus one, MINOR to 0 and PATCH to 0. This unit is the MAJOR step; the published `open_thread.completion_criteria` argument changes shape.
 
 3. Write that exact value into the `"version"` field of `package.json` and into the `"version"` field of `.claude-plugin/plugin.json`, in the same commit. Change nothing else in either file.
@@ -642,6 +646,7 @@ import { amendCriteriaTool } from '../../src/server/tools/amend_criteria.ts'
 import { recordDecisionTool } from '../../src/server/tools/record_decision.ts'
 import type { Criterion } from '../../src/schema/thread.ts'
 import { openStore } from '../../src/store/records.ts'
+import * as caps from '../../src/schema/caps.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { rawGit } from '../support/git-fixture.ts'
 
@@ -773,7 +778,37 @@ test('criterion.amend-criteria-stores-the-check-on-an-inserted-criterion', async
     assert.equal(found?.check, 'node --test test/sync/two-clones.test.ts exits 0')
   })
 })
+
+test('criterion.open-thread-refuses-a-check-that-overflows-its-cap-once-escaped', async () => {
+  await withCriterionFixture(async (rt) => {
+    const refused = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
+      title: 'a thread whose criterion check overflows its cap once escaped',
+      slug: 'over-cap-check-thread',
+      completion_criteria: [
+        { text: 'the health check ships', check: String.fromCharCode(1).repeat(84) }
+      ]
+    })
+    assert.equal(refused.ok, false)
+    if (refused.ok) throw new Error('expected open_thread to refuse a check that overflows its cap once escaped')
+    assert.equal(refused.refusal.field, 'completion_criteria')
+    assert.equal(
+      refused.refusal.accepted,
+      `at most ${caps.CRITERION_CHECK_MAX} characters after escaping, per check`
+    )
+    assert.equal(refused.refusal.example, 'npm test exits 0')
+    assert.equal(refused.refusal.retryable, true)
+    assert.equal(
+      refused.refusal.message,
+      `completion_criteria[0].check exceeds its cap of ${caps.CRITERION_CHECK_MAX} characters after escaping; observed 504; remedy: shorten the check and retry.`
+    )
+    const opened = openStore(rt, rt.cwd)
+    if (!opened.ok) throw new Error('criterion fixture: the store did not open')
+    assert.equal(opened.value.readThreads().length, 0)
+  })
+})
 ```
+
+`String.fromCharCode(1).repeat(84)` is 84 characters raw, which passes the schema's `maxLength` of 500, and 504 characters once `escapeStored` expands each control character into the six-character token `U+0001`, which is over the same 500-character cap. That is the only way to reach the handler's own cap branch, and the numbers were measured while this plan was written. The same technique is already used against sibling fields at `test/contract/no-path.test.ts:163`.
 
 ### 5.2 Which test discharges which acceptance criterion
 
@@ -781,13 +816,11 @@ test('criterion.amend-criteria-stores-the-check-on-an-inserted-criterion', async
 |---|---|
 | 1 — refuses a criterion with no check (`B8`, `A4`) | `criterion.open-thread-refuses-a-criterion-carrying-no-check` |
 | 2 — stores the check (`B8`) | `criterion.open-thread-stores-the-check-it-was-given` |
-| 3 — refuses an over-cap check (`B8`, `P2`) | `criterion.text-cap-refusal-is-complete` in `test/unit/criteria.test.ts` covers the sibling cap through the same helper; the `open_thread` branch added by step 6 is covered by the mutation in section 7, item `M-A2b`. See the honesty note below |
+| 3 — refuses an over-cap check (`B8`) | `criterion.open-thread-refuses-a-check-that-overflows-its-cap-once-escaped` |
 | 4 — refuses an insert with no check (`B10`, `A4`) | `criterion.amend-criteria-refuses-an-insert-carrying-no-check` |
 | 5 — stores the check on insert (`B10`) | `criterion.amend-criteria-stores-the-check-on-an-inserted-criterion` |
-| 6 — the suite, the typecheck and the packaging check (`P1`, `P4`) | section 8 |
-| 7 — the two manifests agree (`P4`) | `node scripts/check-packaging.mjs` in section 8 |
 
-**Honesty note on acceptance criterion 3.** No new test asserts the over-cap check refusal from `open_thread`. The reason is that the whole-call refusal on an over-cap value is already asserted for the sibling field by `open_thread.title-cap-is-checked-after-escaping` (`test/spawn/lifecycle.test.ts:617`) and for the insert path by `criteria.text-cap-refusal-is-complete` (`test/unit/criteria.test.ts:115`), and adding a third assertion of the same mechanism would duplicate a shipped test rather than add trust. The criterion ships with honesty-ladder status **`unverified-reasoned`** for the `open_thread` branch specifically: the code is written and reviewed, and it is not covered by a test of its own. It is not weakened, and no proxy assertion is substituted for it.
+Every acceptance criterion that carries a behavioural change has a test of its own, and every one of those tests is red at the parent commit. No criterion in this unit ships on the honesty ladder.
 
 ### 5.3 Existing tests updated, and why each one is answered rather than excluded
 
@@ -1119,7 +1152,7 @@ Procedure, run from the repository root on a clean checkout of the parent commit
    node --test test/contract/criterion-contract.test.ts
    ```
 
-3. Expect exit 1 and all four tests failing, with these exact assertions:
+3. Expect exit 1 and all five tests failing, with these exact assertions:
 
    - `criterion.open-thread-refuses-a-criterion-carrying-no-check` —
      `AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:` with `actual: 'completion_criteria.0'` and `expected: 'completion_criteria.0.check'`.
@@ -1129,10 +1162,12 @@ Procedure, run from the repository root on a clean checkout of the parent commit
      `actual: true`, `expected: false`.
    - `criterion.amend-criteria-stores-the-check-on-an-inserted-criterion` —
      `actual: undefined`, `expected: 'node --test test/sync/two-clones.test.ts exits 0'`.
+   - `criterion.open-thread-refuses-a-check-that-overflows-its-cap-once-escaped` —
+     `AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:` with `true !== false`, on the `refused.ok` assertion.
 
 4. Delete the file again before applying section 4.
 
-All four failures above were produced and read while this plan was written, against a tree carrying the parent's schema and none of section 4's edits.
+All five failures above were produced and read while this plan was written, against a tree carrying the parent's schema and none of section 4's edits. The run reported `ℹ pass 0`, `ℹ fail 5`.
 
 ## 7. Inertness mutation
 
@@ -1142,9 +1177,9 @@ Each mutation is applied on top of the finished change, the named test is run, a
 
 Edit `src/server/tools/open_thread.ts`. In `CriterionCreateSchema`, insert `.optional()` between `.max(caps.CRITERION_CHECK_MAX)` and `.describe(...)` on the `check` field.
 
-Run `node --test test/contract/criterion-contract.test.ts`.
+Run `node --test test/contract/criterion-contract.test.ts`. Expect exit 1 and:
 
-Expect `✖ criterion.open-thread-refuses-a-criterion-carrying-no-check`, with `actual: true`, `expected: false` on the `refusal.ok` assertion.
+`✖ criterion.open-thread-refuses-a-criterion-carrying-no-check`, with `actual: true`, `expected: false` on the `refusal.ok` assertion.
 
 Restore by deleting the inserted `.optional()` line.
 
@@ -1152,9 +1187,9 @@ Restore by deleting the inserted `.optional()` line.
 
 Edit `src/server/tools/open_thread.ts`. In the criterion built by step 7, change `check: entry.check,` to `check: null,`.
 
-Run `node --test test/contract/criterion-contract.test.ts`.
+Run `node --test test/contract/criterion-contract.test.ts`. Expect exit 1 and:
 
-Expect `✖ criterion.open-thread-stores-the-check-it-was-given`.
+`✖ criterion.open-thread-stores-the-check-it-was-given`.
 
 Restore by changing `check: null,` back to `check: entry.check,`.
 
@@ -1162,9 +1197,11 @@ Restore by changing `check: null,` back to `check: entry.check,`.
 
 Edit `src/server/tools/open_thread.ts`. Delete the whole `oversizedCheckIndex` block added by step 6.
 
-Run `npm run typecheck`.
+Run `node --test test/contract/criterion-contract.test.ts`. Expect exit 1.
 
-Expect exit 0 and no output, because `criterionCheckCapRefusal` becomes unused but is not exported, and the project's typecheck does not fail on an unused module-level constant. **This mutation has no test that turns red**, which is the honest content of the note in section 5.2: acceptance criterion 3 ships as `unverified-reasoned`. Restore by re-applying step 6.
+Expect `✖ criterion.open-thread-refuses-a-check-that-overflows-its-cap-once-escaped`, with `actual: 'thread'` and `expected: 'completion_criteria'` — the oversized check then survives as far as the whole-record validator, which names the record rather than the field.
+
+Restore by re-applying step 6.
 
 ### `M-A3` — acceptance criterion 4
 
@@ -1174,9 +1211,9 @@ Edit `src/server/tools/amend_criteria.ts`. Delete this whole line:
       if (input.check === undefined) return { ok: false, refusal: missingFieldRefusal('check', 'insert') }
 ```
 
-Run `node --test test/contract/criterion-contract.test.ts`.
+Run `node --test test/contract/criterion-contract.test.ts`. Expect exit 1 and:
 
-Expect `✖ criterion.amend-criteria-refuses-an-insert-carrying-no-check`.
+`✖ criterion.amend-criteria-refuses-an-insert-carrying-no-check`.
 
 Restore by re-inserting the deleted line immediately after the `kind` guard.
 
@@ -1184,9 +1221,9 @@ Restore by re-inserting the deleted line immediately after the `kind` guard.
 
 Edit `src/domain/criteria.ts`. In the criterion built by step 10, change `check: escapedCheck,` to `check: null,`.
 
-Run `node --test test/contract/criterion-contract.test.ts`.
+Run `node --test test/contract/criterion-contract.test.ts`. Expect exit 1 and:
 
-Expect `✖ criterion.amend-criteria-stores-the-check-on-an-inserted-criterion`.
+`✖ criterion.amend-criteria-stores-the-check-on-an-inserted-criterion`.
 
 Restore by changing `check: null,` back to `check: escapedCheck,`.
 
@@ -1207,18 +1244,19 @@ Run all four, from the repository root, after every step in sections 4 and 5 has
 3. ```
    node --test test/contract/criterion-contract.test.ts
    ```
-   Expect exit 0, and these four lines each prefixed `✔`:
+   Expect exit 0, the summary line `ℹ fail 0`, and these five lines each prefixed `✔`:
    `criterion.open-thread-refuses-a-criterion-carrying-no-check`,
    `criterion.open-thread-stores-the-check-it-was-given`,
    `criterion.amend-criteria-refuses-an-insert-carrying-no-check`,
-   `criterion.amend-criteria-stores-the-check-on-an-inserted-criterion`.
+   `criterion.amend-criteria-stores-the-check-on-an-inserted-criterion`,
+   `criterion.open-thread-refuses-a-check-that-overflows-its-cap-once-escaped`.
 
 4. ```
    npm test
    ```
-   Expect exit 0 and the summary line `ℹ fail 0`. Do not compare the `ℹ tests` count against any number written down anywhere; this unit adds four tests to whatever the parent carried, and a pinned total is a test that fails on unrelated growth.
+   Expect exit 0 and the summary line `ℹ fail 0`. Do not compare the `ℹ tests` count against any number written down anywhere; this unit adds five tests to whatever the parent carried, and a pinned total is a test that fails on unrelated growth.
 
-   The full suite was run under this exact change on a throwaway copy of the tree while this plan was written: `ℹ tests 440`, `ℹ pass 440`, `ℹ fail 0`, exit 0.
+   The full suite was run under this exact change on a throwaway copy of the tree while this plan was written: `ℹ tests 441`, `ℹ pass 441`, `ℹ fail 0`, exit 0.
 
 5. **Never run `npm ci` or `npm install`.** `node_modules` is tracked in this repository and an install rewrites tracked files.
 
@@ -1285,13 +1323,14 @@ node ~/.claude/lib/git/pr.mjs pr-create \
   --verified "npm test - fail 0, exit 0" \
   --verified "npm run typecheck - exit 0, no output" \
   --verified "node scripts/check-packaging.mjs - check-packaging: ok, exit 0" \
-  --verified "new acceptance tests red on the parent commit - 4 of 4 failed" \
-  --verified "inertness mutation on each behavioural criterion - 4 of 5 turned their test red" \
-  --not-verified "the over-cap check refusal from open_thread - no test of its own; unverified-reasoned" \
+  --verified "new acceptance tests red on the parent commit - 5 of 5 failed" \
+  --verified "inertness mutation on each behavioural criterion - 5 mutations, every named test turned red" \
   --not-verified "npm run mutate - not run"
 ```
 
-Measured diff size: **363 changed lines — 112 production, 251 test.** Measured by applying every step in sections 4 and 5 to a throwaway copy of the tree and diffing it against the unmodified copy. That is inside the 400-line review ceiling.
+Measured diff size: **392 changed lines — 112 production, 280 test.** Measured by applying every step in sections 4 and 5 to a throwaway copy of the tree and diffing it against the unmodified copy. That is inside the 400-line review ceiling.
+
+Expect the command to exit 0 and to print the URL of the created pull request on its last line. A non-zero exit is a stop condition: report it and open no pull request by any other means.
 
 ## 11. Stop conditions
 
@@ -1299,7 +1338,7 @@ For every condition below: **STOP and report; do not improvise.**
 
 ### 11.1 The schema fields this unit writes into must already exist
 
-Run:
+Run, and expect exit 0:
 
 ```
 node -e "const t=require('fs').readFileSync('src/schema/thread.ts','utf8');console.log(['check','result','result_status'].every(f=>t.includes(f+': ')))"
@@ -1307,7 +1346,7 @@ node -e "const t=require('fs').readFileSync('src/schema/thread.ts','utf8');conso
 
 If the output is not `true`, the schema unit has not landed on this branch's base. STOP and report; do not improvise.
 
-Run:
+Run, and expect exit 0:
 
 ```
 node -e "const c=require('fs').readFileSync('src/schema/caps.ts','utf8');console.log(c.includes('CRITERION_CHECK_MAX'))"
@@ -1317,7 +1356,7 @@ If the output is not `true`, the cap this unit measures against does not exist. 
 
 ### 11.2 The two manifests must agree before anything is changed
 
-Run:
+Run, and expect exit 0:
 
 ```
 node -e "console.log(require('./package.json').version, require('./.claude-plugin/plugin.json').version)"

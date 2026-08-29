@@ -924,3 +924,45 @@ not a technical one — no unit owns the file and its caller is a maintenance sc
 
 `U5-A` remeasured at **762 lines** (177 production / 585 test), up from 683, and keeps its `OR16`
 exception on the unchanged shown ground. `U5-B` 310 and `U5-C` 202 are unmoved.
+
+## OR30 — `U4` splits into two, both MAJOR, and takes `src/domain/criteria.ts`
+
+`U4` measured at **771 changed lines** end-to-end, 1.9x the ceiling, and split at the seam between
+creating a criterion and completing one.
+
+| Part | Carries | Branch | Type | Lines (prod/test) |
+| --- | --- | --- | --- | --- |
+| U4-A Creating a criterion | `B8`, `B10`, `A4` | `feat/u4-criterion-contract-a` | feat (breaking) | 392 (112/280) |
+| U4-B Completing a criterion | `B9`, `B41`, `A3`, the `A2` share | `feat/u4-criterion-contract-b` | feat (breaking) | 383 (142/241) |
+
+Both are under the ceiling. Neither needs an exception.
+
+**Both halves take a MAJOR bump.** `A` changes `open_thread.completion_criteria` from string to
+object; `B` changes `update_thread.criteria_done` from id to object. Two breaking changes to a
+published MCP contract are two major versions, and `OR1` already settled the principle: semantic
+versioning answers to the published contract, not to the in-repo caller count. The ladder therefore
+lands in `3.x`, and `OR6`'s read-then-increment absorbs the cascade without re-authoring any plan.
+
+Rejected: one MAJOR across both, on the ground that they are one unit. A version is per merge, each
+merge is a release, and the second release breaks callers the first did not. Bundling the signal into
+the first would leave the second break unannounced — which is the whole failure mode the major bump
+exists to prevent.
+
+**`B8` is a breaking input change the SPEC does not name as one** (it names only `B9`). The SPEC is
+not wrong about `B8`'s behaviour, only silent about its blast radius; recorded here rather than as a
+defect in the SPEC.
+
+**No `!` in any pull request title.** The centralized `pr-create` tool accepts the type set
+`feat fix refactor docs test chore perf ci` and nothing else, so `feat!` is not available. The break
+is disclosed in the body: `--risk` names it, and `--what` states the shape callers must send now.
+
+**Ownership: `U4` takes `src/domain/criteria.ts`**, enumerated under an `Also edits (to keep the tree
+green):` line per `OR11`. `amend_criteria` delegates criterion construction there, so `B10` is
+unauthorable without it. No unit in the ladder owns that file — `U9` owns `src/domain/pointer.ts`,
+which is a different module — and no wave-2 unit touches it.
+
+**The refusal is a schema refusal, not a handler one, and that is correct.** `U4`'s divergence 3 is
+right: a handler refusal for the bare id array is unreachable without publishing an input schema that
+claims to accept a string it will always reject. A published schema that lies is worse than a
+narrower one. The refusal still carries all four parts — the field `criteria_done.0`, what is
+accepted, a valid example, and `retryable: true` — which is what `P2` actually requires.
