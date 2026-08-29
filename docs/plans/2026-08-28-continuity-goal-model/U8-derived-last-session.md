@@ -87,13 +87,14 @@ a breaking change from the one signal an external caller reads.
 string `park_thread` stamps on the entry it writes, and the one function that decides which entries
 belong to the previous session. No other unit in this ladder creates a module at that path.
 
-**Also edits, to keep the tree green** — files this unit does not own, edited only where the tree
+**Also edits (to keep the tree green):** files this unit does not own, edited only where the tree
 would not typecheck or the suite would not pass otherwise, each with its reason:
 
 | File | Part | Reason |
 | --- | --- | --- |
 | `src/server/tools/resume_thread.ts` | A | It is the only production caller of the briefing renderer. Without the session entries reaching it, the derivation is dead code and the unit's green cannot be observed |
 | `test/spawn/resume.test.ts` | A, B | It holds the end-to-end receipts for both parts, and one shipped test in it asserts that `park_thread` writes `last_session` |
+| `test/unit/briefing.test.ts` | A | Two golden whole-output tests in it render a thread that takes this unit's legacy branch, so their expectations gain the one line it adds. Ground truth 2.19 measures it. The item-completeness unit creates both and merges a whole wave earlier, so there is no simultaneous writer |
 | `test/support/published.ts` | B | It maps a sentence of `park_thread`'s published description to the arguments that provide it. Change one without the other and the shipped claim census halts |
 
 **SPEC anchors:** section 9 unit U8; section 8 rules B14, B23; section 7 defect D10; section 10's risk
@@ -476,6 +477,45 @@ What is wrong with it: it pins the removed argument as correct behaviour through
 `B14` cannot land while this assertion stands. It is replaced, not deleted, and the replacement
 asserts the same surrounding property — that a park call touches nothing it was not asked to touch.
 
+### 2.19 `test/unit/briefing.test.ts:176-178` and `:228-230` — two golden tests that take the legacy branch
+
+As the item-completeness unit leaves them. From
+`briefing.renders-exact-output-for-a-full-thread` (`test/unit/briefing.test.ts:98`), the expectation's
+last-session region:
+
+```ts
+    '**Last session:**',
+    '',
+    'wrote the first draft',
+```
+
+From `briefing.omits-empty-list-sections-entirely` (`:212`), the same region:
+
+```ts
+    '**Last session:**',
+    '',
+    'wrote the renderer',
+```
+
+What is wrong with them: nothing today, and they are quoted because this unit changes what they assert.
+Both are whole-output assertions — `assert.equal(rendered, expected)` at `:209` and `:239` — and both
+call the renderer with four arguments, so they pass no session entries. Both fixtures carry a non-empty
+stored `spine.last_session`, so both take this unit's legacy branch and both expectations gain exactly
+one line.
+
+Measured on a tree carrying the schema, criterion-contract and item-completeness units plus this one,
+all applied from their own blocks with zero mismatches:
+
+    node --test --experimental-strip-types test/unit/briefing.test.ts
+    tests 22, pass 20, fail 2, exit 1
+
+with both failures differing from expectation by the single line
+
+    + '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead\n'
+
+Left unrepaired this halts the implementer at stop condition 11.10, on two failures that are not the
+one tracked flake, and leaves the next unit's parent red.
+
 ---
 
 ## 3. Divergences from the SPEC
@@ -650,7 +690,7 @@ the order given. After the last step of each part the tree typechecks and the su
 5. Edit `.claude-plugin/plugin.json`. FIND the line `  "version": "CURRENT",` and REPLACE it with
    `  "version": "NEXT",`, substituting the two values.
 
-6. Run `node scripts/check-packaging.mjs`. Expect exit code 0 and no output.
+6. Run `node scripts/check-packaging.mjs`. Expect exit code 0 and the single line `check-packaging: ok`.
 
 Rationale: plan invariant `P4` requires both manifests to move in one commit.
 
@@ -1057,7 +1097,7 @@ executable on its own.
 4. In `package.json`, FIND `  "version": "CURRENT",` and REPLACE with `  "version": "NEXT",`.
 5. In `.claude-plugin/plugin.json`, FIND `  "version": "CURRENT",` and REPLACE with
    `  "version": "NEXT",`.
-6. Run `node scripts/check-packaging.mjs`. Expect exit code 0 and no output.
+6. Run `node scripts/check-packaging.mjs`. Expect exit code 0 and the single line `check-packaging: ok`.
 
 #### Step B2 — remove the published argument
 
@@ -1668,13 +1708,70 @@ test('park.refuses-a-last-session-argument', async () => {
 test('resume.last-session-renders-the-previous-sessions-entries-newest-first', async () => {
 ```
 
-### 5.4 Every acceptance criterion has a named test
+### 5.4 `test/unit/briefing.test.ts` — modified
+
+Two edits, both part A, applied in either order. Each updates a golden whole-output expectation to
+carry the one line this unit's legacy branch adds. Neither fixture is changed, and no assertion is
+removed, weakened or deleted.
+
+**Edit T5 (part A)** — REPLACE. FIND:
+
+```ts
+    '**Last session:**',
+    '',
+    'wrote the first draft',
+```
+
+REPLACE with:
+
+```ts
+    '**Last session:**',
+    '',
+    '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead',
+    'wrote the first draft',
+```
+
+**Edit T6 (part A)** — REPLACE. FIND:
+
+```ts
+    '**Last session:**',
+    '',
+    'wrote the renderer',
+```
+
+REPLACE with:
+
+```ts
+    '**Last session:**',
+    '',
+    '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead',
+    'wrote the renderer',
+```
+
+Each FIND occurs once in the file as the item-completeness unit leaves it; the two regions differ in
+their third line, which is what makes each unique.
+
+**Why the expectations change and the fixtures do not, decided here.** Neither test is about
+`last_session`: one pins the whole rendered output of a fully-populated thread, the other asserts that
+a section with nothing in it is omitted. Both fixtures hold a stored summary and no session log
+entries, which is precisely a thread recorded before this unit, so the legacy line is the correct
+output for each and a golden test that shows it is documenting real behaviour.
+
+**Rejected:** giving either fixture session log entries so it takes the derived branch instead. That
+changes what the test tests, and it would assert the derived rendering in a second place when section
+5.2 already asserts it precisely — one behaviour belongs in one home.
+**Rejected:** emptying `spine.last_session` on the second fixture so the section is omitted. It
+weakens a shipped whole-output assertion to avoid an expected line, and section 5.2 already covers the
+omitted case.
+
+### 5.5 Every acceptance criterion has a named test
 
 | Criterion | Test | File |
 | --- | --- | --- |
 | 1 | `briefing.last-session-renders-the-previous-sessions-entries-newest-first-with-their-ids`, and end to end `resume.last-session-renders-the-previous-sessions-entries-newest-first` | 5.2, 5.3 |
 | 2 | the six `session-log.*` segmentation tests | 5.1 |
 | 3 | `briefing.last-session-falls-back-to-the-stored-text-marked-as-legacy`, and end to end `resume.last-session-falls-back-to-the-stored-text-marked-as-legacy` | 5.2, 5.3 |
+| 3, again | `briefing.renders-exact-output-for-a-full-thread` and `briefing.omits-empty-list-sections-entirely` as edits T5 and T6 leave them, which pin the legacy line inside two whole-output assertions | 5.4 |
 | 4 | `briefing.deriving-last-session-deletes-nothing-from-the-record` | 5.2 |
 | 5 | `briefing.last-session-is-omitted-when-there-are-no-entries-and-no-stored-text` | 5.2 |
 | 6 | `briefing.a-session-entry-that-does-not-fit-the-budget-carries-the-clip-marker` and `briefing.a-session-entry-that-fits-renders-whole-with-no-marker` | 5.2 |
@@ -2075,15 +2172,27 @@ Run every command from the repository root, in this order, for each part.
 | # | Command | Expected exit code | Output substring that proves it |
 | --- | --- | --- | --- |
 | 1 | `npx tsc -p tsconfig.json --noEmit` | 0 | no output at all |
-| 2 | `node scripts/check-packaging.mjs` | 0 | no output at all |
+| 2 | `node scripts/check-packaging.mjs` | 0 | the single line `check-packaging: ok` |
 | 3 | `node --test --experimental-strip-types test/unit/session-log.test.ts` | 0 | `ℹ pass 7` and `ℹ fail 0` |
 | 4 | `node --test --experimental-strip-types test/unit/briefing-last-session.test.ts` | 0 | `ℹ pass 6` and `ℹ fail 0` |
+| 4b | `node --test --experimental-strip-types test/unit/briefing.test.ts` | 0 | `ℹ tests 22`, `ℹ pass 22` and `ℹ fail 0` |
 | 5 | `node --test --experimental-strip-types test/contract/render-census.test.ts` | 0 | `✔ render.no-unescaped-site` and `ℹ fail 0` |
 | 6 | `node --test --experimental-strip-types "test/contract/**/*.test.ts"` | 0 | `ℹ fail 0` |
 | 7 | `node --test --experimental-strip-types test/spawn/resume.test.ts` | 0 | `ℹ fail 0`, with `ℹ tests 24` for part A and `ℹ tests 25` for part B |
 | 8 | `npm test` | 0 | `ℹ fail 0` |
 
-Rows 3 and 4 apply to both parts: part A creates those two files and part B must leave them green.
+**Two kinds of row, distinguished because they are read differently.** Rows 3, 4, 4b and 7 run test
+files this plan creates or modifies; they are where this unit's own behaviour is proved. Rows 5 and 6
+run test files this plan does not touch at all — they are regression guards over two shipped censuses
+this unit could halt without meaning to: the render census, because this unit adds interpolated values
+to a censused file, and the published-claim census, because part B changes a published description. A
+guard that never goes red still earns its row; a reader who mistakes it for a receipt does not.
+
+Rows 3, 4 and 4b apply to both parts: part A creates the two new files and updates the golden one, and
+part B must leave all three green. **Row 4b is not optional.** Two golden whole-output assertions in
+that file render a thread that takes this unit's legacy branch, so without edits T5 and T6 it reports
+`ℹ tests 22, ℹ pass 20, ℹ fail 2, exit 1` and `npm test` in row 8 goes red on two tests that are not
+the one tracked flake — which stop condition 11.10 then halts on, correctly.
 
 **Never run `npm ci` or `npm install`.** `node_modules` is tracked in this repository and an install
 rewrites tracked files.
@@ -2119,7 +2228,9 @@ Files: `package.json`, `.claude-plugin/plugin.json`. Contains step A1.
 
 Files: `src/domain/session-log.ts`, `src/render/briefing.ts`, `src/server/tools/resume_thread.ts`,
 `test/unit/session-log.test.ts`, `test/unit/briefing-last-session.test.ts`,
-`test/spawn/resume.test.ts`. Contains steps A2, A3, A4, A5, A6 and test edit T1.
+`test/unit/briefing.test.ts`, `test/spawn/resume.test.ts`. Contains steps A2, A3, A4, A5, A6 and test
+edits T1, T5 and T6. Edits T5 and T6 belong in this commit and no earlier one: they are red without
+the production change and green with it.
 
 ### Part B, on `feat/u8-derived-last-session-b`
 
@@ -2149,14 +2260,15 @@ reading `git diff --numstat`. Never estimated.
 
 | Cut | Changed lines | Production | Test | Version manifests |
 | --- | --- | --- | --- | --- |
-| Unsplit | 421 | 82 | 335 | 4 |
-| **U8-A** | **356** | 64 | 288 | 4 |
+| Unsplit | 423 | 82 | 337 | 4 |
+| **U8-A** | **358** | 64 | 290 | 4 |
 | **U8-B** | **69** | 18 | 47 | 4 |
 
-The two parts sum to 425 rather than 421 because each bumps the version, which is four lines counted
-twice.
+The two parts sum to 427 rather than 423 because each bumps the version, which is four lines counted
+twice. Both figures are two lines higher than an earlier measurement of this plan, which is edits T5
+and T6: two inserted lines, no deletion.
 
-**Ruled: split.** Unsplit the unit is 421 changed lines against a 400-line ceiling. The exception the
+**Ruled: split.** Unsplit the unit is 423 changed lines against a 400-line ceiling. The exception the
 ceiling allows applies only where splitting would destroy a red-on-parent receipt, and it does not
 apply here: section 6 shows each part reaching its own red at its own parent — part A through two
 end-to-end tests that compile and run there, part B through one. Both parts are then under the ceiling
@@ -2184,8 +2296,10 @@ node ~/.claude/lib/git/pr.mjs pr-create \
   --why "The entries describing the previous session were already recorded and already addressable, so the summary was being stored by hand when it could be derived." \
   --risk "A briefing for a thread with a long session log now carries more text, so the size search that fits a briefing into its budget shortens more values than before; every shortened value ends with the marker that says so." \
   --verified "npx tsc -p tsconfig.json --noEmit - exit 0" \
+  --verified "node scripts/check-packaging.mjs - check-packaging: ok" \
   --verified "node --test test/unit/session-log.test.ts - 7 pass, 0 fail" \
   --verified "node --test test/unit/briefing-last-session.test.ts - 6 pass, 0 fail" \
+  --verified "node --test test/unit/briefing.test.ts - 22 pass, 0 fail" \
   --verified "node --test test/spawn/resume.test.ts - 24 pass, 0 fail" \
   --verified "node --test test/contract/render-census.test.ts - render.no-unescaped-site passed, 0 fail" \
   --verified "npm test - 0 fail" \
@@ -2196,8 +2310,8 @@ Expect exit code `0` and a printed pull request URL beginning `https://github.co
 A non-zero exit code means the tool rejected a field value: read the rejection, correct that one value,
 and run it again. Never fall back to another way of opening a pull request.
 
-Diff size, which the implementer states from the value it measured: 356 changed lines, 64 production
-and 288 test, plus 4 lines of version manifest. Under the reviewable ceiling; no exception claimed.
+Diff size, which the implementer states from the value it measured: 358 changed lines, 64 production
+and 290 test, plus 4 lines of version manifest. Under the reviewable ceiling; no exception claimed.
 
 ### 10.3 Part B
 
@@ -2343,11 +2457,12 @@ After the last step of a part, run:
 git diff --name-only main -- test/
 ```
 
-For part A expect exactly these three paths and no others:
+For part A expect exactly these four paths and no others:
 
 ```
 test/spawn/resume.test.ts
 test/unit/briefing-last-session.test.ts
+test/unit/briefing.test.ts
 test/unit/session-log.test.ts
 ```
 
@@ -2424,14 +2539,16 @@ each as written. Section 11.7 is run once per edit, immediately before that edit
 
 **Version step.** Section 4 step A1, in full: read `package.json`'s version, confirm
 `.claude-plugin/plugin.json` prints the same string, increment MINOR and set PATCH to `0`, write the
-new value into both files, and run `node scripts/check-packaging.mjs` expecting exit code 0 and no
-output. The Conventional Commits type is `feat`.
+new value into both files, and run `node scripts/check-packaging.mjs` expecting exit code 0 and the
+single line `check-packaging: ok`. The Conventional Commits type is `feat`.
 
 **Steps, in order.** A1, A2, A3 (edits A3.1 through A3.10), A4, A5 (edits A5.1 through A5.3), A6.
 
 **Tests.** Create `test/unit/session-log.test.ts` in full from section 5.1. Create
 `test/unit/briefing-last-session.test.ts` in full from section 5.2. Apply test edit T1 from section 5.3
-to `test/spawn/resume.test.ts`.
+to `test/spawn/resume.test.ts`. Apply test edits T5 and T6 from section 5.4 to
+`test/unit/briefing.test.ts`; without them that file reports two failures and the full-suite gate goes
+red.
 
 **Red on the parent.** Section 6.1. On the parent, with only test edit T1 applied,
 `node --test --experimental-strip-types test/spawn/resume.test.ts` exits non-zero with `ℹ fail 2` and
@@ -2446,8 +2563,9 @@ plainly and section 7 supplies their proof instead.
 **Inertness mutations.** Sections 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7 and 7.9. Apply each, run its named
 command, confirm its named failure, then restore exactly.
 
-**Full verification.** Section 8, rows 1, 3, 4, 5, 6, 7 and 8. Row 7 expects `ℹ tests 24` and
-`ℹ fail 0`. Row 8 carries the full-suite rule quoted in section 11.10. Never run `npm ci` or
+**Full verification.** Section 8, rows 1, 3, 4, 4b, 5, 6, 7 and 8. Row 4b expects `ℹ tests 22` and
+`ℹ fail 0`. Row 7 expects `ℹ tests 24` and `ℹ fail 0`. Row 8 carries the full-suite rule quoted in
+section 11.10. Never run `npm ci` or
 `npm install`.
 
 **Commits.** Section 9, commits A1 and A2.
@@ -2477,7 +2595,8 @@ Section 11.7 is run once per edit, immediately before that edit is applied.
 **Version step.** Section 4 step B1, in full: read `package.json`'s version, confirm
 `.claude-plugin/plugin.json` prints the same string, increment MAJOR and set MINOR and PATCH to `0`,
 write the new value into both files, and run `node scripts/check-packaging.mjs` expecting exit code 0
-and no output. The Conventional Commits type is `feat`; the MAJOR bump is because removing an accepted
+and the single line `check-packaging: ok`. The Conventional Commits type is `feat`; the MAJOR bump is
+because removing an accepted
 argument from a tool published over the Model Context Protocol turns a call that succeeds today into a
 refusal.
 
@@ -2497,8 +2616,9 @@ order.
 **Inertness mutations.** Sections 7.8, 7.9, 7.10 and 7.11. Apply each, run its named command, confirm
 its named failure, then restore exactly.
 
-**Full verification.** Section 8, rows 1, 2, 3, 4, 5, 6, 7 and 8. Row 7 expects `ℹ tests 25` and
-`ℹ fail 0`. Row 8 carries the full-suite rule quoted in section 11.10. Never run `npm ci` or
+**Full verification.** Section 8, rows 1, 2, 3, 4, 4b, 5, 6, 7 and 8. Row 4b expects `ℹ tests 22` and
+`ℹ fail 0`. Row 7 expects `ℹ tests 25` and `ℹ fail 0`. Row 8 carries the full-suite rule quoted in
+section 11.10. Never run `npm ci` or
 `npm install`.
 
 **Commits.** Section 9, commits B1, B2 and B3.
