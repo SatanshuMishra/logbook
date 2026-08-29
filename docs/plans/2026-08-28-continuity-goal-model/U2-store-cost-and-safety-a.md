@@ -8,7 +8,7 @@
 | **Depends on** | `U1 Schema foundations` must already be merged into `main` before this branch is cut. Section 11 carries the check that proves it |
 | **Required by** | `U2 …-b` (the safety half) edits `src/merge/sync.ts`, which this plan also edits. `…-b` is cut only after this one merges |
 | **Wave** | 1, second position |
-| **Branch name** | `perf/u2-store-cost-and-safety-a`, cut from `main` |
+| **Branch name** | `perf/u2a-store-cost`, cut from `main` |
 | **Version bump** | Baseline `1.6.1` -> `1.6.2` per orchestrator rulings OR1, OR23 and OR25. Applied as a read-then-increment in step 9, never as a hard-coded pair |
 | **Owns** | `src/store/records.ts`, `src/store/read-path.ts`, `src/merge/sync.ts` |
 | **Creates** | `test/store/open-cost.test.ts`, `test/store/materialise-cost.test.ts` |
@@ -1178,7 +1178,7 @@ Replace each number in the `--verified` lines below with the number section 8 ac
 ```
 node ~/.claude/lib/git/pr.mjs pr-create \
   --repo SatanshuMishra/logbook \
-  --head perf/u2-store-cost-and-safety-a \
+  --head perf/u2a-store-cost \
   --base main \
   --title "perf(store): read the ledger tree once instead of once per record" \
   --what "Copying stored records out of git onto disk now costs two git processes however many records there are, instead of one process per record." \

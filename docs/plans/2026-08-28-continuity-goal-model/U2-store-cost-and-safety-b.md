@@ -8,7 +8,7 @@
 | **Depends on** | `U1 Schema foundations` and `U2 …-a` must both already be merged into `main` before this branch is cut. Section 11 carries the checks that prove both |
 | **Required by** | Nothing in wave 1 |
 | **Wave** | 1, second position, second half |
-| **Branch name** | `perf/u2-store-cost-and-safety-b`, cut from `main` |
+| **Branch name** | `fix/u2b-store-guard`, cut from `main` |
 | **Version bump** | Baseline `1.6.2` -> `1.6.3` per orchestrator rulings OR1, OR23 and OR25, as further adjusted for the split recorded in section 3. Applied as a read-then-increment in step 7, never as a hard-coded pair |
 | **Owns** | `src/store/single-store.ts`, `src/merge/sync.ts` |
 | **Creates** | No new source or test files |
@@ -752,7 +752,7 @@ Every `--verified` line below names a check listed in section 8; a line whose ch
 ```
 node ~/.claude/lib/git/pr.mjs pr-create \
   --repo SatanshuMishra/logbook \
-  --head perf/u2-store-cost-and-safety-b \
+  --head fix/u2b-store-guard \
   --base main \
   --title "fix(store): close two ways foreign data reached the ledger" \
   --what "A project that has two stores on this machine is now refused at open, naming both of them, instead of one being used and the other silently ignored." \
