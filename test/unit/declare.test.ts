@@ -263,6 +263,7 @@ test('schema.refusal-example-always-revalidates', () => {
     completion_criteria: [
       { id: '0'.repeat(26), ordinal: 1, text: 'a', done: false, kind: 'planned', struck_by: null }
     ],
+    artifacts: [{ id: '0'.repeat(26), label: 'a', pointer: 'a' }],
     spine: {
       active_goal: 'a',
       next_step: 'a',
@@ -310,6 +311,7 @@ test('schema.refusal-example-property.candidates-reach-nested-and-array-branches
     completion_criteria: [
       { id: '0'.repeat(26), ordinal: 1, text: 'a', done: false, kind: 'planned', struck_by: null }
     ],
+    artifacts: [{ id: '0'.repeat(26), label: 'a', pointer: 'a' }],
     spine: {
       active_goal: 'a',
       next_step: 'a',

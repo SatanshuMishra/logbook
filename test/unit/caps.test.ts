@@ -57,35 +57,46 @@ test('caps.refuse-whole-call', () => {
   assert.deepEqual(stored, beforeSnapshot)
 })
 
-test('caps.assert-contribution', () => {
+test('caps.open-risks-accumulate-past-the-old-element-cap', () => {
   const rt = testRuntime()
   const makeRisk = (label: string): Risk => ({ id: rt.ulid(), scope: 'test', text: `risk ${label}`, refs: [] })
-
-  const risks39 = Array.from({ length: caps.OPEN_RISKS_MAX_ELEMENTS - 1 }, (_, i) => makeRisk(String(i)))
-  const stored39: Spine = { ...baseSpine(), open_risks: risks39 }
-
-  const acceptResult = contributeToSpine(stored39, { open_risks: [makeRisk('new')] })
-  assert.equal(acceptResult.ok, true)
-  if (!acceptResult.ok) {
-    throw new Error('expected the 40th risk to be accepted')
-  }
-  assert.equal(acceptResult.value.open_risks.length, caps.OPEN_RISKS_MAX_ELEMENTS)
 
   const risks40 = Array.from({ length: caps.OPEN_RISKS_MAX_ELEMENTS }, (_, i) => makeRisk(String(i)))
   const stored40: Spine = { ...baseSpine(), open_risks: risks40 }
 
-  const refuseResult = contributeToSpine(stored40, { open_risks: [makeRisk('overflow')] })
+  const acceptResult = contributeToSpine(stored40, { open_risks: [makeRisk('forty-first')] })
+  assert.equal(acceptResult.ok, true)
+  if (!acceptResult.ok) {
+    throw new Error('expected the 41st risk to be accepted; open_risks is bounded by record size, not element count')
+  }
+  assert.equal(acceptResult.value.open_risks.length, caps.OPEN_RISKS_MAX_ELEMENTS + 1)
+})
+
+test('caps.key-decisions-still-refuse-on-their-element-cap', () => {
+  const rt = testRuntime()
+  const makeDecision = (label: string): KeyDecision => ({
+    id: rt.ulid(),
+    decision_id: rt.ulid(),
+    title: `decision ${label}`,
+    scope: 'test'
+  })
+  const stored: Spine = {
+    ...baseSpine(),
+    key_decisions: Array.from({ length: caps.KEY_DECISIONS_MAX_ELEMENTS }, (_, i) => makeDecision(String(i)))
+  }
+
+  const refuseResult = contributeToSpine(stored, { key_decisions: [makeDecision('overflow')] })
   assert.equal(refuseResult.ok, false)
   if (refuseResult.ok) {
-    throw new Error('expected the 41st risk to be refused')
+    throw new Error('expected the 201st key decision to be refused')
   }
-  assert.equal(refuseResult.field, 'risks_add')
+  assert.equal(refuseResult.field, 'key_decisions_add')
 })
 
 test('caps.assert-contribution-ignores-untouched-collections', () => {
   const rt = testRuntime()
   const makeRisk = (label: string): Risk => ({ id: rt.ulid(), scope: 'test', text: `risk ${label}`, refs: [] })
-  const overCapRisks = Array.from({ length: caps.OPEN_RISKS_MAX_ELEMENTS + 5 }, (_, i) => makeRisk(String(i)))
+  const overCapRisks = Array.from({ length: caps.KEY_DECISIONS_MAX_ELEMENTS + 5 }, (_, i) => makeRisk(String(i)))
   const stored: Spine = { ...baseSpine(), open_risks: overCapRisks }
 
   const result = contributeToSpine(stored, { next_step: 'a fresh next step' })
