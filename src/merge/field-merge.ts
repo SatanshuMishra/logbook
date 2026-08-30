@@ -21,6 +21,7 @@ export const THREAD_RULES: Record<keyof Thread | `spine.${keyof Spine}`, FieldRu
   blocked_by: 'conflict-on-divergence',
   predecessor_id: 'take-present',
   completion_criteria: 'union-by-id',
+  artifacts: 'union-by-id',
   spine: 'take-present',
   created_at: 'take-present',
   updated_at: 'take-later',

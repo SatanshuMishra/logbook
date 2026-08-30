@@ -7,18 +7,24 @@ import * as caps from './caps.ts'
 export type Ulid = string
 export type Iso8601 = string
 
+export type ResultStatus = 'verified' | 'unverified-reasoned'
+
 export type Criterion = {
   id: Ulid
   ordinal: number
   text: string
   done: boolean
   kind: 'planned' | 'detour'
+  check?: string | null | undefined
+  result?: string | null | undefined
+  result_status?: ResultStatus | null | undefined
   struck_by: Ulid | null
 }
 
 export type Risk = { id: Ulid; scope: string; text: string; refs: string[]; criterion_id?: Ulid | undefined }
 export type KeyDecision = { id: Ulid; decision_id: Ulid; title: string; scope: string; criterion_id?: Ulid | undefined }
 export type OutOfScope = { id: Ulid; text: string }
+export type Artifact = { id: Ulid; label: string; pointer: string }
 
 export type Spine = {
   active_goal: string
@@ -37,6 +43,7 @@ export type Thread = {
   blocked_by: string | null
   predecessor_id?: Ulid | undefined
   completion_criteria: Criterion[]
+  artifacts?: Artifact[] | undefined
   spine: Spine
   created_at: Iso8601
   updated_at: Iso8601
@@ -57,6 +64,29 @@ const CriterionSchema = structural(
     done: structural(z.boolean().describe('whether this criterion has been satisfied')),
     kind: structural(
       z.enum(['planned', 'detour']).describe('whether this criterion was planned up front or added mid-thread')
+    ),
+    check: content(
+      z
+        .string()
+        .max(caps.CRITERION_CHECK_MAX)
+        .nullable()
+        .optional()
+        .describe('the re-runnable check that decides whether this criterion is true, absent when none is recorded')
+    ),
+    result: content(
+      z
+        .string()
+        .max(caps.CRITERION_RESULT_MAX)
+        .nullable()
+        .optional()
+        .describe('what the check returned when this criterion was marked done, absent when none is recorded')
+    ),
+    result_status: structural(
+      z
+        .enum(['verified', 'unverified-reasoned'])
+        .nullable()
+        .optional()
+        .describe('whether the recorded result came from running the check, absent when none is recorded')
     ),
     struck_by: structural(
       z
@@ -105,15 +135,19 @@ const OutOfScopeSchema = structural(
   })
 )
 
+const ArtifactSchema = structural(
+  z.object({
+    id: ulidField('the artifact entry identity, a ULID'),
+    label: content(z.string().min(1).max(caps.ARTIFACT_LABEL_MAX).describe('what this artifact is, in a few words')),
+    pointer: pointer(caps.ARTIFACT_POINTER_MAX, 'a path or url naming where this artifact lives')
+  })
+)
+
 const SpineSchema = z.object({
   active_goal: content(z.string().max(caps.SPINE_ACTIVE_GOAL_MAX).describe('the thread goal currently being worked')),
   next_step: content(z.string().max(caps.SPINE_NEXT_STEP_MAX).describe('the next concrete step in this thread')),
   last_session: content(z.string().max(caps.SPINE_LAST_SESSION_MAX).describe('a summary of the most recent session')),
-  open_risks: z
-    .array(RiskSchema)
-    .max(caps.OPEN_RISKS_MAX_ELEMENTS)
-    .describe('risks still open on this thread')
-    .meta({ class: 'structural' }),
+  open_risks: z.array(RiskSchema).describe('risks still open on this thread').meta({ class: 'structural' }),
   key_decisions: z
     .array(KeyDecisionSchema)
     .max(caps.KEY_DECISIONS_MAX_ELEMENTS)
@@ -147,6 +181,11 @@ const ThreadShape = z.object({
     .array(CriterionSchema)
     .max(caps.CRITERIA_RETENTION_MAX_ELEMENTS)
     .describe('the criteria that define this thread as done, struck criteria retained')
+    .meta({ class: 'structural' }),
+  artifacts: z
+    .array(ArtifactSchema)
+    .optional()
+    .describe('the artifacts this thread produced, each a label and a pointer')
     .meta({ class: 'structural' }),
   spine: SpineSchema.describe('the progressive summary of this thread').meta({ class: 'structural' }),
   created_at: isoField('when this thread was created'),
