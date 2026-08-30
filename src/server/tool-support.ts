@@ -99,9 +99,9 @@ const overByteCapRefusal = (thread: Thread, observed: number): Refusal => {
   }
 }
 
-const invalidThreadRecordRefusal = (issue: string): Refusal => ({
+const invalidThreadRecordRefusal = (field: string, issue: string): Refusal => ({
   ok: false,
-  field: 'thread',
+  field,
   accepted: 'a thread record that matches its stored shape',
   example: 'shorten or remove the entry that failed validation and retry',
   retryable: true,
@@ -128,7 +128,7 @@ export const commitThread = (store: Store, thread: Thread, message: string): Att
   }
   const validated = ThreadRecord.parse(thread)
   if (!validated.ok) {
-    return { ok: false, refusal: invalidThreadRecordRefusal(validated.message) }
+    return { ok: false, refusal: invalidThreadRecordRefusal(validated.field, validated.message) }
   }
   const result = store.commit([{ kind: 'thread', record: validated.value }], message)
   if (!result.ok) {

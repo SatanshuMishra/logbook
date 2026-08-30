@@ -1,4 +1,4 @@
-import { ULID_PATTERN, SLUG_PATTERN, ISO_PATTERN } from './ids.ts'
+import { ULID_PATTERN, SLUG_PATTERN, ISO_PATTERN, SHA_PATTERN } from './ids.ts'
 
 export type JsonSchemaNode = Record<string, unknown>
 
@@ -43,6 +43,9 @@ const synthesiseString = (node: JsonSchemaNode): string => {
   }
   if (pattern === ISO_PATTERN.source) {
     return '2024-01-01T00:00:00.000Z'
+  }
+  if (pattern === SHA_PATTERN.source) {
+    return '0'.repeat(40)
   }
   const minLength = typeof node.minLength === 'number' ? node.minLength : 0
   const maxLength = typeof node.maxLength === 'number' ? node.maxLength : undefined
