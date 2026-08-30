@@ -24,8 +24,8 @@ const SCALAR_CAP: Record<ScalarField, number> = {
   last_session: caps.SPINE_LAST_SESSION_MAX
 }
 
-const COLLECTION_ELEMENTS_CAP: Record<CollectionField, number> = {
-  open_risks: caps.OPEN_RISKS_MAX_ELEMENTS,
+const COLLECTION_ELEMENTS_CAP: Record<CollectionField, number | null> = {
+  open_risks: null,
   key_decisions: caps.KEY_DECISIONS_MAX_ELEMENTS,
   out_of_scope: caps.OUT_OF_SCOPE_MAX_ELEMENTS
 }
@@ -62,6 +62,9 @@ const checkScalarField = (field: ScalarField, value: string | undefined): Refusa
 
 const checkCollectionCount = (field: CollectionField, storedCount: number, contributedCount: number): Refusal | null => {
   const limit = COLLECTION_ELEMENTS_CAP[field]
+  if (limit === null) {
+    return null
+  }
   const observed = storedCount + contributedCount
   if (observed > limit) {
     return capRefusal(
