@@ -16,20 +16,21 @@ export type Declared<T> = {
   readonly schema: z.ZodType<T>
   readonly jsonSchema: Record<string, unknown>
   parse: (input: unknown) => Ok<T> | Refusal
-  refuse: (issues: z.core.$ZodIssue[]) => Refusal
+  refuse: (issues: z.core.$ZodIssue[], input?: unknown) => Refusal
 }
 
 export const declare = <T>(name: string, schema: z.ZodType<T>): Declared<T> => {
   const jsonSchema = z.toJSONSchema(schema, { target: 'draft-7', io: 'input' }) as Record<string, unknown>
 
-  const refuse = (issues: z.core.$ZodIssue[]): Refusal => buildRefusal(jsonSchema, issues)
+  const refuse = (issues: z.core.$ZodIssue[], input?: unknown): Refusal =>
+    buildRefusal(jsonSchema, issues, input)
 
   const parse = (input: unknown): Ok<T> | Refusal => {
     const result = schema.safeParse(input)
     if (result.success) {
       return { ok: true, value: result.data }
     }
-    return refuse(result.error.issues)
+    return refuse(result.error.issues, input)
   }
 
   return { name, schema, jsonSchema, parse, refuse }

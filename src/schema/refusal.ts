@@ -77,10 +77,52 @@ const renderExample = (root: JsonSchemaNode, node: JsonSchemaNode): string => {
 
 const isNonRetryable = (issue: z.core.$ZodIssue): boolean => issue.code === 'custom'
 
-const renderMessage = (field: string, accepted: string, example: string, retryable: boolean): string =>
-  `${field} was refused; it accepts ${accepted}; a valid example is ${example}; retryable=${retryable}.`
+const valueAtPath = (input: unknown, path: (string | number | symbol)[]): unknown => {
+  let cursor: unknown = input
+  for (const segment of path) {
+    if (cursor === null || typeof cursor !== 'object') return undefined
+    cursor = (cursor as Record<string, unknown>)[String(segment)]
+  }
+  return cursor
+}
 
-export const refuse = (jsonSchema: Record<string, unknown>, issues: z.core.$ZodIssue[]): Refusal => {
+const renderObserved = (input: unknown, issue: z.core.$ZodIssue): string | null => {
+  const value = valueAtPath(input, issue.path)
+  if (typeof value === 'string') return `${value.length} characters`
+  if (Array.isArray(value)) return `${value.length} entries`
+  return null
+}
+
+const renderRemedy = (issue: z.core.$ZodIssue): string => {
+  if (issue.code === 'too_big' && issue.origin === 'array') {
+    return `remove entries until at most ${String(issue.maximum)} remain and retry`
+  }
+  if (issue.code === 'too_big') {
+    return `shorten the value to at most ${String(issue.maximum)} and retry`
+  }
+  if (issue.code === 'too_small') {
+    return `lengthen the value to at least ${String(issue.minimum)} and retry`
+  }
+  return 'send a value matching what this field accepts and retry'
+}
+
+const renderMessage = (
+  field: string,
+  accepted: string,
+  observed: string | null,
+  example: string,
+  remedy: string,
+  retryable: boolean
+): string => {
+  const observedClause = observed === null ? '' : `observed ${observed}; `
+  return `${field} was refused; it accepts ${accepted}; ${observedClause}a valid example is ${example}; remedy: ${remedy}; retryable=${retryable}.`
+}
+
+export const refuse = (
+  jsonSchema: Record<string, unknown>,
+  issues: z.core.$ZodIssue[],
+  input?: unknown
+): Refusal => {
   const issue = issues[0]
   if (issue === undefined) {
     throw new Error('refuse called with no issues to derive a refusal from')
@@ -93,7 +135,8 @@ export const refuse = (jsonSchema: Record<string, unknown>, issues: z.core.$ZodI
   const accepted = renderAccepted(effectiveNode)
   const example = renderExample(jsonSchema, outerNode)
   const retryable = !isNonRetryable(issue)
-  const message = renderMessage(field, accepted, example, retryable)
+  const observed = renderObserved(input, issue)
+  const message = renderMessage(field, accepted, observed, example, renderRemedy(issue), retryable)
 
   return { ok: false, field, accepted, example, retryable, message }
 }
