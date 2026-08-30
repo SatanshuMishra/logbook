@@ -1140,3 +1140,77 @@ exactly what the SPEC states. It does NOT detect a published optional argument t
 supplied — measured: reverting `B11`'s `criterion_id` write turned no census assertion red, and only
 a dedicated behavioural test caught it. Widening `A6` to cover it would be promoting a finding into a
 verification mandate, which `receipts.md` forbids. Registered as `N12`.
+
+## OR34 — `U9`'s six rows, and the consolidated ladder
+
+`U9` splits six ways. **None is breaking to the published MCP contract**: `B15` and `B11` add optional
+arguments, `B12` removes a refusal, and `B39` is internal.
+
+| Part | Carries | Branch | Type | Lines (prod/test) |
+| --- | --- | --- | --- | --- |
+| U9-A Declared focus on resume | `B15` (resume), `B35` | `feat/u9a-declared-focus` | feat | 549 (142/407) |
+| U9-B Focus on update | `B15` (update) | `feat/u9b-update-thread-focus` | feat | 280 (79/201) |
+| U9-C Write tools ignore the pointer | `S4` | `test/u9c-write-tools-ignore-the-pointer` | test | 299 (0/299) |
+| U9-D Declared scope | `B11`, `B12` | `feat/u9d-declared-scope` | feat | 183 (45/138) |
+| U9-E Optional arguments | `A6` | `test/u9e-optional-arguments` | test | 887 (0/887) |
+| U9-F The resolved counter | `B39` | `perf/u9f-resolved-counter` | perf | 322 (78/244) |
+
+`A` and `E` take the `OR16` exception on shown grounds. Withholding the renderer from `A` makes the
+briefing print `**Focus:** not set` while the same reply carries a focus array — a self-contradicting
+release. Splitting `E` narrows a closed census's population, which `P8` forbids outright.
+
+**`B39`'s measurement is honest and small:** ~85 microseconds at 200 links (2-3.5%), files opened
+200 -> 170, and noise at 10 and 40 links. A cheaper variant was rejected for misreporting
+schema-invalid records. `D15` is a correctness defect — reading and discarding whole records to print
+one number — and the speed was never the point.
+
+### The consolidated ladder — 27 versioned merges plus one documentation pull request
+
+This table supersedes the `OR1`, `OR23` and `OR25` tables. Every version step remains a
+read-then-increment per `OR6`; the numbers below are the baseline, and a shift does not invalidate
+any plan.
+
+| # | Part | Branch | Type | Version |
+| --- | --- | --- | --- | --- |
+| — | Documentation (`OR21`) | `docs/continuity-goal-model-spec` | docs | none |
+| 1 | U0 Trunk verification gate | `ci/u0-trunk-verification-gate` | ci | 1.4.2 |
+| 2 | U1-A Refusal completeness | `fix/u1a-refusal-completeness` | fix | 1.4.3 |
+| 3 | U1-B Field classes | `feat/u1b-field-classes` | feat | 1.5.0 |
+| 4 | U1-C Goal-model fields | `feat/u1c-goal-model-fields` | feat | 1.6.0 |
+| 5 | U1-D Spawn allowlist | `test/u1d-spawn-allowlist` | test | 1.6.1 |
+| 6 | U2-A Store cost | `perf/u2a-store-cost` | perf | 1.6.2 |
+| 7 | U2-B Store guard | `fix/u2b-store-guard` | fix | 1.6.3 |
+| 8 | U3 Promises | `docs/u3-promises` | docs | 1.6.4 |
+| 9 | U4-A Creating a criterion | `feat/u4-criterion-contract-a` | feat | **2.0.0** |
+| 10 | U4-B Completing a criterion | `feat/u4-criterion-contract-b` | feat | **3.0.0** |
+| 11 | U5-A The caps go | `feat/u5a-briefing-caps-go` | feat | 3.1.0 |
+| 12 | U5-B The shared clip marker | `feat/u5b-clip-marker` | feat | 3.2.0 |
+| 13 | U5-C Item detail | `feat/u5c-item-detail` | feat | 3.3.0 |
+| 14 | U6-A Discovery, part one | `feat/u6-discovery-a` | feat | 3.4.0 |
+| 15 | U6-B Discovery, part two | `feat/u6-discovery-b` | feat | 3.5.0 |
+| 16 | U7-A Ledger-presence verdict | `feat/u7a-ledger-presence` | feat | 3.6.0 |
+| 17 | U7-B Banner marker | `feat/u7b-banner-marker` | feat | 3.7.0 |
+| 18 | U7-C Capture guidance | `feat/u7c-capture-guidance` | feat | 3.8.0 |
+| 19 | U8-A The derivation | `feat/u8-derived-last-session-a` | feat | 3.9.0 |
+| 20 | U8-B The field stops being accepted | `feat/u8-derived-last-session-b` | feat | **4.0.0** |
+| 21 | U9-A Declared focus on resume | `feat/u9a-declared-focus` | feat | 4.1.0 |
+| 22 | U9-B Focus on update | `feat/u9b-update-thread-focus` | feat | 4.2.0 |
+| 23 | U9-C Write tools ignore the pointer | `test/u9c-write-tools-ignore-the-pointer` | test | 4.2.1 |
+| 24 | U9-D Declared scope | `feat/u9d-declared-scope` | feat | 4.3.0 |
+| 25 | U9-E Optional arguments | `test/u9e-optional-arguments` | test | 4.3.1 |
+| 26 | U9-F The resolved counter | `perf/u9f-resolved-counter` | perf | 4.3.2 |
+| 27 | U10 Write fidelity | `fix/u10-write-fidelity` | fix | 4.3.3 |
+
+**Three major bumps, each earned by a proven contract break:** `U4-A` (`open_thread.completion_criteria`
+string to object), `U4-B` (`update_thread.criteria_done` id to object), `U8-B` (`park_thread` is a
+`z.strictObject`, so dropping the key turns a succeeding call into a refusal — probed, not argued).
+
+**Dependency checks against this order, each satisfied:** `U5-B` (12) ships the clip helper before
+`U7-B` (17) imports it. `U1-D` (5) ships the spawn allowlist before `U7-A` (16) needs it. `U5-A`,
+`U5-B` and `U7` all precede `U8-A` (19). `U4-B` (10), `U5-C` (13) and `U8-A` (19) all precede `U9-A`
+(21). `U10` (27) is gated externally on thread `01M130YJYH0X1HBKPWM17FAPNQ`, not on any row here.
+
+**`OR17`'s premise dissolved and its ordering is kept anyway.** `U2` was placed behind `U1` because
+`OR15` might have forced `U1` into `src/store/records.ts`. `U1`'s census found bindings are written as
+`kind: 'raw'` and added no branch, so the collision never materialised. The order costs nothing and
+`OR1` already had it.
