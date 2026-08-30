@@ -120,6 +120,13 @@ test('git-boundary.a-binding-branch-carrying-a-line-break-is-refused-by-its-reco
   assert.equal(result.field, 'branch')
 })
 
+test('git-boundary.an-empty-binding-branch-is-refused', () => {
+  const result = BindingRecord.parse(baseBinding(''))
+  assert.equal(result.ok, false, 'an empty binding branch must be refused')
+  if (result.ok) return
+  assert.equal(result.field, 'branch')
+})
+
 test('git-boundary.a-binding-branch-that-is-an-ordinary-branch-name-is-accepted', () => {
   assert.equal(BindingRecord.parse(baseBinding('feat/u1-schema-foundations')).ok, true)
 })

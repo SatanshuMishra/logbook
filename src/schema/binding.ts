@@ -19,7 +19,7 @@ const ulidField = (description: string) => structural(z.string().regex(ULID_PATT
 const BindingShape = z.object({
   id: ulidField('the binding identity, a ULID'),
   thread_id: ulidField('the thread this branch is bound to'),
-  branch: pointer(caps.BINDING_BRANCH_MAX, 'the git branch name bound to this thread'),
+  branch: pointer(caps.BINDING_BRANCH_MAX, 'the git branch name bound to this thread').min(1),
   created_at: structural(z.string().regex(ISO_PATTERN).describe('when this binding was recorded'))
 })
 
