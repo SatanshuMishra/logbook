@@ -39,6 +39,7 @@ const CAP_ROLES: Record<string, CapRole> = {
   DECISION_OPTIONS_MAX_ELEMENTS: 'record-field',
   DECISION_OPTION_MAX: 'record-field',
   DECISION_SUPERSEDES_MAX_ELEMENTS: 'record-field',
+  DECISION_COMMIT_MAX: 'record-field',
   SESSION_ACTOR_MAX: 'record-field',
   SESSION_BODY_MAX: 'record-field',
   THREAD_RECORD_SERIALISED_MAX_BYTES: 'record-bytes',
