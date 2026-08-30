@@ -11,7 +11,7 @@ type FoundCollection = { path: string; node: JsonSchemaNode }
 
 const isNode = (value: unknown): value is JsonSchemaNode => typeof value === 'object' && value !== null
 
-const EXPECTED_COLLECTION_PATHS = ['completion_criteria', 'spine.key_decisions', 'spine.open_risks', 'spine.out_of_scope']
+const EXPECTED_COLLECTION_PATHS = ['artifacts', 'completion_criteria', 'spine.key_decisions', 'spine.open_risks', 'spine.out_of_scope']
 
 const collectArrayOfObjectNodes = (root: JsonSchemaNode): FoundCollection[] => {
   const found: FoundCollection[] = []
@@ -91,7 +91,7 @@ test('model.every-element-has-id.census-is-exhaustive-not-just-non-empty', () =>
 
   assert.ok(discoveredPaths.length > 0)
   assert.notDeepStrictEqual(discoveredPaths, EXPECTED_COLLECTION_PATHS)
-  assert.deepStrictEqual(discoveredPaths, ['completion_criteria', 'spine.open_risks', 'spine.out_of_scope'])
+  assert.deepStrictEqual(discoveredPaths, ['artifacts', 'completion_criteria', 'spine.open_risks', 'spine.out_of_scope'])
 })
 
 test('model.every-element-has-id.follows-shared-refs', () => {

@@ -82,6 +82,16 @@ test('git-boundary.a-risk-ref-that-is-an-address-is-accepted', () => {
   assert.equal(result.value.spine.open_risks[0]?.refs[0], 'docs/specs/2026-08-28-continuity-goal-model.md#L120')
 })
 
+test('git-boundary.an-artifact-pointer-carrying-a-code-fence-is-refused', () => {
+  const result = ThreadRecord.parse({
+    ...baseThread(),
+    artifacts: [{ id: ARTIFACT_ID, label: 'the plan', pointer: 'see ```ts' }]
+  })
+  assert.equal(result.ok, false, 'an artifact pointer carrying a code fence must be refused')
+  if (result.ok) return
+  assert.equal(result.field, 'artifacts.0.pointer')
+})
+
 test('git-boundary.a-decision-commit-that-is-not-a-sha-is-refused', () => {
   const result = DecisionRecord.parse({ ...baseDecision(), commit: 'e5f0195' })
   assert.equal(result.ok, false, 'a short sha must be refused; the stored field is a full object id')

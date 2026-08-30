@@ -12,6 +12,8 @@ export const SPINE_LAST_SESSION_MAX = 500
 export const CRITERIA_MAX_ELEMENTS = 40
 export const CRITERIA_RETENTION_MAX_ELEMENTS = 200
 export const CRITERION_TEXT_MAX = 500
+export const CRITERION_CHECK_MAX = 500
+export const CRITERION_RESULT_MAX = 1000
 
 export const OPEN_RISKS_MAX_ELEMENTS = 40
 export const RISK_TEXT_MAX = 500
@@ -25,6 +27,9 @@ export const KEY_DECISION_SCOPE_MAX = 200
 
 export const OUT_OF_SCOPE_MAX_ELEMENTS = 40
 export const OUT_OF_SCOPE_TEXT_MAX = 300
+
+export const ARTIFACT_LABEL_MAX = 200
+export const ARTIFACT_POINTER_MAX = 500
 
 export const DECISION_TITLE_MAX = 200
 export const DECISION_CONTEXT_MAX = 4000

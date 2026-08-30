@@ -394,6 +394,7 @@ test('merge.rule-table-is-covered.walk-finds-spine-and-top-level-paths', () => {
   assert.deepEqual(
     [...paths].sort(),
     [
+      'artifacts',
       'blocked_by',
       'completion_criteria',
       'created_at',
