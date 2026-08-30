@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { declare } from './declare.ts'
 import { ULID_PATTERN, SLUG_PATTERN, ISO_PATTERN } from './ids.ts'
+import { content, pointer, structural } from './field-class.ts'
 import * as caps from './caps.ts'
 
 export type Ulid = string
@@ -41,91 +42,113 @@ export type Thread = {
   updated_at: Iso8601
 }
 
-const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
-const optionalUlidField = (description: string) => z.string().regex(ULID_PATTERN).optional().describe(description)
-const isoField = (description: string) => z.string().regex(ISO_PATTERN).describe(description)
+const ulidField = (description: string) => structural(z.string().regex(ULID_PATTERN).describe(description))
+const optionalUlidField = (description: string) =>
+  structural(z.string().regex(ULID_PATTERN).optional().describe(description))
+const isoField = (description: string) => structural(z.string().regex(ISO_PATTERN).describe(description))
 
-const CriterionSchema = z.object({
-  id: ulidField('the criterion identity, a stable ULID that the merge keys on'),
-  ordinal: z
-    .number()
-    .int()
-    .min(1)
-    .describe('the rendered position of this criterion, recomputed on render, never merged'),
-  text: z.string().max(caps.CRITERION_TEXT_MAX).describe('the criterion text'),
-  done: z.boolean().describe('whether this criterion has been satisfied'),
-  kind: z.enum(['planned', 'detour']).describe('whether this criterion was planned up front or added mid-thread'),
-  struck_by: z
-    .string()
-    .regex(ULID_PATTERN)
-    .nullable()
-    .describe('the decision id that struck this criterion, or null when it has not been struck')
-})
+const CriterionSchema = structural(
+  z.object({
+    id: ulidField('the criterion identity, a stable ULID that the merge keys on'),
+    ordinal: structural(
+      z.number().int().min(1).describe('the rendered position of this criterion, recomputed on render, never merged')
+    ),
+    text: content(z.string().max(caps.CRITERION_TEXT_MAX).describe('the criterion text')),
+    done: structural(z.boolean().describe('whether this criterion has been satisfied')),
+    kind: structural(
+      z.enum(['planned', 'detour']).describe('whether this criterion was planned up front or added mid-thread')
+    ),
+    struck_by: structural(
+      z
+        .string()
+        .regex(ULID_PATTERN)
+        .nullable()
+        .describe('the decision id that struck this criterion, or null when it has not been struck')
+    )
+  })
+)
 
-const RiskSchema = z.object({
-  id: ulidField('the risk identity, a ULID'),
-  scope: z.string().max(caps.RISK_SCOPE_MAX).describe('the criterion or area of the thread this risk concerns'),
-  text: z.string().max(caps.RISK_TEXT_MAX).describe('the risk text'),
-  refs: z
-    .array(z.string().max(caps.RISK_REF_MAX))
-    .max(caps.RISK_REFS_MAX_ELEMENTS)
-    .describe('external pointers backing this risk'),
-  criterion_id: optionalUlidField('the criterion this risk ranks against, absent when the risk is unanchored')
-})
+const RiskSchema = structural(
+  z.object({
+    id: ulidField('the risk identity, a ULID'),
+    scope: content(
+      z.string().max(caps.RISK_SCOPE_MAX).describe('the criterion or area of the thread this risk concerns')
+    ),
+    text: content(z.string().max(caps.RISK_TEXT_MAX).describe('the risk text')),
+    refs: z
+      .array(pointer(caps.RISK_REF_MAX, 'one external pointer backing this risk'))
+      .max(caps.RISK_REFS_MAX_ELEMENTS)
+      .describe('external pointers backing this risk')
+      .meta({ class: 'pointer' }),
+    criterion_id: optionalUlidField('the criterion this risk ranks against, absent when the risk is unanchored')
+  })
+)
 
-const KeyDecisionSchema = z.object({
-  id: ulidField('the key-decision link identity, a ULID'),
-  decision_id: ulidField('the decision record this key decision links to'),
-  title: z.string().max(caps.KEY_DECISION_TITLE_MAX).describe('the decision title as it should render on the spine'),
-  scope: z.string().max(caps.KEY_DECISION_SCOPE_MAX).describe('the criterion or area of the thread this decision resolved'),
-  criterion_id: optionalUlidField('the criterion this decision ranks against, absent when the decision is unanchored')
-})
+const KeyDecisionSchema = structural(
+  z.object({
+    id: ulidField('the key-decision link identity, a ULID'),
+    decision_id: ulidField('the decision record this key decision links to'),
+    title: content(
+      z.string().max(caps.KEY_DECISION_TITLE_MAX).describe('the decision title as it should render on the spine')
+    ),
+    scope: content(
+      z.string().max(caps.KEY_DECISION_SCOPE_MAX).describe('the criterion or area of the thread this decision resolved')
+    ),
+    criterion_id: optionalUlidField('the criterion this decision ranks against, absent when the decision is unanchored')
+  })
+)
 
-const OutOfScopeSchema = z.object({
-  id: ulidField('the out-of-scope entry identity, a ULID'),
-  text: z.string().max(caps.OUT_OF_SCOPE_TEXT_MAX).describe('the out-of-scope statement')
-})
+const OutOfScopeSchema = structural(
+  z.object({
+    id: ulidField('the out-of-scope entry identity, a ULID'),
+    text: content(z.string().max(caps.OUT_OF_SCOPE_TEXT_MAX).describe('the out-of-scope statement'))
+  })
+)
 
 const SpineSchema = z.object({
-  active_goal: z.string().max(caps.SPINE_ACTIVE_GOAL_MAX).describe('the thread goal currently being worked'),
-  next_step: z.string().max(caps.SPINE_NEXT_STEP_MAX).describe('the next concrete step in this thread'),
-  last_session: z.string().max(caps.SPINE_LAST_SESSION_MAX).describe('a summary of the most recent session'),
-  open_risks: z.array(RiskSchema).max(caps.OPEN_RISKS_MAX_ELEMENTS).describe('risks still open on this thread'),
+  active_goal: content(z.string().max(caps.SPINE_ACTIVE_GOAL_MAX).describe('the thread goal currently being worked')),
+  next_step: content(z.string().max(caps.SPINE_NEXT_STEP_MAX).describe('the next concrete step in this thread')),
+  last_session: content(z.string().max(caps.SPINE_LAST_SESSION_MAX).describe('a summary of the most recent session')),
+  open_risks: z
+    .array(RiskSchema)
+    .max(caps.OPEN_RISKS_MAX_ELEMENTS)
+    .describe('risks still open on this thread')
+    .meta({ class: 'structural' }),
   key_decisions: z
     .array(KeyDecisionSchema)
     .max(caps.KEY_DECISIONS_MAX_ELEMENTS)
-    .describe('decisions linked into the spine'),
+    .describe('decisions linked into the spine')
+    .meta({ class: 'structural' }),
   out_of_scope: z
     .array(OutOfScopeSchema)
     .max(caps.OUT_OF_SCOPE_MAX_ELEMENTS)
     .describe('statements of what this thread explicitly excludes')
+    .meta({ class: 'structural' })
 })
 
 const ThreadShape = z.object({
   id: ulidField('the thread identity, a ULID'),
-  slug: z
-    .string()
-    .min(1)
-    .max(caps.THREAD_SLUG_MAX)
-    .regex(SLUG_PATTERN)
-    .describe('a short lowercase label for the thread'),
-  title: z.string().min(1).max(caps.THREAD_TITLE_MAX).describe('the thread title'),
-  status: z.enum(['open', 'done', 'abandoned']).describe('the thread lifecycle state'),
-  blocked_by: z
-    .string()
-    .max(caps.THREAD_BLOCKED_BY_MAX)
-    .nullable()
-    .describe('the reason this thread is blocked, or null when it is not blocked'),
-  predecessor_id: z
-    .string()
-    .regex(ULID_PATTERN)
-    .optional()
-    .describe('the id of the thread this one succeeds, absent when this thread succeeds no earlier thread'),
+  slug: content(
+    z.string().min(1).max(caps.THREAD_SLUG_MAX).regex(SLUG_PATTERN).describe('a short lowercase label for the thread')
+  ),
+  title: content(z.string().min(1).max(caps.THREAD_TITLE_MAX).describe('the thread title')),
+  status: structural(z.enum(['open', 'done', 'abandoned']).describe('the thread lifecycle state')),
+  blocked_by: content(
+    z
+      .string()
+      .max(caps.THREAD_BLOCKED_BY_MAX)
+      .nullable()
+      .describe('the reason this thread is blocked, or null when it is not blocked')
+  ),
+  predecessor_id: optionalUlidField(
+    'the id of the thread this one succeeds, absent when this thread succeeds no earlier thread'
+  ),
   completion_criteria: z
     .array(CriterionSchema)
     .max(caps.CRITERIA_RETENTION_MAX_ELEMENTS)
-    .describe('the criteria that define this thread as done, struck criteria retained'),
-  spine: SpineSchema.describe('the progressive summary of this thread'),
+    .describe('the criteria that define this thread as done, struck criteria retained')
+    .meta({ class: 'structural' }),
+  spine: SpineSchema.describe('the progressive summary of this thread').meta({ class: 'structural' }),
   created_at: isoField('when this thread was created'),
   updated_at: isoField('when this thread was last updated')
 })
