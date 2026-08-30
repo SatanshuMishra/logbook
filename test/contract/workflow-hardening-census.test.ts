@@ -18,17 +18,21 @@ type ParsedJob = {
   id: string
   permissions: unknown
   steps: ParsedStep[]
+  ifExpression: string | undefined
+  referencesPullRequestContext: boolean
 }
 
 type ParsedWorkflow = {
   file: string
   topPermissions: unknown
+  triggers: unknown
   jobs: ParsedJob[]
 }
 
 const TEST_FILE_PATH = fileURLToPath(import.meta.url)
 const WORKFLOW_EXTENSIONS = new Set(['.yml', '.yaml'])
 const WORKFLOWS_SUBPATH = ['.github', 'workflows']
+const PULL_REQUEST_CONTEXT_TOKEN = 'github.event.pull_request'
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -72,7 +76,13 @@ const parseJob = (workflowLabel: string, jobId: string, jobValue: unknown): Pars
   const stepsNode = job.steps
   assert.ok(Array.isArray(stepsNode), `${workflowLabel} job "${jobId}": has no steps: array`)
   const steps = stepsNode.map((stepValue, index) => parseStep(workflowLabel, jobId, index, stepValue))
-  return { id: jobId, permissions: job.permissions, steps }
+  return {
+    id: jobId,
+    permissions: job.permissions,
+    steps,
+    ifExpression: typeof job.if === 'string' ? job.if : undefined,
+    referencesPullRequestContext: JSON.stringify(job).includes(PULL_REQUEST_CONTEXT_TOKEN)
+  }
 }
 
 const parseWorkflowFile = (absolutePath: string, label: string): ParsedWorkflow => {
@@ -85,7 +95,12 @@ const parseWorkflowFile = (absolutePath: string, label: string): ParsedWorkflow 
     parseJob(label, jobId, jobValue)
   )
   assert.ok(jobs.length > 0, `${label}: jobs: mapping is empty`)
-  return { file: label, topPermissions: (doc as Record<string, unknown>).permissions, jobs }
+  return {
+    file: label,
+    topPermissions: (doc as Record<string, unknown>).permissions,
+    triggers: (doc as Record<string, unknown>).on,
+    jobs
+  }
 }
 
 const loadWorkflows = (): ParsedWorkflow[] => {
@@ -421,5 +436,57 @@ test('workflow-hardening.install-ignore-scripts', () => {
   assert.doesNotThrow(
     () => census(population, classify),
     describeViolations('install-ignore-scripts', population, classify)
+  )
+})
+
+const PULL_REQUEST_EVENT_GUARD = "github.event_name == 'pull_request'"
+const PUSH_TRIGGER_KEY = 'push'
+const TRIGGER_BRANCHES_KEY = 'branches'
+const TRUNK_BRANCH_NAME = 'main'
+
+type TrunkVerificationItem = {
+  workflow: string
+  job: string
+  triggers: unknown
+  referencesPullRequestContext: boolean
+  ifExpression: string | undefined
+}
+
+const trunkVerificationItemFor = (workflow: ParsedWorkflow, job: ParsedJob): TrunkVerificationItem => ({
+  workflow: workflow.file,
+  job: job.id,
+  triggers: workflow.triggers,
+  referencesPullRequestContext: job.referencesPullRequestContext,
+  ifExpression: job.ifExpression
+})
+
+const classifyTrunkVerification = (
+  item: TrunkVerificationItem
+): Classified<TrunkVerificationItem>['verdict'] | 'unclassifiable' => {
+  if (!isPlainObject(item.triggers)) return 'unclassifiable'
+  const pushNode = item.triggers[PUSH_TRIGGER_KEY]
+  if (pushNode !== undefined && !isPlainObject(pushNode)) return 'unclassifiable'
+  const branchesNode = isPlainObject(pushNode) ? pushNode[TRIGGER_BRANCHES_KEY] : undefined
+  if (pushNode !== undefined && !Array.isArray(branchesNode)) return 'unclassifiable'
+  const runsOnPushToTrunk = Array.isArray(branchesNode) && branchesNode.includes(TRUNK_BRANCH_NAME)
+  if (!item.referencesPullRequestContext) return runsOnPushToTrunk ? 'allowed' : 'forbidden'
+  if (!runsOnPushToTrunk) return item.ifExpression === undefined ? 'allowed' : 'unclassifiable'
+  return item.ifExpression === PULL_REQUEST_EVENT_GUARD ? 'allowed' : 'forbidden'
+}
+
+test('workflow-hardening.trunk-verification', () => {
+  const workflows = loadWorkflows()
+  const population = workflows.flatMap((workflow) =>
+    workflow.jobs.map((job) => trunkVerificationItemFor(workflow, job))
+  )
+
+  assert.ok(
+    population.length > 0,
+    'workflow-hardening.trunk-verification: zero jobs found across all workflows; a census over an empty population proves nothing'
+  )
+
+  assert.doesNotThrow(
+    () => census(population, classifyTrunkVerification),
+    describeViolations('trunk-verification', population, classifyTrunkVerification)
   )
 })
