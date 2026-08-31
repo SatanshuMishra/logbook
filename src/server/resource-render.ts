@@ -38,6 +38,8 @@ export const renderSessionEntryResource = (entry: SessionEntry): string =>
     escapeStored(entry.body)
   ].join('\n')
 
+const renderDetailQuarantinedLine = (id: string): string => `quarantined: ${escapeStored(id)}`
+
 const detailCriterionStatus = (criterion: Criterion): string => {
   if (criterion.struck_by !== null) return 'struck'
   return criterion.done ? 'done' : 'open'
@@ -72,8 +74,6 @@ const renderDetailOutOfScopeLine = (outOfScope: OutOfScope): string =>
   `- ${escapeStored(outOfScope.id)} ${escapeStored(outOfScope.text)}`
 
 const renderDetailDanglingLine = (decisionId: string): string => `dangling: ${escapeStored(decisionId)}`
-
-const renderDetailQuarantinedLine = (decisionId: string): string => `quarantined: ${escapeStored(decisionId)}`
 
 const renderDetailRelatedLine = (predecessor: Thread): string =>
   `- succeeds: ${escapeStored(predecessor.title)} (${escapeStored(predecessor.slug)})`
