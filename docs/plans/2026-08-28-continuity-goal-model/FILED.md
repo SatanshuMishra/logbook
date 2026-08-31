@@ -445,3 +445,114 @@ Appends only. Never edit an item another planner wrote.
   this census would not notice. Today each such argument has its own behavioural test; nothing
   enforces that it must.
 - **Not folded in.**
+
+## F2e — The U2-A plan document still prescribes `git checkout-index` and rejects the mechanism the branch actually shipped
+
+- **Surfaced by:** U2-A delivery
+- **Evidence:** `docs/plans/2026-08-28-continuity-goal-model/U2-store-cost-and-safety-a.md` step 6 (`:370-452`), its inertness-mutation section 7.2 (`:895-903`) and its finding section 8.6 (`:1110-1132`) all describe materialisation as `git read-tree` loading the ledger tree into a private index followed by `git checkout-index -a` writing every file out of it — confirmed by reading all three ranges. The paragraph rejecting the alternative sits inside step 6 itself, at `:456`, not in section 8.5 as an earlier note located it; the text re-confirmed at that exact line reads: "Rejected: `git cat-file --batch`, one long-lived process fed every blob id on standard input. It is the smaller edit and needs no index file, but it returns the whole store's contents through the shared git helper's standard-output buffer, which `src/store/git.ts:68-72` leaves at Node's 1 MiB default; and its output frames each blob by BYTE length while that helper decodes to a string, so slicing the frames apart is wrong for any record containing a character outside ASCII. `checkout-index` writes to disk and never puts record content through a buffer at all." The branch that actually shipped, `perf/u2a-store-cost`, does the opposite in a new module: `src/store/materialise-tree.ts:159` calls `deps.runGit(rt, repo, ['ls-tree', '-r', '-z', '--full-tree', ref])` for the listing and `:172-173` calls `deps.runGitBuffer(rt, repo, ['cat-file', '--batch'], { stdin: batchInput })` for the contents — read directly on that branch, `checkout-index` does not appear anywhere in the shipped module. `checkout-index` writes a tree entry straight to the filesystem however the operating system interprets its mode; a git tree entry recorded with file mode `120000` is a symbolic link, a filesystem entry that points at a second path rather than holding data itself, and `checkout-index` would create a real one on disk. The shipped module instead refuses any such entry before writing anything: `validateEntries` at `src/store/materialise-tree.ts:58-64` rejects any tree entry whose mode is not the plain-file mode `100644` (`REQUIRED_TREE_ENTRY_MODE`, line 6), and the dedicated test `store.a-non-regular-tree-entry-is-refused` (`test/store/materialise-refuses-non-regular-entries.test.ts:65-106`) crafts a `120000` entry pointing at a real file, confirms `openStore` refuses it, and then confirms with `lstatSync(...).isSymbolicLink()` that no symbolic link was ever created on disk (`:91-102`). A decision id `01M1AZ7R8Q35SFNAB2HRERT5DZ` was supplied for the switch away from `checkout-index`, but this pass could not locate that identifier anywhere in the repository's text — decision records are stored in the plugin's own per-project data store outside this checkout, which this pass does not connect to — so the identifier itself is `[unverified]`; the switch and its reason are independently established from the two module bodies and the refusal test above, without needing the identifier.
+- **Why it is above the ceiling:** rewriting a frozen plan document's prose is not a step any unit's acceptance criteria name, and none of U2-A's nine criteria (`U2-store-cost-and-safety-a.md:29-37`) concern the plan file's own text. Per the standing rule that the code wins where a document and the code disagree, the plan document is a stale artifact and the shipped module is what is true now.
+- **Not folded in.**
+
+## F2f — The plan cites a test, `roster.subprocess-census`, that was never shipped under that name or any other
+
+- **Surfaced by:** U2-A delivery
+- **Evidence:** `docs/plans/2026-08-28-continuity-goal-model/U2-store-cost-and-safety-a.md:35` (acceptance criterion 7) reads "Proven jointly by `store.open-does-not-read-every-record` and the already-shipped `roster.subprocess-census`", and `:774` repeats the name in the criteria-to-test table: "`store.open-does-not-read-every-record` plus `roster.subprocess-census` in `test/store/roster.test.ts` (already shipped), which asserts a whole roster read over fifty threads costs at most one subprocess." A search for `subprocess-census` across the shipped branch's source and test trees returns exactly these two lines of plan prose and nothing under `src/` or `test/`. The test that exists at the cited file is named `roster.is-subprocess-free` (`test/store/roster.test.ts:50`), and its assertion at `:74-77` reads `assert.ok(getSubprocessCallCounter() <= 1, ...)` with the message "expected the whole roster read over 50 threads to cost at most one subprocess, counted ...` — which is the exact behaviour the plan's own sentence describes, under a different name. This was independently corroborated at `docs/plans/2026-08-25-post-cutover-repair/MSP-1-materialisation-stamp.md:224`, a document from an earlier unit, which names the same test `roster.is-subprocess-free` at the same file and line range.
+- **Why it is above the ceiling:** correcting a frozen plan document's prose is not a step named in any of U2-A's acceptance criteria. The correct name is recorded here, and belongs in the pull request body rather than in an edit to the plan.
+- **Not folded in.**
+
+## F2g — `roster.is-subprocess-free` does not discharge invariant `O5`, and the roster's record reads still grow with the terminal pile
+
+- **Surfaced by:** U2-A delivery
+- **Evidence:** `O5` is stated at `docs/specs/2026-08-28-continuity-goal-model.md:245`: "For every discovery surface, the number of records it reads does not grow as terminal records accumulate." `roster.is-subprocess-free` (`test/store/roster.test.ts:50-80`) asserts `getSubprocessCallCounter() <= 1` (`:74-77`) — a count of git subprocesses, a different quantity from the count of records read that `O5` names. The same test calls `opened.value.readThreads()` at `:68` and asserts at `:70` that it returns all 50 seeded threads, so it demonstrates that every record is read, not that the number read is bounded. `resetSubprocessCallCounter()` is called at `:66`, after `openStore` has already returned at `:62`, so any work `openStore` itself performs is excluded from the count the test checks; this same caveat was recorded independently, before this unit, at `docs/plans/2026-08-25-post-cutover-repair/MSP-1-materialisation-stamp.md:224`, and is re-confirmed here against the shipped test body rather than taken on trust. Separately, `src/render/roster.ts:19` declares `const TERMINAL_STATUSES = new Set<Thread['status']>(['done', 'abandoned'])`, and `selectRosterThreads` at `:21-23` filters a thread list against that set — filtering happens after the full list has already been read by `readThreads()`, not before. So as terminal threads accumulate in the store, `readThreads()` reads strictly more record files while the roster still renders the same surviving rows: exactly the growth `O5` forbids for a discovery surface.
+
+  What this unit did prove is the open-path half of the same invariant. `store.open-does-not-read-every-record` (`test/store/open-cost.test.ts:49-78`) bounds the directory entries the open path examines at a fixed ceiling. A second test this unit adds beyond the frozen plan's own file-in-full listing, `store.open-directory-scan-does-not-grow-with-record-count` (`test/store/open-cost.test.ts:107-116`), goes further and asserts equality of that count between 4 records and 40 (`assert.equal` at `:111-115`) — the non-growth clause itself, not merely a ceiling. In plain words, this test counts directory entries examined by the open path's existence probe; it does not count record files read, so it does not on its own discharge `O5`'s records-read clause. This drafting pass read the assertion's message template directly in the code and confirms it says what the supplied failure text claims it says; the specific numbers were observed by executing the test rather than supplied untested — a test dispatch ran it against the parent commit `82dab09` with substitute instrumentation and read exit code 1, an independent code review reproduced the same red on a scratchpad copy by removing the early `return true` from `holdsAnyRecord`, and after the rename the same mutation was re-applied and re-run, again producing exit code 1. The verbatim assertion message from the post-rename run, as reported to this drafting pass rather than executed by it, reads: "opening a store holding 4 records examined 5 directory entries and opening one holding 40 records examined 41; the number of directory entries examined must not depend on how many records the store holds".
+- **Why it is above the ceiling:** making the roster's record reads independent of the terminal pile needs an index over terminal records inside `readThreads`, which changes the store's read surface and the roster's contract — neither of which any U2-A criterion asks for. U2-A's ceiling is `B37` (the open path's walk) and `B38` (materialisation's subprocess count), and the SPEC's own `Green` cell for the U2 row (`docs/specs/2026-08-28-continuity-goal-model.md:410`) asks only for "Store-open and materialisation timings recorded before and after. `S1` asserted by the existing concurrency receipt. The guard detects the second live store on this machine" — it does not ask for `O5` over the roster.
+- **Consequence if unaddressed:** `O5` is only partially discharged. The open path's record reads no longer grow with the store's size; the roster's still do, in proportion to how many threads have ever reached a terminal status.
+- **Not folded in.**
+
+## F2h — correction and extension of `F2d`: the tree listing still runs through the 1 MiB default buffer, while the shipped content read uses a 256 MiB one
+
+- **Surfaced by:** U2-A delivery
+- **Evidence:** `src/store/materialise-tree.ts:159` calls `deps.runGit(rt, repo, ['ls-tree', '-r', '-z', '--full-tree', ref])`, and `:172-173` calls `deps.runGitBuffer(rt, repo, ['cat-file', '--batch'], { stdin: batchInput })`. `src/store/git.ts:22` declares `export const GIT_BUFFER_MAX_BYTES = 256 * 1024 * 1024`; the plain `git` helper's `spawnSync` call at `:79-83` sets no `maxBuffer`, so Node's 1 MiB default applies to it, while the `gitBuffer` helper's `spawnSync` call at `:103-107` sets `maxBuffer: GIT_BUFFER_MAX_BYTES` at line 105. So the listing call — which scales with how many records the ledger ref holds — reads through the small unbounded-by-config buffer, and only the content call reads through the large one.
+
+  This condition was measured against this machine's live ledger ref today by running two commands: `git ls-tree -r -z --full-tree refs/logbook/ledger | wc -c`, which returned 33508 bytes, and `git ls-tree -r --full-tree refs/logbook/ledger | wc -l`, which returned 300 entries — roughly 31 times under the 1 MiB ceiling, against a prior session's figure of 32618 bytes across 292 entries. The two agree on order of magnitude and differ by the 8 entries the ref gained between them, so the 33508/300 figure is the fresher. This drafting pass did not run either command itself; both were run by the dispatching orchestrator on this machine today, and are reported here as measured rather than supplied untested.
+
+  The failure mode is loud, not silent: `spawnSync` sets `result.error` with code `ENOBUFS` on overflow, and the plain `git` helper returns `{ ok: false, code: -1, stderr: result.error.message }` at `:84-85` — the call fails outright rather than returning a truncated listing. `gitBuffer` recognises the same code explicitly via `isBufferOverflow` at `:97` (`error.code === 'ENOBUFS'`) and reports it as a named `overflow` case at `:108-117`.
+
+  This condition is pre-existing, not introduced by this unit: on the parent commit `82dab09`, `src/store/read-path.ts:154` already listed the tree with `countedMaterialiseGit(rt, layout.projectRoot, ['ls-tree', '-r', '--full-tree', ref])`, wrapping the same plain `git` helper, and the parent's `src/store/git.ts` has no `gitBuffer` function at all — so on the parent every git call, buffered or not, went through the same 1 MiB default.
+
+  This corrects and supersedes part of `F2d`'s reasoning above. `F2d` reasoned that `git cat-file --batch` "would have put the entire store's contents through that same buffer, which is one reason U2's plan writes the tree out with `git checkout-index` instead" — `git cat-file --batch` did ship, and it reads through the dedicated `gitBuffer` helper at 256 MiB, not through the 1 MiB helper `F2d` described. `F2d`'s underlying observation about the plain `git` helper having no `maxBuffer` remains true and is what this item extends to the still-unbuffered `ls-tree` call.
+- **Why it is above the ceiling:** U2-A's criteria concern the number of subprocesses materialisation spawns (`B38`), not the buffer size any helper reads its output through. `src/store/git.ts` is not owned by U2-A (`U2-store-cost-and-safety-a.md`'s Owns row lists `src/store/records.ts`, `src/store/read-path.ts`, `src/merge/sync.ts`), so widening the listing call's buffer would be a change to a file this unit does not own.
+- **Not folded in.**
+
+## F2i — an unguarded cleanup inside two nested `finally` blocks in the merge path can replace the outcome it was meant to preserve
+
+- **Surfaced by:** U2-A delivery
+- **Evidence:** `src/merge/sync.ts:351-353` reads:
+  ```
+      } finally {
+        if (baseScratch !== null) rmSync(baseScratch, { recursive: true, force: true })
+      }
+  ```
+  and `:354-356`, the block it sits inside, reads:
+  ```
+    } finally {
+      rmSync(theirsScratch, { recursive: true, force: true })
+    }
+  ```
+  Neither `rmSync` call is wrapped in its own `try`/`catch`. A prior note cited line 159 for this defect, which does not match the current file at either the shipped branch or `main`; the exact current lines were located by reading the whole function (`performMerge`, `:270-357`) and are 352 and 355 for the two calls themselves.
+
+  A `finally` block runs on the way out of a function whether that function is returning normally or throwing an error. If the statement inside a `finally` block itself throws — here, `rmSync` can throw if the scratch directory it is asked to remove is busy, or if a permission changed after it was created — that new error replaces whatever the function was in the middle of returning or throwing, so the original outcome of the merge attempt is lost and the caller is told about a cleanup failure instead of about the actual merge result. Elsewhere in the same unit's own new module, cleanup is written the other way: `discardScratchDir` in `src/store/read-path.ts:94-105` wraps its `rmSync` in a `try`/`catch` and logs the failure via `rt.log` rather than letting it propagate, which is the pattern these two sites in `src/merge/sync.ts` do not follow.
+- **Why it is above the ceiling:** U2-A's criteria concern materialisation's subprocess count on the merge path (`B38`), not the error-propagation shape of the merge path's scratch-directory cleanup. `src/merge/sync.ts` is owned by this unit for the materialisation change alone; restructuring its cleanup's error handling is a separate change to the same file, not named by any of the nine acceptance criteria.
+- **Not folded in.**
+
+## F2j — the early-exit directory scan holds one open directory handle per level of recursion
+
+- **Surfaced by:** U2-A delivery
+- **Evidence:** `src/store/records.ts:98-111` (`holdsAnyRecord`, the function this unit introduces to close defect `D13`) reads:
+  ```
+  const holdsAnyRecord = (dir: string): boolean => {
+    const handle = openDirOrNull(dir)
+    if (handle === null) return false
+    try {
+      for (let entry = handle.readSync(); entry !== null; entry = handle.readSync()) {
+        recordScanCount += 1
+        if (entry.isFile() && entry.name.endsWith('.json')) return true
+        if (entry.isDirectory() && holdsAnyRecord(path.join(dir, entry.name))) return true
+      }
+      return false
+    } finally {
+      handle.closeSync()
+    }
+  }
+  ```
+  The recursive call at line 105 happens from inside the `try` block, before the `finally` at `:108-110` runs `handle.closeSync()`. So descending into a subdirectory does not close the parent directory's handle first; every ancestor directory on the current path stays open for the whole depth of the descent, and each is closed only as the recursion unwinds back out of it.
+
+  An operating system caps how many files and directory handles one process may have open at the same time; exceeding that cap raises the error `EMFILE`. Because this function holds a handle for the whole depth of its descent instead of closing each one before recursing into the next, the number of handles open at any moment is measured against the depth of the records tree, not against how many records exist at one level.
+
+  The honest limit on this: the records tree's known shape is shallow — `records/threads/`, `records/decisions/`, `records/sessions/<thread ULID>/`, and `records/bindings/` are each at most two levels deep from `layout.records` — so the practical depth reachable today is small, and no `EMFILE` has been observed or reproduced. This is a structural observation about how the function is shaped, not a reproduced failure.
+- **Why it is above the ceiling:** U2-A's criterion 1 (`store.open-does-not-read-every-record`) asks that the open path stop reading every record, which `holdsAnyRecord` achieves by returning at the first record found. Restructuring the recursion to close a handle before descending into the next one is a separate change to the same function that no acceptance criterion names.
+- **Not folded in.**
+
+## F2k — the store layout does not require its root, `CLAUDE_PLUGIN_DATA`, to be an absolute path
+
+- **Surfaced by:** U2-A delivery
+- **Evidence:** `src/store/layout.ts:65-75` reads the environment value under the key `CLAUDE_PLUGIN_DATA` (declared at `:14`) and refuses only when it is unset or empty:
+  ```
+    const pluginData = rt.env[CLAUDE_PLUGIN_DATA]
+    if (pluginData === undefined || pluginData.length === 0) {
+      return {
+        ok: false,
+        field: CLAUDE_PLUGIN_DATA,
+        accepted: 'a non-empty absolute path set in the environment',
+        example: '/Users/example/.claude/plugin-data',
+        retryable: true,
+        message: `${CLAUDE_PLUGIN_DATA} is not set; the store cannot be located without it`
+      }
+    }
+  ```
+  The refusal's own text and its `accepted` field both describe the expected value as "a non-empty absolute path", but nothing in the function checks that shape: a search of the whole file for `path.isAbsolute` and `path.resolve` returns no calls on `pluginData` anywhere in it — the value is joined straight into `path.join(pluginData, key)` at `:78` and used as-is. This file is unchanged by U2-A (it is outside this unit's Owns row) and was read on the shipped branch to confirm the condition is identical to `main`.
+
+  A relative value would be interpreted against whatever directory the current process happens to be running in when the store is opened, rather than against a fixed location. The same project could then resolve to different store roots depending on where the server or CLI happened to be started from, even though the environment variable's text never changed.
+- **Why it is above the ceiling:** U2-A's criteria concern the cost of opening and materialising a store, not the validation of where the store root is located, and `src/store/layout.ts` is not among the files this unit owns. The neighbouring surface that does compare store roots against each other, the duplicate-store guard in `src/store/single-store.ts`, is owned by unit U2-B (`docs/plans/2026-08-28-continuity-goal-model/U2-store-cost-and-safety-b.md:13`), which is the unit that next touches this area of the store.
+- **Not folded in.**
