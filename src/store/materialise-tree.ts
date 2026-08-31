@@ -6,8 +6,17 @@ import type { GitBufferOpts, GitBufferResult, GitOpts, GitResult } from './git.t
 export const REQUIRED_TREE_ENTRY_MODE = '100644'
 export const REQUIRED_TREE_ENTRY_TYPE = 'blob'
 
-const FORBIDDEN_PATH_SEGMENTS = new Set(['..', '.', '.git'])
+const FORBIDDEN_REDUCED_PATH_SEGMENTS = new Set(['', '.', '..', '.git', 'git~1'])
+const DEFAULT_IGNORABLE_CODE_POINT_PATTERN = /[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g
+const TRAILING_DOT_OR_SPACE_PATTERN = /[. ]+$/
 const NEWLINE_BYTE = 0x0a
+
+const reducePathSegmentForForbiddenComparison = (segment: string): string =>
+  segment
+    .normalize('NFC')
+    .replace(DEFAULT_IGNORABLE_CODE_POINT_PATTERN, '')
+    .toLowerCase()
+    .replace(TRAILING_DOT_OR_SPACE_PATTERN, '')
 
 export type GitRunner = (rt: Runtime, repo: string, args: string[], opts?: GitOpts) => GitResult
 export type GitBufferRunner = (rt: Runtime, repo: string, args: string[], opts?: GitBufferOpts) => GitBufferResult
@@ -63,7 +72,13 @@ const validateEntries = (
       return { ok: false, detail: `ledger tree entry has an unusable path: ${JSON.stringify(entry.relPath)}` }
     }
     const segments = entry.relPath.split('/')
-    if (segments.some((segment) => segment.length === 0 || FORBIDDEN_PATH_SEGMENTS.has(segment))) {
+    if (
+      segments.some(
+        (segment) =>
+          segment.length === 0 ||
+          FORBIDDEN_REDUCED_PATH_SEGMENTS.has(reducePathSegmentForForbiddenComparison(segment))
+      )
+    ) {
       return { ok: false, detail: `ledger tree entry ${entry.relPath} has a forbidden path segment` }
     }
     const resolved = path.resolve(destination, entry.relPath)
