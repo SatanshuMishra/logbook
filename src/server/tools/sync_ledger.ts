@@ -5,6 +5,8 @@ import type { Refusal } from '../../schema/declare.ts'
 import { layoutFor } from '../../store/layout.ts'
 import { sync } from '../../merge/sync.ts'
 import { withDetail } from '../../store/detail.ts'
+import { clipGraphemes, escapeStored } from '../../render/escape.ts'
+import * as caps from '../../schema/caps.ts'
 import { openProjectStore } from '../tool-support.ts'
 
 const SyncLedgerInputSchema = NO_ARGUMENTS
@@ -53,6 +55,21 @@ export const rejectedRefusal = (detail: string): Refusal =>
     detail
   )
 
+export const unparseableRecordsRefusal = (records: readonly string[]): Refusal => {
+  const escaped = records.map((record) => clipGraphemes(escapeStored(record), caps.UNPARSEABLE_RECORD_NAME_MAX))
+  const shown = escaped.slice(0, caps.UNPARSEABLE_RECORDS_SHOWN_MAX)
+  const remainder = escaped.length - shown.length
+  const named = remainder > 0 ? `${shown.join(', ')} (+${remainder} more)` : shown.join(', ')
+  return {
+    ok: false,
+    field: 'sync',
+    accepted: 'a shared ledger whose every record file this version can read',
+    example: 'upgrade this plugin to the version that wrote those records, or have the teammate who wrote them repair or remove them on the shared copy',
+    retryable: false,
+    message: `sync stopped before merging: the shared ledger carries ${escaped.length} record file(s) this version cannot read: ${named}. Nothing was merged and nothing was sent to origin. Repeating this call cannot help, because the bytes live on the shared copy: upgrade this plugin to the version that wrote those records, or have the teammate who wrote them repair or remove them, then run sync_ledger again.`
+  }
+}
+
 export const conflictRefusal = (conflicts: readonly { record: string; field: string }[]): Refusal => {
   const named = conflicts.map((c) => `${c.record} ${c.field}`).join('; ')
   return {
@@ -98,6 +115,9 @@ export const syncLedgerTool: ToolSpec<SyncLedgerInput, SyncLedgerOutput> = {
 
     if (outcome.reason === 'conflict') {
       return { ok: false, refusal: conflictRefusal(outcome.conflicts) }
+    }
+    if (outcome.reason === 'unparseable') {
+      return { ok: false, refusal: unparseableRecordsRefusal(outcome.records) }
     }
     if (outcome.reason === 'offline') {
       return { ok: false, refusal: offlineRefusal(outcome.detail) }

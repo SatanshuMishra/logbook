@@ -182,8 +182,9 @@ test('sync.refuses-a-remote-record-it-cannot-parse', () => {
 
     assert.equal(mergeOutcome.ok, false, 'a merge carrying remote bytes this version cannot parse must be refused')
     if (mergeOutcome.ok) return
-    assert.equal(mergeOutcome.reason, 'rejected')
-    assert.match(mergeOutcome.detail, new RegExp(badRelPath))
+    assert.equal(mergeOutcome.reason, 'unparseable')
+    if (mergeOutcome.reason !== 'unparseable') return
+    assert.deepEqual(mergeOutcome.records, [badRelPath])
 
     const anaRefAfter = git(ana.rt, ana.repo, ['rev-parse', LEDGER_REF])
     assert.equal(anaRefAfter.ok, true)

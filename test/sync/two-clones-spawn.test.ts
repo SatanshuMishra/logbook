@@ -6,12 +6,14 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import type { Runtime } from '../../src/runtime/runtime.ts'
 import type { Declared } from '../../src/schema/declare.ts'
 import { DecisionRecord, type Decision } from '../../src/schema/decision.ts'
 import { SessionRecord, type SessionEntry } from '../../src/schema/session.ts'
 import { ThreadRecord, type Thread } from '../../src/schema/thread.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { readAllRecordFiles } from '../../src/store/read-path.ts'
+import { writeRecords } from '../../src/store/write-path.ts'
 import { rawGit } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
@@ -162,6 +164,19 @@ const assertRecordsAreClean = (layout: StoreLayout): void => {
   }
 }
 
+const runtimeOf = (teammate: SpawnedTeammate): Runtime =>
+  testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: teammate.pluginData } })
+
+const refusalTextOf = (label: string, result: CallToolResult): string => {
+  assert.equal(result.isError, true, `${label} expected a refusal, got a success: ${JSON.stringify(result)}`)
+  const content = result.content
+  assert.ok(Array.isArray(content) && content.length > 0, `${label} returned no content to show the operator`)
+  const first = content[0] as { type: string; text?: string }
+  assert.equal(first.type, 'text', `${label} returned content the operator cannot read as text`)
+  assert.equal(typeof first.text, 'string', `${label} returned a text block with no text`)
+  return first.text as string
+}
+
 const layoutOf = (teammate: SpawnedTeammate): StoreLayout => {
   const rt = testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: teammate.pluginData } })
   const result = layoutFor(rt, teammate.repo)
@@ -288,4 +303,57 @@ test('sync.two-clones-offline.spawn', async () => {
 
 test('sync.two-clones-offline.spawn.ben-pushes-first', async () => {
   await runSpawnOfflineMergeScenario('ben')
+})
+
+test('sync.names-the-unparseable-record-to-the-operator', async () => {
+  await withTwoSpawnedClones(async (ana, ben) => {
+    const openedA = await callTool(ana, 'open_thread', {
+      title: 'a thread ana pushes before the bad record arrives',
+      slug: 'unparseable-record-thread-a',
+      completion_criteria: ['a criterion for the unparseable-record scenario']
+    })
+    assertOkResult('open_thread (ana, thread a)', openedA)
+
+    const anaInitialPush = await callTool(ana, 'sync_ledger', {})
+    assertOkResult('sync_ledger (ana initial push)', anaInitialPush)
+
+    const benFastForward = await callTool(ben, 'sync_ledger', {})
+    assertOkResult('sync_ledger (ben initial fast-forward)', benFastForward)
+
+    const badRelPath = 'decisions/not-a-valid-decision-record.json'
+    const rawWrite = writeRecords(
+      runtimeOf(ben),
+      layoutOf(ben),
+      [{ kind: 'raw', relPath: badRelPath, content: '{"this is not a valid decision record":true}' }],
+      'ben: record a decision the schema will reject'
+    )
+    assert.equal(rawWrite.ok, true, 'the fixture must be able to seed a record this version cannot parse')
+
+    const benPushesBadRecord = await callTool(ben, 'sync_ledger', {})
+    assertOkResult('sync_ledger (ben pushes the unparseable record)', benPushesBadRecord)
+
+    const openedB = await callTool(ana, 'open_thread', {
+      title: 'a thread ana opens so her next sync must merge',
+      slug: 'unparseable-record-thread-b',
+      completion_criteria: ['a criterion that makes ana diverge from the shared copy']
+    })
+    assertOkResult('open_thread (ana, thread b)', openedB)
+
+    const anaMerge = await callTool(ana, 'sync_ledger', {})
+    const operatorText = refusalTextOf('sync_ledger (ana, merging the unparseable record)', anaMerge)
+
+    assert.ok(
+      operatorText.includes(badRelPath),
+      `the operator must be told which record file could not be parsed: expected the text to name ${badRelPath}, but it read:\n${operatorText}`
+    )
+    assert.ok(
+      /^retryable: false$/m.test(operatorText),
+      `retrying the same call cannot fix bytes that live on the shared copy, so the operator must be told the refusal is not retryable: expected a line reading "retryable: false", but the text read:\n${operatorText}`
+    )
+    assert.equal(
+      /\bpush\b[^\n]*\brejected\b/i.test(operatorText),
+      false,
+      `no push was attempted on this path, so the operator must not be told a push was rejected, but the text read:\n${operatorText}`
+    )
+  })
 })

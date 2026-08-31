@@ -20,6 +20,7 @@ export type SyncAction = 'noop' | 'pushed' | 'pushed-unverified' | 'fast-forward
 export type SyncOutcome =
   | { ok: true; action: SyncAction; ref: string; local_sha: string | null; remote_sha: string | null }
   | { ok: false; reason: 'conflict'; conflicts: Conflict[] }
+  | { ok: false; reason: 'unparseable'; records: string[] }
   | { ok: false; reason: 'offline' | 'rejected'; detail: string }
 
 export type SyncOps = { beforeCas?: () => void }
@@ -297,13 +298,12 @@ const performMerge = (
       const base = baseScratch !== null ? readScratchRecordSet(baseScratch) : null
 
       if (theirs.passthrough.length > 0) {
-        const named = theirs.passthrough.map((file) => file.relPath).join(', ')
         return {
           kind: 'return',
           outcome: {
             ok: false,
-            reason: 'rejected',
-            detail: `the shared ledger carries ${theirs.passthrough.length} record file(s) this version cannot parse: ${named}; nothing was merged and nothing was pushed, so both copies are unchanged`
+            reason: 'unparseable',
+            records: theirs.passthrough.map((file) => file.relPath)
           }
         }
       }
