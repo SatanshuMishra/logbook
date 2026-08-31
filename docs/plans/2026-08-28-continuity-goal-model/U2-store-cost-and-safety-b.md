@@ -141,6 +141,30 @@ This is the call that commits the array section 2.5 built, so it is the point at
 
 8. **No divergence was found between the SPEC's cited line numbers and the working tree.**
 
+9. **Stop condition 11.2a's check is inert and is re-anchored.** As written, section 11.2 runs `grep -c "checkout-index" src/merge/sync.ts` and halts on `0`, intending to prove the first half of this unit (U2-A) landed. That string appears in that file at no commit — not on `main`, not on this branch. U2-A's own plan did specify `checkout-index`, but the mechanism was withdrawn after three reproduced regressions, one CRITICAL: it materialised a mode-`120000` tree entry as a real symlink, a reader followed it, and the quarantine path then re-read it, stored the resolved secret, and pushed it to the shared remote. It was replaced by `git ls-tree -r` plus one batched `git cat-file --batch`, in a new module `src/store/materialise-tree.ts`. The original check therefore prints `0` whether or not U2-A landed — no discriminating power, and it would halt a correctly stacked branch on a false alarm. The re-anchored check is the existence of `src/store/materialise-tree.ts` together with the batched `cat-file` call reached from `src/merge/sync.ts`. Measured on this branch: the file exists, `src/merge/sync.ts:10` imports `materialiseTreeInto` from it, `src/store/materialise-tree.ts:173` runs `['cat-file', '--batch']`, and none of the three exists at `origin/main`. Present on the branch, absent on `main` — the discrimination 11.2a was supposed to provide.
+
+10. **Sections 2.4, 2.5 and 2.6 cite `src/merge/sync.ts` line numbers eight lines high.** The quoted text in each is byte-correct and every FIND string matches exactly once; only the stated line numbers are wrong, because they were computed against the withdrawn mechanism's line count. The real locations are: section 2.4 `sync.ts:295-299` (not `303-307`), section 2.5 `sync.ts:311-314` (not `319-322`), section 2.6 `sync.ts:321` (not `329`). No FIND string changes.
+
+11. **The section 8.4 expected test count of 440 is stale, and the hard-coded `--verified "npm test - 440 tests, 0 fail, exit 0"` at plan line 763 must not ship as written.** A literal count nobody measured is a fabricated verification line under the honesty rule, which is worse than an absent one. Static counts measured: 449 at `main`, 460 at `ed6f116`, and U2-A has added more since. The pull request uses the number the run actually prints.
+
+12. **Step 4's rationale for reusing the `rejected` outcome is false, and it was the sole justification for excluding `src/server/` from this unit's scope.** The rationale states: "The existing `rejected` outcome is reused rather than a new one added, because the sync tool already renders that outcome's detail into a refusal, so no file outside this plan's ownership has to change." This was established by execution, not by reading: a probe drove the real production entrypoint `bin/logbook-server.ts` over the Model Context Protocol through the exact scenario this unit's acceptance test builds, and captured what the tool actually returned to the operator. The operator receives verbatim:
+
+    field: sync
+    accepted: a push the remote will accept without further changes
+    example: retry the call
+    retryable: true
+    the push to the shared ledger to origin was rejected; retry the call.
+
+   `Object.getOwnPropertyNames` on the returned object yields exactly `['content', 'isError']`. There is no `detail` property anywhere on it, and the string `decisions/not-a-valid-decision-record.json` — the record file named in the internal refusal — appears nowhere the operator can see. This was confirmed three separate ways, including `util.inspect` with `showHidden: true`, so a non-enumerable property could not have been hiding it either. The cause: `pickRefusalFields` in `src/server/errors.ts` copies only `field`, `accepted`, `example`, `retryable` and `message` onto the object the tool boundary returns — `detail` is never one of the fields it carries through, for any refusal, not only this unit's new one.
+
+   This produces three consequences for this unit specifically:
+
+   - Acceptance criterion 8 ("the refusal names the record file that could not be parsed") is NOT met at the surface the criterion names, which is what a human operating the tool actually sees. The committed test, `sync.refuses-a-remote-record-it-cannot-parse`, passes only because it asserts the return value of `sync()` itself — an internal function — rather than the operator-visible MCP tool boundary that sits in front of it.
+   - Plan invariant P2 is violated: the refusal reports `retryable: true` for a condition where a retry can never succeed, because the unparseable bytes live on the remote and nothing local can change them by retrying.
+   - The refusal's message also states that a push was rejected, when in this scenario the guard returns before any push is even attempted.
+
+   The remedy requires threading a new `SyncOutcome` reason into `src/server/tools/sync_ledger.ts` so the operator-visible tool boundary can distinguish and correctly render this refusal. `src/server/` is listed in this plan's own "Does not touch" row (section 0), and adding a new outcome kind is a design decision, not a mechanical fix. This is recorded as OPEN and awaiting a ruling. It is not recorded as resolved, and no resolution is proposed here.
+
 ---
 
 ## 4. The change, step by step
