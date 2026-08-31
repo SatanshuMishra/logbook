@@ -23,9 +23,18 @@ const CENSUSED_FILES = [
   'src/server/prompts.ts'
 ] as const
 
-const ESCAPE_MODULE_SPECIFIERS = ['./escape.ts', '../render/escape.ts', '../../render/escape.ts']
+const ESCAPE_MODULE_SPECIFIERS = [
+  './escape.ts',
+  '../render/escape.ts',
+  '../../render/escape.ts',
+  './clip.ts',
+  '../render/clip.ts',
+  '../../render/clip.ts'
+]
 const ESCAPE_FUNCTION = 'escapeStored'
 const CLIP_FUNCTION = 'clipGraphemes'
+const MARKER_CLIP_FUNCTION = 'clipWithMarker'
+const WRAPPING_CLIP_FUNCTIONS = new Set([CLIP_FUNCTION, MARKER_CLIP_FUNCTION])
 const ITERATION_CALLBACK_NAMES = new Set(['map', 'flatMap', 'filter', 'forEach', 'find'])
 const ARRAY_PRODUCING_NAMES = new Set(['map', 'flatMap'])
 const JOIN_METHOD = 'join'
@@ -40,7 +49,11 @@ type Ctx = { checker: ts.TypeChecker; sourceFile: ts.SourceFile; escapeSymbols: 
 const contextFor = (checker: ts.TypeChecker, sourceFile: ts.SourceFile): Ctx => ({
   checker,
   sourceFile,
-  escapeSymbols: findNamedImportSymbols(checker, sourceFile, ESCAPE_MODULE_SPECIFIERS, [ESCAPE_FUNCTION, CLIP_FUNCTION])
+  escapeSymbols: findNamedImportSymbols(checker, sourceFile, ESCAPE_MODULE_SPECIFIERS, [
+    ESCAPE_FUNCTION,
+    CLIP_FUNCTION,
+    MARKER_CLIP_FUNCTION
+  ])
 })
 
 const unwrap = (node: ts.Node): ts.Node => {
@@ -283,7 +296,7 @@ const resolveTerminals = (ctx: Ctx, node: ts.Node, depth: number): ts.Expression
 const isEscapedCall = (ctx: Ctx, node: ts.Node, depth: number): boolean => {
   const called = escapeCallName(ctx, node)
   if (called === ESCAPE_FUNCTION) return true
-  if (called !== CLIP_FUNCTION || !ts.isCallExpression(node)) return false
+  if (called === null || !WRAPPING_CLIP_FUNCTIONS.has(called) || !ts.isCallExpression(node)) return false
   const wrapped = node.arguments[0]
   return wrapped !== undefined && classifyExpression(ctx, wrapped, depth + 1) === 'escaped'
 }
@@ -419,11 +432,12 @@ const SYNTHETIC_OFFENDING_EXPRESSION = 'payload.rawTitle'
 const SYNTHETIC_ESCAPE_SOURCE = [
   'export const escapeStored = (text: string): string => text',
   'export const clipGraphemes = (text: string, max: number): string => text.slice(0, max)',
+  'export const clipWithMarker = (text: string, max: number): string => text.slice(0, max)',
   ''
 ].join('\n')
 
 const SYNTHETIC_MODULE_SOURCE = [
-  "import { escapeStored, clipGraphemes } from './escape.ts'",
+  "import { escapeStored, clipGraphemes, clipWithMarker } from './escape.ts'",
   '',
   "const BANNER = 'Synthetic'",
   '',
@@ -433,7 +447,9 @@ const SYNTHETIC_MODULE_SOURCE = [
   '  [',
   '    `${BANNER}: ${clipGraphemes(escapeStored(payload.safeTitle), 40)}`,',
   '    `Count: ${payload.count}`,',
-  '    `Title: ${payload.rawTitle}`',
+  '    `Title: ${payload.rawTitle}`,',
+  '    `Shortened: ${clipWithMarker(escapeStored(payload.safeTitle), 40)}`,',
+  '    `ShortenedRaw: ${clipWithMarker(payload.rawTitle, 40)}`',
   "  ].join('\\n')",
   ''
 ].join('\n')
@@ -506,9 +522,11 @@ test('render.no-unescaped-site.names-the-module-and-the-expression-it-halted-on'
       ['BANNER', 'server-authored'],
       ['clipGraphemes(escapeStored(payload.safeTitle), 40)', 'escaped'],
       ['payload.count', 'server-authored'],
-      [SYNTHETIC_OFFENDING_EXPRESSION, 'unclassifiable']
+      [SYNTHETIC_OFFENDING_EXPRESSION, 'unclassifiable'],
+      ['clipWithMarker(escapeStored(payload.safeTitle), 40)', 'escaped'],
+      ['clipWithMarker(payload.rawTitle, 40)', 'unclassifiable']
     ],
-    'the synthetic module must expose exactly one unescaped interpolation alongside three classified ones'
+    'the synthetic module must expose two unescaped interpolations alongside four classified ones'
   )
 
   assert.throws(

@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { UriTemplate } from '@modelcontextprotocol/sdk/shared/uriTemplate.js'
 import { rawGit } from '../support/git-fixture.ts'
@@ -368,6 +369,42 @@ test('resource.sessions-lists-every-entry-id-with-its-first-line', async () => {
   })
 })
 
+const ABSENT_SESSIONS_THREAD_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
+const SESSIONS_ABSENT_THREAD_REFUSAL = 'logbook://sessions: no thread record matches id'
+
+test('resources.sessions-refuses-an-id-naming-no-thread-record', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+    const uri = `logbook://sessions/${ABSENT_SESSIONS_THREAD_ID}`
+    assert.notEqual(
+      ids.sessionThreadId,
+      ABSENT_SESSIONS_THREAD_ID,
+      'expected the fixture to seed a thread id other than the absent one'
+    )
+
+    const outcome = await fx.spawned.client
+      .readResource({ uri })
+      .then((read) => ({ kind: 'resolved' as const, contentCount: read.contents.length }))
+      .catch((error: unknown) => ({ kind: 'refused' as const, error }))
+
+    assert.ok(
+      outcome.kind === 'refused',
+      `expected ${uri} to be refused, got a listing body carrying ${outcome.kind === 'resolved' ? outcome.contentCount : 0} content items`
+    )
+    const { error } = outcome
+    assert.ok(error instanceof McpError, `expected the refusal to be an McpError, got ${String(error)}`)
+    assert.equal(
+      error.code,
+      ErrorCode.InvalidParams,
+      `expected the refusal to carry ErrorCode.InvalidParams, got ${error.code}`
+    )
+    assert.ok(
+      error.message.includes(SESSIONS_ABSENT_THREAD_REFUSAL),
+      `expected the refusal message to contain '${SESSIONS_ABSENT_THREAD_REFUSAL}', got '${error.message}'`
+    )
+  })
+})
+
 test('resource.index-lists-the-sessions-address', async () => {
   await withFixture(async (fx) => {
     await fx.spawned.client.listTools()
@@ -395,6 +432,46 @@ test('resource.thread-detail-shows-every-binding', async () => {
     assert.ok(
       detailText.includes('feat/resources-fixture-branch'),
       'expected the thread resource to name the bound branch'
+    )
+  })
+})
+
+const BINDINGS_UNREAD_NOTE = 'bindings could not be read; none is claimed either way'
+
+test('resource.thread-detail-degrades-when-bindings-cannot-be-read', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+    const bound = (await fx.spawned.client.callTool({
+      name: 'bind_branch',
+      arguments: { thread_id: ids.threadId, branch: 'feat/unreadable-bindings-fixture-branch' }
+    })) as CallToolResult
+    assertOkResult('bind_branch (unreadable bindings fixture arrange)', bound)
+
+    const rt = testRuntime({
+      env: { HOME: fx.homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: fx.pluginData },
+      cwd: fx.repo
+    })
+    const layout = layoutFor(rt, fx.repo)
+    assert.equal(layout.ok, true)
+    if (!layout.ok) return
+
+    const bindingsPath = join(layout.value.records, 'bindings')
+    rmSync(bindingsPath, { recursive: true, force: true })
+    writeFileSync(bindingsPath, 'this is a regular file, not a directory\n')
+
+    const detailText = await readThreadResourceText(fx.spawned, ids.threadId)
+
+    assert.ok(
+      detailText.includes(`Id: ${ids.threadId}`),
+      `expected the thread resource to still render its thread record, got '${detailText}'`
+    )
+    assert.ok(
+      detailText.includes(BINDINGS_UNREAD_NOTE),
+      `expected the thread resource to report its bindings unread, got '${detailText}'`
+    )
+    assert.ok(
+      !detailText.includes(layout.value.root),
+      'expected the thread resource to keep the store path out of the rendered body'
     )
   })
 })
