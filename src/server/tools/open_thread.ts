@@ -7,6 +7,21 @@ import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { commitThread, loadThreadForReference, openProjectStore } from '../tool-support.ts'
 
+const CriterionCreateSchema = z
+  .strictObject({
+    text: z
+      .string()
+      .min(1)
+      .max(caps.CRITERION_TEXT_MAX)
+      .describe('one completion criterion as plain text; the server mints its id and display ordinal'),
+    check: z
+      .string()
+      .min(1)
+      .max(caps.CRITERION_CHECK_MAX)
+      .describe('the re-runnable check that decides whether this criterion is true, for example npm test exits 0')
+  })
+  .describe('one completion criterion together with the check that decides it')
+
 const OpenThreadInputSchema = z.strictObject({
   title: z.string().min(1).max(caps.THREAD_TITLE_MAX).describe('the one-line thread title'),
   slug: z
@@ -21,13 +36,7 @@ const OpenThreadInputSchema = z.strictObject({
     .optional()
     .describe('the id of an existing thread this new thread succeeds, a 26-character ULID such as 01M0NDPM0ACCR9CD68PMHYWGGD; omit it when this thread succeeds no earlier thread'),
   completion_criteria: z
-    .array(
-      z
-        .string()
-        .min(1)
-        .max(caps.CRITERION_TEXT_MAX)
-        .describe('one completion criterion as plain text; the server mints its id and display ordinal')
-    )
+    .array(CriterionCreateSchema)
     .min(1)
     .max(caps.CRITERIA_MAX_ELEMENTS)
     .describe('what finishing looks like; at least one criterion is required or the thread can never be closed')
@@ -42,7 +51,8 @@ const OpenThreadOutputSchema = z.object({
       z.object({
         id: z.string().describe('the id minted for this criterion'),
         ordinal: z.number().int().describe('the display position of this criterion'),
-        text: z.string().describe('the stored text of this criterion')
+        text: z.string().describe('the stored text of this criterion'),
+        check: z.string().describe('the stored check that decides this criterion')
       })
     )
     .describe('the criteria minted for this thread, in display order')
@@ -78,11 +88,20 @@ const criterionTextCapRefusal = (index: number, observed: number): Refusal => ({
   message: `completion_criteria[${index}] exceeds its cap of ${caps.CRITERION_TEXT_MAX} characters after escaping; observed ${observed}; remedy: shorten the criterion text and retry.`
 })
 
+const criterionCheckCapRefusal = (index: number, observed: number): Refusal => ({
+  ok: false,
+  field: 'completion_criteria',
+  accepted: `at most ${caps.CRITERION_CHECK_MAX} characters after escaping, per check`,
+  example: 'npm test exits 0',
+  retryable: true,
+  message: `completion_criteria[${index}].check exceeds its cap of ${caps.CRITERION_CHECK_MAX} characters after escaping; observed ${observed}; remedy: shorten the check and retry.`
+})
+
 export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
   name: 'open_thread',
   title: 'Open thread',
   description:
-    'Creates a new thread of work and returns its id. A thread needs a one-line title, a short slug that is unique in this project, and at least one completion criterion stating what finishing looks like; a thread with no criterion can never be closed, so the call is refused without one. Criteria are supplied as plain strings and the server assigns each one a stable id and its display ordinal, so ["the merge test passes in both push orders", "the plan is committed"] is a complete value. The slug is lowercase letters, digits and hyphens, up to 64 characters, for example merge-and-sync.',
+    'Creates a new thread of work and returns its id. A thread needs a one-line title, a short slug that is unique in this project, and at least one completion criterion stating what finishing looks like; a thread with no criterion can never be closed, so the call is refused without one. Every criterion carries its own check, the re-runnable thing that decides whether it is true, and a criterion with no check is refused. Criteria are supplied as text-and-check pairs and the server assigns each one a stable id and its display ordinal, so [{"text": "the merge test passes in both push orders", "check": "npm test exits 0"}] is a complete value. The slug is lowercase letters, digits and hyphens, up to 64 characters, for example merge-and-sync.',
   input: OpenThreadInputSchema,
   output: OpenThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -101,11 +120,25 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
       return { ok: false, refusal: titleCapRefusal(escapedTitle.length) }
     }
 
-    const escapedCriteriaTexts = input.completion_criteria.map((text) => escapeStored(text))
-    const oversizedIndex = escapedCriteriaTexts.findIndex((text) => text.length > caps.CRITERION_TEXT_MAX)
-    if (oversizedIndex !== -1) {
-      const oversizedText = escapedCriteriaTexts[oversizedIndex]
-      return { ok: false, refusal: criterionTextCapRefusal(oversizedIndex, oversizedText === undefined ? 0 : oversizedText.length) }
+    const escapedCriteria = input.completion_criteria.map((entry) => ({
+      text: escapeStored(entry.text),
+      check: escapeStored(entry.check)
+    }))
+    const oversizedTextIndex = escapedCriteria.findIndex((entry) => entry.text.length > caps.CRITERION_TEXT_MAX)
+    if (oversizedTextIndex !== -1) {
+      const oversized = escapedCriteria[oversizedTextIndex]
+      return {
+        ok: false,
+        refusal: criterionTextCapRefusal(oversizedTextIndex, oversized === undefined ? 0 : oversized.text.length)
+      }
+    }
+    const oversizedCheckIndex = escapedCriteria.findIndex((entry) => entry.check.length > caps.CRITERION_CHECK_MAX)
+    if (oversizedCheckIndex !== -1) {
+      const oversized = escapedCriteria[oversizedCheckIndex]
+      return {
+        ok: false,
+        refusal: criterionCheckCapRefusal(oversizedCheckIndex, oversized === undefined ? 0 : oversized.check.length)
+      }
     }
 
     const predecessorId = input.predecessor_id
@@ -115,12 +148,15 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
     }
 
     const now = rt.now()
-    const completionCriteria: Criterion[] = escapedCriteriaTexts.map((text, index) => ({
+    const completionCriteria: Criterion[] = escapedCriteria.map((entry, index) => ({
       id: rt.ulid(),
       ordinal: index + 1,
-      text,
+      text: entry.text,
       done: false,
       kind: 'planned',
+      check: entry.check,
+      result: null,
+      result_status: null,
       struck_by: null
     }))
 
@@ -154,7 +190,12 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
         thread_id: committed.value.id,
         slug: committed.value.slug,
         status: committed.value.status,
-        completion_criteria: committed.value.completion_criteria.map((c) => ({ id: c.id, ordinal: c.ordinal, text: c.text }))
+        completion_criteria: committed.value.completion_criteria.map((c) => ({
+          id: c.id,
+          ordinal: c.ordinal,
+          text: c.text,
+          check: c.check ?? ''
+        }))
       }
     }
   }

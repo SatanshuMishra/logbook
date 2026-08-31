@@ -251,7 +251,7 @@ const buildTwoFieldConflict = async (
   const opened = await callTool(ana, 'open_thread', {
     title: 'resolve conflict fixture thread',
     slug,
-    completion_criteria: ['a criterion for the resolve fixture']
+    completion_criteria: [{ text: 'a criterion for the resolve fixture', check: 'the resolve fixture check' }]
   })
   assertOkResult('open_thread', opened)
   const threadId = (opened.structuredContent as { thread_id: string }).thread_id

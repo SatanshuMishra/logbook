@@ -60,7 +60,7 @@ const structuredOf = (label: string, result: CallToolResult): Record<string, unk
 const openThread = async (fx: Fixture, slug: string): Promise<string> => {
   const opened = (await fx.spawned.client.callTool({
     name: 'open_thread',
-    arguments: { title: 'a thread that can be blocked', slug, completion_criteria: ['the blockage renders'] }
+    arguments: { title: 'a thread that can be blocked', slug, completion_criteria: [{ text: 'the blockage renders', check: 'the roster prints it' }] }
   })) as CallToolResult
   const threadId = structuredOf('open_thread', opened).thread_id
   assert.equal(typeof threadId, 'string', 'open_thread must return a thread_id string')

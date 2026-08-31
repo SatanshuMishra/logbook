@@ -455,7 +455,12 @@ test('skill.cannot-strand', async () => {
       arguments: {
         title: 'skills contract fixture thread',
         slug: 'skills-contract-fixture',
-        completion_criteria: ['prove the documented preflight and debrief sequence cannot strand a pointer']
+        completion_criteria: [
+          {
+            text: 'prove the documented preflight and debrief sequence cannot strand a pointer',
+            check: 'the skills contract test drives both skills end to end'
+          }
+        ]
       }
     })) as CallToolResult
     assert.notEqual(

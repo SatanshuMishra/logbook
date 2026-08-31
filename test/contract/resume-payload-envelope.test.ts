@@ -70,7 +70,9 @@ const openOrdinaryThread = async (rt: Runtime, slug: string): Promise<string> =>
   const opened = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
     title: 'guard the resume payload byte budget',
     slug,
-    completion_criteria: ['the predicted payload size bounds the serialised reply']
+    completion_criteria: [
+      { text: 'the predicted payload size bounds the serialised reply', check: 'the envelope test asserts it' }
+    ]
   })
   if (!opened.ok) {
     throw new Error(`expected open_thread to create the fixture thread, it refused: ${opened.refusal.message}`)
