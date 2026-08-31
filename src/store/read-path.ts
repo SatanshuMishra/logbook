@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type { Declared } from '../schema/declare.ts'
 import type { Runtime } from '../runtime/runtime.ts'
-import { git } from './git.ts'
+import { git, gitBuffer } from './git.ts'
 import type { StoreLayout } from './layout.ts'
+import { materialiseTreeInto } from './materialise-tree.ts'
 import { LEDGER_REF } from './ref.ts'
 
 export type Quarantined = { quarantined: true; path: string; reason: string }
@@ -31,9 +32,14 @@ const countedGit: typeof git = (rt, repo, args, opts) => {
   return git(rt, repo, args, opts)
 }
 
-const countedMaterialiseGit: typeof git = (rt, repo, args, opts) => {
+export const countedMaterialiseGit: typeof git = (rt, repo, args, opts) => {
   materialiseCallCount += 1
   return git(rt, repo, args, opts)
+}
+
+export const countedMaterialiseGitBuffer: typeof gitBuffer = (rt, repo, args, opts) => {
+  materialiseCallCount += 1
+  return gitBuffer(rt, repo, args, opts)
 }
 
 const STAMP_FILE_NAME = 'last-materialised'
@@ -83,14 +89,6 @@ const errnoOf = (error: unknown): string | null => {
     if (typeof code === 'string') return code
   }
   return null
-}
-
-const discardIndexFile = (rt: Runtime, indexFile: string): void => {
-  try {
-    rmSync(indexFile, { force: true })
-  } catch (error) {
-    rt.log({ level: 'error', event: 'store.materialise-index-cleanup-failed', detail: describeError(error) })
-  }
 }
 
 const discardScratchDir = (rt: Runtime, dir: string): void => {
@@ -151,33 +149,14 @@ const swapRecordsTreeIntoPlace = (rt: Runtime, layout: StoreLayout, newTreeDir: 
 
 const materialiseTree = (rt: Runtime, layout: StoreLayout, ref: string): MaterialiseOutcome => {
   const newTreeDir = freshRecordsScratchDir(layout)
-  const indexFile = path.join(recordsScratchRoot(layout), `materialise-index-${randomUUID()}`)
 
-  try {
-    mkdirSync(newTreeDir, { recursive: true })
-  } catch (error) {
-    return { ok: false, detail: `the records scratch tree could not be created: ${describeError(error)}` }
-  }
-
-  try {
-    const readTree = countedMaterialiseGit(rt, layout.projectRoot, ['read-tree', ref], { indexFile })
-    if (!readTree.ok) {
-      discardScratchDir(rt, newTreeDir)
-      return { ok: false, detail: `the ledger tree could not be read (git read-tree exit ${readTree.code})` }
-    }
-
-    const checkout = countedMaterialiseGit(
-      rt,
-      layout.projectRoot,
-      ['checkout-index', '-a', `--prefix=${newTreeDir}${path.sep}`],
-      { indexFile }
-    )
-    if (!checkout.ok) {
-      discardScratchDir(rt, newTreeDir)
-      return { ok: false, detail: `the ledger tree could not be written out (git checkout-index exit ${checkout.code})` }
-    }
-  } finally {
-    discardIndexFile(rt, indexFile)
+  const materialised = materialiseTreeInto(rt, layout.projectRoot, ref, newTreeDir, {
+    runGit: countedMaterialiseGit,
+    runGitBuffer: countedMaterialiseGitBuffer
+  })
+  if (!materialised.ok) {
+    discardScratchDir(rt, newTreeDir)
+    return { ok: false, detail: materialised.detail }
   }
 
   return swapRecordsTreeIntoPlace(rt, layout, newTreeDir)

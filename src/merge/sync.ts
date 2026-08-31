@@ -7,7 +7,8 @@ import { SessionRecord, type SessionEntry } from '../schema/session.ts'
 import { ThreadRecord, type Thread } from '../schema/thread.ts'
 import { git } from '../store/git.ts'
 import type { StoreLayout } from '../store/layout.ts'
-import { readAllRecordFiles, syncWorkingCopy } from '../store/read-path.ts'
+import { materialiseTreeInto } from '../store/materialise-tree.ts'
+import { countedMaterialiseGit, countedMaterialiseGitBuffer, readAllRecordFiles, syncWorkingCopy } from '../store/read-path.ts'
 import { LEDGER_REF, casUpdateRef } from '../store/ref.ts'
 import type { Store } from '../store/records.ts'
 import { writeRecords, type RecordChange } from '../store/write-path.ts'
@@ -141,22 +142,13 @@ type MaterialiseResult = { ok: true; scratch: string } | { ok: false; detail: st
 
 const materialiseRefToScratch = (rt: Runtime, layout: StoreLayout, ref: string): MaterialiseResult => {
   const scratch = mkdtempSync(path.join(tmpdir(), 'logbook-sync-scratch-'))
-  const indexFile = path.join(scratch, 'materialise-index')
-  try {
-    const readTree = git(rt, layout.projectRoot, ['read-tree', ref], { indexFile })
-    if (!readTree.ok) {
-      rmSync(scratch, { recursive: true, force: true })
-      return { ok: false, detail: `git read-tree failed for ${ref}: ${readTree.stderr.trim()}` }
-    }
-    const checkout = git(rt, layout.projectRoot, ['checkout-index', '-a', `--prefix=${scratch}${path.sep}`], {
-      indexFile
-    })
-    if (!checkout.ok) {
-      rmSync(scratch, { recursive: true, force: true })
-      return { ok: false, detail: `git checkout-index failed for ${ref}: ${checkout.stderr.trim()}` }
-    }
-  } finally {
-    rmSync(indexFile, { force: true })
+  const materialised = materialiseTreeInto(rt, layout.projectRoot, ref, scratch, {
+    runGit: countedMaterialiseGit,
+    runGitBuffer: countedMaterialiseGitBuffer
+  })
+  if (!materialised.ok) {
+    rmSync(scratch, { recursive: true, force: true })
+    return { ok: false, detail: materialised.detail }
   }
   return { ok: true, scratch }
 }
