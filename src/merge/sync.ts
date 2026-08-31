@@ -137,39 +137,26 @@ const readScratchRecordSet = (root: string): ScratchRecordSet => {
   return { threads, decisions, sessionsByThread, passthrough }
 }
 
-const parseLsTreeLine = (line: string): { blobId: string; relPath: string } | null => {
-  const tabIndex = line.indexOf('\t')
-  if (tabIndex === -1) return null
-  const meta = line.slice(0, tabIndex).split(' ')
-  const blobId = meta[2]
-  if (blobId === undefined) return null
-  return { blobId, relPath: line.slice(tabIndex + 1) }
-}
-
 type MaterialiseResult = { ok: true; scratch: string } | { ok: false; detail: string }
 
 const materialiseRefToScratch = (rt: Runtime, layout: StoreLayout, ref: string): MaterialiseResult => {
-  const listing = git(rt, layout.projectRoot, ['ls-tree', '-r', '--full-tree', ref])
-  if (!listing.ok) {
-    return { ok: false, detail: `git ls-tree failed for ${ref}: ${listing.stderr.trim()}` }
-  }
-
   const scratch = mkdtempSync(path.join(tmpdir(), 'logbook-sync-scratch-'))
-  const lines = listing.stdout.split('\n').filter((line) => line.length > 0)
-  for (const line of lines) {
-    const parsed = parseLsTreeLine(line)
-    if (parsed === null) continue
-    const content = git(rt, layout.projectRoot, ['cat-file', '-p', parsed.blobId])
-    if (!content.ok) {
+  const indexFile = path.join(scratch, 'materialise-index')
+  try {
+    const readTree = git(rt, layout.projectRoot, ['read-tree', ref], { indexFile })
+    if (!readTree.ok) {
       rmSync(scratch, { recursive: true, force: true })
-      return {
-        ok: false,
-        detail: `git cat-file could not read blob ${parsed.blobId} (${parsed.relPath}) from ${ref}: ${content.stderr.trim()}`
-      }
+      return { ok: false, detail: `git read-tree failed for ${ref}: ${readTree.stderr.trim()}` }
     }
-    const target = path.join(scratch, parsed.relPath)
-    mkdirSync(path.dirname(target), { recursive: true })
-    writeFileSync(target, content.stdout, 'utf8')
+    const checkout = git(rt, layout.projectRoot, ['checkout-index', '-a', `--prefix=${scratch}${path.sep}`], {
+      indexFile
+    })
+    if (!checkout.ok) {
+      rmSync(scratch, { recursive: true, force: true })
+      return { ok: false, detail: `git checkout-index failed for ${ref}: ${checkout.stderr.trim()}` }
+    }
+  } finally {
+    rmSync(indexFile, { force: true })
   }
   return { ok: true, scratch }
 }

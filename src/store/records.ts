@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs'
+import { opendirSync, readdirSync, type Dir } from 'node:fs'
 import path from 'node:path'
 import type { Ok, Refusal } from '../schema/declare.ts'
 import { DecisionRecord, type Decision } from '../schema/decision.ts'
@@ -78,20 +78,35 @@ const checkRecordsReadable = (rt: Runtime, layout: StoreLayout): Refusal | null 
   }
 }
 
-const diskRecordCount = (dir: string): number => {
+let recordScanCount = 0
+
+export const resetRecordScanCounter = (): void => {
+  recordScanCount = 0
+}
+
+export const getRecordScanCounter = (): number => recordScanCount
+
+const openDirOrNull = (dir: string): Dir | null => {
   try {
-    let total = 0
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (entry.isDirectory()) {
-        total += diskRecordCount(path.join(dir, entry.name))
-      } else if (entry.isFile() && entry.name.endsWith('.json')) {
-        total += 1
-      }
-    }
-    return total
+    return opendirSync(dir)
   } catch (error) {
-    if (errnoCode(error) === 'ENOENT') return 0
+    if (errnoCode(error) === 'ENOENT') return null
     throw error
+  }
+}
+
+const holdsAnyRecord = (dir: string): boolean => {
+  const handle = openDirOrNull(dir)
+  if (handle === null) return false
+  try {
+    for (let entry = handle.readSync(); entry !== null; entry = handle.readSync()) {
+      recordScanCount += 1
+      if (entry.isFile() && entry.name.endsWith('.json')) return true
+      if (entry.isDirectory() && holdsAnyRecord(path.join(dir, entry.name))) return true
+    }
+    return false
+  } finally {
+    handle.closeSync()
   }
 }
 
@@ -118,7 +133,9 @@ const ensureMaterialised = (rt: Runtime, layout: StoreLayout): Ok<void> | Refusa
   const outcome = syncWorkingCopy(rt, layout)
   if (!outcome.ok) return materialisationRefusal(outcome.detail)
 
-  if (diskRecordCount(layout.records) > 0) return { ok: true, value: undefined }
+  if (outcome.materialised) return { ok: true, value: undefined }
+
+  if (holdsAnyRecord(layout.records)) return { ok: true, value: undefined }
 
   const inRef = refRecordCount(rt, layout)
   if (inRef === null || inRef === 0) return { ok: true, value: undefined }

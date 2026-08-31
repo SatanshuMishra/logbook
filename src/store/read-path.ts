@@ -66,15 +66,6 @@ export const markMaterialised = (layout: StoreLayout, ref: string): void => {
   writeStamp(layout, ref)
 }
 
-const parseLsTreeLine = (line: string): { blobId: string; relPath: string } | null => {
-  const tabIndex = line.indexOf('\t')
-  if (tabIndex === -1) return null
-  const meta = line.slice(0, tabIndex).split(' ')
-  const blobId = meta[2]
-  if (blobId === undefined) return null
-  return { blobId, relPath: line.slice(tabIndex + 1) }
-}
-
 export type MaterialiseOutcome = { ok: true } | { ok: false; detail: string }
 
 const RECORDS_SCRATCH_DIR_NAME = 'records-scratch'
@@ -92,6 +83,14 @@ const errnoOf = (error: unknown): string | null => {
     if (typeof code === 'string') return code
   }
   return null
+}
+
+const discardIndexFile = (rt: Runtime, indexFile: string): void => {
+  try {
+    rmSync(indexFile, { force: true })
+  } catch (error) {
+    rt.log({ level: 'error', event: 'store.materialise-index-cleanup-failed', detail: describeError(error) })
+  }
 }
 
 const discardScratchDir = (rt: Runtime, dir: string): void => {
@@ -151,40 +150,34 @@ const swapRecordsTreeIntoPlace = (rt: Runtime, layout: StoreLayout, newTreeDir: 
 }
 
 const materialiseTree = (rt: Runtime, layout: StoreLayout, ref: string): MaterialiseOutcome => {
-  const list = countedMaterialiseGit(rt, layout.projectRoot, ['ls-tree', '-r', '--full-tree', ref])
-  if (!list.ok) {
-    return { ok: false, detail: `the ledger tree could not be listed (git ls-tree exit ${list.code})` }
-  }
-
   const newTreeDir = freshRecordsScratchDir(layout)
-  const lines = list.stdout.split('\n').filter((line) => line.length > 0)
-  let unreadable = 0
-  let currentTarget = newTreeDir
+  const indexFile = path.join(recordsScratchRoot(layout), `materialise-index-${randomUUID()}`)
+
   try {
     mkdirSync(newTreeDir, { recursive: true })
-    for (const line of lines) {
-      const parsed = parseLsTreeLine(line)
-      if (parsed === null) continue
-      const content = countedMaterialiseGit(rt, layout.projectRoot, ['cat-file', '-p', parsed.blobId])
-      if (!content.ok) {
-        unreadable += 1
-        continue
-      }
-      currentTarget = path.join(newTreeDir, parsed.relPath)
-      mkdirSync(path.dirname(currentTarget), { recursive: true })
-      writeFileSync(currentTarget, content.stdout, 'utf8')
-    }
   } catch (error) {
-    discardScratchDir(rt, newTreeDir)
-    return {
-      ok: false,
-      detail: `writing ${currentTarget} into the records scratch tree failed: ${describeError(error)}`
-    }
+    return { ok: false, detail: `the records scratch tree could not be created: ${describeError(error)}` }
   }
 
-  if (unreadable > 0) {
-    discardScratchDir(rt, newTreeDir)
-    return { ok: false, detail: `${unreadable} record blob(s) in the ledger tree could not be read` }
+  try {
+    const readTree = countedMaterialiseGit(rt, layout.projectRoot, ['read-tree', ref], { indexFile })
+    if (!readTree.ok) {
+      discardScratchDir(rt, newTreeDir)
+      return { ok: false, detail: `the ledger tree could not be read (git read-tree exit ${readTree.code})` }
+    }
+
+    const checkout = countedMaterialiseGit(
+      rt,
+      layout.projectRoot,
+      ['checkout-index', '-a', `--prefix=${newTreeDir}${path.sep}`],
+      { indexFile }
+    )
+    if (!checkout.ok) {
+      discardScratchDir(rt, newTreeDir)
+      return { ok: false, detail: `the ledger tree could not be written out (git checkout-index exit ${checkout.code})` }
+    }
+  } finally {
+    discardIndexFile(rt, indexFile)
   }
 
   return swapRecordsTreeIntoPlace(rt, layout, newTreeDir)
