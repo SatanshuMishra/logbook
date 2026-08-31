@@ -11,6 +11,7 @@ import {
   RESUME_PAYLOAD_MAX_BYTES,
   type DecisionIntegrity
 } from '../../src/render/briefing.ts'
+import { CLIP_MARKER } from '../../src/render/clip.ts'
 import { ThreadRecord, type Thread, type Criterion, type Risk, type KeyDecision, type OutOfScope } from '../../src/schema/thread.ts'
 import { CRITERIA_MAX_ELEMENTS, KEY_DECISION_TITLE_MAX, OPEN_RISKS_MAX_ELEMENTS, THREAD_SLUG_MAX } from '../../src/schema/caps.ts'
 import type { Pointer } from '../../src/domain/pointer.ts'
@@ -768,7 +769,7 @@ test('briefing.the-clip-search-lands-just-under-the-resume-payload-cap-on-the-wo
   )
 
   const retained = textAfterPrefix(render.briefing, `- ${shownRisk.id} `)
-  assert.ok(retained > 0, `the clipped risk text must keep some of its own text, got ${retained}`)
+  assert.ok(retained > CLIP_MARKER.length, `the clipped risk text must keep some of its own text beside the marker, got ${retained}`)
   assert.ok(
     render.briefing.endsWith('for the complete record.'),
     'a clipped render must carry the address that resolves to the complete record'
