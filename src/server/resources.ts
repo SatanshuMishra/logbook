@@ -103,7 +103,17 @@ const readBindingsForThread = (rt: Runtime, threadId: string): BindingIntegrity 
     rt.log({ level: 'error', event: 'resource.thread-bindings-unreadable', detail: layout.message })
     return { bound: [], unreadable: 0, unread: true }
   }
-  const slots = readAllRecordFiles<Binding>(path.join(layout.value.records, 'bindings'), BindingRecord)
+  let slots: Slot<Binding>[]
+  try {
+    slots = readAllRecordFiles<Binding>(path.join(layout.value.records, 'bindings'), BindingRecord)
+  } catch (error) {
+    rt.log({
+      level: 'error',
+      event: 'resource.thread-bindings-unreadable',
+      detail: error instanceof Error ? error.message : String(error)
+    })
+    return { bound: [], unreadable: 0, unread: true }
+  }
   const bound: Binding[] = []
   let unreadable = 0
   for (const slot of slots) {
