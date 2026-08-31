@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { UriTemplate } from '@modelcontextprotocol/sdk/shared/uriTemplate.js'
 import { rawGit } from '../support/git-fixture.ts'
@@ -364,6 +365,42 @@ test('resource.sessions-lists-every-entry-id-with-its-first-line', async () => {
     assert.ok(
       listing.indexOf(newerId) < listing.indexOf(olderId),
       'expected the sessions resource to render newest first'
+    )
+  })
+})
+
+const ABSENT_SESSIONS_THREAD_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
+const SESSIONS_ABSENT_THREAD_REFUSAL = 'logbook://sessions: no thread record matches id'
+
+test('resources.sessions-refuses-an-id-naming-no-thread-record', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+    const uri = `logbook://sessions/${ABSENT_SESSIONS_THREAD_ID}`
+    assert.notEqual(
+      ids.sessionThreadId,
+      ABSENT_SESSIONS_THREAD_ID,
+      'expected the fixture to seed a thread id other than the absent one'
+    )
+
+    const outcome = await fx.spawned.client
+      .readResource({ uri })
+      .then((read) => ({ kind: 'resolved' as const, contentCount: read.contents.length }))
+      .catch((error: unknown) => ({ kind: 'refused' as const, error }))
+
+    assert.ok(
+      outcome.kind === 'refused',
+      `expected ${uri} to be refused, got a listing body carrying ${outcome.kind === 'resolved' ? outcome.contentCount : 0} content items`
+    )
+    const { error } = outcome
+    assert.ok(error instanceof McpError, `expected the refusal to be an McpError, got ${String(error)}`)
+    assert.equal(
+      error.code,
+      ErrorCode.InvalidParams,
+      `expected the refusal to carry ErrorCode.InvalidParams, got ${error.code}`
+    )
+    assert.ok(
+      error.message.includes(SESSIONS_ABSENT_THREAD_REFUSAL),
+      `expected the refusal message to contain '${SESSIONS_ABSENT_THREAD_REFUSAL}', got '${error.message}'`
     )
   })
 })
