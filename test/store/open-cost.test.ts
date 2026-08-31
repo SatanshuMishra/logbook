@@ -76,3 +76,40 @@ test('store.open-does-not-read-every-record', () => {
     })
   })
 })
+
+const recordScansFor = (recordCount: number): number =>
+  withRepo((repo) =>
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const seeded = openStore(rt, repo)
+      assert.equal(seeded.ok, true)
+      if (!seeded.ok) throw new Error('expected the seeding open to succeed')
+
+      const changes: RecordChange[] = []
+      for (let index = 0; index < recordCount; index += 1) {
+        changes.push(makeThread(rt, `open-record-reads-${index}`))
+      }
+      const committed = seeded.value.commit(changes, `seed ${recordCount} threads`)
+      assert.equal(committed.ok, true)
+
+      resetRecordScanCounter()
+
+      const reopened = openStore(rt, repo)
+      assert.equal(reopened.ok, true)
+      if (!reopened.ok) throw new Error('expected the reopening open to succeed')
+      assert.equal(reopened.value.readThreads().length, recordCount)
+
+      return getRecordScanCounter()
+    })
+  )
+
+test('store.open-record-reads-do-not-grow-with-record-count', () => {
+  const few = recordScansFor(4)
+  const many = recordScansFor(40)
+
+  assert.equal(
+    few,
+    many,
+    `opening a store holding 4 records examined ${few} directory entries and opening one holding 40 records examined ${many}; the number of directory entries examined must not depend on how many records the store holds`
+  )
+})
