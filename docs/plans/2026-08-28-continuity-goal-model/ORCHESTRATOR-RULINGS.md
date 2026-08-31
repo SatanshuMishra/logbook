@@ -1214,3 +1214,286 @@ string to object), `U4-B` (`update_thread.criteria_done` id to object), `U8-B` (
 `OR15` might have forced `U1` into `src/store/records.ts`. `U1`'s census found bindings are written as
 `kind: 'raw'` and added no branch, so the collision never materialised. The order costs nothing and
 `OR1` already had it.
+
+## OR35 — `U4-A`'s site enumeration undercounts, and the repair is a closed census, not two patches
+
+`U4-A` was dispatched and halted before branching. Its FIND census passed — all 44 blocks match
+byte-for-byte exactly once — and it halted on a different clause: **section 5.3's site enumeration is
+wrong.** It states `test/sync/two-clones-spawn.test.ts` — one site. The file has three, at lines 204,
+313 and 338, all at six spaces of indentation.
+
+This was observed, not argued. Steps 1-8 were applied to a disposable tree and one test file run:
+
+| Tree state | Command | Exit | Result |
+| --- | --- | --- | --- |
+| `9bc094b` | `node --test test/sync/two-clones-spawn.test.ts` | 0 | tests 3, pass 3, fail 0 |
+| steps 1-8 applied | `node --test test/sync/two-clones-spawn.test.ts` | 1 | tests 3, pass 0, fail 3 |
+
+The failure names the unaddressed site directly: `open_thread (ana, thread a) expected a successful
+call, got a refusal: field: completion_criteria.0`, at `test/sync/two-clones-spawn.test.ts:315:5`.
+
+The single site the plan does fix, line 204, sits in a helper used only by the other two tests. So
+the plan's one edit repairs the two tests it never names and leaves the named test broken. That is
+why a green suite was predicted and a red one is what the tree produces.
+
+**`U4-A` section 8's recorded measurement of `tests 441, pass 441, fail 0` is superseded by the two
+runs above.** It cannot hold with lines 313 and 338 unpatched. This is a confirmed instance of live
+risk `01M18AN2ZS60JAKVJG3ABH833V`, not a suspicion about it.
+
+### The two missing pairs, authored here so the implementer authors nothing
+
+Both FIND strings occur exactly once, verified. The `check` values follow section 5.3's own idiom:
+the scenario's name followed by the word `check`.
+
+FIND:
+
+```ts
+      completion_criteria: ['a criterion for the unparseable-record scenario']
+```
+
+REPLACE:
+
+```ts
+      completion_criteria: [
+        { text: 'a criterion for the unparseable-record scenario', check: 'the unparseable-record scenario check' }
+      ]
+```
+
+FIND:
+
+```ts
+      completion_criteria: ['a criterion that makes ana diverge from the shared copy']
+```
+
+REPLACE:
+
+```ts
+      completion_criteria: [
+        { text: 'a criterion that makes ana diverge from the shared copy', check: 'the divergence scenario check' }
+      ]
+```
+
+### The census, which is the actual repair
+
+Applying the two pairs above and proceeding would fix the file that was tripped over and leave every
+other undercount in place. A FIND census proves each block matches something; it does not prove every
+old-shape call site is addressed by some block. Those are different questions, and only the second one
+predicts the suite.
+
+Before `U4-A` applies step 1, run a closed census over the whole tree. Classify **every** occurrence of
+`completion_criteria` in `src/` and `test/` into exactly one of:
+
+1. an old-shape call site addressed by a named FIND block in section 5.3 or by a pair in this ruling —
+   record which block;
+2. an old-shape call site addressed by nothing — **STOP and report**, listing file, line and the
+   verbatim line;
+3. not a call site — a schema field, a type, a renderer read, a merge rule — with the reason it cannot
+   refuse at runtime.
+
+An occurrence that fits none of the three is unclassifiable, and the census **halts** on it rather than
+defaulting it into class 3. A pinned count and a sampled allowlist are both forbidden: they are
+change-detectors wearing a census costume, and the defect this ruling exists to repair is precisely a
+count that was pinned and wrong.
+
+The census is reported to the orchestrator before any edit. Class 2 members are a STOP for the same
+reason the first one was: choosing a `check` string is authoring, and `PLANNING-BRIEF.md` section 2
+forbids passing that judgement to the implementer. The orchestrator authors them, as it did above.
+
+### What is not changed
+
+`U4-A`'s FIND blocks, steps, tests, red-on-parent, inertness mutation and stop conditions all stand.
+Stop conditions 11.1 and 11.2 were run and both pass; the version bump target reads `1.6.4 -> 2.0.0`.
+No plan document is edited — this ruling is appended, per `OR7`, and the plan is read alongside it.
+
+### Filed above the ceiling, not folded in
+
+- `U4-A` line 811 cites the control-character technique at `test/contract/no-path.test.ts:163`. It is
+  at `:165`. Two lines off, and harmless because the FIND block itself matches.
+- `U4-B`'s section 5.1 and 5.4 FIND blocks are unmeasured. They target files `U4-A` edits, so they can
+  only be measured at `U4-A`'s tip, which does not exist yet. Deferred by design, not overlooked.
+
+## OR36 — `U6-B` ships two more commits: the receipt its criterion 1 lacks, and the one finding that is introduced rather than discovered
+
+`U6` shipped both parts, PR #107 and PR #109. Its lead returned an honest downgrade on one acceptance
+criterion and twelve findings above the ceiling. Two of the thirteen are dispositions this ruling
+changes; the other eleven are filed.
+
+### The line this ruling draws
+
+`FILED.md` exists because a unit must not absorb every problem its planning uncovers. That doctrine
+governs a defect the unit **discovered**. It does not govern a defect the unit **introduced**. A
+finding is folded in when the diff under review is what creates the failure mode, and filed when the
+failure mode predates the diff or lives outside it.
+
+Applied here, exactly one of the eleven findings is introduced: `readBindingsForThread` is new code in
+`U6-B`, and the thread resource did not read bindings before it. The other eleven are filed.
+
+### Obligation 1 — criterion 1's refusal ships with something that can turn red
+
+`U6-B` acceptance criterion 1 requires that reading `logbook://sessions/{thread_id}` for an id naming
+no thread record is **refused**, not answered with an empty listing. That clause discharges defect
+`D7`. The refusal is implemented at `src/server/resources.ts:155-159` and is reachable. Nothing
+asserts it: deleting the whole block leaves the suite green, which under `P11` and `OR13` means half
+the criterion shipped with no receipt.
+
+A downgrade is for a receipt that **cannot** be taken. This one costs one test, so it is taken.
+
+- File: `test/spawn/resources.test.ts`, beside the sessions tests already there.
+- Name: `resources.sessions-refuses-an-id-naming-no-thread-record`.
+- Assertion: reading `logbook://sessions/<a well-formed ULID that names no thread record>` rejects
+  with an `McpError` carrying `ErrorCode.InvalidParams` whose message contains
+  `logbook://sessions: no thread record matches id`. Assert the rejection itself, never a proxy for
+  it, and assert that no listing body is returned.
+- Inertness: delete the `if (slot === null)` block at `src/server/resources.ts:155-159` so the handler
+  falls through to the render. The new test must turn **red**. Restore exactly.
+
+### Obligation 2 — the bindings read stops taking the thread resource down
+
+`src/server/resources.ts:106` calls `readAllRecordFiles` on the `bindings` directory outside any
+guard. A filesystem error other than not-found — a permission error, an I/O error, a path that is not
+a directory — propagates out of `readThreadResourceBody` for **every** thread, not only the thread
+whose bindings failed, and carries the store's absolute path to the caller.
+
+The repair is the channel the unit already built. Two lines above, at `:102-105`, a failed layout
+resolution logs `resource.thread-bindings-unreadable` and returns
+`{ bound: [], unreadable: 0, unread: true }`. The plan scoped that channel to layout resolution
+only, which is why this path was never considered — but the degradation it expresses is exactly the
+right one here, and the renderer already prints the unread marker.
+
+- Change: guard the `readAllRecordFiles` call at `:106`. On a throw, log
+  `resource.thread-bindings-unreadable` with the error's message and return the identical
+  `{ bound: [], unreadable: 0, unread: true }` value that `:104` returns. The absolute path reaches
+  the log, never the caller.
+- Test: assert a thread resource read still renders, and reports its bindings unread, when the
+  bindings directory cannot be read. Trigger it deterministically by replacing the `bindings`
+  directory with a regular file, so the read fails `ENOTDIR` on any platform and without depending on
+  the user the suite runs as. A `chmod`-based trigger is rejected: it silently does nothing when the
+  suite runs as root.
+- Inertness: revert the guard. The new test must turn **red**. Restore exactly.
+
+### What is not reopened
+
+Both obligations land as additional commits on `feat/u6b-discovery-addresses`, before the human gate.
+PR #109's title and body are fixed at creation and are **not** rewritten; its
+`--not-verified` line on criterion 1 becomes conservative rather than wrong, which is the safe
+direction for a body to be stale in. Nothing about `U6-A`, PR #107, or the merge order changes.
+
+### Filed, not folded — the remaining ten
+
+Recorded in `FILED.md` as `F6a` through `F6k`. None is folded into either part.
+
+## OR37 — `U5-B`: criterion 9 is fixed in code, criterion 8's mutation is rescheduled, and two surviving mutants are killed
+
+`U5-A` shipped as PR #108. `U5-B` is implemented and green and raised one question it correctly refused
+to answer itself. Four dispositions follow. `U5-C` is unchanged.
+
+### Criterion 9 — option 1, and it is not a concession to the criterion
+
+Criterion 9 requires at most one shortening marker per line. The `- succeeds:` line interpolates a
+predecessor title and a predecessor slug, each shortened independently, so it can carry two. The
+counterexample was reproduced at six fixture shapes on a schema-admissible thread rendering **inside**
+budget. The shipped test passes only because its fixture has no predecessor, so that line never
+renders. That is a receipt asserting a case it never reaches, which is the same defect as `U6-B`'s
+criterion 1 in a different costume.
+
+Ruled: **pin the slug so it never shortens.** The reason is not that it makes criterion 9 true. It is
+that clipping a slug is wrong on its own merits, and criterion 9 is how that wrongness surfaced:
+
+- `SLUG_PATTERN` is `/^[a-z0-9][a-z0-9-]{0,63}$/` and `THREAD_SLUG_MAX` is 64. No character in that
+  class is escaped mid-line, so `escapeStored(slug)` is always the slug and always at most 64
+  graphemes. The clip path is unreachable for any value the schema admits.
+- A shortened slug is **unresolvable**. The slug is the only human-readable handle on that line; a
+  title survives shortening as meaning, a handle does not survive it at all. Shipping a clip path that
+  can only ever destroy a lookup key is a defect independent of any criterion.
+
+Two constraints on the implementation:
+
+1. **Derive the pin from the schema, never hardcode 64.** Import `THREAD_SLUG_MAX` from
+   `src/schema/caps.ts` at the `clipAt` site. A literal 64 goes stale silently if the schema bound
+   ever rises, and the symptom of that staleness is two markers on a line again — the exact defect
+   being closed.
+2. **The receipt is the counterexample, not a rewrite of the assertion.** Widen criterion 9's test so
+   its fixture renders **with** a predecessor, making the `- succeeds:` line appear. That test must be
+   red before the pin and green after. A criterion-9 test whose fixture has no predecessor is not
+   evidence and does not count.
+
+This deviates from step B3's whole-file mandate, and the deviation is authorised here and nowhere
+else. Rejected: rewording criterion 9 to per-value. It would edit a frozen plan document to describe
+what the code happens to do, and it would leave the unresolvable-slug defect shipped.
+
+### Criterion 8 — the mutation is misassigned, not missing
+
+Mutation 7.5's FIND names `criterion: NO_CLIP,` followed by `criterionCheck: NO_CLIP,`.
+`criterionCheck` is introduced by `U5-C`'s step C2 and exists nowhere in `src/` or `test/` today, so the
+mutation cannot run at `U5-B`. The implementer was right that this is not a halt, and right not to
+improvise a substitute.
+
+Ruled, in two parts:
+
+- **At `U5-B`,** run 7.5 against two adjacent fields that exist on this tree — `criterion: NO_CLIP,`
+  and `settled: NO_CLIP,` in the `UNCLIPPED` record. What 7.5 proves is that the first render attempt
+  shortens nothing; any real clip substituted into that record turns it red, and the identity of the
+  field is not what carries the proof. With that mutation run and restored, criterion 8 is **verified**,
+  not unverified-reasoned.
+- **At `U5-C`,** run 7.5 exactly as written once `criterionCheck` exists. It is a valid mutation in the
+  wrong part, not a defective one.
+
+The plan's separate claim that criterion 8's population "expands sixfold when escaped" is unexercised
+and measures 1.01x, because `escapeStored` escapes `#` only at line start. That clause is filed, not
+fixed; nothing in the criterion depends on the multiplier.
+
+### Two surviving mutants on code this part introduces
+
+`src/render/clip.ts` is new in `U5-B`. Both mutants below were demonstrated, and both survive against
+that new module's own tests, so under `OR36`'s line these are introduced, not discovered.
+
+1. **`clipWithMarker` has no output-shape assertion.** A mutant that reverses escaping — turning a
+   stored `U+000A` token back into a real newline — passed all five clip tests. On a project whose
+   sibling thread exists to close stored-text forgery gaps, a clip helper that may re-introduce control
+   characters with nothing asserting otherwise is a receipt that cannot turn red. Add an assertion that
+   the returned value is the input's own prefix followed by `CLIP_MARKER` and nothing else, and confirm
+   that mutant now dies.
+2. **The census's red-proof fixture never calls `clipWithMarker`.** Mutating the classifier to admit it
+   unconditionally left both census tests green, so the census cannot fail for the reason it exists.
+   Make the fixture exercise the call, and confirm the unconditional-admit mutant dies.
+
+### Everything else stands
+
+`U5-A` and PR #108 are untouched. The remaining Part A and Part B findings, and the four plan defects,
+are filed as `F5a` onward. Nothing is folded beyond the four dispositions above.
+
+## OR38 — amendment to `OR36`: its landing premise is void, and the two commits take their own pull request
+
+`OR36` directed its two obligations onto `feat/u6b-discovery-addresses` "before the human gate". The
+gate had already passed: PR #109 merged at head `03b0838` after being retargeted from
+`feat/u6a-content-rendered` to `main` and rebased, which rewrote the shas the implementer had pushed.
+Its branch is the pre-rebase line and is 17 behind, 7 ahead of `main`.
+
+The work itself is complete and verified — `npm test` at `506 pass / 0 fail` on the first run,
+typecheck and packaging both exit 0, and each obligation's inertness mutation observed red and
+restored. Obligation 2's test was additionally red before the guard existed, carrying the store's
+absolute path to the caller, which is the defect itself reproduced rather than a proxy for it.
+
+**Both defects are live on `main` today.** `origin/main:src/server/resources.ts:106` is the unguarded
+read, and neither new test name appears in `origin/main:test/spawn/resources.test.ts`.
+
+Ruled:
+
+1. **A fresh branch off current `main`, and a new pull request.** Branch `fix/u6b-bindings-guard-and-receipt`,
+   base `main`. Cherry-pick the two commits — `b4847c8` then `a26025a` — onto `aa0085a`. The
+   re-application is expected to be clean: `src/server/resources.ts` is byte-identical between the
+   implementer's base and `main`, and `test/spawn/resources.test.ts` differs by five insertions and two
+   deletions. A conflict is a STOP, not a merge judgement.
+2. **Re-run the full verification on the re-applied tree before opening.** The earlier green was
+   measured against a tree that no longer exists; `main` now also carries `U5-A` and `U4-A`.
+3. **Version: read-then-increment PATCH, `fix` type.** `main` is at `2.0.0`, so this reads `2.0.1`.
+   The pull request carries a behaviour change, so it takes a version step like any other merge; the
+   number is read from the manifests at branch time, never carried forward from `1.8.0`.
+4. **The stale remote branch is not this unit's to delete.** The implementer's authorised push
+   re-created `origin/feat/u6b-discovery-addresses` at `a26025a` after the human had deleted it, so a
+   seven-commit line now exists on origin with no pull request attached. Five of its commits are
+   already on `main` through #109's rebase. Deleting a remote branch is destructive and outward-facing;
+   it is referred to the human and performed by no agent.
+
+The pull request body states plainly that it repairs two defects that reached `main` in #109, so a
+reviewer is not left inferring why a follow-up exists.
