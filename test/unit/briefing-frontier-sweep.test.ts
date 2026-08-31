@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { renderBriefing, BRIEFING_MAX_CHARS, RESUME_PAYLOAD_MAX_BYTES } from '../../src/render/briefing.ts'
+import { renderBriefingWithPasses, BRIEFING_MAX_CHARS, RESUME_PAYLOAD_MAX_BYTES } from '../../src/render/briefing.ts'
 import { escapeStored } from '../../src/render/escape.ts'
 import { ThreadRecord } from '../../src/schema/thread.ts'
 import * as caps from '../../src/schema/caps.ts'
@@ -50,12 +50,69 @@ const resumePayloadBytes = (threadId: string, briefing: string): number =>
     'utf8'
   )
 
-type Measured = { chars: number; bytes: number }
+type Measured = {
+  chars: number
+  bytes: number
+  withinBudget: boolean
+  itemsHeld: number
+  itemsRendered: number
+}
+
+const SECTION_HEADINGS = [
+  '**Open risks:**',
+  '**Key decisions:**',
+  '**Out of scope:**',
+  '**Completion criteria:**',
+  '**Settled items (on goals already met or struck):**'
+] as const
+
+const sectionLineCount = (lines: readonly string[], heading: string): number => {
+  const headingIndex = lines.indexOf(heading)
+  if (headingIndex === -1) return 0
+  let count = 0
+  for (let cursor = headingIndex + 1; cursor < lines.length; cursor += 1) {
+    const line = lines[cursor]
+    if (line === undefined || line.length === 0) break
+    count += 1
+  }
+  return count
+}
+
+const CRITERION_ROW_PATTERN = /^- c\d+ \[(?:open|done|struck)\]:/
 
 const measure = (shape: SweepShape): Measured => {
   const { thread, predecessor, integrity } = buildSweepFixture(rt, shape)
-  const briefing = renderBriefing(thread, integrity, null, predecessor)
-  return { chars: briefing.length, bytes: resumePayloadBytes(thread.id, briefing) }
+  const render = renderBriefingWithPasses(thread, integrity, null, predecessor)
+  const lines = render.briefing.split('\n')
+
+  const criterionRows = lines.filter((line) => CRITERION_ROW_PATTERN.test(line)).length
+  const danglingRows = lines.filter((line) => line.startsWith('- dangling: ')).length
+  const quarantinedRows = lines.filter((line) => line.startsWith('- quarantined: ')).length
+
+  const itemsRendered =
+    criterionRows +
+    sectionLineCount(lines, SECTION_HEADINGS[0]) +
+    sectionLineCount(lines, SECTION_HEADINGS[1]) +
+    sectionLineCount(lines, SECTION_HEADINGS[2]) +
+    sectionLineCount(lines, SECTION_HEADINGS[4]) +
+    danglingRows +
+    quarantinedRows
+
+  const itemsHeld =
+    thread.completion_criteria.length +
+    thread.spine.open_risks.length +
+    thread.spine.key_decisions.length +
+    thread.spine.out_of_scope.length +
+    integrity.dangling.length +
+    integrity.quarantined.length
+
+  return {
+    chars: render.briefing.length,
+    bytes: resumePayloadBytes(thread.id, render.briefing),
+    withinBudget: render.withinBudget,
+    itemsHeld,
+    itemsRendered
+  }
 }
 
 const isAdmissible = (shape: SweepShape): boolean => ThreadRecord.parse(buildSweepFixture(rt, shape).thread).ok
@@ -89,6 +146,9 @@ type SweptRecord = {
   outcome: Outcome
   chars: number | null
   bytes: number | null
+  withinBudget: boolean | null
+  itemsHeld: number | null
+  itemsRendered: number | null
 }
 
 const classifiedOutcomes: ReadonlySet<string> = new Set(OUTCOME_CLASSES)
@@ -178,7 +238,10 @@ const sweep = (): SweptRecord[] => {
             bulkCount,
             outcome,
             chars: measured === null ? null : measured.chars,
-            bytes: measured === null ? null : measured.bytes
+            bytes: measured === null ? null : measured.bytes,
+            withinBudget: measured === null ? null : measured.withinBudget,
+            itemsHeld: measured === null ? null : measured.itemsHeld,
+            itemsRendered: measured === null ? null : measured.itemsRendered
           })
 
           const withinRecordCap = (shape: SweepShape): boolean =>
@@ -238,7 +301,7 @@ const sweep = (): SweptRecord[] => {
   return swept
 }
 
-test('briefing.frontier-sweep-finds-no-record-breaching-the-character-or-byte-cap', (t) => {
+test('briefing.frontier-sweep-finds-no-record-that-loses-an-item-or-hides-a-budget-breach', (t) => {
   assert.equal(Buffer.byteLength(ASCII_FILL, 'utf8'), 1, 'the ASCII fill must be one byte per character')
   assert.equal(Buffer.byteLength(MULTI_BYTE_FILL, 'utf8'), 3, 'the multi-byte fill must be three bytes per character')
   assert.equal(Buffer.byteLength(DELIMITER_FILL, 'utf8'), 1, 'the delimiter fill must be one byte per character')
@@ -320,14 +383,34 @@ test('briefing.frontier-sweep-finds-no-record-breaching-the-character-or-byte-ca
   const worstPerFill = FILLS.map((fill) => worstFirst.find((record) => record.fill === fill.name)).filter(
     (record): record is SweptRecord => record !== undefined
   )
+  for (const record of worstPerFill) t.diagnostic(`worst ${record.fill}: ${describe(record)}`)
 
+  const losingAnItem = admissible.filter((record) => record.itemsRendered !== record.itemsHeld)
   assert.equal(
-    breaching.length,
+    losingAnItem.length,
     0,
     [
-      `${breaching.length} of ${swept.length} swept records exceeded the ${BRIEFING_MAX_CHARS} character cap or the ${RESUME_PAYLOAD_MAX_BYTES} resume-payload byte cap`,
-      ...worstPerFill.map((record) => `worst ${record.fill}: ${describe(record)}`),
-      ...worstFirst.slice(0, 5).map((record) => `breaching: ${describe(record)}`)
+      `${losingAnItem.length} of ${admissible.length} swept records rendered fewer items than they hold; no display rule may remove an item`,
+      ...losingAnItem.slice(0, 5).map((record) => `losing: ${record.itemsRendered} of ${record.itemsHeld} — ${describe(record)}`)
     ].join('\n')
+  )
+
+  const claimingToFit = breaching.filter((record) => record.withinBudget === true)
+  assert.equal(
+    claimingToFit.length,
+    0,
+    [
+      `${claimingToFit.length} of ${breaching.length} breaching records reported themselves as within budget; a render that does not fit must say so`,
+      ...claimingToFit.slice(0, 5).map((record) => `claiming: ${describe(record)}`)
+    ].join('\n')
+  )
+
+  const silentlyBreaching = admissible.filter(
+    (record) => record.withinBudget === true && (record.chars ?? 0) > BRIEFING_MAX_CHARS
+  )
+  assert.equal(
+    silentlyBreaching.length,
+    0,
+    'no record may report itself within budget while rendering past the character cap'
   )
 })
