@@ -5,7 +5,7 @@ import type { SessionEntry } from '../../schema/session.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { transition } from '../../domain/lifecycle.ts'
-import { ThreadRecord } from '../../schema/thread.ts'
+import { ThreadRecord, type Thread } from '../../schema/thread.ts'
 import { openProjectStore, loadThread } from '../tool-support.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import { withDetail } from '../../store/detail.ts'
@@ -25,8 +25,34 @@ const CloseThreadInputSchema = z.strictObject({
 const CloseThreadOutputSchema = z.object({
   thread_id: z.string().describe('the id of the thread that was closed'),
   status: z.enum(['done', 'abandoned']).describe('the lifecycle state the thread now carries'),
-  session_entry_id: z.string().describe('the id of the session log entry that recorded the closure detail')
+  session_entry_id: z.string().describe('the id of the session log entry that recorded the closure detail'),
+  result_status_split: z
+    .object({
+      verified: z.number().int().describe('how many met criteria recorded a check that was actually run'),
+      unverified_reasoned: z
+        .number()
+        .int()
+        .describe('how many met criteria recorded a check that could not be run, with the reason'),
+      not_recorded: z.number().int().describe('how many met criteria carry no recorded result at all')
+    })
+    .describe('how the met criteria on this thread divide by how their result was obtained')
 })
+
+type ResultStatusSplit = { verified: number; unverified_reasoned: number; not_recorded: number }
+
+const resultStatusSplitOf = (thread: Thread): ResultStatusSplit => {
+  const met = thread.completion_criteria.filter((criterion) => criterion.struck_by === null && criterion.done)
+  const verified = met.filter((criterion) => criterion.result_status === 'verified').length
+  const unverifiedReasoned = met.filter((criterion) => criterion.result_status === 'unverified-reasoned').length
+  return {
+    verified,
+    unverified_reasoned: unverifiedReasoned,
+    not_recorded: met.length - verified - unverifiedReasoned
+  }
+}
+
+const renderResultStatusSplit = (split: ResultStatusSplit): string =>
+  `criteria met: ${split.verified} verified, ${split.unverified_reasoned} unverified-reasoned, ${split.not_recorded} not recorded.`
 
 type CloseThreadInput = z.infer<typeof CloseThreadInputSchema>
 type CloseThreadOutput = z.infer<typeof CloseThreadOutputSchema>
@@ -66,7 +92,7 @@ export const closeThreadTool: ToolSpec<CloseThreadInput, CloseThreadOutput> = {
   name: 'close_thread',
   title: 'Close thread',
   description:
-    'Closes one thread as either done or abandoned, and this cannot be undone through any tool. Closing as done is gated: every criterion that has not been struck must already be marked done and a closure statement must be supplied, and if any criterion is still open the call is refused and names each one. Closing as abandoned needs a reason instead, which is written to the session log rather than onto the thread. Reopening later means creating a new thread that references this one.',
+    'Closes one thread as either done or abandoned, and this cannot be undone through any tool. Closing as done is gated: every criterion that has not been struck must already be marked done and a closure statement must be supplied, and if any criterion is still open the call is refused and names each one. Closing as abandoned needs a reason instead, which is written to the session log rather than onto the thread. Reopening later means creating a new thread that references this one. The reply reports how the met criteria divide between checks that were run and checks that could not be, and neither count is ever a reason to refuse.',
   input: CloseThreadInputSchema,
   output: CloseThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
@@ -113,13 +139,16 @@ export const closeThreadTool: ToolSpec<CloseThreadInput, CloseThreadOutput> = {
       return { ok: false, refusal: commitFailureRefusal(committed.detail) }
     }
 
+    const split = resultStatusSplitOf(validated.value)
+
     return {
       ok: true,
-      text: `closed thread ${thread.slug} as ${input.outcome}.`,
+      text: `closed thread ${thread.slug} as ${input.outcome}; ${renderResultStatusSplit(split)}`,
       structured: {
         thread_id: validated.value.id,
         status: input.outcome,
-        session_entry_id: sessionEntry.id
+        session_entry_id: sessionEntry.id,
+        result_status_split: split
       }
     }
   }

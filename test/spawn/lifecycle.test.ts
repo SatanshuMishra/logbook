@@ -275,7 +275,9 @@ test('update_thread.spawn.contract', async () => {
     const activeGoal = 'a real active goal supplied so this call actually changes the thread'
     const { valid } = generateSchemaCases('update_thread', schema, {
       thread_id: threadId,
-      criteria_done: [criterionId],
+      criteria_done: [
+        { criterion_id: criterionId, result: 'the fixture check was run and returned this', result_status: 'verified' }
+      ],
       active_goal: activeGoal
     })
     const result = (await fx.spawned.client.callTool({ name: 'update_thread', arguments: valid })) as CallToolResult
@@ -586,7 +588,12 @@ test('close_thread.done-thread-is-terminal', async () => {
 
     const markDone = (await fx.spawned.client.callTool({
       name: 'update_thread',
-      arguments: { thread_id: threadId, criteria_done: [criterionId] }
+      arguments: {
+        thread_id: threadId,
+        criteria_done: [
+          { criterion_id: criterionId, result: 'the fixture check was run and returned this', result_status: 'verified' }
+        ]
+      }
     })) as CallToolResult
     assertOkResult('update_thread (mark criterion done before closing)', markDone)
 
@@ -732,7 +739,10 @@ test('update_thread.refuses-marking-a-struck-criterion-done', async () => {
 
     const markDone = (await fx.spawned.client.callTool({
       name: 'update_thread',
-      arguments: { thread_id: threadId, criteria_done: [struckId] }
+      arguments: {
+        thread_id: threadId,
+        criteria_done: [{ criterion_id: struckId, result: 'the check was run', result_status: 'verified' }]
+      }
     })) as CallToolResult
     assert.equal(markDone.isError, true, 'a struck criterion cannot be marked done')
     const text = firstTextOf(markDone)

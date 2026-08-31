@@ -320,7 +320,7 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
 
     const unknownCriterion = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,
-      criteria_done: [rt.ulid()]
+      criteria_done: [{ criterion_id: rt.ulid(), result: 'the census result', result_status: 'verified' }]
     })
     if (unknownCriterion.ok) throw new Error('expected updateThreadTool to refuse an unknown criterion id')
     refusals.push({ producer: UPDATE_THREAD_UNKNOWN_CRITERION_PRODUCER, refusal: unknownCriterion.refusal })

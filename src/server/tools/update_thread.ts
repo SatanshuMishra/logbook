@@ -34,13 +34,26 @@ const KeyDecisionAddSchema = z
   })
   .describe('one decision to link into the spine')
 
+const CriterionDoneSchema = z
+  .strictObject({
+    criterion_id: ulidField('the id of a completion criterion already present on this thread'),
+    result: z
+      .string()
+      .max(caps.CRITERION_RESULT_MAX)
+      .describe('what the check returned, or when it could not be run, specifically why it could not'),
+    result_status: z
+      .enum(['verified', 'unverified-reasoned'])
+      .describe('verified when the check was run and result is what it returned; unverified-reasoned when the check could not be run and result says why')
+  })
+  .describe('one criterion to mark done, as an object carrying what was observed; the bare criterion id string this argument took before is refused, so send {"criterion_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV", "result": "436 tests, 0 fail, exit 0", "result_status": "verified"} in place of "01ARZ3NDEKTSV4RRFFQ69G5FAV"')
+
 const UpdateThreadInputSchema = z.strictObject({
   thread_id: ulidField('the id of the thread to update'),
   criteria_done: z
-    .array(ulidField('the id of a completion criterion already present on this thread'))
+    .array(CriterionDoneSchema)
     .max(caps.CRITERIA_MAX_ELEMENTS)
     .optional()
-    .describe('criterion ids to mark done; an id not present on the thread is refused'),
+    .describe('criteria to mark done, each carrying what was observed; an id not present on the thread is refused'),
   active_goal: z
     .string()
     .max(caps.SPINE_ACTIVE_GOAL_MAX)
@@ -113,6 +126,42 @@ export const unknownCriterionRefusal = (ids: string[]): Refusal => ({
   message: `criteria_done names ids not present on this thread: ${ids.join(', ')}.`
 })
 
+const duplicateCriterionRefusal = (ids: string[]): Refusal => ({
+  ok: false,
+  field: 'criteria_done',
+  accepted: 'at most one entry per criterion id in a single call',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: true,
+  message: `criteria_done names the same criterion more than once, so no single result could be stored for it: ${ids.join(', ')}.`
+})
+
+const emptyResultRefusal = (ids: string[]): Refusal => ({
+  ok: false,
+  field: 'criteria_done',
+  accepted: 'a non-empty result on every entry, stating what the check returned or why it could not be run',
+  example: '436 tests, 0 fail, exit 0',
+  retryable: true,
+  message: `criteria_done carries an empty result for these criteria, and a criterion is never marked done without one: ${ids.join(', ')}.`
+})
+
+const resultCapRefusal = (index: number, observed: number): Refusal => ({
+  ok: false,
+  field: 'criteria_done',
+  accepted: `at most ${caps.CRITERION_RESULT_MAX} characters after escaping, per result`,
+  example: '436 tests, 0 fail, exit 0',
+  retryable: true,
+  message: `criteria_done[${index}].result exceeds its cap of ${caps.CRITERION_RESULT_MAX} characters after escaping; observed ${observed}; remedy: shorten the result, record the detail through log_session_event, and retry.`
+})
+
+const contradictoryResultRefusal = (ids: string[]): Refusal => ({
+  ok: false,
+  field: 'criteria_done',
+  accepted: 'a criterion that is not already done, or the same result and result_status it was already marked done with',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: false,
+  message: `criteria_done would overwrite the recorded result of a criterion already marked done, and a recorded result is never rewritten: ${ids.join(', ')}.`
+})
+
 const struckCriterionRefusal = (ids: string[]): Refusal => ({
   ok: false,
   field: 'criteria_done',
@@ -162,7 +211,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
   name: 'update_thread',
   title: 'Update thread',
   description:
-    'Records mid-session progress on one thread: mark criteria done, refresh any of the six running-summary fields, set or clear what the thread is blocked on, and add or retire risks. Every argument is optional and only what is supplied is written, so a call carrying just criteria_done: ["<criterion ulid>"] changes nothing else. Risks are retired by id rather than by resubmitting the whole list, so a thread with fourteen risks costs one id to change one of them. The reply reports what changed, not what the record now holds.',
+    'Records mid-session progress on one thread: mark criteria done, refresh any of the six running-summary fields, set or clear what the thread is blocked on, and add or retire risks. Every argument is optional and only what is supplied is written, so a call carrying just criteria_done: [{"criterion_id": "<criterion ulid>", "result": "<what the check returned>", "result_status": "verified"}] changes nothing else. Marking a criterion done records what was observed and whether the check was actually run, and it is refused without both. Risks are retired by id rather than by resubmitting the whole list, so a thread with fourteen risks costs one id to change one of them. The reply reports what changed, not what the record now holds.',
   input: UpdateThreadInputSchema,
   output: UpdateThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -175,7 +224,12 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     if (!loaded.ok) return { ok: false, refusal: loaded.refusal }
     const thread = loaded.value
 
-    const criteriaDoneIds = input.criteria_done ?? []
+    const criteriaDone = input.criteria_done ?? []
+    const criteriaDoneIds = criteriaDone.map((entry) => entry.criterion_id)
+    const duplicatedIds = criteriaDoneIds.filter((id, index) => criteriaDoneIds.indexOf(id) !== index)
+    if (duplicatedIds.length > 0) {
+      return { ok: false, refusal: duplicateCriterionRefusal([...new Set(duplicatedIds)]) }
+    }
     const unknownCriteria = criteriaDoneIds.filter((id) => !thread.completion_criteria.some((c) => c.id === id))
     if (unknownCriteria.length > 0) {
       return { ok: false, refusal: unknownCriterionRefusal(unknownCriteria) }
@@ -186,13 +240,44 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     if (struckCriteria.length > 0) {
       return { ok: false, refusal: struckCriterionRefusal(struckCriteria) }
     }
+    const emptyResults = criteriaDone.filter((entry) => entry.result.trim().length === 0)
+    if (emptyResults.length > 0) {
+      return { ok: false, refusal: emptyResultRefusal(emptyResults.map((entry) => entry.criterion_id)) }
+    }
+    const escapedResults = criteriaDone.map((entry) => escapeStored(entry.result))
+    const oversizedResultIndex = escapedResults.findIndex((result) => result.length > caps.CRITERION_RESULT_MAX)
+    if (oversizedResultIndex !== -1) {
+      const oversized = escapedResults[oversizedResultIndex]
+      return {
+        ok: false,
+        refusal: resultCapRefusal(oversizedResultIndex, oversized === undefined ? 0 : oversized.length)
+      }
+    }
+    const completions = new Map(
+      criteriaDone.map((entry, index) => [
+        entry.criterion_id,
+        { result: escapedResults[index] as string, result_status: entry.result_status }
+      ])
+    )
+    const contradicted = criteriaDone.filter((entry) => {
+      const existing = thread.completion_criteria.find((c) => c.id === entry.criterion_id)
+      if (existing === undefined || !existing.done) return false
+      const completion = completions.get(entry.criterion_id)
+      return existing.result !== completion?.result || existing.result_status !== completion?.result_status
+    })
+    if (contradicted.length > 0) {
+      return { ok: false, refusal: contradictoryResultRefusal(contradicted.map((entry) => entry.criterion_id)) }
+    }
     const markedDone = criteriaDoneIds.filter((id) => {
       const existing = thread.completion_criteria.find((c) => c.id === id)
       return existing !== undefined && !existing.done
     })
-    const nextCriteria = thread.completion_criteria.map((c) =>
-      criteriaDoneIds.includes(c.id) ? { ...c, done: true } : c
-    )
+    const nextCriteria = thread.completion_criteria.map((c) => {
+      const completion = completions.get(c.id)
+      return completion === undefined
+        ? c
+        : { ...c, done: true, result: completion.result, result_status: completion.result_status }
+    })
 
     const retireIds = input.risks_retire ?? []
     const retiredIds = retireIds.filter((id) => thread.spine.open_risks.some((r) => r.id === id))
