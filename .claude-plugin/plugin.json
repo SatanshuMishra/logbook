@@ -1,9 +1,18 @@
 {
   "name": "logbook",
-  "version": "1.6.3",
+  "version": "1.6.4",
   "displayName": "Logbook",
   "description": "Git-native, multi-user, drift-aware session continuity for Claude Code.",
-  "author": { "name": "Logbook Plugin" },
+  "author": {
+    "name": "Logbook Plugin"
+  },
   "license": "MIT",
-  "keywords": ["logbook", "ledger", "mcp", "handoff", "resume", "drift"]
+  "keywords": [
+    "logbook",
+    "ledger",
+    "mcp",
+    "handoff",
+    "resume",
+    "drift"
+  ]
 }

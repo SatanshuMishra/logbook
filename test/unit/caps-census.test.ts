@@ -48,7 +48,9 @@ const CAP_ROLES: Record<string, CapRole> = {
   SESSION_BODY_MAX: 'record-field',
   THREAD_RECORD_SERIALISED_MAX_BYTES: 'record-bytes',
   UNRECOGNIZED_KEYS_SHOWN_MAX: 'refusal-display',
-  UNRECOGNIZED_KEY_NAME_MAX: 'refusal-display'
+  UNRECOGNIZED_KEY_NAME_MAX: 'refusal-display',
+  UNPARSEABLE_RECORDS_SHOWN_MAX: 'refusal-display',
+  UNPARSEABLE_RECORD_NAME_MAX: 'refusal-display'
 }
 
 export const classifyCapConstant = (name: string): Classified<string>['verdict'] | 'unclassifiable' =>

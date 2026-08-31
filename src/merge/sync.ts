@@ -20,6 +20,7 @@ export type SyncAction = 'noop' | 'pushed' | 'pushed-unverified' | 'fast-forward
 export type SyncOutcome =
   | { ok: true; action: SyncAction; ref: string; local_sha: string | null; remote_sha: string | null }
   | { ok: false; reason: 'conflict'; conflicts: Conflict[] }
+  | { ok: false; reason: 'unparseable'; records: string[] }
   | { ok: false; reason: 'offline' | 'rejected'; detail: string }
 
 export type SyncOps = { beforeCas?: () => void }
@@ -296,6 +297,17 @@ const performMerge = (
       const theirs = readScratchRecordSet(theirsScratch)
       const base = baseScratch !== null ? readScratchRecordSet(baseScratch) : null
 
+      if (theirs.passthrough.length > 0) {
+        return {
+          kind: 'return',
+          outcome: {
+            ok: false,
+            reason: 'unparseable',
+            records: theirs.passthrough.map((file) => file.relPath)
+          }
+        }
+      }
+
       const { changes: mergedChanges, conflicts } = computeMerge(ours, theirs, base)
       if (conflicts.length > 0) {
         const written = writeConflicts(layout, conflicts)
@@ -308,17 +320,12 @@ const performMerge = (
         return { kind: 'return', outcome: { ok: false, reason: 'conflict', conflicts } }
       }
 
-      const changes: RecordChange[] = [
-        ...mergedChanges,
-        ...theirs.passthrough.map((file) => ({ kind: 'raw' as const, relPath: file.relPath, content: file.content }))
-      ]
-
       const message = `merge ${localVal.slice(0, 12)} with ${remoteVal.slice(0, 12)}`
       const writeOps = {
         extraParents: [remoteVal],
         ...(ops.beforeCas !== undefined ? { beforeCas: ops.beforeCas } : {})
       }
-      const commitResult = writeRecords(rt, layout, changes, message, writeOps)
+      const commitResult = writeRecords(rt, layout, mergedChanges, message, writeOps)
       if (!commitResult.ok) {
         if (commitResult.reason === 'ref-moved') return { kind: 'retry' }
         return { kind: 'return', outcome: { ok: false, reason: 'rejected', detail: commitResult.detail } }

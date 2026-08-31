@@ -141,6 +141,63 @@ This is the call that commits the array section 2.5 built, so it is the point at
 
 8. **No divergence was found between the SPEC's cited line numbers and the working tree.**
 
+9. **Stop condition 11.2a's check is inert and is re-anchored.** As written, section 11.2 runs `grep -c "checkout-index" src/merge/sync.ts` and halts on `0`, intending to prove the first half of this unit (U2-A) landed. That string appears in that file at no commit — not on `main`, not on this branch. U2-A's own plan did specify `checkout-index`, but the mechanism was withdrawn after three reproduced regressions, one CRITICAL: it materialised a mode-`120000` tree entry as a real symlink, a reader followed it, and the quarantine path then re-read it, stored the resolved secret, and pushed it to the shared remote. It was replaced by `git ls-tree -r` plus one batched `git cat-file --batch`, in a new module `src/store/materialise-tree.ts`. The original check therefore prints `0` whether or not U2-A landed — no discriminating power, and it would halt a correctly stacked branch on a false alarm. The re-anchored check is the existence of `src/store/materialise-tree.ts` together with the batched `cat-file` call reached from `src/merge/sync.ts`. Measured on this branch: the file exists, `src/merge/sync.ts:10` imports `materialiseTreeInto` from it, `src/store/materialise-tree.ts:173` runs `['cat-file', '--batch']`, and none of the three exists at `origin/main`. Present on the branch, absent on `main` — the discrimination 11.2a was supposed to provide.
+
+10. **Sections 2.4, 2.5 and 2.6 cite `src/merge/sync.ts` line numbers eight lines high.** The quoted text in each is byte-correct and every FIND string matches exactly once; only the stated line numbers are wrong, because they were computed against the withdrawn mechanism's line count. The real locations are: section 2.4 `sync.ts:295-299` (not `303-307`), section 2.5 `sync.ts:311-314` (not `319-322`), section 2.6 `sync.ts:321` (not `329`). No FIND string changes.
+
+11. **The section 8.4 expected test count of 440 is stale, and the hard-coded `--verified "npm test - 440 tests, 0 fail, exit 0"` at plan line 763 must not ship as written.** A literal count nobody measured is a fabricated verification line under the honesty rule, which is worse than an absent one. Static counts measured: 449 at `main`, 460 at `ed6f116`, and U2-A has added more since. The pull request uses the number the run actually prints.
+
+12. **Step 4's rationale for reusing the `rejected` outcome is false, and it was the sole justification for excluding `src/server/` from this unit's scope.** The rationale states: "The existing `rejected` outcome is reused rather than a new one added, because the sync tool already renders that outcome's detail into a refusal, so no file outside this plan's ownership has to change." This was established by execution, not by reading: a probe drove the real production entrypoint `bin/logbook-server.ts` over the Model Context Protocol through the exact scenario this unit's acceptance test builds, and captured what the tool actually returned to the operator. The operator receives verbatim:
+
+    field: sync
+    accepted: a push the remote will accept without further changes
+    example: retry the call
+    retryable: true
+    the push to the shared ledger to origin was rejected; retry the call.
+
+   `Object.getOwnPropertyNames` on the returned object yields exactly `['content', 'isError']`. There is no `detail` property anywhere on it, and the string `decisions/not-a-valid-decision-record.json` — the record file named in the internal refusal — appears nowhere the operator can see. This was confirmed three separate ways, including `util.inspect` with `showHidden: true`, so a non-enumerable property could not have been hiding it either. The cause: `pickRefusalFields` in `src/server/errors.ts` copies only `field`, `accepted`, `example`, `retryable` and `message` onto the object the tool boundary returns — `detail` is never one of the fields it carries through, for any refusal, not only this unit's new one.
+
+   This produces three consequences for this unit specifically:
+
+   - Acceptance criterion 8 ("the refusal names the record file that could not be parsed") is NOT met at the surface the criterion names, which is what a human operating the tool actually sees. The committed test, `sync.refuses-a-remote-record-it-cannot-parse`, passes only because it asserts the return value of `sync()` itself — an internal function — rather than the operator-visible MCP tool boundary that sits in front of it.
+   - Plan invariant P2 is violated: the refusal reports `retryable: true` for a condition where a retry can never succeed, because the unparseable bytes live on the remote and nothing local can change them by retrying.
+   - The refusal's message also states that a push was rejected, when in this scenario the guard returns before any push is even attempted.
+
+   The remedy requires threading a new `SyncOutcome` reason into `src/server/tools/sync_ledger.ts` so the operator-visible tool boundary can distinguish and correctly render this refusal. `src/server/` is listed in this plan's own "Does not touch" row (section 0), and adding a new outcome kind is a design decision, not a mechanical fix. This is recorded as OPEN and awaiting a ruling. It is not recorded as resolved, and no resolution is proposed here.
+
+13. **Divergence 12 is RULED: this unit is widened to meet criterion 8, and `src/server/` is opened for exactly one refusal outcome.** The ruling was made by the orchestrator, not by the implementing session, and it resolves the OPEN item divergence 12 left. Three grounds, each of which independently suffices.
+
+    - A regression the change itself introduces is in scope. Before this branch there was no refusal on this path at all, so the misleading refusal is a new harm this unit created rather than a pre-existing one it declined to fix. The same ruling was already applied twice on this ladder: to `U1-B`'s lost minimum, and to `U2-A`'s mechanism withdrawal (decision `01M1AZ7R8Q35SFNAB2HRERT5DZ`). Choosing what it takes to meet a criterion safely is how the criterion gets met; it is not an expansion of the criterion.
+    - The boundary rested on a premise that is false. Step 4's stated rationale for excluding `src/server/` is, verbatim, "the sync tool already renders that outcome's `detail` into a refusal, so no file outside this plan's ownership has to change." Divergence 12 disproved that by execution: `pickRefusalFields` in `src/server/errors.ts` copies only `field`, `accepted`, `example`, `retryable` and `message`, so no refusal's `detail` has ever reached an operator. A boundary whose sole justification is untrue does not bind.
+    - Criterion 8 is a ceiling criterion, so unmet means the unit is not done. Shipping as written would also breach the green-branch invariant, because it degrades the operator experience relative to the parent rather than leaving it intact.
+
+    The widening is bounded to this one outcome. Nothing else in `src/server/` was touched, and in particular the general question of whether `detail` should reach the operator is left open and unaddressed.
+
+    **What shipped.** A fourth `SyncOutcome` failure variant, `unparseable`, carrying `records: string[]`, mirroring how the existing `conflict` variant carries `conflicts`. The variant deliberately carries **no** `detail` field. That shape is load-bearing rather than cosmetic: `src/server/tools/sync_ledger.ts` ends its dispatch in an implicit `else` that reads `outcome.detail`, so a variant shaped `{ reason; detail }` would have satisfied it, fallen through to `rejectedRefusal`, and still typechecked, reproducing the exact defect. Omitting `detail` forced a compile error at that line, which was observed: `TS2339: Property 'detail' does not exist on type ...`. The hazard was live, and the shape choice is what closed it.
+
+    The operator now receives, captured from a real server over the Model Context Protocol:
+
+        field: sync
+        accepted: a shared ledger whose every record file this version can read
+        example: upgrade this plugin to the version that wrote those records, or have the teammate who wrote them repair or remove them on the shared copy
+        retryable: false
+        sync stopped before merging: the shared ledger carries 1 record file(s) this version cannot read: decisions/not-a-valid-decision-record.json. Nothing was merged and nothing was sent to origin. Repeating this call cannot help, because the bytes live on the shared copy: upgrade this plugin to the version that wrote those records, or have the teammate who wrote them repair or remove them, then run sync_ledger again.
+
+    All three harms divergence 12 named are gone: the file is named, `retryable` is `false`, and no push is claimed.
+
+14. **`F2y` was discharged inside this unit rather than left filed, because divergence 13 made it live.** `F2y` recorded that the record names interpolated into this refusal are remote-controlled bytes with no sanitisation and no cap, and that it was inert only because the text never reached an operator. Divergence 13 removes that condition, so the same change that makes the names visible must also make them safe; fixing the display defect alone would have introduced a terminal-injection defect in its place. The names are now escaped and clipped per name, the list is capped, and an honest `(+N more)` remainder is rendered, following the house pattern already used for unrecognised keys in `src/schema/refusal.ts`. Two cap constants were added beside their precedent in `src/schema/caps.ts`. The refusal still carries no absolute filesystem path, so criterion 3's shipped privacy property is preserved.
+
+15. **Three test surfaces changed as a consequence, and none of them weakens a test.**
+
+    - `test/sync/two-clones-spawn.test.ts` gains `sync.names-the-unparseable-record-to-the-operator`, which drives the real server as a subprocess over the Model Context Protocol and asserts the operator-visible text. This is the receipt criterion 8 always needed. The pre-existing `sync.refuses-a-remote-record-it-cannot-parse` asserts the return value of the internal `sync()` function, which is why it passed while the criterion was unmet.
+    - `test/sync/conflict.test.ts` has two assertions repointed from `reason === 'rejected'` and a regular-expression match on `detail` to the new variant's `reason` and an exact structural comparison of `records`. That is a strengthening: it pins a specific new outcome kind and an exact array instead of a pattern match against a shared bucket.
+    - `test/contract/no-path.test.ts` and `test/unit/caps-census.test.ts` are censuses that halt on anything they cannot classify. Both required wiring for the new producer and the two new constants. The `no-path` census discovers producers through the module's exports, so the new refusal builder had to be exported; a module-private one would have left the census passing while covering nothing.
+
+16. **Two review findings were accepted as in scope rather than filed, because both concern this unit's own new code.**
+
+    - The escape-before-clip ORDER was not pinned by any test. That order is load-bearing: `escapeStored` expands text, turning one control character into the six characters that spell its code point, so the clip must run second or the cap stops bounding the output. Every test added for `F2y` used names escaping leaves unchanged, so all of them passed under either order. Reversing the order was demonstrated to leave the whole suite green while a hundred-character name rendered six hundred characters. A receipt that survives mutation of the thing it guards is not a receipt, so an assertion pinning the bound was added, and it was confirmed to turn red under the reversal and green when restored.
+    - The refusal message claimed `so both copies are unchanged`. The two facts before that clause are true, but the conclusion is not exactly true of the local copy, because `sync` calls `clearConflicts` for every non-`conflict` outcome and that unlinks the pending conflicts file. Only the clause was removed. The deletion itself is untouched and remains filed as `F2r`; correcting a sentence is not the same as changing behaviour, and telling an operator something untrue is the same class of harm criterion 8 exists to remove.
+
 ---
 
 ## 4. The change, step by step

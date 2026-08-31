@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -44,6 +44,88 @@ test('store.refuses-a-second-store', () => {
     assert.doesNotMatch(result.message, new RegExp(escapeRegExp(pluginDataRoot)))
   } finally {
     rmSync(pluginDataRoot, { recursive: true, force: true })
+  }
+})
+
+test('store.refuses-a-second-store-under-another-plugin-data-root', () => {
+  const pluginDataParent = mkdtempSync(path.join(tmpdir(), 'logbook-cross-root-'))
+  try {
+    const projectRoot = '/tmp/some/shared/project'
+    const sharedKey = 'store-key-shared'
+    writeOrigin(path.join(pluginDataParent, 'install-a'), sharedKey, projectRoot)
+    writeOrigin(path.join(pluginDataParent, 'install-b'), sharedKey, projectRoot)
+
+    const layout: StoreLayout = {
+      root: path.join(pluginDataParent, 'install-a', sharedKey),
+      records: path.join(pluginDataParent, 'install-a', sharedKey, 'records'),
+      state: path.join(pluginDataParent, 'install-a', sharedKey, 'state'),
+      projectRoot
+    }
+
+    const rt = testRuntime()
+    const result = ensureSingleStore(rt, layout)
+
+    assert.equal(result.ok, false, 'a second store for this project under another plugin-data root must be refused')
+    if (result.ok) {
+      throw new Error('expected a refusal')
+    }
+    assert.equal(result.retryable, false)
+    assert.match(result.message, /install-b/)
+    assert.match(result.message, new RegExp(escapeRegExp(sharedKey)))
+    assert.doesNotMatch(result.message, new RegExp(escapeRegExp(pluginDataParent)))
+  } finally {
+    rmSync(pluginDataParent, { recursive: true, force: true })
+  }
+})
+
+test('store.a-second-store-for-another-project-under-another-root-is-ok', () => {
+  const pluginDataParent = mkdtempSync(path.join(tmpdir(), 'logbook-cross-root-'))
+  try {
+    const sharedKey = 'store-key-shared'
+    writeOrigin(path.join(pluginDataParent, 'install-a'), sharedKey, '/tmp/project/one')
+    writeOrigin(path.join(pluginDataParent, 'install-b'), sharedKey, '/tmp/project/two')
+
+    const layout: StoreLayout = {
+      root: path.join(pluginDataParent, 'install-a', sharedKey),
+      records: path.join(pluginDataParent, 'install-a', sharedKey, 'records'),
+      state: path.join(pluginDataParent, 'install-a', sharedKey, 'state'),
+      projectRoot: '/tmp/project/one'
+    }
+
+    const rt = testRuntime()
+    const result = ensureSingleStore(rt, layout)
+
+    assert.equal(result.ok, true, 'a same-keyed store belonging to a different project must not be treated as a duplicate')
+  } finally {
+    rmSync(pluginDataParent, { recursive: true, force: true })
+  }
+})
+
+test('store.a-symlinked-cross-root-candidate-is-not-followed', () => {
+  const pluginDataParent = mkdtempSync(path.join(tmpdir(), 'logbook-cross-root-'))
+  try {
+    const sharedKey = 'store-key-shared'
+    const projectRoot = '/tmp/some/shared/project'
+    writeOrigin(path.join(pluginDataParent, 'install-a'), sharedKey, projectRoot)
+    mkdirSync(path.join(pluginDataParent, 'install-b'), { recursive: true })
+    symlinkSync(
+      path.join(pluginDataParent, 'install-a', sharedKey),
+      path.join(pluginDataParent, 'install-b', sharedKey)
+    )
+
+    const layout: StoreLayout = {
+      root: path.join(pluginDataParent, 'install-a', sharedKey),
+      records: path.join(pluginDataParent, 'install-a', sharedKey, 'records'),
+      state: path.join(pluginDataParent, 'install-a', sharedKey, 'state'),
+      projectRoot
+    }
+
+    const rt = testRuntime()
+    const result = ensureSingleStore(rt, layout)
+
+    assert.equal(result.ok, true, "a symlinked cross-root candidate must not be followed into the store's own root")
+  } finally {
+    rmSync(pluginDataParent, { recursive: true, force: true })
   }
 })
 

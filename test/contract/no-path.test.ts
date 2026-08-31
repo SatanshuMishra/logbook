@@ -32,6 +32,7 @@ import {
 } from '../../src/server/tools/record_decision.ts'
 import { logSessionEventTool, invalidSessionEntryRefusal } from '../../src/server/tools/log_session_event.ts'
 import { syncLedgerTool } from '../../src/server/tools/sync_ledger.ts'
+import { writeRecords } from '../../src/store/write-path.ts'
 import {
   resolveConflictTool,
   unclassifiableRecordRefusal,
@@ -134,6 +135,7 @@ const LOG_SESSION_EVENT_HANDLER_PRODUCER: ProducerId = 'server/tools/log_session
 const SYNC_LEDGER_OFFLINE_PRODUCER: ProducerId = 'server/tools/sync_ledger.ts#offlineRefusal'
 const SYNC_LEDGER_REJECTED_PRODUCER: ProducerId = 'server/tools/sync_ledger.ts#rejectedRefusal'
 const SYNC_LEDGER_CONFLICT_PRODUCER: ProducerId = 'server/tools/sync_ledger.ts#conflictRefusal'
+const SYNC_LEDGER_UNPARSEABLE_PRODUCER: ProducerId = 'server/tools/sync_ledger.ts#unparseableRecordsRefusal'
 const SYNC_LEDGER_HANDLER_PRODUCER: ProducerId = 'server/tools/sync_ledger.ts#syncLedgerTool.handler'
 
 const RESOLVE_CONFLICT_NO_CONFLICTS_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#noConflictsRefusal'
@@ -1023,6 +1025,45 @@ const collectSyncLedgerRejectedRefusal = async (): Promise<TaggedRefusal[]> => {
   return refusals
 }
 
+const UNPARSEABLE_FIXTURE_REL_PATH = 'decisions/a-record-this-version-cannot-read.json'
+
+const collectSyncLedgerUnparseableRefusal = async (): Promise<TaggedRefusal[]> => {
+  const refusals: TaggedRefusal[] = []
+  await withTwoSyncFixtureRepos(async (ana, ben) => {
+    const seed = syncFixtureThread(ana.rt, 'sync-fixture-unparseable', 'sync fixture unparseable thread')
+    const created = ana.store.commit([{ kind: 'thread', record: seed }], 'ana: seed a thread for the unparseable probe')
+    if (!created.ok) throw new Error('expected the sync-unparseable fixture to seed a thread')
+
+    const anaFirstSync = await syncLedgerTool.handler(ana.rt, STUB_TOOL_CTX, {})
+    if (!anaFirstSync.ok) throw new Error('expected the sync-unparseable fixture to push the seeded thread')
+
+    const benFirstSync = await syncLedgerTool.handler(ben.rt, STUB_TOOL_CTX, {})
+    if (!benFirstSync.ok) throw new Error('expected the sync-unparseable fixture to fast-forward ben')
+
+    const benLayout = layoutFor(ben.rt, ben.repo)
+    if (!benLayout.ok) throw new Error("expected layoutFor to resolve ben's sync fixture layout")
+    const seededBadRecord = writeRecords(
+      ben.rt,
+      benLayout.value,
+      [{ kind: 'raw', relPath: UNPARSEABLE_FIXTURE_REL_PATH, content: '{"this is not a valid decision record":true}' }],
+      'ben: write a record this version cannot read'
+    )
+    if (!seededBadRecord.ok) throw new Error('expected the sync-unparseable fixture to seed a record the schema rejects')
+
+    const benPush = await syncLedgerTool.handler(ben.rt, STUB_TOOL_CTX, {})
+    if (!benPush.ok) throw new Error('expected the sync-unparseable fixture to push the unreadable record')
+
+    const anaDiverges = syncFixtureThread(ana.rt, 'sync-fixture-unparseable-second', 'sync fixture unparseable second thread')
+    const diverged = ana.store.commit([{ kind: 'thread', record: anaDiverges }], 'ana: diverge so the next sync must merge')
+    if (!diverged.ok) throw new Error('expected the sync-unparseable fixture to diverge ana from the shared copy')
+
+    const anaMerge = await syncLedgerTool.handler(ana.rt, STUB_TOOL_CTX, {})
+    if (anaMerge.ok) throw new Error('expected syncLedgerTool to refuse when the shared copy carries a record it cannot read')
+    refusals.push({ producer: SYNC_LEDGER_UNPARSEABLE_PRODUCER, refusal: anaMerge.refusal })
+  })
+  return refusals
+}
+
 const collectRealRefusals = async (): Promise<TaggedRefusal[]> => {
   const refusals: TaggedRefusal[] = [
     { producer: REFUSE_PRODUCER, refusal: refusalTemplate() },
@@ -1190,6 +1231,7 @@ const collectRealRefusals = async (): Promise<TaggedRefusal[]> => {
   refusals.push(...(await collectSyncLedgerConflictAndResolveCommitFailureRefusals()))
   refusals.push(...(await collectResolveConflictUnsafeDivergenceRefusal()))
   refusals.push(...(await collectSyncLedgerRejectedRefusal()))
+  refusals.push(...(await collectSyncLedgerUnparseableRefusal()))
 
   return refusals
 }
