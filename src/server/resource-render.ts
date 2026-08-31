@@ -1,9 +1,11 @@
 import { escapeStored } from '../render/escape.ts'
 import type { Decision } from '../schema/decision.ts'
 import type { SessionEntry } from '../schema/session.ts'
-import type { Criterion, KeyDecision, OutOfScope, Risk, Thread } from '../schema/thread.ts'
+import type { Artifact, Criterion, KeyDecision, OutOfScope, Risk, Thread } from '../schema/thread.ts'
 import type { Pointer } from '../domain/pointer.ts'
 import type { DecisionIntegrity } from '../render/briefing.ts'
+
+const NOT_RECORDED = 'not recorded'
 
 const renderCommitLine = (commit: string | null): string =>
   typeof commit !== 'string' ? 'Commit: unknown' : 'Commit: ' + escapeStored(commit)
@@ -41,8 +43,24 @@ const detailCriterionStatus = (criterion: Criterion): string => {
   return criterion.done ? 'done' : 'open'
 }
 
+const renderDetailCriterionCheckLine = (criterion: Criterion): string =>
+  `  check: ${typeof criterion.check === 'string' ? escapeStored(criterion.check) : NOT_RECORDED}`
+
+const renderDetailCriterionResultLine = (criterion: Criterion): string => {
+  if (typeof criterion.result !== 'string') return `  result: ${NOT_RECORDED}`
+  const status = typeof criterion.result_status === 'string' ? escapeStored(criterion.result_status) : NOT_RECORDED
+  return `  result: ${escapeStored(criterion.result)} (${status})`
+}
+
 const renderDetailCriterionLine = (criterion: Criterion): string =>
-  `c${criterion.ordinal} [${detailCriterionStatus(criterion)}] ${escapeStored(criterion.id)}: ${escapeStored(criterion.text)}`
+  [
+    `c${criterion.ordinal} [${detailCriterionStatus(criterion)}] ${escapeStored(criterion.id)}: ${escapeStored(criterion.text)}`,
+    renderDetailCriterionCheckLine(criterion),
+    renderDetailCriterionResultLine(criterion)
+  ].join('\n')
+
+const renderDetailArtifactLine = (artifact: Artifact): string =>
+  `- ${escapeStored(artifact.id)} ${escapeStored(artifact.label)} -> ${escapeStored(artifact.pointer)}`
 
 const renderDetailRiskLine = (risk: Risk): string =>
   `- ${escapeStored(risk.id)} [${escapeStored(risk.scope)}] ${escapeStored(risk.text)}`
@@ -73,6 +91,7 @@ export const renderThreadDetail = (
   predecessor: Thread | null
 ): string => {
   const criteriaLines = thread.completion_criteria.map(renderDetailCriterionLine)
+  const artifactLines = (thread.artifacts ?? []).map(renderDetailArtifactLine)
   const riskLines = thread.spine.open_risks.map(renderDetailRiskLine)
   const keyDecisionLines = thread.spine.key_decisions.map(renderDetailKeyDecisionLine)
   const outOfScopeLines = thread.spine.out_of_scope.map(renderDetailOutOfScopeLine)
@@ -84,12 +103,15 @@ export const renderThreadDetail = (
   return [
     `Thread: ${escapeStored(thread.title)}`,
     `Id: ${escapeStored(thread.id)}`,
+    `Slug: ${escapeStored(thread.slug)}`,
     `Status: ${escapeStored(thread.status)}`,
     renderDetailBlockage(thread.blocked_by),
     renderDetailPointerStatus(pointer, thread.id),
     `Active goal: ${escapeStored(thread.spine.active_goal)}`,
     `Next step: ${escapeStored(thread.spine.next_step)}`,
     `Last session: ${escapeStored(thread.spine.last_session)}`,
+    'Artifacts:',
+    ...artifactLines,
     'Related:',
     ...relatedLines,
     'Completion criteria:',
