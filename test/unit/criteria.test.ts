@@ -51,11 +51,11 @@ test('criteria.requires-decision-ref', () => {
   const existing = makeCriterion(rt, 1, 'the existing criterion')
   const thread = makeThread(rt, [existing])
 
-  const insertMissing = insertCriterion(rt, thread, { text: 'a new criterion', kind: 'planned', decisionId: undefined }, resolve)
+  const insertMissing = insertCriterion(rt, thread, { text: 'a new criterion', check: 'npm test exits 0', kind: 'planned', decisionId: undefined }, resolve)
   assert.equal(insertMissing.ok, false)
   assert.equal((insertMissing as { field: string }).field, 'decision_id')
 
-  const insertUnresolved = insertCriterion(rt, thread, { text: 'a new criterion', kind: 'planned', decisionId: unknown }, alwaysUnresolved)
+  const insertUnresolved = insertCriterion(rt, thread, { text: 'a new criterion', check: 'npm test exits 0', kind: 'planned', decisionId: unknown }, alwaysUnresolved)
   assert.equal(insertUnresolved.ok, false)
   assert.equal((insertUnresolved as { field: string }).field, 'decision_id')
 
@@ -120,7 +120,7 @@ test('criteria.text-cap-refusal-is-complete', () => {
   const thread = makeThread(rt, [existing])
 
   const oversizedText = 'x'.repeat(CRITERION_TEXT_MAX + 1)
-  const result = insertCriterion(rt, thread, { text: oversizedText, kind: 'planned', decisionId }, resolve)
+  const result = insertCriterion(rt, thread, { text: oversizedText, check: 'npm test exits 0', kind: 'planned', decisionId }, resolve)
 
   assert.equal(result.ok, false)
   if (result.ok) {
@@ -142,7 +142,7 @@ test('criteria.capacity-refusal-is-complete', () => {
   const criteria = Array.from({ length: CRITERIA_MAX_ELEMENTS }, (_, i) => makeCriterion(rt, i + 1, `criterion ${i}`))
   const thread = makeThread(rt, criteria)
 
-  const result = insertCriterion(rt, thread, { text: 'one more', kind: 'planned', decisionId }, resolve)
+  const result = insertCriterion(rt, thread, { text: 'one more', check: 'npm test exits 0', kind: 'planned', decisionId }, resolve)
 
   assert.equal(result.ok, false)
   if (result.ok) {
@@ -164,7 +164,7 @@ test('criteria.strike-frees-capacity', () => {
   const criteria = Array.from({ length: CRITERIA_MAX_ELEMENTS }, (_, i) => makeCriterion(rt, i + 1, `criterion ${i}`))
   const thread = makeThread(rt, criteria)
 
-  const atCap = insertCriterion(rt, thread, { text: 'over the cap', kind: 'planned', decisionId }, resolve)
+  const atCap = insertCriterion(rt, thread, { text: 'over the cap', check: 'npm test exits 0', kind: 'planned', decisionId }, resolve)
   assert.equal(atCap.ok, false)
 
   const firstCriterion = criteria[0]
@@ -181,7 +181,7 @@ test('criteria.strike-frees-capacity', () => {
   const afterStrike = insertCriterion(
     rt,
     struckThread,
-    { text: 'now there is room', kind: 'planned', decisionId },
+    { text: 'now there is room', check: 'npm test exits 0', kind: 'planned', decisionId },
     resolve
   )
   assert.equal(afterStrike.ok, true)
@@ -198,7 +198,7 @@ test('criteria.ordinals-recompute', () => {
   const result = insertCriterion(
     rt,
     thread,
-    { text: 'inserted between the two', kind: 'detour', decisionId, position: 1 },
+    { text: 'inserted between the two', check: 'npm test exits 0', kind: 'detour', decisionId, position: 1 },
     resolve
   )
   assert.equal(result.ok, true)

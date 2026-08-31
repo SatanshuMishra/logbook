@@ -212,7 +212,11 @@ const openThreadWithCriteria = async (
 ): Promise<{ threadId: string; criteria: { id: string; ordinal: number }[] }> => {
   const opened = (await fx.spawned.client.callTool({
     name: 'open_thread',
-    arguments: { title: `${slug} fixture`, slug, completion_criteria: criteria }
+    arguments: {
+      title: `${slug} fixture`,
+      slug,
+      completion_criteria: criteria.map((text) => ({ text, check: 'the spawn fixture check' }))
+    }
   })) as CallToolResult
   assertOkResult(`open_thread (${slug})`, opened)
   const structured = opened.structuredContent as {
@@ -565,7 +569,7 @@ test('decision.supersede-retains', async () => {
     const opened = await callTool(openThreadTool.handler, rt, {
       title: 'supersede fixture thread',
       slug: 'supersede-fixture-thread',
-      completion_criteria: ['a criterion for the supersede fixture']
+      completion_criteria: [{ text: 'a criterion for the supersede fixture', check: 'the supersede fixture check' }]
     })
     assert.equal(opened.ok, true)
     if (!opened.ok) return
@@ -641,7 +645,9 @@ test('decision.records-project-head', async () => {
       const opened = await callTool(openThreadTool.handler, rt, {
         title: 'project head fixture thread',
         slug: 'project-head-fixture-thread',
-        completion_criteria: ['a criterion for the project head fixture']
+        completion_criteria: [
+          { text: 'a criterion for the project head fixture', check: 'the project head fixture check' }
+        ]
       })
       assert.equal(opened.ok, true)
       if (!opened.ok) throw new Error('project head fixture: open_thread was refused')
@@ -810,7 +816,9 @@ test('concurrent.distinct-ids', async () => {
     const opened = await callTool(openThreadTool.handler, parentRt, {
       title: 'concurrency fixture thread',
       slug: 'concurrency-fixture-thread',
-      completion_criteria: ['a criterion for the concurrency fixture']
+      completion_criteria: [
+        { text: 'a criterion for the concurrency fixture', check: 'the concurrency fixture check' }
+      ]
     })
     assert.equal(opened.ok, true)
     if (!opened.ok) return
@@ -999,7 +1007,7 @@ const mintThread = async (rt: Runtime, criteria: string[]): Promise<{ threadId: 
   const reply = await callTool(openThreadTool.handler, rt, {
     title: 'census fixture thread',
     slug: `census-fixture-thread-${randomUUID()}`,
-    completion_criteria: criteria
+    completion_criteria: criteria.map((text) => ({ text, check: 'the census fixture check' }))
   })
   if (!reply.ok) {
     throw new Error(`census fixture: open_thread refused while minting a fixture thread: ${JSON.stringify(reply.refusal)}`)
@@ -1022,7 +1030,9 @@ const buildDriver = (tool: ToolSpec<never, never>, world: CensusWorld): CensusDr
           input: {
             title: 'census probe: open_thread accepted call',
             slug: `census-open-thread-probe-${randomUUID()}`,
-            completion_criteria: ['a criterion minted purely for the open_thread census probe']
+            completion_criteria: [
+              { text: 'a criterion minted purely for the open_thread census probe', check: 'the census probe check' }
+            ]
           }
         }
       ]
@@ -1084,6 +1094,7 @@ const buildDriver = (tool: ToolSpec<never, never>, world: CensusWorld): CensusDr
               operation: 'insert',
               decision_id: world.decisionId,
               text: 'a criterion inserted by the amend_criteria census probe',
+              check: 'the amend_criteria census probe check',
               kind: 'planned'
             }
           }
@@ -1382,7 +1393,11 @@ test('decision.is-immutable', async () => {
     const seedThread = await callTool(openThreadTool.handler, anaToolRt, {
       title: 'census seed thread',
       slug: 'census-seed-thread',
-      completion_criteria: ['first seed criterion', 'second seed criterion', 'third seed criterion']
+      completion_criteria: [
+        { text: 'first seed criterion', check: 'the first seed check' },
+        { text: 'second seed criterion', check: 'the second seed check' },
+        { text: 'third seed criterion', check: 'the third seed check' }
+      ]
     })
     assert.equal(seedThread.ok, true)
     if (!seedThread.ok) return

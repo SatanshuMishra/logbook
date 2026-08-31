@@ -355,6 +355,7 @@ test('amend_criteria.spawn.contract', async () => {
       decision_id: decisionId,
       operation: insertOperation,
       text: synthesiseValue(schema, propOf(schema, 'text')),
+      check: synthesiseValue(schema, propOf(schema, 'check')),
       kind: synthesiseValue(schema, propOf(schema, 'kind'))
     })
     const result = (await fx.spawned.client.callTool({ name: 'amend_criteria', arguments: valid })) as CallToolResult
@@ -486,7 +487,10 @@ test('update_thread.cap-refusal-is-whole-call', async () => {
 
 test('amend_criteria.retention-cap-matches-stored-shape', async () => {
   await withFixture(async (fx) => {
-    const criteria = Array.from({ length: caps.CRITERIA_MAX_ELEMENTS }, (_, i) => `criterion ${i}`)
+    const criteria = Array.from({ length: caps.CRITERIA_MAX_ELEMENTS }, (_, i) => ({
+      text: `criterion ${i}`,
+      check: `the check for criterion ${i}`
+    }))
     const opened = (await fx.spawned.client.callTool({
       name: 'open_thread',
       arguments: { title: 'retention cap thread', slug: 'retention-cap-thread', completion_criteria: criteria }
@@ -512,6 +516,7 @@ test('amend_criteria.retention-cap-matches-stored-shape', async () => {
         operation: 'insert',
         decision_id: decisionId,
         text: 'a new criterion inserted after the strike freed capacity',
+        check: 'the check for the criterion inserted after the strike',
         kind: 'detour'
       }
     })) as CallToolResult
@@ -627,7 +632,11 @@ test('open_thread.title-cap-is-checked-after-escaping', async () => {
 
     const result = (await fx.spawned.client.callTool({
       name: 'open_thread',
-      arguments: { title: oversizedTitle, slug: 'title-cap-thread', completion_criteria: ['a criterion'] }
+      arguments: {
+        title: oversizedTitle,
+        slug: 'title-cap-thread',
+        completion_criteria: [{ text: 'a criterion', check: 'the title-cap fixture check' }]
+      }
     })) as CallToolResult
 
     assert.equal(result.isError, true, 'a title within the raw cap but over the escaped cap must be refused')
@@ -702,7 +711,10 @@ test('update_thread.refuses-marking-a-struck-criterion-done', async () => {
       arguments: {
         title: 'struck-criteria thread',
         slug: 'struck-criteria-thread',
-        completion_criteria: ['first criterion', 'second criterion']
+        completion_criteria: [
+          { text: 'first criterion', check: 'the first check' },
+          { text: 'second criterion', check: 'the second check' }
+        ]
       }
     })) as CallToolResult
     assertOkResult('open_thread (struck-criteria fixture)', opened)

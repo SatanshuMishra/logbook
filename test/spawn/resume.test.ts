@@ -348,7 +348,7 @@ test('resume_thread.spawn.contract', async () => {
     const { threadId } = await createFixtureThread(fx.spawned, fx.published, {
       title: fixtureTitle,
       slug: 'resume-wiring-proof',
-      completion_criteria: [fixtureCriterion]
+      completion_criteria: [{ text: fixtureCriterion, check: 'the resume wiring proof check' }]
     })
     const outputSchema = outputSchemaFor(fx.outputSchemas, 'resume_thread')
     const result = await callResume(fx.spawned, fx.published, threadId)
