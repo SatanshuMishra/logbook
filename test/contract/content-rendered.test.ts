@@ -139,7 +139,11 @@ const renderedSurfaces = (sentinels: ReadonlyMap<string, string>): string => {
   parsedOr(BindingRecord, buildValue(BindingRecord.jsonSchema, 'binding', sentinels))
 
   return [
-    renderThreadDetail(thread, { resolved: 0, dangling: [], quarantined: [] }, null, null),
+    renderThreadDetail(thread, { resolved: 0, dangling: [], quarantined: [] }, null, null, {
+      bound: [],
+      unreadable: 0,
+      unread: false
+    }),
     renderDecisionResource(decision),
     renderSessionEntryResource(entry)
   ].join('\n')
