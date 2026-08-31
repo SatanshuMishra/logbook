@@ -201,7 +201,9 @@ const runSpawnOfflineMergeScenario = (pusherFirst: 'ana' | 'ben'): Promise<void>
     const opened = await callTool(ana, 'open_thread', {
       title: 'two clones spawn thread',
       slug: `two-clones-spawn-thread-${pusherFirst}`,
-      completion_criteria: ['a criterion for the spawn offline-merge scenario']
+      completion_criteria: [
+        { text: 'a criterion for the spawn offline-merge scenario', check: 'the offline-merge scenario check' }
+      ]
     })
     assertOkResult('open_thread', opened)
     const threadId = (opened.structuredContent as { thread_id: string }).thread_id
@@ -310,7 +312,9 @@ test('sync.names-the-unparseable-record-to-the-operator', async () => {
     const openedA = await callTool(ana, 'open_thread', {
       title: 'a thread ana pushes before the bad record arrives',
       slug: 'unparseable-record-thread-a',
-      completion_criteria: ['a criterion for the unparseable-record scenario']
+      completion_criteria: [
+        { text: 'a criterion for the unparseable-record scenario', check: 'the unparseable-record scenario check' }
+      ]
     })
     assertOkResult('open_thread (ana, thread a)', openedA)
 
@@ -335,7 +339,9 @@ test('sync.names-the-unparseable-record-to-the-operator', async () => {
     const openedB = await callTool(ana, 'open_thread', {
       title: 'a thread ana opens so her next sync must merge',
       slug: 'unparseable-record-thread-b',
-      completion_criteria: ['a criterion that makes ana diverge from the shared copy']
+      completion_criteria: [
+        { text: 'a criterion that makes ana diverge from the shared copy', check: 'the divergence scenario check' }
+      ]
     })
     assertOkResult('open_thread (ana, thread b)', openedB)
 

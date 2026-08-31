@@ -8,6 +8,7 @@ export type DecisionResolver = (decisionId: string) => boolean
 
 export type InsertCriterionInput = {
   text: string
+  check: string
   kind: 'planned' | 'detour'
   decisionId: string | null | undefined
   position?: number
@@ -151,12 +152,25 @@ export const insertCriterion = (
     )
   }
 
+  const escapedCheck = escapeStored(input.check)
+  if (escapedCheck.length > caps.CRITERION_CHECK_MAX) {
+    return textCapRefusal(
+      'criteria.insert.check',
+      escapedCheck.length,
+      caps.CRITERION_CHECK_MAX,
+      'shorten the check and retry'
+    )
+  }
+
   const inserted: Criterion = {
     id: rt.ulid(),
     ordinal: 0,
     text: escapedText,
     done: false,
     kind: input.kind,
+    check: escapedCheck,
+    result: null,
+    result_status: null,
     struck_by: null
   }
 

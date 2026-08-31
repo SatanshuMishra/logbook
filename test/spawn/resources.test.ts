@@ -71,7 +71,7 @@ const seedStore = async (spawned: SpawnedServer): Promise<SeededIds> => {
     arguments: {
       title: 'resources fixture thread',
       slug: 'resources-fixture-thread',
-      completion_criteria: ['a resources fixture criterion']
+      completion_criteria: [{ text: 'a resources fixture criterion', check: 'the resources fixture check' }]
     }
   })) as CallToolResult
   assertOkResult('open_thread (resources fixture arrange)', opened)
@@ -117,7 +117,10 @@ const seedThreadWithRisksAndCriteria = async (spawned: SpawnedServer): Promise<T
     arguments: {
       title: 'thread detail fixture thread',
       slug: 'thread-detail-fixture-thread',
-      completion_criteria: ['the first thread detail criterion', 'the second thread detail criterion']
+      completion_criteria: [
+        { text: 'the first thread detail criterion', check: 'the first thread detail check' },
+        { text: 'the second thread detail criterion', check: 'the second thread detail check' }
+      ]
     }
   })) as CallToolResult
   assertOkResult('open_thread (thread detail fixture arrange)', opened)
