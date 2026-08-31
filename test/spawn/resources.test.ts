@@ -436,6 +436,46 @@ test('resource.thread-detail-shows-every-binding', async () => {
   })
 })
 
+const BINDINGS_UNREAD_NOTE = 'bindings could not be read; none is claimed either way'
+
+test('resource.thread-detail-degrades-when-bindings-cannot-be-read', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+    const bound = (await fx.spawned.client.callTool({
+      name: 'bind_branch',
+      arguments: { thread_id: ids.threadId, branch: 'feat/unreadable-bindings-fixture-branch' }
+    })) as CallToolResult
+    assertOkResult('bind_branch (unreadable bindings fixture arrange)', bound)
+
+    const rt = testRuntime({
+      env: { HOME: fx.homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: fx.pluginData },
+      cwd: fx.repo
+    })
+    const layout = layoutFor(rt, fx.repo)
+    assert.equal(layout.ok, true)
+    if (!layout.ok) return
+
+    const bindingsPath = join(layout.value.records, 'bindings')
+    rmSync(bindingsPath, { recursive: true, force: true })
+    writeFileSync(bindingsPath, 'this is a regular file, not a directory\n')
+
+    const detailText = await readThreadResourceText(fx.spawned, ids.threadId)
+
+    assert.ok(
+      detailText.includes(`Id: ${ids.threadId}`),
+      `expected the thread resource to still render its thread record, got '${detailText}'`
+    )
+    assert.ok(
+      detailText.includes(BINDINGS_UNREAD_NOTE),
+      `expected the thread resource to report its bindings unread, got '${detailText}'`
+    )
+    assert.ok(
+      !detailText.includes(layout.value.root),
+      'expected the thread resource to keep the store path out of the rendered body'
+    )
+  })
+})
+
 test('resource.list-enumerates-open-threads-and-not-decisions-or-session-entries', async () => {
   await withFixture(async (fx) => {
     const ids = await seedStore(fx.spawned)
