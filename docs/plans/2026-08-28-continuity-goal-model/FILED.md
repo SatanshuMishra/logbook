@@ -705,3 +705,80 @@ Appends only. Never edit an item another planner wrote.
 - **Evidence:** the project standard is 200 to 400 lines typical and 800 maximum. `test/contract/no-path.test.ts` stood at roughly 1406 lines before this unit and this unit adds 42 more to wire the new refusal producer into the census, taking it to 1448. The growth is structural rather than incidental: the file holds both the census machinery and a hand-written fixture collector for every refusal producer in the codebase, so it grows by construction each time a producer is added, and every future unit that adds one will push it further. The natural extraction is the `collectSync*` and sibling fixture collectors into a support module beside `test/support/refusal-census.ts`, leaving the assertions in place.
 - **Why it is above the ceiling:** none of the eight acceptance criteria concern file size, and the file was already 606 lines over the maximum before this unit touched it. Extracting the collectors is a refactor of a shipped contract test that many units depend on, and doing it inside this unit would mix a refactor with a behaviour change in one diff, which the project's commit discipline forbids.
 - **Not folded in.**
+
+## F6a — The new content census walks only `properties` and `items`, so a `content` field under a composition keyword is never classified
+
+- **Surfaced by:** U6-A code review
+- **Evidence:** the shared walker in `test/support/schema-nodes.ts` descends `properties` and `items` only. A `content` field nested under `anyOf`, `oneOf`, `allOf` or `$defs` is not reached, so it is neither allowed nor rejected and the census passes green while invariant `O4` is unproven for it. Measured as not live today: all five `anyOf` nodes in the four record schemas have scalar-only branches. The sibling census in `test/contract/described.test.ts` already carries the guard this one lacks.
+- **Why it is above the ceiling:** U6-A's ceiling is that every field declared `content` today appears on a rendered surface, and it does. Hardening the walker against a composition shape no record currently uses is a new behaviour whose blast radius is every schema in the tree, and it may turn unrelated nodes red.
+- **Not folded in.**
+
+## F6b — The content census derives its record path roots twice, so a record rename produces a false red
+
+- **Surfaced by:** U6-A code review
+- **Evidence:** the census computes the root path for a record schema by two independent derivations rather than one shared one. They agree today. A future rename of a record type changes one and not the other, and the census fails with a mismatch that names neither the rename nor the real cause.
+- **Why it is above the ceiling:** none of U6-A's criteria concern the census's own resilience to a rename, and unifying the derivations is a refactor of a contract test that U6-B then extends.
+- **Not folded in.**
+
+## F6c — Three `not recorded` fallback branches are live production code no test can reach
+
+- **Surfaced by:** U6-A code review
+- **Evidence:** `src/server/resource-render.ts` gained three fallback branches rendering `not recorded` for absent optional values. No test reaches any of the three, and the schema makes two of them unreachable through the published write path.
+- **Why it is above the ceiling:** U6-A's criteria concern fields that ARE recorded reaching a surface. Whether an absent value renders a fallback or nothing is unasked, and `DG1` forbids shipping an unreachable predicate, so the correct disposition may be deletion rather than a test.
+- **Not folded in.**
+
+## F6d — `thread_id` reaches filesystem path construction with no ULID validation
+
+- **Surfaced by:** U6-B security review
+- **Evidence:** the `logbook://sessions/{thread_id}` template passes its captured segment into `store.readThread` and into path construction without asserting it is a well-formed ULID. On POSIX the reviewer verified there is no traversal, because the value is used to look up a record rather than to join a path segment directly.
+- **Why it is above the ceiling:** U6-B's criteria concern the address existing, listing entries, and refusing an id that names no thread record — all of which hold. Adding an identifier-shape gate at a resource boundary is a validation policy that belongs to every address at once, not to the one this unit added.
+- **Not folded in.**
+
+## F6e — Windows path handling is unverified, because the host is macOS
+
+- **Surfaced by:** U6-B security review
+- **Evidence:** a raw backslash survives URI parsing into `thread_id`, and Windows `path.join` treats a backslash as a separator. The reviewer could not execute the Windows case on this host and verified only that POSIX has no traversal. Status: `unverified-reasoned`, reasoned not run.
+- **Why it is above the ceiling:** no criterion concerns platform portability, and the check cannot be run on the machine the unit was built on.
+- **Not folded in.**
+
+## F6f — The sessions listing is bounded by total history rather than by open work
+
+- **Surfaced by:** U6-B code review
+- **Evidence:** `readSessionsResourceBody` returns every session-log entry a thread holds, with no cap and no cursor. Worst case is roughly 8 KB per entry, and the thread with the longest history is the one most likely to be read.
+- **Why it is above the ceiling:** criterion 1 asks for every entry id with the first line of each, newest first, which is what it returns. A cap or a cursor changes the published shape of an address this unit is introducing, and bounding growth by exclusion rather than by truncation is a SPEC-level choice recorded on this thread's out-of-scope list.
+- **Not folded in.**
+
+## F6g — `resources/list` is auto-fetched on connect, so untrusted thread titles enter a model's context unrequested
+
+- **Surfaced by:** U6-B security review
+- **Evidence:** clients fetch `resources/list` automatically when they connect. That listing now carries thread titles and slugs, which on a shared ledger ref are authored by other people. The values are escaped through `escapeStored`, so this is an exposure question rather than a forgery one: content nobody asked for reaches a model's context at connect time.
+- **Why it is above the ceiling:** the unit's criteria concern the addresses being discoverable, which requires them to be listed. Whether a listing should carry titles at all is a question about the published surface that predates this unit's two rows.
+- **Not folded in.**
+
+## F6h — A quarantined thread record passes the sessions address's existence gate, where all three sibling addresses refuse
+
+- **Surfaced by:** U6-B code review
+- **Evidence:** `readSessionsResourceBody` refuses only when `store.readThread` returns `null`. `readThreadResourceBody` additionally refuses when the slot is quarantined, at `src/server/resources.ts:129-131`. The sessions address answers for a thread whose record could not be parsed.
+- **Why it is above the ceiling:** criterion 1 specifies the refusal for an id that names no thread record, and a quarantined record is a record that exists. Making quarantine refuse on a fourth address is a consistency change across the resource surface.
+- **Not folded in.**
+
+## F6i — The shortened-lines note measures UTF-16 code units against a grapheme budget
+
+- **Surfaced by:** U6-B code review
+- **Evidence:** the note reporting that some lines were shortened compares a UTF-16 length against a grapheme budget, so for any line containing astral characters or combining marks it can claim a clip that did not happen. Same class as the escaped-name defect already filed for U2-B.
+- **Why it is above the ceiling:** no criterion concerns the accuracy of the note, and the correct fix is the shared grapheme helper that a different unit in this wave is shipping.
+- **Not folded in.**
+
+## F6j — The `resource.read-is-pure` invariant does not cover the new `resources/list` path
+
+- **Surfaced by:** U6-B code review
+- **Evidence:** the invariant asserts that reading a resource does not mutate the store. `listThreadResources` calls `openProjectStore`, which opens the store and can materialise, and the invariant's census does not enumerate the `resources/list` path.
+- **Why it is above the ceiling:** widening a closed invariant to a second entry point is a new obligation on every current and future list handler, and U6-B's criteria concern what the addresses return rather than what reading them costs.
+- **Not folded in.**
+
+## F6k — Two defects in the U6 plan documents themselves
+
+- **Surfaced by:** U6-B implementation
+- **Evidence:** stop condition 11.5 is placed one step early. It says to run after step 11 and expect `3`, but the third `list: undefined` belongs to the sessions template that step 12 registers, so the condition cannot read `3` where it is placed. Re-run on the finished tree it reads `3` and `1`, matching the plan's expected pair. Separately, both U6 plans state that `node scripts/check-packaging.mjs` produces no output; it exits 0 and prints `check-packaging: ok`.
+- **Why it is above the ceiling:** `OR0` and `OR9` forbid every agent from editing a plan document, and neither defect changed what shipped — the first was reachable by running the condition one step later, the second is a documentation error about an exit-0 command.
+- **Not folded in.**
