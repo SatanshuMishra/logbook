@@ -3,8 +3,18 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import * as ts from 'typescript'
+import { renderBriefingWithPasses, type DecisionIntegrity } from '../../src/render/briefing.ts'
+import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
+import { escapeStored } from '../../src/render/escape.ts'
+import { ThreadRecord, type Thread, type Criterion } from '../../src/schema/thread.ts'
+import * as caps from '../../src/schema/caps.ts'
+import { testRuntime } from '../support/runtime.ts'
 import { census, type Classified } from '../support/census.ts'
 import { REBUILD_ROOT, forEachDescendant, lineOf, loadSourceProgram, relativeToRoot, sourceFileFor } from '../support/source-census.ts'
+
+const rt = testRuntime()
+
+const EMPTY_INTEGRITY: DecisionIntegrity = { resolved: 0, dangling: [], quarantined: [] }
 
 type SliceSite = { file: string; line: number; expression: string; discardsElements: boolean }
 
@@ -197,4 +207,154 @@ test('briefing.criterion-ordinal-is-read-only-to-render-a-display-label.control.
     { file: 'src/render/briefing.ts', line: 1, expression: 'sortBy(candidate.ordinal)', use: 'unknown' }
   ]
   assert.throws(() => census(unknown, classifyOrdinalSite))
+})
+
+const ESCAPE_EXPANDING_CHAR = '#'
+
+const criterionOf = (overrides: Partial<Criterion> = {}): Criterion => ({
+  id: rt.ulid(),
+  ordinal: 1,
+  text: 'a criterion',
+  done: false,
+  kind: 'planned',
+  struck_by: null,
+  ...overrides
+})
+
+const threadOf = (overrides: Partial<Thread> = {}): Thread => ({
+  id: rt.ulid(),
+  slug: 'hides-nothing-fixture',
+  title: 'Hides Nothing Fixture',
+  status: 'open',
+  blocked_by: null,
+  completion_criteria: [],
+  spine: {
+    active_goal: 'ship the renderer',
+    next_step: 'write the tests',
+    last_session: 'wrote the renderer',
+    open_risks: [],
+    key_decisions: [],
+    out_of_scope: []
+  },
+  created_at: rt.now(),
+  updated_at: rt.now(),
+  ...overrides
+})
+
+test('briefing.a-render-that-fits-its-budget-is-clipped-nowhere', () => {
+  const predecessor = threadOf({ title: ESCAPE_EXPANDING_CHAR.repeat(caps.THREAD_TITLE_MAX), status: 'done' })
+  const thread = threadOf({
+    predecessor_id: predecessor.id,
+    completion_criteria: [
+      criterionOf({ ordinal: 1, text: ESCAPE_EXPANDING_CHAR.repeat(caps.CRITERION_TEXT_MAX) })
+    ],
+    spine: {
+      active_goal: 'g',
+      next_step: 'n',
+      last_session: 'l',
+      open_risks: [{ id: rt.ulid(), scope: 's', text: ESCAPE_EXPANDING_CHAR.repeat(caps.RISK_TEXT_MAX), refs: [] }],
+      key_decisions: [],
+      out_of_scope: []
+    }
+  })
+  assert.equal(ThreadRecord.parse(thread).ok, true, 'the escape-expanding fixture must itself be schema-admissible')
+
+  const render = renderBriefingWithPasses(thread, EMPTY_INTEGRITY, null, predecessor)
+
+  assert.equal(render.withinBudget, true, 'this fixture must fit its budget, or it says nothing about a render that fits')
+  const criterionText = thread.completion_criteria[0]?.text
+  const riskText = thread.spine.open_risks[0]?.text
+  if (criterionText === undefined || riskText === undefined) {
+    throw new Error('the escape-expanding fixture must carry one criterion and one risk, or there is no full render to check')
+  }
+  assert.ok(
+    render.briefing.includes(escapeStored(criterionText)),
+    'a briefing that fits its budget must render the whole criterion text, however far the escape expands it'
+  )
+  assert.ok(
+    render.briefing.includes(escapeStored(riskText)),
+    'a briefing that fits its budget must render the whole risk text, however far the escape expands it'
+  )
+  assert.ok(
+    render.briefing.includes(escapeStored(predecessor.title)),
+    'a briefing that fits its budget must render the whole predecessor title, which no fixed limit may shorten'
+  )
+  assert.equal(
+    render.briefing.includes(CLIP_MARKER),
+    false,
+    'a briefing that fits its budget must carry no clip marker'
+  )
+  assert.equal(
+    render.briefing.includes('**Not shown:**'),
+    false,
+    'a briefing that fits its budget must carry no not-shown block'
+  )
+  assert.equal(render.passes, 1, 'a briefing that fits its budget must never enter the clip search')
+})
+
+const SHORTENING_FIXTURE_CRITERION_COUNT = 100
+const SHORTENING_FIXTURE_CRITERION_TEXT_LENGTH = 300
+
+const CRITERION_TEXT_PATTERN = /^- c\d+ \[(?:open|done|struck)\]: (.*) \(id [0-9A-HJKMNP-TV-Z]{26}\)$/
+const RISK_TEXT_PATTERN = /^- [0-9A-HJKMNP-TV-Z]{26} (.*)$/
+const SUCCEEDS_TITLE_PATTERN = /^- succeeds: (.*) \([^)]*\)$/
+
+const SHORTENABLE_VALUE_PATTERNS = [CRITERION_TEXT_PATTERN, RISK_TEXT_PATTERN, SUCCEEDS_TITLE_PATTERN]
+
+const storedValueOf = (line: string): string | null => {
+  for (const pattern of SHORTENABLE_VALUE_PATTERNS) {
+    const match = pattern.exec(line)
+    if (match !== null && match[1] !== undefined) return match[1]
+  }
+  return null
+}
+
+test('briefing.every-shortened-value-carries-the-marker-inside-its-own-limit', () => {
+  const criteria: Criterion[] = Array.from({ length: SHORTENING_FIXTURE_CRITERION_COUNT }, (_, index) =>
+    criterionOf({ ordinal: index + 1, text: 'x'.repeat(SHORTENING_FIXTURE_CRITERION_TEXT_LENGTH) })
+  )
+  const predecessor = threadOf({
+    slug: 'a'.repeat(caps.THREAD_SLUG_MAX),
+    title: 'p'.repeat(caps.THREAD_TITLE_MAX),
+    status: 'done'
+  })
+  const thread = threadOf({ predecessor_id: predecessor.id, completion_criteria: criteria })
+  assert.equal(ThreadRecord.parse(thread).ok, true, 'the shortening fixture must itself be schema-admissible')
+  assert.equal(ThreadRecord.parse(predecessor).ok, true, 'the predecessor fixture must itself be schema-admissible')
+
+  const render = renderBriefingWithPasses(thread, EMPTY_INTEGRITY, null, predecessor)
+  assert.ok(render.passes > 1, 'this fixture must enter the clip search, or nothing was shortened')
+  assert.equal(render.withinBudget, true, 'the clip search must land this fixture inside its budget')
+
+  const marked = render.briefing
+    .split('\n')
+    .filter((line) => line.includes(CLIP_MARKER))
+    .filter((line) => !line.startsWith('- some text on this briefing was shortened'))
+  assert.ok(marked.length > 0, 'the clip search must have shortened at least one value')
+
+  for (const line of marked) {
+    assert.equal(line.split(CLIP_MARKER).length - 1, 1, `the marker must appear once on a shortened line, got: ${line}`)
+    const value = storedValueOf(line)
+    assert.notEqual(value, null, `a line carrying the marker must be a value line this test can read, got: ${line}`)
+    assert.ok((value as string).endsWith(CLIP_MARKER), `a shortened value must end with the marker, got: ${value as string}`)
+    assert.ok(
+      (value as string).length > CLIP_MARKER_GRAPHEMES,
+      `a shortened value must keep some of its own text beside the marker, got: ${value as string}`
+    )
+  }
+
+  assert.ok(
+    render.briefing.includes(
+      '- some text on this briefing was shortened to fit the character budget; every shortened value ends with ...[shortened]'
+    ),
+    'the not-shown block must say that text was shortened'
+  )
+  assert.ok(
+    render.briefing.includes(`ends with ${CLIP_MARKER}`),
+    'the not-shown bullet must name the same marker the shortened values carry'
+  )
+  assert.ok(
+    render.briefing.includes(`See logbook://thread/${thread.id} for the complete record.`),
+    'a shortened render must carry the address that resolves to the complete record'
+  )
 })
