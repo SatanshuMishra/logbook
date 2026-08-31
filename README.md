@@ -4,6 +4,49 @@ Logbook is a Claude Code plugin that keeps a durable "ledger" of what happened a
 
 The current version lives in `package.json:3` and `.claude-plugin/plugin.json:3`; a test checks that both match the version the running server reports at startup.
 
+## What Logbook promises
+
+These are the promises Logbook publishes. Each carries the identifier the goal model gives it (`docs/specs/2026-08-28-continuity-goal-model.md`, section 4.1), and a test fails the build if any of those identifiers stops appearing here or if this file names one the goal model does not declare (`test/contract/readme-promises-census.test.ts`). The two documents cannot drift apart in silence.
+
+The case for Logbook is **continuity and auditability** — that a later session picks up where an earlier one stopped, and that you can always see how a record came to be there. Logbook makes no claim about making any model perform better.
+
+| ID | Promise |
+|---|---|
+| **LG1** | **You can work your goals in any order.** Nothing in Logbook behaves differently because you finished the third one first |
+| **LG2** | **However you work, you can record.** Anything holding a thread's identifier can write to it. No kind of record is reachable only through one working style, and for the same recorded content no style reaches a limit sooner than another |
+| **LG3** | **Logbook never invents a value you did not give it.** Anything you left out — including which goal an item belongs to — is stored as absent and reported back as absent, and no stored link points at something that does not resolve |
+| **LG4** | **Your code is never stored.** No file contents, no diffs, no source. Git already holds those, and Logbook hands you back to git rather than copying it |
+| **LG5** | **What you write is what is stored, or the write is refused.** Where a value has to be transformed on the way in, the transform is declared and can be undone. **One exception, which this build does not yet close:** a line break, and certain other characters, are stored as a written-out token such as `U+000A` — and text that already contained that token as ordinary characters is stored in exactly the same way, so when the value is read back the two cannot be told apart. That overlap is known and tracked |
+| **LG6** | **When you read a record you see all of it.** No piece of text is stored that no surface ever shows you |
+| **LG7** | **You can find any record without guessing.** Every kind of record has an identifier you can list and then ask for directly |
+| **LG8** | **No display rule drops an item in silence.** Where something is left out, the output says how many were left out and gives the address that fetches them |
+| **LG9** | **Anything that shortens text says that it shortened it**, and shortens only as far as its budget forces |
+| **LG10** | **Logbook never scores, ranks or prioritises your records.** What you recorded is what you get back |
+| **LG11** | **A crash puts at most one step's work at risk.** Everything recorded before it has already landed as a commit |
+| **LG12** | **You never have to remember to close the session.** Logbook does not depend on a tidy-up step you might forget |
+| **LG13** | **Reading one record never gets slower as your history grows** |
+| **LG14** | **What Logbook loads is bounded by the work still open, not by everything ever recorded** — and nothing is deleted to keep it that way |
+| **LG15** | **Nothing recorded is ever rewritten or deleted.** Correcting a decision means recording a new one that names the old; the old one stays readable |
+| **LG16** | **Logbook never runs anything it stores.** Records can arrive from a shared remote, and none of them can execute on your machine |
+| **LG17** | **A goal counts as finished only when you record how you know.** Marking one done asks what was observed, and whether the check behind it was actually run |
+
+## What Logbook does not do
+
+These are non-goals — things deliberately not built, each with its reason. They are held by decision records and review, not by an automated check. The grounds are recorded in full in `docs/specs/2026-08-28-continuity-goal-model.md`, section 3.2.
+
+| Not a goal | Why |
+|---|---|
+| **Two sessions on one project at the same time** | Deliberate. Logbook is single-session-per-project by design. That is a limit, stated here rather than left for you to discover |
+| A search, vector or embedding layer | Less accurate than the plain record set at this scale, it fails the simplicity constraint, and it was measured to reduce how much an agent used material it had already been handed |
+| A multi-level index over the records | Measured worse than the flat one it would replace |
+| Event sourcing, or projections over the ledger | Hard in ways that are well documented, and it fails the simplicity constraint outright |
+| Automatic capture of file edits, diffs, tool calls or test runs | Duplicates what git already holds; records actions rather than reasons, so it cannot supply the why; and it widens what leaves your machine |
+| Summarising or consolidating stored records with a model | Measured to lose compliance with recorded constraints, and to corrupt records that had been correct |
+| Pruning, archiving or deleting records to control growth | Growth is bounded by leaving settled work out of the surfaces that load it, never by destroying history |
+| An importance scorer or ranking system | The forcing function is the existing refusal when a cap is reached; a coarse scorer propagates its own errors |
+| A model that judges whether a goal is genuinely complete | An agent assessing its own work makes false completion claims, and a second model checking that claim scores at or near chance. Ground truth comes from state, never testimony — and this plugin's server has no model access at all |
+| Enforcement machinery over the content of a gated record | Measured and withdrawn: an inert gate and an enforced gate produced a runnable check equally often |
+
 ## Requirements
 
 Node.js **22.19 or newer** (`package.json:8-9`).
