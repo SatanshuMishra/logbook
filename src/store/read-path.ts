@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type { Declared } from '../schema/declare.ts'
 import type { Runtime } from '../runtime/runtime.ts'
-import { git } from './git.ts'
+import { git, gitBuffer } from './git.ts'
 import type { StoreLayout } from './layout.ts'
+import { materialiseTreeInto } from './materialise-tree.ts'
 import { LEDGER_REF } from './ref.ts'
 
 export type Quarantined = { quarantined: true; path: string; reason: string }
@@ -31,9 +32,14 @@ const countedGit: typeof git = (rt, repo, args, opts) => {
   return git(rt, repo, args, opts)
 }
 
-const countedMaterialiseGit: typeof git = (rt, repo, args, opts) => {
+export const countedMaterialiseGit: typeof git = (rt, repo, args, opts) => {
   materialiseCallCount += 1
   return git(rt, repo, args, opts)
+}
+
+export const countedMaterialiseGitBuffer: typeof gitBuffer = (rt, repo, args, opts) => {
+  materialiseCallCount += 1
+  return gitBuffer(rt, repo, args, opts)
 }
 
 const STAMP_FILE_NAME = 'last-materialised'
@@ -64,15 +70,6 @@ const writeStamp = (layout: StoreLayout, value: string): void => {
 
 export const markMaterialised = (layout: StoreLayout, ref: string): void => {
   writeStamp(layout, ref)
-}
-
-const parseLsTreeLine = (line: string): { blobId: string; relPath: string } | null => {
-  const tabIndex = line.indexOf('\t')
-  if (tabIndex === -1) return null
-  const meta = line.slice(0, tabIndex).split(' ')
-  const blobId = meta[2]
-  if (blobId === undefined) return null
-  return { blobId, relPath: line.slice(tabIndex + 1) }
 }
 
 export type MaterialiseOutcome = { ok: true } | { ok: false; detail: string }
@@ -151,40 +148,15 @@ const swapRecordsTreeIntoPlace = (rt: Runtime, layout: StoreLayout, newTreeDir: 
 }
 
 const materialiseTree = (rt: Runtime, layout: StoreLayout, ref: string): MaterialiseOutcome => {
-  const list = countedMaterialiseGit(rt, layout.projectRoot, ['ls-tree', '-r', '--full-tree', ref])
-  if (!list.ok) {
-    return { ok: false, detail: `the ledger tree could not be listed (git ls-tree exit ${list.code})` }
-  }
-
   const newTreeDir = freshRecordsScratchDir(layout)
-  const lines = list.stdout.split('\n').filter((line) => line.length > 0)
-  let unreadable = 0
-  let currentTarget = newTreeDir
-  try {
-    mkdirSync(newTreeDir, { recursive: true })
-    for (const line of lines) {
-      const parsed = parseLsTreeLine(line)
-      if (parsed === null) continue
-      const content = countedMaterialiseGit(rt, layout.projectRoot, ['cat-file', '-p', parsed.blobId])
-      if (!content.ok) {
-        unreadable += 1
-        continue
-      }
-      currentTarget = path.join(newTreeDir, parsed.relPath)
-      mkdirSync(path.dirname(currentTarget), { recursive: true })
-      writeFileSync(currentTarget, content.stdout, 'utf8')
-    }
-  } catch (error) {
-    discardScratchDir(rt, newTreeDir)
-    return {
-      ok: false,
-      detail: `writing ${currentTarget} into the records scratch tree failed: ${describeError(error)}`
-    }
-  }
 
-  if (unreadable > 0) {
+  const materialised = materialiseTreeInto(rt, layout.projectRoot, ref, newTreeDir, {
+    runGit: countedMaterialiseGit,
+    runGitBuffer: countedMaterialiseGitBuffer
+  })
+  if (!materialised.ok) {
     discardScratchDir(rt, newTreeDir)
-    return { ok: false, detail: `${unreadable} record blob(s) in the ledger tree could not be read` }
+    return { ok: false, detail: materialised.detail }
   }
 
   return swapRecordsTreeIntoPlace(rt, layout, newTreeDir)

@@ -7,7 +7,8 @@ import { SessionRecord, type SessionEntry } from '../schema/session.ts'
 import { ThreadRecord, type Thread } from '../schema/thread.ts'
 import { git } from '../store/git.ts'
 import type { StoreLayout } from '../store/layout.ts'
-import { readAllRecordFiles, syncWorkingCopy } from '../store/read-path.ts'
+import { materialiseTreeInto } from '../store/materialise-tree.ts'
+import { countedMaterialiseGit, countedMaterialiseGitBuffer, readAllRecordFiles, syncWorkingCopy } from '../store/read-path.ts'
 import { LEDGER_REF, casUpdateRef } from '../store/ref.ts'
 import type { Store } from '../store/records.ts'
 import { writeRecords, type RecordChange } from '../store/write-path.ts'
@@ -137,39 +138,17 @@ const readScratchRecordSet = (root: string): ScratchRecordSet => {
   return { threads, decisions, sessionsByThread, passthrough }
 }
 
-const parseLsTreeLine = (line: string): { blobId: string; relPath: string } | null => {
-  const tabIndex = line.indexOf('\t')
-  if (tabIndex === -1) return null
-  const meta = line.slice(0, tabIndex).split(' ')
-  const blobId = meta[2]
-  if (blobId === undefined) return null
-  return { blobId, relPath: line.slice(tabIndex + 1) }
-}
-
 type MaterialiseResult = { ok: true; scratch: string } | { ok: false; detail: string }
 
 const materialiseRefToScratch = (rt: Runtime, layout: StoreLayout, ref: string): MaterialiseResult => {
-  const listing = git(rt, layout.projectRoot, ['ls-tree', '-r', '--full-tree', ref])
-  if (!listing.ok) {
-    return { ok: false, detail: `git ls-tree failed for ${ref}: ${listing.stderr.trim()}` }
-  }
-
   const scratch = mkdtempSync(path.join(tmpdir(), 'logbook-sync-scratch-'))
-  const lines = listing.stdout.split('\n').filter((line) => line.length > 0)
-  for (const line of lines) {
-    const parsed = parseLsTreeLine(line)
-    if (parsed === null) continue
-    const content = git(rt, layout.projectRoot, ['cat-file', '-p', parsed.blobId])
-    if (!content.ok) {
-      rmSync(scratch, { recursive: true, force: true })
-      return {
-        ok: false,
-        detail: `git cat-file could not read blob ${parsed.blobId} (${parsed.relPath}) from ${ref}: ${content.stderr.trim()}`
-      }
-    }
-    const target = path.join(scratch, parsed.relPath)
-    mkdirSync(path.dirname(target), { recursive: true })
-    writeFileSync(target, content.stdout, 'utf8')
+  const materialised = materialiseTreeInto(rt, layout.projectRoot, ref, scratch, {
+    runGit: countedMaterialiseGit,
+    runGitBuffer: countedMaterialiseGitBuffer
+  })
+  if (!materialised.ok) {
+    rmSync(scratch, { recursive: true, force: true })
+    return { ok: false, detail: materialised.detail }
   }
   return { ok: true, scratch }
 }

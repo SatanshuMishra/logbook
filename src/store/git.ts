@@ -12,6 +12,15 @@ export type Identity = { name: string; email: string }
 
 export type GitOpts = { stdin?: string; indexFile?: string; identity?: Identity }
 
+export type GitBufferOpts = GitOpts
+
+export type GitBufferResult =
+  | { ok: true; stdout: Buffer }
+  | { ok: false; overflow: true; maxBuffer: number; stderr: string }
+  | { ok: false; overflow: false; code: number; stderr: string }
+
+export const GIT_BUFFER_MAX_BYTES = 256 * 1024 * 1024
+
 const FORBIDDEN_ENV_KEYS = [
   'GIT_DIR',
   'GIT_WORK_TREE',
@@ -54,16 +63,18 @@ const removeSelfAllocatedIndex = (indexFile: string, opts: GitOpts): void => {
   }
 }
 
+const buildGitEnv = (rt: Runtime, indexFile: string, opts: GitOpts): Record<string, string | undefined> => ({
+  ...sanitisedRuntimeEnv(rt.env),
+  ...identityEnv(opts.identity),
+  GIT_INDEX_FILE: indexFile,
+  GIT_CONFIG_NOSYSTEM: '1',
+  GIT_TERMINAL_PROMPT: '0',
+  HOME: rt.env.HOME
+})
+
 export const git = (rt: Runtime, repo: string, args: string[], opts: GitOpts = {}): GitResult => {
   const indexFile = opts.indexFile ?? freshIndexPath()
-  const env: Record<string, string | undefined> = {
-    ...sanitisedRuntimeEnv(rt.env),
-    ...identityEnv(opts.identity),
-    GIT_INDEX_FILE: indexFile,
-    GIT_CONFIG_NOSYSTEM: '1',
-    GIT_TERMINAL_PROMPT: '0',
-    HOME: rt.env.HOME
-  }
+  const env = buildGitEnv(rt, indexFile, opts)
   try {
     const result = spawnSync('git', ['-C', repo, ...args], {
       env,
@@ -78,6 +89,38 @@ export const git = (rt: Runtime, repo: string, args: string[], opts: GitOpts = {
       return { ok: true, stdout: result.stdout }
     }
     return { ok: false, code, stderr: result.stderr }
+  } finally {
+    removeSelfAllocatedIndex(indexFile, opts)
+  }
+}
+
+const isBufferOverflow = (error: NodeJS.ErrnoException): boolean => error.code === 'ENOBUFS'
+
+export const gitBuffer = (rt: Runtime, repo: string, args: string[], opts: GitBufferOpts = {}): GitBufferResult => {
+  const indexFile = opts.indexFile ?? freshIndexPath()
+  const env = buildGitEnv(rt, indexFile, opts)
+  try {
+    const result = spawnSync('git', ['-C', repo, ...args], {
+      env,
+      maxBuffer: GIT_BUFFER_MAX_BYTES,
+      ...(opts.stdin !== undefined ? { input: opts.stdin } : {})
+    })
+    if (result.error) {
+      if (isBufferOverflow(result.error as NodeJS.ErrnoException)) {
+        return {
+          ok: false,
+          overflow: true,
+          maxBuffer: GIT_BUFFER_MAX_BYTES,
+          stderr: `git ${args.join(' ')} produced more than GIT_BUFFER_MAX_BYTES (${GIT_BUFFER_MAX_BYTES}) bytes of output; refusing rather than risk mistaking a truncated read for a short ledger`
+        }
+      }
+      return { ok: false, overflow: false, code: -1, stderr: result.error.message }
+    }
+    const code = result.status ?? -1
+    if (code === 0) {
+      return { ok: true, stdout: result.stdout as Buffer }
+    }
+    return { ok: false, overflow: false, code, stderr: (result.stderr as Buffer).toString('utf8') }
   } finally {
     removeSelfAllocatedIndex(indexFile, opts)
   }
