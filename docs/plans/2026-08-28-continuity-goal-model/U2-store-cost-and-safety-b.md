@@ -165,6 +165,39 @@ This is the call that commits the array section 2.5 built, so it is the point at
 
    The remedy requires threading a new `SyncOutcome` reason into `src/server/tools/sync_ledger.ts` so the operator-visible tool boundary can distinguish and correctly render this refusal. `src/server/` is listed in this plan's own "Does not touch" row (section 0), and adding a new outcome kind is a design decision, not a mechanical fix. This is recorded as OPEN and awaiting a ruling. It is not recorded as resolved, and no resolution is proposed here.
 
+13. **Divergence 12 is RULED: this unit is widened to meet criterion 8, and `src/server/` is opened for exactly one refusal outcome.** The ruling was made by the orchestrator, not by the implementing session, and it resolves the OPEN item divergence 12 left. Three grounds, each of which independently suffices.
+
+    - A regression the change itself introduces is in scope. Before this branch there was no refusal on this path at all, so the misleading refusal is a new harm this unit created rather than a pre-existing one it declined to fix. The same ruling was already applied twice on this ladder: to `U1-B`'s lost minimum, and to `U2-A`'s mechanism withdrawal (decision `01M1AZ7R8Q35SFNAB2HRERT5DZ`). Choosing what it takes to meet a criterion safely is how the criterion gets met; it is not an expansion of the criterion.
+    - The boundary rested on a premise that is false. Step 4's stated rationale for excluding `src/server/` is, verbatim, "the sync tool already renders that outcome's `detail` into a refusal, so no file outside this plan's ownership has to change." Divergence 12 disproved that by execution: `pickRefusalFields` in `src/server/errors.ts` copies only `field`, `accepted`, `example`, `retryable` and `message`, so no refusal's `detail` has ever reached an operator. A boundary whose sole justification is untrue does not bind.
+    - Criterion 8 is a ceiling criterion, so unmet means the unit is not done. Shipping as written would also breach the green-branch invariant, because it degrades the operator experience relative to the parent rather than leaving it intact.
+
+    The widening is bounded to this one outcome. Nothing else in `src/server/` was touched, and in particular the general question of whether `detail` should reach the operator is left open and unaddressed.
+
+    **What shipped.** A fourth `SyncOutcome` failure variant, `unparseable`, carrying `records: string[]`, mirroring how the existing `conflict` variant carries `conflicts`. The variant deliberately carries **no** `detail` field. That shape is load-bearing rather than cosmetic: `src/server/tools/sync_ledger.ts` ends its dispatch in an implicit `else` that reads `outcome.detail`, so a variant shaped `{ reason; detail }` would have satisfied it, fallen through to `rejectedRefusal`, and still typechecked, reproducing the exact defect. Omitting `detail` forced a compile error at that line, which was observed: `TS2339: Property 'detail' does not exist on type ...`. The hazard was live, and the shape choice is what closed it.
+
+    The operator now receives, captured from a real server over the Model Context Protocol:
+
+        field: sync
+        accepted: a shared ledger whose every record file this version can read
+        example: upgrade this plugin to the version that wrote those records, or have the teammate who wrote them repair or remove them on the shared copy
+        retryable: false
+        sync stopped before merging: the shared ledger carries 1 record file(s) this version cannot read: decisions/not-a-valid-decision-record.json. Nothing was merged and nothing was sent to origin. Repeating this call cannot help, because the bytes live on the shared copy: upgrade this plugin to the version that wrote those records, or have the teammate who wrote them repair or remove them, then run sync_ledger again.
+
+    All three harms divergence 12 named are gone: the file is named, `retryable` is `false`, and no push is claimed.
+
+14. **`F2y` was discharged inside this unit rather than left filed, because divergence 13 made it live.** `F2y` recorded that the record names interpolated into this refusal are remote-controlled bytes with no sanitisation and no cap, and that it was inert only because the text never reached an operator. Divergence 13 removes that condition, so the same change that makes the names visible must also make them safe; fixing the display defect alone would have introduced a terminal-injection defect in its place. The names are now escaped and clipped per name, the list is capped, and an honest `(+N more)` remainder is rendered, following the house pattern already used for unrecognised keys in `src/schema/refusal.ts`. Two cap constants were added beside their precedent in `src/schema/caps.ts`. The refusal still carries no absolute filesystem path, so criterion 3's shipped privacy property is preserved.
+
+15. **Three test surfaces changed as a consequence, and none of them weakens a test.**
+
+    - `test/sync/two-clones-spawn.test.ts` gains `sync.names-the-unparseable-record-to-the-operator`, which drives the real server as a subprocess over the Model Context Protocol and asserts the operator-visible text. This is the receipt criterion 8 always needed. The pre-existing `sync.refuses-a-remote-record-it-cannot-parse` asserts the return value of the internal `sync()` function, which is why it passed while the criterion was unmet.
+    - `test/sync/conflict.test.ts` has two assertions repointed from `reason === 'rejected'` and a regular-expression match on `detail` to the new variant's `reason` and an exact structural comparison of `records`. That is a strengthening: it pins a specific new outcome kind and an exact array instead of a pattern match against a shared bucket.
+    - `test/contract/no-path.test.ts` and `test/unit/caps-census.test.ts` are censuses that halt on anything they cannot classify. Both required wiring for the new producer and the two new constants. The `no-path` census discovers producers through the module's exports, so the new refusal builder had to be exported; a module-private one would have left the census passing while covering nothing.
+
+16. **Two review findings were accepted as in scope rather than filed, because both concern this unit's own new code.**
+
+    - The escape-before-clip ORDER was not pinned by any test. That order is load-bearing: `escapeStored` expands text, turning one control character into the six characters that spell its code point, so the clip must run second or the cap stops bounding the output. Every test added for `F2y` used names escaping leaves unchanged, so all of them passed under either order. Reversing the order was demonstrated to leave the whole suite green while a hundred-character name rendered six hundred characters. A receipt that survives mutation of the thing it guards is not a receipt, so an assertion pinning the bound was added, and it was confirmed to turn red under the reversal and green when restored.
+    - The refusal message claimed `so both copies are unchanged`. The two facts before that clause are true, but the conclusion is not exactly true of the local copy, because `sync` calls `clearConflicts` for every non-`conflict` outcome and that unlinks the pending conflicts file. Only the clause was removed. The deletion itself is untouched and remains filed as `F2r`; correcting a sentence is not the same as changing behaviour, and telling an operator something untrue is the same class of harm criterion 8 exists to remove.
+
 ---
 
 ## 4. The change, step by step
