@@ -1,6 +1,8 @@
 import type { Thread, Criterion, Risk, KeyDecision, OutOfScope } from '../schema/thread.ts'
 import type { Pointer } from '../domain/pointer.ts'
-import { escapeStored, clipGraphemes } from './escape.ts'
+import { escapeStored } from './escape.ts'
+import { CLIP_MARKER_GRAPHEMES, clipWithMarker } from './clip.ts'
+import { THREAD_SLUG_MAX } from '../schema/caps.ts'
 
 export type DecisionIntegrity = {
   resolved: number
@@ -41,25 +43,26 @@ const fitsBudget = (briefing: string, threadId: string, hasPreviousSession: bool
   briefing.length <= BRIEFING_MAX_CHARS &&
   resumePayloadBytes(briefing, threadId, hasPreviousSession) <= RESUME_PAYLOAD_TARGET_BYTES
 
-const RELATED_TITLE_CLIP = 100
-const RELATED_SLUG_CLIP = 64
-
+const RELATED_TITLE_NATURAL_MAX = 100
+const RELATED_SLUG_NATURAL_MAX = 64
 const RISK_TEXT_NATURAL_MAX = 500
 const KEY_DECISION_TITLE_NATURAL_MAX = 200
 const OUT_OF_SCOPE_TEXT_NATURAL_MAX = 300
 const CRITERION_TEXT_NATURAL_MAX = 500
 const SETTLED_TEXT_NATURAL_MAX = 120
 
-const MIN_TEXT_CLIP = 0
-const TEXT_CLIPPED_BULLET =
-  '- some criterion, risk, key decision or out-of-scope text was shortened to fit the character budget'
+const MIN_TEXT_CLIP = CLIP_MARKER_GRAPHEMES
+const NO_CLIP = Number.POSITIVE_INFINITY
 
 const FOCUS_NOT_SET_LINE =
   '**Focus:** not set. Risks and key decisions render as one group in the order they were recorded, apart from those on a goal already met or struck.'
 
 const SETTLED_HEADING = '**Settled items (on goals already met or struck):**'
 
-const clip = (text: string, max: number): string => clipGraphemes(escapeStored(text), max)
+const TEXT_CLIPPED_BULLET =
+  '- some text on this briefing was shortened to fit the character budget; every shortened value ends with ...[shortened]'
+
+const clip = (text: string, max: number): string => clipWithMarker(escapeStored(text), max)
 
 const criterionStatus = (criterion: Criterion): string => {
   if (criterion.struck_by !== null) return 'struck'
@@ -88,8 +91,8 @@ const renderSettledKeyDecisionLine = (keyDecision: KeyDecision, textClip: number
 const renderDanglingLine = (decisionId: string): string => `- dangling: ${escapeStored(decisionId)}`
 const renderQuarantinedLine = (decisionId: string): string => `- quarantined: ${escapeStored(decisionId)}`
 
-const renderRelatedLine = (predecessor: Thread): string =>
-  `- succeeds: ${clip(predecessor.title, RELATED_TITLE_CLIP)} (${clip(predecessor.slug, RELATED_SLUG_CLIP)})`
+const renderRelatedLine = (predecessor: Thread, renderClip: RenderClip): string =>
+  `- succeeds: ${clip(predecessor.title, renderClip.relatedTitle)} (${clip(predecessor.slug, renderClip.relatedSlug)})`
 
 const renderBlockage = (blockedBy: string | null): string =>
   blockedBy === null ? '**Blockage:** none' : `**Blocked:** ${escapeStored(blockedBy)}`
@@ -116,9 +119,19 @@ const laneSplit = <T extends { criterion_id?: string | undefined }>(
   settled: items.filter((item) => laneFor(item.criterion_id, criteriaById) === 'settled')
 })
 
-type RenderClip = { risk: number; keyDecision: number; outOfScope: number; criterion: number; settled: number }
+type RenderClip = {
+  relatedTitle: number
+  relatedSlug: number
+  risk: number
+  keyDecision: number
+  outOfScope: number
+  criterion: number
+  settled: number
+}
 
 const clipAt = (perItemClip: number): RenderClip => ({
+  relatedTitle: Math.min(perItemClip, RELATED_TITLE_NATURAL_MAX),
+  relatedSlug: THREAD_SLUG_MAX,
   risk: Math.min(perItemClip, RISK_TEXT_NATURAL_MAX),
   keyDecision: Math.min(perItemClip, KEY_DECISION_TITLE_NATURAL_MAX),
   outOfScope: Math.min(perItemClip, OUT_OF_SCOPE_TEXT_NATURAL_MAX),
@@ -126,15 +139,25 @@ const clipAt = (perItemClip: number): RenderClip => ({
   settled: Math.min(perItemClip, SETTLED_TEXT_NATURAL_MAX)
 })
 
+const UNCLIPPED: RenderClip = {
+  relatedTitle: NO_CLIP,
+  relatedSlug: NO_CLIP,
+  risk: NO_CLIP,
+  keyDecision: NO_CLIP,
+  outOfScope: NO_CLIP,
+  criterion: NO_CLIP,
+  settled: NO_CLIP
+}
+
 const MAX_ITEM_CLIP = Math.max(
+  RELATED_TITLE_NATURAL_MAX,
+  RELATED_SLUG_NATURAL_MAX,
   RISK_TEXT_NATURAL_MAX,
   KEY_DECISION_TITLE_NATURAL_MAX,
   OUT_OF_SCOPE_TEXT_NATURAL_MAX,
   CRITERION_TEXT_NATURAL_MAX,
   SETTLED_TEXT_NATURAL_MAX
 )
-
-const FULL_CLIP: RenderClip = clipAt(MAX_ITEM_CLIP)
 
 type ClipSearch = { briefing: string; passes: number }
 
@@ -186,7 +209,7 @@ const assembleBriefing = (
   const nextStepLines = thread.spine.next_step.length === 0 ? [] : [thread.spine.next_step]
 
   const relatedThreads = predecessor === null ? [] : [predecessor]
-  const relatedLines = relatedThreads.map(renderRelatedLine)
+  const relatedLines = relatedThreads.map((item) => renderRelatedLine(item, renderClip))
   const riskLines = risks.live.map((item) => renderRiskLine(item, renderClip.risk))
   const keyDecisionLines = keyDecisions.live.map((item) => renderKeyDecisionLine(item, renderClip.keyDecision))
   const outOfScopeLines = outOfScope.map((item) => renderOutOfScopeLine(item, renderClip.outOfScope))
@@ -249,7 +272,9 @@ const assembleBriefing = (
     ...notShownBulletLines.slice(0, 1).map(() => ''),
     ...notShownBulletLines.slice(0, 1).map(() => '**Not shown:**'),
     ...notShownBulletLines,
-    ...notShownBulletLines.slice(0, 1).map(() => `See ${clip(notShownAddress, 200)} for the complete record.`)
+    ...notShownBulletLines
+      .slice(0, 1)
+      .map(() => `See ${notShownAddress} for the complete record.`)
   ].join('\n')
 }
 
@@ -287,7 +312,7 @@ export const renderBriefingWithPasses = (
     withinBudget: fitsBudget(briefing, thread.id, hasPreviousSession)
   })
 
-  const unclipped = renderWith(FULL_CLIP, false)
+  const unclipped = renderWith(UNCLIPPED, false)
   if (fitsBudget(unclipped, thread.id, hasPreviousSession)) return finish(unclipped, 1)
 
   const search = largestFittingClipRender(
