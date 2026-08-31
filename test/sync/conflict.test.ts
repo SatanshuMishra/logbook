@@ -139,7 +139,7 @@ test('sync.conflict-refuses', () => {
   })
 })
 
-test('sync.preserves-a-remote-only-quarantined-record', () => {
+test('sync.refuses-a-remote-record-it-cannot-parse', () => {
   withTwoClones((ana, ben, remote) => {
     const anaLayout = layoutIn(ana)
     const benLayout = layoutIn(ben)
@@ -155,11 +155,12 @@ test('sync.preserves-a-remote-only-quarantined-record', () => {
     assert.equal(fastForwardBen.ok, true)
 
     const badDecisionId = 'not-a-valid-decision-record'
+    const badRelPath = `decisions/${badDecisionId}.json`
     const malformedContent = '{"this is not a valid decision record":true}'
     const rawWrite = writeRecords(
       ben.rt,
       benLayout,
-      [{ kind: 'raw', relPath: `decisions/${badDecisionId}.json`, content: malformedContent }],
+      [{ kind: 'raw', relPath: badRelPath, content: malformedContent }],
       'ben: record a decision the schema will reject'
     )
     assert.equal(rawWrite.ok, true)
@@ -173,16 +174,24 @@ test('sync.preserves-a-remote-only-quarantined-record', () => {
     const createB = ana.store.commit([threadB], 'ana: create thread b')
     assert.equal(createB.ok, true)
 
+    const anaRefBefore = git(ana.rt, ana.repo, ['rev-parse', LEDGER_REF])
+    assert.equal(anaRefBefore.ok, true)
+    if (!anaRefBefore.ok) return
+
     const mergeOutcome = sync(ana.rt, ana.store, anaLayout)
-    assert.equal(mergeOutcome.ok, true)
-    if (!mergeOutcome.ok) return
-    assert.equal(mergeOutcome.action, 'merged')
 
-    const remoteRecordExists = git(ana.rt, remote, ['cat-file', '-e', `${LEDGER_REF}:decisions/${badDecisionId}.json`])
-    assert.equal(remoteRecordExists.ok, true)
+    assert.equal(mergeOutcome.ok, false, 'a merge carrying remote bytes this version cannot parse must be refused')
+    if (mergeOutcome.ok) return
+    assert.equal(mergeOutcome.reason, 'rejected')
+    assert.match(mergeOutcome.detail, new RegExp(badRelPath))
 
-    const remoteRecordContent = git(ana.rt, remote, ['cat-file', '-p', `${LEDGER_REF}:decisions/${badDecisionId}.json`])
-    assert.equal(remoteRecordContent.ok, true)
+    const anaRefAfter = git(ana.rt, ana.repo, ['rev-parse', LEDGER_REF])
+    assert.equal(anaRefAfter.ok, true)
+    if (!anaRefAfter.ok) return
+    assert.equal(anaRefAfter.stdout.trim(), anaRefBefore.stdout.trim(), 'the refused merge must not advance the local ledger ref')
+
+    const remoteRecordContent = git(ana.rt, remote, ['cat-file', '-p', `${LEDGER_REF}:${badRelPath}`])
+    assert.equal(remoteRecordContent.ok, true, 'the refusal must leave the remote copy of the record intact')
     if (!remoteRecordContent.ok) return
     assert.equal(remoteRecordContent.stdout, malformedContent)
   })
