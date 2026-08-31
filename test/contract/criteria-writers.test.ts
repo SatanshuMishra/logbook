@@ -8,6 +8,8 @@ import * as caps from '../../src/schema/caps.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const CRITERIA_DOMAIN_PATTERN = /criteri/i
+const CRITERION_STATEMENT_LEAF = 'text'
+const ARRAY_ELEMENT_SUFFIX = '[]'
 const AMEND_CRITERIA_TOOL_NAME = 'amend_criteria'
 const THREAD_ID_PROPERTY = 'thread_id'
 
@@ -44,6 +46,9 @@ const hasThreadIdProperty = (inputSchema: Record<string, unknown>): boolean => {
   return isPlainObject(properties) && THREAD_ID_PROPERTY in properties
 }
 
+const isCriterionStatementProperty = (path: string): boolean =>
+  path.endsWith(ARRAY_ELEMENT_SUFFIX) || path.slice(path.lastIndexOf('.') + 1) === CRITERION_STATEMENT_LEAF
+
 export const classifyCriteriaTextProperty = (
   entry: SchemaProperty,
   toolHasThreadId: boolean
@@ -58,6 +63,7 @@ export const classifyCriteriaTextProperty = (
 
   if (!CRITERIA_DOMAIN_PATTERN.test(entry.topLevelName)) return 'allowed'
   if ('pattern' in node || 'enum' in node || 'const' in node) return 'allowed'
+  if (!isCriterionStatementProperty(entry.path)) return 'allowed'
 
   return toolHasThreadId ? 'forbidden' : 'allowed'
 }
@@ -116,6 +122,28 @@ test('criteria.no-other-tool-writes-criteria.control.id-reference-is-not-text', 
     node: { type: 'string', pattern: '^[0-9A-HJKMNP-TV-Z]{26}$', description: 'the id of a completion criterion' }
   }
   assert.equal(classifyCriteriaTextProperty(idReferenceProperty, true), 'allowed')
+})
+
+test('criteria.no-other-tool-writes-criteria.control.a-recorded-observation-is-not-criterion-text', () => {
+  const resultProperty: SchemaProperty = {
+    path: 'criteria_done[].result',
+    topLevelName: 'criteria_done',
+    node: {
+      type: 'string',
+      maxLength: caps.CRITERION_RESULT_MAX,
+      description: 'what the check returned, or when it could not be run, specifically why it could not'
+    }
+  }
+  assert.equal(classifyCriteriaTextProperty(resultProperty, true), 'allowed')
+})
+
+test('criteria.no-other-tool-writes-criteria.control.a-bare-criteria-array-element-on-a-thread-tool-is-forbidden', () => {
+  const bareElementProperty: SchemaProperty = {
+    path: 'criteria_replace[]',
+    topLevelName: 'criteria_replace',
+    node: { type: 'string', minLength: 1, maxLength: 500, description: 'replacement text for a criterion' }
+  }
+  assert.equal(classifyCriteriaTextProperty(bareElementProperty, true), 'forbidden')
 })
 
 test('criteria.no-other-tool-writes-criteria.control.unrelated-scope-text-is-allowed', () => {

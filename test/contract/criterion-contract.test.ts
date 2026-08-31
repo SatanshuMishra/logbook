@@ -7,7 +7,9 @@ import type { Runtime } from '../../src/runtime/runtime.ts'
 import type { ToolContext } from '../../src/server/register.ts'
 import { declare } from '../../src/schema/declare.ts'
 import { openThreadTool } from '../../src/server/tools/open_thread.ts'
+import { updateThreadTool } from '../../src/server/tools/update_thread.ts'
 import { amendCriteriaTool } from '../../src/server/tools/amend_criteria.ts'
+import { closeThreadTool } from '../../src/server/tools/close_thread.ts'
 import { recordDecisionTool } from '../../src/server/tools/record_decision.ts'
 import type { Criterion } from '../../src/schema/thread.ts'
 import { openStore } from '../../src/store/records.ts'
@@ -169,5 +171,194 @@ test('criterion.open-thread-refuses-a-check-that-overflows-its-cap-once-escaped'
     const opened = openStore(rt, rt.cwd)
     if (!opened.ok) throw new Error('criterion fixture: the store did not open')
     assert.equal(opened.value.readThreads().length, 0)
+  })
+})
+
+test('criterion.criteria-done-refuses-the-bare-criterion-id-array', () => {
+  const declared = declare<unknown>(updateThreadTool.name, updateThreadTool.input)
+  const refusal = declared.parse({
+    thread_id: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+    criteria_done: ['01ARZ3NDEKTSV4RRFFQ69G5FAV']
+  })
+  assert.equal(refusal.ok, false)
+  if (refusal.ok) throw new Error('expected update_thread to refuse a bare criterion id array')
+  assert.equal(refusal.field, 'criteria_done.0')
+  assert.equal(refusal.retryable, true)
+  assert.match(refusal.accepted, /the bare criterion id string this argument took before is refused/)
+  assert.match(refusal.accepted, /"criterion_id".*"result".*"result_status"/)
+  assert.match(refusal.example, /"criterion_id"/)
+  assert.match(refusal.example, /"result_status"/)
+})
+
+test('criterion.criteria-done-records-the-result-and-its-status', async () => {
+  await withCriterionFixture(async (rt) => {
+    const { threadId, criterionIds } = await openFixtureThread(rt, 'records-the-result', [
+      { text: 'the health check ships', check: 'npm test exits 0' }
+    ])
+    const criterionId = criterionIds[0] as string
+    const marked = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      criteria_done: [{ criterion_id: criterionId, result: '436 tests, 0 fail, exit 0', result_status: 'verified' }]
+    })
+    assert.equal(marked.ok, true)
+    if (!marked.ok) throw new Error('expected update_thread to mark the criterion done')
+    assert.deepEqual(marked.structured.criteria_marked_done, [criterionId])
+    const stored = readStoredCriteria(rt, threadId)
+    assert.equal(stored[0]?.done, true)
+    assert.equal(stored[0]?.result, '436 tests, 0 fail, exit 0')
+    assert.equal(stored[0]?.result_status, 'verified')
+  })
+})
+
+test('criterion.criteria-done-refuses-an-empty-result', async () => {
+  await withCriterionFixture(async (rt) => {
+    const { threadId, criterionIds } = await openFixtureThread(rt, 'empty-result', [
+      { text: 'the health check ships', check: 'npm test exits 0' }
+    ])
+    const criterionId = criterionIds[0] as string
+    const refused = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      criteria_done: [{ criterion_id: criterionId, result: '   ', result_status: 'verified' }]
+    })
+    assert.equal(refused.ok, false)
+    if (refused.ok) throw new Error('expected update_thread to refuse an empty result')
+    assert.equal(refused.refusal.field, 'criteria_done')
+    assert.equal(
+      refused.refusal.accepted,
+      'a non-empty result on every entry, stating what the check returned or why it could not be run'
+    )
+    assert.equal(refused.refusal.retryable, true)
+    assert.match(refused.refusal.message, /a criterion is never marked done without one/)
+    assert.equal(readStoredCriteria(rt, threadId)[0]?.done, false)
+  })
+})
+
+test('criterion.criteria-done-refuses-an-absent-result-status', () => {
+  const declared = declare<unknown>(updateThreadTool.name, updateThreadTool.input)
+  const refusal = declared.parse({
+    thread_id: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+    criteria_done: [{ criterion_id: '01ARZ3NDEKTSV4RRFFQ69G5FAV', result: 'the check was run' }]
+  })
+  assert.equal(refusal.ok, false)
+  if (refusal.ok) throw new Error('expected update_thread to refuse an absent result_status')
+  assert.equal(refusal.field, 'criteria_done.0.result_status')
+  assert.equal(refusal.example, 'verified')
+  assert.match(refusal.accepted, /enum=verified,unverified-reasoned/)
+})
+
+test('criterion.criteria-done-refuses-an-id-that-names-no-criterion-on-the-thread', async () => {
+  await withCriterionFixture(async (rt) => {
+    const { threadId } = await openFixtureThread(rt, 'unknown-criterion', [
+      { text: 'the health check ships', check: 'npm test exits 0' }
+    ])
+    const strangerId = rt.ulid()
+    const refused = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      criteria_done: [{ criterion_id: strangerId, result: 'the check was run', result_status: 'verified' }]
+    })
+    assert.equal(refused.ok, false)
+    if (refused.ok) throw new Error('expected update_thread to refuse a criterion id that is not on the thread')
+    assert.equal(refused.refusal.field, 'criteria_done')
+    assert.match(refused.refusal.message, /names ids not present on this thread/)
+  })
+})
+
+test('criterion.criteria-done-refuses-overwriting-a-recorded-result', async () => {
+  await withCriterionFixture(async (rt) => {
+    const { threadId, criterionIds } = await openFixtureThread(rt, 'no-overwrite', [
+      { text: 'the health check ships', check: 'npm test exits 0' }
+    ])
+    const criterionId = criterionIds[0] as string
+    const first = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      criteria_done: [{ criterion_id: criterionId, result: '436 tests, 0 fail, exit 0', result_status: 'verified' }]
+    })
+    assert.equal(first.ok, true)
+
+    const repeated = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      criteria_done: [{ criterion_id: criterionId, result: '436 tests, 0 fail, exit 0', result_status: 'verified' }]
+    })
+    assert.equal(repeated.ok, true, 'resending the same result must not be refused')
+
+    const contradiction = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      criteria_done: [{ criterion_id: criterionId, result: 'a different result', result_status: 'verified' }]
+    })
+    assert.equal(contradiction.ok, false)
+    if (contradiction.ok) throw new Error('expected update_thread to refuse overwriting a recorded result')
+    assert.equal(contradiction.refusal.field, 'criteria_done')
+    assert.equal(contradiction.refusal.retryable, false)
+    assert.equal(readStoredCriteria(rt, threadId)[0]?.result, '436 tests, 0 fail, exit 0')
+  })
+})
+
+test('criterion.close-thread-prints-the-verified-and-unverified-reasoned-split', async () => {
+  await withCriterionFixture(async (rt) => {
+    const { threadId, criterionIds } = await openFixtureThread(rt, 'the-split', [
+      { text: 'the health check ships', check: 'npm test exits 0' },
+      { text: 'the mutation score holds', check: 'npm run mutate reports at least 75 percent' }
+    ])
+    const marked = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      criteria_done: [
+        { criterion_id: criterionIds[0] as string, result: '436 tests, 0 fail, exit 0', result_status: 'verified' },
+        {
+          criterion_id: criterionIds[1] as string,
+          result: 'the mutation run takes 152 minutes and was not performed on this machine',
+          result_status: 'unverified-reasoned'
+        }
+      ]
+    })
+    assert.equal(marked.ok, true)
+
+    const closed = await closeThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      outcome: 'done',
+      detail: 'shipped the criterion contract'
+    })
+    assert.equal(closed.ok, true)
+    if (!closed.ok) throw new Error('expected close_thread to close a thread carrying an unverified-reasoned criterion')
+    assert.deepEqual(closed.structured.result_status_split, {
+      verified: 1,
+      unverified_reasoned: 1,
+      not_recorded: 0
+    })
+    assert.equal(
+      closed.text,
+      'closed thread the-split as done; criteria met: 1 verified, 1 unverified-reasoned, 0 not recorded.'
+    )
+  })
+})
+
+test('criterion.close-thread-refuses-on-neither-side-of-the-split', async () => {
+  await withCriterionFixture(async (rt) => {
+    const { threadId, criterionIds } = await openFixtureThread(rt, 'no-refusal', [
+      { text: 'the mutation score holds', check: 'npm run mutate reports at least 75 percent' }
+    ])
+    const marked = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      criteria_done: [
+        {
+          criterion_id: criterionIds[0] as string,
+          result: 'the mutation run takes 152 minutes and was not performed on this machine',
+          result_status: 'unverified-reasoned'
+        }
+      ]
+    })
+    assert.equal(marked.ok, true)
+
+    const closed = await closeThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      outcome: 'done',
+      detail: 'shipped what could be shipped and recorded what could not be verified'
+    })
+    assert.equal(closed.ok, true)
+    if (!closed.ok) throw new Error('a thread whose only met criterion is unverified-reasoned must still close')
+    assert.deepEqual(closed.structured.result_status_split, {
+      verified: 0,
+      unverified_reasoned: 1,
+      not_recorded: 0
+    })
   })
 })

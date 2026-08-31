@@ -229,7 +229,10 @@ const openThreadWithCriteria = async (
 const markCriterionDone = async (fx: SpawnFixture, threadId: string, criterionId: string): Promise<void> => {
   const marked = (await fx.spawned.client.callTool({
     name: 'update_thread',
-    arguments: { thread_id: threadId, criteria_done: [criterionId] }
+    arguments: {
+      thread_id: threadId,
+      criteria_done: [{ criterion_id: criterionId, result: 'the fixture check was run', result_status: 'verified' }]
+    }
   })) as CallToolResult
   assertOkResult('update_thread (mark a criterion done)', marked)
 }
