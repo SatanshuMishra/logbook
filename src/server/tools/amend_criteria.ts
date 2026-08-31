@@ -26,6 +26,12 @@ const AmendCriteriaInputSchema = z.strictObject({
     .enum(['planned', 'detour'])
     .optional()
     .describe('whether an inserted criterion was planned up front or added mid-thread; required for insert, ignored otherwise'),
+  check: z
+    .string()
+    .min(1)
+    .max(caps.CRITERION_CHECK_MAX)
+    .optional()
+    .describe('the re-runnable check that decides whether an inserted criterion is true; required for insert, ignored otherwise'),
   position: z
     .number()
     .int()
@@ -47,7 +53,14 @@ export const missingFieldRefusal = (field: string, forOperation: string): Refusa
   ok: false,
   field,
   accepted: `a value for ${field} when operation is "${forOperation}"`,
-  example: field === 'position' ? '0' : field === 'kind' ? 'planned' : 'ship the health check before closing this thread',
+  example:
+    field === 'position'
+      ? '0'
+      : field === 'kind'
+        ? 'planned'
+        : field === 'check'
+          ? 'npm test exits 0'
+          : 'ship the health check before closing this thread',
   retryable: true,
   message: `${field} is required when operation is "${forOperation}".`
 })
@@ -56,7 +69,7 @@ export const amendCriteriaTool: ToolSpec<AmendCriteriaInput, AmendCriteriaOutput
   name: 'amend_criteria',
   title: 'Amend criteria',
   description:
-    'Amends one completion criterion on a thread by inserting a new one, rewriting the text of an existing one, or striking it, and no other kind of edit reaches a criterion once it exists. Every amendment carries a decision_id that must resolve to a decision record already stored on this project; an id that resolves to nothing is refused. Striking a criterion keeps it on the thread marked struck rather than deleting it, so a struck criterion still renders in the history it came from. Insert also takes an optional zero-based position: {"operation": "insert", "text": "the merge test passes in both push orders", "kind": "detour", "decision_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV", "position": 0} inserts a criterion at the very front of the list, and omitting position appends it at the end instead.',
+    'Amends one completion criterion on a thread by inserting a new one, rewriting the text of an existing one, or striking it, and no other kind of edit reaches a criterion once it exists. Every amendment carries a decision_id that must resolve to a decision record already stored on this project; an id that resolves to nothing is refused. Striking a criterion keeps it on the thread marked struck rather than deleting it, so a struck criterion still renders in the history it came from. An inserted criterion also carries a check, the re-runnable thing that decides whether it is true, and an insert with no check is refused. Insert also takes an optional zero-based position: {"operation": "insert", "text": "the merge test passes in both push orders", "check": "npm test exits 0", "kind": "detour", "decision_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV", "position": 0} inserts a criterion at the very front of the list, and omitting position appends it at the end instead.',
   input: AmendCriteriaInputSchema,
   output: AmendCriteriaOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -77,12 +90,14 @@ export const amendCriteriaTool: ToolSpec<AmendCriteriaInput, AmendCriteriaOutput
     if (input.operation === 'insert') {
       if (input.text === undefined) return { ok: false, refusal: missingFieldRefusal('text', 'insert') }
       if (input.kind === undefined) return { ok: false, refusal: missingFieldRefusal('kind', 'insert') }
+      if (input.check === undefined) return { ok: false, refusal: missingFieldRefusal('check', 'insert') }
 
       const result = insertCriterion(
         rt,
         thread,
         {
           text: input.text,
+          check: input.check,
           kind: input.kind,
           decisionId: input.decision_id,
           ...(input.position !== undefined ? { position: input.position } : {})
