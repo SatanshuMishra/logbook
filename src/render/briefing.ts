@@ -1,6 +1,5 @@
 import type { Thread, Criterion, Risk, KeyDecision, OutOfScope } from '../schema/thread.ts'
 import type { Pointer } from '../domain/pointer.ts'
-import * as caps from '../schema/caps.ts'
 import { escapeStored, clipGraphemes } from './escape.ts'
 
 export type DecisionIntegrity = {
@@ -45,25 +44,20 @@ const fitsBudget = (briefing: string, threadId: string, hasPreviousSession: bool
 const RELATED_TITLE_CLIP = 100
 const RELATED_SLUG_CLIP = 64
 
-const LANE_A_RISKS_MAX = 8
-const LANE_B_RISKS_MAX = 4
 const RISK_TEXT_NATURAL_MAX = 500
-
-const LANE_A_TITLES_MAX = 10
-const LANE_B_TITLES_MAX = 5
 const KEY_DECISION_TITLE_NATURAL_MAX = 200
-
-const OUT_OF_SCOPE_SHOWN_MAX = 10
 const OUT_OF_SCOPE_TEXT_NATURAL_MAX = 300
-
-const CRITERIA_SHOWN_MAX = caps.CRITERIA_MAX_ELEMENTS
 const CRITERION_TEXT_NATURAL_MAX = 500
-
-const DECISION_ID_SHOWN_MAX = 6
+const SETTLED_TEXT_NATURAL_MAX = 120
 
 const MIN_TEXT_CLIP = 0
 const TEXT_CLIPPED_BULLET =
   '- some criterion, risk, key decision or out-of-scope text was shortened to fit the character budget'
+
+const FOCUS_NOT_SET_LINE =
+  '**Focus:** not set. Risks and key decisions render as one group in the order they were recorded, apart from those on a goal already met or struck.'
+
+const SETTLED_HEADING = '**Settled items (on goals already met or struck):**'
 
 const clip = (text: string, max: number): string => clipGraphemes(escapeStored(text), max)
 
@@ -85,6 +79,12 @@ const renderKeyDecisionLine = (keyDecision: KeyDecision, textClip: number): stri
 
 const renderOutOfScopeLine = (outOfScope: OutOfScope, textClip: number): string => `- ${clip(outOfScope.text, textClip)}`
 
+const renderSettledRiskLine = (risk: Risk, textClip: number): string =>
+  `- risk ${escapeStored(risk.id)} ${clip(risk.text, textClip)}`
+
+const renderSettledKeyDecisionLine = (keyDecision: KeyDecision, textClip: number): string =>
+  `- decision ${escapeStored(keyDecision.decision_id)} ${clip(keyDecision.title, textClip)}`
+
 const renderDanglingLine = (decisionId: string): string => `- dangling: ${escapeStored(decisionId)}`
 const renderQuarantinedLine = (decisionId: string): string => `- quarantined: ${escapeStored(decisionId)}`
 
@@ -97,93 +97,41 @@ const renderBlockage = (blockedBy: string | null): string =>
 const renderPointerStatus = (pointer: Pointer | null, threadId: string): string =>
   pointer !== null && pointer.thread_id === threadId ? '**Currently being worked:** yes' : '**Currently being worked:** no'
 
-type Lane = 'A' | 'B' | 'C'
+type Lane = 'live' | 'settled'
 
-const currentCriterionId = (criteria: readonly Criterion[]): string | null => {
-  const current = criteria.find((criterion) => criterion.struck_by === null && !criterion.done)
-  return current === undefined ? null : current.id
-}
-
-const laneFor = (
-  criterionId: string | undefined,
-  criteriaById: ReadonlyMap<string, Criterion>,
-  currentId: string | null
-): Lane => {
-  if (criterionId === undefined) return 'B'
+const laneFor = (criterionId: string | undefined, criteriaById: ReadonlyMap<string, Criterion>): Lane => {
+  if (criterionId === undefined) return 'live'
   const criterion = criteriaById.get(criterionId)
-  if (criterion === undefined) return 'B'
-  if (criterion.struck_by !== null || criterion.done) return 'C'
-  return criterion.id === currentId ? 'A' : 'B'
+  if (criterion === undefined) return 'live'
+  return criterion.struck_by !== null || criterion.done ? 'settled' : 'live'
 }
 
-type Laned<T> = { shown: T[]; hidden: number }
+type Laned<T> = { live: T[]; settled: T[] }
 
 const laneSplit = <T extends { criterion_id?: string | undefined }>(
   items: readonly T[],
-  criteriaById: ReadonlyMap<string, Criterion>,
-  currentId: string | null,
-  capA: number,
-  capB: number
-): Laned<T> => {
-  const laneA = items.filter((item) => laneFor(item.criterion_id, criteriaById, currentId) === 'A')
-  const laneB = items.filter((item) => laneFor(item.criterion_id, criteriaById, currentId) === 'B')
-  const shownA = laneA.slice(0, capA)
-  const shownB = laneB.slice(0, capB)
-  return { shown: [...shownA, ...shownB], hidden: items.length - shownA.length - shownB.length }
-}
-
-const capList = <T>(items: readonly T[], cap: number): Laned<T> => ({
-  shown: items.slice(0, cap),
-  hidden: Math.max(0, items.length - cap)
+  criteriaById: ReadonlyMap<string, Criterion>
+): Laned<T> => ({
+  live: items.filter((item) => laneFor(item.criterion_id, criteriaById) === 'live'),
+  settled: items.filter((item) => laneFor(item.criterion_id, criteriaById) === 'settled')
 })
 
-const CRITERION_RANK_OPEN = 0
-const CRITERION_RANK_DONE = 1
-const CRITERION_RANK_STRUCK = 2
-
-const criterionRank = (criterion: Criterion): number => {
-  const status = criterionStatus(criterion)
-  if (status === 'open') return CRITERION_RANK_OPEN
-  return status === 'done' ? CRITERION_RANK_DONE : CRITERION_RANK_STRUCK
-}
-
-type RankedCriterion = { criterion: Criterion; index: number; rank: number }
-
-const byRankThenOriginalIndex = (left: RankedCriterion, right: RankedCriterion): number =>
-  left.rank === right.rank ? left.index - right.index : left.rank - right.rank
-
-const capCriteria = (criteria: readonly Criterion[], cap: number): Laned<Criterion> => {
-  const ranked: RankedCriterion[] = criteria.map((criterion, index) => ({
-    criterion,
-    index,
-    rank: criterionRank(criterion)
-  }))
-  const selectedIndices = new Set(
-    [...ranked]
-      .sort(byRankThenOriginalIndex)
-      .slice(0, Math.max(0, cap))
-      .map((entry) => entry.index)
-  )
-  return {
-    shown: ranked.filter((entry) => selectedIndices.has(entry.index)).map((entry) => entry.criterion),
-    hidden: criteria.length - selectedIndices.size
-  }
-}
-
-type RenderClip = { risk: number; keyDecision: number; outOfScope: number; criterion: number }
+type RenderClip = { risk: number; keyDecision: number; outOfScope: number; criterion: number; settled: number }
 
 const clipAt = (perItemClip: number): RenderClip => ({
   risk: Math.min(perItemClip, RISK_TEXT_NATURAL_MAX),
   keyDecision: Math.min(perItemClip, KEY_DECISION_TITLE_NATURAL_MAX),
   outOfScope: Math.min(perItemClip, OUT_OF_SCOPE_TEXT_NATURAL_MAX),
-  criterion: Math.min(perItemClip, CRITERION_TEXT_NATURAL_MAX)
+  criterion: Math.min(perItemClip, CRITERION_TEXT_NATURAL_MAX),
+  settled: Math.min(perItemClip, SETTLED_TEXT_NATURAL_MAX)
 })
 
 const MAX_ITEM_CLIP = Math.max(
   RISK_TEXT_NATURAL_MAX,
   KEY_DECISION_TITLE_NATURAL_MAX,
   OUT_OF_SCOPE_TEXT_NATURAL_MAX,
-  CRITERION_TEXT_NATURAL_MAX
+  CRITERION_TEXT_NATURAL_MAX,
+  SETTLED_TEXT_NATURAL_MAX
 )
 
 const FULL_CLIP: RenderClip = clipAt(MAX_ITEM_CLIP)
@@ -225,15 +173,13 @@ const assembleBriefing = (
   predecessor: Thread | null,
   risks: Laned<Risk>,
   keyDecisions: Laned<KeyDecision>,
-  outOfScope: Laned<OutOfScope>,
-  criteria: Laned<Criterion>,
-  dangling: Laned<string>,
-  quarantined: Laned<string>,
+  outOfScope: readonly OutOfScope[],
+  criteria: readonly Criterion[],
   renderClip: RenderClip,
   textWasClipped: boolean
 ): string => {
   const notShownAddress = `logbook://thread/${escapeStored(thread.id)}`
-  const danglingOrQuarantinedHidden = dangling.hidden + quarantined.hidden
+  const unreadableDecisionCount = decisionIntegrity.dangling.length + decisionIntegrity.quarantined.length
 
   const activeGoalLines = thread.spine.active_goal.length === 0 ? [] : [thread.spine.active_goal]
   const lastSessionLines = thread.spine.last_session.length === 0 ? [] : [thread.spine.last_session]
@@ -241,19 +187,19 @@ const assembleBriefing = (
 
   const relatedThreads = predecessor === null ? [] : [predecessor]
   const relatedLines = relatedThreads.map(renderRelatedLine)
-  const riskLines = risks.shown.map((item) => renderRiskLine(item, renderClip.risk))
-  const keyDecisionLines = keyDecisions.shown.map((item) => renderKeyDecisionLine(item, renderClip.keyDecision))
-  const outOfScopeLines = outOfScope.shown.map((item) => renderOutOfScopeLine(item, renderClip.outOfScope))
-  const criterionLines = criteria.shown.map((item) => renderCriterionLine(item, renderClip.criterion))
+  const riskLines = risks.live.map((item) => renderRiskLine(item, renderClip.risk))
+  const keyDecisionLines = keyDecisions.live.map((item) => renderKeyDecisionLine(item, renderClip.keyDecision))
+  const outOfScopeLines = outOfScope.map((item) => renderOutOfScopeLine(item, renderClip.outOfScope))
+  const criterionLines = criteria.map((item) => renderCriterionLine(item, renderClip.criterion))
+  const settledLines = [
+    ...risks.settled.map((item) => renderSettledRiskLine(item, renderClip.settled)),
+    ...keyDecisions.settled.map((item) => renderSettledKeyDecisionLine(item, renderClip.settled))
+  ]
 
   const notShownBulletLines = [
-    ...[risks.hidden].filter((count) => count > 0).map((count) => `- ${count} risks not shown`),
-    ...[keyDecisions.hidden].filter((count) => count > 0).map((count) => `- ${count} key decisions not shown`),
-    ...[outOfScope.hidden].filter((count) => count > 0).map((count) => `- ${count} out-of-scope items not shown`),
-    ...[criteria.hidden].filter((count) => count > 0).map((count) => `- ${count} completion criteria not shown`),
-    ...[danglingOrQuarantinedHidden]
+    ...[unreadableDecisionCount]
       .filter((count) => count > 0)
-      .map((count) => `- ${count} dangling or quarantined decision ids not shown`),
+      .map((count) => `- ${count} linked decision records could not be read; their ids are listed under Decisions above`),
     ...[textWasClipped].filter(Boolean).map(() => TEXT_CLIPPED_BULLET)
   ]
 
@@ -264,6 +210,7 @@ const assembleBriefing = (
     `**Status:** ${escapeStored(thread.status)}`,
     renderBlockage(thread.blocked_by),
     renderPointerStatus(pointer, thread.id),
+    FOCUS_NOT_SET_LINE,
     ...activeGoalLines.slice(0, 1).map(() => ''),
     ...activeGoalLines.slice(0, 1).map(() => '**Active goal:**'),
     ...activeGoalLines.slice(0, 1).map(() => ''),
@@ -279,23 +226,26 @@ const assembleBriefing = (
     ...relatedThreads.slice(0, 1).map(() => ''),
     ...relatedThreads.slice(0, 1).map(() => '**Related:**'),
     ...relatedLines,
-    ...risks.shown.slice(0, 1).map(() => ''),
-    ...risks.shown.slice(0, 1).map(() => '**Open risks:**'),
+    ...riskLines.slice(0, 1).map(() => ''),
+    ...riskLines.slice(0, 1).map(() => '**Open risks:**'),
     ...riskLines,
-    ...keyDecisions.shown.slice(0, 1).map(() => ''),
-    ...keyDecisions.shown.slice(0, 1).map(() => '**Key decisions:**'),
+    ...keyDecisionLines.slice(0, 1).map(() => ''),
+    ...keyDecisionLines.slice(0, 1).map(() => '**Key decisions:**'),
     ...keyDecisionLines,
-    ...outOfScope.shown.slice(0, 1).map(() => ''),
-    ...outOfScope.shown.slice(0, 1).map(() => '**Out of scope:**'),
+    ...outOfScopeLines.slice(0, 1).map(() => ''),
+    ...outOfScopeLines.slice(0, 1).map(() => '**Out of scope:**'),
     ...outOfScopeLines,
-    ...criteria.shown.slice(0, 1).map(() => ''),
-    ...criteria.shown.slice(0, 1).map(() => '**Completion criteria:**'),
+    ...criterionLines.slice(0, 1).map(() => ''),
+    ...criterionLines.slice(0, 1).map(() => '**Completion criteria:**'),
     ...criterionLines,
+    ...settledLines.slice(0, 1).map(() => ''),
+    ...settledLines.slice(0, 1).map(() => SETTLED_HEADING),
+    ...settledLines,
     '',
     '**Decisions:**',
     `- resolved: ${decisionIntegrity.resolved}`,
-    ...dangling.shown.map(renderDanglingLine),
-    ...quarantined.shown.map(renderQuarantinedLine),
+    ...decisionIntegrity.dangling.map(renderDanglingLine),
+    ...decisionIntegrity.quarantined.map(renderQuarantinedLine),
     ...notShownBulletLines.slice(0, 1).map(() => ''),
     ...notShownBulletLines.slice(0, 1).map(() => '**Not shown:**'),
     ...notShownBulletLines,
@@ -313,14 +263,9 @@ export const renderBriefingWithPasses = (
   hasPreviousSession: boolean = PREVIOUS_SESSION_DEFAULT_PRESENT
 ): BriefingRender => {
   const criteriaById = new Map(thread.completion_criteria.map((criterion) => [criterion.id, criterion] as const))
-  const currentId = currentCriterionId(thread.completion_criteria)
 
-  const risks = laneSplit(thread.spine.open_risks, criteriaById, currentId, LANE_A_RISKS_MAX, LANE_B_RISKS_MAX)
-  const keyDecisions = laneSplit(thread.spine.key_decisions, criteriaById, currentId, LANE_A_TITLES_MAX, LANE_B_TITLES_MAX)
-  const outOfScope = capList(thread.spine.out_of_scope, OUT_OF_SCOPE_SHOWN_MAX)
-  const criteria = capCriteria(thread.completion_criteria, CRITERIA_SHOWN_MAX)
-  const dangling = capList(decisionIntegrity.dangling, DECISION_ID_SHOWN_MAX)
-  const quarantined = capList(decisionIntegrity.quarantined, DECISION_ID_SHOWN_MAX)
+  const risks = laneSplit(thread.spine.open_risks, criteriaById)
+  const keyDecisions = laneSplit(thread.spine.key_decisions, criteriaById)
 
   const renderWith = (renderClip: RenderClip, textWasClipped: boolean): string =>
     assembleBriefing(
@@ -330,10 +275,8 @@ export const renderBriefingWithPasses = (
       predecessor,
       risks,
       keyDecisions,
-      outOfScope,
-      criteria,
-      dangling,
-      quarantined,
+      thread.spine.out_of_scope,
+      thread.completion_criteria,
       renderClip,
       textWasClipped
     )

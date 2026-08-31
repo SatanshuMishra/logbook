@@ -5,6 +5,7 @@ import * as ts from 'typescript'
 import {
   renderBriefing,
   renderBriefingWithPasses,
+  resumePayloadBytes,
   BRIEFING_HEADING,
   BRIEFING_MAX_CHARS,
   RESUME_PAYLOAD_MAX_BYTES,
@@ -95,9 +96,18 @@ test('briefing.blockage-none-when-not-blocked', () => {
 
 test('briefing.renders-exact-output-for-a-full-thread', () => {
   const threadId = rt.ulid()
-  const decisionOneId = rt.ulid()
   const riskId = rt.ulid()
-  const criterionA = { id: rt.ulid(), ordinal: 1, text: 'first criterion', done: true, kind: 'planned' as const, struck_by: null }
+  const settledRiskId = rt.ulid()
+  const liveDecisionId = rt.ulid()
+  const settledDecisionId = rt.ulid()
+  const criterionA = {
+    id: rt.ulid(),
+    ordinal: 1,
+    text: 'first criterion',
+    done: true,
+    kind: 'planned' as const,
+    struck_by: null
+  }
   const criterionB = {
     id: rt.ulid(),
     ordinal: 2,
@@ -116,15 +126,29 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
       active_goal: 'ship the renderer',
       next_step: 'add tests',
       last_session: 'wrote the first draft',
-      open_risks: [{ id: riskId, scope: 'renderer', text: 'escaping might be incomplete', refs: [] }],
-      key_decisions: [{ id: rt.ulid(), decision_id: decisionOneId, title: 'use postgres', scope: 'storage' }],
+      open_risks: [
+        { id: riskId, scope: 'renderer', text: 'escaping might be incomplete', refs: [] },
+        { id: settledRiskId, scope: 'renderer', text: 'a risk on a met goal', refs: [], criterion_id: criterionA.id }
+      ],
+      key_decisions: [
+        { id: rt.ulid(), decision_id: liveDecisionId, title: 'use postgres', scope: 'storage' },
+        {
+          id: rt.ulid(),
+          decision_id: settledDecisionId,
+          title: 'the escape is applied at render time',
+          scope: 'storage',
+          criterion_id: criterionA.id
+        }
+      ],
       out_of_scope: [{ id: rt.ulid(), text: 'does not cover the CLI' }]
     }
   })
 
+  assert.equal(ThreadRecord.parse(thread).ok, true, 'the exact-output fixture must itself be schema-admissible')
+
   const pointer: Pointer = { thread_id: threadId, written_at: rt.now(), session_id: 'session-x' }
 
-  const integrity: DecisionIntegrity = { resolved: 1, dangling: [], quarantined: [] }
+  const integrity: DecisionIntegrity = { resolved: 2, dangling: [], quarantined: [] }
   const rendered = renderBriefing(thread, integrity, pointer, null)
 
   const expected = [
@@ -134,6 +158,7 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     '**Status:** open',
     '**Blockage:** none',
     '**Currently being worked:** yes',
+    '**Focus:** not set. Risks and key decisions render as one group in the order they were recorded, apart from those on a goal already met or struck.',
     '',
     '**Active goal:**',
     '',
@@ -160,8 +185,12 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     `- c1 [done]: first criterion (id ${criterionA.id})`,
     `- c2 [struck]: second criterion (id ${criterionB.id})`,
     '',
+    '**Settled items (on goals already met or struck):**',
+    `- risk ${settledRiskId} a risk on a met goal`,
+    `- decision ${settledDecisionId} the escape is applied at render time`,
+    '',
     '**Decisions:**',
-    '- resolved: 1'
+    '- resolved: 2'
   ].join('\n')
 
   assert.equal(rendered, expected)
@@ -177,6 +206,7 @@ test('briefing.omits-empty-list-sections-entirely', () => {
     '**Status:** done',
     '**Blocked:** still finishing docs',
     '**Currently being worked:** no',
+    '**Focus:** not set. Risks and key decisions render as one group in the order they were recorded, apart from those on a goal already met or struck.',
     '',
     '**Active goal:**',
     '',
@@ -194,7 +224,15 @@ test('briefing.omits-empty-list-sections-entirely', () => {
     '- resolved: 0'
   ].join('\n')
   assert.equal(rendered, expected)
-  for (const heading of ['**Related:**', '**Open risks:**', '**Key decisions:**', '**Out of scope:**', '**Completion criteria:**', '**Not shown:**']) {
+  for (const heading of [
+    '**Related:**',
+    '**Open risks:**',
+    '**Key decisions:**',
+    '**Out of scope:**',
+    '**Completion criteria:**',
+    '**Settled items (on goals already met or struck):**',
+    '**Not shown:**'
+  ]) {
     assert.equal(rendered.includes(heading), false, `expected ${heading} to be omitted when its list is empty`)
   }
 })
@@ -279,35 +317,42 @@ const CRITERION_ROW_PATTERN = /^- c\d+ \[(open|done|struck)\]: /
 const criterionRowCount = (rendered: string): number =>
   rendered.split('\n').filter((line) => CRITERION_ROW_PATTERN.test(line)).length
 
-test('briefing.lane-a-is-the-current-criterions-items-shown-in-full', () => {
-  const current = criterion({ ordinal: 1, text: 'the current criterion' })
+test('briefing.with-no-focus-declared-every-live-risk-renders-in-the-order-it-was-recorded', () => {
+  const first = criterion({ ordinal: 1, text: 'the first criterion' })
   const other = criterion({ ordinal: 2, text: 'a later live criterion' })
-  const currentRisk = risk({ text: 'risk tied to the current criterion', criterion_id: current.id })
   const otherRisk = risk({ text: 'risk tied to a later criterion', criterion_id: other.id })
+  const firstRisk = risk({ text: 'risk tied to the first criterion', criterion_id: first.id })
 
   const thread = baseThread({
-    completion_criteria: [current, other],
+    completion_criteria: [first, other],
     spine: {
       active_goal: 'g',
       next_step: 'n',
       last_session: 'l',
-      open_risks: [otherRisk, currentRisk],
+      open_risks: [otherRisk, firstRisk],
       key_decisions: [],
       out_of_scope: []
     }
   })
 
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  const openRisksIndex = rendered.split('\n').indexOf('**Open risks:**')
+  const lines = rendered.split('\n')
+  const openRisksIndex = lines.indexOf('**Open risks:**')
   assert.notEqual(openRisksIndex, -1)
-  assert.equal(
-    rendered.split('\n')[openRisksIndex + 1],
-    `- ${currentRisk.id} risk tied to the current criterion`,
-    'the current criterion risk must render first, in lane A, even though it was recorded last'
+  assert.deepEqual(
+    [lines[openRisksIndex + 1], lines[openRisksIndex + 2]],
+    [`- ${otherRisk.id} risk tied to a later criterion`, `- ${firstRisk.id} risk tied to the first criterion`],
+    'with no focus declared there is no lane A: both live risks render as one group, in the order they were recorded'
+  )
+  assert.ok(
+    lines.includes(
+      '**Focus:** not set. Risks and key decisions render as one group in the order they were recorded, apart from those on a goal already met or struck.'
+    ),
+    'the briefing must state that focus is not set'
   )
 })
 
-test('briefing.out-of-scope-overflow-is-capped-and-counted-in-the-tail', () => {
+test('briefing.every-out-of-scope-item-renders-and-none-is-counted-away', () => {
   const outOfScopeItems: OutOfScope[] = Array.from({ length: 12 }, (_, index) => ({
     id: rt.ulid(),
     text: `out of scope item ${index}`
@@ -323,25 +368,17 @@ test('briefing.out-of-scope-overflow-is-capped-and-counted-in-the-tail', () => {
     }
   })
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  assert.ok(rendered.includes('out of scope item 0'))
-  assert.ok(rendered.includes('out of scope item 9'))
+  for (const item of outOfScopeItems) {
+    assert.ok(rendered.includes(item.text), `every out-of-scope item must render; ${item.text} did not`)
+  }
   assert.equal(
-    rendered.includes('out of scope item 10'),
+    rendered.includes('out-of-scope items not shown'),
     false,
-    'out-of-scope is capped at 10 shown; the 11th item must not render'
-  )
-  assert.equal(
-    rendered.includes('out of scope item 11'),
-    false,
-    'out-of-scope is capped at 10 shown; the 12th item must not render'
-  )
-  assert.ok(
-    rendered.includes('- 2 out-of-scope items not shown'),
-    'the two overflow out-of-scope items must be counted in the not-shown tail'
+    'no out-of-scope item may be counted away; the display-time cap that produced that count is deleted'
   )
 })
 
-test('briefing.dangling-and-quarantined-overflow-is-capped-and-counted-in-the-tail', () => {
+test('briefing.every-dangling-and-quarantined-decision-id-renders-and-the-tail-counts-the-records-it-could-not-read', () => {
   const thread = baseThread()
   const integrity: DecisionIntegrity = {
     resolved: 0,
@@ -352,21 +389,30 @@ test('briefing.dangling-and-quarantined-overflow-is-capped-and-counted-in-the-ta
   const lines = rendered.split('\n')
   assert.equal(
     lines.filter((line) => line.startsWith('- dangling: ')).length,
-    6,
-    'dangling decision ids are capped at 6 shown'
+    8,
+    'every dangling decision id must render; the display-time cap that withheld them is deleted'
   )
   assert.equal(
     lines.filter((line) => line.startsWith('- quarantined: ')).length,
     4,
-    'all 4 quarantined decision ids fit under the cap of 6 and must all render'
+    'every quarantined decision id must render'
+  )
+  assert.equal(
+    rendered.includes('dangling or quarantined decision ids not shown'),
+    false,
+    'no decision id may be counted away by a display cap'
   )
   assert.ok(
-    rendered.includes('- 2 dangling or quarantined decision ids not shown'),
-    'the 2 overflow dangling ids must be counted in the not-shown tail, combined with quarantined overflow'
+    rendered.includes('- 12 linked decision records could not be read; their ids are listed under Decisions above'),
+    'the not-shown tail must count the decision records the store could not read'
+  )
+  assert.ok(
+    rendered.includes(`See logbook://thread/${thread.id} for the complete record.`),
+    'the not-shown tail must carry the address that resolves to the complete record'
   )
 })
 
-test('briefing.lane-c-collapses-a-done-criterions-risk-while-lane-b-shows-an-unanchored-one-in-full', () => {
+test('briefing.a-risk-on-a-met-goal-renders-last-and-compact-under-the-settled-heading', () => {
   const doneCriterion = criterion({ ordinal: 1, text: 'already finished', done: true })
   const settledRisk = risk({ text: 'a risk on a finished criterion', criterion_id: doneCriterion.id })
   const unanchoredRisk = risk({ text: 'a risk naming no criterion at all' })
@@ -384,37 +430,42 @@ test('briefing.lane-c-collapses-a-done-criterions-risk-while-lane-b-shows-an-una
   })
 
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
+  const lines = rendered.split('\n')
 
   assert.ok(
-    rendered.includes(`- ${unanchoredRisk.id} a risk naming no criterion at all`),
-    'an unanchored risk must render in full, in the live lane, never the collapsed one'
+    lines.includes(`- ${unanchoredRisk.id} a risk naming no criterion at all`),
+    'an unanchored risk must render in full, in the live group'
+  )
+
+  const settledIndex = lines.indexOf('**Settled items (on goals already met or struck):**')
+  assert.notEqual(settledIndex, -1, 'a risk on a met goal must bring the settled heading with it')
+  assert.equal(
+    lines[settledIndex + 1],
+    `- risk ${settledRisk.id} a risk on a finished criterion`,
+    'the settled risk must render compactly, as its id and its text, under the settled heading'
+  )
+  assert.ok(
+    settledIndex > lines.indexOf('**Open risks:**'),
+    'the settled group must render after the live groups, never before them'
   )
   assert.equal(
-    rendered.includes(settledRisk.id),
+    rendered.includes('risks not shown'),
     false,
-    'a risk anchored to a done criterion must not print its id or text; it is collapsed'
-  )
-  assert.ok(
-    rendered.includes('- 1 risks not shown'),
-    'the collapsed risk on the done criterion must be counted in the not-shown tail'
-  )
-  assert.ok(
-    rendered.includes(`logbook://thread/${thread.id}`),
-    'the not-shown tail must name the one address that retrieves the collapsed risk'
+    'a risk on a met goal is rendered, never counted away'
   )
 })
 
 const CRITERIA_FILLING_EVERY_SHOWN_SLOT = 40
 
-test('briefing.a-risk-on-a-criterion-hidden-by-the-cap-still-collapses-to-lane-c', () => {
+test('briefing.a-criterion-beyond-the-forty-that-the-deleted-cap-once-showed-renders-with-its-settled-risk', () => {
   const openCriteria: Criterion[] = Array.from({ length: CRITERIA_FILLING_EVERY_SHOWN_SLOT }, (_, index) =>
     criterion({ ordinal: index + 1, text: `open criterion ${index + 1}` })
   )
-  const hiddenDone = criterion({ ordinal: 41, text: 'finished after the shown slots ran out', done: true })
-  const settledRisk = risk({ text: 'a risk on a criterion the cap withheld', criterion_id: hiddenDone.id })
+  const beyondTheOldCap = criterion({ ordinal: 41, text: 'finished after the old shown slots ran out', done: true })
+  const settledRisk = risk({ text: 'a risk on a criterion the old cap withheld', criterion_id: beyondTheOldCap.id })
 
   const thread = baseThread({
-    completion_criteria: [...openCriteria, hiddenDone],
+    completion_criteria: [...openCriteria, beyondTheOldCap],
     spine: {
       active_goal: 'g',
       next_step: 'n',
@@ -426,21 +477,19 @@ test('briefing.a-risk-on-a-criterion-hidden-by-the-cap-still-collapses-to-lane-c
   })
 
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  const hiddenCriterionRow = /^- c41 \[/
 
-  assert.equal(
-    rendered.split('\n').some((line) => hiddenCriterionRow.test(line)),
-    false,
-    'the done criterion at ordinal 41 must be pushed out of the 40 shown slots by the 40 open ones that outrank it'
-  )
-  assert.equal(
-    rendered.includes(settledRisk.id),
-    false,
-    'a risk anchored to a done criterion must stay collapsed even when the cap withheld that criterion; resolving anchors against only the shown criteria would leave it unresolved and render it in full'
+  assert.ok(
+    rendered.split('\n').some((line) => line.startsWith('- c41 [done]: finished after the old shown slots ran out (id ')),
+    'the criterion at ordinal 41 must render; the display cap that withheld it is deleted'
   )
   assert.ok(
-    rendered.includes('- 1 risks not shown'),
-    'the risk collapsed against the withheld done criterion must be counted in the not-shown tail'
+    rendered.includes(`- risk ${settledRisk.id} a risk on a criterion the old cap withheld`),
+    'a risk on a met goal must render compactly under the settled heading, wherever that goal sits in the list'
+  )
+  assert.equal(
+    rendered.includes('completion criteria not shown'),
+    false,
+    'no criterion may be counted away by a display cap'
   )
 })
 
@@ -467,20 +516,22 @@ test('briefing.a-risk-naming-a-criterion-that-no-longer-resolves-is-treated-as-u
   )
 })
 
-test('briefing.lane-caps-collapse-overflow-into-the-not-shown-tail', () => {
+test('briefing.every-unanchored-risk-renders-and-none-is-counted-away', () => {
   const live = criterion({ ordinal: 1, text: 'the live criterion' })
-  const risks: Risk[] = Array.from({ length: 6 }, (_, index) =>
-    risk({ text: `unanchored risk number ${index}` })
-  )
+  const risks: Risk[] = Array.from({ length: 6 }, (_, index) => risk({ text: `unanchored risk number ${index}` }))
   const thread = baseThread({
     completion_criteria: [live],
     spine: { active_goal: 'g', next_step: 'n', last_session: 'l', open_risks: risks, key_decisions: [], out_of_scope: [] }
   })
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  assert.ok(rendered.includes('unanchored risk number 0'))
-  assert.ok(rendered.includes('unanchored risk number 3'))
-  assert.equal(rendered.includes('unanchored risk number 4'), false, 'lane B caps at 4; the 5th unanchored risk must not render')
-  assert.ok(rendered.includes('- 2 risks not shown'))
+  for (const item of risks) {
+    assert.ok(rendered.includes(item.text), `every risk must render; ${item.text} did not`)
+  }
+  assert.equal(
+    rendered.includes('risks not shown'),
+    false,
+    'no risk may be counted away; the two lane caps that withheld them are deleted'
+  )
 })
 
 test('briefing.omits-the-not-shown-tail-when-nothing-was-cut', () => {
@@ -499,7 +550,7 @@ test('briefing.omits-the-not-shown-tail-when-nothing-was-cut', () => {
   assert.equal(rendered.includes('**Not shown:**'), false)
 })
 
-test('briefing.completion-criteria-are-capped-and-open-ones-survive', () => {
+test('briefing.every-completion-criterion-renders-and-none-is-counted-away', () => {
   const retired: Criterion[] = Array.from({ length: 199 }, (_, index) =>
     criterion({ ordinal: index + 1, text: 'retired', struck_by: rt.ulid() })
   )
@@ -510,16 +561,14 @@ test('briefing.completion-criteria-are-capped-and-open-ones-survive', () => {
 
   assert.equal(
     criterionRowCount(rendered),
-    40,
-    'the completion criteria list must render at most 40 rows, however many criteria the thread retains'
+    200,
+    'every retained criterion must render; the display cap that showed only forty is deleted'
   )
-  assert.ok(
-    rendered.includes(survivor.id),
-    'the open criterion at ordinal 200 must survive the cap; a plain slice of the first 40 would drop it'
-  )
-  assert.ok(
-    rendered.includes('- 160 completion criteria not shown'),
-    'the 160 criteria the cap withheld must be counted in the not-shown tail'
+  assert.ok(rendered.includes(survivor.id), 'the open criterion at ordinal 200 must render')
+  assert.equal(
+    rendered.includes('completion criteria not shown'),
+    false,
+    'no criterion may be counted away by a display cap'
   )
 })
 
@@ -569,7 +618,7 @@ const decisionRecordSizedThread = (): Thread => {
   }
 }
 
-test('briefing.renders-a-record-byte-maximal-thread-within-budget', () => {
+test('briefing.renders-every-item-of-a-record-byte-maximal-thread-and-reports-the-budget-breach', () => {
   const thread = decisionRecordSizedThread()
   const parsed = ThreadRecord.parse(thread)
   assert.equal(parsed.ok, true, 'the constructed fixture must itself be schema-admissible')
@@ -581,27 +630,41 @@ test('briefing.renders-a-record-byte-maximal-thread-within-budget', () => {
     quarantined: Array.from({ length: 50 }, () => rt.ulid())
   }
 
-  const rendered = renderBriefing(thread, integrity, null, predecessor)
-  assert.ok(
-    rendered.length <= BRIEFING_MAX_CHARS,
-    `expected the rendered briefing to be at most ${BRIEFING_MAX_CHARS} characters, got ${rendered.length}`
-  )
+  const render = renderBriefingWithPasses(thread, integrity, null, predecessor)
+  const lines = render.briefing.split('\n')
 
-  const payload = {
-    content: [{ type: 'text', text: rendered }],
-    structuredContent: { thread_id: thread.id, briefing: rendered, previous_session: null }
-  }
-  const payloadBytes = Buffer.byteLength(JSON.stringify(payload), 'utf8')
-  assert.ok(
-    payloadBytes <= RESUME_PAYLOAD_MAX_BYTES,
-    `expected the serialised resume_thread payload to be at most ${RESUME_PAYLOAD_MAX_BYTES} bytes, got ${payloadBytes}`
-  )
-
-  assert.ok(rendered.includes('**Completion criteria:**'), 'the completion criteria section still renders on a record-byte-maximal thread')
   assert.equal(
-    criterionRowCount(rendered),
-    40,
-    'a record-byte-maximal thread renders exactly 40 criterion rows, the rest withheld to the not-shown tail'
+    criterionRowCount(render.briefing),
+    thread.completion_criteria.length,
+    'every criterion of a record-byte-maximal thread renders; no display cap withholds one'
+  )
+  assert.equal(
+    lines.filter((line) => line.startsWith('- dangling: ')).length + lines.filter((line) => line.startsWith('- quarantined: ')).length,
+    integrity.dangling.length + integrity.quarantined.length,
+    'every dangling and quarantined decision id renders'
+  )
+  for (const marker of [
+    'risks not shown',
+    'key decisions not shown',
+    'out-of-scope items not shown',
+    'completion criteria not shown',
+    'dangling or quarantined decision ids not shown'
+  ]) {
+    assert.equal(render.briefing.includes(marker), false, `no item may be counted away by a display cap; found "${marker}"`)
+  }
+
+  assert.equal(
+    render.withinBudget,
+    false,
+    'a record-byte-maximal thread renders past the budget once every item must render, and the renderer must say so rather than hide an item to fit'
+  )
+  assert.ok(
+    render.briefing.length > BRIEFING_MAX_CHARS,
+    `the breach this render reports must be real, got ${render.briefing.length} characters against a cap of ${BRIEFING_MAX_CHARS}`
+  )
+  assert.ok(
+    resumePayloadBytes(render.briefing, thread.id, false) > RESUME_PAYLOAD_MAX_BYTES,
+    'the reported breach must also be real in bytes'
   )
 })
 
@@ -661,7 +724,7 @@ test('briefing.the-clip-search-converges-within-the-pass-ceiling', () => {
 
 const ASCII_FILL = 'x'
 const WORST_REACHABLE_CRITERION_TEXT_LENGTH = 51
-const RISK_TEXT_RETAINED_FLOOR = 250
+const CLIP_SEARCH_UTILISATION_SLACK_BYTES = 500
 
 const worstReachableAsciiShape: SweepShape = {
   fill: ASCII_FILL,
@@ -680,8 +743,8 @@ const textAfterPrefix = (rendered: string, prefix: string): number => {
   return line.length - prefix.length
 }
 
-test('briefing.the-clip-search-keeps-most-of-the-risk-text-on-the-worst-reachable-ascii-record', () => {
-  const { thread, predecessor, integrity } = buildSweepFixture(rt, worstReachableAsciiShape)
+test('briefing.the-clip-search-lands-just-under-the-resume-payload-cap-on-the-worst-reachable-ascii-record', () => {
+  const { thread, predecessor } = buildSweepFixture(rt, worstReachableAsciiShape)
   assert.equal(
     ThreadRecord.parse(thread).ok,
     true,
@@ -696,18 +759,25 @@ test('briefing.the-clip-search-keeps-most-of-the-risk-text-on-the-worst-reachabl
 
   assert.ok(
     render.passes > 1,
-    `this record must actually enter the clip search, or the retained-text floor below is measuring an unclipped render; got ${render.passes} renders`
+    `this record must actually enter the clip search, or the utilisation floor below is measuring an unclipped render; got ${render.passes} renders`
   )
   assert.equal(
     render.withinBudget,
     true,
-    'the clip search must land this record inside both caps, or the retained-text floor below is bought by breaching the budget'
+    'the clip search must land this record inside both caps, or the utilisation floor below is bought by breaching the budget'
   )
 
   const retained = textAfterPrefix(render.briefing, `- ${shownRisk.id} `)
+  assert.ok(retained > 0, `the clipped risk text must keep some of its own text, got ${retained}`)
   assert.ok(
-    retained >= RISK_TEXT_RETAINED_FLOOR,
-    `expected the clip search to keep at least ${RISK_TEXT_RETAINED_FLOOR} characters of the first shown risk, got ${retained}; a one-shot shrink that overshoots the budget keeps far less`
+    render.briefing.endsWith('for the complete record.'),
+    'a clipped render must carry the address that resolves to the complete record'
+  )
+
+  const used = resumePayloadBytes(render.briefing, thread.id, true)
+  assert.ok(
+    used >= RESUME_PAYLOAD_MAX_BYTES - CLIP_SEARCH_UTILISATION_SLACK_BYTES,
+    `the clip search must land within ${CLIP_SEARCH_UTILISATION_SLACK_BYTES} bytes of the ${RESUME_PAYLOAD_MAX_BYTES} byte cap, or it overshot and threw text away; got ${used} bytes`
   )
 })
 
