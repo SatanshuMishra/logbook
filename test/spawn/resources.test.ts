@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import { UriTemplate } from '@modelcontextprotocol/sdk/shared/uriTemplate.js'
 import { rawGit } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
@@ -158,6 +159,7 @@ const resolveShapeToUri = (shape: string, ids: SeededIds): string | null => {
   if (shape === 'logbook://roster') return 'logbook://roster'
   if (shape === 'logbook://thread/{id}') return `logbook://thread/${ids.threadId}`
   if (shape === 'logbook://decision/{id}') return `logbook://decision/${ids.decisionId}`
+  if (shape === 'logbook://sessions/{thread_id}') return `logbook://sessions/${ids.sessionThreadId}`
   if (shape === 'logbook://session/{thread_id}/{entry_id}') {
     return `logbook://session/${ids.sessionThreadId}/${ids.sessionEntryId}`
   }
@@ -209,8 +211,11 @@ test('resource.index-addresses-resolve', async () => {
     assert.ok(registeredShapes.length > 0, 'expected the server to register at least one resource or template')
 
     const indexShapeSet = new Set(shapes)
-    const classifyRegisteredAgainstIndex = (registered: string): 'allowed' | 'unclassifiable' =>
-      indexShapeSet.has(registered) ? 'allowed' : 'unclassifiable'
+    const indexTemplates = shapes.map((shape) => new UriTemplate(shape))
+    const classifyRegisteredAgainstIndex = (registered: string): 'allowed' | 'unclassifiable' => {
+      if (indexShapeSet.has(registered)) return 'allowed'
+      return indexTemplates.some((template) => template.match(registered) !== null) ? 'allowed' : 'unclassifiable'
+    }
     assert.doesNotThrow(() => census(registeredShapes, classifyRegisteredAgainstIndex))
   })
 })
@@ -315,5 +320,110 @@ test('resource.thread-detail-shows-every-risk-and-criterion-id', async () => {
     for (const riskId of ids.riskIds) {
       assert.ok(detailText.includes(riskId), `expected the thread resource to contain risk id ${riskId}`)
     }
+  })
+})
+
+const readResourceText = async (spawned: SpawnedServer, uri: string): Promise<string> => {
+  const read = await spawned.client.readResource({ uri })
+  const [content] = read.contents
+  assert.ok(
+    content !== undefined && 'text' in content && typeof content.text === 'string',
+    `expected ${uri} to return text content`
+  )
+  return (content as { text: string }).text
+}
+
+const logEntry = async (spawned: SpawnedServer, threadId: string, body: string): Promise<string> => {
+  const result = (await spawned.client.callTool({
+    name: 'log_session_event',
+    arguments: { thread_id: threadId, actor: 'claude', body }
+  })) as CallToolResult
+  assertOkResult('log_session_event (sessions fixture arrange)', result)
+  return (result.structuredContent as { session_entry_id: string }).session_entry_id
+}
+
+test('resource.sessions-lists-every-entry-id-with-its-first-line', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+    const olderId = await logEntry(fx.spawned, ids.threadId, 'the older first line\nthe older second line')
+    const newerId = await logEntry(fx.spawned, ids.threadId, 'the newer first line\nthe newer second line')
+
+    const listing = await readResourceText(fx.spawned, `logbook://sessions/${ids.threadId}`)
+
+    assert.ok(listing.includes(olderId), `expected the sessions resource to name entry ${olderId}`)
+    assert.ok(listing.includes(newerId), `expected the sessions resource to name entry ${newerId}`)
+    assert.ok(listing.includes('the older first line'), 'expected the sessions resource to show the older first line')
+    assert.ok(listing.includes('the newer first line'), 'expected the sessions resource to show the newer first line')
+    assert.ok(
+      !listing.includes('the older second line'),
+      'expected the sessions resource to show the first line only'
+    )
+    assert.ok(
+      listing.indexOf(newerId) < listing.indexOf(olderId),
+      'expected the sessions resource to render newest first'
+    )
+  })
+})
+
+test('resource.index-lists-the-sessions-address', async () => {
+  await withFixture(async (fx) => {
+    await fx.spawned.client.listTools()
+    const indexBody = await readIndexBody(fx.spawned)
+    assert.ok(
+      parseIndexShapes(indexBody).includes('logbook://sessions/{thread_id}'),
+      'expected logbook://index to list logbook://sessions/{thread_id}'
+    )
+  })
+})
+
+test('resource.thread-detail-shows-every-binding', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+    const bound = (await fx.spawned.client.callTool({
+      name: 'bind_branch',
+      arguments: { thread_id: ids.threadId, branch: 'feat/resources-fixture-branch' }
+    })) as CallToolResult
+    assertOkResult('bind_branch (bindings fixture arrange)', bound)
+    const bindingId = (bound.structuredContent as { binding_id: string }).binding_id
+
+    const detailText = await readThreadResourceText(fx.spawned, ids.threadId)
+
+    assert.ok(detailText.includes(bindingId), `expected the thread resource to name binding ${bindingId}`)
+    assert.ok(
+      detailText.includes('feat/resources-fixture-branch'),
+      'expected the thread resource to name the bound branch'
+    )
+  })
+})
+
+test('resource.list-enumerates-open-threads-and-not-decisions-or-session-entries', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+
+    const listed = await fx.spawned.client.listResources()
+    const uris = listed.resources.map((resource) => resource.uri)
+
+    assert.ok(uris.length > 2, `expected resources/list to return more than two entries, got ${uris.length}`)
+    assert.ok(uris.includes(`logbook://thread/${ids.threadId}`), 'expected resources/list to name the open thread')
+    assert.ok(
+      !uris.includes(`logbook://decision/${ids.decisionId}`),
+      'expected resources/list to leave decision records unenumerated'
+    )
+    assert.ok(
+      !uris.includes(`logbook://session/${ids.sessionThreadId}/${ids.sessionEntryId}`),
+      'expected resources/list to leave session entries unenumerated'
+    )
+
+    const closed = (await fx.spawned.client.callTool({
+      name: 'close_thread',
+      arguments: { thread_id: ids.threadId, outcome: 'abandoned', detail: 'the fixture thread is no longer pursued' }
+    })) as CallToolResult
+    assertOkResult('close_thread (list fixture arrange)', closed)
+
+    const afterClose = await fx.spawned.client.listResources()
+    assert.ok(
+      !afterClose.resources.map((resource) => resource.uri).includes(`logbook://thread/${ids.threadId}`),
+      'expected resources/list to drop a terminal thread'
+    )
   })
 })

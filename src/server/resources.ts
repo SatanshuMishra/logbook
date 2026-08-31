@@ -1,15 +1,25 @@
+import path from 'node:path'
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js'
+import type { ListResourcesResult } from '@modelcontextprotocol/sdk/types.js'
 import type { Variables } from '@modelcontextprotocol/sdk/shared/uriTemplate.js'
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Slot, Store, Thread } from '../store/records.ts'
 import { layoutFor } from '../store/layout.ts'
+import { readAllRecordFiles } from '../store/read-path.ts'
+import { BindingRecord, type Binding } from '../schema/binding.ts'
 import { readPointer } from '../domain/pointer.ts'
 import { escapeStored } from '../render/escape.ts'
 import type { DecisionIntegrity } from '../render/briefing.ts'
 import { paginateRoster, renderRoster, selectRosterThreads, toRosterRow } from '../render/roster.ts'
 import { openProjectStore, resolvePredecessor } from './tool-support.ts'
-import { renderDecisionResource, renderSessionEntryResource, renderThreadDetail } from './resource-render.ts'
+import {
+  renderDecisionResource,
+  renderSessionEntryResource,
+  renderSessionsResource,
+  renderThreadDetail,
+  type BindingIntegrity
+} from './resource-render.ts'
 import {
   completeDecisionIds,
   completeSessionEntryIds,
@@ -27,6 +37,10 @@ const ADDRESSES: readonly Address[] = [
     description: 'one thread record in full, every risk and criterion id shown, resolved by its id or its slug'
   },
   { shape: 'logbook://decision/{id}', description: 'one decision record, resolved by its id' },
+  {
+    shape: 'logbook://sessions/{thread_id}',
+    description: 'every session-log entry id for one thread with the first line of each, newest first'
+  },
   {
     shape: 'logbook://session/{thread_id}/{entry_id}',
     description: 'one session-log entry, resolved by its thread id and its own id'
@@ -83,6 +97,26 @@ const decisionIntegrityForThread = (rt: Runtime, store: Store, thread: Thread): 
   return { resolved: outcomes.length - dangling.length - quarantined.length, dangling, quarantined }
 }
 
+const readBindingsForThread = (rt: Runtime, threadId: string): BindingIntegrity => {
+  const layout = layoutFor(rt, rt.cwd)
+  if (!layout.ok) {
+    rt.log({ level: 'error', event: 'resource.thread-bindings-unreadable', detail: layout.message })
+    return { bound: [], unreadable: 0, unread: true }
+  }
+  const slots = readAllRecordFiles<Binding>(path.join(layout.value.records, 'bindings'), BindingRecord)
+  const bound: Binding[] = []
+  let unreadable = 0
+  for (const slot of slots) {
+    if (slot.quarantined) {
+      unreadable += 1
+      rt.log({ level: 'error', event: 'resource.thread-binding-quarantined', detail: slot.reason })
+      continue
+    }
+    if (slot.record.thread_id === threadId) bound.push(slot.record)
+  }
+  return { bound, unreadable, unread: false }
+}
+
 const readThreadResourceBody = (rt: Runtime, id: string): string => {
   const store = openStoreForRead(rt, 'logbook://thread')
   const slot = resolveThreadSlot(store, id)
@@ -106,7 +140,52 @@ const readThreadResourceBody = (rt: Runtime, id: string): string => {
   const pointerRead = layout.ok ? readPointer(rt, layout.value) : { kind: 'absent' as const }
   const pointer = pointerRead.kind === 'pointer' ? pointerRead.value : null
 
-  return renderThreadDetail(thread, decisionIntegrity, pointer, resolvePredecessor(rt, store, thread))
+  return renderThreadDetail(
+    thread,
+    decisionIntegrity,
+    pointer,
+    resolvePredecessor(rt, store, thread),
+    readBindingsForThread(rt, thread.id)
+  )
+}
+
+const readSessionsResourceBody = (rt: Runtime, threadId: string): string => {
+  const store = openStoreForRead(rt, 'logbook://sessions')
+  const slot = store.readThread(threadId)
+  if (slot === null) {
+    throw new McpError(
+      ErrorCode.InvalidParams,
+      `logbook://sessions: no thread record matches id '${escapeStored(threadId)}'`
+    )
+  }
+  const entries = store.readSessionEntries(threadId)
+  const loaded = entries.flatMap((entry) => (entry.quarantined ? [] : [entry.record]))
+  const quarantined = entries.flatMap((entry) =>
+    entry.quarantined ? [path.basename(entry.path, '.json')] : []
+  )
+  return renderSessionsResource({
+    threadId,
+    entries: [...loaded].reverse(),
+    quarantined
+  })
+}
+
+const listThreadResources = (rt: Runtime): ListResourcesResult => {
+  const opened = openProjectStore(rt)
+  if (!opened.ok) {
+    rt.log({ level: 'error', event: 'resource.thread-list-unavailable', detail: opened.refusal.message })
+    return { resources: [] }
+  }
+  const threads = opened.value.readThreads().flatMap((slot) => (slot.quarantined ? [] : [slot.record]))
+  return {
+    resources: selectRosterThreads(threads).map((thread) => ({
+      uri: `logbook://thread/${escapeStored(thread.id)}`,
+      name: escapeStored(thread.slug),
+      title: escapeStored(thread.title),
+      description: `one thread record in full: ${escapeStored(thread.title)}`,
+      mimeType: 'text/markdown'
+    }))
+  }
 }
 
 const readDecisionResourceBody = (rt: Runtime, id: string): string => {
@@ -184,7 +263,7 @@ export const registerResources = (server: McpServer, rt: Runtime): void => {
   server.registerResource(
     'thread',
     new ResourceTemplate('logbook://thread/{id}', {
-      list: undefined,
+      list: () => listThreadResources(rt),
       complete: { id: (value, context) => completeThreadIdentifiers(rt, context, value) }
     }),
     {
@@ -213,6 +292,29 @@ export const registerResources = (server: McpServer, rt: Runtime): void => {
     (uri, variables) => ({
       contents: [
         { uri: uri.href, mimeType: 'text/markdown', text: readDecisionResourceBody(rt, variableAsString(variables, 'id')) }
+      ]
+    })
+  )
+
+  server.registerResource(
+    'sessions',
+    new ResourceTemplate('logbook://sessions/{thread_id}', {
+      list: undefined,
+      complete: { thread_id: (value, context) => completeSessionThreadIds(rt, context, value) }
+    }),
+    {
+      title: 'Session log',
+      description:
+        'Every session-log entry id for one thread with the first line of each, newest first. Read one in full at logbook://session/{thread_id}/{entry_id}.',
+      mimeType: 'text/markdown'
+    },
+    (uri, variables) => ({
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: 'text/markdown',
+          text: readSessionsResourceBody(rt, variableAsString(variables, 'thread_id'))
+        }
       ]
     })
   )

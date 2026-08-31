@@ -1,11 +1,21 @@
-import { escapeStored } from '../render/escape.ts'
+import { clipGraphemes, escapeStored } from '../render/escape.ts'
+import type { Binding } from '../schema/binding.ts'
 import type { Decision } from '../schema/decision.ts'
 import type { SessionEntry } from '../schema/session.ts'
 import type { Artifact, Criterion, KeyDecision, OutOfScope, Risk, Thread } from '../schema/thread.ts'
 import type { Pointer } from '../domain/pointer.ts'
 import type { DecisionIntegrity } from '../render/briefing.ts'
 
+export type BindingIntegrity = { bound: Binding[]; unreadable: number; unread: boolean }
+
+export type SessionsListing = { threadId: string; entries: SessionEntry[]; quarantined: string[] }
+
 const NOT_RECORDED = 'not recorded'
+const STORED_LINE_BREAK = 'U+000A'
+const SESSION_FIRST_LINE_MAX = 200
+const SESSION_FIRST_LINE_CLIPPED_NOTE =
+  'some entry first lines were shortened to fit this listing; read the entry in full for the rest'
+const BINDINGS_UNREAD_NOTE = 'bindings could not be read; none is claimed either way'
 
 const renderCommitLine = (commit: string | null): string =>
   typeof commit !== 'string' ? 'Commit: unknown' : 'Commit: ' + escapeStored(commit)
@@ -38,6 +48,27 @@ export const renderSessionEntryResource = (entry: SessionEntry): string =>
     escapeStored(entry.body)
   ].join('\n')
 
+const renderDetailQuarantinedLine = (id: string): string => `quarantined: ${escapeStored(id)}`
+
+const firstStoredLine = (body: string): string => body.split(STORED_LINE_BREAK)[0] ?? ''
+
+const renderSessionsEntryLine = (entry: SessionEntry): string =>
+  `- ${escapeStored(entry.id)} [${escapeStored(entry.created_at)}] ${clipGraphemes(escapeStored(firstStoredLine(entry.body)), SESSION_FIRST_LINE_MAX)}`
+
+const firstLineWasClipped = (entry: SessionEntry): boolean =>
+  escapeStored(firstStoredLine(entry.body)).length > SESSION_FIRST_LINE_MAX
+
+export const renderSessionsResource = (listing: SessionsListing): string => {
+  const count = listing.entries.length
+  return [
+    `Sessions: ${count} entr${count === 1 ? 'y' : 'ies'} for thread ${escapeStored(listing.threadId)}`,
+    ...listing.entries.map(renderSessionsEntryLine),
+    ...listing.quarantined.map(renderDetailQuarantinedLine),
+    ...listing.entries.filter(firstLineWasClipped).slice(0, 1).map(() => SESSION_FIRST_LINE_CLIPPED_NOTE),
+    `Read one in full at logbook://session/${escapeStored(listing.threadId)}/{entry_id}`
+  ].join('\n')
+}
+
 const detailCriterionStatus = (criterion: Criterion): string => {
   if (criterion.struck_by !== null) return 'struck'
   return criterion.done ? 'done' : 'open'
@@ -62,6 +93,9 @@ const renderDetailCriterionLine = (criterion: Criterion): string =>
 const renderDetailArtifactLine = (artifact: Artifact): string =>
   `- ${escapeStored(artifact.id)} ${escapeStored(artifact.label)} -> ${escapeStored(artifact.pointer)}`
 
+const renderDetailBindingLine = (binding: Binding): string =>
+  `- ${escapeStored(binding.id)} ${escapeStored(binding.branch)}`
+
 const renderDetailRiskLine = (risk: Risk): string =>
   `- ${escapeStored(risk.id)} [${escapeStored(risk.scope)}] ${escapeStored(risk.text)}`
 
@@ -72,8 +106,6 @@ const renderDetailOutOfScopeLine = (outOfScope: OutOfScope): string =>
   `- ${escapeStored(outOfScope.id)} ${escapeStored(outOfScope.text)}`
 
 const renderDetailDanglingLine = (decisionId: string): string => `dangling: ${escapeStored(decisionId)}`
-
-const renderDetailQuarantinedLine = (decisionId: string): string => `quarantined: ${escapeStored(decisionId)}`
 
 const renderDetailRelatedLine = (predecessor: Thread): string =>
   `- succeeds: ${escapeStored(predecessor.title)} (${escapeStored(predecessor.slug)})`
@@ -88,7 +120,8 @@ export const renderThreadDetail = (
   thread: Thread,
   decisionIntegrity: DecisionIntegrity,
   pointer: Pointer | null,
-  predecessor: Thread | null
+  predecessor: Thread | null,
+  bindings: BindingIntegrity
 ): string => {
   const criteriaLines = thread.completion_criteria.map(renderDetailCriterionLine)
   const artifactLines = (thread.artifacts ?? []).map(renderDetailArtifactLine)
@@ -97,6 +130,11 @@ export const renderThreadDetail = (
   const outOfScopeLines = thread.spine.out_of_scope.map(renderDetailOutOfScopeLine)
   const danglingLines = decisionIntegrity.dangling.map(renderDetailDanglingLine)
   const quarantinedLines = decisionIntegrity.quarantined.map(renderDetailQuarantinedLine)
+  const bindingLines = bindings.bound.map(renderDetailBindingLine)
+  const bindingUnreadableLines = [bindings.unreadable]
+    .filter((count) => count > 0)
+    .map((count) => `unreadable binding records: ${count}`)
+  const bindingUnreadLines = [bindings.unread].filter(Boolean).map(() => BINDINGS_UNREAD_NOTE)
   const relatedThreads = predecessor === null ? [] : [predecessor]
   const relatedLines = relatedThreads.map(renderDetailRelatedLine)
 
@@ -122,6 +160,10 @@ export const renderThreadDetail = (
     ...keyDecisionLines,
     'Out of scope:',
     ...outOfScopeLines,
+    'Bindings:',
+    ...bindingLines,
+    ...bindingUnreadableLines,
+    ...bindingUnreadLines,
     'Decisions:',
     `resolved: ${decisionIntegrity.resolved}`,
     ...danglingLines,
