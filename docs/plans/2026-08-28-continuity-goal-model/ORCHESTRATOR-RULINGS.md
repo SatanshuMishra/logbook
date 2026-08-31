@@ -1497,3 +1497,64 @@ Ruled:
 
 The pull request body states plainly that it repairs two defects that reached `main` in #109, so a
 reviewer is not left inferring why a follow-up exists.
+
+## OR39 — a whole-file REPLACE is stale by construction, and `U5-C`'s would silently revert `OR37`
+
+`U5-C` cut its branch and halted before any edit with two stop conditions. Both are correct, and the
+second is the most dangerous shape this ladder's standing risk has taken.
+
+### The general hazard, because it outlives this unit
+
+Risk `01M18AN2ZS60JAKVJG3ABH833V` has until now produced failures that announce themselves: a `FIND`
+string that no longer matches simply does not match, the implementer halts, and nothing is lost. That
+is a safe failure.
+
+**A whole-file `REPLACE` has no such property.** It cannot fail to match. It overwrites whatever the
+file has become, and every change that landed between the plan's authoring snapshot and the current
+tree is reverted silently, with a green suite if no test happens to cover the reverted line.
+
+Ruled, generally: **before applying any whole-file `REPLACE`, diff the plan's authoring snapshot of
+that file against the current tree and enumerate every difference.** Each difference is classified as
+either carried forward into the replacement text, or deliberately reverted with a stated reason. A
+difference that is neither is a STOP. This applies to every remaining unit in this ladder, not only to
+`U5-C`.
+
+### `STOP 2` — `C2` keeps `OR37`'s repair
+
+Plan step `C2` is a whole-file replacement of `src/render/briefing.ts` authored before `OR37` existed.
+Two lines now on `main` are absent from it, verified at `origin/main`:
+
+| | `C2` would write | `origin/main` has |
+| --- | --- | --- |
+| import | absent | `import { THREAD_SLUG_MAX } from '../schema/caps.ts'` at line 5 |
+| `clipAt` | `relatedSlug: Math.min(perItemClip, RELATED_SLUG_NATURAL_MAX),` | `relatedSlug: THREAD_SLUG_MAX,` at line 134 |
+
+Applying `C2` verbatim reverts the slug pin and re-opens both defects `OR37` closed: the `- succeeds:`
+line carries two markers again, and a shortened slug becomes unresolvable again.
+
+Ruled: **`C2`'s replacement text keeps both lines.** This is not an extension of `OR37`'s "authorised
+here and nowhere else". That phrase scoped the authorisation to *deviate from step `B3`*; it says
+nothing about whether the resulting code survives. Once a repair is on `main`, a later plan step that
+would revert it is a defect in that step, not a licence to revert. Re-anchoring is mechanical.
+
+The implementer was right to ask rather than extend the wording itself. The two readings differ by a
+production line that decides whether a shipped defect stays closed, and one round-trip is the correct
+price for that.
+
+**`OR37`'s second constraint is what would have caught this.** Requiring criterion 9's receipt to
+render *with* a predecessor means reverting the pin turns that test red. A receipt demanded for one
+reason caught a different fault entirely, which is the argument for demanding receipts at all.
+
+### `STOP 1` — `C4.3` is re-anchored to the three-pattern array
+
+`C4.3`'s `FIND` names a two-element `SHORTENABLE_VALUE_PATTERNS`. `OR37`'s repair added
+`SUCCEEDS_TITLE_PATTERN`, so `test/unit/briefing-hides-nothing.test.ts` now holds three. Matches: 0.
+
+Ruled: re-anchor the `FIND` to the three-element array as it stands on `main`, and the check pattern
+`C4.3` introduces becomes the **fourth** element rather than the third. The step's intent is unchanged;
+only its anchor moved, and it moved because of a repair this thread itself ordered.
+
+### Version
+
+`main` is at `3.0.0`. `U5-C` reads `3.1.0` by read-then-increment per `OR6`, `feat` type. Read both
+manifests at branch time.
