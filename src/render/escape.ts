@@ -5,6 +5,7 @@ const ORDINARY_SPACE = ' '
 const LINE_SEPARATOR = '\u2028'
 const PARAGRAPH_SEPARATOR = '\u2029'
 const MARKDOWN_LEADING_CHARS = new Set(['#', '-', '*', '+', '>', '`', '~', '_'])
+const ANGLE_BRACKETS = new Set(['<', '>'])
 const MARKDOWN_INDENT_THRESHOLD = 4
 const ORDERED_LIST_DIGIT = /[0-9]/
 const ORDERED_LIST_PUNCTUATION = new Set(['.', ')'])
@@ -16,7 +17,8 @@ const isBlank = (char: string): boolean => {
   return SEPARATOR_CLASS.test(char) && char !== ORDINARY_SPACE
 }
 
-const isEscapable = (char: string): boolean => FORMAT_CLASS.test(char) || isBlank(char)
+const isEscapable = (char: string): boolean =>
+  ANGLE_BRACKETS.has(char) || FORMAT_CLASS.test(char) || isBlank(char)
 
 const toEscaped = (char: string): string => {
   const codePoint = char.codePointAt(0) ?? 0
