@@ -1,8 +1,9 @@
 # New material — becomes thread criteria, never folded into a unit
 
-Work established during planning that the approved SPEC does not cover. Each item is carried as its
-own completion criterion on thread `01M130AYZYVWAGDKGHJX9AXPFG`, with its own decision record where
-one is needed. Nothing here is absorbed into a unit's acceptance ceiling.
+Work established during planning that the approved SPEC does not cover. Items are bound into named
+groups rather than carried one by one, and each group is carried as a completion criterion on thread
+`01M130AYZYVWAGDKGHJX9AXPFG`. One decision, `01M1FF5VA6JCR7QH8Q727WBR1D`, authorises that grouping.
+Nothing here is absorbed into a unit's acceptance ceiling.
 
 The register exists because "acceptance is a ceiling" is only honest if the overflow lands somewhere
 durable. A discovery with no home is a discovery that gets quietly folded in.
