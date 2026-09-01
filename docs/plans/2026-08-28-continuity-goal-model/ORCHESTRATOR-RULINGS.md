@@ -1558,3 +1558,170 @@ only its anchor moved, and it moved because of a repair this thread itself order
 
 `main` is at `3.0.0`. `U5-C` reads `3.1.0` by read-then-increment per `OR6`, `feat` type. Read both
 manifests at branch time.
+
+## OR40 — wave 2's remainder shipped as one linear stack, and what that cost
+
+Four units remained in wave 2: `U5-C`, `U7-A`, `U7-B`, `U7-C`. None could merge without a human, and
+`U7-B` stop condition 11.7 requires `U7-A` merged first. Cutting all four from `main` would have
+stalled three behind a human merge.
+
+Ruled at dispatch time, and applied: one linear stack, `main` -> `U5-C` -> `U7-A` -> `U7-B` -> `U7-C`.
+Each branch cut from its predecessor's tip, each pull request based on its predecessor's branch,
+`OR4`'s cut-from-`main` clause superseded for these four only. `OR4`'s definition of red-on-the-parent
+was unchanged: red at the commit the branch was cut from, which was no longer `main`.
+
+It worked. All four shipped, all four merged, `main` went `3.0.0` to `3.4.0` and is verified green at
+`aff4143` with 550 pass and 0 fail.
+
+**Two of the four should not have been in the stack, and `OR42` corrects it.** `U5-C` is independent
+of every `U7` block, and `U7-C` is independent of `U7-A` and `U7-B` — this plan's own section 10 says
+so: "C is independent of both and may merge in any position." The only genuine dependency in the set
+is `U7-A` before `U7-B`. The reason given for stacking the other two was that all four write the two
+version manifests, which is a version-numbering problem wearing a dependency costume. It is treated
+as what it is in `OR42`.
+
+### The rebase, which is the part worth remembering
+
+`PR 118` merged with a merge commit, and its branch had been rebased before that merge. Its head at
+merge time was `64eb512`; the tip handed to `U7-B` was `41277f1`. The trees are byte-identical at
+`ab659a30`; only the commit identifiers differ.
+
+That orphaned `41277f1`. Every branch stacked on it lost shared ancestry with `main`, the merge base
+fell back to `U5-C`'s tip `e7683f2`, and a real three-way merge of `PR 120` returned exit 1 with
+conflicts in `package.json`, `.claude-plugin/plugin.json` and `src/cli/session-start.ts` — while
+GitHub's own `mergeable` flag still read `MERGEABLE`.
+
+Ruled: **no branch in a stack is ever rebased, by any button.** A merge commit at merge time does not
+undo an update-branch rebase performed before it, and GitHub's mergeability flag is not evidence.
+
+The repair is a merge, never a rebase, and this repository already had the shape twice — `c54158c`
+and `643250b`. It landed as `231e099 Merge branch 'main' into feat/u7b-banner-clip-marker`, after
+which `PR 120` read `CLEAN`. Nothing was lost: `41277f1` is an ancestor of `main` today, because the
+branch carrying it merged.
+
+## OR41 — a plan-supplied fixture that calls a live tool is stale by the same construction as a whole-file REPLACE
+
+`U7-C` halted at red-on-parent. Test 5.4's fixture at plan line 1363 called the live `open_thread`
+with `completion_criteria` as an array of strings. `U4-A` changed that field to an array of
+`strictObject({text, check})`, both required, and merged into `main` after `U7`'s plan was authored
+(`5043645`, an ancestor of `origin/main`; the schema is at `src/server/tools/open_thread.ts:10-23`).
+
+The test did fail on the parent, on a refusal in fixture setup rather than on its own assertion:
+
+```
+calling "open_thread" failed: field: completion_criteria.0
+accepted: object one completion criterion together with the check that decides it
+```
+
+**That is worse than a wrong message.** The test could never have turned green after step 10 either,
+because the fixture dies before the debrief sequence is ever driven. Acceptance criterion 10 (`B34`,
+defect `D10`) had no producible receipt, which made commit `C3` unshippable rather than merely
+mis-messaged.
+
+### The repair, authored here because the implementer may not author it
+
+The plan supplies the criterion's `text` and no `check` anywhere. Choosing one is authoring, which
+`PLANNING-BRIEF.md` section 2 forbids passing to the implementer. `OR35` set the precedent when
+`U4-A` hit the identical wall, and its idiom is the scenario's name followed by the word `check`.
+
+FIND, one line at six spaces of indentation:
+
+```
+      completion_criteria: ['prove the documented debrief sequence refreshes the running summary']
+```
+
+REPLACE:
+
+```
+      completion_criteria: [
+        { text: 'prove the documented debrief sequence refreshes the running summary', check: 'the debrief spine update scenario check' }
+      ]
+```
+
+The shape is byte-for-byte what `OR35` authored and what is on `main` at
+`test/sync/two-clones-spawn.test.ts:316`. There is no linter and no line-length rule in this
+repository. Applied, section 6.4's second predicted failure became obtainable exactly as written, and
+the `FIND` matched exactly once before and zero after.
+
+### The general rule, which binds every remaining unit
+
+`OR39` aims its staleness enumeration at whole-file `REPLACE`s: it compares the plan against files the
+plan **edits**. This defect lived in a fixture the plan **creates**, calling a live tool whose input
+schema moved underneath it. Neither the `FIND` census nor the `OR39` diff could ever have caught it.
+
+Ruled: **before accepting any red as the predicted one, check each plan-supplied fixture that calls a
+live MCP tool against that tool's current input schema.** A red whose message names a field refusal
+rather than the predicted assertion is a stale fixture, never a receipt.
+
+## OR42 — amendment to `OR40`: stack on dependency only, and the version manifests are why independent units collide
+
+### What stacks
+
+Ruled, superseding `OR40`'s application: **a unit is stacked behind another only when it has a content
+dependency on it.** A shared version manifest is not a content dependency. Applied to wave 2's
+remainder, the correct topology was three lanes, not one chain of four: `U5-C` from `main`; `U7-A`
+then `U7-B` stacked, because stop condition 11.7 requires it; `U7-C` from `main`.
+
+Stacking an independent unit costs real things. It forces a merge order that no dependency justifies,
+it makes every branch above the first hostage to whatever happens to the branches below, and — as
+`OR40` records — it puts three branches in the blast radius of one rebase instead of one.
+
+### Why the version number conflicts, on stacked and independent units alike
+
+The plugin version is one line in two files, and `OR6` has every unit derive its own value by
+read-then-increment from its own base. That makes the manifests a guaranteed meeting point for any two
+branches sharing a base, whether or not they share a single line of real code.
+
+**Stacking prevents this rather than causing it.** In a correct stack each branch reads its parent's
+already-incremented value, so at merge time the base and one side agree and only the child's increment
+is a change. Wave 2's chain produced `3.1.0`, `3.2.0`, `3.3.0`, `3.4.0` with no version conflict at
+any merge. The conflict observed on `PR 120` came from the rebase in `OR40`, not from the stack: the
+merge base dropped back to `e7683f2` where the manifests read `3.1.0`, while `main` said `3.2.0` and
+the branch said `3.3.0` — one line, two changes, conflict.
+
+**Two independent units merged one after the other give one of two outcomes, and both are bad.**
+
+| Case | What git does | What ships |
+| --- | --- | --- |
+| Different Conventional Commits types, so different values | base `X`, ours `Y`, theirs `Z` on one line — **conflict** | nothing, until a human resolves it |
+| Same type, so the same value | both sides wrote identical content — **clean merge, no conflict** | the second merge changes no version at all, and **a release is silently skipped** |
+
+The second case is the dangerous one, because nothing announces it. A clean merge is not evidence that
+the version is right.
+
+### Ruled
+
+1. A unit that is independent is cut from `main` and is not stacked.
+2. After each merge, every open unit branch takes `git merge main` — never a rebase — and
+   **re-derives its version from the merged value** by `OR6`'s read-then-increment.
+3. The re-derivation is mandatory **even when git reports no conflict**, precisely because the
+   same-value case merges cleanly and skips a release.
+4. `node scripts/check-packaging.mjs` does not detect a skipped release; it only checks that the two
+   manifests agree with each other. Agreement is not correctness.
+
+Withdrawing `OR6` in favour of a single per-wave release commit was considered and rejected here: it
+would change a step baked into every remaining plan document, and `U8-B`'s MAJOR bump is load-bearing
+evidence of a proven contract break rather than bookkeeping. The cost of the rule above is one merge
+commit per open branch per merge, which is what wave 2 paid anyway.
+
+## OR43 — the artifacts section renders correctly and nothing can populate it, and the label separator is a latent defect
+
+`U5-C` shipped criterion 12's Artifacts block. Two facts about it were established by the unit and
+neither is a reason to reopen the criterion.
+
+**Nothing writes `thread.artifacts`.** The field is read at `src/render/briefing.ts` and in the thread
+resource render, and written by no tool anywhere in `src/`. Criterion 22's check says the thread
+renders its artifacts, and the renderer does; the gap is population, which the check does not cover.
+Ruled: criterion 22 stands as met, and the section is correct forward work. The unit that first writes
+the field owns proving it renders end to end.
+
+**The label separator is ambiguous, and it was introduced here.** The line renders
+`- ${label}: ${pointer}`, and `escapeStored` does not escape a colon, so a label of `docs: /etc/shadow`
+renders as `- docs: /etc/shadow: real/pointer` and a reader splitting on the first `: ` takes the wrong
+pointer. `OR36` says a unit folds in what it introduces, and `U5-C` did not — correctly, because every
+candidate fix is a render format the plan does not supply and the exact-output test pins the line.
+
+Ruled: this is filed rather than folded in, as `F5e`, and the exception is stated rather than assumed.
+It is unreachable today for the same reason the section cannot populate: no write path exists. **The
+unit that ships a write path for `thread.artifacts` fixes the separator in the same change**, and may
+not ship the writer without it. That binding is the whole reason this is allowed to be filed.

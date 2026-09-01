@@ -782,3 +782,108 @@ Appends only. Never edit an item another planner wrote.
 - **Evidence:** stop condition 11.5 is placed one step early. It says to run after step 11 and expect `3`, but the third `list: undefined` belongs to the sessions template that step 12 registers, so the condition cannot read `3` where it is placed. Re-run on the finished tree it reads `3` and `1`, matching the plan's expected pair. Separately, both U6 plans state that `node scripts/check-packaging.mjs` produces no output; it exits 0 and prints `check-packaging: ok`.
 - **Why it is above the ceiling:** `OR0` and `OR9` forbid every agent from editing a plan document, and neither defect changed what shipped — the first was reachable by running the condition one step later, the second is a documentation error about an exit-0 command.
 - **Not folded in.**
+
+## F5e — The artifacts line's `: ` separator is ambiguous, and a label may contain one
+
+- **Surfaced by:** U5-C implementation and code review
+- **Evidence:** the artifacts line renders `- ${label}: ${pointer}`. `escapeStored` does not escape a colon, so a label of `docs: /etc/shadow` renders as `- docs: /etc/shadow: real/pointer`, and a reader splitting on the first `: ` takes the wrong value as the pointer.
+- **Why it is above the ceiling:** this was **introduced** by U5-C, which `OR36` says a unit folds in. It is filed instead under the explicit exception in `OR43`: the plan supplies that line's exact text and the exact-output test pins it, so every candidate fix — a different separator, escaping the label, two lines — is a render format no plan supplies. `OR43` binds the unit that first ships a write path for `thread.artifacts` to fix this in the same change, and forbids shipping the writer without it.
+- **Not folded in.**
+
+## F5f — No tool writes `thread.artifacts`, so the section criterion 12 adds cannot populate
+
+- **Surfaced by:** U5-C implementation
+- **Evidence:** `thread.artifacts` is read by the briefing renderer and by the thread resource render, and written by no tool anywhere in `src/`.
+- **Why it is above the ceiling:** criterion 22's check says the thread renders its artifacts, and the renderer does. The gap is population, which the check does not cover and which no U5 criterion mentions. Disposed by `OR43`: the criterion stands as met and the section is correct forward work.
+- **Not folded in.**
+
+## F5g — The frontier sweep's fixture sets no `check`, `result` or `refs`, so the census only ever exercises the `not recorded` branch
+
+- **Surfaced by:** U5-C code review
+- **Evidence:** `test/support/briefing-sweep-fixture.ts` builds criteria with none of the three fields populated. The sweep therefore classifies 733 records without once rendering a populated check line, result line or risk reference.
+- **Why it is above the ceiling:** the fixture is not U5-C's file and no U5 criterion concerns the sweep's population. Widening it changes what every unit downstream of the sweep is measured against.
+- **Not folded in.**
+
+## F5h — The sweep's item accountant counts `- ref:` sub-lines as risks
+
+- **Surfaced by:** U5-C code review
+- **Evidence:** the accountant that proves no record loses an item counts risk reference sub-lines as risks. It is masked today only because `refs` is empty everywhere in the fixture, which is `F5g`.
+- **Why it is above the ceiling:** it is latent behind `F5g` and fires the moment that fixture is extended. Fixing it now would change an accountant no U5 criterion names, against a population that cannot yet reach it.
+- **Not folded in.**
+
+## F5i — The briefing gates the result line on `done`; the resource render does not
+
+- **Surfaced by:** U5-C code review
+- **Evidence:** the briefing renders a criterion's result line only when the criterion is done. `src/render/resource-render.ts:80` renders it unconditionally. The two surfaces disagree about when a result is shown.
+- **Why it is above the ceiling:** criterion 13 specifies the briefing's behaviour, and changing the briefing to match the resource would contradict the criterion as written. Deciding which surface is right is a ruling, not an implementation choice.
+- **Not folded in.**
+
+## F5j — An empty risk reference is reachable and renders as a blank bullet
+
+- **Surfaced by:** U5-C code review
+- **Evidence:** `update_thread` accepts a risk reference that is the empty string, and the new reference rendering emits it as a bullet with no content.
+- **Why it is above the ceiling:** the fix belongs in `src/server/tools/update_thread.ts`, which is a write-side validation this unit does not touch and no U5 criterion covers.
+- **Not folded in.**
+
+## F5k — `test/unit/briefing.test.ts` is over the 800-line file ceiling, and was before this diff
+
+- **Surfaced by:** U5-C code review
+- **Evidence:** the file measures 832 lines after U5-C and measured 810 before it, against the 800-line ceiling in the coding-style rule.
+- **Why it is above the ceiling:** the file was already over before this unit, and splitting a golden exact-output test file is a restructuring that would change what several units' receipts point at.
+- **Not folded in.**
+
+## F5l — The `(decision <id>)` trailer is spoofable by a key-decision title ending in the same shape
+
+- **Surfaced by:** U5-C security review
+- **Evidence:** the key-decision line appends `(decision <id>)`, and a title whose own text ends in that shape renders indistinguishably. This extends the pattern already present at `src/render/briefing.ts:83` rather than creating it.
+- **Why it is above the ceiling:** the reviewer rated it LOW and traced no consumer that parses the trailer. Closing it means a structural render format for identifiers across every line that carries one, which is a surface-wide change.
+- **Not folded in.**
+
+## F5m — `MAX_ITEM_CLIP` is the one clip site the compiler does not check
+
+- **Surfaced by:** U5-C code review
+- **Evidence:** every other clip field is reached through a typed `RenderClip` member; `MAX_ITEM_CLIP` is computed from the natural maxima and is not covered by that type, so a new clip field added later can be omitted from it without a type error.
+- **Why it is above the ceiling:** it is complete and correct today, and the code is exactly what the plan specifies. Making it compiler-checked is a type change no U5 criterion asks for.
+- **Not folded in.**
+
+## F5n — `U5`'s section 6.3 third command uses `--test-name-pattern`, which does not filter
+
+- **Surfaced by:** U5-C implementation
+- **Evidence:** `node --test --experimental-strip-types test/spawn/decisions.test.ts --test-name-pattern "outcome-body"` ran all 15 tests in the file rather than the one named. The receipt still holds, because the named test failed as predicted; the command does not do what its shape implies.
+- **Why it is above the ceiling:** `OR0` and `OR9` forbid every agent from editing a plan document, and the receipt was obtainable as written.
+- **Not folded in.**
+
+## F7d — `package-lock.json` declares `1.4.0` against a `package.json` that is now `3.4.0`
+
+- **Surfaced by:** U5-C, U7-A, U7-B and U7-C implementation — reported four times
+- **Evidence:** `package-lock.json` carries `"version": "1.4.0"` at both line 3 and line 9. `package.json` and `.claude-plugin/plugin.json` both read `3.4.0` on `main` at `aff4143`. `node scripts/check-packaging.mjs` exits 0, because it compares the two manifests with each other and never reads the lockfile.
+- **Why it is above the ceiling:** every unit in wave 2 widened the gap by its own increment, and none could close it. The ordinary fix is an install, which is forbidden here because `node_modules` is tracked and installing rewrites tracked files and leaves the suite red on `yaml`. Closing it needs a deliberate change to either the lockfile discipline or the packaging check, owned by no unit.
+- **Not folded in.**
+
+## F7e — Several plans state that `check-packaging` produces no output; it prints `check-packaging: ok`
+
+- **Surfaced by:** U5-C and U7 implementation
+- **Evidence:** `node scripts/check-packaging.mjs` exits 0 and prints `check-packaging: ok`. `npm run` additionally echoes its own header. Section 8 of the affected plans expects no output. Exit 0 is the real gate, and every unit used it.
+- **Why it is above the ceiling:** `OR0` and `OR9` forbid editing a plan document, and the same defect is already filed for U6 at `F6k`. Recorded here because it recurred in wave 2's plans as well.
+- **Not folded in.**
+
+## F7f — `U7`'s test 5.4 fixture was stale against `U4`'s criterion contract, and produced a red that could never turn green
+
+- **Surfaced by:** U7-C implementation
+- **Evidence:** plan line 1363 calls the live `open_thread` with `completion_criteria` as an array of strings. `5043645`, already an ancestor of `origin/main`, changed that field to an array of `strictObject({text, check})`. The test failed on `field: completion_criteria.0` in fixture setup rather than on its own assertion, and would have stayed red after the production change because the fixture dies before the debrief sequence is driven.
+- **Why it is above the ceiling:** repairing it required authoring a `check` string the plan does not contain, which `PLANNING-BRIEF.md` section 2 forbids the implementer. Ruled and authored in `OR41`, which also generalises the check to every plan-supplied fixture that calls a live tool.
+- **Not folded in.**
+
+## F7g — Reading a test run's exit code through a pipe produces a false green
+
+- **Surfaced by:** U7-B implementation
+- **Evidence:** an agent ran a test command piped through `tail` and read `$?`, which returned `tail`'s exit code of `0` rather than `node`'s `1`. It caught the error itself and re-ran unpiped for the true `1`. No false result reached a commit or a pull request body.
+- **Why it is above the ceiling:** it is a working practice rather than a defect in the tree, and no unit's criteria concern how a command is invoked. It is recorded because a green obtained this way is indistinguishable from a real one in every artifact downstream of it, and every U7 work order after this carried an explicit prohibition.
+- **Not folded in.**
+
+## F7h — The `/pr` skill trigger fires on dispatches with no pull-request content
+
+- **Surfaced by:** U7-A and U7-B implementation
+- **Evidence:** the trigger was injected into five dispatches across the two blocks, including a branch cut and a version bump. Every agent refused it and said so, and every pull request in wave 2 was opened only by the centralized `pr-create` tool.
+- **Why it is above the ceiling:** it is harness behaviour outside the tree entirely. Recorded because it means the explicit refusal clause belongs in every work order, not only in the ones that end in a release.
+- **Not folded in.**
