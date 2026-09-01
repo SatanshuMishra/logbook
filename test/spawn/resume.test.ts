@@ -571,6 +571,75 @@ test('park.refreshes-the-spine', async () => {
   })
 })
 
+test('resume.last-session-renders-the-previous-sessions-entries-newest-first', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+    await callResume(fx.spawned, fx.published, threadId)
+
+    const firstBody = 'MARKER-ENTRY-ONE read the spec and located the derivation point'
+    const secondBody = 'MARKER-ENTRY-TWO wrote the segmentation rule'
+    const outcome = 'MARKER-PARK closed out the session with the derivation landed'
+
+    const entryIds: string[] = []
+    for (const body of [firstBody, secondBody]) {
+      const logged = (await fx.spawned.client.callTool({
+        name: 'log_session_event',
+        arguments: { thread_id: threadId, actor: 'claude', body }
+      })) as CallToolResult
+      assertOkResult('log_session_event', logged)
+      entryIds.push((logged.structuredContent as { session_entry_id: string }).session_entry_id)
+    }
+
+    const parked = await callPark(fx.spawned, fx.published, { thread_id: threadId, outcome })
+    assertOkResult('park_thread (last-session derivation)', parked)
+    const parkEntryIds = (parked.structuredContent as { session_entry_ids: string[] }).session_entry_ids
+    const parkEntryId = parkEntryIds[0]
+    assert.ok(parkEntryId !== undefined, 'the park call must have written a session log entry')
+
+    const resumed = await callResume(fx.spawned, fx.published, threadId)
+    assertOkResult('resume_thread (last-session derivation)', resumed)
+    const briefing = (resumed.structuredContent as { briefing: string }).briefing
+    const lines = briefing.split('\n')
+    const headingAt = lines.indexOf('**Last session:**')
+    assert.notEqual(headingAt, -1, 'the briefing must carry a Last session heading')
+
+    assert.deepEqual(
+      lines.slice(headingAt + 2, headingAt + 5),
+      [`- ${parkEntryId} ${outcome}`, `- ${entryIds[1]} ${secondBody}`, `- ${entryIds[0]} ${firstBody}`],
+      'the Last session section must render the previous session entries newest first, each with its entry id'
+    )
+  })
+})
+
+test('resume.last-session-falls-back-to-the-stored-text-marked-as-legacy', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+    const storedSummary = 'MARKER-LEGACY a summary typed by hand before the derivation existed'
+
+    const updated = (await fx.spawned.client.callTool({
+      name: 'update_thread',
+      arguments: { thread_id: threadId, last_session: storedSummary }
+    })) as CallToolResult
+    assertOkResult('update_thread (legacy last session)', updated)
+
+    const resumed = await callResume(fx.spawned, fx.published, threadId)
+    assertOkResult('resume_thread (legacy last session)', resumed)
+    const briefing = (resumed.structuredContent as { briefing: string }).briefing
+    const lines = briefing.split('\n')
+    const headingAt = lines.indexOf('**Last session:**')
+    assert.notEqual(headingAt, -1, 'the briefing must carry a Last session heading')
+
+    assert.deepEqual(
+      lines.slice(headingAt + 2, headingAt + 4),
+      [
+        '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead',
+        storedSummary
+      ],
+      'with no session log entries the stored text must render, marked as legacy'
+    )
+  })
+})
+
 test('park.control-a-held-pointer-still-stores-the-outcome', async () => {
   await withFixture(async (fx) => {
     const { threadId } = await createFixtureThread(fx.spawned, fx.published)

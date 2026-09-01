@@ -1,5 +1,7 @@
 import type { Thread, Criterion, Risk, KeyDecision, OutOfScope, Artifact } from '../schema/thread.ts'
+import type { SessionEntry } from '../schema/session.ts'
 import type { Pointer } from '../domain/pointer.ts'
+import { previousSessionEntries } from '../domain/session-log.ts'
 import { escapeStored } from './escape.ts'
 import { CLIP_MARKER_GRAPHEMES, clipWithMarker } from './clip.ts'
 import { THREAD_SLUG_MAX } from '../schema/caps.ts'
@@ -52,6 +54,7 @@ const OUT_OF_SCOPE_TEXT_NATURAL_MAX = 300
 const CRITERION_TEXT_NATURAL_MAX = 500
 const CRITERION_CHECK_NATURAL_MAX = 500
 const CRITERION_RESULT_NATURAL_MAX = 500
+const LAST_SESSION_TEXT_NATURAL_MAX = 500
 const SETTLED_TEXT_NATURAL_MAX = 120
 const ARTIFACT_LABEL_NATURAL_MAX = 200
 const ARTIFACT_POINTER_NATURAL_MAX = 500
@@ -65,6 +68,11 @@ const FOCUS_NOT_SET_LINE =
   '**Focus:** not set. Risks and key decisions render as one group in the order they were recorded, apart from those on a goal already met or struck.'
 
 const SETTLED_HEADING = '**Settled items (on goals already met or struck):**'
+
+const LAST_SESSION_HEADING = '**Last session:**'
+
+const LEGACY_LAST_SESSION_MARKER =
+  '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead'
 
 const TEXT_CLIPPED_BULLET =
   '- some text on this briefing was shortened to fit the character budget; every shortened value ends with ...[shortened]'
@@ -116,6 +124,9 @@ const renderOutOfScopeLine = (outOfScope: OutOfScope, textClip: number): string 
 const renderArtifactLine = (artifact: Artifact, renderClip: RenderClip): string =>
   `- ${clip(artifact.label, renderClip.artifactLabel)}: ${clip(artifact.pointer, renderClip.artifactPointer)}`
 
+const renderSessionEntryLine = (entry: SessionEntry, textClip: number): string =>
+  `- ${escapeStored(entry.id)} ${clip(entry.body, textClip)}`
+
 const renderSettledRiskLine = (risk: Risk, textClip: number): string =>
   `- risk ${escapeStored(risk.id)} ${clip(risk.text, textClip)}`
 
@@ -163,6 +174,7 @@ type RenderClip = {
   criterion: number
   criterionCheck: number
   criterionResult: number
+  lastSession: number
   settled: number
   artifactLabel: number
   artifactPointer: number
@@ -178,6 +190,7 @@ const clipAt = (perItemClip: number): RenderClip => ({
   criterion: Math.min(perItemClip, CRITERION_TEXT_NATURAL_MAX),
   criterionCheck: Math.min(perItemClip, CRITERION_CHECK_NATURAL_MAX),
   criterionResult: Math.min(perItemClip, CRITERION_RESULT_NATURAL_MAX),
+  lastSession: Math.min(perItemClip, LAST_SESSION_TEXT_NATURAL_MAX),
   settled: Math.min(perItemClip, SETTLED_TEXT_NATURAL_MAX),
   artifactLabel: Math.min(perItemClip, ARTIFACT_LABEL_NATURAL_MAX),
   artifactPointer: Math.min(perItemClip, ARTIFACT_POINTER_NATURAL_MAX)
@@ -193,6 +206,7 @@ const UNCLIPPED: RenderClip = {
   criterion: NO_CLIP,
   criterionCheck: NO_CLIP,
   criterionResult: NO_CLIP,
+  lastSession: NO_CLIP,
   settled: NO_CLIP,
   artifactLabel: NO_CLIP,
   artifactPointer: NO_CLIP
@@ -208,6 +222,7 @@ const MAX_ITEM_CLIP = Math.max(
   CRITERION_TEXT_NATURAL_MAX,
   CRITERION_CHECK_NATURAL_MAX,
   CRITERION_RESULT_NATURAL_MAX,
+  LAST_SESSION_TEXT_NATURAL_MAX,
   SETTLED_TEXT_NATURAL_MAX,
   ARTIFACT_LABEL_NATURAL_MAX,
   ARTIFACT_POINTER_NATURAL_MAX
@@ -252,6 +267,7 @@ const assembleBriefing = (
   keyDecisions: Laned<KeyDecision>,
   outOfScope: readonly OutOfScope[],
   criteria: readonly Criterion[],
+  previousEntries: readonly SessionEntry[],
   renderClip: RenderClip,
   textWasClipped: boolean
 ): string => {
@@ -259,7 +275,10 @@ const assembleBriefing = (
   const unreadableDecisionCount = decisionIntegrity.dangling.length + decisionIntegrity.quarantined.length
 
   const activeGoalLines = thread.spine.active_goal.length === 0 ? [] : [thread.spine.active_goal]
-  const lastSessionLines = thread.spine.last_session.length === 0 ? [] : [thread.spine.last_session]
+  const legacyLastSessionText =
+    previousEntries.length > 0 || thread.spine.last_session.length === 0 ? [] : [thread.spine.last_session]
+  const lastSessionHeading =
+    previousEntries.length + legacyLastSessionText.length === 0 ? [] : [LAST_SESSION_HEADING]
   const nextStepLines = thread.spine.next_step.length === 0 ? [] : [thread.spine.next_step]
 
   const artifacts = thread.artifacts ?? []
@@ -297,10 +316,12 @@ const assembleBriefing = (
     ...activeGoalLines.slice(0, 1).map(() => '**Active goal:**'),
     ...activeGoalLines.slice(0, 1).map(() => ''),
     ...activeGoalLines.map((value) => escapeStored(value)),
-    ...lastSessionLines.slice(0, 1).map(() => ''),
-    ...lastSessionLines.slice(0, 1).map(() => '**Last session:**'),
-    ...lastSessionLines.slice(0, 1).map(() => ''),
-    ...lastSessionLines.map((value) => escapeStored(value)),
+    ...lastSessionHeading.slice(0, 1).map(() => ''),
+    ...lastSessionHeading.slice(0, 1).map(() => LAST_SESSION_HEADING),
+    ...lastSessionHeading.slice(0, 1).map(() => ''),
+    ...previousEntries.map((entry) => renderSessionEntryLine(entry, renderClip.lastSession)),
+    ...legacyLastSessionText.slice(0, 1).map(() => LEGACY_LAST_SESSION_MARKER),
+    ...legacyLastSessionText.map((value) => escapeStored(value)),
     ...nextStepLines.slice(0, 1).map(() => ''),
     ...nextStepLines.slice(0, 1).map(() => '**Next step:**'),
     ...nextStepLines.slice(0, 1).map(() => ''),
@@ -344,12 +365,14 @@ export const renderBriefingWithPasses = (
   decisionIntegrity: DecisionIntegrity,
   pointer: Pointer | null,
   predecessor: Thread | null,
-  hasPreviousSession: boolean = PREVIOUS_SESSION_DEFAULT_PRESENT
+  hasPreviousSession: boolean = PREVIOUS_SESSION_DEFAULT_PRESENT,
+  sessionEntries: readonly SessionEntry[] = []
 ): BriefingRender => {
   const criteriaById = new Map(thread.completion_criteria.map((criterion) => [criterion.id, criterion] as const))
 
   const risks = laneSplit(thread.spine.open_risks, criteriaById)
   const keyDecisions = laneSplit(thread.spine.key_decisions, criteriaById)
+  const previousEntries = previousSessionEntries(sessionEntries)
 
   const renderWith = (renderClip: RenderClip, textWasClipped: boolean): string =>
     assembleBriefing(
@@ -361,6 +384,7 @@ export const renderBriefingWithPasses = (
       keyDecisions,
       thread.spine.out_of_scope,
       thread.completion_criteria,
+      previousEntries,
       renderClip,
       textWasClipped
     )
@@ -387,5 +411,7 @@ export const renderBriefing = (
   decisionIntegrity: DecisionIntegrity,
   pointer: Pointer | null,
   predecessor: Thread | null,
-  hasPreviousSession: boolean = PREVIOUS_SESSION_DEFAULT_PRESENT
-): string => renderBriefingWithPasses(thread, decisionIntegrity, pointer, predecessor, hasPreviousSession).briefing
+  hasPreviousSession: boolean = PREVIOUS_SESSION_DEFAULT_PRESENT,
+  sessionEntries: readonly SessionEntry[] = []
+): string =>
+  renderBriefingWithPasses(thread, decisionIntegrity, pointer, predecessor, hasPreviousSession, sessionEntries).briefing
