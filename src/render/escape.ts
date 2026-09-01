@@ -89,6 +89,47 @@ export const escapeStored = (text: string): string => {
   return out.join('')
 }
 
+const ESCAPE_PREFIX = 'U+'
+const ESCAPE_DIGITS = /^[0-9A-F]+$/
+const ESCAPE_WIDTHS = [4, 5, 6] as const
+const MAX_CODE_POINT = 0x10ffff
+const SURROGATE_LOW = 0xd800
+const SURROGATE_HIGH = 0xdfff
+
+const decodedEscapeAt = (chars: readonly string[], index: number): { char: string; width: number } | null => {
+  for (const width of ESCAPE_WIDTHS) {
+    const start = index + ESCAPE_PREFIX.length
+    const digits = chars.slice(start, start + width).join('')
+    if (digits.length !== width) continue
+    if (!ESCAPE_DIGITS.test(digits)) continue
+    const codePoint = Number.parseInt(digits, 16)
+    if (codePoint > MAX_CODE_POINT) continue
+    if (codePoint >= SURROGATE_LOW && codePoint <= SURROGATE_HIGH) continue
+    const char = String.fromCodePoint(codePoint)
+    if (toEscaped(char) !== `${ESCAPE_PREFIX}${digits}`) continue
+    if (!isEmittedEscape(char)) continue
+    return { char, width }
+  }
+  return null
+}
+
+export const unescapeStored = (text: string): string => {
+  const chars = Array.from(text)
+  const out: string[] = []
+  let index = 0
+  while (index < chars.length) {
+    const decoded = chars[index] === 'U' && chars[index + 1] === '+' ? decodedEscapeAt(chars, index) : null
+    if (decoded !== null) {
+      out.push(decoded.char)
+      index += ESCAPE_PREFIX.length + decoded.width
+      continue
+    }
+    out.push(chars[index] as string)
+    index += 1
+  }
+  return out.join('')
+}
+
 export const clipGraphemes = (text: string, max: number): string => {
   const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
   const graphemes = Array.from(segmenter.segment(text), (entry) => entry.segment)
