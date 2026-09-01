@@ -166,7 +166,7 @@ const nonProgramOrdinalSites = (): OrdinalSite[] =>
       )
   )
 
-const UNASSERTED_ORDINAL_ROOT = `src${path.sep}render${path.sep}`
+const ASSERTED_ORDINAL_ROOTS = [`src${path.sep}render${path.sep}`, `src${path.sep}server${path.sep}tools${path.sep}`]
 
 test('briefing.criterion-ordinal-is-read-only-to-render-a-display-label', (t) => {
   const { program, productionFiles, testFiles } = loadSourceProgram()
@@ -187,11 +187,11 @@ test('briefing.criterion-ordinal-is-read-only-to-render-a-display-label', (t) =>
     t.diagnostic(`unasserted here, owned elsewhere: ${site.file}:${site.line} ${site.expression}`)
   }
 
-  const underRender = population.filter((site) => site.file.startsWith(UNASSERTED_ORDINAL_ROOT))
-  assert.ok(underRender.length > 0, 'the render modules must read criterion.ordinal, or this assertion is vacuous')
+  const underAssertedRoots = population.filter((site) => ASSERTED_ORDINAL_ROOTS.some((root) => site.file.startsWith(root)))
+  assert.ok(underAssertedRoots.length > 0, 'the asserted roots must read criterion.ordinal, or this assertion is vacuous')
   assert.doesNotThrow(
-    () => census(underRender, classifyOrdinalSite),
-    `every read of criterion.ordinal under src/render must render a display label; any other read infers sequence from position:\n${underRender
+    () => census(underAssertedRoots, classifyOrdinalSite),
+    `every read of criterion.ordinal under src/render or src/server/tools must render a display label; any other read infers sequence from position:\n${underAssertedRoots
       .filter((site) => classifyOrdinalSite(site) !== 'allowed')
       .map((site) => `${site.file}:${site.line} ${site.expression}`)
       .join('\n')}`
