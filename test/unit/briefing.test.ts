@@ -97,6 +97,7 @@ test('briefing.blockage-none-when-not-blocked', () => {
 
 test('briefing.renders-exact-output-for-a-full-thread', () => {
   const threadId = rt.ulid()
+  const artifactId = rt.ulid()
   const riskId = rt.ulid()
   const settledRiskId = rt.ulid()
   const liveDecisionId = rt.ulid()
@@ -107,6 +108,9 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     text: 'first criterion',
     done: true,
     kind: 'planned' as const,
+    check: 'npm test',
+    result: '436 tests, 0 fail',
+    result_status: 'verified' as const,
     struck_by: null
   }
   const criterionB = {
@@ -123,12 +127,13 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     status: 'open',
     blocked_by: null,
     completion_criteria: [criterionA, criterionB],
+    artifacts: [{ id: artifactId, label: 'the implementation plan', pointer: 'docs/plans/u5.md' }],
     spine: {
       active_goal: 'ship the renderer',
       next_step: 'add tests',
       last_session: 'wrote the first draft',
       open_risks: [
-        { id: riskId, scope: 'renderer', text: 'escaping might be incomplete', refs: [] },
+        { id: riskId, scope: 'renderer', text: 'escaping might be incomplete', refs: ['docs/specs/goal-model.md#L120'] },
         { id: settledRiskId, scope: 'renderer', text: 'a risk on a met goal', refs: [], criterion_id: criterionA.id }
       ],
       key_decisions: [
@@ -161,6 +166,9 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     '**Currently being worked:** yes',
     '**Focus:** not set. Risks and key decisions render as one group in the order they were recorded, apart from those on a goal already met or struck.',
     '',
+    '**Artifacts:**',
+    '- the implementation plan: docs/plans/u5.md',
+    '',
     '**Active goal:**',
     '',
     'ship the renderer',
@@ -175,16 +183,20 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     '',
     '**Open risks:**',
     `- ${riskId} escaping might be incomplete`,
+    '  - ref: docs/specs/goal-model.md#L120',
     '',
     '**Key decisions:**',
-    '- use postgres',
+    `- use postgres (decision ${liveDecisionId})`,
     '',
     '**Out of scope:**',
     '- does not cover the CLI',
     '',
     '**Completion criteria:**',
     `- c1 [done]: first criterion (id ${criterionA.id})`,
+    '  - check: npm test',
+    '  - result: 436 tests, 0 fail (verified)',
     `- c2 [struck]: second criterion (id ${criterionB.id})`,
+    '  - check: not recorded',
     '',
     '**Settled items (on goals already met or struck):**',
     `- risk ${settledRiskId} a risk on a met goal`,
@@ -227,6 +239,7 @@ test('briefing.omits-empty-list-sections-entirely', () => {
   assert.equal(rendered, expected)
   for (const heading of [
     '**Related:**',
+    '**Artifacts:**',
     '**Open risks:**',
     '**Key decisions:**',
     '**Out of scope:**',
@@ -638,6 +651,11 @@ test('briefing.renders-every-item-of-a-record-byte-maximal-thread-and-reports-th
     criterionRowCount(render.briefing),
     thread.completion_criteria.length,
     'every criterion of a record-byte-maximal thread renders; no display cap withholds one'
+  )
+  assert.equal(
+    lines.filter((line) => line.startsWith('  - check: ')).length,
+    thread.completion_criteria.length,
+    'every criterion renders its check line, recorded or not'
   )
   assert.equal(
     lines.filter((line) => line.startsWith('- dangling: ')).length + lines.filter((line) => line.startsWith('- quarantined: ')).length,

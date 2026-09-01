@@ -311,10 +311,14 @@ test('decision.outcome-body-is-absent-from-both-briefing-surfaces', async () => 
     const decisionsAt = lines.indexOf('**Decisions:**')
     assert.notEqual(keyDecisionsAt, -1, 'the briefing must carry a Key decisions section')
     assert.notEqual(decisionsAt, -1, 'the briefing must carry a Decisions section')
-    assert.equal(
-      lines[keyDecisionsAt + 1],
-      '- link decisions into the spine automatically',
-      'the Key decisions section must carry the decision title with no intervening update_thread call'
+    const keyDecisionLine = lines[keyDecisionsAt + 1]
+    assert.ok(
+      keyDecisionLine !== undefined && keyDecisionLine.startsWith('- link decisions into the spine automatically (decision '),
+      `the Key decisions section must carry the decision title with no intervening update_thread call, got: ${String(keyDecisionLine)}`
+    )
+    assert.ok(
+      keyDecisionLine !== undefined && /\(decision [0-9A-HJKMNP-TV-Z]{26}\)$/.test(keyDecisionLine),
+      `the Key decisions section must carry the decision id beside the title, got: ${String(keyDecisionLine)}`
     )
     assert.equal(
       briefing.includes(DECISION_OUTCOME_SENTINEL),

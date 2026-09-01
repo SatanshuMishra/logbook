@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import * as ts from 'typescript'
-import { renderBriefingWithPasses, type DecisionIntegrity } from '../../src/render/briefing.ts'
+import { renderBriefing, renderBriefingWithPasses, type DecisionIntegrity } from '../../src/render/briefing.ts'
 import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
 import { escapeStored } from '../../src/render/escape.ts'
 import { ThreadRecord, type Thread, type Criterion } from '../../src/schema/thread.ts'
@@ -246,7 +246,11 @@ test('briefing.a-render-that-fits-its-budget-is-clipped-nowhere', () => {
   const thread = threadOf({
     predecessor_id: predecessor.id,
     completion_criteria: [
-      criterionOf({ ordinal: 1, text: ESCAPE_EXPANDING_CHAR.repeat(caps.CRITERION_TEXT_MAX) })
+      criterionOf({
+        ordinal: 1,
+        text: ESCAPE_EXPANDING_CHAR.repeat(caps.CRITERION_TEXT_MAX),
+        check: ESCAPE_EXPANDING_CHAR.repeat(caps.CRITERION_CHECK_MAX)
+      })
     ],
     spine: {
       active_goal: 'g',
@@ -298,8 +302,9 @@ const SHORTENING_FIXTURE_CRITERION_TEXT_LENGTH = 300
 const CRITERION_TEXT_PATTERN = /^- c\d+ \[(?:open|done|struck)\]: (.*) \(id [0-9A-HJKMNP-TV-Z]{26}\)$/
 const RISK_TEXT_PATTERN = /^- [0-9A-HJKMNP-TV-Z]{26} (.*)$/
 const SUCCEEDS_TITLE_PATTERN = /^- succeeds: (.*) \([^)]*\)$/
+const CHECK_TEXT_PATTERN = /^ {2}- check: (.*)$/
 
-const SHORTENABLE_VALUE_PATTERNS = [CRITERION_TEXT_PATTERN, RISK_TEXT_PATTERN, SUCCEEDS_TITLE_PATTERN]
+const SHORTENABLE_VALUE_PATTERNS = [CRITERION_TEXT_PATTERN, RISK_TEXT_PATTERN, SUCCEEDS_TITLE_PATTERN, CHECK_TEXT_PATTERN]
 
 const storedValueOf = (line: string): string | null => {
   for (const pattern of SHORTENABLE_VALUE_PATTERNS) {
@@ -357,4 +362,46 @@ test('briefing.every-shortened-value-carries-the-marker-inside-its-own-limit', (
     render.briefing.includes(`See logbook://thread/${thread.id} for the complete record.`),
     'a shortened render must carry the address that resolves to the complete record'
   )
+})
+
+test('briefing.artifacts-render-before-the-spine', () => {
+  const thread = threadOf({
+    artifacts: [{ id: rt.ulid(), label: 'the implementation plan', pointer: 'docs/plans/u5.md' }]
+  })
+  assert.equal(ThreadRecord.parse(thread).ok, true, 'the artifact fixture must itself be schema-admissible')
+
+  const lines = renderBriefing(thread, EMPTY_INTEGRITY, null, null).split('\n')
+  const artifactsAt = lines.indexOf('**Artifacts:**')
+  const activeGoalAt = lines.indexOf('**Active goal:**')
+
+  assert.notEqual(artifactsAt, -1, 'a thread carrying artifacts must render an artifacts section')
+  assert.equal(lines[artifactsAt + 1], '- the implementation plan: docs/plans/u5.md')
+  assert.ok(artifactsAt < activeGoalAt, 'the artifacts section must render before the spine')
+})
+
+test('briefing.a-criterion-marked-done-renders-its-result-and-the-status-of-that-result', () => {
+  const thread = threadOf({
+    completion_criteria: [
+      criterionOf({
+        ordinal: 1,
+        text: 'the store defect is closed',
+        done: true,
+        check: 'npm test',
+        result: 'the reproduction could not be run in this environment',
+        result_status: 'unverified-reasoned'
+      })
+    ]
+  })
+  assert.equal(ThreadRecord.parse(thread).ok, true, 'the result fixture must itself be schema-admissible')
+
+  const lines = renderBriefing(thread, EMPTY_INTEGRITY, null, null).split('\n')
+  assert.ok(lines.includes('  - check: npm test'))
+  assert.ok(lines.includes('  - result: the reproduction could not be run in this environment (unverified-reasoned)'))
+})
+
+test('briefing.a-criterion-with-no-check-or-result-renders-not-recorded-never-blank', () => {
+  const thread = threadOf({ completion_criteria: [criterionOf({ ordinal: 1, text: 'a goal', done: true })] })
+  const lines = renderBriefing(thread, EMPTY_INTEGRITY, null, null).split('\n')
+  assert.ok(lines.includes('  - check: not recorded'))
+  assert.ok(lines.includes('  - result: not recorded (not recorded)'))
 })
