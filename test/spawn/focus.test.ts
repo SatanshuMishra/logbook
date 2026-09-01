@@ -332,6 +332,46 @@ test('update_thread.refuses-a-focus-id-repeated-in-the-same-call', async () => {
   })
 })
 
+test('update_thread.refusal-after-the-focus-write-leaves-the-pointer-focus-unchanged', async () => {
+  await withFixture(async (fx) => {
+    const { threadId, criterionId } = await createFixtureThread(fx.spawned)
+
+    const resumed = (await fx.spawned.client.callTool({
+      name: 'resume_thread',
+      arguments: { thread_id: threadId }
+    })) as CallToolResult
+    assertOkResult('resume_thread (arrange)', resumed)
+    assert.deepEqual(readPointerFocus(fx), [])
+
+    const seedOutOfScope = Array.from({ length: 40 }, (_, index) => `seed out-of-scope entry ${index}`)
+    const seeded = (await fx.spawned.client.callTool({
+      name: 'update_thread',
+      arguments: { thread_id: threadId, out_of_scope_add: seedOutOfScope }
+    })) as CallToolResult
+    assertOkResult('update_thread (seed to the out_of_scope cap)', seeded)
+
+    const startingFocus = readPointerFocus(fx)
+    assert.deepEqual(startingFocus, [])
+
+    const overCap = (await fx.spawned.client.callTool({
+      name: 'update_thread',
+      arguments: {
+        thread_id: threadId,
+        focus: [criterionId],
+        out_of_scope_add: ['one entry past the out_of_scope cap']
+      }
+    })) as CallToolResult
+    assert.equal(overCap.isError, true, 'expected the call to be refused once out_of_scope exceeds its cap')
+
+    const forgedFocus = readPointerFocus(fx)
+    assert.deepEqual(
+      forgedFocus,
+      startingFocus,
+      `expected the stored session pointer's focus to remain unchanged at ${JSON.stringify(startingFocus)} after the refused update_thread call, but found ${JSON.stringify(forgedFocus)}`
+    )
+  })
+})
+
 test('focus.never-reaches-the-thread-record', async () => {
   await withFixture(async (fx) => {
     const { threadId, criterionId } = await createFixtureThread(fx.spawned, {

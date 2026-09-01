@@ -7,8 +7,8 @@ import type { KeyDecision, Risk, Spine, Thread, Ulid } from '../../schema/thread
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
-import { layoutFor } from '../../store/layout.ts'
-import { readPointer, writePointer } from '../../domain/pointer.ts'
+import { layoutFor, type StoreLayout } from '../../store/layout.ts'
+import { readPointer, writePointer, type Pointer } from '../../domain/pointer.ts'
 import { commitThread, loadThread, openProjectStore, type Attempt } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
@@ -249,25 +249,36 @@ export const DIFFERENT_THREAD_FOCUS_REASON =
 export const OTHER_SESSION_FOCUS_REASON =
   'another session holds the record of what is being worked, so this session did not overwrite its focus'
 
-const resolveFocusOutcome = (rt: Runtime, threadId: string, focusIds: Ulid[] | undefined): Attempt<FocusOutcome> => {
-  if (focusIds === undefined) return { ok: true, value: { written: false, reason: null } }
+type FocusPlan = { outcome: FocusOutcome; pending: { layout: StoreLayout; next: Pointer } | null }
+
+const decideFocusOutcome = (rt: Runtime, threadId: string, focusIds: Ulid[] | undefined): Attempt<FocusPlan> => {
+  if (focusIds === undefined) return { ok: true, value: { outcome: { written: false, reason: null }, pending: null } }
 
   const layout = layoutFor(rt, rt.cwd)
   if (!layout.ok) return { ok: false, refusal: layout }
 
   const pointerRead = readPointer(rt, layout.value)
   if (pointerRead.kind !== 'pointer') {
-    return { ok: true, value: { written: false, reason: NO_WORKED_THREAD_FOCUS_REASON } }
+    return { ok: true, value: { outcome: { written: false, reason: NO_WORKED_THREAD_FOCUS_REASON }, pending: null } }
   }
   if (pointerRead.value.thread_id !== threadId) {
-    return { ok: true, value: { written: false, reason: DIFFERENT_THREAD_FOCUS_REASON } }
+    return { ok: true, value: { outcome: { written: false, reason: DIFFERENT_THREAD_FOCUS_REASON }, pending: null } }
   }
   if (pointerRead.value.session_id !== rt.sessionId) {
-    return { ok: true, value: { written: false, reason: OTHER_SESSION_FOCUS_REASON } }
+    return { ok: true, value: { outcome: { written: false, reason: OTHER_SESSION_FOCUS_REASON }, pending: null } }
   }
 
-  writePointer(rt, layout.value, { ...pointerRead.value, focus: focusIds })
-  return { ok: true, value: { written: true, reason: null } }
+  return {
+    ok: true,
+    value: {
+      outcome: { written: true, reason: null },
+      pending: { layout: layout.value, next: { ...pointerRead.value, focus: focusIds } }
+    }
+  }
+}
+
+const applyFocusPlan = (rt: Runtime, plan: FocusPlan): void => {
+  if (plan.pending !== null) writePointer(rt, plan.pending.layout, plan.pending.next)
 }
 
 export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> = {
@@ -425,10 +436,11 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
       spineFieldsUpdated.length === 0 &&
       !blockageChanged
 
-    const focusOutcome = resolveFocusOutcome(rt, thread.id, focusIds)
-    if (!focusOutcome.ok) return { ok: false, refusal: focusOutcome.refusal }
+    const focusPlan = decideFocusOutcome(rt, thread.id, focusIds)
+    if (!focusPlan.ok) return { ok: false, refusal: focusPlan.refusal }
 
     if (nothingChanged) {
+      applyFocusPlan(rt, focusPlan.value)
       return {
         ok: true,
         text: `no fields were supplied; thread ${thread.slug} is unchanged.`,
@@ -441,8 +453,8 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
           key_decisions_added: [],
           out_of_scope_added: [],
           blocked_by_set: false,
-          focus_written: focusOutcome.value.written,
-          focus_not_written_reason: focusOutcome.value.reason
+          focus_written: focusPlan.value.outcome.written,
+          focus_not_written_reason: focusPlan.value.outcome.reason
         }
       }
     }
@@ -464,6 +476,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     const committed = commitThread(store, nextThread, `update thread ${thread.slug}`)
     if (!committed.ok) return { ok: false, refusal: committed.refusal }
 
+    applyFocusPlan(rt, focusPlan.value)
     return {
       ok: true,
       text: `updated thread ${thread.slug}: ${markedDone.length} criteria marked done, ${newRisks.length} risks added, ${retiredIds.length} risks retired.`,
@@ -476,8 +489,8 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
         key_decisions_added: newKeyDecisions.map((kd) => kd.id),
         out_of_scope_added: newOutOfScope.map((o) => o.id),
         blocked_by_set: blockageChanged,
-        focus_written: focusOutcome.value.written,
-        focus_not_written_reason: focusOutcome.value.reason
+        focus_written: focusPlan.value.outcome.written,
+        focus_not_written_reason: focusPlan.value.outcome.reason
       }
     }
   }
