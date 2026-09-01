@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { escapeStored, clipGraphemes } from '../../src/render/escape.ts'
+import { escapeStored, clipGraphemes, unescapeStored, isEmittedEscape, toEscaped } from '../../src/render/escape.ts'
 import { census } from '../support/census.ts'
 
 const MAX_CODE_POINT = 0x10ffff
@@ -58,6 +58,34 @@ test('escape.marker-behind-leading-spaces-is-tokenised', () => {
   const escaped = escapeStored(input)
   assert.equal(escaped, '  U+0023# Instructions')
   assert.equal(/(^|\n) *#{1,6}\s/.test(escaped), false)
+})
+
+const SETEXT_UNDERLINE_LINE = /(^|\n) {0,3}=+[ \t]*(\n|$)/
+const SETEXT_H1 = /(^|\n)[^\n]+\n {0,3}=+[ \t]*(\n|$)/
+const PRECEDING_TEXT_LINE = 'Next step'
+
+test('escape.setext-underline-cannot-forge-heading', () => {
+  const payload = '==='
+  assert.ok(
+    SETEXT_H1.test(`${PRECEDING_TEXT_LINE}\n${payload}`),
+    'the raw payload does not forge a setext heading, so neutralising it would prove nothing'
+  )
+  const escaped = escapeStored(payload)
+  assert.equal(escaped, 'U+003D==')
+  assert.equal(SETEXT_UNDERLINE_LINE.test(escaped), false)
+  assert.equal(SETEXT_H1.test(`${PRECEDING_TEXT_LINE}\n${escaped}`), false)
+})
+
+test('escape.setext-underline-behind-leading-spaces-cannot-forge-heading', () => {
+  const payload = '   ==='
+  assert.ok(
+    SETEXT_H1.test(`${PRECEDING_TEXT_LINE}\n${payload}`),
+    'the raw payload does not forge a setext heading, so neutralising it would prove nothing'
+  )
+  const escaped = escapeStored(payload)
+  assert.equal(escaped, '   U+003D==')
+  assert.equal(SETEXT_UNDERLINE_LINE.test(escaped), false)
+  assert.equal(SETEXT_H1.test(`${PRECEDING_TEXT_LINE}\n${escaped}`), false)
 })
 
 test('escape.indented-code-block-at-line-start-is-neutralised', () => {
@@ -146,6 +174,79 @@ test('escape.stored-is-idempotent-over-the-escapable-and-markdown-leading-popula
     const twice = escapeStored(once)
     return twice === once ? 'allowed' : 'forbidden'
   })
+})
+
+const collectEmittedPopulation = (): number[] => {
+  const collected: number[] = []
+  for (let codePoint = 0; codePoint <= MAX_CODE_POINT; codePoint += 1) {
+    if (codePoint >= SURROGATE_LOW && codePoint <= SURROGATE_HIGH) continue
+    if (isEmittedEscape(String.fromCodePoint(codePoint))) collected.push(codePoint)
+  }
+  return collected
+}
+
+const roundTripContexts = (codePoint: number): string[] => {
+  const char = String.fromCodePoint(codePoint)
+  return [char, `x${char}y`, `1${char} z`, `   ${char}`, `a\n${char}b`]
+}
+
+test('escape.round-trip-census-over-the-emitted-escape-set', () => {
+  const population = collectEmittedPopulation()
+  assert.ok(population.length > 0)
+  census(population, (codePoint) => {
+    const contexts = roundTripContexts(codePoint)
+    if (contexts.every((context) => escapeStored(context) === context)) return 'unclassifiable'
+    const reversible = contexts.every((context) => unescapeStored(escapeStored(context)) === context)
+    return reversible ? 'allowed' : 'forbidden'
+  })
+})
+
+test('escape.emitted-token-alphabet-is-prefix-free', () => {
+  const tokens = [...new Set(collectEmittedPopulation().map((codePoint) => toEscaped(String.fromCodePoint(codePoint))))]
+  assert.ok(tokens.length > 0)
+  census(tokens, (token) =>
+    tokens.some((candidate) => candidate !== token && candidate.startsWith(token)) ? 'forbidden' : 'allowed'
+  )
+})
+
+test('escape.unescape-leaves-text-outside-the-emitted-token-alphabet-untouched', () => {
+  assert.equal(unescapeStored('U+0041'), 'U+0041')
+  assert.equal(unescapeStored('U+00AB'), 'U+00AB')
+  assert.equal(unescapeStored('U+ffff'), 'U+ffff')
+  assert.equal(unescapeStored('U+002'), 'U+002')
+  assert.equal(unescapeStored('plain pointer docs/spec.md#L12'), 'plain pointer docs/spec.md#L12')
+})
+
+test('escape.line-break-structure-survives-the-round-trip', () => {
+  const heading = '# Injected\n## Also'
+  assert.equal(escapeStored(heading), 'U+0023 InjectedU+000AU+0023# Also')
+  assert.equal(unescapeStored(escapeStored(heading)), heading)
+  const paragraphs = 'first\n\nsecond\r\nthird'
+  assert.equal(unescapeStored(escapeStored(paragraphs)), paragraphs)
+})
+
+test('escape.leading-space-and-ordered-list-markers-survive-the-round-trip', () => {
+  assert.equal(escapeStored('        x'), '   U+0020   U+0020x')
+  assert.equal(unescapeStored('   U+0020   U+0020x'), '        x')
+  assert.equal(escapeStored('1. x'), '1U+002E x')
+  assert.equal(unescapeStored('1U+002E x'), '1. x')
+  assert.equal(escapeStored('12) y'), '12U+0029 y')
+  assert.equal(unescapeStored('12U+0029 y'), '12) y')
+})
+
+test('escape.a-hex-digit-following-a-token-is-not-absorbed-into-it', () => {
+  assert.equal(escapeStored('\nB'), 'U+000AB')
+  assert.equal(unescapeStored('U+000AB'), '\nB')
+  assert.equal(escapeStored('\u200BF'), 'U+200BF')
+  assert.equal(unescapeStored('U+200BF'), '\u200BF')
+  assert.equal(unescapeStored(escapeStored('\u{E0001}')), '\u{E0001}')
+})
+
+test('escape.round-trip-is-exact-only-outside-the-emitted-token-alphabet', () => {
+  assert.equal(escapeStored('U+000A'), 'U+000A')
+  assert.equal(unescapeStored(escapeStored('U+000A')), '\n')
+  assert.notEqual(unescapeStored(escapeStored('U+000A')), 'U+000A')
+  assert.equal(unescapeStored(escapeStored('U+0041')), 'U+0041')
 })
 
 test('clip.is-grapheme-safe', () => {
