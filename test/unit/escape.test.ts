@@ -88,6 +88,45 @@ test('escape.setext-underline-behind-leading-spaces-cannot-forge-heading', () =>
   assert.equal(SETEXT_H1.test(`${PRECEDING_TEXT_LINE}\n${escaped}`), false)
 })
 
+const LINK_REFERENCE_DEFINITION = /(^|\n) {0,3}\[[^\]\n]+\]:[ \t]*\S+/
+const PRECEDING_SECTION_HEADING = 'Next step'
+const LINK_REFERENCE_LABEL = 'label'
+const LINK_REFERENCE_DESTINATION = 'https://attacker.example'
+
+const inSection = (body: string): string => `${PRECEDING_SECTION_HEADING}\n\n${body}`
+
+test('escape.link-reference-definition-cannot-be-forged', () => {
+  const payload = `[${LINK_REFERENCE_LABEL}]: ${LINK_REFERENCE_DESTINATION}`
+  assert.ok(
+    LINK_REFERENCE_DEFINITION.test(payload),
+    'the raw payload does not forge a link reference definition, so neutralising it would prove nothing'
+  )
+  assert.ok(
+    LINK_REFERENCE_DEFINITION.test(inSection(payload)),
+    'the raw payload does not forge a link reference definition inside a section, so neutralising it would prove nothing'
+  )
+  const escaped = escapeStored(payload)
+  assert.equal(escaped, `U+005B${LINK_REFERENCE_LABEL}]: ${LINK_REFERENCE_DESTINATION}`)
+  assert.equal(LINK_REFERENCE_DEFINITION.test(escaped), false)
+  assert.equal(LINK_REFERENCE_DEFINITION.test(inSection(escaped)), false)
+})
+
+test('escape.link-reference-definition-behind-leading-spaces-cannot-be-forged', () => {
+  const payload = `   [${LINK_REFERENCE_LABEL}]: ${LINK_REFERENCE_DESTINATION}`
+  assert.ok(
+    LINK_REFERENCE_DEFINITION.test(payload),
+    'the raw payload does not forge a link reference definition, so neutralising it would prove nothing'
+  )
+  assert.ok(
+    LINK_REFERENCE_DEFINITION.test(inSection(payload)),
+    'the raw payload does not forge a link reference definition inside a section, so neutralising it would prove nothing'
+  )
+  const escaped = escapeStored(payload)
+  assert.equal(escaped, `   U+005B${LINK_REFERENCE_LABEL}]: ${LINK_REFERENCE_DESTINATION}`)
+  assert.equal(LINK_REFERENCE_DEFINITION.test(escaped), false)
+  assert.equal(LINK_REFERENCE_DEFINITION.test(inSection(escaped)), false)
+})
+
 test('escape.indented-code-block-at-line-start-is-neutralised', () => {
   const input = '    indented code block forged from stored text'
   const escaped = escapeStored(input)
