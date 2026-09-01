@@ -25,11 +25,7 @@ import { amendCriteriaTool } from '../../src/server/tools/amend_criteria.ts'
 import { resumeThreadTool } from '../../src/server/tools/resume_thread.ts'
 import { parkThreadTool } from '../../src/server/tools/park_thread.ts'
 import { listThreadsTool } from '../../src/server/tools/list_threads.ts'
-import {
-  recordDecisionTool,
-  invalidDecisionRefusal,
-  noOpenCriterionRefusal
-} from '../../src/server/tools/record_decision.ts'
+import { recordDecisionTool, invalidDecisionRefusal } from '../../src/server/tools/record_decision.ts'
 import { logSessionEventTool, invalidSessionEntryRefusal } from '../../src/server/tools/log_session_event.ts'
 import { syncLedgerTool } from '../../src/server/tools/sync_ledger.ts'
 import { writeRecords } from '../../src/store/write-path.ts'
@@ -125,7 +121,7 @@ const RECORD_DECISION_OPTION_CAP_PRODUCER: ProducerId = 'server/tools/record_dec
 const RECORD_DECISION_INVALID_PRODUCER: ProducerId = 'server/tools/record_decision.ts#invalidDecisionRefusal'
 const RECORD_DECISION_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/record_decision.ts#commitFailureRefusal'
 const RECORD_DECISION_SCOPE_CAP_PRODUCER: ProducerId = 'server/tools/record_decision.ts#scopeCapRefusal'
-const RECORD_DECISION_NO_OPEN_CRITERION_PRODUCER: ProducerId = 'server/tools/record_decision.ts#noOpenCriterionRefusal'
+const RECORD_DECISION_UNKNOWN_CRITERION_PRODUCER: ProducerId = 'server/tools/record_decision.ts#unknownCriterionRefusal'
 const RECORD_DECISION_HANDLER_PRODUCER: ProducerId = 'server/tools/record_decision.ts#recordDecisionTool.handler'
 
 const LOG_SESSION_EVENT_ACTOR_CAP_PRODUCER: ProducerId = 'server/tools/log_session_event.ts#actorCapRefusal'
@@ -464,7 +460,18 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     })
     if (scopeOverflow.ok) throw new Error('expected recordDecisionTool to refuse a scope that overflows its cap once escaped')
     refusals.push({ producer: RECORD_DECISION_SCOPE_CAP_PRODUCER, refusal: scopeOverflow.refusal })
-    refusals.push({ producer: RECORD_DECISION_NO_OPEN_CRITERION_PRODUCER, refusal: noOpenCriterionRefusal(threadId) })
+    const unknownDecisionCriterion = await recordDecisionTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      title: 'a census title',
+      context: 'a census context',
+      options: ['a census option'],
+      outcome: 'a census outcome',
+      criterion_id: rt.ulid()
+    })
+    if (unknownDecisionCriterion.ok) {
+      throw new Error('expected recordDecisionTool to refuse a criterion_id that names no criterion on this thread')
+    }
+    refusals.push({ producer: RECORD_DECISION_UNKNOWN_CRITERION_PRODUCER, refusal: unknownDecisionCriterion.refusal })
 
     const actorOverflow = await logSessionEventTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,

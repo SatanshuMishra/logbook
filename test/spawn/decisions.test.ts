@@ -341,9 +341,9 @@ test('decision.outcome-body-is-absent-from-both-briefing-surfaces', async () => 
   })
 })
 
-test('decision.scope-derives-to-the-lowest-open-criterion', async () => {
+test('decision.omitted-scope-is-stored-empty', async () => {
   await withSpawnFixture(async (fx) => {
-    const fixture = await openThreadWithCriteria(fx, 'scope-derivation-fixture', [
+    const fixture = await openThreadWithCriteria(fx, 'scope-omission-fixture', [
       'the first criterion',
       'the second criterion',
       'the third criterion'
@@ -357,25 +357,27 @@ test('decision.scope-derives-to-the-lowest-open-criterion', async () => {
       name: 'record_decision',
       arguments: {
         thread_id: fixture.threadId,
-        title: 'a decision with a derived scope',
+        title: 'a decision with no scope supplied',
         context: 'the first criterion is already done',
-        options: ['derive the scope', 'demand an explicit one'],
-        outcome: 'derive it from the lowest criterion still open'
+        options: ['store an empty scope', 'invent one from open criteria'],
+        outcome: 'store an empty scope; nothing is derived'
       }
     })) as CallToolResult
-    assertOkResult('record_decision (derived scope)', recorded)
+    assertOkResult('record_decision (omitted scope)', recorded)
+    const recordedStructured = recorded.structuredContent as { scope: string | null }
+    assert.equal(recordedStructured.scope, null, 'the reply must report an omitted scope as null')
 
     const stored = readStoredThread(fx, fixture.threadId)
     assert.equal(stored.spine.key_decisions.length, 1)
     assert.equal(
       stored.spine.key_decisions[0]?.scope,
-      'criterion 2',
-      'scope must derive to the lowest-ordinal criterion that is neither done nor struck'
+      '',
+      'an omitted scope must be stored as the empty string, never derived from open criteria'
     )
   })
 })
 
-test('decision.scope-uses-an-explicit-value-in-place-of-the-derived-one', async () => {
+test('decision.an-explicit-scope-is-stored-verbatim', async () => {
   await withSpawnFixture(async (fx) => {
     const threadId = await createFixtureThread(fx.spawned, fx.published)
 
@@ -384,47 +386,102 @@ test('decision.scope-uses-an-explicit-value-in-place-of-the-derived-one', async 
       arguments: {
         thread_id: threadId,
         title: 'a decision with an explicit scope',
-        context: 'the caller knows the area better than the derivation does',
-        options: ['use the derived scope', 'send an explicit one'],
+        context: 'the caller knows the area the decision resolved',
+        options: ['send an explicit scope', 'leave it out'],
         outcome: 'send an explicit one',
         scope: 'the merge queue fast path'
       }
     })) as CallToolResult
     assertOkResult('record_decision (explicit scope)', recorded)
+    const recordedStructured = recorded.structuredContent as { scope: string | null }
+    assert.equal(recordedStructured.scope, 'the merge queue fast path', 'the reply must echo the supplied scope')
 
     const stored = readStoredThread(fx, threadId)
     assert.equal(stored.spine.key_decisions.length, 1)
-    assert.equal(
-      stored.spine.key_decisions[0]?.scope,
-      'the merge queue fast path',
-      'an explicit scope must be stored in place of the derived one'
-    )
+    assert.equal(stored.spine.key_decisions[0]?.scope, 'the merge queue fast path', 'an explicit scope must be stored verbatim')
   })
 })
 
-test('decision.refuses-naming-scope-when-no-open-criterion-remains', async () => {
+test('decision.omitting-scope-succeeds-even-when-no-criterion-is-open', async () => {
   await withSpawnFixture(async (fx) => {
-    const fixture = await openThreadWithCriteria(fx, 'scope-refusal-fixture', ['the only criterion'])
+    const fixture = await openThreadWithCriteria(fx, 'scope-no-open-criterion-fixture', ['the only criterion'])
     const only = fixture.criteria[0]
     assert.ok(only !== undefined, 'open_thread must mint the one criterion it was given')
     await markCriterionDone(fx, fixture.threadId, only.id)
 
-    const refused = (await fx.spawned.client.callTool({
+    const recorded = (await fx.spawned.client.callTool({
       name: 'record_decision',
       arguments: {
         thread_id: fixture.threadId,
-        title: 'a decision with nothing to derive a scope from',
-        context: 'every criterion is done',
-        options: ['invent a scope', 'refuse and say so'],
-        outcome: 'refuse and say so'
+        title: 'a decision recorded once every criterion is done',
+        context: 'every criterion is done, and that is legitimate',
+        options: ['refuse for lack of an open criterion', 'succeed with an empty scope'],
+        outcome: 'succeed with an empty scope; a thread-wide decision is legitimate'
       }
     })) as CallToolResult
 
-    assert.equal(refused.isError, true, 'record_decision must refuse when scope cannot be derived')
-    const text = firstTextOf(refused)
-    assert.equal(text.split('\n')[0], 'field: scope')
-    assert.match(text, /is done or struck/)
-    assert.match(text, /the decision was not recorded/)
+    assertOkResult('record_decision (no open criterion, scope omitted)', recorded)
+    const stored = readStoredThread(fx, fixture.threadId)
+    assert.equal(
+      stored.spine.key_decisions[0]?.scope,
+      '',
+      'omitting scope must never be refused for lack of an open criterion'
+    )
+  })
+})
+
+test('decision.criterion_id-is-stored-on-the-key-decision-when-supplied', async () => {
+  await withSpawnFixture(async (fx) => {
+    const fixture = await openThreadWithCriteria(fx, 'criterion-id-anchor-fixture', ['the anchor criterion'])
+    const anchor = fixture.criteria[0]
+    assert.ok(anchor !== undefined, 'open_thread must mint the one criterion it was given')
+
+    const recorded = (await fx.spawned.client.callTool({
+      name: 'record_decision',
+      arguments: {
+        thread_id: fixture.threadId,
+        title: 'a decision anchored to one criterion',
+        context: 'this decision ranks against a single criterion',
+        options: ['anchor it to the criterion', 'leave it unanchored'],
+        outcome: 'anchor it to the criterion',
+        criterion_id: anchor.id
+      }
+    })) as CallToolResult
+    assertOkResult('record_decision (criterion_id supplied)', recorded)
+
+    const stored = readStoredThread(fx, fixture.threadId)
+    assert.equal(stored.spine.key_decisions.length, 1)
+    assert.equal(
+      stored.spine.key_decisions[0]?.criterion_id,
+      anchor.id,
+      'a supplied criterion_id must be stored on the key-decision link'
+    )
+  })
+})
+
+test('decision.criterion_id-is-absent-from-the-key-decision-when-omitted', async () => {
+  await withSpawnFixture(async (fx) => {
+    const threadId = await createFixtureThread(fx.spawned, fx.published)
+
+    const recorded = (await fx.spawned.client.callTool({
+      name: 'record_decision',
+      arguments: {
+        thread_id: threadId,
+        title: 'a decision anchored to nothing in particular',
+        context: 'this decision is not anchored to one criterion',
+        options: ['anchor it', 'leave it unanchored'],
+        outcome: 'leave it unanchored'
+      }
+    })) as CallToolResult
+    assertOkResult('record_decision (criterion_id omitted)', recorded)
+
+    const stored = readStoredThread(fx, threadId)
+    assert.equal(stored.spine.key_decisions.length, 1)
+    assert.equal(
+      stored.spine.key_decisions[0]?.criterion_id,
+      undefined,
+      'an omitted criterion_id must never be invented onto the key-decision link'
+    )
   })
 })
 
