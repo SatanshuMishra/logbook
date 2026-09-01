@@ -1807,3 +1807,280 @@ new code under the previous version number.
 Neither of those is a judgement about whether the number should have moved. That judgement now lives
 in exactly one place per wave — the release pull request — instead of being distributed across every
 unit branch, which is the point of the change.
+
+## OR45 — `U8-A`'s spoofable session boundary is bound to `U8-B` rather than folded back into `U8-A`
+
+`U8-A` made `entry.actor` load-bearing — `previousSessionEntries` segments the session log on `actor`
+equalling `logbook:park_thread`. `log_session_event` accepts `actor` as free text with no
+reserved-prefix check, so two calls collapse an honest three-entry window to one and drop content from
+a teammate's briefing. The security reviewer EXECUTED this, did not argue it. Session entries merge in
+from origin, so any repo contributor can do it. `OR36` says a unit folds in what it introduces, and
+`U8-A` introduced this — but `U8-A`'s pull request 124 was already open, and its body enumerates the
+checks that ran; adding a commit would leave the body describing a tree that no longer exists, and a
+body is never rewritten after creation.
+
+Options rejected: add a commit to `U8-A`'s open branch, which leaves pull request 124's body describing
+a vanished tree; close pull request 124 and reopen `U8-A` with the fix; file it against an unnamed
+future unit as `OR43` did for the label separator.
+
+Ruled: bound to `U8-B`. `U8-B`'s step B4 already imports the park actor as a shared constant, so it is
+the only remaining wave-3 unit touching this boundary, and it is already a proven MAJOR break, so a
+second break costs nothing against the wave's `4.0.0` release. `OR43`'s precedent allows filing with a
+binding rather than folding in; the binding here names a unit shipping IN THIS WAVE rather than an
+unnamed future one. **`U8-B` may not ship without it.**
+
+## OR46 — the forged session boundary is closed at the tool and left open at the ledger, and the structural remedy goes to `architect`
+
+`U8-B` shipped the reserved-actor refusal, closing the `log_session_event` boundary — a closed census
+found exactly three session-entry construction sites, and neither `park_thread` nor `close_thread`
+routes through the tool handler, so no exemption was needed. Security review then found the refusal
+does not reach the other way in. `mergeSession` in `src/merge/field-merge.ts` unions remote session
+entries by id with no field rule, and the only validation a remote entry meets is the length cap on
+`actor`. Anyone who can push to `refs/logbook/ledger` writes the blob by hand and forges the boundary
+with no plugin involved.
+
+Options rejected: fold the merge-side rule into `U8-B`, expanding a shipped unit past its criterion;
+open the structural remedy as its own unit inside wave 3.
+
+Ruled: filed and routed to `architect`. The reviewer's proposed remedy is to stop deriving the boundary
+from a content field at all — have `park_thread` record the boundary entry's id on the thread spine and
+slice from that, so a disagreement surfaces as a conflict a human resolves rather than a silent
+takeover. **That is a design change to how a session is delimited, not a validation to add**, and it
+belongs to a decision rather than to an implementer. The tool-side refusal stands on its own merits and
+is not withdrawn.
+
+## OR47 — `U9-A`'s nine unlisted `Pointer` sites are repaired by authored pairs, and the compiler is the closed census
+
+`U9-A` halted before cutting a branch. Step A-1.1 makes `focus` a required field of `Pointer`, and nine
+`Pointer` literals live in `test/hooks/stop-gate-ledger-presence.test.ts` and
+`test/hooks/post-tool-use-writes-nothing.test.ts`, which no Part A FIND block touches and Part A's
+13-file list does not name. Both import the real domain type, so they are genuine construction sites;
+`tsc` exits 2 with the whole of Part A applied. Both files were created by `U7`, after `U9`'s ground
+truth was reconstructed. This is the fourth unit caught by the live risk that every plan's FIND strings
+for a file another unit edits first were authored against a reconstruction. Separately, step A-0's FIND
+matches zero times because `U8-B` already landed that exact repair.
+
+Options rejected: make `focus` optional on `Pointer`, which contradicts the plan's own round-trip test
+and briefing render; let the implementer choose a value for the nine sites, which is authoring, and the
+plan reserves that to the orchestrator; run a grep census over `Pointer` construction sites as `OR35`
+did for `completion_criteria`.
+
+Ruled: three FIND/REPLACE pairs authored against the base tree at `7f2442e` and verified — pair 1
+matches 7 times, pairs 2 and 3 once each, nine sites in total. The value is the empty array at all nine
+sites, since these are hook tests declaring no focus. Part A's file list becomes 15, and a sixteenth
+file in the test diff is still a stop. **No grep census is required, because `tsc` exit 0 is itself the
+closed census over `Pointer` construction sites** — the compiler enumerates every site that fails, so
+none can hide, and no count is pinned. Step A-0 is skipped as already applied rather than treated as a
+stop.
+
+## OR48 — `U9-B`'s pointer write is fixed on its own branch rather than filed, because the plan asserts the invariant it breaks; and `OR34`'s consolidated table does not contain the merge it produced
+
+Review found `update_thread` writes the session pointer inside `resolveFocusOutcome`, which the handler
+calls BEFORE `contributeToSpine` and `commitThread`, both of which can still refuse. A refused call
+therefore leaves the pointer carrying new focus while the caller is told nothing was written, and
+`focus_written` cannot report it because a refusal returns no structured output. Two reachable paths
+were named: a thread at the key-decisions element cap taking one more addition, and a record crossing
+the serialised byte cap. `U9`'s plan states the opposite at line 1491 — a call that would otherwise be
+refused writes neither the thread record nor the pointer.
+
+Options rejected: file it above the ceiling as `U8-A`'s introduced defects were filed; fold it into
+`U9-C`, the next unit in the stack.
+
+Ruled: fixed on `U9-B`'s own branch. **This is not a finding above the acceptance ceiling; it is the
+plan's own stated invariant going unmet**, so the unit does not meet its plan until it is closed. The
+repair splits `resolveFocusOutcome` into a decide half that only reads and an apply half that only
+writes, with apply called on the two paths that return ok and nowhere else; every early return keeps
+its outcome and reason verbatim. Pull request 127's body already discloses the defect as a risk and
+cannot be edited after creation, so it over-discloses once fixed — the safe direction, accepted rather
+than corrected.
+
+**This repair merged as pull request 132, a wave-3 merge that `OR34`'s consolidated 27-row ladder table
+(this file, lines 1173-1202) does not contain.** That table lists `U8-A`, `U8-B`, `U9-A` through `U9-F`
+and `U10` as rows 19-27; there is no row for the follow-on fix branch `fix/u9b-unreadable-pointer`.
+**The consolidated table is therefore incomplete as a record of what wave 3 merged, and that is stated
+here rather than by editing the table** — `OR0` and `OR9` forbid editing a plan document, and `OR34` is
+a ruling every plan reads. Anyone counting wave 3's merges from `OR34` alone undercounts by one.
+
+## OR49 — the unguarded pointer read is promoted from filed to fixed, because a probe showed it discards the rest of the call
+
+The ordering-fix lead was told to leave the unguarded `readPointer` and `durableWrite` throws filed as
+a separate error-handling concern. Security review then reproduced it twice — in process and end to end
+through a spawned server. With `state/active-thread.json` replaced by a directory, `update_thread`
+carrying `thread_id`, `focus` and `next_step` throws `EISDIR`, the wrapper converts it to a generic
+failure, and the `next_step` in the same call is never committed. **The identical call without `focus`
+succeeds.** So adding this unit's own argument is what converts a recoverable filesystem fault into
+total loss of the call's other work, which makes it a regression `U9-B` introduced rather than a
+pre-existing gap.
+
+Options rejected: leave it filed as originally ruled, since it is error handling rather than the
+invariant the plan states; route it to `architect` with the pointer-ownership race.
+
+Ruled: fixed on `U9-B`'s branch. The earlier filing was made without the probe; with it, the finding is
+an EXECUTED regression this unit introduced, and `OR36` applies. The repair is a catch around the
+pointer read mapping a read failure to its own `focus_not_written_reason`, mirroring how a corrupt
+pointer is already handled, so the thread write proceeds. Scoped to that alone. The
+corrupt-reported-as-absent conflation stays filed because a plan-authored test pins it, and the
+read-check-write race on the pointer joins the session-boundary question already routed to
+`architect`.
+
+## OR50 — a second rebase orphaned a stacked tip, `OR40` has now been violated twice, and pull request 127 merged without the guard fix on it
+
+Two things happened together while two units ran in parallel. Pull request 127 merged at 07:00:47Z with
+head `89dd5d7`, which carries the pointer-ordering fix but NOT the unguarded-pointer-read guard being
+written onto the same branch at that moment; the branch was deleted on merge, so the guard commit has
+no home. Separately, `U9-C`'s branch was force-updated from `d275a1d` to `cc94bba`, reparented directly
+onto the new `main`. The trees are identical and the patch-ids match, so only the parent moved — but
+`d275a1d` became unreachable from origin and `U9-D`'s commit hung off an orphan. A pull request opened
+from it would have claimed `U9-C`'s own 299-line file as `U9-D`'s work, because the merge-base falls
+back to `89dd5d7`. Repository settings show `allow_update_branch` false, so GitHub's own update button
+was not available and the force-update came from elsewhere.
+
+Options rejected: rebase `U9-D` onto the new `U9-C` tip, which is what `OR40` forbids and what caused
+this; abandon `U9-D`'s commit and re-run the unit against the new tip.
+
+Ruled: merge, never rebase, as `OR40` already ruled and as this repository has done three times before.
+The four-file diff against the new `U9-C` tip is the acceptance check, and a fifth file means the
+merge-base is still wrong and halts the recovery.
+
+**`OR40`'s no-rebase rule has now been violated twice across two waves while stated only as an
+instruction, so it is not enforceable by being written down.** A stacked branch needs protection that
+does not depend on anyone reading the rule. Merging a parent while a child agent is mid-flight on the
+same branch is the second half of the same problem, and the wave has been serialising for exactly that
+reason. Also record that pull request 127 merged carrying the ordering fix but not the guard, so the
+guard reached `main` by a separate route rather than on the pull request whose body describes it.
+
+## OR51 — two of `U9-E`'s four census weaknesses are fixed before merge and two are filed, split on whether the census can prove its own guarantee
+
+`U9-E`'s census population is genuinely closed — 28 recipes across 7 tools derived from the live
+schemas, no pinned count and no allowlist, confirmed independently against the schemas. But review
+found seven of the 28 produce no observable landing site, so they assert nothing, and the two controls
+that prove the census halts use a bare throws assertion with no matcher. The reviewer swapped the
+classifier's two branches and both controls still passed, so they cannot distinguish a forbidden
+verdict from an unclassifiable one, which are opposite meanings. Separately, the `amend_criteria`
+fixture is refused by the live schema and skipped in silence, inerting four of the seven.
+
+Options rejected: ship as filed, since the gap is disclosed in the body and sits above the declared
+ceiling; fold all four in, expanding a unit already at 2.2 times the review ceiling.
+
+Ruled: split. The control matchers and the `amend_criteria` fixture are fixed on `U9-E`'s branch before
+merge — the first is the proof of the halting property the whole census rests on, and the second is an
+`OR41`-class stale fixture whose repair is mechanical and un-inerts four of the seven gaps. Filed
+instead: the `list_threads` cursor recipe, which needs a fixture holding more threads than a page, and
+the classifier accepting a refusal as proof of absence without inspecting it. Both are design changes
+deserving their own scrutiny rather than a fold-in. **A green census that a quarter of cannot fail is
+the exact automation-bias failure this series exists to prevent**, which is why the first two are not
+deferred.
+
+## OR52 — `U9-F` is a regression at low link counts, the opposite of what its plan predicted, and it ships anyway on correctness
+
+The plan (and `OR34`'s own paragraph on `B39`) quoted roughly 85 microseconds saved at 200 links, 2 to
+3.5 percent, and called 10 and 40 links noise. Re-measured on the real tree across three runs with zero
+variation in the structural claim: files opened go 10 to 8, 40 to 34, 200 to 170.
+
+| Links | Files opened, before | Files opened, after | Timing change |
+| --- | --- | --- | --- |
+| 10 | 10 | 8 | ~3 microseconds SLOWER |
+| 40 | 40 | 34 | not separately quoted; direction improves toward 200 |
+| 200 | 200 | 170 | 119-126 microseconds faster, 4.6-4.9 percent |
+
+**The timing differs at every size.** At 200 links the saving is 119 to 126 microseconds, 4.6 to 4.9
+percent — about 45 percent larger than claimed. At 10 links the change is about 3 microseconds SLOWER,
+the same sign in all three runs and all 750 paired repetitions with disjoint minimum ranges, because
+one directory read costs more than the two failing opens it saves. Ten links is the common case, since
+most threads carry few key decisions.
+
+Options rejected: withdraw the unit, since a perf-typed change that regresses the common case is
+mislabelled; reopen it to make the directory read conditional on link count, which is authoring past
+the plan.
+
+Ruled: ships. The plan's own framing is that `D15` is a correctness defect — reading and discarding
+whole records to print one number — and that the speed was never the point. Three microseconds at ten
+links is not a user-visible regression and does not overturn that. The pull request body carries the
+measurement as not run, which was true when written and is conservative rather than false, and a body
+cannot be edited after creation, so **the regression is recorded here instead of being posted to the
+pull request unasked**. Two things stay unmeasured and are not claimed: how the directory read scales
+with total store size rather than per-thread links, which would deepen the low-link regression; and
+what fraction of a real resumption these microseconds represent.
+
+## OR53 — wave 3 releases `4.0.0` over its eight merged units, and `U10` is excluded
+
+`OR44` sets wave 3's release at `4.0.0` and puts it after the wave's last unit merges. `OR34` row 27 is
+`U10`, so read literally the release waits on `U10`. `U10` is gated on thread
+`01M130YJYH0X1HBKPWM17FAPNQ` criteria 1 to 3, all open and none landed on `main`: no underscore in
+`MARKDOWN_LEADING_CHARS`, no unconditional angle-bracket escape, no `unescapeStored` in the tree. That
+is unscheduled work on another thread. Meanwhile **`U8-B`'s proven `park_thread` break is already
+merged and published as `3.4.0`, so a breaking contract change is live under a minor version.**
+
+Options rejected: hold `4.0.0` until `U10` merges, per a literal reading of `OR34` row 27; release
+`U10`'s content early without its blocking thread, censusing an escape set about to move.
+
+Ruled: release `4.0.0` now, covering `U8-A`, `U8-B`, `U9-A` through `U9-F` and pull request 132.
+Holding the release leaves a published break mislabelled as a minor for an unbounded time, since the
+gate is another thread's unscheduled work. **`OR1` placed `U10` in wave 4 in the first place, so
+excluding it restores the original wave boundary rather than inventing one.** `U10` is non-breaking, so
+it takes a minor or patch of its own later and forfeits nothing by shipping apart.
+
+## OR54 — four standing instructions binding on every remaining plan and every agent that executes one
+
+Each of these was found during wave-3 execution and each binds work not yet done. Recording them only
+on a thread record nobody reads mid-implementation would not reach the agent that needs them, so they
+are recorded here instead.
+
+### The FIND-block check matches the whole block, never a first line
+
+`U8-derived-last-session.md:2435` is `### 11.7 A FIND string does not match`. Its check, at `:2441`, is
+`grep -c -F -- '<line>' <file>`, applied to THE FIRST LINE of the FIND block, expecting exactly `1`.
+
+Uniqueness of a first line is not uniqueness of a block. A FIND block that opens on a recurring line —
+a bare `})`, a repeated field declaration — returns a count above 1 and halts a correct edit. It fired
+falsely against `U8-B` twice.
+
+Ruled: **match the ENTIRE multi-line FIND text and require exactly one occurrence.** Same halt
+semantics — zero means the tree is not the tree the plan was authored against, more than one means the
+site is ambiguous — over the correct population.
+
+The plan itself already concedes the defect without naming it: `U8-derived-last-session.md:2449-2451`
+carves out two edits whose first line begins with whitespace (`  criterionResult: number` and
+`  spine_fields_updated: z`). A check needing per-edit exceptions to its own population is the symptom.
+
+**RULE IT BY MECHANISM, NOT BY THE STRING "11.7".** The section is numbered differently in sibling
+plans. Any stop condition checking a FIND block by a single representative line is corrected the same
+way, whatever its number.
+
+Four sibling plans were checked, not assumed to share the defect uniformly:
+
+| Plan | Section | Check as written | Needs the correction |
+| --- | --- | --- | --- |
+| `U2-store-cost-and-safety-a.md:1237` | `### 11.2 A FIND string does not match exactly once` | anchored whole-line greps (`grep -c "^<one exact line>$" <file>`), one representative line per FIND block | yes, same defect class |
+| `U2-store-cost-and-safety-b.md:874` | `### 11.3 A FIND string does not match exactly once` | same anchored single-line form as `U2-A` | yes, same defect class |
+| `U5-briefing-hides-nothing.md:5062` | `### 11.5 A FIND string does not match` | carries NO command at all; prose instructing the implementer that every FIND block was checked to occur exactly once, and to stop if one does not match | no, its intent is already whole-block |
+| `U8-derived-last-session.md:2435` | `### 11.7 A FIND string does not match` | `grep -c -F` first-line form described above | yes, this is the only plan in the directory containing a `grep -c -F` invocation |
+
+`U9-declared-focus.md` and `U10-write-fidelity.md` contain no section matching
+`### 11.N A FIND string does not match`.
+
+### Every remaining plan's `pr-create` block is rejected as written
+
+The centralized tool requires each `what`, `why` and `risk` value to start with an uppercase letter and
+end in terminal punctuation. All twelve remaining blocks supply lowercase values with no terminal
+punctuation, so every one is rejected. Capitalising a value that begins with a lowercase identifier
+mangles the identifier, and a body cannot be edited after creation. Ruled: rephrase each value so it
+does not begin with an identifier, rather than capitalising what is there.
+
+### Every remaining plan's separate red-on-parent commit is refused by the pre-commit hook
+
+Every remaining plan specifies a separate commit carrying only the red test.
+`scripts/pre-commit-typecheck.sh` refuses it by construction, because a test-only commit fails the
+typecheck. Bypassing the hook is not authorised. Ruled: measure the red as a receipt, keep the slice
+staged, and ship one commit. State the cost honestly — the red-on-parent is then a receipt an agent
+reports rather than a commit anyone can re-run, which is weaker, and the hook is the reason.
+
+### `docs/rules/continuity-ledger.md` understated the session pointer, and no unit owned the file
+
+`docs/rules/continuity-ledger.md:89` listed the session pointer as carrying `pointer.thread_id`,
+`pointer.written_at` and `pointer.session_id` exhaustively, which `U9-A`'s required `focus` field
+falsifies. No wave-3 unit owns that file, and the continuity-rule census classifies tool names only, so
+nothing caught it. The same text is installed as a global rule outside this repository, so the
+correction lands in two places. Ruled: corrected in this same change, and the general lesson recorded —
+**a rule document describing a schema is not covered by any census that enumerates tool names, and a
+unit that changes a record's shape owns the prose describing that shape.**

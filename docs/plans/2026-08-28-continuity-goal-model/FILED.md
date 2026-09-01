@@ -887,3 +887,38 @@ Appends only. Never edit an item another planner wrote.
 - **Evidence:** the trigger was injected into five dispatches across the two blocks, including a branch cut and a version bump. Every agent refused it and said so, and every pull request in wave 2 was opened only by the centralized `pr-create` tool.
 - **Why it is above the ceiling:** it is harness behaviour outside the tree entirely. Recorded because it means the explicit refusal clause belongs in every work order, not only in the ones that end in a release.
 - **Not folded in.**
+
+## F9e — the `list_threads` cursor recipe contributes no assertion
+
+- **Surfaced by:** U9-E code review
+- **Evidence:** `U9-E`'s optional-argument census holds 28 recipes across 7 tools, derived from the live schemas. The `list_threads.cursor` recipe produces no differing landing site between the supplied and omitted runs, so it asserts nothing; proving it needs a fixture holding more threads than one page.
+- **Why it is above the ceiling:** it is a fixture design change, not a repair to the census's population, and `U9-E` was already at 2.2 times the review line ceiling. Disclosed in pull request 131.
+- **Not folded in.**
+
+## F9f — the census classifier accepts a refusal as proof of absence without inspecting it
+
+- **Surfaced by:** U9-E code review
+- **Evidence:** four `amend_criteria` arguments have their omitted run refused by the live schema, and the classifier discards the refusal rather than reading it, so a refusal for any reason counts as the argument having no effect.
+- **Why it is above the ceiling:** distinguishing an expected refusal from an unrelated one is classifier design, deserving its own scrutiny rather than a fold-in; `OR51` ruled the split.
+- **Not folded in.**
+
+## F9g — seven of the optional-argument census's 28 recipes contribute no assertion
+
+- **Surfaced by:** U9-E code review
+- **Evidence:** four `amend_criteria` arguments whose omitted run is refused and whose refusal is discarded, plus `amend_criteria.position`, `park_thread.thread_id` and `list_threads.cursor`, which produce no differing landing site. The population is closed and the controls now prove which condition fired, but a quarter of the census cannot fail.
+- **Why it is above the ceiling:** closing it needs both the classifier change (`F9f`) and the fixtures (`F9e`); it needs its own unit. Disclosed in pull request 131.
+- **Not folded in.**
+
+## F9h — the resolved counter's cost now scales with total store size, and that is unmeasured
+
+- **Surfaced by:** U9-F implementation and measurement
+- **Evidence:** the change trades failing opens for one directory read, so its cost scales with how many decisions the WHOLE store holds rather than how many one thread links. In a large store the fixed overhead grows while the per-link saving does not, which would deepen the measured 3-microsecond regression at 10 links and could erode the saving at 40. Measured: files opened 10 to 8, 40 to 34, 200 to 170; timing 3 microseconds slower at 10 links, 119-126 microseconds faster at 200.
+- **Why it is above the ceiling:** `U9-F`'s criteria concern the counter's correctness, not its scaling; measuring it needs a store fixture sized deliberately, which no criterion asks for. `OR52` ruled the unit ships.
+- **Not folded in.**
+
+## F9i — criterion 25's `park_thread` refusal is satisfied by a schema property with no test asserting it
+
+- **Surfaced by:** wave 3 close-out review
+- **Evidence:** criterion 25's clause "`park_thread` refuses the field" holds only because `ParkThreadInputSchema` is a `z.strictObject` at `src/server/tools/park_thread.ts:22`, which reads `const ParkThreadInputSchema = z.strictObject({`. No test asserts the `last_session` refusal, so loosening the schema to a non-strict object later would drop the behaviour silently and no check would notice.
+- **Why it is above the ceiling:** the criterion is marked done on the observed behaviour and the behaviour is genuinely present; what is missing is the receipt, and adding it is a test no wave-3 unit's criteria cover. The behaviour is satisfied; the receipt is owed.
+- **Not folded in.**
