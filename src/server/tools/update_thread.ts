@@ -264,7 +264,7 @@ const decideFocusOutcome = (rt: Runtime, threadId: string, focusIds: Ulid[] | un
   try {
     pointerRead = readPointer(rt, layout.value)
   } catch (error) {
-    rt.log({ level: 'error', event: 'focus.pointer-unreadable', code: errnoCode(error) })
+    rt.log({ level: 'error', event: 'focus.pointer-unreadable', code: errnoCode(error), detail: (error as Error).message })
     return { ok: true, value: { outcome: { written: false, reason: UNREADABLE_POINTER_FOCUS_REASON }, pending: null } }
   }
   if (pointerRead.kind !== 'pointer') {
