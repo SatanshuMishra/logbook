@@ -548,29 +548,60 @@ test('park.refreshes-the-spine', async () => {
     await callResume(fx.spawned, fx.published, threadId)
 
     const suppliedOutcome = 'wrapped up the spine refresh assertions for this session'
-    const suppliedLastSession = 'confirmed the park call updates last_session and next_step only'
     const suppliedNextStep = 'verify the remaining spine fields stay untouched'
 
     const parked = await callPark(fx.spawned, fx.published, {
       thread_id: threadId,
       outcome: suppliedOutcome,
-      last_session: suppliedLastSession,
       next_step: suppliedNextStep
     })
     assertOkResult('park_thread (refreshes-the-spine)', parked)
     const structured = parked.structuredContent as { spine_fields_updated: string[] }
-    assert.deepEqual(structured.spine_fields_updated, ['last_session', 'next_step'])
+    assert.deepEqual(structured.spine_fields_updated, ['next_step'])
 
     const after = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
-    assert.equal(after.spine.last_session, escapeStored(suppliedLastSession))
     assert.equal(after.spine.next_step, escapeStored(suppliedNextStep))
-    assert.equal(after.spine.active_goal, before.spine.active_goal, 'active_goal must be byte-identical when only last_session and next_step were supplied')
+    assert.equal(after.spine.last_session, before.spine.last_session, 'last_session must be byte-identical; park_thread no longer writes it')
+    assert.equal(after.spine.active_goal, before.spine.active_goal, 'active_goal must be byte-identical when only next_step was supplied')
     assert.deepEqual(after.spine.open_risks, before.spine.open_risks, 'open_risks must be untouched by a park call that supplied no risk contribution')
     assert.deepEqual(after.spine.key_decisions, before.spine.key_decisions, 'key_decisions must be untouched by a park call that supplied no decision contribution')
     assert.deepEqual(after.spine.out_of_scope, before.spine.out_of_scope, 'out_of_scope must be untouched by a park call that supplied no out-of-scope contribution')
   })
 })
 
+test('park.refuses-a-last-session-argument', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+    await callResume(fx.spawned, fx.published, threadId)
+
+    const parkSchema = schemaFor(fx.published, 'park_thread')
+    const properties = (parkSchema as { properties?: Record<string, unknown> }).properties ?? {}
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(properties, 'last_session'),
+      false,
+      'park_thread must no longer publish a last_session argument'
+    )
+
+    const result = (await fx.spawned.client.callTool({
+      name: 'park_thread',
+      arguments: { thread_id: threadId, outcome: 'this call supplies a field the tool no longer accepts', last_session: 'a hand-written summary' }
+    })) as CallToolResult
+    assert.equal(result.isError, true, 'park_thread must refuse a call carrying last_session')
+    assert.match(JSON.stringify(result.content), /last_session/, 'the refusal must name the field that was wrong')
+
+    const after = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
+    assert.equal(after.spine.last_session, '', 'a refused park call must write nothing')
+
+    const outputSchema = outputSchemaFor(fx.outputSchemas, 'park_thread')
+    const outputProperties = outputSchema.properties as Record<string, unknown>
+    const updated = outputProperties.spine_fields_updated as { items?: { enum?: unknown } }
+    assert.deepEqual(
+      updated.items?.enum,
+      ['next_step'],
+      'park_thread must publish next_step as the only spine field its reply can report'
+    )
+  })
+})
 test('resume.last-session-renders-the-previous-sessions-entries-newest-first', async () => {
   await withFixture(async (fx) => {
     const { threadId } = await createFixtureThread(fx.spawned, fx.published)

@@ -31,11 +31,6 @@ const ParkThreadInputSchema = z.strictObject({
   thread_id: ulidField(
     'the id of the thread being worked; omit it and the machine resolves it from what is currently marked as being worked'
   ).optional(),
-  last_session: z
-    .string()
-    .max(caps.SPINE_LAST_SESSION_MAX)
-    .optional()
-    .describe('replaces the spine last_session field when supplied; omit to leave it unchanged'),
   next_step: z
     .string()
     .max(caps.SPINE_NEXT_STEP_MAX)
@@ -61,7 +56,7 @@ const ParkThreadOutputSchema = z.object({
     .array(z.string())
     .describe('the id of the session log entry this call wrote, empty when none was written'),
   spine_fields_updated: z
-    .array(z.enum(['last_session', 'next_step']))
+    .array(z.enum(['next_step']))
     .describe('which spine fields this call changed'),
   pointer_released: z
     .boolean()
@@ -251,13 +246,9 @@ const parkResolvedThread = (
   }
 
   const spineContribution: SpineContribution = {
-    ...(input.last_session !== undefined ? { last_session: input.last_session } : {}),
     ...(input.next_step !== undefined ? { next_step: input.next_step } : {})
   }
-  const spineFieldsUpdated: ('last_session' | 'next_step')[] = [
-    ...(input.last_session !== undefined ? (['last_session'] as const) : []),
-    ...(input.next_step !== undefined ? (['next_step'] as const) : [])
-  ]
+  const spineFieldsUpdated: 'next_step'[] = [...(input.next_step !== undefined ? (['next_step'] as const) : [])]
 
   const contributed = contributeToSpine(thread.spine, spineContribution)
   if (!contributed.ok) {
@@ -321,7 +312,7 @@ export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
   name: 'park_thread',
   title: 'Park thread',
   description:
-    'Ends work on the thread being worked right now, in a single call: it writes the session log entry, refreshes the last_session and next_step fields, and releases the record of what is being worked. Send the outcome as text plus either of those two fields; the thread id is optional because the machine already knows which thread is being worked. Omit the outcome to release the record of what is being worked without writing a session log entry. The thread stays open, parking is not closing, and a parked thread appears in the next roster.',
+    'Ends work on the thread being worked right now, in a single call: it writes the session log entry, refreshes the next_step field, and releases the record of what is being worked. The last_session field is no longer accepted here; it is derived from the session log. Send the outcome as text plus the next step; the thread id is optional because the machine already knows which thread is being worked. Omit the outcome to release the record of what is being worked without writing a session log entry. The thread stays open, parking is not closing, and a parked thread appears in the next roster.',
   input: ParkThreadInputSchema,
   output: ParkThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },

@@ -114,9 +114,10 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
     { phrase: 'Takes one thread id', providers: ['resume_thread.thread_id'] }
   ],
   park_thread: [
+    { phrase: 'refreshes the next_step field', providers: ['park_thread.next_step'] },
     {
-      phrase: 'refreshes the last_session and next_step fields',
-      providers: ['park_thread.last_session', 'park_thread.next_step']
+      phrase: 'The last_session field is no longer accepted here; it is derived from the session log.',
+      providers: []
     },
     { phrase: 'Send the outcome as text', providers: ['park_thread.outcome'] },
     { phrase: 'the thread id is optional', providers: ['park_thread.thread_id'] }
