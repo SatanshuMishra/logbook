@@ -143,6 +143,11 @@ const mustBeString = (value: unknown, what: string): string => {
   return value
 }
 
+const mustBeStringArray = (value: unknown, what: string): string[] => {
+  if (!Array.isArray(value)) throw new Error(`optional-argument-recipes: expected ${what} to be an array`)
+  return value.map((entry, index) => mustBeString(entry, `${what}[${index}]`))
+}
+
 type AnyTool = { handler: (rt: Runtime, ctx: ToolContext, input: any) => Promise<ToolReply<Record<string, unknown>>> }
 
 const runOptionalArgRecipe = async <C>(
@@ -704,7 +709,16 @@ export const TEST_2_CASES: Test2Case[] = [
     tool: 'amend_criteria',
     handler: amendCriteriaTool,
     setup: openAmendCriteriaFixture,
-    minimalArgs: (ctx) => ({ thread_id: ctx.threadId, operation: 'strike', decision_id: ctx.decisionId }),
+    minimalArgs: (ctx) => ({
+      thread_id: ctx.threadId,
+      operation: 'strike',
+      decision_id: ctx.decisionId,
+      criterion_id: mustGet(
+        mustBeStringArray(ctx.criterionIds, 'the test-2 amend_criteria fixture criterion ids'),
+        0,
+        'the first test-2 amend_criteria fixture criterion id'
+      )
+    }),
     attributable: () => ({})
   },
   {

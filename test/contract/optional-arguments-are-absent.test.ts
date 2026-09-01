@@ -125,7 +125,7 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.contro
   )
 })
 
-test('contract.optional-arguments-are-absent.the-response-reports-it-absent', async () => {
+test('contract.optional-arguments-are-absent.the-response-reports-it-absent', async (t) => {
   const population = derivePopulation()
   const toolsWithOptionalArguments = new Set(population.map((path) => path.split('.')[0]))
   const cases = TEST_2_CASES.filter((testCase) => toolsWithOptionalArguments.has(testCase.tool))
@@ -138,7 +138,12 @@ test('contract.optional-arguments-are-absent.the-response-reports-it-absent', as
     const fixture = await withSingleFixture(testCase.setup)
     try {
       const result = await testCase.handler.handler(fixture.rt, {} as never, testCase.minimalArgs(fixture.ctx))
-      if (!result.ok) continue
+      if (!result.ok) {
+        t.diagnostic(
+          `${testCase.tool}: the minimal-args run was refused (${result.refusal.field}): ${result.refusal.message}`
+        )
+        continue
+      }
       const attributable = testCase.attributable(result.structured)
       for (const [field, value] of Object.entries(attributable)) {
         assert.ok(
