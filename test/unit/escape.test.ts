@@ -60,6 +60,34 @@ test('escape.marker-behind-leading-spaces-is-tokenised', () => {
   assert.equal(/(^|\n) *#{1,6}\s/.test(escaped), false)
 })
 
+const SETEXT_UNDERLINE_LINE = /(^|\n) {0,3}=+[ \t]*(\n|$)/
+const SETEXT_H1 = /(^|\n)[^\n]+\n {0,3}=+[ \t]*(\n|$)/
+const PRECEDING_TEXT_LINE = 'Next step'
+
+test('escape.setext-underline-cannot-forge-heading', () => {
+  const payload = '==='
+  assert.ok(
+    SETEXT_H1.test(`${PRECEDING_TEXT_LINE}\n${payload}`),
+    'the raw payload does not forge a setext heading, so neutralising it would prove nothing'
+  )
+  const escaped = escapeStored(payload)
+  assert.equal(escaped, 'U+003D==')
+  assert.equal(SETEXT_UNDERLINE_LINE.test(escaped), false)
+  assert.equal(SETEXT_H1.test(`${PRECEDING_TEXT_LINE}\n${escaped}`), false)
+})
+
+test('escape.setext-underline-behind-leading-spaces-cannot-forge-heading', () => {
+  const payload = '   ==='
+  assert.ok(
+    SETEXT_H1.test(`${PRECEDING_TEXT_LINE}\n${payload}`),
+    'the raw payload does not forge a setext heading, so neutralising it would prove nothing'
+  )
+  const escaped = escapeStored(payload)
+  assert.equal(escaped, '   U+003D==')
+  assert.equal(SETEXT_UNDERLINE_LINE.test(escaped), false)
+  assert.equal(SETEXT_H1.test(`${PRECEDING_TEXT_LINE}\n${escaped}`), false)
+})
+
 test('escape.indented-code-block-at-line-start-is-neutralised', () => {
   const input = '    indented code block forged from stored text'
   const escaped = escapeStored(input)
