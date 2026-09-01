@@ -9,6 +9,11 @@ refuses instead of parking when the thread it would write to is gone, terminal, 
 held by another session; the refusal says the outcome text was not stored and has to be re-sent.
 Omit outcome and park_thread only releases the record of what is being worked.
 
+Any agent holding a thread id records against it, a subagent included, and recording at the
+subagent boundary is preferred to carrying the material back. The split is by content: a
+subagent records what it established, and a selection between live options is recorded by
+whoever selected.
+
 Identifiers are ULIDs: 26 characters, Crockford base32, for example
 01M0NDPM0ACCR9CD68PMHYWGGD. Do not compose one. Take a thread id from list_threads or from the
 logbook://roster resource, and a decision id from the tool result that created it.
