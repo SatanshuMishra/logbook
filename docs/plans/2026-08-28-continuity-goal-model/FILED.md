@@ -971,3 +971,32 @@ Appends only. Never edit an item another planner wrote.
   classifier, which is also its own unit. Recording the exposure is the honest status; adding either
   mechanism here would be a build change riding inside a test confirmation.
 - **Not folded in.**
+
+## F10h — the reproduction models a pre-merge `escape.ts`, and `main` has since widened the leading-character set it copies
+
+- **Surfaced by:** U10 list-prefix headroom confirmation, pre-merge base check
+- **Evidence:** this unit's branch was cut from `464defcb917cfa5d8d5c8d95fa84794ab5ff230e`.
+  `origin/main` has since advanced to `0afb9fc574882d80cdbec25cd73c62e8e1d70865`, and
+  `git diff 464defcb origin/main -- src/render/escape.ts` shows `MARKDOWN_LEADING_CHARS` growing from
+  `['#', '-', '*', '+', '>', '`', '~', '_']` to that same set plus `'='`, alongside three newly
+  exported symbols `isEmittedEscape`, `toEscaped` and `unescapeStored`, and a new `unescapeStored`
+  implementation. `MARKDOWN_INDENT_THRESHOLD` is unchanged at `4` in both revisions, so this unit's
+  verdict — that four is the maximum safe leading-space threshold — is unaffected. The gap is in the
+  test's anti-drift guard: `test/support/escape-indent-reproduction.ts:7` carries a copy of the
+  pre-merge eight-character set, and the population's leading-character payloads are derived from
+  that copy, so no population member begins with `=`. The byte-identity pin between the reproduction
+  and the real `escapeStored` at threshold 4 therefore stays green after a merge while the
+  reproduction no longer models the real module for that one character. A `git merge-tree` against
+  `origin/main` reports exactly one conflict, in `FILED.md` itself, and no conflict in any source or
+  test file.
+- **Why it is above the ceiling:** this unit's criterion concerns the leading-space threshold, which
+  `main` did not change, and the unit was explicitly forbidden from touching `src/render/escape.ts`
+  because two other lanes held it concurrently. The reproduction cannot simply gain `=` on this
+  branch: the real `escapeStored` at this branch's base does not escape it, so adding it here would
+  turn the pin red for the wrong reason and for a behaviour that does not exist at this commit.
+  Closing the gap properly means one of two redesigns of the test's core mechanism — deriving the
+  leading-character alphabet behaviourally by probing the real `escapeStored` instead of copying a
+  set, or splicing the real module's own output for everything outside the leading-space region so
+  the reproduction varies nothing but the threshold. Either is its own unit, and neither can be done
+  from a base that predates the change it must accommodate.
+- **Not folded in.**
