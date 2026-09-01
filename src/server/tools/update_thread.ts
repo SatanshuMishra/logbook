@@ -8,8 +8,9 @@ import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
 import { layoutFor, type StoreLayout } from '../../store/layout.ts'
-import { readPointer, writePointer, type Pointer } from '../../domain/pointer.ts'
+import { readPointer, writePointer, type Pointer, type PointerRead } from '../../domain/pointer.ts'
 import { commitThread, loadThread, openProjectStore, type Attempt } from '../tool-support.ts'
+import { errnoCode } from '../../store/detail.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 const optionalUlidField = (description: string) => z.string().regex(ULID_PATTERN).optional().describe(description)
@@ -248,6 +249,8 @@ export const DIFFERENT_THREAD_FOCUS_REASON =
   "the thread marked as being worked is a different thread, so this thread's focus was not set"
 export const OTHER_SESSION_FOCUS_REASON =
   'another session holds the record of what is being worked, so this session did not overwrite its focus'
+export const UNREADABLE_POINTER_FOCUS_REASON =
+  "the record of what is being worked could not be read, so this session's focus was not set"
 
 type FocusPlan = { outcome: FocusOutcome; pending: { layout: StoreLayout; next: Pointer } | null }
 
@@ -257,7 +260,13 @@ const decideFocusOutcome = (rt: Runtime, threadId: string, focusIds: Ulid[] | un
   const layout = layoutFor(rt, rt.cwd)
   if (!layout.ok) return { ok: false, refusal: layout }
 
-  const pointerRead = readPointer(rt, layout.value)
+  let pointerRead: PointerRead
+  try {
+    pointerRead = readPointer(rt, layout.value)
+  } catch (error) {
+    rt.log({ level: 'error', event: 'focus.pointer-unreadable', code: errnoCode(error), detail: (error as Error).message })
+    return { ok: true, value: { outcome: { written: false, reason: UNREADABLE_POINTER_FOCUS_REASON }, pending: null } }
+  }
   if (pointerRead.kind !== 'pointer') {
     return { ok: true, value: { outcome: { written: false, reason: NO_WORKED_THREAD_FOCUS_REASON }, pending: null } }
   }

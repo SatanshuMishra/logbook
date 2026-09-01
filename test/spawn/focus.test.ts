@@ -20,6 +20,8 @@ const DIFFERENT_THREAD_FOCUS_REASON =
   "the thread marked as being worked is a different thread, so this thread's focus was not set"
 const OTHER_SESSION_FOCUS_REASON =
   'another session holds the record of what is being worked, so this session did not overwrite its focus'
+const UNREADABLE_POINTER_FOCUS_REASON =
+  "the record of what is being worked could not be read, so this session's focus was not set"
 
 const runSetupStep = (repo: string, args: string[]): void => {
   const result = rawGit(repo, args)
@@ -214,6 +216,37 @@ test('update_thread.reports-focus-not-written-when-the-pointer-file-is-corrupt',
     const structured = updated.structuredContent as { focus_written: boolean; focus_not_written_reason: string | null }
     assert.equal(structured.focus_written, false)
     assert.equal(structured.focus_not_written_reason, NO_WORKED_THREAD_FOCUS_REASON)
+  })
+})
+
+test('update_thread.persists-next-step-when-the-pointer-file-cannot-be-read', async () => {
+  await withFixture(async (fx) => {
+    const { threadId, criterionId } = await createFixtureThread(fx.spawned)
+    const layout = layoutInFixture(fx)
+    const pointerPath = join(layout.state, 'active-thread.json')
+    mkdirSync(layout.state, { recursive: true })
+    mkdirSync(pointerPath)
+
+    const suppliedNextStep = 'the next step that must survive an unreadable pointer file'
+    try {
+      const updated = (await fx.spawned.client.callTool({
+        name: 'update_thread',
+        arguments: { thread_id: threadId, focus: [criterionId], next_step: suppliedNextStep }
+      })) as CallToolResult
+      assertOkResult('update_thread (unreadable pointer file)', updated)
+      const structured = updated.structuredContent as { focus_written: boolean; focus_not_written_reason: string | null }
+      assert.equal(structured.focus_written, false)
+      assert.equal(structured.focus_not_written_reason, UNREADABLE_POINTER_FOCUS_REASON)
+
+      const stored = JSON.parse(threadRecordRawText(fx, threadId)) as { spine: { next_step: string } }
+      assert.equal(
+        stored.spine.next_step,
+        suppliedNextStep,
+        'the next_step supplied alongside focus must be persisted even when the pointer file cannot be read'
+      )
+    } finally {
+      rmSync(pointerPath, { recursive: true, force: true })
+    }
   })
 })
 
