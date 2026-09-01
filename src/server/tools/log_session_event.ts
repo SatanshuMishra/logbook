@@ -4,6 +4,7 @@ import type { Refusal } from '../../schema/declare.ts'
 import { ULID_PATTERN } from '../../schema/ids.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
+import { RESERVED_ACTOR_PREFIX } from '../../domain/session-log.ts'
 import { SessionRecord, type SessionEntry } from '../../schema/session.ts'
 import { withDetail } from '../../store/detail.ts'
 import { openProjectStore, loadThread } from '../tool-support.ts'
@@ -31,6 +32,15 @@ export const actorCapRefusal = (observed: number): Refusal => ({
   example: 'claude',
   retryable: true,
   message: `actor exceeds its cap of ${caps.SESSION_ACTOR_MAX} characters after escaping; observed ${observed}; remedy: shorten the actor and retry.`
+})
+
+export const reservedActorPrefixRefusal = (): Refusal => ({
+  ok: false,
+  field: 'actor',
+  accepted: `an actor name that does not begin with "${RESERVED_ACTOR_PREFIX}"`,
+  example: 'claude',
+  retryable: true,
+  message: `actor begins with the reserved prefix "${RESERVED_ACTOR_PREFIX}", which marks entries Logbook writes for itself; remedy: choose an actor name that does not begin with "${RESERVED_ACTOR_PREFIX}" and retry.`
 })
 
 export const bodyCapRefusal = (observed: number): Refusal => ({
@@ -84,6 +94,9 @@ export const logSessionEventTool: ToolSpec<LogSessionEventInput, LogSessionEvent
     const escapedActor = escapeStored(input.actor)
     if (escapedActor.length > caps.SESSION_ACTOR_MAX) {
       return { ok: false, refusal: actorCapRefusal(escapedActor.length) }
+    }
+    if (escapedActor.startsWith(RESERVED_ACTOR_PREFIX)) {
+      return { ok: false, refusal: reservedActorPrefixRefusal() }
     }
 
     const escapedBody = escapeStored(input.body)

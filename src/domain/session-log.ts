@@ -1,6 +1,8 @@
 import type { SessionEntry } from '../schema/session.ts'
 
-export const PARK_THREAD_ACTOR = 'logbook:park_thread'
+export const RESERVED_ACTOR_PREFIX = 'logbook:'
+
+export const PARK_THREAD_ACTOR = `${RESERVED_ACTOR_PREFIX}park_thread`
 
 const byIdAscending = (left: SessionEntry, right: SessionEntry): number => {
   if (left.id < right.id) return -1

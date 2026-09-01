@@ -127,6 +127,8 @@ const RECORD_DECISION_NO_OPEN_CRITERION_PRODUCER: ProducerId = 'server/tools/rec
 const RECORD_DECISION_HANDLER_PRODUCER: ProducerId = 'server/tools/record_decision.ts#recordDecisionTool.handler'
 
 const LOG_SESSION_EVENT_ACTOR_CAP_PRODUCER: ProducerId = 'server/tools/log_session_event.ts#actorCapRefusal'
+const LOG_SESSION_EVENT_RESERVED_ACTOR_PREFIX_PRODUCER: ProducerId =
+  'server/tools/log_session_event.ts#reservedActorPrefixRefusal'
 const LOG_SESSION_EVENT_BODY_CAP_PRODUCER: ProducerId = 'server/tools/log_session_event.ts#bodyCapRefusal'
 const LOG_SESSION_EVENT_INVALID_PRODUCER: ProducerId = 'server/tools/log_session_event.ts#invalidSessionEntryRefusal'
 const LOG_SESSION_EVENT_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/log_session_event.ts#commitFailureRefusal'
@@ -456,6 +458,16 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     if (actorOverflow.ok) throw new Error('expected logSessionEventTool to refuse an actor that overflows its cap once escaped')
     refusals.push({ producer: LOG_SESSION_EVENT_ACTOR_CAP_PRODUCER, refusal: actorOverflow.refusal })
     refusals.push({ producer: LOG_SESSION_EVENT_HANDLER_PRODUCER, refusal: actorOverflow.refusal })
+
+    const reservedActorPrefix = await logSessionEventTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      actor: 'logbook:park_thread',
+      body: 'a census body'
+    })
+    if (reservedActorPrefix.ok) {
+      throw new Error('expected logSessionEventTool to refuse an actor beginning with the reserved prefix')
+    }
+    refusals.push({ producer: LOG_SESSION_EVENT_RESERVED_ACTOR_PREFIX_PRODUCER, refusal: reservedActorPrefix.refusal })
 
     const bodyOverflow = await logSessionEventTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,

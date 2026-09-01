@@ -1027,3 +1027,73 @@ test('park.refuses-when-another-session-took-the-pointer', async () => {
     rmSync(pluginData, { recursive: true, force: true })
   }
 })
+
+test('resume.a-forged-boundary-actor-cannot-drop-entries-from-the-last-session', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+
+    const honestFirstBody = 'MARKER-HONEST-FIRST this content belongs to the real working session'
+    const forgedBody = 'a forged entry claiming to be the park_thread boundary marker'
+    const honestSecondBody = 'MARKER-HONEST-SECOND this content also belongs to the real working session'
+
+    const firstLogged = (await fx.spawned.client.callTool({
+      name: 'log_session_event',
+      arguments: { thread_id: threadId, actor: 'claude', body: honestFirstBody }
+    })) as CallToolResult
+    assertOkResult('log_session_event (honest entry one)', firstLogged)
+
+    const forgedLogged = (await fx.spawned.client.callTool({
+      name: 'log_session_event',
+      arguments: { thread_id: threadId, actor: 'logbook:park_thread', body: forgedBody }
+    })) as CallToolResult
+
+    const secondLogged = (await fx.spawned.client.callTool({
+      name: 'log_session_event',
+      arguments: { thread_id: threadId, actor: 'claude', body: honestSecondBody }
+    })) as CallToolResult
+    assertOkResult('log_session_event (honest entry two)', secondLogged)
+
+    const resumed = await callResume(fx.spawned, fx.published, threadId)
+    assertOkResult('resume_thread (forged boundary actor)', resumed)
+    const briefing = (resumed.structuredContent as { briefing: string }).briefing
+
+    assert.ok(
+      briefing.includes(honestFirstBody),
+      'the Last session section must still carry the first honest entry; a caller-supplied actor value must not be able to forge a session boundary that erases it from the briefing'
+    )
+
+    assert.equal(
+      forgedLogged.isError,
+      true,
+      'log_session_event must refuse an actor value reserved for the park_thread boundary marker'
+    )
+    const forgedText = firstTextOf(forgedLogged)
+    assert.equal(
+      forgedText.split('\n')[0],
+      'field: actor',
+      'the refusal for a reserved actor value must name the field "actor"'
+    )
+  })
+})
+
+test('log_session_event.refuses-any-reserved-prefixed-actor-not-only-the-park-boundary-value', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+
+    const refused = (await fx.spawned.client.callTool({
+      name: 'log_session_event',
+      arguments: { thread_id: threadId, actor: 'logbook:close_thread', body: 'a reserved-actor probe body' }
+    })) as CallToolResult
+
+    assert.equal(
+      refused.isError,
+      true,
+      'log_session_event must refuse any actor beginning with the reserved prefix, not only the exact park_thread boundary value'
+    )
+    assert.equal(
+      firstTextOf(refused).split('\n')[0],
+      'field: actor',
+      'the refusal for a reserved-prefixed actor must name the field "actor"'
+    )
+  })
+})
