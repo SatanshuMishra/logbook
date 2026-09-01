@@ -32,6 +32,15 @@ export const unknownFocusRefusal = (ids: string[]): Refusal => ({
   message: `focus names ids not present on this thread: ${ids.join(', ')}.`
 })
 
+const duplicateFocusRefusal = (ids: string[]): Refusal => ({
+  ok: false,
+  field: 'focus',
+  accepted: 'at most one entry per criterion id in a single call',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: true,
+  message: `focus names the same criterion more than once: ${ids.join(', ')}.`
+})
+
 const PreviousSessionSchema = z.object({
   thread_id: z.string().describe('the id of the thread a previous session left marked as being worked'),
   written_at: z.string().describe('when the previous session marked that thread as being worked')
@@ -67,6 +76,10 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
     const thread = loaded.value
 
     const focusIds = input.focus ?? []
+    const duplicatedFocusIds = focusIds.filter((id, index) => focusIds.indexOf(id) !== index)
+    if (duplicatedFocusIds.length > 0) {
+      return { ok: false, refusal: duplicateFocusRefusal([...new Set(duplicatedFocusIds)]) }
+    }
     const unknownFocusIds = focusIds.filter((id) => !thread.completion_criteria.some((c) => c.id === id))
     if (unknownFocusIds.length > 0) {
       return { ok: false, refusal: unknownFocusRefusal(unknownFocusIds) }

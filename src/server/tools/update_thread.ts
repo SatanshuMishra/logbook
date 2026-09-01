@@ -231,6 +231,15 @@ export const unknownFocusRefusal = (ids: string[]): Refusal => ({
   message: `focus names ids not present on this thread: ${ids.join(', ')}.`
 })
 
+const duplicateFocusRefusal = (ids: string[]): Refusal => ({
+  ok: false,
+  field: 'focus',
+  accepted: 'at most one entry per criterion id in a single call',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: true,
+  message: `focus names the same criterion more than once: ${ids.join(', ')}.`
+})
+
 type FocusOutcome = { written: boolean; reason: string | null }
 
 export const NO_WORKED_THREAD_FOCUS_REASON =
@@ -279,7 +288,12 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     const thread = loaded.value
 
     const focusIds = input.focus
-    const unknownFocusIds = (focusIds ?? []).filter((id) => !thread.completion_criteria.some((c) => c.id === id))
+    const focusIdsPresent = focusIds ?? []
+    const duplicatedFocusIds = focusIdsPresent.filter((id, index) => focusIdsPresent.indexOf(id) !== index)
+    if (duplicatedFocusIds.length > 0) {
+      return { ok: false, refusal: duplicateFocusRefusal([...new Set(duplicatedFocusIds)]) }
+    }
+    const unknownFocusIds = focusIdsPresent.filter((id) => !thread.completion_criteria.some((c) => c.id === id))
     if (unknownFocusIds.length > 0) {
       return { ok: false, refusal: unknownFocusRefusal(unknownFocusIds) }
     }

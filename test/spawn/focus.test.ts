@@ -84,6 +84,20 @@ const assertRefusalOnFocus = (result: CallToolResult, unknownId: string): void =
   )
 }
 
+const assertDuplicateFocusRefusal = (result: CallToolResult, repeatedId: string): void => {
+  assert.equal(result.isError, true, 'expected the call to be refused')
+  const text = firstTextOf(result)
+  const lines = text.split('\n')
+  assert.equal(lines[0], 'field: focus', `expected the refusal to name field "focus", got "${lines[0]}"`)
+  assert.match(text, /^accepted: /m)
+  assert.match(text, /^example: /m)
+  assert.match(text, /^retryable: (true|false)/m)
+  assert.ok(
+    text.includes(`focus names the same criterion more than once: ${repeatedId}`),
+    `expected the refusal message to name the repeated focus id, got: ${text}`
+  )
+}
+
 const createFixtureThread = async (
   spawned: SpawnedServer,
   overrides: Record<string, unknown> = {}
@@ -291,6 +305,30 @@ test('update_thread.refuses-a-focus-id-naming-no-criterion-on-this-thread', asyn
       arguments: { thread_id: threadId, focus: [unknownId] }
     })) as CallToolResult
     assertRefusalOnFocus(result, unknownId)
+  })
+})
+
+test('resume_thread.refuses-a-focus-id-repeated-in-the-same-call', async () => {
+  await withFixture(async (fx) => {
+    const { threadId, criterionId } = await createFixtureThread(fx.spawned)
+
+    const result = (await fx.spawned.client.callTool({
+      name: 'resume_thread',
+      arguments: { thread_id: threadId, focus: [criterionId, criterionId] }
+    })) as CallToolResult
+    assertDuplicateFocusRefusal(result, criterionId)
+  })
+})
+
+test('update_thread.refuses-a-focus-id-repeated-in-the-same-call', async () => {
+  await withFixture(async (fx) => {
+    const { threadId, criterionId } = await createFixtureThread(fx.spawned)
+
+    const result = (await fx.spawned.client.callTool({
+      name: 'update_thread',
+      arguments: { thread_id: threadId, focus: [criterionId, criterionId] }
+    })) as CallToolResult
+    assertDuplicateFocusRefusal(result, criterionId)
   })
 })
 
