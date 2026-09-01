@@ -199,7 +199,7 @@ export const generateSchemaCases = (
   const seen = new Set<ConstraintClass>()
 
   if (schema.additionalProperties === false) {
-    const unknownKey = '__logbook_unexpected_field__'
+    const unknownKey = 'logbook-unexpected-field'
     pushMutation(mutations, seen, 'unknownKey', unknownKey, { ...validBase, [unknownKey]: true })
   }
 

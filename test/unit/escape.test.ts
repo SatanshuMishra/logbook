@@ -71,7 +71,7 @@ test('escape.leading-space-run-below-threshold-passes-through-and-above-threshol
   assert.equal(escapeStored('        x'), '   U+0020   U+0020x')
 })
 
-const MARKDOWN_LEADING_CHARS = ['#', '-', '*', '+', '>', '`', '~']
+const MARKDOWN_LEADING_CHARS = ['#', '-', '*', '+', '>', '`', '~', '_']
 
 const collectIdempotencyPopulation = (): number[] => [
   ...collectEscapableUnion(),
