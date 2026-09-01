@@ -5,8 +5,11 @@ import type { Thread } from '../store/records.ts'
 import { readPointer } from '../domain/pointer.ts'
 import { recordSessionBaseline } from '../hooklib/ledger-presence.ts'
 import { escapeStored } from '../render/escape.ts'
+import { clipWithMarker } from '../render/clip.ts'
 
 export type SessionStartEvent = { session_id: string; source: string; cwd: string }
+
+export const BANNER_MAX_GRAPHEMES = 10000
 
 const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.length > 0
 
@@ -66,5 +69,5 @@ export const runSessionStart = (rt: Runtime, event: SessionStartEvent): SessionS
   const listing = renderThreadListing(rt, event.cwd)
   const sections = crashReport === null ? [listing] : [crashReport, listing]
   recordBaseline(rt, event.cwd, event.session_id)
-  return { additionalContext: sections.join('\n\n') }
+  return { additionalContext: clipWithMarker(sections.join('\n\n'), BANNER_MAX_GRAPHEMES) }
 }
