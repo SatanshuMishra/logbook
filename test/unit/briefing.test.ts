@@ -152,7 +152,7 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
 
   assert.equal(ThreadRecord.parse(thread).ok, true, 'the exact-output fixture must itself be schema-admissible')
 
-  const pointer: Pointer = { thread_id: threadId, written_at: rt.now(), session_id: 'session-x' }
+  const pointer: Pointer = { thread_id: threadId, written_at: rt.now(), session_id: 'session-x', focus: [] }
 
   const integrity: DecisionIntegrity = { resolved: 2, dangling: [], quarantined: [] }
   const rendered = renderBriefing(thread, integrity, pointer, null)
@@ -255,7 +255,7 @@ test('briefing.omits-empty-list-sections-entirely', () => {
 
 test('briefing.pointer-status-is-no-for-a-different-thread', () => {
   const thread = baseThread()
-  const pointer: Pointer = { thread_id: rt.ulid(), written_at: rt.now(), session_id: 'someone-else' }
+  const pointer: Pointer = { thread_id: rt.ulid(), written_at: rt.now(), session_id: 'someone-else', focus: [] }
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, pointer, null)
   assert.ok(rendered.split('\n').includes('**Currently being worked:** no'))
 })

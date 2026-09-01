@@ -27,23 +27,35 @@ const PREVIOUS_SESSION_PRESENT_EXTRA_BYTES = PREVIOUS_SESSION_LARGEST_BYTES - PR
 const PREVIOUS_SESSION_ABSENT_EXTRA_BYTES = 0
 const PREVIOUS_SESSION_DEFAULT_PRESENT = true
 const JSON_STRING_DELIMITER_BYTES = 2
+const FOCUS_FIELD_DEFAULT_COUNT = 0
+const FOCUS_FIELD_PREFIX_BYTES = 9
+const FOCUS_ID_SERIALISED_BYTES = 28
+const FOCUS_ID_SEPARATOR_BYTES = 1
 
 const jsonEscapedByteLen = (text: string): number =>
   Buffer.byteLength(JSON.stringify(text), 'utf8') - JSON_STRING_DELIMITER_BYTES
 
+const focusFieldBytes = (focusCount: number): number =>
+  FOCUS_FIELD_PREFIX_BYTES +
+  2 +
+  focusCount * FOCUS_ID_SERIALISED_BYTES +
+  Math.max(0, focusCount - 1) * FOCUS_ID_SEPARATOR_BYTES
+
 export const resumePayloadBytes = (
   briefing: string,
   threadId: string,
-  hasPreviousSession: boolean = PREVIOUS_SESSION_DEFAULT_PRESENT
+  hasPreviousSession: boolean = PREVIOUS_SESSION_DEFAULT_PRESENT,
+  focusCount: number = FOCUS_FIELD_DEFAULT_COUNT
 ): number =>
   BRIEFING_COPIES_IN_RESUME_PAYLOAD * jsonEscapedByteLen(briefing) +
   jsonEscapedByteLen(threadId) +
   RESUME_PAYLOAD_SCAFFOLD_BYTES +
-  (hasPreviousSession ? PREVIOUS_SESSION_PRESENT_EXTRA_BYTES : PREVIOUS_SESSION_ABSENT_EXTRA_BYTES)
+  (hasPreviousSession ? PREVIOUS_SESSION_PRESENT_EXTRA_BYTES : PREVIOUS_SESSION_ABSENT_EXTRA_BYTES) +
+  focusFieldBytes(focusCount)
 
-const fitsBudget = (briefing: string, threadId: string, hasPreviousSession: boolean): boolean =>
+const fitsBudget = (briefing: string, threadId: string, hasPreviousSession: boolean, focusCount: number): boolean =>
   briefing.length <= BRIEFING_MAX_CHARS &&
-  resumePayloadBytes(briefing, threadId, hasPreviousSession) <= RESUME_PAYLOAD_TARGET_BYTES
+  resumePayloadBytes(briefing, threadId, hasPreviousSession, focusCount) <= RESUME_PAYLOAD_TARGET_BYTES
 
 const RELATED_TITLE_NATURAL_MAX = 100
 const RELATED_SLUG_NATURAL_MAX = 64
@@ -145,23 +157,41 @@ const renderBlockage = (blockedBy: string | null): string =>
 const renderPointerStatus = (pointer: Pointer | null, threadId: string): string =>
   pointer !== null && pointer.thread_id === threadId ? '**Currently being worked:** yes' : '**Currently being worked:** no'
 
-type Lane = 'live' | 'settled'
+const focusLabel = (id: string, criteriaById: ReadonlyMap<string, Criterion>): string => {
+  const criterion = criteriaById.get(id)
+  return criterion === undefined ? escapeStored(id) : `c${criterion.ordinal}`
+}
 
-const laneFor = (criterionId: string | undefined, criteriaById: ReadonlyMap<string, Criterion>): Lane => {
+const renderFocusLine = (focus: readonly string[], criteriaById: ReadonlyMap<string, Criterion>): string => {
+  if (focus.length === 0) return FOCUS_NOT_SET_LINE
+  const labels = focus.map((id) => focusLabel(id, criteriaById)).join(', ')
+  return `**Focus:** ${labels}. Risks and key decisions on those goals render first, then the rest in the order they were recorded, apart from those on a goal already met or struck.`
+}
+
+type Lane = 'focused' | 'live' | 'settled'
+
+const laneFor = (
+  criterionId: string | undefined,
+  criteriaById: ReadonlyMap<string, Criterion>,
+  focus: readonly string[]
+): Lane => {
   if (criterionId === undefined) return 'live'
   const criterion = criteriaById.get(criterionId)
   if (criterion === undefined) return 'live'
-  return criterion.struck_by !== null || criterion.done ? 'settled' : 'live'
+  if (criterion.struck_by !== null || criterion.done) return 'settled'
+  return focus.includes(criterionId) ? 'focused' : 'live'
 }
 
-type Laned<T> = { live: T[]; settled: T[] }
+type Laned<T> = { focused: T[]; live: T[]; settled: T[] }
 
 const laneSplit = <T extends { criterion_id?: string | undefined }>(
   items: readonly T[],
-  criteriaById: ReadonlyMap<string, Criterion>
+  criteriaById: ReadonlyMap<string, Criterion>,
+  focus: readonly string[]
 ): Laned<T> => ({
-  live: items.filter((item) => laneFor(item.criterion_id, criteriaById) === 'live'),
-  settled: items.filter((item) => laneFor(item.criterion_id, criteriaById) === 'settled')
+  focused: items.filter((item) => laneFor(item.criterion_id, criteriaById, focus) === 'focused'),
+  live: items.filter((item) => laneFor(item.criterion_id, criteriaById, focus) === 'live'),
+  settled: items.filter((item) => laneFor(item.criterion_id, criteriaById, focus) === 'settled')
 })
 
 type RenderClip = {
@@ -262,6 +292,8 @@ const assembleBriefing = (
   thread: Thread,
   decisionIntegrity: DecisionIntegrity,
   pointer: Pointer | null,
+  focus: readonly string[],
+  criteriaById: ReadonlyMap<string, Criterion>,
   predecessor: Thread | null,
   risks: Laned<Risk>,
   keyDecisions: Laned<KeyDecision>,
@@ -285,8 +317,10 @@ const assembleBriefing = (
   const relatedThreads = predecessor === null ? [] : [predecessor]
   const relatedLines = relatedThreads.map((item) => renderRelatedLine(item, renderClip))
   const artifactLines = artifacts.map((item) => renderArtifactLine(item, renderClip))
-  const riskBlocks = risks.live.map((item) => renderRiskBlock(item, renderClip))
-  const keyDecisionLines = keyDecisions.live.map((item) => renderKeyDecisionLine(item, renderClip.keyDecision))
+  const riskBlocks = [...risks.focused, ...risks.live].map((item) => renderRiskBlock(item, renderClip))
+  const keyDecisionLines = [...keyDecisions.focused, ...keyDecisions.live].map((item) =>
+    renderKeyDecisionLine(item, renderClip.keyDecision)
+  )
   const outOfScopeLines = outOfScope.map((item) => renderOutOfScopeLine(item, renderClip.outOfScope))
   const criterionBlocks = criteria.map((item) => renderCriterionBlock(item, renderClip))
   const settledLines = [
@@ -308,7 +342,7 @@ const assembleBriefing = (
     `**Status:** ${escapeStored(thread.status)}`,
     renderBlockage(thread.blocked_by),
     renderPointerStatus(pointer, thread.id),
-    FOCUS_NOT_SET_LINE,
+    renderFocusLine(focus, criteriaById),
     ...artifactLines.slice(0, 1).map(() => ''),
     ...artifactLines.slice(0, 1).map(() => '**Artifacts:**'),
     ...artifactLines,
@@ -369,9 +403,10 @@ export const renderBriefingWithPasses = (
   sessionEntries: readonly SessionEntry[] = []
 ): BriefingRender => {
   const criteriaById = new Map(thread.completion_criteria.map((criterion) => [criterion.id, criterion] as const))
+  const focus = pointer !== null && pointer.thread_id === thread.id ? pointer.focus : []
 
-  const risks = laneSplit(thread.spine.open_risks, criteriaById)
-  const keyDecisions = laneSplit(thread.spine.key_decisions, criteriaById)
+  const risks = laneSplit(thread.spine.open_risks, criteriaById, focus)
+  const keyDecisions = laneSplit(thread.spine.key_decisions, criteriaById, focus)
   const previousEntries = previousSessionEntries(sessionEntries)
 
   const renderWith = (renderClip: RenderClip, textWasClipped: boolean): string =>
@@ -379,6 +414,8 @@ export const renderBriefingWithPasses = (
       thread,
       decisionIntegrity,
       pointer,
+      focus,
+      criteriaById,
       predecessor,
       risks,
       keyDecisions,
@@ -392,15 +429,15 @@ export const renderBriefingWithPasses = (
   const finish = (briefing: string, passes: number): BriefingRender => ({
     briefing,
     passes,
-    withinBudget: fitsBudget(briefing, thread.id, hasPreviousSession)
+    withinBudget: fitsBudget(briefing, thread.id, hasPreviousSession, focus.length)
   })
 
   const unclipped = renderWith(UNCLIPPED, false)
-  if (fitsBudget(unclipped, thread.id, hasPreviousSession)) return finish(unclipped, 1)
+  if (fitsBudget(unclipped, thread.id, hasPreviousSession, focus.length)) return finish(unclipped, 1)
 
   const search = largestFittingClipRender(
     (perItemClip) => renderWith(clipAt(perItemClip), true),
-    (briefing) => fitsBudget(briefing, thread.id, hasPreviousSession),
+    (briefing) => fitsBudget(briefing, thread.id, hasPreviousSession, focus.length),
     unclipped
   )
   return finish(search.briefing, search.passes + 1)

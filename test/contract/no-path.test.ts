@@ -114,6 +114,7 @@ const LIST_THREADS_HANDLER_PRODUCER: ProducerId = 'server/tools/list_threads.ts#
 const OPEN_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/open_thread.ts#openThreadTool.handler'
 const PARK_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/park_thread.ts#parkThreadTool.handler'
 const RESUME_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/resume_thread.ts#resumeThreadTool.handler'
+const RESUME_THREAD_UNKNOWN_FOCUS_PRODUCER: ProducerId = 'server/tools/resume_thread.ts#unknownFocusRefusal'
 const UPDATE_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/update_thread.ts#updateThreadTool.handler'
 
 const RECORD_DECISION_TITLE_CAP_PRODUCER: ProducerId = 'server/tools/record_decision.ts#titleCapRefusal'
@@ -302,6 +303,13 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     const resumeUnknownThread = await resumeThreadTool.handler(rt, STUB_TOOL_CTX, { thread_id: rt.ulid() })
     if (resumeUnknownThread.ok) throw new Error('expected resumeThreadTool to refuse an unknown thread id')
     refusals.push({ producer: RESUME_THREAD_HANDLER_PRODUCER, refusal: resumeUnknownThread.refusal })
+
+    const resumeUnknownFocus = await resumeThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      focus: [rt.ulid()]
+    })
+    if (resumeUnknownFocus.ok) throw new Error('expected resumeThreadTool to refuse a focus id naming no criterion on this thread')
+    refusals.push({ producer: RESUME_THREAD_UNKNOWN_FOCUS_PRODUCER, refusal: resumeUnknownFocus.refusal })
 
     const resumeForPark = await resumeThreadTool.handler(rt, STUB_TOOL_CTX, { thread_id: threadId })
     if (!resumeForPark.ok) throw new Error('expected resumeThreadTool to resume the census tool fixture thread')
