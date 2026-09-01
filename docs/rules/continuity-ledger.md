@@ -86,9 +86,15 @@ not change its state.
 ## Being worked now is a pointer, not a state
 
 What the previous implementation expressed as an `active` state is a file, `active-thread.json`,
-under `state/`. It carries `pointer.thread_id`, `pointer.written_at` and `pointer.session_id`.
+under `state/`. It carries four fields: `pointer.thread_id`, `pointer.written_at`,
+`pointer.session_id`, and `pointer.focus`, the list of completion criteria this session declared
+it is working on, held on the pointer and never on the thread record. `pointer.focus` is required on
+the pointer's type but optional when the file is read: every write emits all four fields, a pointer
+written before the field existed still parses, and a missing or unreadable `focus` is read back as
+an empty list rather than reported corrupt.
 
-- `resume_thread` writes the pointer and returns `resume_thread.briefing`.
+- `resume_thread` writes the whole pointer and returns `resume_thread.briefing`; `update_thread`
+  also writes `pointer.focus`.
 - `park_thread` releases it. The thread stays `open`; parking is not closing, and a parked thread
   appears in the next roster.
 - At session start, a pointer left behind by a different session is reported as a crash report,
