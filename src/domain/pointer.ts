@@ -6,7 +6,7 @@ import { durableWrite } from '../store/durable-write.ts'
 import { ULID_PATTERN, ISO_PATTERN } from '../schema/ids.ts'
 import type { Ulid, Iso8601 } from '../schema/thread.ts'
 
-export type Pointer = { thread_id: Ulid; written_at: Iso8601; session_id: string }
+export type Pointer = { thread_id: Ulid; written_at: Iso8601; session_id: string; focus: Ulid[] }
 
 export type PointerRead = { kind: 'absent' } | { kind: 'pointer'; value: Pointer } | { kind: 'corrupt'; reason: string }
 
@@ -16,12 +16,18 @@ const POINTER_FILE_NAME = 'active-thread.json'
 
 const pointerPathFor = (root: StoreLayout): string => path.join(root.state, POINTER_FILE_NAME)
 
-const isValidPointerShape = (value: unknown): value is Pointer => {
+const isUlidArray = (value: unknown): value is Ulid[] =>
+  Array.isArray(value) && value.every((entry) => typeof entry === 'string' && ULID_PATTERN.test(entry))
+
+type StoredPointerShape = { thread_id: string; written_at: string; session_id: string; focus?: unknown }
+
+const isValidPointerShape = (value: unknown): value is StoredPointerShape => {
   if (typeof value !== 'object' || value === null) return false
   const candidate = value as Record<string, unknown>
   if (typeof candidate.thread_id !== 'string' || !ULID_PATTERN.test(candidate.thread_id)) return false
   if (typeof candidate.written_at !== 'string' || !ISO_PATTERN.test(candidate.written_at)) return false
   if (typeof candidate.session_id !== 'string' || candidate.session_id.length === 0) return false
+  if ('focus' in candidate && !isUlidArray(candidate.focus)) return false
   return true
 }
 
@@ -50,14 +56,24 @@ export const readPointer = (rt: Runtime, root: StoreLayout): PointerRead => {
 
   return {
     kind: 'pointer',
-    value: { thread_id: parsed.thread_id, written_at: parsed.written_at, session_id: parsed.session_id }
+    value: {
+      thread_id: parsed.thread_id,
+      written_at: parsed.written_at,
+      session_id: parsed.session_id,
+      focus: isUlidArray(parsed.focus) ? parsed.focus : []
+    }
   }
 }
 
 export const writePointer = (rt: Runtime, root: StoreLayout, p: Pointer): void => {
   mkdirSync(root.state, { recursive: true })
   const target = pointerPathFor(root)
-  const contents = JSON.stringify({ thread_id: p.thread_id, written_at: p.written_at, session_id: p.session_id })
+  const contents = JSON.stringify({
+    thread_id: p.thread_id,
+    written_at: p.written_at,
+    session_id: p.session_id,
+    focus: p.focus
+  })
   durableWrite(target, contents, { log: rt.log })
 }
 

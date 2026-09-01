@@ -38,12 +38,12 @@ test('pointer.write-is-idempotent', () => {
       const layout = layoutIn(rt, repo)
 
       const threadId = rt.ulid()
-      const first = { thread_id: threadId, written_at: rt.now(), session_id: 'session-a' }
+      const first = { thread_id: threadId, written_at: rt.now(), session_id: 'session-a', focus: [] }
       writePointer(rt, layout, first)
       const afterFirst = readdirSync(layout.state)
       assert.deepEqual(afterFirst, [pointerFileName])
 
-      const second = { thread_id: threadId, written_at: rt.now(), session_id: 'session-a' }
+      const second = { thread_id: threadId, written_at: rt.now(), session_id: 'session-a', focus: [] }
       assert.notEqual(first.written_at, second.written_at)
       writePointer(rt, layout, second)
       const afterSecond = readdirSync(layout.state)
@@ -64,7 +64,7 @@ test('pointer.release-is-idempotent', () => {
       assert.doesNotThrow(() => releasePointer(rt, layout))
       assert.deepEqual(readPointer(rt, layout), ABSENT)
 
-      writePointer(rt, layout, { thread_id: rt.ulid(), written_at: rt.now(), session_id: 'session-b' })
+      writePointer(rt, layout, { thread_id: rt.ulid(), written_at: rt.now(), session_id: 'session-b', focus: [] })
       assert.notDeepEqual(readPointer(rt, layout), ABSENT)
 
       assert.doesNotThrow(() => releasePointer(rt, layout))
@@ -85,7 +85,7 @@ test('pointer.release-only-own', () => {
 
       const owner = rt.ulid()
       const other = rt.ulid()
-      const original = { thread_id: owner, written_at: rt.now(), session_id: 'session-c' }
+      const original = { thread_id: owner, written_at: rt.now(), session_id: 'session-c', focus: [] }
       writePointer(rt, layout, original)
 
       const outcome = releasePointerIfOwned(rt, layout, other)
@@ -104,7 +104,7 @@ test('pointer.survives-nothing', () => {
     withPluginData((pluginData) => {
       const rt = runtimeWithHome(pluginData)
       const sourceLayout = layoutIn(rt, repo)
-      writePointer(rt, sourceLayout, { thread_id: rt.ulid(), written_at: rt.now(), session_id: 'session-d' })
+      writePointer(rt, sourceLayout, { thread_id: rt.ulid(), written_at: rt.now(), session_id: 'session-d', focus: [] })
       assert.notDeepEqual(readPointer(rt, sourceLayout), ABSENT)
 
       const cloneParent = mkdtempSync(join(tmpdir(), 'logbook-pointer-clone-'))
@@ -149,6 +149,68 @@ test('pointer.wrong-shape-json-reports-corrupt', () => {
 
       mkdirSync(layout.state, { recursive: true })
       writeFileSync(join(layout.state, pointerFileName), JSON.stringify({ thread_id: 'nope' }), 'utf8')
+
+      const result = readPointer(rt, layout)
+      assert.equal(result.kind, 'corrupt')
+      if (result.kind !== 'corrupt') return
+      assert.ok(result.reason.length > 0)
+      assert.doesNotMatch(result.reason, /[\\/]/, 'the corrupt reason must not leak a filesystem path')
+    })
+  })
+})
+
+test('pointer.focus-round-trips', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const layout = layoutIn(rt, repo)
+
+      const focus = [rt.ulid(), rt.ulid()]
+      const written = { thread_id: rt.ulid(), written_at: rt.now(), session_id: 'session-focus', focus }
+      writePointer(rt, layout, written)
+
+      const result = readPointer(rt, layout)
+      assert.deepEqual(result, { kind: 'pointer', value: written })
+    })
+  })
+})
+
+test('pointer.reads-forward-a-pointer-file-with-no-focus-key', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const layout = layoutIn(rt, repo)
+
+      mkdirSync(layout.state, { recursive: true })
+      const threadId = rt.ulid()
+      const writtenAt = rt.now()
+      writeFileSync(
+        join(layout.state, pointerFileName),
+        JSON.stringify({ thread_id: threadId, written_at: writtenAt, session_id: 'session-pre-focus' }),
+        'utf8'
+      )
+
+      const result = readPointer(rt, layout)
+      assert.deepEqual(result, {
+        kind: 'pointer',
+        value: { thread_id: threadId, written_at: writtenAt, session_id: 'session-pre-focus', focus: [] }
+      })
+    })
+  })
+})
+
+test('pointer.malformed-focus-reports-corrupt', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const layout = layoutIn(rt, repo)
+
+      mkdirSync(layout.state, { recursive: true })
+      writeFileSync(
+        join(layout.state, pointerFileName),
+        JSON.stringify({ thread_id: rt.ulid(), written_at: rt.now(), session_id: 'session-bad-focus', focus: ['not-a-ulid'] }),
+        'utf8'
+      )
 
       const result = readPointer(rt, layout)
       assert.equal(result.kind, 'corrupt')

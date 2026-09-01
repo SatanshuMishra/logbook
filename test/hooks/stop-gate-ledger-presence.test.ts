@@ -95,7 +95,7 @@ test('hook.stop-gate-blocks-when-nothing-reached-the-ledger-since-resume', () =>
   withFixture(({ rt, repo, layout }) => {
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
     startSession(rt, repo, SESSION_ID)
-    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID })
+    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID, focus: [] })
 
     const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
     assert.equal(verdict.kind, 'block', 'the stop gate must block when the ledger ref has not moved since resume')
@@ -106,7 +106,7 @@ test('hook.stop-gate-clears-the-moment-something-reaches-the-ledger', () => {
   withFixture(({ rt, repo, layout }) => {
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
     startSession(rt, repo, SESSION_ID)
-    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID })
+    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID, focus: [] })
 
     assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind, 'block')
 
@@ -121,7 +121,7 @@ test('hook.stop-gate-re-evaluates-rather-than-latching', () => {
   withFixture(({ rt, repo, layout }) => {
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
     startSession(rt, repo, SESSION_ID)
-    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID })
+    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID, focus: [] })
 
     assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind, 'block')
     assert.equal(
@@ -139,7 +139,7 @@ test('hook.stop-gate-is-silent-when-the-stop-hook-is-already-active', () => {
   withFixture(({ rt, repo, layout }) => {
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
     startSession(rt, repo, SESSION_ID)
-    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID })
+    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID, focus: [] })
 
     const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, true))
     assert.equal(verdict.kind, 'silent', 'blocking while the stop hook is already active would not terminate')
@@ -160,7 +160,8 @@ test('hook.stop-gate-is-silent-when-no-thread-is-being-worked-by-this-session', 
     writePointer(rt, layout, {
       thread_id: threadId,
       written_at: '2024-01-01T00:00:00.000Z',
-      session_id: OTHER_SESSION_ID
+      session_id: OTHER_SESSION_ID,
+      focus: []
     })
     assert.equal(
       stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind,
@@ -174,7 +175,7 @@ test('hook.stop-gate-is-silent-when-this-session-recorded-no-baseline', () => {
   withFixture(({ rt, repo, layout }) => {
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
     startSession(rt, repo, OTHER_SESSION_ID)
-    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID })
+    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID, focus: [] })
 
     const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
     assert.equal(verdict.kind, 'silent', 'without a baseline for this session there is no window to compare against')
@@ -185,7 +186,7 @@ test('hook.stop-gate-is-silent-when-the-project-had-no-ledger-ref-at-session-sta
   withFixture(({ rt, repo, layout }) => {
     startSession(rt, repo, SESSION_ID)
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
-    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID })
+    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID, focus: [] })
 
     const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
     assert.equal(verdict.kind, 'silent', 'a session that began before the ledger ref existed has no window to compare against')
@@ -196,7 +197,7 @@ test('hook.stop-gate-ledger-message-claims-presence-and-never-completeness', () 
   withFixture(({ rt, repo, layout }) => {
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
     startSession(rt, repo, SESSION_ID)
-    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID })
+    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID, focus: [] })
 
     const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
     assert.equal(verdict.kind, 'block')

@@ -65,7 +65,8 @@ test('hook.post-tool-use-writes-nothing-for-a-commit-shaped-command', () => {
       writePointer(rt, layout.value, {
         thread_id: seeded.record.id,
         written_at: '2024-01-01T00:00:00.000Z',
-        session_id: SESSION_ID
+        session_id: SESSION_ID,
+        focus: []
       })
 
       const ledgerHead = (): string => rawGit(repo, ['rev-parse', 'refs/logbook/ledger']).stdout.trim()
