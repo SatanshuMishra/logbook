@@ -922,3 +922,52 @@ Appends only. Never edit an item another planner wrote.
 - **Evidence:** criterion 25's clause "`park_thread` refuses the field" holds only because `ParkThreadInputSchema` is a `z.strictObject` at `src/server/tools/park_thread.ts:22`, which reads `const ParkThreadInputSchema = z.strictObject({`. No test asserts the `last_session` refusal, so loosening the schema to a non-strict object later would drop the behaviour silently and no check would notice.
 - **Why it is above the ceiling:** the criterion is marked done on the observed behaviour and the behaviour is genuinely present; what is missing is the receipt, and adding it is a test no wave-3 unit's criteria cover. The behaviour is satisfied; the receipt is owed.
 - **Not folded in.**
+
+## F10d — the vendored `node_modules` tree is drifted from `package-lock.json` across roughly 227 packages
+
+- **Surfaced by:** U10 list-prefix headroom confirmation
+- **Evidence:** a single `npm install --save-dev --save-exact commonmark@0.31.2` reported `added 231 packages, and changed 1 package`, while `git diff --stat package-lock.json` showed only `53 insertions, 3 deletions` — the four new parser entries plus two version-field corrections. The added packages were therefore already declared in the pre-install lockfile but absent from the git-tracked `node_modules` on disk; `git show HEAD:package-lock.json` confirms entries for packages such as the `@babel`, `@inquirer` and `@stryker-mutator` trees that had no vendored copy. At package-version granularity the same drift shows in `@hono/node-server`: the pre-install lockfile pinned `2.1.1` while the vendored copy on disk was `1.19.14`, read from `git show HEAD:node_modules/@hono/node-server/package.json`. Reconciling that one package produced 44 file deletions and 10 modifications, because the newer version drops its CommonJS builds and ships only `.mjs`/`.d.mts`. Per-file working-tree count after the install was 12,957 entries, of which 12,900 were untracked additions.
+- **Why it is above the ceiling:** this unit's acceptance is confined to confirming the escape module's indentation threshold against a real CommonMark parser. Reconciling the vendored tree is a repository-vendoring policy decision that no unit's criteria cover, and a partial reconciliation would be worse than none — correcting one package while leaving 226 others drifted makes the tree's relationship to the lockfile harder to reason about, not easier. This unit therefore commits only the parser's own 76 files and leaves the drift exactly as it found it.
+- **Not folded in.**
+
+## F10e — a threshold rise would nest the forged code block as the list item's own child, replacing the item's readable body
+
+- **Surfaced by:** U10 list-prefix headroom confirmation
+- **Evidence:** measured against `commonmark@0.31.2`: in the `- ` marker context the renderer uses at `src/render/briefing.ts:132`, `:134` and `:137`, a stored value escaped at a threshold of 5 renders as `-     U+002D`, and the parsed list item's direct child is a `code_block` whose `literal` is `U+002D\n` — not a paragraph containing a code block. At the current threshold of 4 the same population yields `["document","paragraph","text"]` and no code block, across 192 renderings. So the failure mode a threshold rise would open is not merely that a code block appears somewhere in the document: the body of the very list item the template built to hold the value silently becomes a code block instead of readable text, which is what a reader of a criteria, decision or out-of-scope list would lose.
+- **Why it is above the ceiling:** this unit's criterion asks whether four is the maximum safe value, and it is — the finding characterises the consequence of a change nobody has made. Acting on it would mean editing `src/render/escape.ts`, which this unit is explicitly forbidden from touching because two other lanes hold that file concurrently. It is recorded so that any future threshold tuning starts from the measured consequence rather than from a fresh reading of the specification.
+- **Not folded in.**
+
+## F10f — the confirmation covers the four rendering positions found in `briefing.ts`, and no repo-wide audit of `escapeStored` consumers was performed
+
+- **Surfaced by:** U10 list-prefix headroom confirmation
+- **Evidence:** the confirmation drove its population through four embedding contexts derived from `src/render/briefing.ts` — a fresh block at column 0 (`briefing.ts:352`, `:362`), a lazy paragraph continuation (`briefing.ts:358`), immediately after a bare `- ` marker (`briefing.ts:132`, `:134`, `:137`), and mid-line behind a plain text prefix. The two column-0-adjacent contexts are the ones that flip at a threshold of 5; the lazy-continuation and mid-line contexts were measured as structurally immune at both thresholds rather than assumed to be. No exhaustive census was run over every call site in the repository that consumes `escapeStored` output, so the claim that those four position classes are the complete set of markdown positions the escaped output can reach is unverified.
+- **Why it is above the ceiling:** the criterion asks for the threshold claim to be confirmed against a real parser, and it now is, for every position the renderer is known to use. Establishing that the position set itself is closed is a separate census over a different population, needing its own unit and its own halting classifier. Naming the gap is the honest status; silently implying full coverage is not.
+- **Not folded in.**
+
+## F10g — an ambient module declaration makes a devDependency's types visible to `src/`, where nothing checks that runtime imports stay inside `dependencies`
+
+- **Surfaced by:** U10 list-prefix headroom confirmation, code review
+- **Evidence:** `test/fixtures/commonmark.d.ts:1` declares `declare module 'commonmark'` in a file with
+  no top-level `import` or `export`, which is a genuine ambient declaration rather than a module
+  augmentation, and the parser package ships no types of its own so nothing is shadowed. An ambient
+  declaration is global to the whole TypeScript compilation, and `tsconfig.json:14` compiles
+  `src/**/*.ts`, `bin/**/*.ts`, `hooks/**/*.ts` and `test/**/*.ts` together under one project. So a
+  file under `src/` that imported `commonmark` would typecheck cleanly today. `EXACT_DEPENDENCIES` at
+  `scripts/check-packaging.mjs:29-33` pins the runtime `dependencies` exactly to
+  `@modelcontextprotocol/sdk`, `ulid` and `zod`, and `checkPackageManifest` at `:88-97` refuses when
+  `package.json`'s `dependencies` differ from that set — `commonmark` is not among them, so it ships
+  only as a devDependency. Nothing validates that `src/` imports only from the pinned set, so such an
+  import would pass every gate here and fail at runtime for anyone who installed the plugin, where
+  devDependencies are not present. A repository-wide grep for `commonmark` outside `node_modules`,
+  `.git` and `docs` returns exactly three code sites, all under `test/`:
+  `test/fixtures/commonmark.d.ts:1`, `test/unit/escape-indent-threshold.test.ts:3`
+  (`import { Parser } from 'commonmark'`), and `:227` (a string literal naming a fabricated node type).
+  No such import exists under `src/`, `bin/` or `hooks/` today.
+- **Why it is above the ceiling:** this unit's acceptance is confined to confirming the escape module's
+  indentation threshold against a real CommonMark parser. There is no clean in-TypeScript scoping fix
+  short of splitting the tests into their own `tsconfig`, which is a build-configuration change
+  affecting every file in the repository and needing its own unit. The alternative guard — a check that
+  `src/`, `bin/` and `hooks/` import only from `dependencies` — is a new census with its own halting
+  classifier, which is also its own unit. Recording the exposure is the honest status; adding either
+  mechanism here would be a build change riding inside a test confirmation.
+- **Not folded in.**

@@ -26,6 +26,7 @@
     "@modelcontextprotocol/inspector": "2.3.0",
     "@stryker-mutator/core": "10.0.0",
     "@types/node": "22.20.1",
+    "commonmark": "0.31.2",
     "typescript": "5.9.3",
     "yaml": "^2.9.0"
   }
