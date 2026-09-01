@@ -3,6 +3,7 @@ import { layoutFor } from '../store/layout.ts'
 import { openStore } from '../store/records.ts'
 import type { Thread } from '../store/records.ts'
 import { readPointer } from '../domain/pointer.ts'
+import { recordSessionBaseline } from '../hooklib/ledger-presence.ts'
 import { escapeStored } from '../render/escape.ts'
 
 export type SessionStartEvent = { session_id: string; source: string; cwd: string }
@@ -52,11 +53,18 @@ const renderCrashReport = (rt: Runtime, projectRoot: string, sessionId: string):
   )
 }
 
+const recordBaseline = (rt: Runtime, projectRoot: string, sessionId: string): void => {
+  const layout = layoutFor(rt, projectRoot)
+  if (!layout.ok) return
+  recordSessionBaseline(rt, layout.value, sessionId)
+}
+
 export type SessionStartReply = { additionalContext: string }
 
 export const runSessionStart = (rt: Runtime, event: SessionStartEvent): SessionStartReply => {
   const crashReport = renderCrashReport(rt, event.cwd, event.session_id)
   const listing = renderThreadListing(rt, event.cwd)
   const sections = crashReport === null ? [listing] : [crashReport, listing]
+  recordBaseline(rt, event.cwd, event.session_id)
   return { additionalContext: sections.join('\n\n') }
 }
