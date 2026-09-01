@@ -5,6 +5,7 @@ import { ULID_PATTERN } from '../../schema/ids.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import type { SessionEntry } from '../../schema/session.ts'
+import { PARK_THREAD_ACTOR } from '../../domain/session-log.ts'
 import { ThreadRecord, type Thread } from '../../schema/thread.ts'
 import type { Store } from '../../store/records.ts'
 import type { RecordChange } from '../../store/write-path.ts'
@@ -280,7 +281,7 @@ const parkResolvedThread = (
       : {
           id: rt.ulid(),
           thread_id: thread.id,
-          actor: 'logbook:park_thread',
+          actor: PARK_THREAD_ACTOR,
           body: escapedOutcome,
           created_at: rt.now()
         }
