@@ -10,6 +10,7 @@ import { contributeToSpine, type SpineContribution } from '../../domain/spine.ts
 import { layoutFor, type StoreLayout } from '../../store/layout.ts'
 import { readPointer, writePointer, type Pointer, type PointerRead } from '../../domain/pointer.ts'
 import { commitThread, loadThread, openProjectStore, type Attempt } from '../tool-support.ts'
+import { errnoCode } from '../../store/detail.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 const optionalUlidField = (description: string) => z.string().regex(ULID_PATTERN).optional().describe(description)
@@ -262,7 +263,8 @@ const decideFocusOutcome = (rt: Runtime, threadId: string, focusIds: Ulid[] | un
   let pointerRead: PointerRead
   try {
     pointerRead = readPointer(rt, layout.value)
-  } catch {
+  } catch (error) {
+    rt.log({ level: 'error', event: 'focus.pointer-unreadable', code: errnoCode(error) })
     return { ok: true, value: { outcome: { written: false, reason: UNREADABLE_POINTER_FOCUS_REASON }, pending: null } }
   }
   if (pointerRead.kind !== 'pointer') {
