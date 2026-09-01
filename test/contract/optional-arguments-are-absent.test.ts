@@ -104,7 +104,11 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.contro
     omitted: 'criterion 1',
     refused: false
   }
-  assert.throws(() => census([forbidden], classifyLandingSite))
+  assert.throws(
+    () => census([forbidden], classifyLandingSite),
+    /census rejected a forbidden item:/,
+    'contract.optional-arguments-are-absent: a derived non-empty value must be rejected as forbidden, not halted as unclassifiable'
+  )
 })
 
 test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.control.an-unclassifiable-value-halts', () => {
@@ -114,7 +118,11 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.contro
     omitted: { nested: true },
     refused: false
   }
-  assert.throws(() => census([weird], classifyLandingSite))
+  assert.throws(
+    () => census([weird], classifyLandingSite),
+    /census halted on an unclassifiable item:/,
+    'contract.optional-arguments-are-absent: an unclassifiable value must halt the census, not be rejected as forbidden'
+  )
 })
 
 test('contract.optional-arguments-are-absent.the-response-reports-it-absent', async () => {
