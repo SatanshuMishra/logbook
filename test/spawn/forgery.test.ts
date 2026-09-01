@@ -14,6 +14,7 @@ import { ALL_TOOLS } from '../../src/server/register.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { openStore } from '../../src/store/records.ts'
 import { escapeStored } from '../../src/render/escape.ts'
+import { CLIP_MARKER } from '../../src/render/clip.ts'
 import { BRIEFING_HEADING } from '../../src/render/briefing.ts'
 import { renderThreadListing } from '../../src/cli/session-start.ts'
 import { UNRECOGNIZED_KEY_NAME_MAX } from '../../src/schema/caps.ts'
@@ -793,8 +794,12 @@ test('render.clip-is-grapheme-safe', async () => {
       'the seeded listing was not long enough to force the session-start clip, so this surface would prove nothing'
     )
     assert.ok(
-      unclipped.startsWith(emitted),
-      'the emitted session-start context is not a prefix of the listing it was clipped from'
+      emitted.endsWith(CLIP_MARKER),
+      'the emitted session-start context was clipped and carries no clip marker'
+    )
+    assert.ok(
+      unclipped.startsWith(emitted.slice(0, -CLIP_MARKER.length)),
+      'the emitted session-start context, with its clip marker removed, is not a prefix of the listing it was clipped from'
     )
     assertUtf8Clean('session-start additionalContext', emitted)
   } finally {
