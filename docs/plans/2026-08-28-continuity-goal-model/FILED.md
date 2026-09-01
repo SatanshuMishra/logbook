@@ -952,28 +952,28 @@ Appends only. Never edit an item another planner wrote.
 - **Why it is above the ceiling:** repairing it means either deleting the local array at `test/unit/escape.test.ts:160` in favour of the module's set, or editing that array's contents — both are changes to a shipped test this criterion does not own, and the U10 work order forbids editing any existing test. `F10d` already holds the repair and names the exports (`isEmittedEscape`, `toEscaped`) that make it possible. Recorded here so the worsening is visible on the record `F10d` will be closed against.
 - **Not folded in.**
 
-## F10d — the vendored `node_modules` tree is drifted from `package-lock.json` across roughly 227 packages
+## F10h — the vendored `node_modules` tree is drifted from `package-lock.json` across roughly 227 packages
 
 - **Surfaced by:** U10 list-prefix headroom confirmation
 - **Evidence:** a single `npm install --save-dev --save-exact commonmark@0.31.2` reported `added 231 packages, and changed 1 package`, while `git diff --stat package-lock.json` showed only `53 insertions, 3 deletions` — the four new parser entries plus two version-field corrections. The added packages were therefore already declared in the pre-install lockfile but absent from the git-tracked `node_modules` on disk; `git show HEAD:package-lock.json` confirms entries for packages such as the `@babel`, `@inquirer` and `@stryker-mutator` trees that had no vendored copy. At package-version granularity the same drift shows in `@hono/node-server`: the pre-install lockfile pinned `2.1.1` while the vendored copy on disk was `1.19.14`, read from `git show HEAD:node_modules/@hono/node-server/package.json`. Reconciling that one package produced 44 file deletions and 10 modifications, because the newer version drops its CommonJS builds and ships only `.mjs`/`.d.mts`. Per-file working-tree count after the install was 12,957 entries, of which 12,900 were untracked additions.
 - **Why it is above the ceiling:** this unit's acceptance is confined to confirming the escape module's indentation threshold against a real CommonMark parser. Reconciling the vendored tree is a repository-vendoring policy decision that no unit's criteria cover, and a partial reconciliation would be worse than none — correcting one package while leaving 226 others drifted makes the tree's relationship to the lockfile harder to reason about, not easier. This unit therefore commits only the parser's own 76 files and leaves the drift exactly as it found it.
 - **Not folded in.**
 
-## F10e — a threshold rise would nest the forged code block as the list item's own child, replacing the item's readable body
+## F10i — a threshold rise would nest the forged code block as the list item's own child, replacing the item's readable body
 
 - **Surfaced by:** U10 list-prefix headroom confirmation
 - **Evidence:** measured against `commonmark@0.31.2`: in the `- ` marker context the renderer uses at `src/render/briefing.ts:132`, `:134` and `:137`, a stored value escaped at a threshold of 5 renders as `-     U+002D`, and the parsed list item's direct child is a `code_block` whose `literal` is `U+002D\n` — not a paragraph containing a code block. At the current threshold of 4 the same population yields `["document","paragraph","text"]` and no code block, across 192 renderings. So the failure mode a threshold rise would open is not merely that a code block appears somewhere in the document: the body of the very list item the template built to hold the value silently becomes a code block instead of readable text, which is what a reader of a criteria, decision or out-of-scope list would lose.
 - **Why it is above the ceiling:** this unit's criterion asks whether four is the maximum safe value, and it is — the finding characterises the consequence of a change nobody has made. Acting on it would mean editing `src/render/escape.ts`, which this unit is explicitly forbidden from touching because two other lanes hold that file concurrently. It is recorded so that any future threshold tuning starts from the measured consequence rather than from a fresh reading of the specification.
 - **Not folded in.**
 
-## F10f — the confirmation covers the four rendering positions found in `briefing.ts`, and no repo-wide audit of `escapeStored` consumers was performed
+## F10j — the confirmation covers the four rendering positions found in `briefing.ts`, and no repo-wide audit of `escapeStored` consumers was performed
 
 - **Surfaced by:** U10 list-prefix headroom confirmation
 - **Evidence:** the confirmation drove its population through four embedding contexts derived from `src/render/briefing.ts` — a fresh block at column 0 (`briefing.ts:352`, `:362`), a lazy paragraph continuation (`briefing.ts:358`), immediately after a bare `- ` marker (`briefing.ts:132`, `:134`, `:137`), and mid-line behind a plain text prefix. The two column-0-adjacent contexts are the ones that flip at a threshold of 5; the lazy-continuation and mid-line contexts were measured as structurally immune at both thresholds rather than assumed to be. No exhaustive census was run over every call site in the repository that consumes `escapeStored` output, so the claim that those four position classes are the complete set of markdown positions the escaped output can reach is unverified.
 - **Why it is above the ceiling:** the criterion asks for the threshold claim to be confirmed against a real parser, and it now is, for every position the renderer is known to use. Establishing that the position set itself is closed is a separate census over a different population, needing its own unit and its own halting classifier. Naming the gap is the honest status; silently implying full coverage is not.
 - **Not folded in.**
 
-## F10g — an ambient module declaration makes a devDependency's types visible to `src/`, where nothing checks that runtime imports stay inside `dependencies`
+## F10k — an ambient module declaration makes a devDependency's types visible to `src/`, where nothing checks that runtime imports stay inside `dependencies`
 
 - **Surfaced by:** U10 list-prefix headroom confirmation, code review
 - **Evidence:** `test/fixtures/commonmark.d.ts:1` declares `declare module 'commonmark'` in a file with
@@ -1001,7 +1001,7 @@ Appends only. Never edit an item another planner wrote.
   mechanism here would be a build change riding inside a test confirmation.
 - **Not folded in.**
 
-## F10h — the reproduction models a pre-merge `escape.ts`, and `main` has since widened the leading-character set it copies
+## F10l — the reproduction models a pre-merge `escape.ts`, and `main` has since widened the leading-character set it copies
 
 - **Surfaced by:** U10 list-prefix headroom confirmation, pre-merge base check
 - **Evidence:** this unit's branch was cut from `464defcb917cfa5d8d5c8d95fa84794ab5ff230e`.
