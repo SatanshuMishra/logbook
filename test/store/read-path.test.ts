@@ -8,10 +8,13 @@ import { layoutFor } from '../../src/store/layout.ts'
 import {
   getMaterialiseCallCounter,
   getSubprocessCallCounter,
+  readRecordFile,
+  readRecordVerdict,
   resetMaterialiseCallCounter,
   resetSubprocessCallCounter
 } from '../../src/store/read-path.ts'
 import { openStore } from '../../src/store/records.ts'
+import { DecisionRecord, type Decision } from '../../src/schema/decision.ts'
 import type { RecordChange } from '../../src/store/write-path.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { withRepo } from '../support/git-fixture.ts'
@@ -167,5 +170,36 @@ test('read.absent-is-null-not-error', () => {
         chmodSync(layout.value.records, 0o755)
       }
     })
+  })
+})
+
+test('read.verdict-agrees-with-read-record-file', () => {
+  withPluginData((pluginData) => {
+    const dir = pluginData
+    const absentPath = join(dir, 'absent-decision.json')
+    const unparseablePath = join(dir, 'unparseable-decision.json')
+    const invalidSchemaPath = join(dir, 'invalid-schema-decision.json')
+
+    writeFileSync(unparseablePath, '{not-json', 'utf8')
+    writeFileSync(invalidSchemaPath, JSON.stringify({ id: 'not-a-ulid', title: 'x' }), 'utf8')
+
+    const cases: { name: string; path: string }[] = [
+      { name: 'absent file', path: absentPath },
+      { name: 'unparseable JSON', path: unparseablePath },
+      { name: 'well-formed JSON that fails the declared schema', path: invalidSchemaPath }
+    ]
+
+    for (const testCase of cases) {
+      const slot = readRecordFile<Decision>(testCase.path, DecisionRecord)
+      const expectedVerdict = slot === null ? 'absent' : slot.quarantined ? 'quarantined' : 'valid'
+      const verdict = readRecordVerdict<Decision>(testCase.path, DecisionRecord)
+      assert.equal(verdict, expectedVerdict, `readRecordVerdict must agree with readRecordFile for ${testCase.name}`)
+    }
+
+    assert.equal(
+      readRecordVerdict<Decision>(invalidSchemaPath, DecisionRecord),
+      'quarantined',
+      'a decision file that is well-formed JSON but invalid against DecisionRecord must verdict as quarantined, matching readRecordFile, and never as resolved'
+    )
   })
 })

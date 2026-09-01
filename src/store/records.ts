@@ -8,7 +8,7 @@ import type { Runtime } from '../runtime/runtime.ts'
 import { errnoCode, withDetail } from './detail.ts'
 import { git } from './git.ts'
 import { createStoreDirectories, layoutFor, type StoreLayout } from './layout.ts'
-import { markMaterialised, readAllRecordFiles, readRecordFile, syncWorkingCopy } from './read-path.ts'
+import { markMaterialised, readAllRecordFiles, readRecordFile, readRecordVerdict, syncWorkingCopy } from './read-path.ts'
 import { LEDGER_REF } from './ref.ts'
 import { ensureSingleStore } from './single-store.ts'
 import { writeRecords } from './write-path.ts'
@@ -21,12 +21,15 @@ export type { Decision } from '../schema/decision.ts'
 export type { SessionEntry } from '../schema/session.ts'
 export type { Thread, Ulid } from '../schema/thread.ts'
 
+export type DecisionProbe = { resolved: number; dangling: Ulid[]; quarantined: Ulid[] }
+
 export type Store = {
   readThread: (id: Ulid) => Slot<Thread> | null
   readThreads: () => Slot<Thread>[]
   readDecision: (id: Ulid) => Slot<Decision> | null
   readSessionEntry: (threadId: Ulid, entryId: Ulid) => Slot<SessionEntry> | null
   readSessionEntries: (threadId: Ulid) => Slot<SessionEntry>[]
+  probeDecisions: (ids: readonly Ulid[]) => DecisionProbe
   commit: (changes: RecordChange[], message: string) => CommitResult
 }
 
@@ -51,10 +54,51 @@ const invalidChangeResult = (refusal: Refusal): CommitResult => ({
 })
 
 const threadPath = (layout: StoreLayout, id: Ulid): string => path.join(layout.records, 'threads', `${id}.json`)
-const decisionPath = (layout: StoreLayout, id: Ulid): string =>
-  path.join(layout.records, 'decisions', `${id}.json`)
+const decisionsDir = (layout: StoreLayout): string => path.join(layout.records, 'decisions')
+const decisionPath = (layout: StoreLayout, id: Ulid): string => path.join(decisionsDir(layout), `${id}.json`)
 const sessionEntryPath = (layout: StoreLayout, threadId: Ulid, entryId: Ulid): string =>
   path.join(layout.records, 'sessions', threadId, `${entryId}.json`)
+
+type PresentDecisionIds = { listed: true; ids: Set<string> } | { listed: false }
+
+const presentDecisionIds = (layout: StoreLayout): PresentDecisionIds => {
+  try {
+    const names = readdirSync(decisionsDir(layout)).filter((name) => name.endsWith('.json'))
+    return { listed: true, ids: new Set(names.map((name) => name.slice(0, -'.json'.length))) }
+  } catch (error) {
+    if (errnoCode(error) === 'ENOENT') return { listed: true, ids: new Set() }
+    return { listed: false }
+  }
+}
+
+const probeDecisionIdsByVerdict = (layout: StoreLayout, ids: readonly Ulid[]): DecisionProbe => {
+  const dangling: Ulid[] = []
+  const quarantined: Ulid[] = []
+  for (const id of ids) {
+    const verdict = readRecordVerdict<Decision>(decisionPath(layout, id), DecisionRecord)
+    if (verdict === 'quarantined') quarantined.push(id)
+    else if (verdict === 'absent') dangling.push(id)
+  }
+  return { resolved: ids.length - dangling.length - quarantined.length, dangling, quarantined }
+}
+
+const probeDecisionIds = (layout: StoreLayout, ids: readonly Ulid[]): DecisionProbe => {
+  const present = presentDecisionIds(layout)
+  if (!present.listed) return probeDecisionIdsByVerdict(layout, ids)
+
+  const dangling: Ulid[] = []
+  const quarantined: Ulid[] = []
+  for (const id of ids) {
+    if (!present.ids.has(id)) {
+      dangling.push(id)
+      continue
+    }
+    const verdict = readRecordVerdict<Decision>(decisionPath(layout, id), DecisionRecord)
+    if (verdict === 'quarantined') quarantined.push(id)
+    else if (verdict === 'absent') dangling.push(id)
+  }
+  return { resolved: ids.length - dangling.length - quarantined.length, dangling, quarantined }
+}
 
 const checkRecordsReadable = (rt: Runtime, layout: StoreLayout): Refusal | null => {
   try {
@@ -176,6 +220,7 @@ export const openStore = (rt: Runtime, projectRoot: string): Ok<Store> | Refusal
       readRecordFile<SessionEntry>(sessionEntryPath(storeLayout, threadId, entryId), SessionRecord),
     readSessionEntries: (threadId) =>
       readAllRecordFiles<SessionEntry>(path.join(storeLayout.records, 'sessions', threadId), SessionRecord),
+    probeDecisions: (ids) => probeDecisionIds(storeLayout, ids),
     commit: (changes, message) => {
       for (const change of changes) {
         const refusal = validateChange(change)

@@ -261,6 +261,9 @@ const layoutInFixture = (repo: string, pluginData: string, homeDir: string): Sto
 const threadRecordPath = (layout: StoreLayout, threadId: string): string =>
   join(layout.records, 'threads', `${threadId}.json`)
 
+const decisionRecordPath = (layout: StoreLayout, decisionId: string): string =>
+  join(layout.records, 'decisions', `${decisionId}.json`)
+
 const pointerFilePath = (layout: StoreLayout): string => join(layout.state, 'active-thread.json')
 
 const runRejectsInvalid = async (
@@ -369,6 +372,63 @@ test('resume_thread.spawn.contract', async () => {
       structured.briefing.includes('**Currently being worked:** yes'),
       'the returned briefing must reflect the pointer this same resume call just wrote'
     )
+  })
+})
+
+test('resume.decision-integrity-reports-resolved-dangling-and-quarantined-end-to-end', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+
+    const recorded = (await fx.spawned.client.callTool({
+      name: 'record_decision',
+      arguments: {
+        thread_id: threadId,
+        title: 'a resolvable decision for the resume integrity probe',
+        context: 'the probe needs one decision that resolves cleanly through resume_thread',
+        options: ['record it plainly'],
+        outcome: 'record it plainly'
+      }
+    })) as CallToolResult
+    assertOkResult('record_decision (resume integrity probe, resolved)', recorded)
+
+    const layout = layoutInFixture(fx.repo, fx.pluginData, fx.homeDir)
+    const rt = testRuntime({ env: { HOME: fx.homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: fx.pluginData }, cwd: fx.repo })
+    const danglingDecisionId = rt.ulid()
+    const quarantinedDecisionId = rt.ulid()
+    mkdirSync(join(layout.records, 'decisions'), { recursive: true })
+    writeFileSync(decisionRecordPath(layout, quarantinedDecisionId), '{not-json', 'utf8')
+
+    const opened = openStore(rt, fx.repo)
+    assert.equal(opened.ok, true, 'resume integrity probe fixture must be able to open the store')
+    if (!opened.ok) return
+
+    const thread = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
+    const withExtraLinks = {
+      ...thread,
+      spine: {
+        ...thread.spine,
+        key_decisions: [
+          ...thread.spine.key_decisions,
+          { id: rt.ulid(), decision_id: danglingDecisionId, title: 'a dangling link', scope: 'resume-integrity-probe' },
+          { id: rt.ulid(), decision_id: quarantinedDecisionId, title: 'a quarantined link', scope: 'resume-integrity-probe' }
+        ]
+      }
+    }
+    const seeded = opened.value.commit(
+      [{ kind: 'thread', record: withExtraLinks }],
+      'seed a dangling and a quarantined key-decision link for the resume integrity probe'
+    )
+    assert.equal(seeded.ok, true, 'resume integrity probe fixture must be able to seed the extra links')
+
+    const resumed = await callResume(fx.spawned, fx.published, threadId)
+    assertOkResult('resume_thread (decision integrity, end to end)', resumed)
+    const briefing = (resumed.structuredContent as { briefing: string }).briefing
+    const lines = briefing.split('\n')
+    const decisionsAt = lines.indexOf('**Decisions:**')
+    assert.notEqual(decisionsAt, -1, 'the briefing must carry a Decisions section')
+    assert.equal(lines[decisionsAt + 1], '- resolved: 1')
+    assert.equal(lines[decisionsAt + 2], `- dangling: ${danglingDecisionId}`)
+    assert.equal(lines[decisionsAt + 3], `- quarantined: ${quarantinedDecisionId}`)
   })
 })
 
