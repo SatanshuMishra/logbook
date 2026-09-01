@@ -1,547 +1,871 @@
 {
-  "disposal_complete": false,
+  "disposal_complete": true,
   "FILED": [
     {
       "ordinal": 1,
       "id": "F3a",
-      "class": "pending"
+      "class": "shipped-here",
+      "evidence": "the goal-model specification is on main at docs/specs/2026-08-28-continuity-goal-model.md, so U3's census can read the population it derives from that path"
     },
     {
       "ordinal": 2,
       "id": "F3b",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "frozen-document-contradictions"
     },
     {
       "ordinal": 3,
       "id": "F0a",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "durability-and-repo-posture"
     },
     {
       "ordinal": 4,
       "id": "F0b",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "durability-and-repo-posture"
     },
     {
       "ordinal": 5,
       "id": "F0c",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "durability-and-repo-posture"
     },
     {
       "ordinal": 6,
       "id": "F10a",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "write-fidelity-residue"
     },
     {
       "ordinal": 7,
       "id": "F10b",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "write-fidelity-residue"
     },
     {
       "ordinal": 8,
       "id": "F1a",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "write-side-validation"
     },
     {
       "ordinal": 9,
       "id": "F1b",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "write-side-validation"
     },
     {
       "ordinal": 10,
       "id": "F1c",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "write-side-validation"
     },
     {
       "ordinal": 11,
       "id": "F10c",
-      "class": "pending"
+      "class": "closed",
+      "reason": "a correction to F10a's module count from six to ten; F10a's conclusion is unchanged and no code or document needs an edit"
     },
     {
       "ordinal": 12,
       "id": "F6a",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "duplication-and-file-size"
     },
     {
       "ordinal": 13,
       "id": "F6b",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 14,
       "id": "F6c",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "render-surface-consistency"
     },
     {
       "ordinal": 15,
       "id": "F6d",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "write-fidelity-residue"
     },
     {
       "ordinal": 16,
       "id": "F6e",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "census-machinery"
     },
     {
       "ordinal": 17,
       "id": "F2a",
-      "class": "pending"
+      "class": "closed",
+      "reason": "the residual open cost is the ref read B37 deliberately keeps as the stamp-versus-ref comparison, so removing it is a different change against a different rule"
     },
     {
       "ordinal": 18,
       "id": "F2b",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 19,
       "id": "F2c",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 20,
       "id": "F2d",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 21,
       "id": "F5a",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "render-surface-consistency"
     },
     {
       "ordinal": 22,
       "id": "F5b",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "verification-honesty"
     },
     {
       "ordinal": 23,
       "id": "F5c",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "frozen-invariant-and-budget"
     },
     {
       "ordinal": 24,
       "id": "F4a",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "census-machinery"
     },
     {
       "ordinal": 25,
       "id": "F4b",
-      "class": "pending"
+      "class": "closed",
+      "reason": "false against trunk: src/server/tool-support.ts:91-98 names the heaviest field and the observed byte count in the whole-record cap refusal"
     },
     {
       "ordinal": 26,
       "id": "F4c",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "census-machinery"
     },
     {
       "ordinal": 27,
       "id": "F7a",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 28,
       "id": "F7b",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "census-machinery"
     },
     {
       "ordinal": 29,
       "id": "F7c",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "duplication-and-file-size"
     },
     {
       "ordinal": 30,
       "id": "F5d",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "verification-honesty"
     },
     {
       "ordinal": 31,
       "id": "F8a",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "write-fidelity-residue"
     },
     {
       "ordinal": 32,
       "id": "F8b",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "render-surface-consistency"
     },
     {
       "ordinal": 33,
       "id": "F8c",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "write-side-validation"
     },
     {
       "ordinal": 34,
       "id": "F8d",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "render-surface-consistency"
     },
     {
       "ordinal": 35,
       "id": "F9a",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "frozen-invariant-and-budget"
     },
     {
       "ordinal": 36,
       "id": "F9b",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "write-fidelity-residue"
     },
     {
       "ordinal": 37,
       "id": "F9c",
-      "class": "pending"
+      "class": "shipped-here",
+      "evidence": "U8-A updated both golden briefing tests under OR33; test/unit/briefing.test.ts carries the legacy-fallback line in both exact-output expectations"
     },
     {
       "ordinal": 38,
       "id": "F9d",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "verification-honesty"
     },
     {
       "ordinal": 39,
       "id": "F2e",
-      "class": "pending"
+      "class": "closed",
+      "reason": "the plan's checkout-index prescription is stale against the shipped src/store/materialise-tree.ts; the code wins and the plan document is frozen"
     },
     {
       "ordinal": 40,
       "id": "F2f",
-      "class": "pending"
+      "class": "closed",
+      "reason": "the plan cites roster.subprocess-census; the shipped test is roster.is-subprocess-free at test/store/roster.test.ts:50 and asserts what the plan describes"
     },
     {
       "ordinal": 41,
       "id": "F2g",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 42,
       "id": "F2h",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 43,
       "id": "F2i",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 44,
       "id": "F2j",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 45,
       "id": "F2k",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 46,
       "id": "F2l",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 47,
       "id": "F2m",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 48,
       "id": "F2n",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 49,
       "id": "F2o",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 50,
       "id": "F2p",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 51,
       "id": "F2q",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 52,
       "id": "F2r",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 53,
       "id": "F2s",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 54,
       "id": "F2t",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 55,
       "id": "F2u",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 56,
       "id": "F2v",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 57,
       "id": "F2w",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "duplication-and-file-size"
     },
     {
       "ordinal": 58,
       "id": "F2x",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 59,
       "id": "F2y",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "refusal-text-safety"
     },
     {
       "ordinal": 60,
       "id": "F2z",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "refusal-text-safety"
     },
     {
       "ordinal": 61,
       "id": "F2aa",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "refusal-text-safety"
     },
     {
       "ordinal": 62,
       "id": "F2ab",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "refusal-text-safety"
     },
     {
       "ordinal": 63,
       "id": "F2ac",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "census-machinery"
     },
     {
       "ordinal": 64,
       "id": "F2ad",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 65,
       "id": "F2ae",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "duplication-and-file-size"
     },
     {
       "ordinal": 66,
       "id": "F6a",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "census-machinery"
     },
     {
       "ordinal": 67,
       "id": "F6b",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "census-machinery"
     },
     {
       "ordinal": 68,
       "id": "F6c",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "render-surface-consistency"
     },
     {
       "ordinal": 69,
       "id": "F6d",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "write-side-validation"
     },
     {
       "ordinal": 70,
       "id": "F6e",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "frozen-document-contradictions"
     },
     {
       "ordinal": 71,
       "id": "F6f",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "render-surface-consistency"
     },
     {
       "ordinal": 72,
       "id": "F6g",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "render-surface-consistency"
     },
     {
       "ordinal": 73,
       "id": "F6h",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "render-surface-consistency"
     },
     {
       "ordinal": 74,
       "id": "F6i",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "render-surface-consistency"
     },
     {
       "ordinal": 75,
       "id": "F6j",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "census-machinery"
     },
     {
       "ordinal": 76,
       "id": "F6k",
-      "class": "pending"
+      "class": "closed",
+      "reason": "OR0 and OR9 forbid editing a plan document, and neither defect changed what shipped"
     },
     {
       "ordinal": 77,
       "id": "F5e",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "render-surface-consistency"
     },
     {
       "ordinal": 78,
       "id": "F5f",
-      "class": "pending"
+      "class": "closed",
+      "reason": "disposed by OR43: criterion 22 stands as met and the artifacts section is correct forward work; the unit that first writes the field owns proving it"
     },
     {
       "ordinal": 79,
       "id": "F5g",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "census-machinery"
     },
     {
       "ordinal": 80,
       "id": "F5h",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "census-machinery"
     },
     {
       "ordinal": 81,
       "id": "F5i",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "render-surface-consistency"
     },
     {
       "ordinal": 82,
       "id": "F5j",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "write-side-validation"
     },
     {
       "ordinal": 83,
       "id": "F5k",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "duplication-and-file-size"
     },
     {
       "ordinal": 84,
       "id": "F5l",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "render-surface-consistency"
     },
     {
       "ordinal": 85,
       "id": "F5m",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "render-surface-consistency"
     },
     {
       "ordinal": 86,
       "id": "F5n",
-      "class": "pending"
+      "class": "closed",
+      "reason": "OR0 and OR9 forbid editing a plan document, and the receipt was obtainable exactly as the command was written"
     },
     {
       "ordinal": 87,
       "id": "F7d",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "frozen-document-contradictions"
     },
     {
       "ordinal": 88,
       "id": "F7e",
-      "class": "pending"
+      "class": "closed",
+      "reason": "exit 0 is the real gate and every unit used it; OR0 and OR9 forbid editing the plan documents that describe the output wrongly"
     },
     {
       "ordinal": 89,
       "id": "F7f",
-      "class": "pending"
+      "class": "shipped-here",
+      "evidence": "OR41's authored replacement shipped; test/contract/debrief-spine-update.test.ts:125 calls open_thread with a text-and-check object, so the fixture no longer dies on refusal"
     },
     {
       "ordinal": 90,
       "id": "F7g",
-      "class": "pending"
+      "class": "closed",
+      "reason": "a working practice rather than a defect in the tree; the agent caught it, re-ran unpiped, and no false result reached a commit or a pull request body"
     },
     {
       "ordinal": 91,
       "id": "F7h",
-      "class": "pending"
+      "class": "closed",
+      "reason": "harness behaviour outside the tree entirely; every agent refused the trigger and every wave-2 pull request was opened by the centralized tool"
     },
     {
       "ordinal": 92,
       "id": "F9e",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "census-machinery"
     },
     {
       "ordinal": 93,
       "id": "F9f",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "census-machinery"
     },
     {
       "ordinal": 94,
       "id": "F9g",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "census-machinery"
     },
     {
       "ordinal": 95,
       "id": "F9h",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "store-sync-robustness"
     },
     {
       "ordinal": 96,
       "id": "F9i",
-      "class": "pending"
+      "class": "closed",
+      "reason": "false against trunk: test/spawn/resume.test.ts:632-655 asserts both halves, and the test shipped in 8903242e before the review that filed it"
+    },
+    {
+      "ordinal": 97,
+      "id": "F10d",
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "duplication-and-file-size"
+    },
+    {
+      "ordinal": 98,
+      "id": "F10e",
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "write-fidelity-residue"
+    },
+    {
+      "ordinal": 99,
+      "id": "F10f",
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "census-machinery"
+    },
+    {
+      "ordinal": 100,
+      "id": "F10g",
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "duplication-and-file-size"
     }
   ],
   "NEW": [
     {
       "ordinal": 1,
       "id": "N1",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "durability-and-repo-posture"
     },
     {
       "ordinal": 2,
       "id": "N2",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "durability-and-repo-posture"
     },
     {
       "ordinal": 3,
       "id": "N3",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "durability-and-repo-posture"
     },
     {
       "ordinal": 4,
       "id": "N4",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "write-fidelity-residue"
     },
     {
       "ordinal": 5,
       "id": "N5",
-      "class": "pending"
+      "class": "shipped-here",
+      "evidence": "README.md:19 publishes LG5 together with its measured exception, which is the only obligation N5 itself carries; its durable half is N4"
     },
     {
       "ordinal": 6,
       "id": "N6",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "verification-honesty"
     },
     {
       "ordinal": 7,
       "id": "N7",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "frozen-invariant-and-budget"
     },
     {
       "ordinal": 8,
       "id": "N8",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "verification-honesty"
     },
     {
       "ordinal": 9,
       "id": "N9",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "write-fidelity-residue"
     },
     {
       "ordinal": 10,
       "id": "N10",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "frozen-invariant-and-budget"
     },
     {
       "ordinal": 11,
       "id": "N11",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "write-fidelity-residue"
     },
     {
       "ordinal": 12,
       "id": "N12",
-      "class": "pending"
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "group": "verification-honesty"
     }
   ]
 }

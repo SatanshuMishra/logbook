@@ -20,13 +20,33 @@ const DOCUMENTS: Record<RegisterName, string> = {
 }
 
 const LEGAL_CLASSES: Record<RegisterName, readonly string[]> = {
-  FILED: ['shipped-here', 'bound', 'closed'],
-  NEW: ['shipped-here', 'own-thread']
+  FILED: ['shipped-here', 'bound', 'closed', 'carried-as-criterion'],
+  NEW: ['shipped-here', 'own-thread', 'carried-as-criterion']
 }
+
+const CARRIED_GROUPS: readonly string[] = [
+  'store-sync-robustness',
+  'refusal-text-safety',
+  'duplication-and-file-size',
+  'census-machinery',
+  'render-surface-consistency',
+  'write-side-validation',
+  'frozen-document-contradictions',
+  'durability-and-repo-posture',
+  'write-fidelity-residue',
+  'verification-honesty',
+  'frozen-invariant-and-budget'
+]
+
+const NAMED_CARRIED_GROUPS = CARRIED_GROUPS.map((name) => `"${name}"`).join(', ')
+
+const CARRIED_THREAD_ID = '01M130AYZYVWAGDKGHJX9AXPFG'
+const CARRIED_DECISION_ID = '01M1FF5VA6JCR7QH8Q727WBR1D'
 
 const EVIDENCE_REQUIREMENT: Record<string, string> = {
   'shipped-here': 'a non-empty "evidence" string',
   'own-thread': 'a 26-character Crockford base32 ULID in "thread_id", and the same shape in "decision_id" when it is present',
+  'carried-as-criterion': `a "thread_id" of exactly "${CARRIED_THREAD_ID}", a "decision_id" of exactly "${CARRIED_DECISION_ID}", and a "group" naming exactly one of ${NAMED_CARRIED_GROUPS}`,
   bound: 'a "ruling" matching OR<number> and a "unit" matching U<number> with an optional -<LETTER> suffix',
   closed: 'a non-empty "reason" string'
 }
@@ -236,6 +256,8 @@ const isNonEmptyString = (value: unknown): boolean => typeof value === 'string' 
 
 const matches = (pattern: RegExp, value: unknown): boolean => typeof value === 'string' && pattern.test(value)
 
+const isCarriedGroup = (value: unknown): boolean => typeof value === 'string' && CARRIED_GROUPS.includes(value)
+
 const hasRequiredEvidence = (entry: RegisterEntry): boolean => {
   const { raw } = entry
   switch (entry.disposalClass) {
@@ -243,6 +265,8 @@ const hasRequiredEvidence = (entry: RegisterEntry): boolean => {
       return isNonEmptyString(raw.evidence)
     case 'own-thread':
       return matches(ULID_PATTERN, raw.thread_id) && (raw.decision_id === undefined || matches(ULID_PATTERN, raw.decision_id))
+    case 'carried-as-criterion':
+      return raw.thread_id === CARRIED_THREAD_ID && raw.decision_id === CARRIED_DECISION_ID && isCarriedGroup(raw.group)
     case 'bound':
       return matches(RULING_PATTERN, raw.ruling) && matches(UNIT_PATTERN, raw.unit)
     case 'closed':
@@ -267,6 +291,26 @@ const describeEvidence = (entry: RegisterEntry): string => {
 
 const isDisposed = (entry: RegisterEntry): boolean =>
   entry.disposalClass !== PENDING && LEGAL_CLASSES[entry.register].includes(entry.disposalClass)
+
+type GroupUsage = { group: string; uses: number }
+
+const groupUsage = (
+  vocabulary: readonly string[],
+  entries: Record<RegisterName, RegisterEntry[]>
+): GroupUsage[] => {
+  const carried = REGISTERS.flatMap((register) =>
+    entries[register].filter((entry) => entry.disposalClass === 'carried-as-criterion')
+  )
+  return vocabulary.map((group) => ({
+    group,
+    uses: carried.filter((entry) => entry.raw.group === group).length
+  }))
+}
+
+const classifyGroupUsage = (item: GroupUsage): Verdict => (item.uses > 0 ? 'allowed' : 'unclassifiable')
+
+const describeGroupUsage = (item: GroupUsage): string =>
+  `disposal-census: the closed group vocabulary declares "${item.group}", but no carried-as-criterion entry in ${REGISTER_PATH} names it; the vocabulary declares a group the register no longer uses, so a rename or a reclassification left a dead name that stays legal forever without ever being reached`
 
 type OrdinalItem = { register: RegisterName; ordinal: number; id: string; occurrences: number; total: number }
 
@@ -382,6 +426,8 @@ test('disposal-census.every-class-is-legal-for-the-register-it-appears-in-or-is-
   assert.equal(classifyClass(filedEntry('bound')), 'allowed')
   assert.equal(classifyClass(filedEntry('own-thread')), 'unclassifiable')
   assert.equal(classifyClass(filedEntry('absorbed-into-a-unit')), 'unclassifiable')
+  assert.equal(classifyClass(filedEntry('carried-as-criterion')), 'allowed')
+  assert.equal(classifyClass(newEntry('carried-as-criterion')), 'allowed')
   assert.match(describeClass(newEntry('bound')), /"bound" is a FILED-only disposal class and carries no meaning in NEW/)
   assert.doesNotMatch(describeClass(filedEntry('absorbed-into-a-unit')), /only disposal class/)
 })
@@ -429,6 +475,125 @@ test('disposal-census.every-disposed-entry-carries-the-evidence-its-class-requir
 
   assert.match(describeEvidence(boundWithoutUnit), /requires a "ruling" matching OR<number>/)
   assert.match(describeEvidence(closedWithoutReason), /carries no evidence field at all/)
+
+  const threadUlid = '01M130AYZYVWAGDKGHJX9AXPFG'
+  const decisionUlid = '01M1FF5VA6JCR7QH8Q727WBR1D'
+  const group = 'census-machinery'
+  const carried = (evidence: Record<string, unknown>): RegisterEntry =>
+    entryOf('FILED', 'carried-as-criterion', evidence)
+  assert.equal(
+    classifyEvidence(carried({ thread_id: threadUlid, decision_id: decisionUlid, group })),
+    'allowed',
+    'the carrying thread, the authorising decision and a named group is the whole of the carried-as-criterion evidence'
+  )
+  assert.equal(
+    classifyEvidence(carried({ thread_id: threadUlid, group })),
+    'unclassifiable',
+    'a carried item without a decision_id names no authorisation'
+  )
+  assert.equal(
+    classifyEvidence(carried({ decision_id: decisionUlid, group })),
+    'unclassifiable',
+    'a carried item without a thread_id names no thread that carries it'
+  )
+  assert.equal(
+    classifyEvidence(carried({ thread_id: threadUlid, decision_id: decisionUlid })),
+    'unclassifiable',
+    'a carried item without a group names no criterion it was bound into'
+  )
+  assert.equal(
+    classifyEvidence(carried({ thread_id: threadUlid, decision_id: decisionUlid, group: 'store-sync' })),
+    'unclassifiable',
+    'a group outside the closed vocabulary halts rather than passing as a near miss'
+  )
+  assert.equal(
+    classifyEvidence(carried({ thread_id: 'a-slug-not-a-ulid', decision_id: decisionUlid, group })),
+    'unclassifiable',
+    'a slug in thread_id is not the carrying thread'
+  )
+  assert.equal(
+    classifyEvidence(carried({ thread_id: threadUlid, decision_id: 'not-a-ulid', group })),
+    'unclassifiable',
+    'a slug in decision_id is not the authorising decision'
+  )
+  assert.equal(
+    classifyEvidence(carried({ thread_id: ulid, decision_id: decisionUlid, group })),
+    'unclassifiable',
+    'a well-formed ULID that is not the carrying thread is refused, so this pins the identifier and not its shape'
+  )
+  assert.equal(
+    classifyEvidence(carried({ thread_id: threadUlid, decision_id: ulid, group })),
+    'unclassifiable',
+    'a well-formed ULID that is not the authorising decision is refused, so this pins the identifier and not its shape'
+  )
+
+  const carriedWithoutGroup = entryOf('FILED', 'carried-as-criterion', {
+    thread_id: threadUlid,
+    decision_id: decisionUlid
+  })
+  assert.match(
+    describeEvidence(carriedWithoutGroup),
+    /requires a "thread_id" of exactly "01M130AYZYVWAGDKGHJX9AXPFG", a "decision_id" of exactly "01M1FF5VA6JCR7QH8Q727WBR1D", and a "group" naming exactly one of .*"census-machinery"/
+  )
+  assert.doesNotMatch(describeEvidence(carriedWithoutGroup), /evidence this census does not know how to check/)
+})
+
+test('disposal-census.every-group-the-closed-vocabulary-declares-is-carried-by-at-least-one-register-entry', () => {
+  const headings = allHeadings()
+  const { entries } = loadRegister()
+  guardNonEmpty(headings, entries)
+  assert.ok(
+    CARRIED_GROUPS.length > 0,
+    'disposal-census: the closed group vocabulary is empty; a census over an empty vocabulary proves nothing'
+  )
+  halts(groupUsage(CARRIED_GROUPS, entries), classifyGroupUsage, describeGroupUsage)
+})
+
+test('disposal-census.every-group-the-closed-vocabulary-declares-is-carried-by-at-least-one-register-entry.control.a-declared-but-unused-group-halts-while-a-used-one-passes', () => {
+  const entryOf = (register: RegisterName, ordinal: number, disposalClass: string, group: string): RegisterEntry => {
+    const id = `${register === 'FILED' ? 'F' : 'N'}${ordinal}`
+    return {
+      register,
+      index: ordinal - 1,
+      ordinal,
+      id,
+      disposalClass,
+      raw: {
+        ordinal,
+        id,
+        class: disposalClass,
+        thread_id: CARRIED_THREAD_ID,
+        decision_id: CARRIED_DECISION_ID,
+        group
+      }
+    }
+  }
+  const entries: Record<RegisterName, RegisterEntry[]> = {
+    FILED: [
+      entryOf('FILED', 1, 'carried-as-criterion', 'census-machinery'),
+      entryOf('FILED', 2, 'closed', 'renamed-away-group')
+    ],
+    NEW: [entryOf('NEW', 1, 'carried-as-criterion', 'store-sync-robustness')]
+  }
+  const vocabulary = ['census-machinery', 'store-sync-robustness', 'renamed-away-group']
+  const usage = groupUsage(vocabulary, entries)
+
+  assert.deepEqual(usage, [
+    { group: 'census-machinery', uses: 1 },
+    { group: 'store-sync-robustness', uses: 1 },
+    { group: 'renamed-away-group', uses: 0 }
+  ])
+  assert.deepEqual(usage.map(classifyGroupUsage), ['allowed', 'allowed', 'unclassifiable'])
+  assert.throws(
+    () => census(usage, classifyGroupUsage),
+    /renamed-away-group/,
+    'a group declared in the vocabulary and carried by no entry must halt the census and be named'
+  )
+  assert.doesNotThrow(() => census(groupUsage(['census-machinery'], entries), classifyGroupUsage))
+  assert.match(
+    describeGroupUsage({ group: 'renamed-away-group', uses: 0 }),
+    /declares "renamed-away-group", but no carried-as-criterion entry in .* names it; the vocabulary declares a group the register no longer uses/
+  )
 })
 
 test('disposal-census.ordinals-are-unique-within-a-register-and-run-contiguously-from-one', () => {
