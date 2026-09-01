@@ -17,7 +17,7 @@ const rt = testRuntime()
 
 const ASCII_FILL = 'x'
 const MULTI_BYTE_FILL = '漢'
-const DELIMITER_FILL = '_'
+const DELIMITER_FILL = '.'
 
 const FILLS = [
   { name: 'ascii', char: ASCII_FILL },

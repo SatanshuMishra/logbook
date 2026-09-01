@@ -48,7 +48,7 @@ const graphemesOf = (text: string): string[] =>
 const linesOf = (text: string): string[] => text.split('\n')
 
 const HEADING_AT_LINE_START = /^[ \t]*#/
-const STRUCTURAL_MARKER_AT_LINE_START = /^[ \t]*(#{1,6}|[-*+>]|`{3}|~{3}|\d+[.)])(?=\s|$)/
+const STRUCTURAL_MARKER_AT_LINE_START = /^[ \t]*(#{1,6}|_{3,}|[-*+>]|`{3}|~{3}|\d+[.)])(?=\s|$)/
 const INDENTED_CODE_BLOCK_AT_LINE_START = /^ {4,}/
 
 const headingLinesOf = (text: string): string[] => {
@@ -508,7 +508,8 @@ const SPINE_FORGERY_PAYLOADS: readonly SpinePayload[] = [
   { stored: ' > forged quote', neutralised: ' U+003E forged quote' },
   { stored: ' ``` forged fence', neutralised: ' U+0060`` forged fence' },
   { stored: '1. forged ordered no-space', neutralised: '1U+002E forged ordered no-space' },
-  { stored: '\t- forged bullet from a tab', neutralised: 'U+0009- forged bullet from a tab' }
+  { stored: '\t- forged bullet from a tab', neutralised: 'U+0009- forged bullet from a tab' },
+  { stored: '___', neutralised: 'U+005F__' }
 ]
 
 const controlSpineValue = (index: number): string => `a plainly benign spine probe line ${index}`
