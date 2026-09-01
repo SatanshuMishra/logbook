@@ -20,7 +20,13 @@ const isBlank = (char: string): boolean => {
 const isEscapable = (char: string): boolean =>
   ANGLE_BRACKETS.has(char) || FORMAT_CLASS.test(char) || isBlank(char)
 
-const toEscaped = (char: string): string => {
+export const isEmittedEscape = (char: string): boolean =>
+  isEscapable(char) ||
+  MARKDOWN_LEADING_CHARS.has(char) ||
+  ORDERED_LIST_PUNCTUATION.has(char) ||
+  char === ORDINARY_SPACE
+
+export const toEscaped = (char: string): string => {
   const codePoint = char.codePointAt(0) ?? 0
   return `U+${codePoint.toString(16).toUpperCase().padStart(4, '0')}`
 }
