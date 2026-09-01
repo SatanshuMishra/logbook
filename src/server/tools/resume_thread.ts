@@ -97,27 +97,20 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
     const writtenPointer: Pointer = { thread_id: thread.id, written_at: rt.now(), session_id: rt.sessionId, focus: focusIds }
     writePointer(rt, layout.value, writtenPointer)
 
-    const decisionOutcomes = thread.spine.key_decisions.map((keyDecision) => ({
-      decisionId: keyDecision.decision_id,
-      slot: store.readDecision(keyDecision.decision_id)
-    }))
+    const decisionIds = thread.spine.key_decisions.map((keyDecision) => keyDecision.decision_id)
+    const probe = store.probeDecisions(decisionIds)
 
-    const dangling: string[] = []
-    const quarantined: string[] = []
-    for (const outcome of decisionOutcomes) {
-      if (outcome.slot === null) {
-        dangling.push(outcome.decisionId)
-        rt.log({ level: 'error', event: 'briefing.decision-dangling', decision_id: outcome.decisionId })
-      } else if (outcome.slot.quarantined) {
-        quarantined.push(outcome.decisionId)
-        rt.log({ level: 'error', event: 'briefing.decision-quarantined', decision_id: outcome.decisionId })
-      }
+    for (const decisionId of probe.dangling) {
+      rt.log({ level: 'error', event: 'briefing.decision-dangling', decision_id: decisionId })
+    }
+    for (const decisionId of probe.quarantined) {
+      rt.log({ level: 'error', event: 'briefing.decision-quarantined', decision_id: decisionId })
     }
 
     const decisionIntegrity: DecisionIntegrity = {
-      resolved: decisionOutcomes.length - dangling.length - quarantined.length,
-      dangling,
-      quarantined
+      resolved: probe.resolved,
+      dangling: probe.dangling,
+      quarantined: probe.quarantined
     }
 
     const hasPreviousSession = previousSession !== null

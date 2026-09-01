@@ -213,6 +213,14 @@ export const readRecordFile = <T>(filePath: string, declared: Declared<T>): Slot
   return { quarantined: false, record: result.value }
 }
 
+export type RecordVerdict = 'absent' | 'valid' | 'quarantined'
+
+export const readRecordVerdict = <T>(filePath: string, declared: Declared<T>): RecordVerdict => {
+  const slot = readRecordFile<T>(filePath, declared)
+  if (slot === null) return 'absent'
+  return slot.quarantined ? 'quarantined' : 'valid'
+}
+
 export const readAllRecordFiles = <T>(dir: string, declared: Declared<T>): Slot<T>[] => {
   let names: string[]
   try {
