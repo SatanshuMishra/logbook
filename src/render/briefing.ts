@@ -1,4 +1,4 @@
-import type { Thread, Criterion, Risk, KeyDecision, OutOfScope } from '../schema/thread.ts'
+import type { Thread, Criterion, Risk, KeyDecision, OutOfScope, Artifact } from '../schema/thread.ts'
 import type { Pointer } from '../domain/pointer.ts'
 import { escapeStored } from './escape.ts'
 import { CLIP_MARKER_GRAPHEMES, clipWithMarker } from './clip.ts'
@@ -46,13 +46,20 @@ const fitsBudget = (briefing: string, threadId: string, hasPreviousSession: bool
 const RELATED_TITLE_NATURAL_MAX = 100
 const RELATED_SLUG_NATURAL_MAX = 64
 const RISK_TEXT_NATURAL_MAX = 500
+const RISK_REF_NATURAL_MAX = 200
 const KEY_DECISION_TITLE_NATURAL_MAX = 200
 const OUT_OF_SCOPE_TEXT_NATURAL_MAX = 300
 const CRITERION_TEXT_NATURAL_MAX = 500
+const CRITERION_CHECK_NATURAL_MAX = 500
+const CRITERION_RESULT_NATURAL_MAX = 500
 const SETTLED_TEXT_NATURAL_MAX = 120
+const ARTIFACT_LABEL_NATURAL_MAX = 200
+const ARTIFACT_POINTER_NATURAL_MAX = 500
 
 const MIN_TEXT_CLIP = CLIP_MARKER_GRAPHEMES
 const NO_CLIP = Number.POSITIVE_INFINITY
+
+const NOT_RECORDED = 'not recorded'
 
 const FOCUS_NOT_SET_LINE =
   '**Focus:** not set. Risks and key decisions render as one group in the order they were recorded, apart from those on a goal already met or struck.'
@@ -76,11 +83,38 @@ const renderCriterionLine = (criterion: Criterion, textClip: number): string => 
   return `${withText} (id ${escapeStored(criterion.id)})`
 }
 
-const renderRiskLine = (risk: Risk, textClip: number): string => `- ${escapeStored(risk.id)} ${clip(risk.text, textClip)}`
+const renderCheckLine = (criterion: Criterion, textClip: number): string =>
+  typeof criterion.check === 'string'
+    ? `  - check: ${clip(criterion.check, textClip)}`
+    : `  - check: ${NOT_RECORDED}`
 
-const renderKeyDecisionLine = (keyDecision: KeyDecision, textClip: number): string => `- ${clip(keyDecision.title, textClip)}`
+const renderResultStatus = (criterion: Criterion): string => escapeStored(criterion.result_status ?? NOT_RECORDED)
+
+const renderResultLine = (criterion: Criterion, textClip: number): string =>
+  typeof criterion.result === 'string'
+    ? `  - result: ${clip(criterion.result, textClip)} (${renderResultStatus(criterion)})`
+    : `  - result: ${NOT_RECORDED} (${renderResultStatus(criterion)})`
+
+const renderCriterionBlock = (criterion: Criterion, renderClip: RenderClip): string =>
+  [
+    renderCriterionLine(criterion, renderClip.criterion),
+    renderCheckLine(criterion, renderClip.criterionCheck),
+    ...[criterion].filter((entry) => entry.done).map((entry) => renderResultLine(entry, renderClip.criterionResult))
+  ].join('\n')
+
+const renderRiskBlock = (risk: Risk, renderClip: RenderClip): string =>
+  [
+    `- ${escapeStored(risk.id)} ${clip(risk.text, renderClip.risk)}`,
+    ...risk.refs.map((ref) => `  - ref: ${clip(ref, renderClip.riskRef)}`)
+  ].join('\n')
+
+const renderKeyDecisionLine = (keyDecision: KeyDecision, textClip: number): string =>
+  `- ${clip(keyDecision.title, textClip)} (decision ${escapeStored(keyDecision.decision_id)})`
 
 const renderOutOfScopeLine = (outOfScope: OutOfScope, textClip: number): string => `- ${clip(outOfScope.text, textClip)}`
+
+const renderArtifactLine = (artifact: Artifact, renderClip: RenderClip): string =>
+  `- ${clip(artifact.label, renderClip.artifactLabel)}: ${clip(artifact.pointer, renderClip.artifactPointer)}`
 
 const renderSettledRiskLine = (risk: Risk, textClip: number): string =>
   `- risk ${escapeStored(risk.id)} ${clip(risk.text, textClip)}`
@@ -123,40 +157,60 @@ type RenderClip = {
   relatedTitle: number
   relatedSlug: number
   risk: number
+  riskRef: number
   keyDecision: number
   outOfScope: number
   criterion: number
+  criterionCheck: number
+  criterionResult: number
   settled: number
+  artifactLabel: number
+  artifactPointer: number
 }
 
 const clipAt = (perItemClip: number): RenderClip => ({
   relatedTitle: Math.min(perItemClip, RELATED_TITLE_NATURAL_MAX),
   relatedSlug: THREAD_SLUG_MAX,
   risk: Math.min(perItemClip, RISK_TEXT_NATURAL_MAX),
+  riskRef: Math.min(perItemClip, RISK_REF_NATURAL_MAX),
   keyDecision: Math.min(perItemClip, KEY_DECISION_TITLE_NATURAL_MAX),
   outOfScope: Math.min(perItemClip, OUT_OF_SCOPE_TEXT_NATURAL_MAX),
   criterion: Math.min(perItemClip, CRITERION_TEXT_NATURAL_MAX),
-  settled: Math.min(perItemClip, SETTLED_TEXT_NATURAL_MAX)
+  criterionCheck: Math.min(perItemClip, CRITERION_CHECK_NATURAL_MAX),
+  criterionResult: Math.min(perItemClip, CRITERION_RESULT_NATURAL_MAX),
+  settled: Math.min(perItemClip, SETTLED_TEXT_NATURAL_MAX),
+  artifactLabel: Math.min(perItemClip, ARTIFACT_LABEL_NATURAL_MAX),
+  artifactPointer: Math.min(perItemClip, ARTIFACT_POINTER_NATURAL_MAX)
 })
 
 const UNCLIPPED: RenderClip = {
   relatedTitle: NO_CLIP,
   relatedSlug: NO_CLIP,
   risk: NO_CLIP,
+  riskRef: NO_CLIP,
   keyDecision: NO_CLIP,
   outOfScope: NO_CLIP,
   criterion: NO_CLIP,
-  settled: NO_CLIP
+  criterionCheck: NO_CLIP,
+  criterionResult: NO_CLIP,
+  settled: NO_CLIP,
+  artifactLabel: NO_CLIP,
+  artifactPointer: NO_CLIP
 }
 
 const MAX_ITEM_CLIP = Math.max(
   RELATED_TITLE_NATURAL_MAX,
   RELATED_SLUG_NATURAL_MAX,
   RISK_TEXT_NATURAL_MAX,
+  RISK_REF_NATURAL_MAX,
   KEY_DECISION_TITLE_NATURAL_MAX,
   OUT_OF_SCOPE_TEXT_NATURAL_MAX,
   CRITERION_TEXT_NATURAL_MAX,
-  SETTLED_TEXT_NATURAL_MAX
+  CRITERION_CHECK_NATURAL_MAX,
+  CRITERION_RESULT_NATURAL_MAX,
+  SETTLED_TEXT_NATURAL_MAX,
+  ARTIFACT_LABEL_NATURAL_MAX,
+  ARTIFACT_POINTER_NATURAL_MAX
 )
 
 type ClipSearch = { briefing: string; passes: number }
@@ -208,12 +262,14 @@ const assembleBriefing = (
   const lastSessionLines = thread.spine.last_session.length === 0 ? [] : [thread.spine.last_session]
   const nextStepLines = thread.spine.next_step.length === 0 ? [] : [thread.spine.next_step]
 
+  const artifacts = thread.artifacts ?? []
   const relatedThreads = predecessor === null ? [] : [predecessor]
   const relatedLines = relatedThreads.map((item) => renderRelatedLine(item, renderClip))
-  const riskLines = risks.live.map((item) => renderRiskLine(item, renderClip.risk))
+  const artifactLines = artifacts.map((item) => renderArtifactLine(item, renderClip))
+  const riskBlocks = risks.live.map((item) => renderRiskBlock(item, renderClip))
   const keyDecisionLines = keyDecisions.live.map((item) => renderKeyDecisionLine(item, renderClip.keyDecision))
   const outOfScopeLines = outOfScope.map((item) => renderOutOfScopeLine(item, renderClip.outOfScope))
-  const criterionLines = criteria.map((item) => renderCriterionLine(item, renderClip.criterion))
+  const criterionBlocks = criteria.map((item) => renderCriterionBlock(item, renderClip))
   const settledLines = [
     ...risks.settled.map((item) => renderSettledRiskLine(item, renderClip.settled)),
     ...keyDecisions.settled.map((item) => renderSettledKeyDecisionLine(item, renderClip.settled))
@@ -234,6 +290,9 @@ const assembleBriefing = (
     renderBlockage(thread.blocked_by),
     renderPointerStatus(pointer, thread.id),
     FOCUS_NOT_SET_LINE,
+    ...artifactLines.slice(0, 1).map(() => ''),
+    ...artifactLines.slice(0, 1).map(() => '**Artifacts:**'),
+    ...artifactLines,
     ...activeGoalLines.slice(0, 1).map(() => ''),
     ...activeGoalLines.slice(0, 1).map(() => '**Active goal:**'),
     ...activeGoalLines.slice(0, 1).map(() => ''),
@@ -249,18 +308,18 @@ const assembleBriefing = (
     ...relatedThreads.slice(0, 1).map(() => ''),
     ...relatedThreads.slice(0, 1).map(() => '**Related:**'),
     ...relatedLines,
-    ...riskLines.slice(0, 1).map(() => ''),
-    ...riskLines.slice(0, 1).map(() => '**Open risks:**'),
-    ...riskLines,
+    ...riskBlocks.slice(0, 1).map(() => ''),
+    ...riskBlocks.slice(0, 1).map(() => '**Open risks:**'),
+    ...riskBlocks,
     ...keyDecisionLines.slice(0, 1).map(() => ''),
     ...keyDecisionLines.slice(0, 1).map(() => '**Key decisions:**'),
     ...keyDecisionLines,
     ...outOfScopeLines.slice(0, 1).map(() => ''),
     ...outOfScopeLines.slice(0, 1).map(() => '**Out of scope:**'),
     ...outOfScopeLines,
-    ...criterionLines.slice(0, 1).map(() => ''),
-    ...criterionLines.slice(0, 1).map(() => '**Completion criteria:**'),
-    ...criterionLines,
+    ...criterionBlocks.slice(0, 1).map(() => ''),
+    ...criterionBlocks.slice(0, 1).map(() => '**Completion criteria:**'),
+    ...criterionBlocks,
     ...settledLines.slice(0, 1).map(() => ''),
     ...settledLines.slice(0, 1).map(() => SETTLED_HEADING),
     ...settledLines,

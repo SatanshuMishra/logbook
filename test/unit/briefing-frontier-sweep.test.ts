@@ -56,6 +56,8 @@ type Measured = {
   withinBudget: boolean
   itemsHeld: number
   itemsRendered: number
+  criterionRows: number
+  checkRows: number
 }
 
 const SECTION_HEADINGS = [
@@ -79,6 +81,7 @@ const sectionLineCount = (lines: readonly string[], heading: string): number => 
 }
 
 const CRITERION_ROW_PATTERN = /^- c\d+ \[(?:open|done|struck)\]:/
+const CHECK_ROW_PATTERN = /^ {2}- check: /
 
 const measure = (shape: SweepShape): Measured => {
   const { thread, predecessor, integrity } = buildSweepFixture(rt, shape)
@@ -86,6 +89,7 @@ const measure = (shape: SweepShape): Measured => {
   const lines = render.briefing.split('\n')
 
   const criterionRows = lines.filter((line) => CRITERION_ROW_PATTERN.test(line)).length
+  const checkRows = lines.filter((line) => CHECK_ROW_PATTERN.test(line)).length
   const danglingRows = lines.filter((line) => line.startsWith('- dangling: ')).length
   const quarantinedRows = lines.filter((line) => line.startsWith('- quarantined: ')).length
 
@@ -111,7 +115,9 @@ const measure = (shape: SweepShape): Measured => {
     bytes: resumePayloadBytes(thread.id, render.briefing),
     withinBudget: render.withinBudget,
     itemsHeld,
-    itemsRendered
+    itemsRendered,
+    criterionRows,
+    checkRows
   }
 }
 
@@ -149,6 +155,8 @@ type SweptRecord = {
   withinBudget: boolean | null
   itemsHeld: number | null
   itemsRendered: number | null
+  criterionRows: number | null
+  checkRows: number | null
 }
 
 const classifiedOutcomes: ReadonlySet<string> = new Set(OUTCOME_CLASSES)
@@ -241,7 +249,9 @@ const sweep = (): SweptRecord[] => {
             bytes: measured === null ? null : measured.bytes,
             withinBudget: measured === null ? null : measured.withinBudget,
             itemsHeld: measured === null ? null : measured.itemsHeld,
-            itemsRendered: measured === null ? null : measured.itemsRendered
+            itemsRendered: measured === null ? null : measured.itemsRendered,
+            criterionRows: measured === null ? null : measured.criterionRows,
+            checkRows: measured === null ? null : measured.checkRows
           })
 
           const withinRecordCap = (shape: SweepShape): boolean =>
@@ -392,6 +402,16 @@ test('briefing.frontier-sweep-finds-no-record-that-loses-an-item-or-hides-a-budg
     [
       `${losingAnItem.length} of ${admissible.length} swept records rendered fewer items than they hold; no display rule may remove an item`,
       ...losingAnItem.slice(0, 5).map((record) => `losing: ${record.itemsRendered} of ${record.itemsHeld} — ${describe(record)}`)
+    ].join('\n')
+  )
+
+  const missingACheckLine = admissible.filter((record) => record.criterionRows !== record.checkRows)
+  assert.equal(
+    missingACheckLine.length,
+    0,
+    [
+      `${missingACheckLine.length} of ${admissible.length} swept records rendered a criterion without its check line`,
+      ...missingACheckLine.slice(0, 5).map((record) => `missing: ${record.checkRows} checks for ${record.criterionRows} criteria — ${describe(record)}`)
     ].join('\n')
   )
 
