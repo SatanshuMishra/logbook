@@ -1725,3 +1725,85 @@ Ruled: this is filed rather than folded in, as `F5e`, and the exception is state
 It is unreachable today for the same reason the section cannot populate: no write path exists. **The
 unit that ships a write path for `thread.artifacts` fixes the separator in the same change**, and may
 not ship the writer without it. That binding is the whole reason this is allowed to be filed.
+
+## OR44 — `OR6` is withdrawn: no unit branch touches the version, and each wave ships one release pull request
+
+`OR42` recorded that withdrawing `OR6` had been considered and rejected. That call is reversed here on
+instruction, and the reasons `OR42` gave against it are answered below rather than dropped.
+
+### What is withdrawn
+
+`OR6` is withdrawn in full. **No unit branch writes `package.json` or `.claude-plugin/plugin.json`.**
+
+Every remaining plan document carries a version-bump step and names a commit for it — `U8-A`, `U8-B`,
+`U9-A` through `U9-F` and `U10` all do. Those steps are **not executed** and those commits are **not
+made**. No plan document is edited to say so; `OR0` and `OR9` forbid that, and this ruling is read
+alongside the plan per `OR7`.
+
+An implementer therefore ships **one commit fewer** than its plan's section 9 enumerates. That is
+expected, not a divergence to halt on.
+
+Stop condition 11.5 survives with its meaning narrowed. It asserted that the two manifests agree
+*before the change*; it now asserts only that they agree, and the unit makes no change to them. It
+still catches drift, which is the whole of what it ever caught.
+
+### What replaces it
+
+**One release pull request per wave.** It is opened after the wave's last unit merges and before the
+next wave's branches are cut. It writes the two manifests and nothing else — no source, no test, no
+document.
+
+Its value is derived from the Conventional Commits types of the units the wave contains:
+
+| The wave contains | The release takes |
+| --- | --- |
+| any unit that proved a break in the published contract | MAJOR, MINOR and PATCH to 0 |
+| otherwise, any `feat` | MINOR, PATCH to 0 |
+| otherwise | PATCH |
+
+Applied to wave 3 (`OR34` rows 19 to 27): `U8-B` is a proven break — `park_thread` is a
+`z.strictObject`, so dropping the key turns a succeeding call into a refusal, probed rather than
+argued. **Wave 3's release is `4.0.0`.** Wave 2 already versioned per unit under `OR6` and is not
+revisited; `main` stands at `3.4.0`.
+
+The release pull request's body **enumerates the units it covers**, because a version number no longer
+identifies them on its own. That enumeration is the replacement for the per-unit bump's only real
+benefit.
+
+### What this fixes
+
+`OR42`'s entire collision class disappears. There is exactly one writer of the manifests per wave, so
+two branches can never write different values to the same line, and the silent-skip case — where two
+independent units write the same value, git merges cleanly, and a release vanishes with nothing
+announcing it — cannot arise at all.
+
+`OR42` clauses 2, 3 and 4 are superseded. **Clause 1 stands: a unit is stacked only on a content
+dependency.** With the manifests out of the unit branches, that is now the only thing that could
+ever force a stack. `OR40`'s no-rebase rule stands unchanged.
+
+### What it costs, stated rather than assumed
+
+Between a wave's first unit merging and its release pull request merging, `main`'s version understates
+what the tree carries.
+
+That window was measured against this repository rather than reasoned about. `.github/workflows/`
+holds exactly two files: `rebuild.yml`, which runs tests on `pull_request` and on push to `main`, and
+`receipts.yml`, which runs on `pull_request`. **Neither publishes, tags, or releases anything.** No
+step in either names `publish`, `release`, `npm pack` or a tag. So nothing ships automatically from
+that window, and the only exposure is a human installing the plugin from `main` mid-wave and receiving
+new code under the previous version number.
+
+`.claude-plugin/marketplace.json` carries no version field — `check-packaging.mjs` validates only its
+`name`, `owner.name` and `plugins[0]` — so the release pull request touches two files, not three.
+
+### What still guards the value
+
+- `node scripts/check-packaging.mjs` proves both manifests are plain three-part semver and agree with
+  each other. It has never proved the value is the right one, and it does not now.
+- `test/contract/cutover-manifests-agree.test.ts` proves the version the server reports on the wire
+  matches both manifests, with `plugin.json` as the independent leg because nothing reads it at
+  runtime.
+
+Neither of those is a judgement about whether the number should have moved. That judgement now lives
+in exactly one place per wave — the release pull request — instead of being distributed across every
+unit branch, which is the point of the change.
