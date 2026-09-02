@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -14,7 +14,9 @@ import type { KeyDecision, Thread } from '../../src/schema/thread.ts'
 
 const withStore = (fn: (store: Store, rt: Runtime) => void): void => {
   withRepo((repo) => {
-    const pluginData = mkdtempSync(join(tmpdir(), 'logbook-whole-record-cap-data-'))
+    const pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-whole-record-cap-data-'))
+    const pluginData = join(pluginDataHome, 'plugin-data')
+    mkdirSync(pluginData)
     try {
       const rt = testRuntime({
         env: { HOME: process.env.HOME, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: pluginData },
@@ -26,7 +28,7 @@ const withStore = (fn: (store: Store, rt: Runtime) => void): void => {
       }
       fn(opened.value, rt)
     } finally {
-      rmSync(pluginData, { recursive: true, force: true })
+      rmSync(pluginDataHome, { recursive: true, force: true })
     }
   })
 }

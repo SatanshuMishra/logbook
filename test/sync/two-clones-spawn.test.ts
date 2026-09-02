@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, type Dirent } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, type Dirent } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -48,7 +48,9 @@ const provisionSpawnedTeammate = async (
   runSetupStep(repo, ['config', 'user.name', identity.name])
   runSetupStep(repo, ['config', 'user.email', identity.email])
 
-  const pluginData = mkdtempSync(path.join(tmpdir(), `logbook-spawn-plugin-data-${identity.name}-`))
+  const pluginDataHome = mkdtempSync(path.join(tmpdir(), `logbook-spawn-plugin-data-${identity.name}-`))
+  const pluginData = path.join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   const spawned = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
   await spawned.client.listTools()
 
@@ -67,7 +69,7 @@ const provisionSpawnedTeammate = async (
 
   return {
     teammate: { name: identity.name, repo, pluginData, spawned, transportErrors, goOffline, goOnline },
-    cleanupDirs: [repo, pluginData]
+    cleanupDirs: [repo, pluginDataHome]
   }
 }
 

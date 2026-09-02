@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -57,7 +57,9 @@ const collectOutputSchemas = async (spawned: SpawnedServer): Promise<Map<string,
 
 const withSpawnFixtureNoRemote = async (fn: (fx: SingleFixture) => Promise<void>): Promise<void> => {
   const repo = bootstrapCommittedRepo('logbook-resolve-no-remote-repo')
-  const pluginData = mkdtempSync(path.join(tmpdir(), 'logbook-resolve-no-remote-plugin-data-'))
+  const pluginDataHome = mkdtempSync(path.join(tmpdir(), 'logbook-resolve-no-remote-plugin-data-'))
+  const pluginData = path.join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   const spawned = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
   try {
     const published = await listPublishedTools(spawned)
@@ -66,7 +68,7 @@ const withSpawnFixtureNoRemote = async (fn: (fx: SingleFixture) => Promise<void>
   } finally {
     await spawned.close()
     rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginData, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 }
 
@@ -80,7 +82,9 @@ const withSpawnFixtureWithRemote = async (fn: (fx: SingleFixture) => Promise<voi
   writeFileSync(path.join(repo, 'README.md'), 'logbook resolve fixture repository\n')
   runSetupStep(repo, ['add', 'README.md'])
   runSetupStep(repo, ['commit', '-m', 'fixture: initial commit'])
-  const pluginData = mkdtempSync(path.join(tmpdir(), 'logbook-resolve-with-remote-plugin-data-'))
+  const pluginDataHome = mkdtempSync(path.join(tmpdir(), 'logbook-resolve-with-remote-plugin-data-'))
+  const pluginData = path.join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   const spawned = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
   try {
     const published = await listPublishedTools(spawned)
@@ -89,7 +93,7 @@ const withSpawnFixtureWithRemote = async (fn: (fx: SingleFixture) => Promise<voi
   } finally {
     await spawned.close()
     rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginData, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
     rmSync(remote, { recursive: true, force: true })
   }
 }
@@ -190,11 +194,13 @@ const provisionSpawnedTeammate = async (
   runSetupStep(repo, ['config', 'user.name', identity.name])
   runSetupStep(repo, ['config', 'user.email', identity.email])
 
-  const pluginData = mkdtempSync(path.join(tmpdir(), `logbook-resolve-plugin-data-${identity.name}-`))
+  const pluginDataHome = mkdtempSync(path.join(tmpdir(), `logbook-resolve-plugin-data-${identity.name}-`))
+  const pluginData = path.join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   const spawned = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
   await spawned.client.listTools()
 
-  return { teammate: { name: identity.name, repo, pluginData, spawned }, cleanupDirs: [repo, pluginData] }
+  return { teammate: { name: identity.name, repo, pluginData, spawned }, cleanupDirs: [repo, pluginDataHome] }
 }
 
 const withTwoSpawnedTeammates = async (

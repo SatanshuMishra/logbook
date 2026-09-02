@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -45,7 +45,9 @@ test('guard.is-in-process', async () => {
     const { testRuntime } = await import('../support/runtime.ts')
 
     const projectRoot = mkdtempSync(path.join(tmpdir(), 'logbook-guard-in-process-project-'))
-    const pluginDataRoot = mkdtempSync(path.join(tmpdir(), 'logbook-guard-in-process-plugin-data-'))
+    const pluginDataHome = mkdtempSync(path.join(tmpdir(), 'logbook-guard-in-process-plugin-data-'))
+    const pluginDataRoot = path.join(pluginDataHome, 'plugin-data')
+    mkdirSync(pluginDataRoot)
     const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: pluginDataRoot }, cwd: projectRoot })
 
     const layout = layoutFor(rt, projectRoot)

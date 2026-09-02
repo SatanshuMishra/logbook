@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -221,7 +221,9 @@ test('cutover.manifest-commands-execute', async () => {
     }
     const event = readFixture(FIXTURE_FILE_FOR_EVENT[item.hookName])
     const homeDir = mkdtempSync(path.join(tmpdir(), 'logbook-manifest-exec-home-'))
-    const pluginData = mkdtempSync(path.join(tmpdir(), 'logbook-manifest-exec-data-'))
+    const pluginDataHome = mkdtempSync(path.join(tmpdir(), 'logbook-manifest-exec-data-'))
+    const pluginData = path.join(pluginDataHome, 'plugin-data')
+    mkdirSync(pluginData)
     try {
       const result = spawnSync(process.execPath, [item.absoluteTarget], {
         input: JSON.stringify(event),
@@ -235,7 +237,7 @@ test('cutover.manifest-commands-execute', async () => {
       assert.strictEqual(Array.isArray(parsed), false)
     } finally {
       rmSync(homeDir, { recursive: true, force: true })
-      rmSync(pluginData, { recursive: true, force: true })
+      rmSync(pluginDataHome, { recursive: true, force: true })
     }
   }
 

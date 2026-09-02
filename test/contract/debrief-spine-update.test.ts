@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -107,11 +107,14 @@ test('debrief.documents-next-step-and-not-last-session', () => {
 
 test('debrief.returns-a-non-empty-spine-update', async () => {
   let repo = ''
+  let pluginDataHome = ''
   let pluginData = ''
   let spawned: SpawnedServer | undefined
   try {
     repo = bootstrapRepo()
-    pluginData = mkdtempSync(join(tmpdir(), 'logbook-debrief-plugin-data-'))
+    pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-debrief-plugin-data-'))
+    pluginData = join(pluginDataHome, 'plugin-data')
+    mkdirSync(pluginData)
     spawned = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
 
     const inputNames = await parkInputPropertyNames(spawned)
@@ -142,6 +145,6 @@ test('debrief.returns-a-non-empty-spine-update', async () => {
   } finally {
     if (spawned !== undefined) await spawned.close()
     if (repo !== '') rmSync(repo, { recursive: true, force: true })
-    if (pluginData !== '') rmSync(pluginData, { recursive: true, force: true })
+    if (pluginDataHome !== '') rmSync(pluginDataHome, { recursive: true, force: true })
   }
 })

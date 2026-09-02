@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fork, type ChildProcess } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -88,7 +88,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const withSpawnFixture = async (fn: (fx: SpawnFixture) => Promise<void>): Promise<void> => {
   const repo = bootstrapCommittedRepo('logbook-decisions-spawn-repo')
-  const pluginData = mkdtempSync(path.join(tmpdir(), 'logbook-decisions-spawn-plugin-data-'))
+  const pluginDataHome = mkdtempSync(path.join(tmpdir(), 'logbook-decisions-spawn-plugin-data-'))
+  const pluginData = path.join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   const spawned = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
   try {
     const published = await listPublishedTools(spawned)
@@ -103,7 +105,7 @@ const withSpawnFixture = async (fn: (fx: SpawnFixture) => Promise<void>): Promis
   } finally {
     await spawned.close()
     rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginData, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 }
 
@@ -626,7 +628,9 @@ test('log_session_event.rejects-invalid', async () => {
 
 test('decision.supersede-retains', async () => {
   const repo = bootstrapCommittedRepo('logbook-supersede-repo')
-  const pluginData = mkdtempSync(path.join(tmpdir(), 'logbook-supersede-plugin-data-'))
+  const pluginDataHome = mkdtempSync(path.join(tmpdir(), 'logbook-supersede-plugin-data-'))
+  const pluginData = path.join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   try {
     const rt = withCwd(testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: pluginData } }), repo)
 
@@ -688,7 +692,7 @@ test('decision.supersede-retains', async () => {
     assert.deepEqual(slotB.record.supersedes, [decisionAId])
   } finally {
     rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginData, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 })
 
@@ -703,7 +707,9 @@ test('decision.records-project-head', async () => {
   }
 
   const recordOneDecision = async (repo: string): Promise<ToolReply<unknown>> => {
-    const pluginData = mkdtempSync(path.join(tmpdir(), 'logbook-project-head-plugin-data-'))
+    const pluginDataHome = mkdtempSync(path.join(tmpdir(), 'logbook-project-head-plugin-data-'))
+    const pluginData = path.join(pluginDataHome, 'plugin-data')
+    mkdirSync(pluginData)
     try {
       const rt = withCwd(testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: pluginData } }), repo)
       const opened = await callTool(openThreadTool.handler, rt, {
@@ -724,7 +730,7 @@ test('decision.records-project-head', async () => {
         outcome: 'project head fixture outcome'
       })
     } finally {
-      rmSync(pluginData, { recursive: true, force: true })
+      rmSync(pluginDataHome, { recursive: true, force: true })
     }
   }
 
@@ -866,7 +872,9 @@ const runForkedRecorder = (scriptPath: string): ForkedRecorder => {
 
 test('concurrent.distinct-ids', async () => {
   const repo = mkdtempSync(path.join(tmpdir(), 'logbook-concurrent-repo-'))
-  const pluginData = mkdtempSync(path.join(tmpdir(), 'logbook-concurrent-plugin-data-'))
+  const pluginDataHome = mkdtempSync(path.join(tmpdir(), 'logbook-concurrent-plugin-data-'))
+  const pluginData = path.join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   const scriptDirs: string[] = []
   try {
     runSetupStep(repo, ['init', '--initial-branch=main'])
@@ -933,7 +941,7 @@ test('concurrent.distinct-ids', async () => {
     }
   } finally {
     rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginData, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
     for (const scriptDir of scriptDirs) {
       rmSync(scriptDir, { recursive: true, force: true })
     }
@@ -943,7 +951,9 @@ test('concurrent.distinct-ids', async () => {
 
 test('write.no-orphan-record', () => {
   const repo = bootstrapCommittedRepo('logbook-orphan-repo')
-  const pluginData = mkdtempSync(path.join(tmpdir(), 'logbook-orphan-plugin-data-'))
+  const pluginDataHome = mkdtempSync(path.join(tmpdir(), 'logbook-orphan-plugin-data-'))
+  const pluginData = path.join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   try {
     const rt = testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: pluginData } })
     const layoutResult = layoutFor(rt, repo)
@@ -995,7 +1005,7 @@ test('write.no-orphan-record', () => {
     assert.equal(slot.record.title, nextDecision.record.title)
   } finally {
     rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginData, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 })
 
@@ -1393,7 +1403,9 @@ const provisionCensusTeammate = (
   runSetupStep(repo, ['config', 'user.name', identity.name])
   runSetupStep(repo, ['config', 'user.email', identity.email])
 
-  const pluginData = mkdtempSync(path.join(tmpdir(), `logbook-census-plugin-data-${identity.name}-`))
+  const pluginDataHome = mkdtempSync(path.join(tmpdir(), `logbook-census-plugin-data-${identity.name}-`))
+  const pluginData = path.join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   const baseRt = testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: pluginData } })
   const rt = withDistinctUlidFactory(baseRt, identity.ulidPrefix)
 
@@ -1409,7 +1421,7 @@ const provisionCensusTeammate = (
 
   return {
     teammate: { name: identity.name, repo, store: opened.value as Store, rt, goOffline, goOnline },
-    cleanupDirs: [repo, pluginData]
+    cleanupDirs: [repo, pluginDataHome]
   }
 }
 

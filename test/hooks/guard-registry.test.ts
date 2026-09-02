@@ -4,7 +4,7 @@ import { guardDecision } from '../../src/hooklib/guard.ts'
 import { ALL_TOOLS } from '../../src/server/register.ts'
 import { layoutFor, createStoreDirectories } from '../../src/store/layout.ts'
 import { testRuntime } from '../support/runtime.ts'
-import { freshTmpDir } from './hook-process.ts'
+import { freshPluginDataDir, freshTmpDir } from './hook-process.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 
 const LEDGER_TOOL_PREFIXES = ['mcp__ledger__', 'mcp__plugin_logbook_ledger__'] as const
@@ -30,7 +30,7 @@ const NON_REGISTERED_LEDGER_TOOL_NAMES = [
 
 const storedRuntime = (label: string): { rt: Runtime; projectRoot: string } => {
   const projectRoot = freshTmpDir(`logbook-guard-registry-${label}-project-`)
-  const pluginDataRoot = freshTmpDir(`logbook-guard-registry-${label}-plugin-data-`)
+  const pluginDataRoot = freshPluginDataDir(`logbook-guard-registry-${label}-plugin-data-`).root
   const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: pluginDataRoot }, cwd: projectRoot })
   const layout = layoutFor(rt, projectRoot)
   assert.equal(layout.ok, true, 'expected layoutFor to resolve for a real temp directory')

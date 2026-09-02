@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Runtime } from '../../src/runtime/runtime.ts'
@@ -66,7 +66,9 @@ const provisionTeammate = (remote: string, identity: TeammateIdentity): Provisio
   runSetupStep(repo, ['config', 'user.name', identity.name])
   runSetupStep(repo, ['config', 'user.email', identity.email])
 
-  const pluginData = mkdtempSync(join(tmpdir(), `logbook-plugin-data-${identity.name}-`))
+  const pluginDataHome = mkdtempSync(join(tmpdir(), `logbook-plugin-data-${identity.name}-`))
+  const pluginData = join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   const baseRt = testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: pluginData } })
   const rt = withDistinctUlidFactory(baseRt, identity.ulidTimePrefix)
 
@@ -83,7 +85,7 @@ const provisionTeammate = (remote: string, identity: TeammateIdentity): Provisio
   }
 
   const teammate: Teammate = { name: identity.name, repo, store: opened.value, rt, goOffline, goOnline }
-  return { teammate, cleanupDirs: [repo, pluginData] }
+  return { teammate, cleanupDirs: [repo, pluginDataHome] }
 }
 
 export const withTwoClones = (fn: (ana: Teammate, ben: Teammate, remote: string) => void): void => {

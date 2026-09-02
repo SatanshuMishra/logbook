@@ -10,11 +10,13 @@ import { testRuntime } from '../support/runtime.ts'
 import { withRepo, rawGit } from '../support/git-fixture.ts'
 
 const withPluginData = <T>(fn: (pluginData: string) => T): T => {
-  const dir = mkdtempSync(join(tmpdir(), 'logbook-pointer-plugin-data-'))
+  const home = mkdtempSync(join(tmpdir(), 'logbook-pointer-plugin-data-'))
+  const dir = join(home, 'plugin-data')
+  mkdirSync(dir)
   try {
     return fn(dir)
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
   }
 }
 

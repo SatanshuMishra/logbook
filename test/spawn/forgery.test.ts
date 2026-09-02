@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -104,7 +104,7 @@ const assertUtf8Clean = (surface: string, text: string): void => {
   assert.equal(hasLoneSurrogate(text), false, `${surface}: the rendered text carries a lone surrogate code unit`)
 }
 
-type Fixture = { repo: string; pluginData: string; home: string; layout: StoreLayout }
+type Fixture = { repo: string; pluginData: string; pluginDataHome: string; home: string; layout: StoreLayout }
 
 const runSetupStep = (repo: string, args: readonly string[]): void => {
   const result = rawGit(repo, [...args])
@@ -122,13 +122,15 @@ const makeFixture = (label: string): Fixture => {
   runSetupStep(repo, ['add', 'README.md'])
   runSetupStep(repo, ['commit', '-m', 'fixture: initial commit'])
 
-  const pluginData = mkdtempSync(path.join(tmpdir(), `logbook-forgery-data-${label}-`))
+  const pluginDataHome = mkdtempSync(path.join(tmpdir(), `logbook-forgery-data-${label}-`))
+  const pluginData = path.join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   const home = mkdtempSync(path.join(tmpdir(), `logbook-forgery-home-${label}-`))
   const layout = layoutFor(fixtureRuntime({ repo, pluginData, home }), repo)
   if (!layout.ok) {
     throw new Error(`forgery fixture: the store layout could not be resolved: ${layout.message}`)
   }
-  return { repo, pluginData, home, layout: layout.value }
+  return { repo, pluginData, pluginDataHome, home, layout: layout.value }
 }
 
 const fixtureRuntime = (parts: { repo: string; pluginData: string; home: string }) =>
@@ -138,7 +140,7 @@ const fixtureRuntime = (parts: { repo: string; pluginData: string; home: string 
   })
 
 const disposeFixture = (fixture: Fixture): void => {
-  for (const dir of [fixture.repo, fixture.pluginData, fixture.home]) {
+  for (const dir of [fixture.repo, fixture.pluginDataHome, fixture.home]) {
     rmSync(dir, { recursive: true, force: true })
   }
 }

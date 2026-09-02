@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -12,11 +12,13 @@ import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { writeRecords, type RecordChange } from '../../src/store/write-path.ts'
 
 const withPluginData = <T>(fn: (pluginData: string) => T): T => {
-  const dir = mkdtempSync(join(tmpdir(), 'logbook-plugin-data-'))
+  const home = mkdtempSync(join(tmpdir(), 'logbook-plugin-data-'))
+  const dir = join(home, 'plugin-data')
+  mkdirSync(dir)
   try {
     return fn(dir)
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
   }
 }
 

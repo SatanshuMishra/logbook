@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { test } from 'node:test'
@@ -16,11 +16,13 @@ const runtimeWithPluginData = (pluginData: string): Runtime =>
   testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: pluginData } })
 
 const withAbsolutePluginData = <T>(fn: (pluginData: string) => T): T => {
-  const dir = mkdtempSync(join(tmpdir(), 'logbook-relative-plugin-data-seed-'))
+  const home = mkdtempSync(join(tmpdir(), 'logbook-relative-plugin-data-seed-'))
+  const dir = join(home, 'plugin-data')
+  mkdirSync(dir)
   try {
     return fn(dir)
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
   }
 }
 
@@ -114,7 +116,7 @@ test('store.materialisation-never-writes-into-the-host-project-tree', () => {
       assert.deepEqual(
         newRepoFiles,
         [],
-        `materialising with a relative CLAUDE_PLUGIN_DATA must never write into the project's own working tree; found new file(s) under the repository: ${newRepoFiles.join(', ')}`
+        `materialising with an absolute CLAUDE_PLUGIN_DATA root outside the project must never write into the project's own working tree; found new file(s) under the repository: ${newRepoFiles.join(', ')}`
       )
     })
   })

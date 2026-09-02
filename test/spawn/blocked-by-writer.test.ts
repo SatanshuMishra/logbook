@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -39,14 +39,16 @@ const bootstrapRepo = (): string => {
 
 const withFixture = async (fn: (fx: Fixture) => Promise<void>): Promise<void> => {
   const repo = bootstrapRepo()
-  const pluginData = mkdtempSync(join(tmpdir(), 'logbook-blocked-by-plugin-data-'))
+  const pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-blocked-by-plugin-data-'))
+  const pluginData = join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   const spawned = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
   try {
     await fn({ spawned, repo, pluginData })
   } finally {
     await spawned.close()
     rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginData, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 }
 

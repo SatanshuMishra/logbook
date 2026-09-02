@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Runtime } from '../../src/runtime/runtime.ts'
@@ -65,19 +65,21 @@ type FixturePair<C> = { a: FixtureSide<C>; b: FixtureSide<C>; cleanup: () => voi
 
 const makeFixtureSide = async <C>(
   build: (rt: Runtime) => Promise<C>
-): Promise<{ rt: Runtime; ctx: C; repo: string; pluginDataRoot: string }> => {
+): Promise<{ rt: Runtime; ctx: C; repo: string; pluginDataHome: string }> => {
   const repo = deterministicRepo()
-  const pluginDataRoot = mkdtempSync(join(tmpdir(), 'logbook-optional-args-plugin-data-'))
+  const pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-optional-args-plugin-data-'))
+  const pluginDataRoot = join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginDataRoot)
   const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: pluginDataRoot }, cwd: repo })
   const ctx = await build(rt)
-  return { rt, ctx, repo, pluginDataRoot }
+  return { rt, ctx, repo, pluginDataHome }
 }
 
 const withFixturePair = async <C>(build: (rt: Runtime) => Promise<C>): Promise<FixturePair<C>> => {
   const dirs: string[] = []
   const makeSide = async (): Promise<FixtureSide<C>> => {
     const side = await makeFixtureSide(build)
-    dirs.push(side.repo, side.pluginDataRoot)
+    dirs.push(side.repo, side.pluginDataHome)
     return { rt: side.rt, ctx: side.ctx }
   }
   const a = await makeSide()
@@ -94,7 +96,7 @@ export const withSingleFixture = async <C>(
     ctx: side.ctx,
     cleanup: () => {
       rmSync(side.repo, { recursive: true, force: true })
-      rmSync(side.pluginDataRoot, { recursive: true, force: true })
+      rmSync(side.pluginDataHome, { recursive: true, force: true })
     }
   }
 }

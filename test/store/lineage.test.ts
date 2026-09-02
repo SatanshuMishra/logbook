@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -17,7 +17,9 @@ const STUB_TOOL_CTX = {} as unknown as ToolContext
 
 const withLineageFixture = async (fn: (rt: Runtime) => Promise<void>): Promise<void> => {
   const repo = mkdtempSync(join(tmpdir(), 'logbook-lineage-repo-'))
-  const pluginData = mkdtempSync(join(tmpdir(), 'logbook-lineage-plugin-data-'))
+  const pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-lineage-plugin-data-'))
+  const pluginData = join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   try {
     rawGit(repo, ['init', '--initial-branch=main'])
     rawGit(repo, ['config', 'user.name', 'Logbook Lineage Fixture'])
@@ -28,7 +30,7 @@ const withLineageFixture = async (fn: (rt: Runtime) => Promise<void>): Promise<v
     await fn(testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: pluginData }, cwd: repo }))
   } finally {
     rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginData, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 }
 

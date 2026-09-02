@@ -68,7 +68,9 @@ const bootstrapRepo = (): string => {
 
 const withFixture = async (fn: (fx: Fixture) => Promise<void>): Promise<void> => {
   const repo = bootstrapRepo()
-  const pluginData = mkdtempSync(join(tmpdir(), 'logbook-resume-plugin-data-'))
+  const pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-resume-plugin-data-'))
+  const pluginData = join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   const homeDir = mkdtempSync(join(tmpdir(), 'logbook-resume-home-'))
   const spawned = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
   try {
@@ -84,14 +86,16 @@ const withFixture = async (fn: (fx: Fixture) => Promise<void>): Promise<void> =>
   } finally {
     await spawned.close()
     rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginData, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
     rmSync(homeDir, { recursive: true, force: true })
   }
 }
 
 const withCountingFixture = async (fn: (fx: CountingFixture) => Promise<void>): Promise<void> => {
   const repo = bootstrapRepo()
-  const pluginData = mkdtempSync(join(tmpdir(), 'logbook-resume-counting-plugin-data-'))
+  const pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-resume-counting-plugin-data-'))
+  const pluginData = join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   const homeDir = mkdtempSync(join(tmpdir(), 'logbook-resume-counting-home-'))
   const spawned = await spawnCountingServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
   try {
@@ -100,7 +104,7 @@ const withCountingFixture = async (fn: (fx: CountingFixture) => Promise<void>): 
   } finally {
     await spawned.close()
     rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginData, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
     rmSync(homeDir, { recursive: true, force: true })
   }
 }
@@ -755,7 +759,9 @@ test('park.control-a-held-pointer-still-stores-the-outcome', async () => {
 
 test('handoff.detects-crash', async () => {
   const repo = bootstrapRepo()
-  const pluginData = mkdtempSync(join(tmpdir(), 'logbook-resume-handoff-plugin-data-'))
+  const pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-resume-handoff-plugin-data-'))
+  const pluginData = join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   try {
     let threadId: string
     const p1 = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
@@ -817,7 +823,7 @@ test('handoff.detects-crash', async () => {
     }
   } finally {
     rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginData, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 })
 
@@ -1043,7 +1049,9 @@ test('park.releases-a-corrupt-pointer', async () => {
 
 test('park.refuses-when-another-session-took-the-pointer', async () => {
   const repo = bootstrapRepo()
-  const pluginData = mkdtempSync(join(tmpdir(), 'logbook-resume-ownership-plugin-data-'))
+  const pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-resume-ownership-plugin-data-'))
+  const pluginData = join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   try {
     const p1 = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
     try {
@@ -1084,7 +1092,7 @@ test('park.refuses-when-another-session-took-the-pointer', async () => {
     }
   } finally {
     rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginData, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 })
 

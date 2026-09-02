@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
 import path from 'node:path'
-import { controlledEnv, freshTmpDir, readFixture, runHookProcess } from './hook-process.ts'
+import { controlledEnv, freshPluginDataDir, freshTmpDir, readFixture, runHookProcess } from './hook-process.ts'
 
 const GATE_FILE_NAME = 'stop-gate.json'
 
@@ -23,7 +23,7 @@ const findFileBeneath = (root: string, fileName: string): string | null => {
 
 test('hook.stop-survives-a-fresh-data-directory', () => {
   const home = freshTmpDir('logbook-stop-fresh-home-')
-  const data = freshTmpDir('logbook-stop-fresh-data-')
+  const { home: dataHome, root: data } = freshPluginDataDir('logbook-stop-fresh-data-')
   const cwd = freshTmpDir('logbook-stop-fresh-cwd-')
   try {
     const event = { ...(readFixture('stop.json') as object), cwd }
@@ -44,7 +44,7 @@ test('hook.stop-survives-a-fresh-data-directory', () => {
     assert.ok(statSync(gatePath as string).size > 0, `expected ${gatePath} to be non-empty`)
   } finally {
     rmSync(home, { recursive: true, force: true })
-    rmSync(data, { recursive: true, force: true })
+    rmSync(dataHome, { recursive: true, force: true })
     rmSync(cwd, { recursive: true, force: true })
   }
 })

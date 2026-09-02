@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -18,11 +18,13 @@ const runtimeWithHome = (pluginData: string): Runtime =>
   testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: pluginData } })
 
 const withPluginData = <T>(fn: (pluginData: string) => T): T => {
-  const dir = mkdtempSync(join(tmpdir(), 'logbook-blob-bytes-plugin-data-'))
+  const home = mkdtempSync(join(tmpdir(), 'logbook-blob-bytes-plugin-data-'))
+  const dir = join(home, 'plugin-data')
+  mkdirSync(dir)
   try {
     return fn(dir)
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
   }
 }
 

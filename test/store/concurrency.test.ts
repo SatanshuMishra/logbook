@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -22,11 +22,13 @@ const runtimeWithHome = (pluginData: string): Runtime =>
   testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: pluginData } })
 
 const withPluginData = <T>(fn: (pluginData: string) => T): T => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'logbook-concurrency-plugin-data-'))
+  const home = mkdtempSync(path.join(tmpdir(), 'logbook-concurrency-plugin-data-'))
+  const dir = path.join(home, 'plugin-data')
+  mkdirSync(dir)
   try {
     return fn(dir)
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
   }
 }
 

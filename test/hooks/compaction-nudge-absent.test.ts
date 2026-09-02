@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { census, type Classified } from '../support/census.ts'
-import { TREE_ROOT, runHookProcess, readFixture, controlledEnv, freshTmpDir } from './hook-process.ts'
+import { TREE_ROOT, runHookProcess, readFixture, controlledEnv, freshPluginDataDir, freshTmpDir } from './hook-process.ts'
 
 const NUDGE_PHRASE = ['approaching the ', 'compaction threshold'].join('')
 
@@ -92,7 +92,7 @@ test('hook.compaction-nudge-absent', () => {
 
 test('hook.compaction-nudge-absent.post-tool-use-emits-no-additional-context', () => {
   const home = freshTmpDir('logbook-nudge-home-')
-  const data = freshTmpDir('logbook-nudge-data-')
+  const { home: dataHome, root: data } = freshPluginDataDir('logbook-nudge-data-')
   try {
     const transcriptPath = path.join(home, 'transcript.jsonl')
     writeFileSync(transcriptPath, Buffer.alloc(OVERSIZED_TRANSCRIPT_BYTES, '0'))
@@ -116,6 +116,6 @@ test('hook.compaction-nudge-absent.post-tool-use-emits-no-additional-context', (
     assert.equal(result.stdout.includes(NUDGE_PHRASE), false)
   } finally {
     rmSync(home, { recursive: true, force: true })
-    rmSync(data, { recursive: true, force: true })
+    rmSync(dataHome, { recursive: true, force: true })
   }
 })
