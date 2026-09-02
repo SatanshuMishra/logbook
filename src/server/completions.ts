@@ -97,7 +97,10 @@ export const completeSessionEntryIds = (
   try {
     const threadId = context?.arguments?.thread_id
     if (threadId === undefined || threadId.length === 0) return []
-    if (!ULID_PATTERN.test(threadId)) return []
+    if (!ULID_PATTERN.test(threadId)) {
+      logCompletionFailure(rt, 'session-entry-ids', `rejected thread_id: ${threadId}`)
+      return []
+    }
     const opened = openProjectStore(rt)
     if (!opened.ok) {
       logCompletionFailure(rt, 'session-entry-ids', opened.refusal.message)

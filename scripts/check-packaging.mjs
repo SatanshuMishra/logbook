@@ -150,7 +150,7 @@ async function checkVersionsAgree(root, problems) {
 
   const lock = await readJsonFile(root, 'package-lock.json', problems)
   if (!lock) {
-    problems.push('package-lock.json: could not be read or parsed; version fields cannot be checked against package.json')
+    problems.push('package-lock.json: unavailable, so its version fields were not checked against package.json')
     return
   }
   const lockRootVersion = lock.version

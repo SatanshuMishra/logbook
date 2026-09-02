@@ -151,13 +151,13 @@ const readThreadResourceBody = (rt: Runtime, id: string): string => {
   if (slot === null) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `logbook://thread: no thread record matches id or slug '${escapeStored(id)}'`
+      `logbook://thread: no thread record matches id or slug '${escapeStored(validId)}'`
     )
   }
   if (slot.quarantined) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `logbook://thread: the record for '${escapeStored(id)}' failed to parse and is quarantined: ${escapeStored(slot.reason)}`
+      `logbook://thread: the record for '${escapeStored(validId)}' failed to parse and is quarantined: ${escapeStored(slot.reason)}`
     )
   }
 
@@ -184,7 +184,7 @@ const readSessionsResourceBody = (rt: Runtime, threadId: string): string => {
   if (slot === null) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `logbook://sessions: no thread record matches id '${escapeStored(threadId)}'`
+      `logbook://sessions: no thread record matches id '${escapeStored(validThreadId)}'`
     )
   }
   const entries = store.readSessionEntries(validThreadId)
@@ -193,7 +193,7 @@ const readSessionsResourceBody = (rt: Runtime, threadId: string): string => {
     entry.quarantined ? [path.basename(entry.path, '.json')] : []
   )
   return renderSessionsResource({
-    threadId,
+    threadId: validThreadId,
     entries: [...loaded].reverse(),
     quarantined
   })
@@ -224,13 +224,13 @@ const readDecisionResourceBody = (rt: Runtime, id: string): string => {
   if (slot === null) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `logbook://decision: no decision record matches id '${escapeStored(id)}'`
+      `logbook://decision: no decision record matches id '${escapeStored(validId)}'`
     )
   }
   if (slot.quarantined) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `logbook://decision: the record for '${escapeStored(id)}' failed to parse and is quarantined: ${escapeStored(slot.reason)}`
+      `logbook://decision: the record for '${escapeStored(validId)}' failed to parse and is quarantined: ${escapeStored(slot.reason)}`
     )
   }
   return renderDecisionResource(slot.record)
@@ -244,13 +244,13 @@ const readSessionEntryResourceBody = (rt: Runtime, threadId: string, entryId: st
   if (slot === null) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `logbook://session: no session entry '${escapeStored(entryId)}' exists for thread '${escapeStored(threadId)}'`
+      `logbook://session: no session entry '${escapeStored(validEntryId)}' exists for thread '${escapeStored(validThreadId)}'`
     )
   }
   if (slot.quarantined) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `logbook://session: the entry '${escapeStored(entryId)}' for thread '${escapeStored(threadId)}' failed to parse and is quarantined: ${escapeStored(slot.reason)}`
+      `logbook://session: the entry '${escapeStored(validEntryId)}' for thread '${escapeStored(validThreadId)}' failed to parse and is quarantined: ${escapeStored(slot.reason)}`
     )
   }
   return renderSessionEntryResource(slot.record)
