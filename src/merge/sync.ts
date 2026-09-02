@@ -439,7 +439,7 @@ export const sync = (rt: Runtime, store: Store, layout: StoreLayout, ops: Partia
   for (let attempt = 1; attempt <= MAX_SYNC_ATTEMPTS; attempt += 1) {
     const outcome = runAttempt(rt, store, layout, ops)
     if (outcome.kind === 'return') {
-      if (!(outcome.outcome.ok === false && outcome.outcome.reason === 'conflict')) {
+      if (outcome.outcome.ok === true) {
         clearConflicts(layout)
       }
       return outcome.outcome
@@ -450,6 +450,5 @@ export const sync = (rt: Runtime, store: Store, layout: StoreLayout, ops: Partia
     reason: 'rejected',
     detail: `${LEDGER_REF} kept moving; giving up after ${MAX_SYNC_ATTEMPTS} attempts`
   }
-  clearConflicts(layout)
   return timeoutOutcome
 }

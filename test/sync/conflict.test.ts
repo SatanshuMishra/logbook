@@ -261,6 +261,62 @@ test('sync.clears-a-stale-conflict-file-on-the-next-clean-sync', () => {
   })
 })
 
+test('sync.a-failed-sync-leaves-a-pending-conflict-file-untouched', () => {
+  withTwoClones((ana, ben, _remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+
+    const original = makeThread(ana.rt, 'shared-thread-3')
+    const created = ana.store.commit([original], 'ana: create shared thread 3')
+    assert.equal(created.ok, true)
+
+    const firstAnaSync = sync(ana.rt, ana.store, anaLayout)
+    assert.equal(firstAnaSync.ok, true)
+
+    const firstBenSync = sync(ben.rt, ben.store, benLayout)
+    assert.equal(firstBenSync.ok, true)
+
+    const benSlot = ben.store.readThread(original.record.id)
+    assert.ok(benSlot !== null && !benSlot.quarantined)
+    if (benSlot === null || benSlot.quarantined) return
+    const benEdit: RecordChange = {
+      kind: 'thread',
+      record: { ...benSlot.record, spine: { ...benSlot.record.spine, next_step: 'ben moved it again' }, updated_at: ben.rt.now() }
+    }
+    assert.equal(ben.store.commit([benEdit], 'ben: change next step').ok, true)
+
+    const anaSlot = ana.store.readThread(original.record.id)
+    assert.ok(anaSlot !== null && !anaSlot.quarantined)
+    if (anaSlot === null || anaSlot.quarantined) return
+    const anaEdit: RecordChange = {
+      kind: 'thread',
+      record: { ...anaSlot.record, spine: { ...anaSlot.record.spine, next_step: 'ana moved it again' }, updated_at: ana.rt.now() }
+    }
+    assert.equal(ana.store.commit([anaEdit], 'ana: change next step').ok, true)
+
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+
+    const conflictingBenSync = sync(ben.rt, ben.store, benLayout)
+    assert.equal(conflictingBenSync.ok, false)
+    if (conflictingBenSync.ok) return
+    assert.equal(conflictingBenSync.reason, 'conflict')
+
+    const conflictsPath = path.join(benLayout.state, 'conflicts.json')
+    const conflictsBefore = readFileSync(conflictsPath, 'utf8')
+    assert.ok(conflictsBefore.length > 0)
+
+    ben.goOffline()
+
+    const offlineBenSync = sync(ben.rt, ben.store, benLayout)
+    assert.equal(offlineBenSync.ok, false)
+    if (offlineBenSync.ok) return
+    assert.equal(offlineBenSync.reason, 'offline')
+
+    const conflictsAfter = readFileSync(conflictsPath, 'utf8')
+    assert.equal(conflictsAfter, conflictsBefore, 'a failed sync must leave the pending conflict file byte-identical')
+  })
+})
+
 test('sync.a-scratch-cleanup-failure-does-not-replace-the-merge-outcome', () => {
   withTwoClones((ana, ben, _remote) => {
     const anaLayout = layoutIn(ana)
