@@ -172,6 +172,13 @@ const arrayProducerElements = (ctx: Ctx, expression: ts.Expression, depth: numbe
   if (depth > MAX_RESOLUTION_DEPTH) return null
   const current = unwrap(expression)
 
+  if (ts.isConditionalExpression(current)) {
+    const whenTrue = arrayProducerElements(ctx, current.whenTrue, depth + 1)
+    const whenFalse = arrayProducerElements(ctx, current.whenFalse, depth + 1)
+    if (whenTrue === null || whenFalse === null) return null
+    return [...whenTrue, ...whenFalse]
+  }
+
   if (ts.isArrayLiteralExpression(current)) {
     return current.elements.flatMap((element) => {
       if (!ts.isSpreadElement(element)) return [element]
@@ -304,6 +311,7 @@ const isEscapedCall = (ctx: Ctx, node: ts.Node, depth: number): boolean => {
 const isServerAuthoredTerminal = (ctx: Ctx, node: ts.Expression, depth: number): boolean => {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isNumericLiteral(node)) return true
   if (node.kind === ts.SyntaxKind.TrueKeyword || node.kind === ts.SyntaxKind.FalseKeyword) return true
+  if (node.kind === ts.SyntaxKind.NullKeyword) return true
   if (isEscapedCall(ctx, node, depth)) return true
   if (ts.isTemplateExpression(node)) {
     return node.templateSpans.every((span) => classifyExpression(ctx, span.expression, depth + 1) !== 'unclassifiable')
@@ -463,17 +471,22 @@ const SYNTHETIC_OPTIONS: ts.CompilerOptions = {
   noEmit: true
 }
 
-const buildSyntheticContext = (): Ctx => {
+const buildContext = (
+  directory: string,
+  modulePath: string,
+  moduleSource: string,
+  escapePath: string,
+  escapeSource: string
+): Ctx => {
   const files = new Map([
-    [SYNTHETIC_MODULE_PATH, SYNTHETIC_MODULE_SOURCE],
-    [SYNTHETIC_ESCAPE_PATH, SYNTHETIC_ESCAPE_SOURCE]
+    [modulePath, moduleSource],
+    [escapePath, escapeSource]
   ])
   const base = ts.createCompilerHost(SYNTHETIC_OPTIONS, true)
   const host: ts.CompilerHost = {
     ...base,
     fileExists: (fileName) => files.has(fileName) || base.fileExists(fileName),
-    directoryExists: (directoryName) =>
-      directoryName === SYNTHETIC_DIR || (base.directoryExists?.(directoryName) ?? false),
+    directoryExists: (directoryName) => directoryName === directory || (base.directoryExists?.(directoryName) ?? false),
     readFile: (fileName) => files.get(fileName) ?? base.readFile(fileName),
     getSourceFile: (fileName, options, onError, shouldCreate) => {
       const contents = files.get(fileName)
@@ -481,20 +494,88 @@ const buildSyntheticContext = (): Ctx => {
       return ts.createSourceFile(fileName, contents, options, true)
     }
   }
-  const program = ts.createProgram({ rootNames: [SYNTHETIC_MODULE_PATH], options: SYNTHETIC_OPTIONS, host })
-  const sourceFile = program.getSourceFile(SYNTHETIC_MODULE_PATH)
+  const program = ts.createProgram({ rootNames: [modulePath], options: SYNTHETIC_OPTIONS, host })
+  const sourceFile = program.getSourceFile(modulePath)
   if (sourceFile === undefined) {
-    throw new Error(`buildSyntheticContext: the in-memory module ${SYNTHETIC_MODULE_PATH} did not enter the program`)
+    throw new Error(`buildContext: the in-memory module ${modulePath} did not enter the program`)
   }
   const syntactic = program.getSyntacticDiagnostics(sourceFile)
   if (syntactic.length > 0) {
     const rendered = syntactic
       .map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'))
       .join('\n')
-    throw new Error(`buildSyntheticContext: the in-memory module failed to parse: ${rendered}`)
+    throw new Error(`buildContext: the in-memory module ${modulePath} failed to parse: ${rendered}`)
   }
   return contextFor(program.getTypeChecker(), sourceFile)
 }
+
+const buildSyntheticContext = (): Ctx =>
+  buildContext(SYNTHETIC_DIR, SYNTHETIC_MODULE_PATH, SYNTHETIC_MODULE_SOURCE, SYNTHETIC_ESCAPE_PATH, SYNTHETIC_ESCAPE_SOURCE)
+
+const CONDITIONAL_DIR = path.join(REBUILD_ROOT, 'test', 'render-census-conditional-virtual')
+const CONDITIONAL_MODULE_PATH = path.join(CONDITIONAL_DIR, 'conditional.ts')
+const CONDITIONAL_ESCAPE_PATH = path.join(CONDITIONAL_DIR, 'escape.ts')
+const CONDITIONAL_UNRESOLVABLE_OFFENDING_EXPRESSION = 'payload.rawTitle'
+
+const CONDITIONAL_RESOLVABLE_SOURCE = [
+  "import { escapeStored } from './escape.ts'",
+  '',
+  'type Payload = { flag: boolean; safeTitle: string; count: number }',
+  '',
+  'export const renderConditional = (payload: Payload): string => {',
+  '  const sections = payload.flag ? [escapeStored(payload.safeTitle)] : [payload.count]',
+  "  return sections.join('\\n')",
+  '}',
+  ''
+].join('\n')
+
+const CONDITIONAL_UNRESOLVABLE_SOURCE = [
+  "import { escapeStored } from './escape.ts'",
+  '',
+  'type Payload = { flag: boolean; safeTitle: string; rawTitle: string }',
+  '',
+  'export const renderConditionalUnresolvable = (payload: Payload): string => {',
+  '  const sections = payload.flag ? [escapeStored(payload.safeTitle)] : [payload.rawTitle]',
+  "  return sections.join('\\n')",
+  '}',
+  ''
+].join('\n')
+
+const CONDITIONAL_UNRESOLVABLE_ARM_SOURCE = [
+  'type Payload = { flag: boolean; extra: string[]; rawTitle: string }',
+  '',
+  'export const renderConditionalUnresolvableArm = (payload: Payload): string => {',
+  '  const sections = payload.flag ? payload.extra : [payload.rawTitle]',
+  "  return sections.join('\\n')",
+  '}',
+  ''
+].join('\n')
+
+const NULLABLE_DIR = path.join(REBUILD_ROOT, 'test', 'render-census-nullable-virtual')
+const NULLABLE_MODULE_PATH = path.join(NULLABLE_DIR, 'nullable.ts')
+const NULLABLE_ESCAPE_PATH = path.join(NULLABLE_DIR, 'escape.ts')
+const NULLABLE_TERMINAL_TEXT = 'payload.flag ? null : escapeStored(payload.safeTitle)'
+const NULLABLE_RAW_OFFENDING_EXPRESSION = 'payload.flag ? payload.rawTitle : escapeStored(payload.safeTitle)'
+
+const NULLABLE_RESOLVABLE_SOURCE = [
+  "import { escapeStored } from './escape.ts'",
+  '',
+  'type Payload = { flag: boolean; safeTitle: string }',
+  '',
+  'export const renderNullable = (payloads: Payload[]): string =>',
+  `  payloads.map((payload) => ${NULLABLE_TERMINAL_TEXT}).join('\\n')`,
+  ''
+].join('\n')
+
+const NULLABLE_UNRESOLVABLE_SOURCE = [
+  "import { escapeStored } from './escape.ts'",
+  '',
+  'type Payload = { flag: boolean; safeTitle: string; rawTitle: string }',
+  '',
+  'export const renderNullableRaw = (payloads: Payload[]): string =>',
+  `  payloads.map((payload) => ${NULLABLE_RAW_OFFENDING_EXPRESSION}).join('\\n')`,
+  ''
+].join('\n')
 
 test('render.no-unescaped-site', () => {
   const { checker, program, productionFiles } = loadSourceProgram()
@@ -540,6 +621,129 @@ test('render.no-unescaped-site.names-the-module-and-the-expression-it-halted-on'
       assert.ok(
         error.message.includes(SYNTHETIC_OFFENDING_EXPRESSION),
         `the halt message must name the offending expression ${SYNTHETIC_OFFENDING_EXPRESSION}; got: ${error.message}`
+      )
+      return true
+    }
+  )
+})
+
+test('render.no-unescaped-site.conditional-array-producer-resolves-both-arms', () => {
+  const ctx = buildContext(
+    CONDITIONAL_DIR,
+    CONDITIONAL_MODULE_PATH,
+    CONDITIONAL_RESOLVABLE_SOURCE,
+    CONDITIONAL_ESCAPE_PATH,
+    SYNTHETIC_ESCAPE_SOURCE
+  )
+  const sites = collectSites(ctx, CONDITIONAL_MODULE_PATH)
+
+  assert.deepEqual(
+    sites.map((site) => [site.expression, site.classification]),
+    [
+      ['escapeStored(payload.safeTitle)', 'escaped'],
+      ['payload.count', 'server-authored']
+    ],
+    'a conditional array producer must yield a site from each arm rather than collecting nothing for the join'
+  )
+
+  assert.doesNotThrow(() => census(sites, classifySite), renderBypasses(sites))
+})
+
+test('render.no-unescaped-site.conditional-array-producer-halts-on-an-unresolvable-element-in-a-resolvable-arm', () => {
+  const ctx = buildContext(
+    CONDITIONAL_DIR,
+    CONDITIONAL_MODULE_PATH,
+    CONDITIONAL_UNRESOLVABLE_SOURCE,
+    CONDITIONAL_ESCAPE_PATH,
+    SYNTHETIC_ESCAPE_SOURCE
+  )
+  const sites = collectSites(ctx, CONDITIONAL_MODULE_PATH)
+
+  assert.deepEqual(
+    sites.map((site) => [site.expression, site.classification]),
+    [
+      ['escapeStored(payload.safeTitle)', 'escaped'],
+      [CONDITIONAL_UNRESOLVABLE_OFFENDING_EXPRESSION, 'unclassifiable']
+    ],
+    'the unresolvable arm must surface as its own site rather than being silently dropped'
+  )
+
+  assert.throws(
+    () => census(sites, classifySite),
+    (error: unknown) => {
+      assert.ok(error instanceof Error, 'the census must halt by throwing an Error')
+      assert.ok(
+        error.message.includes('unclassifiable item'),
+        `the halt must be reported as unclassifiable, not forbidden; got: ${error.message}`
+      )
+      assert.ok(
+        !error.message.includes('forbidden item'),
+        `an unresolvable arm is unclassifiable, not forbidden; got: ${error.message}`
+      )
+      assert.ok(
+        error.message.includes(CONDITIONAL_UNRESOLVABLE_OFFENDING_EXPRESSION),
+        `the halt message must name the offending expression ${CONDITIONAL_UNRESOLVABLE_OFFENDING_EXPRESSION}; got: ${error.message}`
+      )
+      return true
+    }
+  )
+})
+
+test('render.no-unescaped-site.known-gap-unresolvable-array-arm-yields-zero-sites-not-a-halt', () => {
+  const ctx = buildContext(
+    CONDITIONAL_DIR,
+    CONDITIONAL_MODULE_PATH,
+    CONDITIONAL_UNRESOLVABLE_ARM_SOURCE,
+    CONDITIONAL_ESCAPE_PATH,
+    SYNTHETIC_ESCAPE_SOURCE
+  )
+  const sites = collectSites(ctx, CONDITIONAL_MODULE_PATH)
+
+  assert.deepEqual(
+    sites,
+    [],
+    'known gap, not a guarantee: when one arm of a conditional array producer cannot be statically resolved, arrayProducerElements returns null for the whole conditional, so the join contributes zero sites and the raw sibling arm (payload.rawTitle) is swallowed silently rather than surfaced as unclassifiable; if a future change makes an unresolvable arm halt instead, this assertion must go red and be updated deliberately'
+  )
+})
+
+test('render.no-unescaped-site.null-terminal-classifies-as-server-authored', () => {
+  const ctx = buildContext(NULLABLE_DIR, NULLABLE_MODULE_PATH, NULLABLE_RESOLVABLE_SOURCE, NULLABLE_ESCAPE_PATH, SYNTHETIC_ESCAPE_SOURCE)
+  const sites = collectSites(ctx, NULLABLE_MODULE_PATH)
+
+  assert.deepEqual(
+    sites.map((site) => [site.expression, site.classification]),
+    [[NULLABLE_TERMINAL_TEXT, 'server-authored']],
+    'a mapped return that resolves to null on one arm and an escaped call on the other must classify as server-authored, not halt'
+  )
+
+  assert.doesNotThrow(() => census(sites, classifySite), renderBypasses(sites))
+})
+
+test('render.no-unescaped-site.raw-terminal-beside-null-still-halts-as-unclassifiable', () => {
+  const ctx = buildContext(NULLABLE_DIR, NULLABLE_MODULE_PATH, NULLABLE_UNRESOLVABLE_SOURCE, NULLABLE_ESCAPE_PATH, SYNTHETIC_ESCAPE_SOURCE)
+  const sites = collectSites(ctx, NULLABLE_MODULE_PATH)
+
+  assert.deepEqual(
+    sites.map((site) => [site.expression, site.classification]),
+    [[NULLABLE_RAW_OFFENDING_EXPRESSION, 'unclassifiable']],
+    'replacing the null arm with a raw caller-supplied field must still halt; the null classification must not admit its sibling by proximity'
+  )
+
+  assert.throws(
+    () => census(sites, classifySite),
+    (error: unknown) => {
+      assert.ok(error instanceof Error, 'the census must halt by throwing an Error')
+      assert.ok(
+        error.message.includes('unclassifiable item'),
+        `a raw caller-supplied terminal must be reported as unclassifiable, not forbidden; got: ${error.message}`
+      )
+      assert.ok(
+        !error.message.includes('forbidden item'),
+        `a raw caller-supplied terminal is unclassifiable, not forbidden; got: ${error.message}`
+      )
+      assert.ok(
+        error.message.includes(NULLABLE_RAW_OFFENDING_EXPRESSION),
+        `the halt message must name the offending expression ${NULLABLE_RAW_OFFENDING_EXPRESSION}; got: ${error.message}`
       )
       return true
     }

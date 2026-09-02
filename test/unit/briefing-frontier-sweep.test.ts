@@ -1,8 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { renderBriefingWithPasses, BRIEFING_MAX_CHARS, RESUME_PAYLOAD_MAX_BYTES } from '../../src/render/briefing.ts'
+import {
+  renderBriefingWithPasses,
+  BRIEFING_MAX_CHARS,
+  RESUME_PAYLOAD_MAX_BYTES,
+  NOT_RECORDED,
+  type DecisionIntegrity
+} from '../../src/render/briefing.ts'
 import { escapeStored } from '../../src/render/escape.ts'
-import { ThreadRecord } from '../../src/schema/thread.ts'
+import { ThreadRecord, type Thread } from '../../src/schema/thread.ts'
 import * as caps from '../../src/schema/caps.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { census } from '../support/census.ts'
@@ -58,6 +64,9 @@ type Measured = {
   itemsRendered: number
   criterionRows: number
   checkRows: number
+  populatedCheckRows: number
+  populatedResultRows: number
+  riskRefRows: number
 }
 
 const SECTION_HEADINGS = [
@@ -80,22 +89,46 @@ const sectionLineCount = (lines: readonly string[], heading: string): number => 
   return count
 }
 
+const sectionMatchingLineCount = (lines: readonly string[], heading: string, pattern: RegExp): number => {
+  const headingIndex = lines.indexOf(heading)
+  if (headingIndex === -1) return 0
+  let count = 0
+  for (let cursor = headingIndex + 1; cursor < lines.length; cursor += 1) {
+    const line = lines[cursor]
+    if (line === undefined || line.length === 0) break
+    if (pattern.test(line)) count += 1
+  }
+  return count
+}
+
 const CRITERION_ROW_PATTERN = /^- c\d+ \[(?:open|done|struck)\]:/
 const CHECK_ROW_PATTERN = /^ {2}- check: /
+const RESULT_ROW_PATTERN = /^ {2}- result: /
+const RISK_REF_ROW_PATTERN = /^ {2}- ref: /
+const RISK_ROW_PATTERN = /^- [0-9A-HJKMNP-TV-Z]{26} /
+const NOT_RECORDED_CHECK_ROW = `  - check: ${NOT_RECORDED}`
+const NOT_RECORDED_RESULT_PREFIX = `  - result: ${NOT_RECORDED} (`
 
-const measure = (shape: SweepShape): Measured => {
-  const { thread, predecessor, integrity } = buildSweepFixture(rt, shape)
+const measureThread = (thread: Thread, integrity: DecisionIntegrity, predecessor: Thread | null): Measured => {
   const render = renderBriefingWithPasses(thread, integrity, null, predecessor)
   const lines = render.briefing.split('\n')
 
   const criterionRows = lines.filter((line) => CRITERION_ROW_PATTERN.test(line)).length
   const checkRows = lines.filter((line) => CHECK_ROW_PATTERN.test(line)).length
+  const populatedCheckRows = lines.filter(
+    (line) => CHECK_ROW_PATTERN.test(line) && line !== NOT_RECORDED_CHECK_ROW
+  ).length
+  const populatedResultRows = lines.filter(
+    (line) => RESULT_ROW_PATTERN.test(line) && !line.startsWith(NOT_RECORDED_RESULT_PREFIX)
+  ).length
+  const riskRefRows = lines.filter((line) => RISK_REF_ROW_PATTERN.test(line)).length
+  const riskRows = sectionMatchingLineCount(lines, SECTION_HEADINGS[0], RISK_ROW_PATTERN)
   const danglingRows = lines.filter((line) => line.startsWith('- dangling: ')).length
   const quarantinedRows = lines.filter((line) => line.startsWith('- quarantined: ')).length
 
   const itemsRendered =
     criterionRows +
-    sectionLineCount(lines, SECTION_HEADINGS[0]) +
+    riskRows +
     sectionLineCount(lines, SECTION_HEADINGS[1]) +
     sectionLineCount(lines, SECTION_HEADINGS[2]) +
     sectionLineCount(lines, SECTION_HEADINGS[4]) +
@@ -117,8 +150,16 @@ const measure = (shape: SweepShape): Measured => {
     itemsHeld,
     itemsRendered,
     criterionRows,
-    checkRows
+    checkRows,
+    populatedCheckRows,
+    populatedResultRows,
+    riskRefRows
   }
+}
+
+const measure = (shape: SweepShape): Measured => {
+  const { thread, predecessor, integrity } = buildSweepFixture(rt, shape)
+  return measureThread(thread, integrity, predecessor)
 }
 
 const isAdmissible = (shape: SweepShape): boolean => ThreadRecord.parse(buildSweepFixture(rt, shape).thread).ok
@@ -157,6 +198,9 @@ type SweptRecord = {
   itemsRendered: number | null
   criterionRows: number | null
   checkRows: number | null
+  populatedCheckRows: number | null
+  populatedResultRows: number | null
+  riskRefRows: number | null
 }
 
 const classifiedOutcomes: ReadonlySet<string> = new Set(OUTCOME_CLASSES)
@@ -251,7 +295,10 @@ const sweep = (): SweptRecord[] => {
             itemsHeld: measured === null ? null : measured.itemsHeld,
             itemsRendered: measured === null ? null : measured.itemsRendered,
             criterionRows: measured === null ? null : measured.criterionRows,
-            checkRows: measured === null ? null : measured.checkRows
+            checkRows: measured === null ? null : measured.checkRows,
+            populatedCheckRows: measured === null ? null : measured.populatedCheckRows,
+            populatedResultRows: measured === null ? null : measured.populatedResultRows,
+            riskRefRows: measured === null ? null : measured.riskRefRows
           })
 
           const withinRecordCap = (shape: SweepShape): boolean =>
@@ -310,6 +357,43 @@ const sweep = (): SweptRecord[] => {
 
   return swept
 }
+
+const oneRiskWithSeveralReferencesThread = (): Thread => ({
+  id: rt.ulid(),
+  slug: 'control-risk-refs',
+  title: 'control record for the risk-reference item count',
+  status: 'open',
+  blocked_by: null,
+  completion_criteria: [],
+  spine: {
+    active_goal: 'control',
+    next_step: 'control',
+    last_session: 'control',
+    open_risks: [
+      {
+        id: rt.ulid(),
+        scope: 'control',
+        text: 'one risk backed by several external references',
+        refs: ['first reference', 'second reference', 'third reference']
+      }
+    ],
+    key_decisions: [],
+    out_of_scope: []
+  },
+  created_at: rt.now(),
+  updated_at: rt.now()
+})
+
+test('briefing.frontier-sweep-one-risk-with-several-references-counts-as-one-item', () => {
+  const thread = oneRiskWithSeveralReferencesThread()
+  const integrity: DecisionIntegrity = { resolved: 0, dangling: [], quarantined: [] }
+  const measured = measureThread(thread, integrity, null)
+  assert.equal(
+    measured.itemsRendered,
+    measured.itemsHeld,
+    `a risk with several references must count as one item, not one per rendered line; rendered ${measured.itemsRendered} of ${measured.itemsHeld} held`
+  )
+})
 
 test('briefing.frontier-sweep-finds-no-record-that-loses-an-item-or-hides-a-budget-breach', (t) => {
   assert.equal(Buffer.byteLength(ASCII_FILL, 'utf8'), 1, 'the ASCII fill must be one byte per character')
@@ -433,4 +517,28 @@ test('briefing.frontier-sweep-finds-no-record-that-loses-an-item-or-hides-a-budg
     0,
     'no record may report itself within budget while rendering past the character cap'
   )
+
+  const exercisesOnBothSidesOfTheBudget = (
+    label: string,
+    hasBranch: (record: SweptRecord) => boolean
+  ): void => {
+    const withinBudgetHit = admissible.some(
+      (record) => record.outcome === 'admissible-within-both-caps' && hasBranch(record)
+    )
+    const breachingHit = admissible.some(
+      (record) => record.outcome === 'admissible-breaching-a-cap' && hasBranch(record)
+    )
+    assert.ok(
+      withinBudgetHit,
+      `no swept record within both caps ever rendered ${label}; the branch was never exercised on a record that fits`
+    )
+    assert.ok(
+      breachingHit,
+      `no swept record breaching a cap ever rendered ${label}; the branch was never exercised on a record that overflows`
+    )
+  }
+
+  exercisesOnBothSidesOfTheBudget('a populated check line', (record) => (record.populatedCheckRows ?? 0) > 0)
+  exercisesOnBothSidesOfTheBudget('a populated result line', (record) => (record.populatedResultRows ?? 0) > 0)
+  exercisesOnBothSidesOfTheBudget('a risk reference', (record) => (record.riskRefRows ?? 0) > 0)
 })

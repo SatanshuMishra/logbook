@@ -147,6 +147,20 @@ async function checkVersionsAgree(root, problems) {
   if (pkgVersion !== pluginVersion) {
     problems.push(`version mismatch: package.json has ${JSON.stringify(pkgVersion)}, .claude-plugin/plugin.json has ${JSON.stringify(pluginVersion)}`)
   }
+
+  const lock = await readJsonFile(root, 'package-lock.json', problems)
+  if (!lock) {
+    problems.push('package-lock.json: unavailable, so its version fields were not checked against package.json')
+    return
+  }
+  const lockRootVersion = lock.version
+  const lockPackagesVersion = lock.packages?.['']?.version
+  if (lockRootVersion !== pkgVersion) {
+    problems.push(`version mismatch: package.json has ${JSON.stringify(pkgVersion)}, package-lock.json version has ${JSON.stringify(lockRootVersion)}`)
+  }
+  if (lockPackagesVersion !== pkgVersion) {
+    problems.push(`version mismatch: package.json has ${JSON.stringify(pkgVersion)}, package-lock.json packages[""].version has ${JSON.stringify(lockPackagesVersion)}`)
+  }
 }
 
 async function checkNpmrc(root, problems) {

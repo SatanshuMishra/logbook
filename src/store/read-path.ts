@@ -68,8 +68,51 @@ const writeStamp = (layout: StoreLayout, value: string): void => {
   writeFileSync(stampPath(layout), value, 'utf8')
 }
 
-export const markMaterialised = (layout: StoreLayout, ref: string): void => {
-  writeStamp(layout, ref)
+const normaliseStampForComparison = (stamp: string | null): string => stamp ?? ''
+
+export type AdvanceStampOutcome =
+  | { advanced: true }
+  | { advanced: false; reason: 'stamp-mismatch'; observed: string | null }
+  | { advanced: false; reason: 'io-error' }
+
+export const advanceMaterialisedStampIfStillCurrent = (
+  rt: Runtime,
+  layout: StoreLayout,
+  before: string | null,
+  after: string
+): AdvanceStampOutcome => {
+  let stamp: string | null
+  try {
+    stamp = readStamp(layout)
+  } catch (error) {
+    rt.log({
+      level: 'error',
+      event: 'store.materialised-stamp-advance-failed',
+      before,
+      after,
+      detail: describeError(error)
+    })
+    return { advanced: false, reason: 'io-error' }
+  }
+
+  if (normaliseStampForComparison(stamp) !== normaliseStampForComparison(before)) {
+    return { advanced: false, reason: 'stamp-mismatch', observed: stamp }
+  }
+
+  try {
+    writeStamp(layout, after)
+  } catch (error) {
+    rt.log({
+      level: 'error',
+      event: 'store.materialised-stamp-advance-failed',
+      before,
+      after,
+      detail: describeError(error)
+    })
+    return { advanced: false, reason: 'io-error' }
+  }
+
+  return { advanced: true }
 }
 
 export type MaterialiseOutcome = { ok: true } | { ok: false; detail: string }
