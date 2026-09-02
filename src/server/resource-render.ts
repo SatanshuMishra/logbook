@@ -148,7 +148,7 @@ const renderDetailPointerStatus = (pointer: Pointer | null, threadId: string): s
   pointer !== null && pointer.thread_id === threadId ? 'Currently being worked: yes' : 'Currently being worked: no'
 
 const renderDetailLastSessionNote = (threadId: string): string =>
-  `(the line above is a stored hand-written summary that no tool writes any more; see logbook://sessions/${escapeStored(threadId)} for the recorded session log)`
+  `(park_thread no longer writes this field; see logbook://sessions/${escapeStored(threadId)} for the recorded session log)`
 
 export const renderThreadDetail = (
   thread: Thread,
@@ -171,6 +171,9 @@ export const renderThreadDetail = (
   const bindingUnreadLines = [bindings.unread].filter(Boolean).map(() => BINDINGS_UNREAD_NOTE)
   const relatedThreads = predecessor === null ? [] : [predecessor]
   const relatedLines = relatedThreads.map(renderDetailRelatedLine)
+  const lastSessionNoteLines = [thread.spine.last_session]
+    .filter((value) => value.length > 0)
+    .map(() => renderDetailLastSessionNote(thread.id))
 
   return [
     `Thread: ${escapeStored(thread.title)}`,
@@ -182,7 +185,7 @@ export const renderThreadDetail = (
     `Active goal: ${escapeStored(thread.spine.active_goal)}`,
     `Next step: ${escapeStored(thread.spine.next_step)}`,
     `Last session: ${escapeStored(thread.spine.last_session)}`,
-    renderDetailLastSessionNote(thread.id),
+    ...lastSessionNoteLines,
     'Artifacts:',
     ...artifactLines,
     'Related:',

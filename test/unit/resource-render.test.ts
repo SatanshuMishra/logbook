@@ -213,8 +213,24 @@ test('resource-render.thread.last-session-legacy-note-follows-the-unchanged-line
   const noteLine = lines[lastSessionIndex + 1]
   assert.ok(
     noteLine !== undefined &&
-      noteLine.includes('stored hand-written summary') &&
+      noteLine.includes('park_thread no longer writes this field') &&
       noteLine.includes(`logbook://sessions/${THREAD_WITHOUT_BINDINGS.id}`),
     `expected the legacy note to follow the Last session line, got ${JSON.stringify(noteLine)}`
+  )
+})
+
+test('resource-render.thread.last-session-legacy-note-is-omitted-when-last-session-is-empty', () => {
+  const thread: Thread = {
+    ...THREAD_WITHOUT_BINDINGS,
+    spine: { ...THREAD_WITHOUT_BINDINGS.spine, last_session: '' }
+  }
+  const rendered = renderThreadDetail(thread, NO_DECISIONS, null, null, NO_BINDINGS)
+  const lines = rendered.split('\n')
+  const lastSessionIndex = lines.indexOf('Last session: ')
+  assert.notEqual(lastSessionIndex, -1, `expected the Last session line to still render, got ${JSON.stringify(lines)}`)
+  const noteLine = lines[lastSessionIndex + 1]
+  assert.ok(
+    noteLine === undefined || !noteLine.includes('park_thread no longer writes this field'),
+    `expected no legacy note when last_session is empty, got ${JSON.stringify(noteLine)}`
   )
 })
