@@ -239,12 +239,13 @@ const readRosterResourceBody = (rt: Runtime): string => {
   const threads = store
     .readThreads()
     .flatMap((slot) => (slot.quarantined ? [] : [slot.record]))
-  const rows = selectRosterThreads(threads).map(toRosterRow)
+  const selected = selectRosterThreads(threads)
+  const rows = selected.map(toRosterRow)
   const paginated = paginateRoster(rows, null, Math.max(rows.length, 1))
   if (!paginated.ok) {
     throw new McpError(ErrorCode.InternalError, 'logbook://roster: the roster could not be paginated')
   }
-  return renderRoster(paginated.page)
+  return renderRoster(paginated.page, threads.length - selected.length)
 }
 
 export const registerResources = (server: McpServer, rt: Runtime): void => {
