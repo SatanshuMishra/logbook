@@ -4,6 +4,7 @@ import type { Runtime } from '../runtime/runtime.ts'
 import { layoutFor } from '../store/layout.ts'
 import { readAllRecordFiles } from '../store/read-path.ts'
 import { DecisionRecord } from '../schema/decision.ts'
+import { ULID_PATTERN } from '../schema/ids.ts'
 import { openProjectStore } from './tool-support.ts'
 
 export type CompletionContext = { arguments?: Record<string, string> }
@@ -96,6 +97,7 @@ export const completeSessionEntryIds = (
   try {
     const threadId = context?.arguments?.thread_id
     if (threadId === undefined || threadId.length === 0) return []
+    if (!ULID_PATTERN.test(threadId)) return []
     const opened = openProjectStore(rt)
     if (!opened.ok) {
       logCompletionFailure(rt, 'session-entry-ids', opened.refusal.message)

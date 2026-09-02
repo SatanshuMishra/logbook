@@ -13,6 +13,7 @@ import { escapeStored } from '../render/escape.ts'
 import type { DecisionIntegrity } from '../render/briefing.ts'
 import { paginateRoster, renderRoster, selectRosterThreads, toRosterRow } from '../render/roster.ts'
 import { openProjectStore, resolvePredecessor } from './tool-support.ts'
+import { ULID_PATTERN, SLUG_PATTERN } from '../schema/ids.ts'
 import {
   renderDecisionResource,
   renderSessionEntryResource,
@@ -56,6 +57,22 @@ const variableAsString = (variables: Variables, key: string): string => {
   if (typeof value === 'string') return value
   if (Array.isArray(value)) return value[0] ?? ''
   return ''
+}
+
+const requireUlid = (addressLabel: string, field: string, value: string): string => {
+  if (ULID_PATTERN.test(value)) return value
+  throw new McpError(
+    ErrorCode.InvalidParams,
+    `${escapeStored(addressLabel)}: '${escapeStored(field)}' must be a ULID matching ${escapeStored(ULID_PATTERN.source)}, got '${escapeStored(value)}'`
+  )
+}
+
+const requireThreadIdentifier = (addressLabel: string, field: string, value: string): string => {
+  if (ULID_PATTERN.test(value) || SLUG_PATTERN.test(value)) return value
+  throw new McpError(
+    ErrorCode.InvalidParams,
+    `${escapeStored(addressLabel)}: '${escapeStored(field)}' must be a ULID matching ${escapeStored(ULID_PATTERN.source)} or a slug matching ${escapeStored(SLUG_PATTERN.source)}, got '${escapeStored(value)}'`
+  )
 }
 
 const openStoreForRead = (rt: Runtime, addressLabel: string): Store => {
@@ -128,8 +145,9 @@ const readBindingsForThread = (rt: Runtime, threadId: string): BindingIntegrity 
 }
 
 const readThreadResourceBody = (rt: Runtime, id: string): string => {
+  const validId = requireThreadIdentifier('logbook://thread', 'id', id)
   const store = openStoreForRead(rt, 'logbook://thread')
-  const slot = resolveThreadSlot(store, id)
+  const slot = resolveThreadSlot(store, validId)
   if (slot === null) {
     throw new McpError(
       ErrorCode.InvalidParams,
@@ -160,15 +178,16 @@ const readThreadResourceBody = (rt: Runtime, id: string): string => {
 }
 
 const readSessionsResourceBody = (rt: Runtime, threadId: string): string => {
+  const validThreadId = requireUlid('logbook://sessions', 'thread_id', threadId)
   const store = openStoreForRead(rt, 'logbook://sessions')
-  const slot = store.readThread(threadId)
+  const slot = store.readThread(validThreadId)
   if (slot === null) {
     throw new McpError(
       ErrorCode.InvalidParams,
       `logbook://sessions: no thread record matches id '${escapeStored(threadId)}'`
     )
   }
-  const entries = store.readSessionEntries(threadId)
+  const entries = store.readSessionEntries(validThreadId)
   const loaded = entries.flatMap((entry) => (entry.quarantined ? [] : [entry.record]))
   const quarantined = entries.flatMap((entry) =>
     entry.quarantined ? [path.basename(entry.path, '.json')] : []
@@ -199,8 +218,9 @@ const listThreadResources = (rt: Runtime): ListResourcesResult => {
 }
 
 const readDecisionResourceBody = (rt: Runtime, id: string): string => {
+  const validId = requireUlid('logbook://decision', 'id', id)
   const store = openStoreForRead(rt, 'logbook://decision')
-  const slot = store.readDecision(id)
+  const slot = store.readDecision(validId)
   if (slot === null) {
     throw new McpError(
       ErrorCode.InvalidParams,
@@ -217,8 +237,10 @@ const readDecisionResourceBody = (rt: Runtime, id: string): string => {
 }
 
 const readSessionEntryResourceBody = (rt: Runtime, threadId: string, entryId: string): string => {
+  const validThreadId = requireUlid('logbook://session', 'thread_id', threadId)
+  const validEntryId = requireUlid('logbook://session', 'entry_id', entryId)
   const store = openStoreForRead(rt, 'logbook://session')
-  const slot = store.readSessionEntry(threadId, entryId)
+  const slot = store.readSessionEntry(validThreadId, validEntryId)
   if (slot === null) {
     throw new McpError(
       ErrorCode.InvalidParams,
