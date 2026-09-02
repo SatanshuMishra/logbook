@@ -73,6 +73,16 @@ export const layoutFor = (rt: Runtime, projectRoot: string): Ok<StoreLayout> | R
       message: `${CLAUDE_PLUGIN_DATA} is not set; the store cannot be located without it`
     }
   }
+  if (!path.isAbsolute(pluginData)) {
+    return {
+      ok: false,
+      field: CLAUDE_PLUGIN_DATA,
+      accepted: 'a non-empty absolute path set in the environment',
+      example: '/Users/example/.claude/plugin-data',
+      retryable: true,
+      message: `${CLAUDE_PLUGIN_DATA} is set to a relative path; a relative value resolves against whatever directory the process happens to start in and can point at a different store on every launch`
+    }
+  }
 
   const key = projectKey(canonicalProjectRoot)
   const root = path.join(pluginData, key)

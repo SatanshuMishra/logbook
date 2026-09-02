@@ -313,3 +313,18 @@ test('ref.classifies-cas-mismatch-vs-io-failure', () => {
     }
   })
 })
+
+test('layout.refuses-a-relative-plugin-data-root', () => {
+  withRepo((repo) => {
+    const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: 'not/an/absolute/path' } })
+    const result = layoutFor(rt, repo)
+    assert.equal(result.ok, false)
+    if (result.ok) return
+    assert.equal(result.field, 'CLAUDE_PLUGIN_DATA')
+    assert.equal(result.retryable, true)
+    assert.match(result.accepted, /absolute/)
+    assert.ok(result.example.startsWith('/'))
+    assert.doesNotMatch(JSON.stringify(result), /not\/an\/absolute\/path/)
+  })
+})
+
