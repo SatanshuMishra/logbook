@@ -593,7 +593,11 @@ test('disposal-census.every-disposed-entry-carries-the-evidence-its-class-requir
   const group = 'store-sync-robustness'
   const criterionUlid = CARRIED_CRITERION_BY_GROUP[group]
   assert.ok(criterionUlid, `disposal-census: the closed vocabulary carries no criterion for "${group}"`)
-  const otherGroup = 'render-surface-consistency'
+  const otherGroup = CARRIED_GROUPS.find((candidate) => candidate !== group)
+  assert.ok(
+    otherGroup !== undefined,
+    'disposal-census: the closed vocabulary carries fewer than two groups, so this control cannot exercise a group-and-criterion mismatch'
+  )
   const otherCriterionUlid = CARRIED_CRITERION_BY_GROUP[otherGroup]
   assert.ok(otherCriterionUlid, `disposal-census: the closed vocabulary carries no criterion for "${otherGroup}"`)
   const strangerUlid = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
