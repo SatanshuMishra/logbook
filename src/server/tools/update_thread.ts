@@ -85,12 +85,12 @@ const UpdateThreadInputSchema = z.strictObject({
     .describe('send true to clear what this thread is blocked on; omit to leave it unchanged'),
   risks_add: z
     .array(RiskAddSchema)
-    .max(caps.OPEN_RISKS_MAX_ELEMENTS)
+    .max(caps.RISKS_PER_CALL_MAX_ELEMENTS)
     .optional()
     .describe('new risks to append to the spine; each one is minted a stable id'),
   risks_retire: z
     .array(ulidField('the id of an open risk currently on this thread'))
-    .max(caps.OPEN_RISKS_MAX_ELEMENTS)
+    .max(caps.RISKS_PER_CALL_MAX_ELEMENTS)
     .optional()
     .describe('risk ids to remove from the spine, for example ["01ARZ3NDEKTSV4RRFFQ69G5FAV"]; retiring an id already gone is not an error'),
   key_decisions_add: z
