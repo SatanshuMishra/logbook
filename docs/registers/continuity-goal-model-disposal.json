@@ -475,38 +475,26 @@
     {
       "ordinal": 59,
       "id": "F2y",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7XPBMPE7G7HN21SS3CQV",
-      "group": "refusal-text-safety"
+      "class": "closed",
+      "reason": "false against trunk: commit 3b9801b9 replaced the joined detail string with a structured records array and made the render boundary escape and cap every name, discharging the coupling this item required in one change"
     },
     {
       "ordinal": 60,
       "id": "F2z",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7XPBMPE7G7HN21SS3CQV",
-      "group": "refusal-text-safety"
+      "class": "closed",
+      "reason": "the meaning residue is accepted: escaping already blocks structure, no dependency-free instrument removes injected meaning, and hashing the name is forbidden by the criterion that the refusal must name the record an operator has to find"
     },
     {
       "ordinal": 61,
       "id": "F2aa",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7XPBMPE7G7HN21SS3CQV",
-      "group": "refusal-text-safety"
+      "class": "shipped-here",
+      "evidence": "every filename this version writes is a ULID under threads, decisions or sessions, so a name outside that shape is decidable without a confusables dependency and now renders annotated; asserted both ways in test/unit/sync-ledger-refusal.test.ts"
     },
     {
       "ordinal": 62,
       "id": "F2ab",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7XPBMPE7G7HN21SS3CQV",
-      "group": "refusal-text-safety"
+      "class": "shipped-here",
+      "evidence": "both refusal renderers now clip through clipWithMarker so a shortened name says so, and clipGraphemes refuses to cut inside an emitted escape token, which previously rendered U+200D as U+20"
     },
     {
       "ordinal": 63,
