@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
+import type { Binding } from '../schema/binding.ts'
 import type { Decision } from '../schema/decision.ts'
 import type { SessionEntry } from '../schema/session.ts'
 import type { Thread } from '../schema/thread.ts'
@@ -14,6 +15,7 @@ export type RecordChange =
   | { kind: 'thread'; record: Thread }
   | { kind: 'decision'; record: Decision }
   | { kind: 'session'; record: SessionEntry }
+  | { kind: 'binding'; record: Binding }
   | { kind: 'raw'; relPath: string; content: string }
 
 export type CommitResult =
@@ -31,10 +33,24 @@ const MAX_ATTEMPTS = 5
 export const writeIndexScratchDir = (layout: StoreLayout): string => path.join(layout.root, 'write-index')
 
 const relativePathFor = (change: RecordChange): string => {
-  if (change.kind === 'thread') return path.join('threads', `${change.record.id}.json`)
-  if (change.kind === 'decision') return path.join('decisions', `${change.record.id}.json`)
-  if (change.kind === 'raw') return change.relPath
-  return path.join('sessions', change.record.thread_id, `${change.record.id}.json`)
+  switch (change.kind) {
+    case 'thread':
+      return path.join('threads', `${change.record.id}.json`)
+    case 'decision':
+      return path.join('decisions', `${change.record.id}.json`)
+    case 'binding':
+      return path.join('bindings', `${change.record.id}.json`)
+    case 'session':
+      return path.join('sessions', change.record.thread_id, `${change.record.id}.json`)
+    case 'raw':
+      return change.relPath
+    default: {
+      const exhaustive: never = change
+      const observedKind = String((change as { kind: unknown }).kind)
+      void exhaustive
+      throw new Error(`relativePathFor received a record change of an unrecognised kind: ${observedKind}.`)
+    }
+  }
 }
 
 const contentFor = (change: RecordChange): string => (change.kind === 'raw' ? change.content : JSON.stringify(change.record))
