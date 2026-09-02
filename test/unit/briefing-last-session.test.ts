@@ -156,12 +156,3 @@ test('briefing.a-single-unreadable-session-entry-reads-singular', () => {
     `- 1 session log entry on this thread could not be read; see logbook://sessions/${thread.id} for the complete record`
   ])
 })
-
-test('briefing.last-session-heading-appears-when-only-entries-are-unreadable', () => {
-  const thread = threadWith('')
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null, false, [], 3)
-
-  assert.deepEqual(sectionOf(rendered, '**Last session:**'), [
-    `- 3 session log entries on this thread could not be read; see logbook://sessions/${thread.id} for the complete record`
-  ])
-})

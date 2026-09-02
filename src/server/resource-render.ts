@@ -19,7 +19,7 @@ export type SessionsListing = {
 const NOT_RECORDED = 'not recorded'
 const STORED_LINE_BREAK = 'U+000A'
 const SESSION_FIRST_LINE_MAX = 200
-const SESSION_FIRST_LINE_ENTRIES_MAX = 50
+export const SESSION_FIRST_LINE_ENTRIES_MAX = 50
 const SESSION_FIRST_LINE_CLIPPED_NOTE =
   'some entry first lines were shortened to fit this listing; read the entry in full for the rest'
 const BINDINGS_UNREAD_NOTE = 'bindings could not be read; none is claimed either way'

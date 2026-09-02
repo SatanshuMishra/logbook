@@ -169,13 +169,13 @@ test('resource-render.thread.open-criterion-omits-the-result-line', () => {
 })
 
 test('resource-render.sessions.grapheme-budget-not-exceeded-by-astral-first-line', () => {
-  const astralFirstLine = '\u{1F600}'.repeat(150)
-  assert.ok(astralFirstLine.length > 200, 'expected the fixture first line to exceed 200 UTF-16 code units')
+  const decomposedFirstLine = 'é'.repeat(150)
+  assert.ok(decomposedFirstLine.length > 200, 'expected the fixture first line to exceed 200 UTF-16 code units')
   const entry: SessionEntry = {
     id: '01ARZ3NDEKTSV4RRFFQ69G5FD0',
     thread_id: '01ARZ3NDEKTSV4RRFFQ69G5FD1',
     actor: 'claude',
-    body: astralFirstLine,
+    body: decomposedFirstLine,
     created_at: '2026-08-24T00:00:00.000Z'
   }
   const rendered = renderSessionsResource({ threadId: entry.thread_id, entries: [entry], quarantined: [], threadQuarantinedReason: null })

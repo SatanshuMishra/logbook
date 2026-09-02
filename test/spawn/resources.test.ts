@@ -14,6 +14,7 @@ import { census } from '../support/census.ts'
 import type { Classified } from '../support/census.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
+import { SESSION_FIRST_LINE_ENTRIES_MAX } from '../../src/server/resource-render.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const ENTRY = join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
@@ -405,8 +406,6 @@ test('resources.sessions-refuses-an-id-naming-no-thread-record', async () => {
   })
 })
 
-const SESSION_FIRST_LINE_ENTRIES_MAX = 50
-
 test('resource.sessions-caps-first-line-text-but-keeps-every-id', async () => {
   await withFixture(async (fx) => {
     const ids = await seedStore(fx.spawned)
@@ -429,9 +428,11 @@ test('resource.sessions-caps-first-line-text-but-keeps-every-id', async () => {
       listing.includes(`cap fixture entry number ${total - 1}`),
       'expected the newest entry to still show its first-line text'
     )
+    const seededSessionEntryCount = 1
+    const droppedCount = total + seededSessionEntryCount - SESSION_FIRST_LINE_ENTRIES_MAX
     assert.ok(
-      listing.includes('first line') && listing.includes('omitted'),
-      `expected a note naming how many first lines were omitted, got '${listing}'`
+      listing.includes(`${droppedCount} entry first lines omitted`),
+      `expected a note naming ${droppedCount} first lines omitted, got '${listing}'`
     )
   })
 })
