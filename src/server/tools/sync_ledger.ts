@@ -57,7 +57,7 @@ export const rejectedRefusal = (detail: string): Refusal =>
     detail
   )
 
-const RECORD_DIRECTORIES = new Set(['threads', 'decisions'])
+const RECORD_DIRECTORIES = new Set(['threads', 'decisions', 'bindings'])
 const SESSIONS_DIRECTORY = 'sessions'
 const RECORD_FILE_SUFFIX = '.json'
 const PATH_SEPARATORS = /[\\/]/
@@ -79,7 +79,8 @@ export const unparseableRecordsRefusal = (records: readonly string[]): Refusal =
   const remainder = records.length - shown.length
   const rendered = shown.map((record) => {
     const escaped = clipWithMarker(escapeStored(record), caps.UNPARSEABLE_RECORD_NAME_MAX)
-    return isWrittenShape(record) ? escaped : `${escaped}${NOT_WRITTEN_SUFFIX}`
+    const bracketed = `<${escaped}>`
+    return isWrittenShape(record) ? bracketed : `${bracketed}${NOT_WRITTEN_SUFFIX}`
   })
   const named = remainder > 0 ? `${rendered.join(', ')} (+${remainder} more)` : rendered.join(', ')
   return {

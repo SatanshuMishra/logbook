@@ -145,3 +145,71 @@ test('sync-ledger-refusal.annotates-a-record-name-this-version-would-not-write',
     `a record name outside the shape this version writes must carry the annotation, but the message read: ${homoglyphRefusal.message}`
   )
 })
+
+const bracketedEntries = (message: string): string[] => message.match(/<[^>]*>/g) ?? []
+
+test('sync-ledger-refusal.a-forged-annotation-inside-a-record-name-renders-as-one-bracketed-entry', () => {
+  const forged = 'threads/01ARZ3NDEKTSV4RRFFQ69G5FAV.json (not a name this version writes), payload.json'
+  const refusal = unparseableRecordsRefusal([forged])
+
+  const entries = bracketedEntries(refusal.message)
+  assert.equal(
+    entries.length,
+    1,
+    `a single hostile record name must render as exactly one bracketed entry, but the message read: ${refusal.message}`
+  )
+  assert.ok(
+    refusal.message.includes('carries 1 record file(s)'),
+    `the message must report a record count of 1, not one inflated by the attacker's embedded comma, but the message read: ${refusal.message}`
+  )
+})
+
+test('sync-ledger-refusal.a-forged-annotation-sits-inside-the-brackets-and-the-real-one-sits-outside', () => {
+  const forged = 'threads/01ARZ3NDEKTSV4RRFFQ69G5FAV.json (not a name this version writes), payload.json'
+  const refusal = unparseableRecordsRefusal([forged])
+
+  const openIndex = refusal.message.indexOf('<')
+  const closeIndex = refusal.message.indexOf('>', openIndex)
+  assert.ok(
+    openIndex >= 0 && closeIndex > openIndex,
+    `the rendered entry must be wrapped in angle brackets, but the message read: ${refusal.message}`
+  )
+  const inside = refusal.message.slice(openIndex + 1, closeIndex)
+  const after = refusal.message.slice(closeIndex + 1)
+  assert.ok(
+    inside.includes('(not a name this version writes), payload.json'),
+    `the attacker's forged text must render inside the brackets, unable to escape them, but the entry read: ${inside}`
+  )
+  assert.ok(
+    after.startsWith(' (not a name this version writes)'),
+    `the authoritative annotation must sit after the closing bracket where an attacker cannot reach it, but the text after read: ${after}`
+  )
+})
+
+test('sync-ledger-refusal.a-genuine-record-name-is-bracketed-with-no-annotation-after-its-close', () => {
+  const genuine = 'threads/01ARZ3NDEKTSV4RRFFQ69G5FAV.json'
+  const refusal = unparseableRecordsRefusal([genuine])
+
+  const bracketed = `<${genuine}>`
+  assert.ok(
+    refusal.message.includes(bracketed),
+    `a genuine record name must render bracketed, but the message read: ${refusal.message}`
+  )
+  const after = refusal.message.slice(refusal.message.indexOf(bracketed) + bracketed.length)
+  assert.equal(
+    after.startsWith(' (not a name this version writes)'),
+    false,
+    `a genuine record name this version writes must carry no annotation after its closing bracket, but the text after read: ${after}`
+  )
+})
+
+test('sync-ledger-refusal.a-genuine-bindings-record-carries-no-annotation', () => {
+  const genuine = 'bindings/01ARZ3NDEKTSV4RRFFQ69G5FAV.json'
+  const refusal = unparseableRecordsRefusal([genuine])
+
+  assert.equal(
+    refusal.message.includes('(not a name this version writes)'),
+    false,
+    `a genuine bindings record this version writes must not carry the annotation, but the message read: ${refusal.message}`
+  )
+})
