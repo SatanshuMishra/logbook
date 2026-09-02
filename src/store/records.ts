@@ -156,16 +156,17 @@ const openDirOrNull = (dir: string): Dir | null => {
 const holdsAnyRecord = (dir: string): boolean => {
   const handle = openDirOrNull(dir)
   if (handle === null) return false
+  const subdirectories: string[] = []
   try {
     for (let entry = handle.readSync(); entry !== null; entry = handle.readSync()) {
       recordScanCount += 1
       if (entry.isFile() && entry.name.endsWith('.json')) return true
-      if (entry.isDirectory() && holdsAnyRecord(path.join(dir, entry.name))) return true
+      if (entry.isDirectory()) subdirectories.push(path.join(dir, entry.name))
     }
-    return false
   } finally {
     handle.closeSync()
   }
+  return subdirectories.some((subdirectory) => holdsAnyRecord(subdirectory))
 }
 
 const refRecordCount = (rt: Runtime, layout: StoreLayout): number | null => {
