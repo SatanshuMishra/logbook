@@ -317,6 +317,43 @@ test('sync.a-failed-sync-leaves-a-pending-conflict-file-untouched', () => {
   })
 })
 
+test('sync.a-locally-quarantined-record-is-logged-not-silently-dropped', () => {
+  withTwoClones((ana, ben, _remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+
+    const threadA = makeThread(ana.rt, 'local-quarantine-thread-a')
+    assert.equal(ana.store.commit([threadA], 'ana: create thread a').ok, true)
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    const threadC = makeThread(ben.rt, 'local-quarantine-thread-c')
+    assert.equal(ben.store.commit([threadC], 'ben: create thread c').ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    const badRelPath = 'decisions/local-quarantine-not-a-valid-decision.json'
+    const rawWrite = writeRecords(
+      ana.rt,
+      anaLayout,
+      [{ kind: 'raw', relPath: badRelPath, content: '{"this is not a valid decision record":true}' }],
+      'ana: record a decision the schema will reject'
+    )
+    assert.equal(rawWrite.ok, true)
+
+    const events: Record<string, unknown>[] = []
+    const watchRt: Runtime = { ...ana.rt, log: (record) => { events.push(record) } }
+
+    const mergeOutcome = sync(watchRt, ana.store, anaLayout)
+    assert.equal(mergeOutcome.ok, true, 'a locally-quarantined record must not block the merge')
+
+    const quarantineLogs = events.filter((record) => record.event === 'sync.local-record-quarantined')
+    assert.equal(quarantineLogs.length, 1, 'the locally-quarantined decision must be named to the operator exactly once')
+    assert.equal(quarantineLogs[0]?.level, 'warn')
+    assert.equal(quarantineLogs[0]?.kind, 'decision')
+    assert.equal(typeof quarantineLogs[0]?.reason, 'string')
+  })
+})
+
 test('sync.a-scratch-cleanup-failure-does-not-replace-the-merge-outcome', () => {
   withTwoClones((ana, ben, _remote) => {
     const anaLayout = layoutIn(ana)

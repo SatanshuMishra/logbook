@@ -88,20 +88,36 @@ const safeDirNames = (dir: string): string[] => {
   }
 }
 
-const readOursRecordSet = (store: Store, layout: StoreLayout): RecordSet => {
+const logLocalQuarantine = (rt: Runtime, kind: 'thread' | 'decision' | 'session', reason: string): void => {
+  rt.log({ level: 'warn', event: 'sync.local-record-quarantined', kind, reason })
+}
+
+const readOursRecordSet = (rt: Runtime, store: Store, layout: StoreLayout): RecordSet => {
   const threads = new Map<string, Thread>()
   for (const slot of store.readThreads()) {
-    if (!slot.quarantined) threads.set(slot.record.id, slot.record)
+    if (slot.quarantined) {
+      logLocalQuarantine(rt, 'thread', slot.reason)
+    } else {
+      threads.set(slot.record.id, slot.record)
+    }
   }
   const decisions = new Map<string, Decision>()
   for (const slot of readAllRecordFiles<Decision>(path.join(layout.records, 'decisions'), DecisionRecord)) {
-    if (!slot.quarantined) decisions.set(slot.record.id, slot.record)
+    if (slot.quarantined) {
+      logLocalQuarantine(rt, 'decision', slot.reason)
+    } else {
+      decisions.set(slot.record.id, slot.record)
+    }
   }
   const sessionsByThread = new Map<string, SessionEntry[]>()
   for (const threadId of safeDirNames(path.join(layout.records, 'sessions'))) {
     const entries: SessionEntry[] = []
     for (const slot of store.readSessionEntries(threadId)) {
-      if (!slot.quarantined) entries.push(slot.record)
+      if (slot.quarantined) {
+        logLocalQuarantine(rt, 'session', slot.reason)
+      } else {
+        entries.push(slot.record)
+      }
     }
     sessionsByThread.set(threadId, entries)
   }
@@ -312,7 +328,7 @@ const performMerge = (
       baseScratch = baseResult.scratch
     }
     try {
-      const ours = readOursRecordSet(store, layout)
+      const ours = readOursRecordSet(rt, store, layout)
       const theirs = readScratchRecordSet(theirsScratch)
       const base = baseScratch !== null ? readScratchRecordSet(baseScratch) : null
 
