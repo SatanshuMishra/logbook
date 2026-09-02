@@ -1,9 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Decision } from '../../src/schema/decision.ts'
+import type { SessionEntry } from '../../src/schema/session.ts'
 import type { Criterion, Thread } from '../../src/schema/thread.ts'
 import type { DecisionIntegrity } from '../../src/render/briefing.ts'
-import { renderDecisionResource, renderThreadDetail } from '../../src/server/resource-render.ts'
+import { renderDecisionResource, renderSessionsResource, renderThreadDetail } from '../../src/server/resource-render.ts'
+import { CLIP_MARKER } from '../../src/render/clip.ts'
 
 const DECISION_WITHOUT_COMMIT: Omit<Decision, 'commit'> = {
   id: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
@@ -164,4 +166,37 @@ test('resource-render.thread.open-criterion-omits-the-result-line', () => {
     lines.every((line) => !line.startsWith('  result:')),
     `expected no result line for an open criterion, got ${JSON.stringify(lines)}`
   )
+})
+
+test('resource-render.sessions.grapheme-budget-not-exceeded-by-astral-first-line', () => {
+  const astralFirstLine = '\u{1F600}'.repeat(150)
+  assert.ok(astralFirstLine.length > 200, 'expected the fixture first line to exceed 200 UTF-16 code units')
+  const entry: SessionEntry = {
+    id: '01ARZ3NDEKTSV4RRFFQ69G5FD0',
+    thread_id: '01ARZ3NDEKTSV4RRFFQ69G5FD1',
+    actor: 'claude',
+    body: astralFirstLine,
+    created_at: '2026-08-24T00:00:00.000Z'
+  }
+  const rendered = renderSessionsResource({ threadId: entry.thread_id, entries: [entry], quarantined: [] })
+  assert.ok(!rendered.includes(CLIP_MARKER), 'expected no clip marker for a first line under the grapheme budget')
+  assert.ok(
+    !rendered.includes('shortened to fit this listing'),
+    'expected no shortened-lines note for a first line under the grapheme budget'
+  )
+})
+
+test('resource-render.sessions.marks-a-first-line-genuinely-over-budget', () => {
+  const overBudgetFirstLine = 'a'.repeat(250)
+  const entry: SessionEntry = {
+    id: '01ARZ3NDEKTSV4RRFFQ69G5FD2',
+    thread_id: '01ARZ3NDEKTSV4RRFFQ69G5FD1',
+    actor: 'claude',
+    body: overBudgetFirstLine,
+    created_at: '2026-08-24T00:00:00.000Z'
+  }
+  const rendered = renderSessionsResource({ threadId: entry.thread_id, entries: [entry], quarantined: [] })
+  assert.ok(rendered.includes(CLIP_MARKER), 'expected the inline clip marker on a first line over the grapheme budget')
+  const noteCount = rendered.split('\n').filter((line) => line.includes('shortened to fit this listing')).length
+  assert.equal(noteCount, 1, `expected exactly one shortened-lines note line, got ${noteCount}`)
 })

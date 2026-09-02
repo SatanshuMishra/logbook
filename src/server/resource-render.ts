@@ -1,4 +1,5 @@
-import { clipGraphemes, escapeStored } from '../render/escape.ts'
+import { escapeStored } from '../render/escape.ts'
+import { clipWithMarker } from '../render/clip.ts'
 import type { Binding } from '../schema/binding.ts'
 import type { Decision } from '../schema/decision.ts'
 import type { SessionEntry } from '../schema/session.ts'
@@ -53,10 +54,12 @@ const renderDetailQuarantinedLine = (id: string): string => `quarantined: ${esca
 const firstStoredLine = (body: string): string => body.split(STORED_LINE_BREAK)[0] ?? ''
 
 const renderSessionsEntryLine = (entry: SessionEntry): string =>
-  `- ${escapeStored(entry.id)} [${escapeStored(entry.created_at)}] ${clipGraphemes(escapeStored(firstStoredLine(entry.body)), SESSION_FIRST_LINE_MAX)}`
+  `- ${escapeStored(entry.id)} [${escapeStored(entry.created_at)}] ${clipWithMarker(escapeStored(firstStoredLine(entry.body)), SESSION_FIRST_LINE_MAX)}`
 
-const firstLineWasClipped = (entry: SessionEntry): boolean =>
-  escapeStored(firstStoredLine(entry.body)).length > SESSION_FIRST_LINE_MAX
+const firstLineWasClipped = (entry: SessionEntry): boolean => {
+  const escaped = escapeStored(firstStoredLine(entry.body))
+  return clipWithMarker(escaped, SESSION_FIRST_LINE_MAX) !== escaped
+}
 
 export const renderSessionsResource = (listing: SessionsListing): string => {
   const count = listing.entries.length
