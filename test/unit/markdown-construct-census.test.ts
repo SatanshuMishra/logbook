@@ -333,7 +333,7 @@ const CONSTRUCTS: readonly Construct[] = [
     classification: 'accepted',
     guards: [],
     rationale:
-      'an image reference mid-line survives, and the residual is a remote destination that a renderer which fetches images would request without a reader acting; the briefing surface consumes text rather than fetching, and the opening bracket is escaped at a line start',
+      'an image reference survives at every position rather than only mid-line: the leading exclamation mark is outside every escape set, so it consumes the line-start position and the bracket after it is mid-line, where brackets were never in scope; the same reference without that one character escapes to U+005B at a line start and collapses to text; the residual is that the storer-chosen destination reaches a rendered briefing intact, because the caller text is accepted under a length cap alone and escapes to itself both on write and on render; nothing in this repository fetches that destination, and what a client renderer does with it is outside this repository and unknown',
     witness: null,
     provenBy: null
   },
