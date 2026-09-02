@@ -599,13 +599,13 @@
       "ordinal": 71,
       "id": "F6f",
       "class": "shipped-here",
-      "evidence": "the sessions listing bounds first-line text at 50 entries and names the count omitted, while every entry id is retained so logbook://session/{thread_id}/{entry_id} still resolves to each one"
+      "evidence": "the listing bounds first-line text at the newest 50 entries and names the count omitted while retaining every entry id; the listing itself is NOT bounded, measured at 13079 characters at the cap, and bounding it needs a cursor, which is a published address change filed above this ceiling"
     },
     {
       "ordinal": 72,
       "id": "F6g",
       "class": "shipped-here",
-      "evidence": "the thread listing no longer carries a title or a description interpolating one, so no free prose authored by another contributor reaches a model on connect, while the uri and the schema-constrained slug remain and B28 still holds"
+      "evidence": "the listing no longer carries a thread title or a description interpolating one, removing two unrequested copies of contributor-authored prose; the slug remains as a schema-constrained identifier that can still express a short imperative, an accepted residual because B28 mandates the listing"
     },
     {
       "ordinal": 73,
