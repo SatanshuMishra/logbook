@@ -9,7 +9,7 @@ import { RECIPES, TEST_2_CASES, isEmptyish, withSingleFixture } from '../support
 
 type Verdict = 'allowed' | 'forbidden' | 'unclassifiable'
 
-type LandingSiteEntry = { path: string; site: string; omitted: unknown; refused: boolean }
+type LandingSiteEntry = { path: string; site: string; omitted: unknown; refused: boolean; noDifference: boolean }
 
 const parentPathOf = (path: string): string | null => {
   if (path.endsWith('[]')) return path.slice(0, -2)
@@ -48,6 +48,7 @@ const derivePopulation = (): string[] =>
   )
 
 const classifyLandingSite = (entry: LandingSiteEntry): Verdict => {
+  if (entry.noDifference) return 'unclassifiable'
   if (entry.refused) return 'allowed'
   if (isEmptyish(entry.omitted)) return 'allowed'
   const value = entry.omitted
@@ -74,16 +75,23 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute', asyn
     }
     const result = await recipe()
     if (result.refused) {
-      entries.push({ path, site: 'refused', omitted: undefined, refused: true })
+      entries.push({ path, site: 'refused', omitted: undefined, refused: true, noDifference: false })
       t.diagnostic(`${path}: the omitted run was refused`)
       continue
     }
     if (result.sites.length === 0) {
       t.diagnostic(`${path}: no landing site differed between the omitted and sentinel runs`)
+      entries.push({
+        path,
+        site: 'no-landing-site',
+        omitted: `supplying ${path} changed nothing on the response, the stored record or the pointer`,
+        refused: false,
+        noDifference: true
+      })
       continue
     }
     for (const site of result.sites) {
-      entries.push({ path, site: site.site, omitted: site.omitted, refused: false })
+      entries.push({ path, site: site.site, omitted: site.omitted, refused: false, noDifference: false })
       t.diagnostic(`${path}#${site.site}: omitted run carries ${JSON.stringify(site.omitted)}`)
     }
   }
@@ -102,7 +110,8 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.contro
     path: 'synthetic.probe',
     site: 'synthetic',
     omitted: 'criterion 1',
-    refused: false
+    refused: false,
+    noDifference: false
   }
   assert.throws(
     () => census([forbidden], classifyLandingSite),
@@ -116,7 +125,8 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.contro
     path: 'synthetic.probe',
     site: 'synthetic',
     omitted: { nested: true },
-    refused: false
+    refused: false,
+    noDifference: false
   }
   assert.throws(
     () => census([weird], classifyLandingSite),

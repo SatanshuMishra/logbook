@@ -471,12 +471,12 @@ const amendCriteriaCheckRecipe = (): Promise<RecipeResult> =>
     { check: 'sentinel insert check' }
   )
 
-type AmendCriteriaPositionFixtureCtx = { threadId: string; existingLength: number; decisionId: string }
+type AmendCriteriaPositionFixtureCtx = { threadId: string; decisionId: string }
 
 const openAmendCriteriaPositionFixture = async (rt: Runtime): Promise<AmendCriteriaPositionFixtureCtx> => {
-  const { threadId, criterionIds } = await openFixtureThread(rt, 'amend-criteria-position')
+  const { threadId } = await openFixtureThread(rt, 'amend-criteria-position', 2)
   const decisionId = await recordFixtureDecision(rt, threadId, 'a position fixture decision')
-  return { threadId, existingLength: criterionIds.length, decisionId }
+  return { threadId, decisionId }
 }
 
 const amendPositionBaseArgs = (ctx: AmendCriteriaPositionFixtureCtx): Record<string, unknown> => ({
@@ -494,11 +494,11 @@ const amendCriteriaPositionRecipe = (): Promise<RecipeResult> =>
     amendCriteriaTool,
     openAmendCriteriaPositionFixture,
     (ctx: AmendCriteriaPositionFixtureCtx) => amendPositionBaseArgs(ctx),
-    (ctx: AmendCriteriaPositionFixtureCtx) => ({ ...amendPositionBaseArgs(ctx), position: ctx.existingLength }),
-    (structured, rt, ctx: AmendCriteriaPositionFixtureCtx) => ({
-      criterion_id: structured.criterion_id,
-      order: readThreadRecord(rt, ctx.threadId)?.completion_criteria.map((c) => c.id).join(',') ?? ''
-    })
+    (ctx: AmendCriteriaPositionFixtureCtx) => ({ ...amendPositionBaseArgs(ctx), position: 0 }),
+    (structured, rt, ctx: AmendCriteriaPositionFixtureCtx) => {
+      const order = readThreadRecord(rt, ctx.threadId)?.completion_criteria.map((c) => c.id) ?? []
+      return { inserted_at_front: order[0] === structured.criterion_id }
+    }
   )
 
 const resumeThreadFocusRecipe = (): Promise<RecipeResult> =>
@@ -520,8 +520,17 @@ const openParkThreadFixture = async (rt: Runtime): Promise<ParkThreadFixtureCtx>
   return { threadId }
 }
 
+const openParkThreadCrossSessionFixture = async (rt: Runtime): Promise<ParkThreadFixtureCtx> => {
+  const { threadId } = await openFixtureThread(rt, 'park-thread-cross-session')
+  const otherSessionRt = testRuntime({ env: rt.env, cwd: rt.cwd, sessionId: 'a-different-session' })
+  const resumed = await resumeThreadTool.handler(otherSessionRt, STUB_TOOL_CTX, { thread_id: threadId })
+  if (!resumed.ok) throw new Error('optional-argument-recipes: expected the park_thread cross-session fixture pointer to be set')
+  return { threadId }
+}
+
 type ParkFieldSpec = {
   field: string
+  setup: (rt: Runtime) => Promise<ParkThreadFixtureCtx>
   sentinelArgs: (ctx: ParkThreadFixtureCtx) => Record<string, unknown>
   extract: (structured: Record<string, unknown>, rt: Runtime, ctx: ParkThreadFixtureCtx) => Record<string, unknown>
 }
@@ -529,6 +538,7 @@ type ParkFieldSpec = {
 const PARK_FIELDS: ParkFieldSpec[] = [
   {
     field: 'outcome',
+    setup: openParkThreadFixture,
     sentinelArgs: () => ({ outcome: 'sentinel park outcome text' }),
     extract: (structured, rt, ctx) => {
       const entryId = (structured.session_entry_ids as string[])[0]
@@ -538,11 +548,16 @@ const PARK_FIELDS: ParkFieldSpec[] = [
   },
   {
     field: 'thread_id',
+    setup: openParkThreadCrossSessionFixture,
     sentinelArgs: (ctx) => ({ thread_id: ctx.threadId }),
-    extract: (structured) => ({ status: structured.status, parked_thread_ids: (structured.parked_thread_ids as string[]).join(',') })
+    extract: (structured) => ({
+      parked: structured.status === 'parked',
+      parked_thread_ids: (structured.parked_thread_ids as string[]).join(',')
+    })
   },
   {
     field: 'next_step',
+    setup: openParkThreadFixture,
     sentinelArgs: () => ({ next_step: 'sentinel park next step text' }),
     extract: (structured, rt, ctx) => ({
       spine_fields_updated: structured.spine_fields_updated,
@@ -553,7 +568,7 @@ const PARK_FIELDS: ParkFieldSpec[] = [
 
 const parkThreadRecipes: [string, () => Promise<RecipeResult>][] = PARK_FIELDS.map((spec) => [
   `park_thread.${spec.field}`,
-  () => runOptionalArgRecipe(`park_thread.${spec.field}`, parkThreadTool, openParkThreadFixture, () => ({}), spec.sentinelArgs, spec.extract)
+  () => runOptionalArgRecipe(`park_thread.${spec.field}`, parkThreadTool, spec.setup, () => ({}), spec.sentinelArgs, spec.extract)
 ])
 
 type RecordDecisionFieldSpec = {
@@ -637,7 +652,11 @@ const listThreadsCursorRecipe = (): Promise<RecipeResult> =>
     openListThreadsFixture,
     () => ({}),
     (ctx: ListThreadsFixtureCtx) => (ctx.knownCursor === null ? {} : { cursor: ctx.knownCursor }),
-    (structured) => ({ next_cursor: structured.next_cursor })
+    (structured, rt, ctx: ListThreadsFixtureCtx) => ({
+      cursor_row_excluded:
+        ctx.knownCursor !== null &&
+        !(structured.threads as { id: string }[]).some((row) => row.id === ctx.knownCursor)
+    })
   )
 
 const listThreadsLimitRecipe = (): Promise<RecipeResult> =>
