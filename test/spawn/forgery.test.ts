@@ -256,6 +256,7 @@ type Surfaces = {
   rosterTool: string
   rosterResource: string
   sessionStartRoster: string
+  threadListResource: string
 }
 
 const renderSurfaces = async (fixture: Fixture, threadId: string): Promise<Surfaces> => {
@@ -267,7 +268,10 @@ const renderSurfaces = async (fixture: Fixture, threadId: string): Promise<Surfa
   })
   try {
     await spawned.client.listTools()
-    await spawned.client.listResources()
+    const listed = await spawned.client.listResources()
+    const threadListResource = listed.resources
+      .map((r) => [r.uri, r.name, r.title ?? '', r.description ?? ''].join(' | '))
+      .join('\n')
 
     const rosterTool = firstTextOf(
       (await spawned.client.callTool({ name: 'list_threads', arguments: {} })) as CallToolResult,
@@ -283,7 +287,7 @@ const renderSurfaces = async (fixture: Fixture, threadId: string): Promise<Surfa
       (await spawned.client.callTool({ name: 'resume_thread', arguments: { thread_id: threadId } })) as CallToolResult,
       'resume_thread'
     )
-    return { briefingTool, briefingResource, rosterTool, rosterResource, sessionStartRoster }
+    return { briefingTool, briefingResource, rosterTool, rosterResource, sessionStartRoster, threadListResource }
   } finally {
     await spawned.close()
   }
@@ -334,7 +338,12 @@ const renderBriefingsFor = async (
 type SurfaceName = keyof Surfaces
 
 const BRIEFING_SURFACES: readonly (keyof BriefingSurfaces)[] = ['briefingTool', 'briefingResource']
-const ROSTER_SURFACES: readonly SurfaceName[] = ['rosterTool', 'rosterResource', 'sessionStartRoster']
+const ROSTER_SURFACES: readonly SurfaceName[] = [
+  'rosterTool',
+  'rosterResource',
+  'sessionStartRoster',
+  'threadListResource'
+]
 
 const assertPayloadIsInert = (surface: string, hostile: string, control: string): void => {
   assert.deepEqual(

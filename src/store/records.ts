@@ -8,7 +8,13 @@ import type { Runtime } from '../runtime/runtime.ts'
 import { errnoCode, withDetail } from './detail.ts'
 import { git } from './git.ts'
 import { createStoreDirectories, layoutFor, type StoreLayout } from './layout.ts'
-import { markMaterialised, readAllRecordFiles, readRecordFile, readRecordVerdict, syncWorkingCopy } from './read-path.ts'
+import {
+  advanceMaterialisedStampIfStillCurrent,
+  readAllRecordFiles,
+  readRecordFile,
+  readRecordVerdict,
+  syncWorkingCopy
+} from './read-path.ts'
 import { LEDGER_REF } from './ref.ts'
 import { ensureSingleStore } from './single-store.ts'
 import { writeRecords } from './write-path.ts'
@@ -230,7 +236,17 @@ export const openStore = (rt: Runtime, projectRoot: string): Ok<Store> | Refusal
       }
       const result = writeRecords(rt, storeLayout, changes, message)
       if (result.ok) {
-        markMaterialised(storeLayout, result.after)
+        const advance = advanceMaterialisedStampIfStillCurrent(rt, storeLayout, result.before, result.after)
+        if (!advance.advanced && advance.reason === 'stamp-mismatch') {
+          rt.log({
+            level: 'error',
+            event: 'store.materialised-stamp-advance-skipped',
+            ref: LEDGER_REF,
+            before: result.before,
+            after: result.after,
+            observed: advance.observed
+          })
+        }
       }
       return result
     }

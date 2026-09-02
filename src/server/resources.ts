@@ -13,6 +13,7 @@ import { escapeStored } from '../render/escape.ts'
 import type { DecisionIntegrity } from '../render/briefing.ts'
 import { paginateRoster, renderRoster, selectRosterThreads, toRosterRow } from '../render/roster.ts'
 import { openProjectStore, resolvePredecessor } from './tool-support.ts'
+import { ULID_PATTERN, SLUG_PATTERN } from '../schema/ids.ts'
 import {
   renderDecisionResource,
   renderSessionEntryResource,
@@ -56,6 +57,22 @@ const variableAsString = (variables: Variables, key: string): string => {
   if (typeof value === 'string') return value
   if (Array.isArray(value)) return value[0] ?? ''
   return ''
+}
+
+const requireUlid = (addressLabel: string, field: string, value: string): string => {
+  if (ULID_PATTERN.test(value)) return value
+  throw new McpError(
+    ErrorCode.InvalidParams,
+    `${escapeStored(addressLabel)}: '${escapeStored(field)}' must be a ULID matching ${escapeStored(ULID_PATTERN.source)}, got '${escapeStored(value)}'`
+  )
+}
+
+const requireThreadIdentifier = (addressLabel: string, field: string, value: string): string => {
+  if (ULID_PATTERN.test(value) || SLUG_PATTERN.test(value)) return value
+  throw new McpError(
+    ErrorCode.InvalidParams,
+    `${escapeStored(addressLabel)}: '${escapeStored(field)}' must be a ULID matching ${escapeStored(ULID_PATTERN.source)} or a slug matching ${escapeStored(SLUG_PATTERN.source)}, got '${escapeStored(value)}'`
+  )
 }
 
 const openStoreForRead = (rt: Runtime, addressLabel: string): Store => {
@@ -128,18 +145,19 @@ const readBindingsForThread = (rt: Runtime, threadId: string): BindingIntegrity 
 }
 
 const readThreadResourceBody = (rt: Runtime, id: string): string => {
+  const validId = requireThreadIdentifier('logbook://thread', 'id', id)
   const store = openStoreForRead(rt, 'logbook://thread')
-  const slot = resolveThreadSlot(store, id)
+  const slot = resolveThreadSlot(store, validId)
   if (slot === null) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `logbook://thread: no thread record matches id or slug '${escapeStored(id)}'`
+      `logbook://thread: no thread record matches id or slug '${escapeStored(validId)}'`
     )
   }
   if (slot.quarantined) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `logbook://thread: the record for '${escapeStored(id)}' failed to parse and is quarantined: ${escapeStored(slot.reason)}`
+      `logbook://thread: the record for '${escapeStored(validId)}' failed to parse and is quarantined: ${escapeStored(slot.reason)}`
     )
   }
 
@@ -160,21 +178,22 @@ const readThreadResourceBody = (rt: Runtime, id: string): string => {
 }
 
 const readSessionsResourceBody = (rt: Runtime, threadId: string): string => {
+  const validThreadId = requireUlid('logbook://sessions', 'thread_id', threadId)
   const store = openStoreForRead(rt, 'logbook://sessions')
-  const slot = store.readThread(threadId)
+  const slot = store.readThread(validThreadId)
   if (slot === null) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `logbook://sessions: no thread record matches id '${escapeStored(threadId)}'`
+      `logbook://sessions: no thread record matches id '${escapeStored(validThreadId)}'`
     )
   }
-  const entries = store.readSessionEntries(threadId)
+  const entries = store.readSessionEntries(validThreadId)
   const loaded = entries.flatMap((entry) => (entry.quarantined ? [] : [entry.record]))
   const quarantined = entries.flatMap((entry) =>
     entry.quarantined ? [path.basename(entry.path, '.json')] : []
   )
   return renderSessionsResource({
-    threadId,
+    threadId: validThreadId,
     entries: [...loaded].reverse(),
     quarantined,
     threadQuarantinedReason: slot.quarantined ? slot.reason : null
@@ -199,36 +218,39 @@ const listThreadResources = (rt: Runtime): ListResourcesResult => {
 }
 
 const readDecisionResourceBody = (rt: Runtime, id: string): string => {
+  const validId = requireUlid('logbook://decision', 'id', id)
   const store = openStoreForRead(rt, 'logbook://decision')
-  const slot = store.readDecision(id)
+  const slot = store.readDecision(validId)
   if (slot === null) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `logbook://decision: no decision record matches id '${escapeStored(id)}'`
+      `logbook://decision: no decision record matches id '${escapeStored(validId)}'`
     )
   }
   if (slot.quarantined) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `logbook://decision: the record for '${escapeStored(id)}' failed to parse and is quarantined: ${escapeStored(slot.reason)}`
+      `logbook://decision: the record for '${escapeStored(validId)}' failed to parse and is quarantined: ${escapeStored(slot.reason)}`
     )
   }
   return renderDecisionResource(slot.record)
 }
 
 const readSessionEntryResourceBody = (rt: Runtime, threadId: string, entryId: string): string => {
+  const validThreadId = requireUlid('logbook://session', 'thread_id', threadId)
+  const validEntryId = requireUlid('logbook://session', 'entry_id', entryId)
   const store = openStoreForRead(rt, 'logbook://session')
-  const slot = store.readSessionEntry(threadId, entryId)
+  const slot = store.readSessionEntry(validThreadId, validEntryId)
   if (slot === null) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `logbook://session: no session entry '${escapeStored(entryId)}' exists for thread '${escapeStored(threadId)}'`
+      `logbook://session: no session entry '${escapeStored(validEntryId)}' exists for thread '${escapeStored(validThreadId)}'`
     )
   }
   if (slot.quarantined) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `logbook://session: the entry '${escapeStored(entryId)}' for thread '${escapeStored(threadId)}' failed to parse and is quarantined: ${escapeStored(slot.reason)}`
+      `logbook://session: the entry '${escapeStored(validEntryId)}' for thread '${escapeStored(validThreadId)}' failed to parse and is quarantined: ${escapeStored(slot.reason)}`
     )
   }
   return renderSessionEntryResource(slot.record)

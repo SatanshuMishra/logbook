@@ -14,9 +14,14 @@ export type SweepShape = {
 
 export type SweepFixture = { thread: Thread; predecessor: Thread; integrity: DecisionIntegrity }
 
+const CRITERION_CHECK_HELD_LENGTH = 40
+const CRITERION_RESULT_HELD_LENGTH = 60
+const RISK_REF_HELD_LENGTH = 40
+
 export const SWEEP_FIXTURE_HELD_FIXED = [
-  'open_risks and out_of_scope are held at the largest element count the record byte cap admits, each at its own text cap',
-  'every criterion is open, ordinals ascend from one, and no criterion is struck or done',
+  'open_risks and out_of_scope are held at the largest element count the record byte cap admits, each at its own text cap, and every risk carries exactly one reference at a fixed short length',
+  'every criterion carries a populated check at a fixed short length, ordinals ascend from one, and no criterion is struck',
+  'the last criterion is marked done with a populated result and result_status at a fixed short length, so the rendered result line is exercised, except in the one cell where anchoring is on and there is exactly one criterion, where that sole criterion is also the anchor and is kept open instead so the anchored criterion never settles; every criterion before the last always stays open',
   'title, slug, blocked_by, active_goal, next_step and last_session are held at their schema caps',
   'a predecessor thread is always resolved, and the written pointer is passed as null',
   'key decisions split evenly into dangling and quarantined decision ids, so no decision resolves'
@@ -24,7 +29,8 @@ export const SWEEP_FIXTURE_HELD_FIXED = [
 
 export const SWEEP_FIXTURE_NOT_SWEPT = [
   'risk text length, out-of-scope text length and key-decision title length, each held at its schema cap',
-  'criterion status, which is held open so that no criterion collapses into the retired lane',
+  'criterion check length, criterion result length (recorded only on the last criterion) and risk reference length, each held at a fixed short length rather than the byte-budget-stressing caps used for risk text, out-of-scope text and key-decision title, so the fixed-count worst-case shapes elsewhere stay schema-admissible',
+  'criterion status for every criterion but the last, which is held open, and for the last criterion itself whenever anchoring is on and it is also the sole (first) criterion; the anchored criterion (criteria[0]) is kept open in every swept cell where anchoring is on, so this change never moves a risk or key decision into the settled lane through the criterion-status mechanism',
   'mixed fills within one record, so a record is entirely ASCII or entirely multi-byte',
   'the escape-expanding fill class, meaning characters the stored-text escape rewrites into a U+XXXX token and so grows roughly sixfold; every swept fill passes through that escape unchanged, so no swept record carries one',
   'grapheme density, meaning how many UTF-16 code units one reader-visible character spans; every swept fill is exactly one code unit per grapheme, so every swept record has a grapheme count equal to its character count'
@@ -33,14 +39,22 @@ export const SWEEP_FIXTURE_NOT_SWEPT = [
 export const buildSweepFixture = (rt: Runtime, shape: SweepShape): SweepFixture => {
   const fillOf = (length: number): string => shape.fill.repeat(length)
 
-  const criteria: Criterion[] = Array.from({ length: shape.criteriaCount }, (_, index) => ({
-    id: rt.ulid(),
-    ordinal: index + 1,
-    text: fillOf(shape.criterionTextLength),
-    done: false,
-    kind: 'planned',
-    struck_by: null
-  }))
+  const criteria: Criterion[] = Array.from({ length: shape.criteriaCount }, (_, index) => {
+    const isLast = index === shape.criteriaCount - 1
+    const isAnchorCriterion = shape.anchored && index === 0
+    const done = isLast && !isAnchorCriterion
+    return {
+      id: rt.ulid(),
+      ordinal: index + 1,
+      text: fillOf(shape.criterionTextLength),
+      done,
+      kind: 'planned',
+      check: fillOf(CRITERION_CHECK_HELD_LENGTH),
+      result: done ? fillOf(CRITERION_RESULT_HELD_LENGTH) : undefined,
+      result_status: done ? 'verified' : undefined,
+      struck_by: null
+    }
+  })
 
   const currentCriterion = criteria[0]
   const anchor = shape.anchored && currentCriterion !== undefined ? { criterion_id: currentCriterion.id } : {}
@@ -49,7 +63,7 @@ export const buildSweepFixture = (rt: Runtime, shape: SweepShape): SweepFixture 
     id: rt.ulid(),
     scope: 'sweep',
     text: fillOf(caps.RISK_TEXT_MAX),
-    refs: [],
+    refs: [fillOf(RISK_REF_HELD_LENGTH)],
     ...anchor
   }))
 

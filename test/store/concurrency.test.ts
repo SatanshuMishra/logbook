@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { git } from '../../src/store/git.ts'
+import { git, GIT_BUFFER_MAX_BYTES } from '../../src/store/git.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
 import { openStore } from '../../src/store/records.ts'
@@ -329,6 +329,166 @@ const raceThroughStoreCommit = (
     rmSync(scratchDir, { recursive: true, force: true })
   }
 }
+
+type FullTreeShimParams = {
+  winnerScriptPath: string
+  winnerPayload: unknown
+}
+
+const FULL_TREE_WINNER_TIMEOUT_MS = 15000
+
+const buildFullTreeGitShim = (params: FullTreeShimParams): GitShim => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'logbook-concurrency-fulltree-shim-'))
+  const shimPath = path.join(dir, 'git')
+  const marker = path.join(dir, 'fired')
+  const winnerOutFile = path.join(dir, 'winner-out.json')
+  const realGit = resolveRealGit()
+  const winnerPayloadJson = JSON.stringify(params.winnerPayload)
+
+  const source = `#!${process.execPath}
+const { spawnSync } = require('node:child_process')
+const { existsSync, readFileSync, writeFileSync } = require('node:fs')
+
+const MARKER = ${JSON.stringify(marker)}
+const REAL_GIT = ${JSON.stringify(realGit)}
+const WINNER_SCRIPT = ${JSON.stringify(params.winnerScriptPath)}
+const WINNER_PAYLOAD = ${JSON.stringify(winnerPayloadJson)}
+const WINNER_OUT = ${JSON.stringify(winnerOutFile)}
+const MAX_BUFFER = ${JSON.stringify(GIT_BUFFER_MAX_BYTES)}
+const WINNER_TIMEOUT_MS = ${JSON.stringify(FULL_TREE_WINNER_TIMEOUT_MS)}
+
+const args = process.argv.slice(2)
+const isFullTreeCall = args.includes('--full-tree')
+
+if (isFullTreeCall && !existsSync(MARKER)) {
+  writeFileSync(MARKER, '')
+  const winner = spawnSync(process.execPath, [WINNER_SCRIPT, WINNER_PAYLOAD], { timeout: WINNER_TIMEOUT_MS })
+  writeFileSync(
+    WINNER_OUT,
+    JSON.stringify({
+      status: winner.status,
+      stdout: winner.stdout ? winner.stdout.toString('utf8') : '',
+      stderr: winner.stderr ? winner.stderr.toString('utf8') : '',
+      error: winner.error ? String(winner.error.message || winner.error) : null
+    })
+  )
+}
+
+const stdin = readFileSync(0)
+const delegated = spawnSync(REAL_GIT, args, { input: stdin, maxBuffer: MAX_BUFFER })
+if (delegated.stdout) process.stdout.write(delegated.stdout)
+if (delegated.stderr) process.stderr.write(delegated.stderr)
+process.exit(delegated.status === null || delegated.status === undefined ? 1 : delegated.status)
+`
+
+  writeFileSync(shimPath, source, { mode: 0o755 })
+  chmodSync(shimPath, 0o755)
+
+  return {
+    dir,
+    winnerOutFile,
+    cleanup: () => rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+type FullTreeWinnerSubprocessOutcome = { status: number | null; stdout: string; stderr: string; error: string | null }
+
+const readFullTreeWinnerOutcome = (shim: GitShim): CommitResult => {
+  assert.ok(
+    existsSync(shim.winnerOutFile),
+    'the git-shim never intercepted a materialisation tree listing, so the competing writer never ran; ' +
+      "the shim fires on args.includes('--full-tree'), matching materialiseTreeInto's ls-tree invocation " +
+      'at src/store/materialise-tree.ts:159 — that shape has probably changed'
+  )
+  const raw = readFileSync(shim.winnerOutFile, 'utf8')
+  const outcome = JSON.parse(raw) as FullTreeWinnerSubprocessOutcome
+  assert.notEqual(
+    outcome.status,
+    null,
+    `the winning writer's subprocess did not complete within ${FULL_TREE_WINNER_TIMEOUT_MS}ms and was terminated: ${outcome.error ?? 'no spawn error reported'}`
+  )
+  assert.equal(
+    outcome.status,
+    0,
+    `the winning writer's subprocess failed: ${outcome.stderr}${outcome.error ? ` (spawn error: ${outcome.error})` : ''}`
+  )
+  return JSON.parse(outcome.stdout) as CommitResult
+}
+
+test('concurrent.a-record-that-landed-during-materialisation-survives', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+
+      const seeded = openStore(rt, repo)
+      assert.equal(seeded.ok, true)
+      if (!seeded.ok) return
+
+      const seedThread = makeThread(rt, 'seed-thread')
+      const seedCommit = seeded.value.commit([seedThread], 'seed thread zero')
+      assert.equal(seedCommit.ok, true)
+      if (!seedCommit.ok) return
+
+      const layout = layoutIn(rt, repo)
+      rmSync(path.join(layout.state, 'last-materialised'), { force: true })
+
+      const landedThread = makeThread(rt, 'landed-thread')
+      const victimThread = makeThread(rt, 'victim-thread')
+
+      const scratchDir = mkdtempSync(path.join(tmpdir(), 'logbook-concurrency-fulltree-race-'))
+      try {
+        const winnerScriptPath = buildWinnerScript(scratchDir)
+        const shim = buildFullTreeGitShim({
+          winnerScriptPath,
+          winnerPayload: {
+            repo,
+            pluginData,
+            home: process.env.HOME,
+            change: landedThread,
+            message: 'land a record mid-materialisation'
+          }
+        })
+
+        try {
+          const raceRt = testRuntime({
+            env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: pluginData, PATH: shim.dir }
+          })
+
+          const opened = openStore(raceRt, repo)
+          assert.equal(opened.ok, true, 'the racing opener must be able to open the store')
+          if (!opened.ok) return
+
+          const winnerOutcome = readFullTreeWinnerOutcome(shim)
+          assert.equal(
+            winnerOutcome.ok,
+            true,
+            'the competing writer must land its record before materialisation completes'
+          )
+
+          const victimResult = opened.value.commit([victimThread], 'commit after the hole opened')
+          assert.equal(victimResult.ok, true, "the victim's own commit must succeed")
+        } finally {
+          shim.cleanup()
+        }
+      } finally {
+        rmSync(scratchDir, { recursive: true, force: true })
+      }
+
+      const cleanRt = runtimeWithHome(pluginData)
+      const reopened = openStore(cleanRt, repo)
+      assert.equal(reopened.ok, true)
+      if (!reopened.ok) return
+
+      const survivor = expectLoaded(
+        reopened.value.readThread(landedThread.record.id),
+        'the record that landed during materialisation'
+      )
+      assert.deepEqual(survivor, landedThread.record)
+
+      assert.deepEqual(listRecordPaths(layout.records), listTreePaths(cleanRt, repo, LEDGER_REF))
+    })
+  })
+})
 
 test('concurrent.second-process-destroys-nothing', () => {
   withRepo((repo) => {

@@ -74,7 +74,7 @@ const ARTIFACT_POINTER_NATURAL_MAX = 500
 const MIN_TEXT_CLIP = CLIP_MARKER_GRAPHEMES
 const NO_CLIP = Number.POSITIVE_INFINITY
 
-const NOT_RECORDED = 'not recorded'
+export const NOT_RECORDED = 'not recorded'
 
 const FOCUS_NOT_SET_LINE =
   '**Focus:** not set. Risks and key decisions render as one group in the order they were recorded, apart from those on a goal already met or struck.'

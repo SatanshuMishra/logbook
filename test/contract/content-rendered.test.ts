@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { z } from 'zod'
 import { census, type Classified } from '../support/census.ts'
-import type { Declared } from '../../src/schema/declare.ts'
+import { declare, type Declared } from '../../src/schema/declare.ts'
 import { flattenSchemaNodes, isPlainObject, type SchemaNode } from '../support/schema-nodes.ts'
 import { ISO_PATTERN, SHA_PATTERN, SLUG_PATTERN, ULID_PATTERN } from '../../src/schema/ids.ts'
-import { POINTER_PATTERN } from '../../src/schema/field-class.ts'
+import { POINTER_PATTERN, content } from '../../src/schema/field-class.ts'
 import { ThreadRecord, type Thread } from '../../src/schema/thread.ts'
 import { DecisionRecord, type Decision } from '../../src/schema/decision.ts'
 import { SessionRecord, type SessionEntry } from '../../src/schema/session.ts'
@@ -93,6 +94,25 @@ const buildValue = (node: unknown, path: string, sentinels: ReadonlyMap<string, 
   return halt(path, `has type ${String(type)}, which the sweep cannot synthesise`)
 }
 
+const isUnionNode = (node: Record<string, unknown>): boolean =>
+  Array.isArray(node.anyOf) || Array.isArray(node.oneOf) || Array.isArray(node.allOf)
+
+const memberCarriesStructure = (member: unknown): boolean => {
+  if (!isPlainObject(member)) return false
+  if ('properties' in member) return true
+  if ('items' in member) return true
+  if ('$ref' in member) return true
+  if ('class' in member) return true
+  return isUnionNode(member)
+}
+
+const carriesStructuredUnion = (node: Record<string, unknown>): boolean => {
+  const members = ([node.anyOf, node.oneOf, node.allOf] as unknown[])
+    .filter((candidate): candidate is unknown[] => Array.isArray(candidate))
+    .flat()
+  return members.some(memberCarriesStructure)
+}
+
 const classOf = (node: SchemaNode): string | undefined => {
   if (!isPlainObject(node.value)) return undefined
   const declared = node.value.class
@@ -133,10 +153,19 @@ const parsedOr = <T>(declared: Declared<T>, built: unknown): T => {
 }
 
 const renderedSurfaces = (sentinels: ReadonlyMap<string, string>): string => {
-  const thread = parsedOr<Thread>(ThreadRecord, buildValue(ThreadRecord.jsonSchema, 'thread', sentinels))
-  const decision = parsedOr<Decision>(DecisionRecord, buildValue(DecisionRecord.jsonSchema, 'decision', sentinels))
-  const entry = parsedOr<SessionEntry>(SessionRecord, buildValue(SessionRecord.jsonSchema, 'session', sentinels))
-  parsedOr(BindingRecord, buildValue(BindingRecord.jsonSchema, 'binding', sentinels))
+  const thread = parsedOr<Thread>(
+    ThreadRecord,
+    buildValue(ThreadRecord.jsonSchema, ThreadRecord.name, sentinels)
+  )
+  const decision = parsedOr<Decision>(
+    DecisionRecord,
+    buildValue(DecisionRecord.jsonSchema, DecisionRecord.name, sentinels)
+  )
+  const entry = parsedOr<SessionEntry>(
+    SessionRecord,
+    buildValue(SessionRecord.jsonSchema, SessionRecord.name, sentinels)
+  )
+  parsedOr(BindingRecord, buildValue(BindingRecord.jsonSchema, BindingRecord.name, sentinels))
 
   return [
     renderThreadDetail(thread, { resolved: 0, dangling: [], quarantined: [] }, null, null, {
@@ -156,6 +185,7 @@ const classify = (
 ): Classified<SchemaNode>['verdict'] | 'unclassifiable' => {
   if (!isPlainObject(node.value)) return 'unclassifiable'
   if ('$ref' in node.value) return 'unclassifiable'
+  if (carriesStructuredUnion(node.value)) return 'unclassifiable'
   const declared = node.value.class
   if (declared === undefined) return 'forbidden'
   if (typeof declared !== 'string') return 'unclassifiable'
@@ -223,4 +253,110 @@ test('content.every-content-field-reaches-a-rendered-surface.control.the-builder
     () => buildValue({ anyOf: [{ type: 'string' }, { type: 'number' }] }, 'probe.two-branches', new Map()),
     /content-rendered: probe\.two-branches carries an anyOf with 2 non-null members/
   )
+})
+
+test('content.every-content-field-reaches-a-rendered-surface.control.a-union-carrying-structure-halts', () => {
+  const structuredUnion: SchemaNode = {
+    path: 'probe.structuredUnion',
+    value: {
+      class: 'content',
+      anyOf: [{ type: 'null' }, { type: 'object', properties: { nested: { type: 'string', class: 'content' } } }]
+    }
+  }
+  assert.equal(classify(structuredUnion, new Map(), ''), 'unclassifiable')
+  assert.throws(
+    () => census([structuredUnion], (node) => classify(node, new Map(), '')),
+    /census halted on an unclassifiable item/
+  )
+
+  const nullableScalar: SchemaNode = {
+    path: 'probe.nullableScalar',
+    value: { class: 'structural', anyOf: [{ type: 'string' }, { type: 'null' }] }
+  }
+  assert.equal(classify(nullableScalar, new Map(), ''), 'allowed')
+
+  const forbiddenNullableContent: SchemaNode = {
+    path: 'probe.forbiddenContent',
+    value: { class: 'content', anyOf: [{ type: 'string' }, { type: 'null' }] }
+  }
+  const sentinelsMissingFromRender = new Map([['probe.forbiddenContent', 'zq-777-sentinel']])
+  assert.equal(
+    classify(forbiddenNullableContent, sentinelsMissingFromRender, 'a surface without the sentinel'),
+    'forbidden'
+  )
+  assert.throws(
+    () =>
+      census([forbiddenNullableContent], (node) =>
+        classify(node, sentinelsMissingFromRender, 'a surface without the sentinel')
+      ),
+    /census rejected a forbidden item/
+  )
+
+  const unionMemberHidingContent: SchemaNode = {
+    path: 'probe.unionMemberHidingContent',
+    value: {
+      class: 'structural',
+      anyOf: [{ type: 'null' }, { type: 'string', class: 'content' }]
+    }
+  }
+  assert.equal(classify(unionMemberHidingContent, new Map(), ''), 'unclassifiable')
+  assert.throws(
+    () => census([unionMemberHidingContent], (node) => classify(node, new Map(), '')),
+    /census halted on an unclassifiable item/
+  )
+
+  const unionMemberHidingRef: SchemaNode = {
+    path: 'probe.unionMemberHidingRef',
+    value: {
+      class: 'structural',
+      anyOf: [{ type: 'null' }, { $ref: 'defs/Nested' }]
+    }
+  }
+  assert.equal(classify(unionMemberHidingRef, new Map(), ''), 'unclassifiable')
+  assert.throws(
+    () => census([unionMemberHidingRef], (node) => classify(node, new Map(), '')),
+    /census halted on an unclassifiable item/
+  )
+})
+
+test('content.every-content-field-reaches-a-rendered-surface.control.a-stale-node-root-halts-the-census', () => {
+  const probeRecord = declare(
+    'probe-stale-root-source',
+    z.object({ label: content(z.string().min(1).describe('a probe content field for the stale-root control')) })
+  )
+
+  const nodes = flattenSchemaNodes(probeRecord.jsonSchema, probeRecord.name)
+  const sentinels = sentinelMap(nodes)
+  const built = buildValue(probeRecord.jsonSchema, probeRecord.name, sentinels)
+  const parsed = parsedOr(probeRecord, built)
+  const rendered = String(parsed.label)
+
+  assert.doesNotThrow(() => census(nodes, (node) => classify(node, sentinels, rendered)))
+
+  const staleRootNodes = flattenSchemaNodes(probeRecord.jsonSchema, 'a-root-the-sentinel-map-was-never-keyed-on')
+  assert.throws(
+    () => census(staleRootNodes, (node) => classify(node, sentinels, rendered)),
+    /census halted on an unclassifiable item/
+  )
+
+  assert.throws(
+    () => census(nodes, (node) => classify(node, sentinels, 'a surface without the sentinel')),
+    /census rejected a forbidden item/
+  )
+})
+
+test('content.every-content-field-reaches-a-rendered-surface.control.the-name-vs-literal-root-fix-has-no-producible-red-here', () => {
+  assert.equal(
+    ThreadRecord.name,
+    'thread',
+    'content-rendered: renderedSurfaces reads ThreadRecord.name instead of the literal "thread" so that a rename ' +
+      'at the declare() call site reaches both derivations; today the two coincide, so reverting that read to the ' +
+      'literal is a no-op census cannot observe. This equality breaking is the only input that would let a real ' +
+      'red be produced for that specific repair; renderedSurfaces cannot be driven with a synthetic record instead, ' +
+      'because renderThreadDetail/renderDecisionResource/renderSessionEntryResource are typed to the real Thread, ' +
+      'Decision and SessionEntry shapes.'
+  )
+  assert.equal(DecisionRecord.name, 'decision')
+  assert.equal(SessionRecord.name, 'session')
+  assert.equal(BindingRecord.name, 'binding')
 })
