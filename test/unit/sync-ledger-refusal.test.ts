@@ -126,3 +126,22 @@ test('sync-ledger-refusal.counts-the-records-it-did-not-show', () => {
     `the refusal must say how many record files could not be read, but the message read: ${refusal.message}`
   )
 })
+
+test('sync-ledger-refusal.annotates-a-record-name-this-version-would-not-write', () => {
+  const genuine = 'decisions/01M0NDPM0ACCR9CD68PMHYWGGD.json'
+  const homoglyph = `decisions/01M0NDPM0аCCR9CD68PMHYWGGD.json`
+  const annotation = ' (not a name this version writes)'
+
+  const genuineRefusal = unparseableRecordsRefusal([genuine])
+  assert.equal(
+    genuineRefusal.message.includes(annotation),
+    false,
+    `a genuine record name this version writes must not carry the annotation, but the message read: ${genuineRefusal.message}`
+  )
+
+  const homoglyphRefusal = unparseableRecordsRefusal([homoglyph])
+  assert.ok(
+    homoglyphRefusal.message.includes(annotation),
+    `a record name outside the shape this version writes must carry the annotation, but the message read: ${homoglyphRefusal.message}`
+  )
+})
