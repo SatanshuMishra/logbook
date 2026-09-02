@@ -10,11 +10,8 @@
     {
       "ordinal": 2,
       "id": "F3b",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8JV77VSP56YC9RCS7ENV",
-      "group": "frozen-document-contradictions"
+      "class": "shipped-here",
+      "evidence": "Corrected as erratum E1 in docs/specs/2026-08-28-continuity-goal-model-errata.md, commit e0f1e98c. Section 11.1 is right and the B36 goal cell overstates: B36 publishes LG16 in the README and does not discharge it; B42 does."
     },
     {
       "ordinal": 3,
@@ -193,11 +190,8 @@
     {
       "ordinal": 23,
       "id": "F5c",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF95055JMHF4PRECMTGVEQ",
-      "group": "frozen-invariant-and-budget"
+      "class": "closed",
+      "reason": "Measured on this tree: 231 of 731 swept records breach a cap, worst render 26994 characters and 55385 bytes. The breach is reported rather than hidden, with withinBudget false and briefing.budget-exceeded logged. B16 mandates that the whole-briefing budget and its clip search stay untouched, so the remedy is not available in this ladder. The lever that would bound it is a cumulative element cap on open_risks, which key_decisions and out_of_scope already carry and open_risks does not; that is new material for a design decision."
     },
     {
       "ordinal": 24,
@@ -298,11 +292,8 @@
     {
       "ordinal": 35,
       "id": "F9a",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF95055JMHF4PRECMTGVEQ",
-      "group": "frozen-invariant-and-budget"
+      "class": "shipped-here",
+      "evidence": "Corrected as erratum E2 in docs/specs/2026-08-28-continuity-goal-model-errata.md, commit e0f1e98c. S4 holds for every call carrying no dependency on pointer state; park_thread supplied with an outcome is the stated exception. The item's own citations were stale and the erratum ships the verified ones: park_thread.ts:362 and resume.test.ts:1044."
     },
     {
       "ordinal": 36,
@@ -604,11 +595,8 @@
     {
       "ordinal": 70,
       "id": "F6e",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8JV77VSP56YC9RCS7ENV",
-      "group": "frozen-document-contradictions"
+      "class": "shipped-here",
+      "evidence": "Fixed in commit 30682e98. The premise was re-measured and held, and proved worse than filed: the completion surface escaped its directory on POSIX, returning a record never written to the sessions directory. Every record identifier is now validated before any filesystem path is built."
     },
     {
       "ordinal": 71,
@@ -748,11 +736,8 @@
     {
       "ordinal": 87,
       "id": "F7d",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8JV77VSP56YC9RCS7ENV",
-      "group": "frozen-document-contradictions"
+      "class": "shipped-here",
+      "evidence": "Fixed in commit 9a376298. The two package-lock.json version fields are corrected to 4.0.1 and check-packaging now reads the lockfile, so the drift is reported rather than accumulated silently."
     },
     {
       "ordinal": 88,
@@ -868,11 +853,8 @@
     {
       "ordinal": 102,
       "id": "F10i",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF95055JMHF4PRECMTGVEQ",
-      "group": "frozen-invariant-and-budget"
+      "class": "closed",
+      "reason": "Not to be worked as filed. The item characterises the consequence of a threshold change nobody has made, and acting on it means editing src/render/escape.ts, which the filing unit was explicitly forbidden from touching because two other lanes held that file. Recorded so that any future threshold tuning starts from the measured consequence rather than a fresh reading."
     },
     {
       "ordinal": 103,
@@ -1002,11 +984,8 @@
     {
       "ordinal": 10,
       "id": "N10",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF95055JMHF4PRECMTGVEQ",
-      "group": "frozen-invariant-and-budget"
+      "class": "shipped-here",
+      "evidence": "Same defect as F9a, restated as new material. Discharged as erratum E2 in docs/specs/2026-08-28-continuity-goal-model-errata.md, commit e0f1e98c, which states S4 with the argument qualifier that makes it true."
     },
     {
       "ordinal": 11,

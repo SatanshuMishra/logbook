@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -68,6 +68,45 @@ test('packaging.control.a-broken-manifest-is-rejected', async () => {
     assert.ok(
       problems.some((problem: string) => problem.includes('.mcp.json')),
       `packaging.control.a-broken-manifest-is-rejected: expected a problem naming .mcp.json, got:\n${problems.join('\n')}`
+    )
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true })
+  }
+})
+
+test('packaging.control.a-lockfile-version-drift-is-rejected', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'logbook-packaging-lockfile-'))
+  try {
+    writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'logbook', version: '4.0.1' }))
+    mkdirSync(path.join(tempDir, '.claude-plugin'), { recursive: true })
+    writeFileSync(
+      path.join(tempDir, '.claude-plugin', 'plugin.json'),
+      JSON.stringify({ name: 'logbook', version: '4.0.1' })
+    )
+    writeFileSync(
+      path.join(tempDir, 'package-lock.json'),
+      JSON.stringify({
+        name: 'logbook',
+        version: '4.0.0',
+        lockfileVersion: 3,
+        requires: true,
+        packages: {
+          '': {
+            name: 'logbook',
+            version: '4.0.0'
+          }
+        }
+      })
+    )
+    const { ok, problems } = await checkPackaging(tempDir)
+    assert.equal(
+      ok,
+      false,
+      `packaging.control.a-lockfile-version-drift-is-rejected: expected the deliberately drifted package-lock.json to be rejected, got ok=true`
+    )
+    assert.ok(
+      problems.some((problem: string) => problem.includes('package-lock.json') && problem.includes('4.0.0')),
+      `packaging.control.a-lockfile-version-drift-is-rejected: expected a problem naming package-lock.json's drifted version, got:\n${problems.join('\n')}`
     )
   } finally {
     rmSync(tempDir, { recursive: true, force: true })
