@@ -4,7 +4,7 @@ const CONTROL_CLASS = /\p{Cc}/u
 const ORDINARY_SPACE = ' '
 const LINE_SEPARATOR = '\u2028'
 const PARAGRAPH_SEPARATOR = '\u2029'
-const MARKDOWN_LEADING_CHARS = new Set(['#', '-', '*', '+', '>', '`', '~', '_', '=', '['])
+export const MARKDOWN_LEADING_CHARS: ReadonlySet<string> = new Set(['#', '-', '*', '+', '>', '`', '~', '_', '=', '['])
 const ANGLE_BRACKETS = new Set(['<', '>'])
 const MARKDOWN_INDENT_THRESHOLD = 4
 const ORDERED_LIST_DIGIT = /[0-9]/
