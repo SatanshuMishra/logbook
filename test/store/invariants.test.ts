@@ -328,3 +328,19 @@ test('layout.refuses-a-relative-plugin-data-root', () => {
   })
 })
 
+test('git.accepts-output-past-the-default-node-buffer', () => {
+  withRepo((repo) => {
+    const rt = testRuntime()
+    const oversized = 'a'.repeat(2 * 1024 * 1024)
+    writeFileSync(join(repo, 'oversized.txt'), oversized)
+    assert.equal(rawGit(repo, ['add', 'oversized.txt']).status, 0)
+    assert.equal(rawGit(repo, ['commit', '-m', 'oversized blob']).status, 0)
+    const blobSha = rawGit(repo, ['rev-parse', 'HEAD:oversized.txt']).stdout.trim()
+
+    const result = git(rt, repo, ['cat-file', '-p', blobSha])
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+    assert.equal(result.stdout.length, oversized.length)
+  })
+})
+
