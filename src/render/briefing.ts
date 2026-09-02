@@ -140,7 +140,7 @@ const renderSessionEntryLine = (entry: SessionEntry, textClip: number): string =
   `- ${escapeStored(entry.id)} ${clip(entry.body, textClip)}`
 
 const renderUnreadableSessionEntriesLine = (count: number, threadId: string): string =>
-  `- ${count} session log entr${count === 1 ? 'y' : 'ies'} could not be read; see logbook://sessions/${escapeStored(threadId)} for the complete record`
+  `- ${count} session log entr${count === 1 ? 'y' : 'ies'} on this thread could not be read; see logbook://sessions/${escapeStored(threadId)} for the complete record`
 
 const renderSettledRiskLine = (risk: Risk, textClip: number): string =>
   `- risk ${escapeStored(risk.id)} ${clip(risk.text, textClip)}`
