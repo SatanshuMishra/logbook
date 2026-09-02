@@ -30,7 +30,6 @@ const CARRIED_CRITERION_BY_GROUP: Readonly<Record<string, string>> = Object.free
   'duplication-and-file-size': '01M1FF81JSTEH63T0T8YZ85W9W',
   'render-surface-consistency': '01M1FF8A1EF6S152A7PR68ECTF',
   'write-fidelity-residue': '01M1FF8W16XG1TJHGNPTG92CTE',
-  'verification-honesty': '01M1FF90KY0JXYAPMH8Q2MXJ3F',
   'frozen-invariant-and-budget': '01M1FF95055JMHF4PRECMTGVEQ',
   'escape-residue-and-authorisation': '01M1FX7W1S2CJ3AFVXFYFVHKWJ'
 })

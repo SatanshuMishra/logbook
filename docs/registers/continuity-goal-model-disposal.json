@@ -160,11 +160,8 @@
     {
       "ordinal": 22,
       "id": "F5b",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF90KY0JXYAPMH8Q2MXJ3F",
-      "group": "verification-honesty"
+      "class": "shipped-here",
+      "evidence": "the forbidden read of Criterion.ordinal this item names is deleted with src/domain/criterion-backfill.ts; its supporting claim of no production caller was wrong and is corrected by F5d, which found scripts/backfill-criterion-id.mjs"
     },
     {
       "ordinal": 23,
@@ -217,11 +214,8 @@
     {
       "ordinal": 30,
       "id": "F5d",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF90KY0JXYAPMH8Q2MXJ3F",
-      "group": "verification-honesty"
+      "class": "shipped-here",
+      "evidence": "the module and its only caller scripts/backfill-criterion-id.mjs are both deleted, so the ownership question this item raised is answered by removal rather than left open"
     },
     {
       "ordinal": 31,
@@ -280,11 +274,8 @@
     {
       "ordinal": 38,
       "id": "F9d",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF90KY0JXYAPMH8Q2MXJ3F",
-      "group": "verification-honesty"
+      "class": "shipped-here",
+      "evidence": "the optional-argument census now classifies a member that produces no difference on any surface as unclassifiable and halts, so an argument published but never written fails it"
     },
     {
       "ordinal": 39,
@@ -787,11 +778,8 @@
     {
       "ordinal": 103,
       "id": "F10j",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF90KY0JXYAPMH8Q2MXJ3F",
-      "group": "verification-honesty"
+      "class": "shipped-here",
+      "evidence": "a closed audit of all 146 escapeStored call sites derived six position classes by rendering, a seventh uncovered class was added to the confirmation, and its payload population now imports the shipped guard set instead of a partial copy"
     },
     {
       "ordinal": 104,
@@ -864,11 +852,8 @@
     {
       "ordinal": 6,
       "id": "N6",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF90KY0JXYAPMH8Q2MXJ3F",
-      "group": "verification-honesty"
+      "class": "shipped-here",
+      "evidence": "every gate mode in receipts.config.json is now explicit rather than defaulted, five schema-violating keys are gone and the file validates; the receipt-gating flip and the coverage gate are deliberately deferred and their measured reasons are recorded on the criterion"
     },
     {
       "ordinal": 7,
@@ -882,11 +867,8 @@
     {
       "ordinal": 8,
       "id": "N8",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF90KY0JXYAPMH8Q2MXJ3F",
-      "group": "verification-honesty"
+      "class": "shipped-here",
+      "evidence": "the surviving read at src/domain/criterion-backfill.ts is deleted and the census blocking assertion is widened from two directories to all of src, so the next such read fails rather than printing"
     },
     {
       "ordinal": 9,
@@ -915,11 +897,8 @@
     {
       "ordinal": 12,
       "id": "N12",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF90KY0JXYAPMH8Q2MXJ3F",
-      "group": "verification-honesty"
+      "class": "shipped-here",
+      "evidence": "the same fix as F9d; this item restates that defect and is disposed with it"
     }
   ]
 }

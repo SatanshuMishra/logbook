@@ -1,10 +1,13 @@
+import { MARKDOWN_LEADING_CHARS } from '../../src/render/escape.ts'
+
+export { MARKDOWN_LEADING_CHARS }
+
 const FORMAT_CLASS = /\p{Cf}/u
 const SEPARATOR_CLASS = /\p{Zs}/u
 const CONTROL_CLASS = /\p{Cc}/u
 const ORDINARY_SPACE = ' '
 const LINE_SEPARATOR = '\u2028'
 const PARAGRAPH_SEPARATOR = '\u2029'
-export const MARKDOWN_LEADING_CHARS: ReadonlySet<string> = new Set(['#', '-', '*', '+', '>', '`', '~', '_'])
 const ANGLE_BRACKETS = new Set(['<', '>'])
 const ORDERED_LIST_DIGIT = /[0-9]/
 const ORDERED_LIST_PUNCTUATION = new Set(['.', ')'])
