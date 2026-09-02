@@ -80,7 +80,7 @@ const classifyBlockedCandidate = (candidate: BlockedCandidate): Classified<Block
 test('roster.renders-blockage-reason', () => {
   const thread = baseThread({ blocked_by: 'waiting on the infra approval' })
   const row = toRosterRow(thread)
-  const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 })
+  const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
   assert.ok(rendered.split('\n').some((line) => line.includes('waiting on the infra approval')))
   assert.ok(rendered.includes('Blocked: waiting on the infra approval'))
 
@@ -98,7 +98,7 @@ test('roster.renders-blockage-reason', () => {
 test('roster.blockage-none-when-not-blocked', () => {
   const thread = baseThread({ blocked_by: null })
   const row = toRosterRow(thread)
-  const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 })
+  const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
   assert.ok(rendered.split('\n').includes('Blockage: none'))
 })
 
@@ -280,7 +280,7 @@ test('roster.render-escapes-every-stored-free-text-field', () => {
     blocked_by: '# heading blockage\nsecond line',
     next_step: '# heading next step\nsecond line'
   })
-  const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 })
+  const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
 
   assert.equal(rendered.includes('#'), false)
   assert.equal(/(^|\n)#{1,6}\s/.test(rendered), false)
@@ -300,7 +300,7 @@ test('roster.render-escapes-the-identifier-timestamp-and-cursor-fields', () => {
     slug: 'identifier-fixture',
     updated_at: '2024-01-01T00:00:05.000Z\nX'
   })
-  const rendered = renderRoster({ rows: [row], next_cursor: '#cursor\u2028tail', total: 2 })
+  const rendered = renderRoster({ rows: [row], next_cursor: '#cursor\u2028tail', total: 2 }, 0)
 
   assert.ok(rendered.includes('Id: 01ARZU+2028TAIL'))
   assert.ok(rendered.includes('Updated: 2024-01-01T00:00:05.000ZU+000AX'))
@@ -320,7 +320,7 @@ test('roster.render-single-row-exact-output', () => {
     next_step: 'ship the next step',
     updated_at: '2024-01-01T00:00:05.000Z'
   }
-  const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 })
+  const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
   const expected = [
     'Roster: 1 of 1 resumable thread.',
     [
@@ -337,24 +337,47 @@ test('roster.render-single-row-exact-output', () => {
 })
 
 test('roster.render-header-uses-plural-threads-when-total-is-not-one', () => {
-  const zeroRows = renderRoster({ rows: [], next_cursor: null, total: 0 })
+  const zeroRows = renderRoster({ rows: [], next_cursor: null, total: 0 }, 0)
   assert.ok(zeroRows.split('\n')[0]?.includes('0 resumable threads.'))
 
   const row = baseRow()
-  const twoTotal = renderRoster({ rows: [row], next_cursor: null, total: 2 })
+  const twoTotal = renderRoster({ rows: [row], next_cursor: null, total: 2 }, 0)
   assert.ok(twoTotal.split('\n')[0]?.includes('1 of 2 resumable threads.'))
 })
 
 test('roster.render-empty-page-joins-header-and-footer-with-a-single-newline', () => {
-  const rendered = renderRoster({ rows: [], next_cursor: null, total: 0 })
+  const rendered = renderRoster({ rows: [], next_cursor: null, total: 0 }, 0)
   assert.equal(rendered, 'Roster: 0 of 0 resumable threads.\nNo further pages.')
 })
 
 test('roster.render-separates-multiple-rows-with-a-blank-line', () => {
   const rowOne = baseRow({ id: rt.ulid(), slug: 'row-one' })
   const rowTwo = baseRow({ id: rt.ulid(), slug: 'row-two' })
-  const rendered = renderRoster({ rows: [rowOne, rowTwo], next_cursor: 'a-cursor', total: 2 })
+  const rendered = renderRoster({ rows: [rowOne, rowTwo], next_cursor: 'a-cursor', total: 2 }, 0)
   const segments = rendered.split('\n\n')
   assert.equal(segments.length, 4)
   assert.equal(segments[segments.length - 1], 'Next cursor: a-cursor')
+})
+
+test('roster.render-with-zero-excluded-is-byte-identical-to-no-exclusion', () => {
+  const page = { rows: [], next_cursor: null, total: 0 }
+  assert.equal(renderRoster(page, 0), 'Roster: 0 of 0 resumable threads.\nNo further pages.')
+})
+
+test('roster.render-names-the-excluded-count-and-address-when-above-zero', () => {
+  const singular = renderRoster({ rows: [], next_cursor: null, total: 0 }, 1)
+  const singularLines = singular.split('\n')
+  assert.equal(singularLines[0], 'Roster: 0 of 0 resumable threads.')
+  assert.equal(singularLines[1], 'Excluded: 1 terminal thread not shown; read it at logbook://thread/{id}.')
+  assert.equal(singularLines[2], 'No further pages.')
+
+  const plural = renderRoster({ rows: [], next_cursor: null, total: 0 }, 2)
+  const pluralLines = plural.split('\n')
+  assert.equal(pluralLines[1], 'Excluded: 2 terminal threads not shown; read one at logbook://thread/{id}.')
+
+  const row = baseRow()
+  const withRows = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 3)
+  const withRowsLines = withRows.split('\n')
+  assert.equal(withRowsLines[0], 'Roster: 1 of 1 resumable thread.')
+  assert.equal(withRowsLines[1], 'Excluded: 3 terminal threads not shown; read one at logbook://thread/{id}.')
 })

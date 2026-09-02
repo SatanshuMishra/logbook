@@ -1,4 +1,5 @@
-import { clipGraphemes, escapeStored } from '../render/escape.ts'
+import { escapeStored } from '../render/escape.ts'
+import { clipWithMarker } from '../render/clip.ts'
 import type { Binding } from '../schema/binding.ts'
 import type { Decision } from '../schema/decision.ts'
 import type { SessionEntry } from '../schema/session.ts'
@@ -8,11 +9,17 @@ import type { DecisionIntegrity } from '../render/briefing.ts'
 
 export type BindingIntegrity = { bound: Binding[]; unreadable: number; unread: boolean }
 
-export type SessionsListing = { threadId: string; entries: SessionEntry[]; quarantined: string[] }
+export type SessionsListing = {
+  threadId: string
+  entries: SessionEntry[]
+  quarantined: string[]
+  threadQuarantinedReason: string | null
+}
 
 const NOT_RECORDED = 'not recorded'
 const STORED_LINE_BREAK = 'U+000A'
 const SESSION_FIRST_LINE_MAX = 200
+export const SESSION_FIRST_LINE_ENTRIES_MAX = 50
 const SESSION_FIRST_LINE_CLIPPED_NOTE =
   'some entry first lines were shortened to fit this listing; read the entry in full for the rest'
 const BINDINGS_UNREAD_NOTE = 'bindings could not be read; none is claimed either way'
@@ -52,19 +59,43 @@ const renderDetailQuarantinedLine = (id: string): string => `quarantined: ${esca
 
 const firstStoredLine = (body: string): string => body.split(STORED_LINE_BREAK)[0] ?? ''
 
-const renderSessionsEntryLine = (entry: SessionEntry): string =>
-  `- ${escapeStored(entry.id)} [${escapeStored(entry.created_at)}] ${clipGraphemes(escapeStored(firstStoredLine(entry.body)), SESSION_FIRST_LINE_MAX)}`
+const renderSessionsEntryLine = (entry: SessionEntry, includeFirstLine: boolean): string =>
+  includeFirstLine
+    ? `- ${escapeStored(entry.id)} [${escapeStored(entry.created_at)}] ${clipWithMarker(escapeStored(firstStoredLine(entry.body)), SESSION_FIRST_LINE_MAX)}`
+    : `- ${escapeStored(entry.id)} [${escapeStored(entry.created_at)}]`
 
-const firstLineWasClipped = (entry: SessionEntry): boolean =>
-  escapeStored(firstStoredLine(entry.body)).length > SESSION_FIRST_LINE_MAX
+const firstLineWasClipped = (entry: SessionEntry): boolean => {
+  const escaped = escapeStored(firstStoredLine(entry.body))
+  return clipWithMarker(escaped, SESSION_FIRST_LINE_MAX) !== escaped
+}
+
+const renderSessionsDroppedFirstLinesNote = (count: number, threadId: string): string =>
+  `${count} entry first line${count === 1 ? '' : 's'} omitted to fit this listing; read one in full at logbook://session/${escapeStored(threadId)}/{entry_id}`
+
+const renderSessionsThreadQuarantinedLine = (reason: string): string =>
+  `thread record quarantined: ${escapeStored(reason)}`
 
 export const renderSessionsResource = (listing: SessionsListing): string => {
   const count = listing.entries.length
+  const shownFirstLine = listing.entries.slice(0, SESSION_FIRST_LINE_ENTRIES_MAX)
+  const droppedFirstLine = listing.entries.slice(SESSION_FIRST_LINE_ENTRIES_MAX)
+
+  const quarantinedThreadLines = [listing.threadQuarantinedReason]
+    .filter((reason): reason is string => reason !== null)
+    .map((reason) => renderSessionsThreadQuarantinedLine(reason))
+
+  const droppedFirstLineLines = [droppedFirstLine.length]
+    .filter((droppedCount) => droppedCount > 0)
+    .map((droppedCount) => renderSessionsDroppedFirstLinesNote(droppedCount, listing.threadId))
+
   return [
     `Sessions: ${count} entr${count === 1 ? 'y' : 'ies'} for thread ${escapeStored(listing.threadId)}`,
-    ...listing.entries.map(renderSessionsEntryLine),
+    ...quarantinedThreadLines,
+    ...shownFirstLine.map((entry) => renderSessionsEntryLine(entry, true)),
+    ...droppedFirstLine.map((entry) => renderSessionsEntryLine(entry, false)),
     ...listing.quarantined.map(renderDetailQuarantinedLine),
-    ...listing.entries.filter(firstLineWasClipped).slice(0, 1).map(() => SESSION_FIRST_LINE_CLIPPED_NOTE),
+    ...shownFirstLine.filter(firstLineWasClipped).slice(0, 1).map(() => SESSION_FIRST_LINE_CLIPPED_NOTE),
+    ...droppedFirstLineLines,
     `Read one in full at logbook://session/${escapeStored(listing.threadId)}/{entry_id}`
   ].join('\n')
 }
@@ -87,7 +118,7 @@ const renderDetailCriterionLine = (criterion: Criterion): string =>
   [
     `c${criterion.ordinal} [${detailCriterionStatus(criterion)}] ${escapeStored(criterion.id)}: ${escapeStored(criterion.text)}`,
     renderDetailCriterionCheckLine(criterion),
-    renderDetailCriterionResultLine(criterion)
+    ...[criterion].filter((entry) => entry.done).map((entry) => renderDetailCriterionResultLine(entry))
   ].join('\n')
 
 const renderDetailArtifactLine = (artifact: Artifact): string =>
@@ -116,6 +147,9 @@ const renderDetailBlockage = (blockedBy: string | null): string =>
 const renderDetailPointerStatus = (pointer: Pointer | null, threadId: string): string =>
   pointer !== null && pointer.thread_id === threadId ? 'Currently being worked: yes' : 'Currently being worked: no'
 
+const renderDetailLastSessionNote = (threadId: string): string =>
+  `(park_thread no longer writes this field; see logbook://sessions/${escapeStored(threadId)} for the recorded session log)`
+
 export const renderThreadDetail = (
   thread: Thread,
   decisionIntegrity: DecisionIntegrity,
@@ -137,6 +171,9 @@ export const renderThreadDetail = (
   const bindingUnreadLines = [bindings.unread].filter(Boolean).map(() => BINDINGS_UNREAD_NOTE)
   const relatedThreads = predecessor === null ? [] : [predecessor]
   const relatedLines = relatedThreads.map(renderDetailRelatedLine)
+  const lastSessionNoteLines = [thread.spine.last_session]
+    .filter((value) => value.length > 0)
+    .map(() => renderDetailLastSessionNote(thread.id))
 
   return [
     `Thread: ${escapeStored(thread.title)}`,
@@ -148,6 +185,7 @@ export const renderThreadDetail = (
     `Active goal: ${escapeStored(thread.spine.active_goal)}`,
     `Next step: ${escapeStored(thread.spine.next_step)}`,
     `Last session: ${escapeStored(thread.spine.last_session)}`,
+    ...lastSessionNoteLines,
     'Artifacts:',
     ...artifactLines,
     'Related:',

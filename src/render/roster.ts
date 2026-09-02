@@ -72,14 +72,21 @@ const renderRosterRow = (row: RosterRow): string =>
     `Updated: ${escapeStored(row.updated_at)}`
   ].join('\n')
 
-export const renderRoster = (page: RosterPage): string => {
+const renderExcludedLine = (excludedByRelevance: number): string =>
+  `Excluded: ${excludedByRelevance} terminal thread${excludedByRelevance === 1 ? '' : 's'} not shown; read ${
+    excludedByRelevance === 1 ? 'it' : 'one'
+  } at logbook://thread/{id}.`
+
+export const renderRoster = (page: RosterPage, excludedByRelevance: number): string => {
   const header = `Roster: ${page.rows.length} of ${page.total} resumable thread${page.total === 1 ? '' : 's'}.`
+  const excludedLines = [excludedByRelevance].filter((count) => count > 0).map(renderExcludedLine)
+  const headerBlock = [header, ...excludedLines].join('\n')
   const footer = page.next_cursor === null ? 'No further pages.' : `Next cursor: ${escapeStored(page.next_cursor)}`
 
   if (page.rows.length === 0) {
-    return [header, footer].join('\n')
+    return [headerBlock, footer].join('\n')
   }
 
   const rowBlocks = page.rows.map(renderRosterRow)
-  return [header, ...rowBlocks, footer].join('\n\n')
+  return [headerBlock, ...rowBlocks, footer].join('\n\n')
 }

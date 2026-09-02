@@ -114,16 +114,17 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
     }
 
     const hasPreviousSession = previousSession !== null
-    const sessionEntries = store
-      .readSessionEntries(thread.id)
-      .flatMap((slot) => (slot.quarantined ? [] : [slot.record]))
+    const sessionEntrySlots = store.readSessionEntries(thread.id)
+    const sessionEntries = sessionEntrySlots.flatMap((slot) => (slot.quarantined ? [] : [slot.record]))
+    const unreadableSessionEntryCount = sessionEntrySlots.filter((slot) => slot.quarantined).length
     const render = renderBriefingWithPasses(
       thread,
       decisionIntegrity,
       writtenPointer,
       resolvePredecessor(rt, store, thread),
       hasPreviousSession,
-      sessionEntries
+      sessionEntries,
+      unreadableSessionEntryCount
     )
     const briefing = render.briefing
 

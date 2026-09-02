@@ -139,6 +139,9 @@ const renderArtifactLine = (artifact: Artifact, renderClip: RenderClip): string 
 const renderSessionEntryLine = (entry: SessionEntry, textClip: number): string =>
   `- ${escapeStored(entry.id)} ${clip(entry.body, textClip)}`
 
+const renderUnreadableSessionEntriesLine = (count: number, threadId: string): string =>
+  `- ${count} session log entr${count === 1 ? 'y' : 'ies'} on this thread could not be read; see logbook://sessions/${escapeStored(threadId)} for the complete record`
+
 const renderSettledRiskLine = (risk: Risk, textClip: number): string =>
   `- risk ${escapeStored(risk.id)} ${clip(risk.text, textClip)}`
 
@@ -301,7 +304,8 @@ const assembleBriefing = (
   criteria: readonly Criterion[],
   previousEntries: readonly SessionEntry[],
   renderClip: RenderClip,
-  textWasClipped: boolean
+  textWasClipped: boolean,
+  unreadableSessionEntryCount: number
 ): string => {
   const notShownAddress = `logbook://thread/${escapeStored(thread.id)}`
   const unreadableDecisionCount = decisionIntegrity.dangling.length + decisionIntegrity.quarantined.length
@@ -309,8 +313,13 @@ const assembleBriefing = (
   const activeGoalLines = thread.spine.active_goal.length === 0 ? [] : [thread.spine.active_goal]
   const legacyLastSessionText =
     previousEntries.length > 0 || thread.spine.last_session.length === 0 ? [] : [thread.spine.last_session]
+  const unreadableSessionEntryLines = [unreadableSessionEntryCount]
+    .filter((count) => count > 0)
+    .map((count) => renderUnreadableSessionEntriesLine(count, thread.id))
   const lastSessionHeading =
-    previousEntries.length + legacyLastSessionText.length === 0 ? [] : [LAST_SESSION_HEADING]
+    previousEntries.length + legacyLastSessionText.length + unreadableSessionEntryLines.length === 0
+      ? []
+      : [LAST_SESSION_HEADING]
   const nextStepLines = thread.spine.next_step.length === 0 ? [] : [thread.spine.next_step]
 
   const artifacts = thread.artifacts ?? []
@@ -356,6 +365,7 @@ const assembleBriefing = (
     ...previousEntries.map((entry) => renderSessionEntryLine(entry, renderClip.lastSession)),
     ...legacyLastSessionText.slice(0, 1).map(() => LEGACY_LAST_SESSION_MARKER),
     ...legacyLastSessionText.map((value) => escapeStored(value)),
+    ...unreadableSessionEntryLines,
     ...nextStepLines.slice(0, 1).map(() => ''),
     ...nextStepLines.slice(0, 1).map(() => '**Next step:**'),
     ...nextStepLines.slice(0, 1).map(() => ''),
@@ -400,7 +410,8 @@ export const renderBriefingWithPasses = (
   pointer: Pointer | null,
   predecessor: Thread | null,
   hasPreviousSession: boolean = PREVIOUS_SESSION_DEFAULT_PRESENT,
-  sessionEntries: readonly SessionEntry[] = []
+  sessionEntries: readonly SessionEntry[] = [],
+  unreadableSessionEntryCount: number = 0
 ): BriefingRender => {
   const criteriaById = new Map(thread.completion_criteria.map((criterion) => [criterion.id, criterion] as const))
   const focus = pointer !== null && pointer.thread_id === thread.id ? pointer.focus : []
@@ -423,7 +434,8 @@ export const renderBriefingWithPasses = (
       thread.completion_criteria,
       previousEntries,
       renderClip,
-      textWasClipped
+      textWasClipped,
+      unreadableSessionEntryCount
     )
 
   const finish = (briefing: string, passes: number): BriefingRender => ({
@@ -449,6 +461,15 @@ export const renderBriefing = (
   pointer: Pointer | null,
   predecessor: Thread | null,
   hasPreviousSession: boolean = PREVIOUS_SESSION_DEFAULT_PRESENT,
-  sessionEntries: readonly SessionEntry[] = []
+  sessionEntries: readonly SessionEntry[] = [],
+  unreadableSessionEntryCount: number = 0
 ): string =>
-  renderBriefingWithPasses(thread, decisionIntegrity, pointer, predecessor, hasPreviousSession, sessionEntries).briefing
+  renderBriefingWithPasses(
+    thread,
+    decisionIntegrity,
+    pointer,
+    predecessor,
+    hasPreviousSession,
+    sessionEntries,
+    unreadableSessionEntryCount
+  ).briefing

@@ -94,11 +94,8 @@
     {
       "ordinal": 14,
       "id": "F6c",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8A1EF6S152A7PR68ECTF",
-      "group": "render-surface-consistency"
+      "class": "shipped-here",
+      "evidence": "the sessions listing clips through clipWithMarker from src/render/clip.ts, so one clip implementation with one marker serves the briefing and the sessions address alike"
     },
     {
       "ordinal": 15,
@@ -151,11 +148,8 @@
     {
       "ordinal": 21,
       "id": "F5a",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8A1EF6S152A7PR68ECTF",
-      "group": "render-surface-consistency"
+      "class": "shipped-here",
+      "evidence": "renderRoster takes the count of threads the terminal filter excluded and, when it is above zero, names that count and the logbook://thread/{id} address that resolves to them, reading no additional record"
     },
     {
       "ordinal": 22,
@@ -229,11 +223,8 @@
     {
       "ordinal": 32,
       "id": "F8b",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8A1EF6S152A7PR68ECTF",
-      "group": "render-surface-consistency"
+      "class": "shipped-here",
+      "evidence": "the thread resource carries a note after the Last session line saying the value is a stored hand-written summary no tool writes, pointing at logbook://sessions for the recorded log, with the line itself byte-unchanged"
     },
     {
       "ordinal": 33,
@@ -244,11 +235,8 @@
     {
       "ordinal": 34,
       "id": "F8d",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8A1EF6S152A7PR68ECTF",
-      "group": "render-surface-consistency"
+      "class": "shipped-here",
+      "evidence": "resume_thread binds the session-entry slots once and counts the quarantined ones, and the briefing names that count and the logbook://sessions address inside Last session while the Not shown block keeps its two members"
     },
     {
       "ordinal": 35,
@@ -526,11 +514,8 @@
     {
       "ordinal": 68,
       "id": "F6c",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8A1EF6S152A7PR68ECTF",
-      "group": "render-surface-consistency"
+      "class": "shipped-here",
+      "evidence": "all three not-recorded branches were measured reachable, 77 of 80 criteria on this repository's own ledger ref carrying no check, so none was deleted and each gained the test it lacked"
     },
     {
       "ordinal": 69,
@@ -547,38 +532,26 @@
     {
       "ordinal": 71,
       "id": "F6f",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8A1EF6S152A7PR68ECTF",
-      "group": "render-surface-consistency"
+      "class": "shipped-here",
+      "evidence": "the listing bounds first-line text at the newest 50 entries and names the count omitted while retaining every entry id; the listing itself is NOT bounded, measured at 13079 characters at the cap, and bounding it needs a cursor, which is a published address change filed above this ceiling"
     },
     {
       "ordinal": 72,
       "id": "F6g",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8A1EF6S152A7PR68ECTF",
-      "group": "render-surface-consistency"
+      "class": "shipped-here",
+      "evidence": "the listing no longer carries a thread title or a description interpolating one, removing two unrequested copies of contributor-authored prose; the slug remains as a schema-constrained identifier that can still express a short imperative, an accepted residual because B28 mandates the listing"
     },
     {
       "ordinal": 73,
       "id": "F6h",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8A1EF6S152A7PR68ECTF",
-      "group": "render-surface-consistency"
+      "class": "shipped-here",
+      "evidence": "the sessions address discloses a quarantined thread record rather than refusing, because the singular session address never consults the thread record and a corrupt record must not hide its own session history"
     },
     {
       "ordinal": 74,
       "id": "F6i",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8A1EF6S152A7PR68ECTF",
-      "group": "render-surface-consistency"
+      "class": "shipped-here",
+      "evidence": "the shortened-lines note is decided by comparing the clipped result against its input, so a first line of astral characters under the grapheme budget no longer claims a clip that did not happen"
     },
     {
       "ordinal": 75,
@@ -595,11 +568,8 @@
     {
       "ordinal": 77,
       "id": "F5e",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8A1EF6S152A7PR68ECTF",
-      "group": "render-surface-consistency"
+      "class": "closed",
+      "reason": "OR43 binds the separator fix to the unit that first ships a thread.artifacts writer and forbids shipping that writer without it, and no writer exists in src/, so the line cannot populate and the ambiguity is unreachable today"
     },
     {
       "ordinal": 78,
@@ -622,11 +592,8 @@
     {
       "ordinal": 81,
       "id": "F5i",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8A1EF6S152A7PR68ECTF",
-      "group": "render-surface-consistency"
+      "class": "shipped-here",
+      "evidence": "the thread resource renders a criterion result line only when the criterion is done, matching the briefing, which is what the schema itself describes result as carrying"
     },
     {
       "ordinal": 82,
@@ -646,20 +613,14 @@
     {
       "ordinal": 84,
       "id": "F5l",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8A1EF6S152A7PR68ECTF",
-      "group": "render-surface-consistency"
+      "class": "closed",
+      "reason": "three shipped tests pin the decision-id trailer including an over-the-wire regex in test/spawn/decisions.test.ts, the reviewer rated it LOW and traced no consumer that parses it, and the remedy is refusing a title ending in that shape, which is write-side validation rather than a render surface"
     },
     {
       "ordinal": 85,
       "id": "F5m",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8A1EF6S152A7PR68ECTF",
-      "group": "render-surface-consistency"
+      "class": "closed",
+      "reason": "no defect: MAX_ITEM_CLIP is complete and correct today and the code is exactly what the plan specifies, and making it compiler-checked is a type change no criterion asks for"
     },
     {
       "ordinal": 86,

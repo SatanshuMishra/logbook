@@ -14,6 +14,7 @@ import { census } from '../support/census.ts'
 import type { Classified } from '../support/census.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
+import { SESSION_FIRST_LINE_ENTRIES_MAX } from '../../src/server/resource-render.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const ENTRY = join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
@@ -407,6 +408,66 @@ test('resources.sessions-refuses-an-id-naming-no-thread-record', async () => {
   })
 })
 
+test('resource.sessions-caps-first-line-text-but-keeps-every-id', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+    const total = SESSION_FIRST_LINE_ENTRIES_MAX + 3
+    const entryIds: string[] = []
+    for (let i = 0; i < total; i += 1) {
+      entryIds.push(await logEntry(fx.spawned, ids.threadId, `cap fixture entry number ${i}`))
+    }
+
+    const listing = await readResourceText(fx.spawned, `logbook://sessions/${ids.threadId}`)
+
+    for (const entryId of entryIds) {
+      assert.ok(listing.includes(entryId), `expected the sessions listing to still name entry ${entryId}`)
+    }
+    assert.ok(
+      !listing.includes('cap fixture entry number 0\n') && !listing.includes('cap fixture entry number 0]'),
+      'expected the oldest entries beyond the cap to lose their first-line text'
+    )
+    assert.ok(
+      listing.includes(`cap fixture entry number ${total - 1}`),
+      'expected the newest entry to still show its first-line text'
+    )
+    const seededSessionEntryCount = 1
+    const droppedCount = total + seededSessionEntryCount - SESSION_FIRST_LINE_ENTRIES_MAX
+    assert.ok(
+      listing.includes(`${droppedCount} entry first lines omitted`),
+      `expected a note naming ${droppedCount} first lines omitted, got '${listing}'`
+    )
+  })
+})
+
+test('resource.sessions-still-answers-for-a-quarantined-thread-record', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+
+    const rt = testRuntime({
+      env: { HOME: fx.homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: fx.pluginData },
+      cwd: fx.repo
+    })
+    const layout = layoutFor(rt, fx.repo)
+    assert.equal(layout.ok, true)
+    if (!layout.ok) return
+
+    const threadRecordPath = join(layout.value.records, 'threads', `${ids.threadId}.json`)
+    writeFileSync(threadRecordPath, 'this is not valid json for a thread record')
+
+    const listing = await readResourceText(fx.spawned, `logbook://sessions/${ids.threadId}`)
+
+    assert.ok(
+      listing.includes(ids.sessionEntryId),
+      `expected the sessions listing to still name entry ${ids.sessionEntryId}`
+    )
+    assert.ok(
+      listing.includes('thread record quarantined'),
+      `expected the sessions listing to disclose the quarantined thread record, got '${listing}'`
+    )
+    assert.ok(listing.includes('invalid JSON'), 'expected the disclosure to carry the parse-failure reason')
+  })
+})
+
 test('resource.index-lists-the-sessions-address', async () => {
   await withFixture(async (fx) => {
     await fx.spawned.client.listTools()
@@ -414,6 +475,23 @@ test('resource.index-lists-the-sessions-address', async () => {
     assert.ok(
       parseIndexShapes(indexBody).includes('logbook://sessions/{thread_id}'),
       'expected logbook://index to list logbook://sessions/{thread_id}'
+    )
+  })
+})
+
+test('resource.index-sessions-description-does-not-promise-a-first-line-for-every-entry', async () => {
+  await withFixture(async (fx) => {
+    await fx.spawned.client.listTools()
+    const indexBody = await readIndexBody(fx.spawned)
+    const sessionsLine = indexBody.split('\n').find((line) => line.startsWith('logbook://sessions/{thread_id}'))
+    assert.ok(sessionsLine !== undefined, `expected logbook://index to carry a logbook://sessions/{thread_id} line, got '${indexBody}'`)
+    assert.ok(
+      !sessionsLine.includes('first line of each'),
+      `expected the sessions description to stop promising a first line for every entry, got '${sessionsLine}'`
+    )
+    assert.ok(
+      sessionsLine.includes(`newest ${SESSION_FIRST_LINE_ENTRIES_MAX} entries`),
+      `expected the sessions description to name the ${SESSION_FIRST_LINE_ENTRIES_MAX}-entry first-line cap, got '${sessionsLine}'`
     )
   })
 })
@@ -474,6 +552,40 @@ test('resource.thread-detail-degrades-when-bindings-cannot-be-read', async () =>
     assert.ok(
       !detailText.includes(layout.value.root),
       'expected the thread resource to keep the store path out of the rendered body'
+    )
+  })
+})
+
+const DISTINCTIVE_TITLE_SENTENCE = 'the quartz falcon migrated northward before the census closed'
+
+test('resource.list-carries-no-thread-title-prose', async () => {
+  await withFixture(async (fx) => {
+    await fx.spawned.client.listTools()
+    const opened = (await fx.spawned.client.callTool({
+      name: 'open_thread',
+      arguments: {
+        title: DISTINCTIVE_TITLE_SENTENCE,
+        slug: 'title-prose-fixture-thread',
+        completion_criteria: [{ text: 'a title prose fixture criterion', check: 'the title prose fixture check' }]
+      }
+    })) as CallToolResult
+    assertOkResult('open_thread (title prose fixture arrange)', opened)
+    const threadId = (opened.structuredContent as { thread_id: string }).thread_id
+
+    const listed = await fx.spawned.client.listResources()
+    const serialised = JSON.stringify(listed)
+
+    assert.ok(
+      !serialised.includes(DISTINCTIVE_TITLE_SENTENCE),
+      `expected resources/list to carry no thread title prose, got '${serialised}'`
+    )
+    assert.ok(
+      serialised.includes(`logbook://thread/${threadId}`),
+      'expected resources/list to still name the thread by uri'
+    )
+    assert.ok(
+      serialised.includes('title-prose-fixture-thread'),
+      'expected resources/list to still name the thread by its slug'
     )
   })
 })
