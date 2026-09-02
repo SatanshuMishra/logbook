@@ -127,9 +127,11 @@ test('sync-ledger-refusal.counts-the-records-it-did-not-show', () => {
   )
 })
 
+const CYRILLIC_A = '\u0430'
+
 test('sync-ledger-refusal.annotates-a-record-name-this-version-would-not-write', () => {
   const genuine = 'decisions/01M0NDPM0ACCR9CD68PMHYWGGD.json'
-  const homoglyph = `decisions/01M0NDPM0аCCR9CD68PMHYWGGD.json`
+  const homoglyph = `decisions/01M0NDPM0${CYRILLIC_A}CCR9CD68PMHYWGGD.json`
   const annotation = ' (not a name this version writes)'
 
   const genuineRefusal = unparseableRecordsRefusal([genuine])

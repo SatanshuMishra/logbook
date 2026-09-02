@@ -11,7 +11,9 @@ const LONG_ASCII = 'x'.repeat(200)
 const LONG_CJK = '漢'.repeat(200)
 const FAMILY_EMOJI = '\u{1F468}‍\u{1F469}‍\u{1F467}'
 const LONG_MULTI_UNIT_GRAPHEMES = FAMILY_EMOJI.repeat(20)
-const ESCAPED_NEWLINE_TOKEN_TEXT = `${'a'.repeat(50)}U+000A${'b'.repeat(50)}`
+const PREFIX_LENGTH = 50
+const ESCAPE_TOKEN_GRAPHEMES = 6
+const ESCAPED_NEWLINE_TOKEN_TEXT = `${'a'.repeat(PREFIX_LENGTH)}U+000A${'b'.repeat(PREFIX_LENGTH)}`
 
 const LIMIT_SWEEP_CEILING = 90
 
@@ -47,7 +49,7 @@ test('clip.a-shortened-value-never-exceeds-its-own-limit-and-carries-the-marker-
         if (text === ESCAPED_NEWLINE_TOKEN_TEXT) {
           const contentCount = graphemeCount(withoutMarker)
           assert.ok(
-            contentCount <= 50 || contentCount >= 56,
+            contentCount <= PREFIX_LENGTH || contentCount >= PREFIX_LENGTH + ESCAPE_TOKEN_GRAPHEMES,
             `clipping to ${max} graphemes must not cut inside the emitted U+000A escape token, got ${contentCount} graphemes of content`
           )
         }
