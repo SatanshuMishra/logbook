@@ -23,11 +23,16 @@ import type { Conflict } from './conflict.ts'
 
 export type SyncAction = 'noop' | 'pushed' | 'pushed-unverified' | 'fast-forwarded' | 'merged'
 
+export type RejectedOutcome =
+  | { ok: false; reason: 'rejected'; cause: 'remote-rejected' | 'contention' | 'local'; detail: string }
+  | { ok: false; reason: 'rejected'; cause: 'invalid-merged-record'; detail: string; field: string }
+
 export type SyncOutcome =
   | { ok: true; action: SyncAction; ref: string; local_sha: string | null; remote_sha: string | null }
   | { ok: false; reason: 'conflict'; conflicts: Conflict[] }
   | { ok: false; reason: 'unparseable'; records: string[] }
-  | { ok: false; reason: 'offline' | 'rejected'; detail: string }
+  | { ok: false; reason: 'offline'; detail: string }
+  | RejectedOutcome
 
 export type SyncOps = { beforeCas?: () => void; removeScratch?: (rt: Runtime, dir: string) => void }
 
@@ -268,7 +273,7 @@ const fastForward = (rt: Runtime, layout: StoreLayout, localVal: string | null, 
     }
   }
   if (cas.cause === 'ref-moved') return { kind: 'retry' }
-  return { kind: 'return', outcome: { ok: false, reason: 'rejected', detail: cas.message } }
+  return { kind: 'return', outcome: { ok: false, reason: 'rejected', cause: 'local', detail: cas.message } }
 }
 
 const pushPlain = (rt: Runtime, layout: StoreLayout): AttemptOutcome => {
@@ -287,7 +292,7 @@ const pushPlain = (rt: Runtime, layout: StoreLayout): AttemptOutcome => {
     }
   }
   if (isLeaseRejection(result.stderr)) return { kind: 'retry' }
-  return { kind: 'return', outcome: { ok: false, reason: 'rejected', detail: result.stderr.trim() } }
+  return { kind: 'return', outcome: { ok: false, reason: 'rejected', cause: 'remote-rejected', detail: result.stderr.trim() } }
 }
 
 const performMerge = (
@@ -300,7 +305,7 @@ const performMerge = (
 ): AttemptOutcome => {
   const theirsResult = materialiseRefToScratch(rt, layout, remoteVal)
   if (!theirsResult.ok) {
-    return { kind: 'return', outcome: { ok: false, reason: 'rejected', detail: theirsResult.detail } }
+    return { kind: 'return', outcome: { ok: false, reason: 'rejected', cause: 'local', detail: theirsResult.detail } }
   }
   const theirsScratch = theirsResult.scratch
   const removeScratch = ops.removeScratch ?? discardScratchDir
@@ -323,7 +328,7 @@ const performMerge = (
     if (baseVal !== null) {
       const baseResult = materialiseRefToScratch(rt, layout, baseVal)
       if (!baseResult.ok) {
-        return { kind: 'return', outcome: { ok: false, reason: 'rejected', detail: baseResult.detail } }
+        return { kind: 'return', outcome: { ok: false, reason: 'rejected', cause: 'local', detail: baseResult.detail } }
       }
       baseScratch = baseResult.scratch
     }
@@ -358,7 +363,12 @@ const performMerge = (
         if (!written.ok) {
           return {
             kind: 'return',
-            outcome: { ok: false, reason: 'rejected', detail: `could not persist conflicts: ${written.detail}` }
+            outcome: {
+              ok: false,
+              reason: 'rejected',
+              cause: 'local',
+              detail: `could not persist conflicts: ${written.detail}`
+            }
           }
         }
         return { kind: 'return', outcome: { ok: false, reason: 'conflict', conflicts } }
@@ -372,7 +382,7 @@ const performMerge = (
       const commitResult = writeRecords(rt, layout, mergedChanges, message, writeOps)
       if (!commitResult.ok) {
         if (commitResult.reason === 'ref-moved') return { kind: 'retry' }
-        return { kind: 'return', outcome: { ok: false, reason: 'rejected', detail: commitResult.detail } }
+        return { kind: 'return', outcome: { ok: false, reason: 'rejected', cause: 'local', detail: commitResult.detail } }
       }
 
       syncWorkingCopy(rt, layout)
@@ -385,7 +395,10 @@ const performMerge = (
       ])
       if (!pushResult.ok) {
         if (isLeaseRejection(pushResult.stderr)) return { kind: 'retry' }
-        return { kind: 'return', outcome: { ok: false, reason: 'rejected', detail: pushResult.stderr.trim() } }
+        return {
+          kind: 'return',
+          outcome: { ok: false, reason: 'rejected', cause: 'remote-rejected', detail: pushResult.stderr.trim() }
+        }
       }
 
       const mergeReceipt = readBackAfterPush(rt, layout)
@@ -473,6 +486,7 @@ export const sync = (rt: Runtime, store: Store, layout: StoreLayout, ops: Partia
   const timeoutOutcome: SyncOutcome = {
     ok: false,
     reason: 'rejected',
+    cause: 'contention',
     detail: `${LEDGER_REF} kept moving; giving up after ${MAX_SYNC_ATTEMPTS} attempts`
   }
   return timeoutOutcome
