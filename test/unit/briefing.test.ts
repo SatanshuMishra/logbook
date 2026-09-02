@@ -744,8 +744,7 @@ test('briefing.the-clip-search-converges-within-the-pass-ceiling', () => {
 })
 
 const ASCII_FILL = 'x'
-const WORST_REACHABLE_CRITERION_TEXT_LENGTH = 51
-const CLIP_SEARCH_UTILISATION_SLACK_BYTES = 500
+const WORST_REACHABLE_CRITERION_TEXT_LENGTH = 100
 
 const worstReachableAsciiShape: SweepShape = {
   fill: ASCII_FILL,
@@ -755,6 +754,29 @@ const worstReachableAsciiShape: SweepShape = {
   criterionTextLength: WORST_REACHABLE_CRITERION_TEXT_LENGTH,
   bulkCount: OPEN_RISKS_MAX_ELEMENTS
 }
+
+const RESUME_PAYLOAD_RESERVE_BYTES = 200
+
+const maxActivelyClippedItems = (shape: SweepShape): number =>
+  shape.criteriaCount +
+  shape.criteriaCount +
+  1 +
+  shape.bulkCount +
+  shape.bulkCount +
+  shape.bulkCount +
+  shape.keyDecisionCount +
+  1
+
+const briefingCopiesInResumePayload = (): number => {
+  const threadId = 'x'.repeat(THREAD_SLUG_MAX)
+  const shorter = resumePayloadBytes('x'.repeat(100), threadId, true)
+  const longer = resumePayloadBytes('x'.repeat(200), threadId, true)
+  return (longer - shorter) / 100
+}
+
+const clipSearchStepBytes = (shape: SweepShape): number => briefingCopiesInResumePayload() * maxActivelyClippedItems(shape)
+
+const CLIP_SEARCH_UTILISATION_SLACK_BYTES = RESUME_PAYLOAD_RESERVE_BYTES + clipSearchStepBytes(worstReachableAsciiShape) - 1
 
 const textAfterPrefix = (rendered: string, prefix: string): number => {
   const line = rendered.split('\n').find((candidate) => candidate.startsWith(prefix))
