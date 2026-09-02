@@ -94,11 +94,8 @@
     {
       "ordinal": 13,
       "id": "F6b",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "closed",
+      "reason": "bounding this needs a per-thread binding index inside the store's read surface, which is a layout and migration decision rather than a robustness repair; the criterion this group carries covers cleanup blocks that throw, the git buffer, the store-root path check, records dropped on merge and the duplicate-store guard's gaps, and read cost is none of them"
     },
     {
       "ordinal": 14,
@@ -133,29 +130,20 @@
     {
       "ordinal": 18,
       "id": "F2b",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "closed",
+      "reason": "the two bounded alternatives are both worse than the cost they remove: caching the negative result was already rejected in the plan because a duplicate appearing mid-session would then go unseen until restart, and capping the scan disables the guard exactly when a large parent makes it most needed; the four-millisecond figure came from fixtures placing the plugin-data root directly in the system temporary directory, which this change fixes, and the measured cost on a real install layout is 0.06 ms"
     },
     {
       "ordinal": 19,
       "id": "F2c",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "shipped-here",
+      "evidence": "every fixture under test/ that sets CLAUDE_PLUGIN_DATA now builds its plugin-data root inside a directory the fixture itself created, established by a closed census over all 47 files referencing it with no occurrence left unclassified; a decoy sibling planted in the new controlled parent trips the duplicate-store guard, which it could not do while the parent was the system temporary directory"
     },
     {
       "ordinal": 20,
       "id": "F2d",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "shipped-here",
+      "evidence": "the plain git helper in src/store/git.ts now sets maxBuffer to GIT_BUFFER_MAX_BYTES and names the limit and the command on an ENOBUFS overflow, so no git call reads through node's 1 MiB default; this item's reasoning about git cat-file --batch is superseded by F2h, which established the batch read already used the 256 MiB helper"
     },
     {
       "ordinal": 21,
@@ -202,11 +190,8 @@
     {
       "ordinal": 27,
       "id": "F7a",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "closed",
+      "reason": "excluding a fetched commit from the presence verdict needs a decision about what reaching the ref means when a shared remote is involved; the verdict compares a bare rev-parse of the ledger ref against a per-session baseline and carries no commit authorship, so the exclusion would have to introduce identity matching and a rule for merge commits, which is new material the criterion this group carries does not name"
     },
     {
       "ordinal": 28,
@@ -313,146 +298,98 @@
     {
       "ordinal": 41,
       "id": "F2g",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "closed",
+      "reason": "making the roster's record reads independent of the terminal pile needs an index over terminal records inside readThreads, changing both the store's read surface and the roster's contract; the open path's half of O5 is already discharged, and the roster's half is a design change no criterion in this group asks for"
     },
     {
       "ordinal": 42,
       "id": "F2h",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "shipped-here",
+      "evidence": "the ls-tree listing whose output scales with how much the ledger holds no longer reads through node's 1 MiB default, because the plain git helper now sets maxBuffer to GIT_BUFFER_MAX_BYTES; verified by a read of output past the old default succeeding byte for byte"
     },
     {
       "ordinal": 43,
       "id": "F2i",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "shipped-here",
+      "evidence": "performMerge routes both scratch-directory removals through a guarded call that logs sync.scratch-cleanup-failed rather than letting a cleanup error replace the merge outcome; a test injects a throwing removal and the merge's own outcome still returns"
     },
     {
       "ordinal": 44,
       "id": "F2j",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "shipped-here",
+      "evidence": "holdsAnyRecord collects subdirectory names while a level's handle is open and recurses only after that handle closes, so no ancestor handle is held across a descent; a child process run with ulimit -n 40 against a 100-level records tree raised EMFILE before the change and exits 0 after"
     },
     {
       "ordinal": 45,
       "id": "F2k",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "shipped-here",
+      "evidence": "layoutFor refuses a relative CLAUDE_PLUGIN_DATA with the project's four-part refusal, which is what its own accepted field already claimed and nothing checked; the shipped containment test moved to an absolute root over the identical physical directory, so its assertions are unchanged"
     },
     {
       "ordinal": 46,
       "id": "F2l",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "shipped-here",
+      "evidence": "readOursRecordSet logs sync.local-record-quarantined at warn with the record kind and the quarantine reason for every locally-quarantined slot it skips, instead of dropping it with no signal at all"
     },
     {
       "ordinal": 47,
       "id": "F2m",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "closed",
+      "reason": "same surface and same rejected alternatives as F2b, and an actor who can populate the plugin-data root's parent already holds write access beside the store and can delete or rewrite it outright, so the scan's cost is not the weakest link on that path"
     },
     {
       "ordinal": 48,
       "id": "F2n",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "shipped-here",
+      "evidence": "readScratchRecordSet walks the whole scratch root and performMerge carries every remote file it does not itself merge through as a raw change, so a file outside threads, decisions and sessions is no longer absent from the tree the merge pushes back; carried paths are fail-closed against traversal and a path present on both sides keeps the local bytes with a logged event"
     },
     {
       "ordinal": 49,
       "id": "F2o",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "shipped-here",
+      "evidence": "a remote-only binding record survives a merge with its bytes intact, asserted both in the materialised records and in the tree pushed to the remote; the same test failed with ENOENT on the binding's own path before the change"
     },
     {
       "ordinal": 50,
       "id": "F2p",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "shipped-here",
+      "evidence": "ensureSingleStore no longer returns early when the plugin-data root does not yet exist, so the cross-root check still runs and the first open for a brand-new install catches a sibling install already holding a store for this project"
     },
     {
       "ordinal": 51,
       "id": "F2q",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "closed",
+      "reason": "an authenticity check needs a signature or an ownership proof the store holds no key material for, and the same local write access that plants the file permits deleting the store outright; the refusal already names the sibling relative to the plugin-data root's parent, so the second store is locatable without leaking an absolute path"
     },
     {
       "ordinal": 52,
       "id": "F2r",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "shipped-here",
+      "evidence": "sync clears state/conflicts.json only when the sync succeeded, so a failed sync no longer deletes the conflict list an operator is part-way through resolving while its own refusal promises that nothing changed; the shipped test pinning the successful case passes unmodified"
     },
     {
       "ordinal": 53,
       "id": "F2s",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "shipped-here",
+      "evidence": "PassthroughFile carries only relPath and captureQuarantined no longer reads the file, so an unparseable remote record is not read fully into memory on every sync attempt for bytes nothing consumes; the two shipped refusal tests pass unmodified"
     },
     {
       "ordinal": 54,
       "id": "F2t",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "shipped-here",
+      "evidence": "the outer listing accepts a symbolic link as a candidate sibling install root, and a canonical identity comparison against the store's own root is what prevents the false lockout the inner lstat was introduced to stop; the shipped symlink test passes unmodified and a genuinely symlinked conflicting sibling is now refused"
     },
     {
       "ordinal": 55,
       "id": "F2u",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "closed",
+      "reason": "the plan ruled error as the level for both of these events, so changing it deviates from a recorded decision rather than fixing a defect the acceptance criteria leave open; the two new tolerated-condition events this change adds use warn without disturbing the ruled ones"
     },
     {
       "ordinal": 56,
       "id": "F2v",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "closed",
+      "reason": "the two mitigations this item names itself both hold: unparseable bytes are inert on read because readRecordFile quarantines them, and materialiseTreeInto enforces entry mode, object type and destination containment whichever path reached it; refusing a fast-forward would permanently strand a machine behind a shared ledger written by a newer version, which is the outcome the ancestor-passthrough ruling already refused for the same reason"
     },
     {
       "ordinal": 57,
@@ -466,11 +403,8 @@
     {
       "ordinal": 58,
       "id": "F2x",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "shipped-here",
+      "evidence": "a non-empty ancestor passthrough logs sync.ancestor-record-unparseable at warn with the count and the relative paths and the merge proceeds unrefused, so the degradation is named rather than invisible; the ruling that the ancestor's files must not refuse is untouched"
     },
     {
       "ordinal": 59,
@@ -517,11 +451,8 @@
     {
       "ordinal": 64,
       "id": "F2ad",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "shipped-here",
+      "evidence": "the rejected outcome carries a cause and sync_ledger renders each with its own retryable, example and message, so an origin-refused push is retryable false, ref contention is retryable true and names contention rather than a rejection that never happened, and a merged record failing its stored shape is its own cause"
     },
     {
       "ordinal": 65,
@@ -745,11 +676,8 @@
     {
       "ordinal": 95,
       "id": "F9h",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF7SD3QR5Z119AXS3RNCJD",
-      "group": "store-sync-robustness"
+      "class": "closed",
+      "reason": "measured rather than argued: at a fixed ten links the probe costs about 155 microseconds against a ten-record store and about 2,773 against a five-thousand-record one, the whole of that growth being the directory read, and the crossover against the 119 to 126 microseconds OR52 recorded as saved at 200 links sits at roughly 240 to 250 total decision records; the item asked only that the scaling be measured, OR52 already ruled the unit ships on correctness, and the regression this measurement reveals is reported as new material rather than folded in"
     },
     {
       "ordinal": 96,
