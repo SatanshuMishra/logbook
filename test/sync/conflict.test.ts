@@ -354,6 +354,64 @@ test('sync.a-locally-quarantined-record-is-logged-not-silently-dropped', () => {
   })
 })
 
+test('sync.an-unparseable-ancestor-record-is-logged-not-silently-degraded', () => {
+  withTwoClones((ana, ben, _remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+
+    const threadA = makeThread(ana.rt, 'ancestor-thread-a')
+    assert.equal(ana.store.commit([threadA], 'ana: create thread a').ok, true)
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    const badRelPath = 'decisions/ancestor-not-a-valid-decision.json'
+    const badWrite = writeRecords(
+      ana.rt,
+      anaLayout,
+      [{ kind: 'raw', relPath: badRelPath, content: '{"this is not a valid decision record":true}' }],
+      'ana: record a decision the schema will reject'
+    )
+    assert.equal(badWrite.ok, true)
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    const validDecisionContent = JSON.stringify({
+      id: ben.rt.ulid(),
+      thread_id: threadA.record.id,
+      title: 'a decision fixed on top of the ancestor',
+      context: 'the ancestor carried a record this version could not parse',
+      options: ['leave it broken', 'fix it'],
+      outcome: 'fix it',
+      commit: null,
+      supersedes: [],
+      created_at: ben.rt.now()
+    })
+    const fixWrite = writeRecords(
+      ben.rt,
+      benLayout,
+      [{ kind: 'raw', relPath: badRelPath, content: validDecisionContent }],
+      'ben: fix the previously unparseable decision'
+    )
+    assert.equal(fixWrite.ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    const threadB = makeThread(ana.rt, 'ancestor-thread-b')
+    assert.equal(ana.store.commit([threadB], 'ana: create thread b').ok, true)
+
+    const events: Record<string, unknown>[] = []
+    const watchRt: Runtime = { ...ana.rt, log: (record) => { events.push(record) } }
+
+    const mergeOutcome = sync(watchRt, ana.store, anaLayout)
+    assert.equal(mergeOutcome.ok, true, 'an unparseable ancestor record must not block the merge')
+
+    const ancestorLogs = events.filter((record) => record.event === 'sync.ancestor-record-unparseable')
+    assert.equal(ancestorLogs.length, 1, 'the unparseable ancestor record must be named to the operator exactly once')
+    assert.equal(ancestorLogs[0]?.level, 'warn')
+    assert.equal(ancestorLogs[0]?.count, 1)
+    assert.deepEqual(ancestorLogs[0]?.records, [badRelPath])
+  })
+})
+
 test('sync.a-scratch-cleanup-failure-does-not-replace-the-merge-outcome', () => {
   withTwoClones((ana, ben, _remote) => {
     const anaLayout = layoutIn(ana)

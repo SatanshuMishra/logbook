@@ -332,6 +332,15 @@ const performMerge = (
       const theirs = readScratchRecordSet(theirsScratch)
       const base = baseScratch !== null ? readScratchRecordSet(baseScratch) : null
 
+      if (base !== null && base.passthrough.length > 0) {
+        rt.log({
+          level: 'warn',
+          event: 'sync.ancestor-record-unparseable',
+          count: base.passthrough.length,
+          records: base.passthrough.map((file) => file.relPath)
+        })
+      }
+
       if (theirs.passthrough.length > 0) {
         return {
           kind: 'return',
