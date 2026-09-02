@@ -1,5 +1,5 @@
 {
-  "disposal_complete": true,
+  "disposal_complete": false,
   "FILED": [
     {
       "ordinal": 1,
@@ -900,6 +900,20 @@
       "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
       "criterion_id": "01M1FF81JSTEH63T0T8YZ85W9W",
       "group": "duplication-and-file-size"
+    },
+    {
+      "ordinal": 106,
+      "id": "F10m",
+      "class": "carried-as-criterion",
+      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
+      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
+      "criterion_id": "01M1FF81JSTEH63T0T8YZ85W9W",
+      "group": "duplication-and-file-size"
+    },
+    {
+      "ordinal": 107,
+      "id": "F10n",
+      "class": "pending"
     }
   ],
   "NEW": [

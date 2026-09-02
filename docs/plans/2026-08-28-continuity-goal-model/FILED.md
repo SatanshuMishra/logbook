@@ -1029,3 +1029,98 @@ Appends only. Never edit an item another planner wrote.
   the reproduction varies nothing but the threshold. Either is its own unit, and neither can be done
   from a base that predates the change it must accommodate.
 - **Not folded in.**
+
+## F10m — the idempotency census reads a hand-copied character list, so neither character this unit added is exercised by it
+
+- **Surfaced by:** U10-continuation criterion 4 implementation, and again at criterion 5.
+- **Evidence:** `test/unit/escape.test.ts:199` declares its own array, `['#', '-', '*', '+', '>',
+  '`', '~', '_']` — eight characters — instead of importing the module's set. The census
+  `escape.stored-is-idempotent-over-the-escapable-and-markdown-leading-population` draws its
+  population from that copy. `src/render/escape.ts:7` now holds ten characters, `['#', '-', '*',
+  '+', '>', '`', '~', '_', '=', '[']`: criterion 4 added the equals sign and criterion 5 added the
+  opening square bracket. Neither reaches the census. The property itself holds, measured directly
+  against the shipped module: `escapeStored('=')` returns `U+003D` and `escapeStored('U+003D')`
+  returns it unchanged; `escapeStored('[')` returns `U+005B` and `escapeStored('U+005B')` returns
+  it unchanged. So escaping twice equals escaping once for both. What is missing is a check that
+  witnesses it — the census reports green while never touching either character. This is the
+  already-filed drift `F10d` widening. `F10d` records that `test/unit/escape.test.ts` carries
+  private reconstructions of module knowledge and that one had already drifted; this is the same
+  defect deepening by two characters, and every future widening of the line-start set deepens it
+  again by one. Two sibling censuses in the same file are immune, because they derive their
+  populations at run time from the exported `isEmittedEscape` rather than from a copy:
+  `escape.round-trip-census-over-the-emitted-escape-set` and
+  `escape.emitted-token-alphabet-is-prefix-free`. Both absorbed the two new characters with no
+  edit. That contrast is the argument for the repair: the pattern that works is already present in
+  the same file.
+- **Why it is above the ceiling:** criterion 4's acceptance is that a stored value cannot forge a
+  setext heading, and criterion 5's is that it cannot forge a link reference definition. Each is
+  discharged by two tests, red-first with an inertness mutation. Repairing a hand-copied array
+  inside a test that neither criterion owns is a change to a shared file with its own blast radius
+  — the copy also feeds `collectIdempotencyPopulation`, so replacing it alters which characters two
+  shipped tests enumerate. That is its own unit of work, not a fold-in.
+- **Disclosed rather than hidden:** pull request 152 carries `--not-verified "idempotency census
+  over the square bracket - not exercised"`, and the equivalent line shipped on criterion 4's pull
+  request for the equals sign.
+- **Not folded in.**
+
+## F10n — a markdown image reference survives the escape at every position and reaches a rendered briefing intact, carrying a destination the storer chose
+
+- **Surfaced by:** U10-continuation criterion 9, the closed construct census, and a follow-up
+  measurement dispatched to confirm its reachability.
+- **Evidence:** measured on Node v26.4.0 with the CommonMark reference parser at 0.31.2. The escape
+  is the identity function on this construct at every position tested. Mid-line, `see
+  ![alt](https://attacker.example/pixel.png) now` is 50 bytes in and 50 bytes out, hex identical.
+  At a line start, `![alt](https://attacker.example/pixel.png)` is 42 bytes in and 42 out, hex
+  identical. It also survives behind two leading spaces, and on the second line of a multi-line
+  value. Parsing the escaped output yields `image
+  destination="https://attacker.example/pixel.png"`, rendering `<img
+  src="https://attacker.example/pixel.png" alt="alt" />`. The mechanism is one character.
+  `isEmittedEscape('!')` returns `false`, so the exclamation mark is in no escape set at all —
+  neither `MARKDOWN_LEADING_CHARS` at `src/render/escape.ts:7` nor `isEscapable` at
+  `src/render/escape.ts:20-21`, which covers only angle brackets, `\p{Cf}`, and blanks. In
+  `escapeStored`, a character matching no special branch falls through and sets `atLineStart = char
+  === '\n' || char === '\r'`, which is false for `!`. The bracket that follows is therefore
+  mid-line, and mid-line brackets were never in scope for escaping. The contrast is exact:
+  `escapeStored('[alt](https://attacker.example/pixel.png)')` at a line start returns
+  `U+005Balt](https://attacker.example/pixel.png)` and collapses to a text node, while the same
+  string with a leading `!` survives intact as an image node. Reachability is confirmed end to end,
+  not inferred. `src/server/tools/update_thread.ts:61-65` validates `active_goal` as
+  `z.string().max(caps.SPINE_ACTIVE_GOAL_MAX).optional()` — a length cap with no content check.
+  `src/domain/spine.ts:208` escapes it on write, and `src/render/briefing.ts:352` escapes it again
+  on render; both passes are the identity function on this input. Driving the real `renderBriefing`
+  with the payload as `spine.active_goal` produced a briefing whose parse yields that image
+  destination. Roughly a dozen other escaped fields carry caller-supplied text the same way,
+  including `thread.title` (`src/render/briefing.ts:341`), `spine.next_step` (`:362`), criterion
+  text (`:92`), risk text (`:127`) and key-decision titles (`:132`). Nothing in this repository
+  fetches that destination. Searches across `src`, `bin`, `hooks`, `scripts` and `skills` for
+  `fetch(`, `http.get`, `https.get`, `http.request`, `https.request`, `undici`, `XMLHttpRequest`,
+  `innerHTML`, `dangerouslySetInnerHTML`, `HtmlRenderer`, `marked` and `markdown-it` returned zero
+  matches. The `commonmark` package appears in exactly two files, both tests, where it is used to
+  prove properties of the escape rather than to render anything at run time. What a client does
+  with the briefing is unknown and outside this repository. No client was inspected and none is
+  speculated about. Worth recording alongside that: `src/server/tools/resume_thread.ts:65`
+  describes the briefing to callers as finished text meant to be shown as it stands, so the
+  repository instructs display of content whose rendering it does not control. The severity turns
+  on a question this unit did not investigate: whether an attacker can write to a ledger that a
+  different person's session renders. If the storer and the reader are always the same principal,
+  this is a self-inflicted string. If the sync surface lets a peer write records another person
+  reads, it is an exfiltration channel — an outbound request to a storer-chosen host with no reader
+  action, which is different in kind from a structural forgery. Three facts read in passing bear on
+  it without settling it: `package.json` describes the plugin as "Git-native, multi-user"; the
+  store synchronises through `refs/logbook/ledger` to the remote `origin`; and `resolve_conflict`
+  exists precisely to reconcile identical record identifiers written independently on two sides of
+  a sync. The authorisation question itself is unexamined and needs its own investigation.
+- **Why it is above the ceiling:** criterion 9's acceptance is that every CommonMark construct
+  carries a verdict of neutralised, structurally unreachable, or accepted with a recorded
+  rationale, and that the census halts on anything it cannot classify. This construct has its
+  verdict — `accepted`, with the residual stated in the entry itself and, since pull request 155,
+  bound by probes at both positions rather than asserted. Neutralising it is a different question:
+  because the mid-line form survives regardless of position, a real fix would have to escape `!` or
+  `[` unconditionally, which would change every stored value containing a bracket and break the
+  shipped idempotency expectations of the ten modules that pass already-escaped text back through
+  the escape. That is an architecture decision, and it was deliberately not taken inside a census
+  unit.
+- **Owed:** the storer-versus-reader authorisation question above should be settled before this
+  finding is closed either way, because it decides whether the residual is cosmetic or a live
+  channel.
+- **Not folded in.**
