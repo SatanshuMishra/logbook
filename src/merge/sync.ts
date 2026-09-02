@@ -16,7 +16,7 @@ import {
   syncWorkingCopy
 } from '../store/read-path.ts'
 import { LEDGER_REF, casUpdateRef } from '../store/ref.ts'
-import type { Store } from '../store/records.ts'
+import { checkChangeShape, type Store } from '../store/records.ts'
 import { writeRecords, type RecordChange } from '../store/write-path.ts'
 import { mergeDecision, mergeSession, mergeThread } from './field-merge.ts'
 import type { Conflict } from './conflict.ts'
@@ -441,6 +441,22 @@ const performMerge = (
       }
 
       const allChanges = [...mergedChanges, ...carriedChanges(rt, layout, theirs.carried)]
+
+      for (const change of allChanges) {
+        const shape = checkChangeShape(change)
+        if (!shape.ok) {
+          return {
+            kind: 'return',
+            outcome: {
+              ok: false,
+              reason: 'rejected',
+              cause: 'invalid-merged-record',
+              detail: shape.message,
+              field: shape.field
+            }
+          }
+        }
+      }
 
       const message = `merge ${localVal.slice(0, 12)} with ${remoteVal.slice(0, 12)}`
       const writeOps = {

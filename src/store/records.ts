@@ -53,6 +53,14 @@ const validateChange = (change: RecordChange): Refusal | null => {
   return validated.ok ? null : validated
 }
 
+export type ChangeShapeVerdict = { ok: true } | { ok: false; field: string; message: string }
+
+export const checkChangeShape = (change: RecordChange): ChangeShapeVerdict => {
+  const refusal = validateChange(change)
+  if (refusal === null) return { ok: true }
+  return { ok: false, field: refusal.field, message: refusal.message }
+}
+
 const invalidChangeResult = (refusal: Refusal): CommitResult => ({
   ok: false,
   reason: 'invalid',

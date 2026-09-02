@@ -8,6 +8,7 @@ import { LEDGER_REF } from '../../src/store/ref.ts'
 import { sync } from '../../src/merge/sync.ts'
 import { writeRecords, type RecordChange } from '../../src/store/write-path.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
+import * as caps from '../../src/schema/caps.ts'
 import type { Teammate } from '../support/clone-fixture.ts'
 import { withTwoClones } from '../support/clone-fixture.ts'
 
@@ -259,6 +260,79 @@ test('sync.a-merge-carries-a-remote-only-binding-record-through', () => {
       bindingContent,
       'the carried binding record must reach the pushed tree with its bytes intact'
     )
+  })
+})
+
+test('sync.a-merge-that-would-overflow-a-stored-cap-refuses-and-writes-nothing', () => {
+  withTwoClones((ana, ben, _remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+
+    const original = makeThread(ana.rt, 'union-overflow-thread')
+    const created = ana.store.commit([original], 'ana: create thread for the union-overflow probe')
+    assert.equal(created.ok, true)
+
+    const firstAnaSync = sync(ana.rt, ana.store, anaLayout)
+    assert.equal(firstAnaSync.ok, true)
+
+    const firstBenSync = sync(ben.rt, ben.store, benLayout)
+    assert.equal(firstBenSync.ok, true)
+
+    const benSlot = ben.store.readThread(original.record.id)
+    assert.ok(benSlot !== null && !benSlot.quarantined)
+    if (benSlot === null || benSlot.quarantined) return
+    const benOutOfScope = Array.from({ length: caps.OUT_OF_SCOPE_MAX_ELEMENTS }, (_, i) => ({
+      id: ben.rt.ulid(),
+      text: `ben out-of-scope ${i}`
+    }))
+    const benEdit: RecordChange = {
+      kind: 'thread',
+      record: {
+        ...benSlot.record,
+        spine: { ...benSlot.record.spine, out_of_scope: benOutOfScope },
+        updated_at: ben.rt.now()
+      }
+    }
+    const benCommit = ben.store.commit([benEdit], 'ben: fill out-of-scope to the stored cap')
+    assert.equal(benCommit.ok, true)
+
+    const anaSlot = ana.store.readThread(original.record.id)
+    assert.ok(anaSlot !== null && !anaSlot.quarantined)
+    if (anaSlot === null || anaSlot.quarantined) return
+    const anaOutOfScope = Array.from({ length: caps.OUT_OF_SCOPE_MAX_ELEMENTS }, (_, i) => ({
+      id: ana.rt.ulid(),
+      text: `ana out-of-scope ${i}`
+    }))
+    const anaEdit: RecordChange = {
+      kind: 'thread',
+      record: {
+        ...anaSlot.record,
+        spine: { ...anaSlot.record.spine, out_of_scope: anaOutOfScope },
+        updated_at: ana.rt.now()
+      }
+    }
+    const anaCommit = ana.store.commit([anaEdit], 'ana: fill out-of-scope to the stored cap with disjoint ids')
+    assert.equal(anaCommit.ok, true)
+
+    const secondAnaSync = sync(ana.rt, ana.store, anaLayout)
+    assert.equal(secondAnaSync.ok, true)
+    if (!secondAnaSync.ok) return
+    assert.equal(secondAnaSync.action, 'pushed')
+
+    const benRecordPath = path.join(benLayout.records, 'threads', `${original.record.id}.json`)
+    const benRecordBefore = readFileSync(benRecordPath, 'utf8')
+
+    const secondBenSync = sync(ben.rt, ben.store, benLayout)
+
+    assert.equal(secondBenSync.ok, false, 'a merge whose union overflows a stored array cap must be refused')
+    if (secondBenSync.ok) return
+    assert.equal(secondBenSync.reason, 'rejected')
+    if (secondBenSync.reason !== 'rejected') return
+    assert.equal(secondBenSync.cause, 'invalid-merged-record')
+    assert.equal(secondBenSync.field, 'spine.out_of_scope')
+
+    const benRecordAfter = readFileSync(benRecordPath, 'utf8')
+    assert.equal(benRecordAfter, benRecordBefore, 'a refused merge must leave the local record on disk untouched')
   })
 })
 
