@@ -476,6 +476,23 @@ test('resource.index-lists-the-sessions-address', async () => {
   })
 })
 
+test('resource.index-sessions-description-does-not-promise-a-first-line-for-every-entry', async () => {
+  await withFixture(async (fx) => {
+    await fx.spawned.client.listTools()
+    const indexBody = await readIndexBody(fx.spawned)
+    const sessionsLine = indexBody.split('\n').find((line) => line.startsWith('logbook://sessions/{thread_id}'))
+    assert.ok(sessionsLine !== undefined, `expected logbook://index to carry a logbook://sessions/{thread_id} line, got '${indexBody}'`)
+    assert.ok(
+      !sessionsLine.includes('first line of each'),
+      `expected the sessions description to stop promising a first line for every entry, got '${sessionsLine}'`
+    )
+    assert.ok(
+      sessionsLine.includes(`newest ${SESSION_FIRST_LINE_ENTRIES_MAX} entries`),
+      `expected the sessions description to name the ${SESSION_FIRST_LINE_ENTRIES_MAX}-entry first-line cap, got '${sessionsLine}'`
+    )
+  })
+})
+
 test('resource.thread-detail-shows-every-binding', async () => {
   await withFixture(async (fx) => {
     const ids = await seedStore(fx.spawned)

@@ -39,7 +39,7 @@ const ADDRESSES: readonly Address[] = [
   { shape: 'logbook://decision/{id}', description: 'one decision record, resolved by its id' },
   {
     shape: 'logbook://sessions/{thread_id}',
-    description: 'every session-log entry id for one thread with the first line of each, newest first'
+    description: 'every session-log entry id for one thread with the first line shown for the newest 50 entries, newest first'
   },
   {
     shape: 'logbook://session/{thread_id}/{entry_id}',
@@ -316,7 +316,7 @@ export const registerResources = (server: McpServer, rt: Runtime): void => {
     {
       title: 'Session log',
       description:
-        'Every session-log entry id for one thread with the first line of each, newest first. Read one in full at logbook://session/{thread_id}/{entry_id}.',
+        'Every session-log entry id for one thread with the first line shown for the newest 50 entries, newest first. Read one in full at logbook://session/{thread_id}/{entry_id}.',
       mimeType: 'text/markdown'
     },
     (uri, variables) => ({
