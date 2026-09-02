@@ -86,20 +86,21 @@ export const ensureSingleStore = (rt: Runtime, layout: StoreLayout): Ok<StoreLay
       .filter((name) => name !== ownKey)
   } catch (error) {
     if (errnoCode(error) === 'ENOENT') {
-      return { ok: true, value: layout }
+      siblingKeys = []
+    } else {
+      const detail = error instanceof Error ? error.message : String(error)
+      return withDetail(
+        {
+          ok: false,
+          field: 'pluginData',
+          accepted: 'a readable plugin-data directory',
+          example: 'CLAUDE_PLUGIN_DATA=/Users/example/.claude/plugin-data',
+          retryable: true,
+          message: `plugin-data directory could not be listed: ${errnoCode(error)}`
+        },
+        detail
+      )
     }
-    const detail = error instanceof Error ? error.message : String(error)
-    return withDetail(
-      {
-        ok: false,
-        field: 'pluginData',
-        accepted: 'a readable plugin-data directory',
-        example: 'CLAUDE_PLUGIN_DATA=/Users/example/.claude/plugin-data',
-        retryable: true,
-        message: `plugin-data directory could not be listed: ${errnoCode(error)}`
-      },
-      detail
-    )
   }
 
   const conflicts = [

@@ -129,6 +129,68 @@ test('store.a-symlinked-cross-root-candidate-is-not-followed', () => {
   }
 })
 
+test('store.first-open-runs-the-cross-root-check-before-own-root-exists', () => {
+  const pluginDataParent = mkdtempSync(path.join(tmpdir(), 'logbook-cross-root-'))
+  try {
+    const projectRoot = '/tmp/some/shared/project'
+    const sharedKey = 'store-key-shared'
+    writeOrigin(path.join(pluginDataParent, 'install-a'), sharedKey, projectRoot)
+
+    const pluginDataRoot = path.join(pluginDataParent, 'install-b')
+    const layout: StoreLayout = {
+      root: path.join(pluginDataRoot, sharedKey),
+      records: path.join(pluginDataRoot, sharedKey, 'records'),
+      state: path.join(pluginDataRoot, sharedKey, 'state'),
+      projectRoot
+    }
+
+    const rt = testRuntime()
+    const result = ensureSingleStore(rt, layout)
+
+    assert.equal(
+      result.ok,
+      false,
+      'the very first open for a new install must still catch a sibling holding the same project'
+    )
+    if (result.ok) {
+      throw new Error('expected a refusal')
+    }
+    assert.equal(result.retryable, false)
+    assert.match(result.message, /install-a/)
+    assert.doesNotMatch(result.message, new RegExp(escapeRegExp(pluginDataParent)))
+  } finally {
+    rmSync(pluginDataParent, { recursive: true, force: true })
+  }
+})
+
+test('store.first-open-with-no-sibling-conflict-is-ok', () => {
+  const pluginDataParent = mkdtempSync(path.join(tmpdir(), 'logbook-cross-root-'))
+  try {
+    const projectRoot = '/tmp/only/one/first-open/project'
+    const sharedKey = 'store-key-shared'
+    writeOrigin(path.join(pluginDataParent, 'install-a'), sharedKey, '/tmp/a/different/project')
+
+    const pluginDataRoot = path.join(pluginDataParent, 'install-b')
+    const layout: StoreLayout = {
+      root: path.join(pluginDataRoot, sharedKey),
+      records: path.join(pluginDataRoot, sharedKey, 'records'),
+      state: path.join(pluginDataRoot, sharedKey, 'state'),
+      projectRoot
+    }
+
+    const rt = testRuntime()
+    const result = ensureSingleStore(rt, layout)
+
+    assert.equal(
+      result.ok,
+      true,
+      'the first open for a new install must still succeed when no sibling holds this project'
+    )
+  } finally {
+    rmSync(pluginDataParent, { recursive: true, force: true })
+  }
+})
+
 test('store.single-store-with-no-sibling-is-ok', () => {
   const pluginDataRoot = mkdtempSync(path.join(tmpdir(), 'logbook-single-store-'))
   try {
