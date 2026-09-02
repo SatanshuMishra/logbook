@@ -34,7 +34,6 @@ const CARRIED_CRITERION_BY_GROUP: Readonly<Record<string, string>> = Object.free
   'frozen-document-contradictions': '01M1FF8JV77VSP56YC9RCS7ENV',
   'durability-and-repo-posture': '01M1FF8QNQC25H6YX0PZ6C1A5A',
   'write-fidelity-residue': '01M1FF8W16XG1TJHGNPTG92CTE',
-  'verification-honesty': '01M1FF90KY0JXYAPMH8Q2MXJ3F',
   'frozen-invariant-and-budget': '01M1FF95055JMHF4PRECMTGVEQ',
   'escape-residue-and-authorisation': '01M1FX7W1S2CJ3AFVXFYFVHKWJ'
 })
