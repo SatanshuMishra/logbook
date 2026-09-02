@@ -10,7 +10,7 @@ import { testRuntime } from '../support/runtime.ts'
 import { withRepo } from '../support/git-fixture.ts'
 
 const SEEDED_RECORD_COUNT = 3
-const RELATIVE_PLUGIN_DATA = 'relative-plugin-data'
+const PLUGIN_DATA_DIR_NAME = 'relative-plugin-data'
 
 const runtimeWithPluginData = (pluginData: string): Runtime =>
   testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: pluginData } })
@@ -91,16 +91,16 @@ test('store.materialisation-never-writes-into-the-host-project-tree', () => {
       assert.equal(committed.ok, true, 'the fixture requires the seeding commit to land on the ledger ref')
     })
 
-    withDisposableCwd(() => {
+    withDisposableCwd((disposableCwd) => {
       const baselineRepoFiles = filesUnder(repo)
 
-      const rt = runtimeWithPluginData(RELATIVE_PLUGIN_DATA)
+      const rt = runtimeWithPluginData(join(disposableCwd, PLUGIN_DATA_DIR_NAME))
       const opened = openStore(rt, repo)
 
       assert.equal(
         opened.ok,
         true,
-        'openStore must resolve a relative CLAUDE_PLUGIN_DATA against the process working directory and materialise successfully, never fail because it tried to write into the host project'
+        'openStore must succeed with an absolute CLAUDE_PLUGIN_DATA root outside the project and materialise successfully, never fail because it tried to write into the host project'
       )
       if (!opened.ok) return
 
