@@ -15,7 +15,7 @@ import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { openStore, type RecordChange } from '../../src/store/records.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import { escapeStored } from '../../src/render/escape.ts'
-import { CLIP_MARKER } from '../../src/render/clip.ts'
+import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
 import { BRIEFING_HEADING } from '../../src/render/briefing.ts'
 import { renderThreadListing } from '../../src/cli/session-start.ts'
 import { UNRECOGNIZED_KEY_NAME_MAX } from '../../src/schema/caps.ts'
@@ -32,6 +32,7 @@ const CONTROL_BLOCKAGE = 'a plainly benign blockage reason'
 const CONTROL_NEXT_STEP = 'a plainly benign next step'
 
 const FAMILY_EMOJI = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}'
+const WIDEST_ESCAPE_TOKEN_GRAPHEMES = 8
 const EMOJI_UNRECOGNISED_KEY = FAMILY_EMOJI.repeat(40)
 const EMOJI_TITLE = FAMILY_EMOJI.repeat(18)
 const EMOJI_NEXT_STEP = FAMILY_EMOJI.repeat(45)
@@ -1046,7 +1047,15 @@ test('render.clip-is-grapheme-safe', async () => {
             graphemesOf(field).length <= UNRECOGNIZED_KEY_NAME_MAX,
             `${spec.name}: the unrecognised key was not clipped within the declared cap, got ${graphemesOf(field).length}`
           )
-          const withoutMarker = field.endsWith(CLIP_MARKER) ? field.slice(0, field.length - CLIP_MARKER.length) : field
+          assert.ok(
+            graphemesOf(field).length >= UNRECOGNIZED_KEY_NAME_MAX - CLIP_MARKER_GRAPHEMES - WIDEST_ESCAPE_TOKEN_GRAPHEMES,
+            `${spec.name}: the clipped key lost far more content than the token-safe backoff can account for, got ${graphemesOf(field).length}`
+          )
+          assert.ok(
+            field.endsWith(CLIP_MARKER),
+            `${spec.name}: a key long enough to force a clip must carry the clip marker, got: ${field}`
+          )
+          const withoutMarker = field.slice(0, field.length - CLIP_MARKER.length)
           assert.ok(
             escapedKey.startsWith(withoutMarker),
             `${spec.name}: the clipped key, with its clip marker removed, is not a grapheme prefix of the escaped key`
