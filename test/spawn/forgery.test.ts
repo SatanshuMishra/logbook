@@ -338,12 +338,7 @@ const renderBriefingsFor = async (
 type SurfaceName = keyof Surfaces
 
 const BRIEFING_SURFACES: readonly (keyof BriefingSurfaces)[] = ['briefingTool', 'briefingResource']
-const ROSTER_SURFACES: readonly SurfaceName[] = [
-  'rosterTool',
-  'rosterResource',
-  'sessionStartRoster',
-  'threadListResource'
-]
+const ROSTER_SURFACES: readonly SurfaceName[] = ['rosterTool', 'rosterResource', 'sessionStartRoster']
 
 const assertPayloadIsInert = (surface: string, hostile: string, control: string): void => {
   assert.deepEqual(
@@ -403,7 +398,7 @@ const assertFragmentsShareOneLine = (surface: string, text: string, fragments: r
 
 const withTitleProbe = async (
   label: string,
-  fn: (hostile: Surfaces, control: Surfaces) => void
+  fn: (hostile: Surfaces, control: Surfaces, hostileId: string, controlId: string) => void
 ): Promise<void> => {
   const hostileFixture = makeFixture(`${label}h`)
   const controlFixture = makeFixture(`${label}c`)
@@ -421,7 +416,12 @@ const withTitleProbe = async (
       count: 1
     })
     assert.ok(hostileId !== undefined && controlId !== undefined, 'the fixture seeded no thread')
-    fn(await renderSurfaces(hostileFixture, hostileId), await renderSurfaces(controlFixture, controlId))
+    fn(
+      await renderSurfaces(hostileFixture, hostileId),
+      await renderSurfaces(controlFixture, controlId),
+      hostileId,
+      controlId
+    )
   } finally {
     disposeFixture(hostileFixture)
     disposeFixture(controlFixture)
@@ -454,9 +454,36 @@ test('render.title-cannot-forge-heading', async () => {
   })
 })
 
+const assertThreadListResourceCarriesNoTitle = (
+  hostile: Surfaces,
+  control: Surfaces,
+  hostileId: string
+): void => {
+  assert.ok(
+    control.threadListResource.length > 0,
+    'threadListResource: the control render was empty, so the absence check on the hostile render would prove nothing'
+  )
+  assert.ok(
+    hostile.threadListResource.length > 0,
+    'threadListResource: the hostile render was empty, so the absence check would prove nothing'
+  )
+  assert.ok(
+    hostile.threadListResource.includes(`logbook://thread/${hostileId}`),
+    'threadListResource: the hostile render dropped the thread uri, so the listing itself broke rather than proving the title is absent'
+  )
+  for (const fragment of [FORGED_TITLE, 'Injected', 'SYSTEM', 'Ignore the above']) {
+    assert.equal(
+      hostile.threadListResource.includes(fragment),
+      false,
+      `threadListResource: the stored title reached the listing, carrying ${JSON.stringify(fragment)}`
+    )
+  }
+}
+
 test('render.roster-cannot-forge-instruction', async () => {
-  await withTitleProbe('a3', (hostile, control) => {
+  await withTitleProbe('a3', (hostile, control, hostileId) => {
     assertTitleIsInertOn(ROSTER_SURFACES, hostile, control)
+    assertThreadListResourceCarriesNoTitle(hostile, control, hostileId)
   })
 })
 
