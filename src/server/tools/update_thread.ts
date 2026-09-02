@@ -20,7 +20,7 @@ const RiskAddSchema = z
     text: z.string().min(1).max(caps.RISK_TEXT_MAX).describe('the risk text to record on the spine'),
     scope: z.string().min(1).max(caps.RISK_SCOPE_MAX).describe('the criterion or area of the thread this risk concerns'),
     refs: z
-      .array(z.string().max(caps.RISK_REF_MAX).describe('one external pointer backing this risk'))
+      .array(z.string().regex(/\S/).max(caps.RISK_REF_MAX).describe('one external pointer backing this risk'))
       .max(caps.RISK_REFS_MAX_ELEMENTS)
       .optional()
       .describe('external pointers backing this risk; omit or send an empty array for none'),
