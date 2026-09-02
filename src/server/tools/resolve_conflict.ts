@@ -10,7 +10,7 @@ import { DecisionRecord, type Decision } from '../../schema/decision.ts'
 import type { Store } from '../../store/records.ts'
 import { layoutFor } from '../../store/layout.ts'
 import { git } from '../../store/git.ts'
-import { markMaterialised } from '../../store/read-path.ts'
+import { advanceMaterialisedStampIfStillCurrent } from '../../store/read-path.ts'
 import { writeRecords, type RecordChange } from '../../store/write-path.ts'
 import type { Conflict } from '../../merge/conflict.ts'
 import { TRACKING_REF } from '../../merge/sync.ts'
@@ -638,7 +638,17 @@ export const resolveConflictTool: ToolSpec<ResolveConflictInput, ResolveConflict
       return { ok: false, refusal: commitFailureRefusal(commitResult.detail) }
     }
 
-    markMaterialised(layout.value, commitResult.after)
+    const advance = advanceMaterialisedStampIfStillCurrent(rt, layout.value, commitResult.before, commitResult.after)
+    if (!advance.advanced && advance.reason === 'stamp-mismatch') {
+      rt.log({
+        level: 'error',
+        event: 'store.materialised-stamp-advance-skipped',
+        ref: LEDGER_REF,
+        before: commitResult.before,
+        after: commitResult.after,
+        observed: advance.observed
+      })
+    }
     clearConflictsFile(conflictsFilePath)
 
     return {

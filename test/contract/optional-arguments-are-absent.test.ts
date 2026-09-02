@@ -80,6 +80,7 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute', asyn
       continue
     }
     if (result.sites.length === 0) {
+      entries.push({ path, site: NO_LANDING_SITE, omitted: undefined, refusal: null })
       t.diagnostic(`${path}: no landing site differed between the omitted and sentinel runs`)
       entries.push({
         path,
@@ -132,6 +133,67 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.contro
     () => census([weird], classifyLandingSite),
     /census halted on an unclassifiable item:/,
     'contract.optional-arguments-are-absent: an unclassifiable value must halt the census, not be rejected as forbidden'
+  )
+})
+
+test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.control.a-refusal-naming-the-argument-is-allowed-an-unrelated-refusal-halts', () => {
+  const namingTheArgument: LandingSiteEntry = {
+    path: 'amend_criteria.criterion_id',
+    site: 'refused',
+    omitted: undefined,
+    refusal: { field: 'criterion_id', message: 'criterion_id is required when operation is "rewrite".' }
+  }
+  assert.equal(
+    classifyLandingSite(namingTheArgument),
+    'allowed',
+    'contract.optional-arguments-are-absent: a refusal naming the argument under test proves the omission was refused, not silently substituted'
+  )
+  assert.match(
+    namingTheArgument.refusal?.message ?? '',
+    /criterion_id is required/,
+    'contract.optional-arguments-are-absent: the refusal message must name the argument under test'
+  )
+
+  const unrelatedRefusal: LandingSiteEntry = {
+    path: 'amend_criteria.criterion_id',
+    site: 'refused',
+    omitted: undefined,
+    refusal: { field: 'thread_id', message: 'thread_id must resolve to an existing thread.' }
+  }
+  assert.throws(
+    () => census([unrelatedRefusal], classifyLandingSite),
+    /census halted on an unclassifiable item:/,
+    'contract.optional-arguments-are-absent: a refusal that does not name the argument under test must halt, not count as proof the argument had no effect'
+  )
+  assert.match(
+    unrelatedRefusal.refusal?.message ?? '',
+    /thread_id must resolve/,
+    'contract.optional-arguments-are-absent: the unrelated refusal message must not mention the argument under test'
+  )
+})
+
+test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.control.a-zero-site-non-refused-entry-halts-a-zero-site-refused-entry-does-not', () => {
+  const zeroSiteNotRefused: LandingSiteEntry = {
+    path: 'synthetic.probe',
+    site: NO_LANDING_SITE,
+    omitted: undefined,
+    refusal: null
+  }
+  assert.throws(
+    () => census([zeroSiteNotRefused], classifyLandingSite),
+    /census halted on an unclassifiable item:/,
+    'contract.optional-arguments-are-absent: a recipe that produced no landing site and was not refused must halt the census'
+  )
+
+  const zeroSiteRefused: LandingSiteEntry = {
+    path: 'synthetic.probe',
+    site: 'refused',
+    omitted: undefined,
+    refusal: { field: 'probe', message: 'probe is required.' }
+  }
+  assert.doesNotThrow(
+    () => census([zeroSiteRefused], classifyLandingSite),
+    'contract.optional-arguments-are-absent: a recipe whose omitted run was legitimately refused must not halt merely for producing no landing site'
   )
 })
 

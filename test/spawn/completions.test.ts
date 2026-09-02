@@ -1,12 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { rawGit } from '../support/git-fixture.ts'
 import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
+import { testRuntime } from '../support/runtime.ts'
+import { layoutFor } from '../../src/store/layout.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const ENTRY = join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
@@ -135,6 +137,67 @@ test('completion.filters-by-prefix', async () => {
     assert.equal(completion.completion.values.includes(gamma.slug), false)
     assert.equal(completion.completion.values.includes(beta.threadId), false)
     assert.equal(completion.completion.values.includes(gamma.threadId), false)
+  })
+})
+
+const PLANTED_ENTRY_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAW'
+const PLANTED_THREAD_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
+
+const plantSessionEntryOutsideSessionsDir = (repo: string, pluginData: string): void => {
+  const rt = testRuntime({
+    env: { HOME: process.env.HOME, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: pluginData },
+    cwd: repo
+  })
+  const layout = layoutFor(rt, repo)
+  if (!layout.ok) throw new Error('completions traversal fixture: could not resolve store layout')
+  const plantedDir = join(layout.value.records, 'PLANTEDDIR')
+  mkdirSync(plantedDir, { recursive: true })
+  writeFileSync(
+    join(plantedDir, `${PLANTED_ENTRY_ID}.json`),
+    JSON.stringify({
+      id: PLANTED_ENTRY_ID,
+      thread_id: PLANTED_THREAD_ID,
+      actor: 'claude',
+      body: 'a planted session entry outside records/sessions',
+      created_at: '2024-01-01T00:00:00.000Z'
+    })
+  )
+}
+
+test('completion.session-entry-ids-refuses-a-traversal-thread-id', async () => {
+  await withFixture(async (fx) => {
+    await fx.spawned.client.listTools()
+    const thread = await openThread(fx.spawned, 'traversal-fixture-thread', 'traversal fixture thread')
+    plantSessionEntryOutsideSessionsDir(fx.repo, fx.pluginData)
+
+    const traversalCompletion = await fx.spawned.client.complete({
+      ref: { type: 'ref/resource', uri: 'logbook://session/{thread_id}/{entry_id}' },
+      argument: { name: 'entry_id', value: '' },
+      context: { arguments: { thread_id: '../PLANTEDDIR' } }
+    })
+
+    assert.deepEqual(
+      traversalCompletion.completion.values,
+      [],
+      `expected a traversal thread_id to yield no completion values, got ${JSON.stringify(traversalCompletion.completion.values)}`
+    )
+
+    const legitimate = (await fx.spawned.client.callTool({
+      name: 'log_session_event',
+      arguments: { thread_id: thread.threadId, actor: 'claude', body: 'a legitimate session entry' }
+    })) as CallToolResult
+    assertOkResult('log_session_event (traversal fixture control)', legitimate)
+    const legitimateEntryId = (legitimate.structuredContent as { session_entry_id: string }).session_entry_id
+
+    const legitimateCompletion = await fx.spawned.client.complete({
+      ref: { type: 'ref/resource', uri: 'logbook://session/{thread_id}/{entry_id}' },
+      argument: { name: 'entry_id', value: '' },
+      context: { arguments: { thread_id: thread.threadId } }
+    })
+    assert.ok(
+      legitimateCompletion.completion.values.includes(legitimateEntryId),
+      'expected a real thread_id to still offer its own session entry ids'
+    )
   })
 })
 

@@ -10,38 +10,26 @@
     {
       "ordinal": 2,
       "id": "F3b",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8JV77VSP56YC9RCS7ENV",
-      "group": "frozen-document-contradictions"
+      "class": "shipped-here",
+      "evidence": "Corrected as erratum E1 in docs/specs/2026-08-28-continuity-goal-model-errata.md, commit e0f1e98c. Section 11.1 is right and the B36 goal cell overstates: B36 publishes LG16 in the README and does not discharge it; B42 does."
     },
     {
       "ordinal": 3,
       "id": "F0a",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8QNQC25H6YX0PZ6C1A5A",
-      "group": "durability-and-repo-posture"
+      "class": "shipped-here",
+      "evidence": "the stamp now advances only when it still names the commit's own parent, so the common case self-repairs on the next store open; proved by concurrent.a-record-that-landed-during-materialisation-survives, red before this change. One narrow race remains open, needing a cross-process lock that does not exist yet, and is filed rather than fixed here."
     },
     {
       "ordinal": 4,
       "id": "F0b",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8QNQC25H6YX0PZ6C1A5A",
-      "group": "durability-and-repo-posture"
+      "class": "closed",
+      "reason": "making a status check required is a repository-administration act that no agent performs; the exact steps a human applies are authored at docs/runbooks/main-required-status-checks.md, and the protection is NOT in force, re-measured 2026-09-01 as 404 Branch not protected with rulesets and rules both empty"
     },
     {
       "ordinal": 5,
       "id": "F0c",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8QNQC25H6YX0PZ6C1A5A",
-      "group": "durability-and-repo-posture"
+      "class": "shipped-here",
+      "evidence": "receipts.yml now pins actions/checkout and actions/setup-node to the same 40-character commit shas rebuild.yml already used, and workflow-hardening.action-refs-are-pinned-shas censuses every uses: across .github/workflows, forbidding a mutable ref and halting on one it cannot decompose"
     },
     {
       "ordinal": 6,
@@ -133,11 +121,8 @@
     {
       "ordinal": 16,
       "id": "F6e",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "test/spawn/forgery.test.ts declares a sixth surface covering resources/list; removing escapeStored from the title field in src/server/resources.ts turns render.roster-cannot-forge-instruction red naming that surface, and the production file was restored byte-identical"
     },
     {
       "ordinal": 17,
@@ -190,20 +175,14 @@
     {
       "ordinal": 23,
       "id": "F5c",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF95055JMHF4PRECMTGVEQ",
-      "group": "frozen-invariant-and-budget"
+      "class": "closed",
+      "reason": "Measured on this tree: 231 of 731 swept records breach a cap, worst render 26994 characters and 55385 bytes. The breach is reported rather than hidden, with withinBudget false and briefing.budget-exceeded logged. B16 mandates that the whole-briefing budget and its clip search stay untouched, so the remedy is not available in this ladder. The lever that would bound it is a cumulative element cap on open_risks, which key_decisions and out_of_scope already carry and open_risks does not; that is new material for a design decision."
     },
     {
       "ordinal": 24,
       "id": "F4a",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "test/contract/criteria-writers.test.ts replaces the property-name gate with a closed census keyed by tool name and path over the free-text leaves of the live tool registry; an unmapped leaf halts instead of passing"
     },
     {
       "ordinal": 25,
@@ -214,11 +193,8 @@
     {
       "ordinal": 26,
       "id": "F4c",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "test/support/published.ts adds the missing direction: every published top-level argument is classified, and one named by no claim and carrying no enumerated reason halts the census"
     },
     {
       "ordinal": 27,
@@ -232,11 +208,8 @@
     {
       "ordinal": 28,
       "id": "F7b",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "test/contract/render-census.test.ts resolves conditional-expression array producers and classifies the null literal as a server-authored terminal; the census now walks 179 sites including the session-start banner composition it previously dropped"
     },
     {
       "ordinal": 29,
@@ -292,11 +265,8 @@
     {
       "ordinal": 35,
       "id": "F9a",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF95055JMHF4PRECMTGVEQ",
-      "group": "frozen-invariant-and-budget"
+      "class": "shipped-here",
+      "evidence": "Corrected as erratum E2 in docs/specs/2026-08-28-continuity-goal-model-errata.md, commit e0f1e98c. S4 holds for every call carrying no dependency on pointer state; park_thread supplied with an outcome is the stated exception. The item's own citations were stale and the erratum ships the verified ones: park_thread.ts:362 and resume.test.ts:1044."
     },
     {
       "ordinal": 36,
@@ -532,11 +502,8 @@
     {
       "ordinal": 63,
       "id": "F2ac",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "closed",
+      "reason": "widening the escaping census to src/server/tools/ yields 114 unclassifiable sites across two opposite kinds of change, production escaping and resolver widening, and is its own unit; the one site named as a bypass is not one, because the slug pattern admits no character any escape rule targets"
     },
     {
       "ordinal": 64,
@@ -559,20 +526,14 @@
     {
       "ordinal": 66,
       "id": "F6a",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "test/contract/content-rendered.test.ts halts when a union member carries properties, items or a nested union, while the six live nullable-scalar unions still resolve"
     },
     {
       "ordinal": 67,
       "id": "F6b",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "test/contract/content-rendered.test.ts derives every record root from the record's own name, so a rename at the declare site reaches both derivations instead of only one"
     },
     {
       "ordinal": 68,
@@ -595,11 +556,8 @@
     {
       "ordinal": 70,
       "id": "F6e",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8JV77VSP56YC9RCS7ENV",
-      "group": "frozen-document-contradictions"
+      "class": "shipped-here",
+      "evidence": "Fixed in commit 30682e98. The premise was re-measured and held, and proved worse than filed: the completion surface escaped its directory on POSIX, returning a record never written to the sessions directory. Every record identifier is now validated before any filesystem path is built."
     },
     {
       "ordinal": 71,
@@ -640,11 +598,8 @@
     {
       "ordinal": 75,
       "id": "F6j",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "test/spawn/resources.test.ts drives the resources/list entry point inside the read-is-pure snapshot window; writing a sentinel into the last-materialised stamp turns the invariant red naming that file"
     },
     {
       "ordinal": 76,
@@ -670,20 +625,14 @@
     {
       "ordinal": 79,
       "id": "F5g",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "test/support/briefing-sweep-fixture.ts populates the check, result and reference fields, and the sweep now asserts each populated branch fires on a within-cap record and on a breaching record"
     },
     {
       "ordinal": 80,
       "id": "F5h",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "test/unit/briefing-frontier-sweep.test.ts counts risks by a row pattern instead of every non-empty line, so a risk carrying references counts once; observed red at 4 of 1 held before the fix"
     },
     {
       "ordinal": 81,
@@ -739,11 +688,8 @@
     {
       "ordinal": 87,
       "id": "F7d",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8JV77VSP56YC9RCS7ENV",
-      "group": "frozen-document-contradictions"
+      "class": "shipped-here",
+      "evidence": "Fixed in commit 9a376298. The two package-lock.json version fields are corrected to 4.0.1 and check-packaging now reads the lockfile, so the drift is reported rather than accumulated silently."
     },
     {
       "ordinal": 88,
@@ -772,29 +718,20 @@
     {
       "ordinal": 92,
       "id": "F9e",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "the list_threads cursor recipe supplies a page limit on both runs and extracts whether the page is the last one, so it now contributes an assertion instead of nothing"
     },
     {
       "ordinal": 93,
       "id": "F9f",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "the optional-argument census carries the refusal and allows it only when it names the argument under test; a refusal for any other reason halts"
     },
     {
       "ordinal": 94,
       "id": "F9g",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "all 28 optional-argument recipes now produce a differing landing site or halt; the position, thread_id and cursor recipes each gained a real site and the four refused ones now name their field"
     },
     {
       "ordinal": 95,
@@ -832,11 +769,8 @@
     {
       "ordinal": 99,
       "id": "F10f",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "closed",
+      "reason": "the test is correct, necessary and already named for what it proves, and the decoding path has its own receipt because emptying the inverse turns five sibling tests red; renaming it would strand three citations in a frozen plan document"
     },
     {
       "ordinal": 100,
@@ -850,20 +784,14 @@
     {
       "ordinal": 101,
       "id": "F10h",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8QNQC25H6YX0PZ6C1A5A",
-      "group": "durability-and-repo-posture"
+      "class": "closed",
+      "reason": "reconciling the vendored node_modules against package-lock.json requires npm install, which is forbidden here because node_modules is git-tracked and installing rewrites tracked files and reddens the suite; F10h's own evidence is that a partial reconciliation across roughly 227 drifted packages is worse than none"
     },
     {
       "ordinal": 102,
       "id": "F10i",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF95055JMHF4PRECMTGVEQ",
-      "group": "frozen-invariant-and-budget"
+      "class": "closed",
+      "reason": "Not to be worked as filed. The item characterises the consequence of a threshold change nobody has made, and acting on it means editing src/render/escape.ts, which the filing unit was explicitly forbidden from touching because two other lanes held that file. Recorded so that any future threshold tuning starts from the measured consequence rather than a fresh reading."
     },
     {
       "ordinal": 103,
@@ -874,11 +802,8 @@
     {
       "ordinal": 104,
       "id": "F10k",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8QNQC25H6YX0PZ6C1A5A",
-      "group": "durability-and-repo-posture"
+      "class": "shipped-here",
+      "evidence": "contract.shipped-code-imports-only-declared-runtime-dependencies walks every import specifier in src, bin and hooks from the TypeScript program and forbids any specifier outside package.json dependencies, node: builtins and relative paths, halting on any it cannot classify"
     },
     {
       "ordinal": 105,
@@ -912,29 +837,20 @@
     {
       "ordinal": 1,
       "id": "N1",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8QNQC25H6YX0PZ6C1A5A",
-      "group": "durability-and-repo-posture"
+      "class": "shipped-here",
+      "evidence": "the stamp now advances only when it still names the commit's own parent, so the common case self-repairs on the next store open; proved by concurrent.a-record-that-landed-during-materialisation-survives, red before this change. One narrow race remains open, needing a cross-process lock that does not exist yet, and is filed rather than fixed here."
     },
     {
       "ordinal": 2,
       "id": "N2",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8QNQC25H6YX0PZ6C1A5A",
-      "group": "durability-and-repo-posture"
+      "class": "shipped-here",
+      "evidence": "the exact required-status-check procedure a human applies is authored at docs/runbooks/main-required-status-checks.md, naming both the classic branch-protection and the rulesets route; the protection itself is a repository-administration act no agent performs and it is NOT in force as of 2026-09-01"
     },
     {
       "ordinal": 3,
       "id": "N3",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8QNQC25H6YX0PZ6C1A5A",
-      "group": "durability-and-repo-posture"
+      "class": "shipped-here",
+      "evidence": "receipts.yml now pins actions/checkout and actions/setup-node to the same 40-character commit shas rebuild.yml already used, and workflow-hardening.action-refs-are-pinned-shas censuses every uses: across .github/workflows, forbidding a mutable ref and halting on one it cannot decompose"
     },
     {
       "ordinal": 4,
@@ -984,11 +900,8 @@
     {
       "ordinal": 10,
       "id": "N10",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF95055JMHF4PRECMTGVEQ",
-      "group": "frozen-invariant-and-budget"
+      "class": "shipped-here",
+      "evidence": "Same defect as F9a, restated as new material. Discharged as erratum E2 in docs/specs/2026-08-28-continuity-goal-model-errata.md, commit e0f1e98c, which states S4 with the argument qualifier that makes it true."
     },
     {
       "ordinal": 11,

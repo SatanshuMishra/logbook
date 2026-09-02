@@ -292,6 +292,8 @@ test('resource.read-is-pure', async () => {
       await fx.spawned.client.readResource({ uri })
     }
 
+    await fx.spawned.client.listResources()
+
     const after = snapshotLayout(layout.value, fx.repo)
     assertSnapshotsIdentical(before, after)
   })
@@ -505,5 +507,44 @@ test('resource.list-enumerates-open-threads-and-not-decisions-or-session-entries
       !afterClose.resources.map((resource) => resource.uri).includes(`logbook://thread/${ids.threadId}`),
       'expected resources/list to drop a terminal thread'
     )
+  })
+})
+
+const THREAD_ID_BACKSLASH = '..\\PLANTED'
+const THREAD_ID_SHAPE_REFUSAL = "logbook://thread: 'id' must be a ULID matching"
+
+test('resources.thread-refuses-an-id-containing-a-backslash', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+
+    const outcome = await fx.spawned.client
+      .readResource({ uri: `logbook://thread/${THREAD_ID_BACKSLASH}` })
+      .then((read) => ({ kind: 'resolved' as const, contentCount: read.contents.length }))
+      .catch((error: unknown) => ({ kind: 'refused' as const, error }))
+
+    assert.ok(
+      outcome.kind === 'refused',
+      `expected the backslash id to be refused, got a listing body carrying ${outcome.kind === 'resolved' ? outcome.contentCount : 0} content items`
+    )
+    const { error } = outcome
+    assert.ok(error instanceof McpError, `expected the refusal to be an McpError, got ${String(error)}`)
+    assert.equal(
+      error.code,
+      ErrorCode.InvalidParams,
+      `expected the refusal to carry ErrorCode.InvalidParams, got ${error.code}`
+    )
+    assert.ok(
+      error.message.includes(THREAD_ID_SHAPE_REFUSAL),
+      `expected the refusal message to contain '${THREAD_ID_SHAPE_REFUSAL}', got '${error.message}'`
+    )
+
+    const byUlid = await readThreadResourceText(fx.spawned, ids.threadId)
+    assert.ok(
+      byUlid.includes(`Id: ${ids.threadId}`),
+      'expected a real ULID to still resolve after the backslash id is refused'
+    )
+
+    const bySlug = await fx.spawned.client.readResource({ uri: 'logbook://thread/resources-fixture-thread' })
+    assert.ok(bySlug.contents.length > 0, 'expected a real slug to still resolve after the backslash id is refused')
   })
 })

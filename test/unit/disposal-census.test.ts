@@ -28,11 +28,9 @@ const CARRIED_CRITERION_BY_GROUP: Readonly<Record<string, string>> = Object.free
   'store-sync-robustness': '01M1FF7SD3QR5Z119AXS3RNCJD',
   'refusal-text-safety': '01M1FF7XPBMPE7G7HN21SS3CQV',
   'duplication-and-file-size': '01M1FF81JSTEH63T0T8YZ85W9W',
-  'census-machinery': '01M1FF85RXZXAVFMGPN75NPAE0',
   'render-surface-consistency': '01M1FF8A1EF6S152A7PR68ECTF',
   'write-side-validation': '01M1FF8E54JGWJKGV2E4T9S5R9',
   'frozen-document-contradictions': '01M1FF8JV77VSP56YC9RCS7ENV',
-  'durability-and-repo-posture': '01M1FF8QNQC25H6YX0PZ6C1A5A',
   'write-fidelity-residue': '01M1FF8W16XG1TJHGNPTG92CTE',
   'frozen-invariant-and-budget': '01M1FF95055JMHF4PRECMTGVEQ',
   'escape-residue-and-authorisation': '01M1FX7W1S2CJ3AFVXFYFVHKWJ'
@@ -519,8 +517,9 @@ test('disposal-census.every-disposed-entry-carries-the-evidence-its-class-requir
 
   const threadUlid = '01M130AYZYVWAGDKGHJX9AXPFG'
   const decisionUlid = '01M1FF5VA6JCR7QH8Q727WBR1D'
-  const group = 'census-machinery'
-  const criterionUlid = '01M1FF85RXZXAVFMGPN75NPAE0'
+  const group = 'store-sync-robustness'
+  const criterionUlid = CARRIED_CRITERION_BY_GROUP[group]
+  assert.ok(criterionUlid, `disposal-census: the closed vocabulary carries no criterion for "${group}"`)
   const carried = (evidence: Record<string, unknown>): RegisterEntry =>
     entryOf('FILED', 'carried-as-criterion', evidence)
   const carriedComplete = carried({ thread_id: threadUlid, decision_id: decisionUlid, group, criterion_id: criterionUlid })
@@ -576,12 +575,14 @@ test('disposal-census.every-disposed-entry-carries-the-evidence-its-class-requir
   })
   assert.match(
     describeEvidence(carriedWithoutGroup),
-    /requires a "thread_id" of exactly "01M130AYZYVWAGDKGHJX9AXPFG", a "decision_id" of exactly "01M1FF5VA6JCR7QH8Q727WBR1D", and a "group" naming exactly one of .*"census-machinery"/
+    new RegExp(
+      `requires a "thread_id" of exactly "01M130AYZYVWAGDKGHJX9AXPFG", a "decision_id" of exactly "01M1FF5VA6JCR7QH8Q727WBR1D", and a "group" naming exactly one of .*"${group}"`
+    )
   )
   assert.doesNotMatch(describeEvidence(carriedWithoutGroup), /evidence this census does not know how to check/)
   assert.match(
     describeEvidence(carriedWithoutGroup),
-    /the legal pairs being .*"census-machinery" to "01M1FF85RXZXAVFMGPN75NPAE0"/,
+    new RegExp(`the legal pairs being .*"${group}" to "${criterionUlid}"`),
     'an entry naming no group gets the whole binding table, because no single expected criterion can be named for it'
   )
 })
@@ -589,10 +590,12 @@ test('disposal-census.every-disposed-entry-carries-the-evidence-its-class-requir
 test('disposal-census.every-disposed-entry-carries-the-evidence-its-class-requires.control.a-group-and-a-criterion-that-do-not-name-each-other-halt', () => {
   const threadUlid = '01M130AYZYVWAGDKGHJX9AXPFG'
   const decisionUlid = '01M1FF5VA6JCR7QH8Q727WBR1D'
-  const group = 'census-machinery'
-  const criterionUlid = '01M1FF85RXZXAVFMGPN75NPAE0'
-  const otherGroup = 'store-sync-robustness'
-  const otherCriterionUlid = '01M1FF7SD3QR5Z119AXS3RNCJD'
+  const group = 'store-sync-robustness'
+  const criterionUlid = CARRIED_CRITERION_BY_GROUP[group]
+  assert.ok(criterionUlid, `disposal-census: the closed vocabulary carries no criterion for "${group}"`)
+  const otherGroup = 'render-surface-consistency'
+  const otherCriterionUlid = CARRIED_CRITERION_BY_GROUP[otherGroup]
+  assert.ok(otherCriterionUlid, `disposal-census: the closed vocabulary carries no criterion for "${otherGroup}"`)
   const strangerUlid = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
   const carried = (evidence: Record<string, unknown>): RegisterEntry => ({
     register: 'FILED',
@@ -660,17 +663,17 @@ test('disposal-census.every-disposed-entry-carries-the-evidence-its-class-requir
 
   assert.match(
     describeEvidence(swappedCriterion),
-    /a "group" of "census-machinery" requires a "criterion_id" of exactly "01M1FF85RXZXAVFMGPN75NPAE0" and no other/,
+    new RegExp(`a "group" of "${group}" requires a "criterion_id" of exactly "${criterionUlid}" and no other`),
     'the remedy text must name the criterion the entry group is bound to, or it cannot be acted on'
   )
   assert.match(
     describeEvidence(swappedCriterion),
-    /criterion_id="01M1FF7SD3QR5Z119AXS3RNCJD"/,
+    new RegExp(`criterion_id="${otherCriterionUlid}"`),
     'the remedy text must also name the criterion the entry actually carries, so both halves of the mismatch are visible'
   )
   assert.match(
     describeEvidence(groupMovedOffItsCriterion),
-    /a "group" of "store-sync-robustness" requires a "criterion_id" of exactly "01M1FF7SD3QR5Z119AXS3RNCJD" and no other/,
+    new RegExp(`a "group" of "${otherGroup}" requires a "criterion_id" of exactly "${otherCriterionUlid}" and no other`),
     'the named expectation follows the group at hand rather than being fixed to one group'
   )
 })

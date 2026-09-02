@@ -10,13 +10,22 @@ import { ALL_TOOLS, registerTool, type ToolSpec } from '../../src/server/registe
 import { productionRuntime } from '../../src/runtime/runtime.ts'
 import { census } from '../support/census.ts'
 import {
+  ARGUMENT_GAPS,
+  PUBLISHED_CLAIMS,
+  argumentPopulation,
   claimPopulation,
+  classifyGapReachability,
+  classifyGapReasonDistinctness,
+  classifyPublishedArgument,
   classifyPublishedClaim,
   classifyPublishedInput,
   classifyRegistryName,
+  gapReachability,
+  gapReasonDistinctness,
   listPublishedTools,
   readRegistryCensus,
   registryPopulation,
+  type ArgumentGap,
   type ClaimCensusItem,
   type PublishedTool,
   type RegistryCensus
@@ -521,4 +530,121 @@ test('contract.published-schema-matches-enforced.claims.control.an-unresolvable-
   assert.equal(classifyPublishedClaim(noSeparator, CLAIM_PROBE_TOOLS), 'unclassifiable')
   const unknownTool = claimProbeItem('publishes one argument named value', ['probe_absent_tool.value'])
   assert.equal(classifyPublishedClaim(unknownTool, CLAIM_PROBE_TOOLS), 'unclassifiable')
+})
+
+test('contract.published-schema-matches-enforced.arguments.every-published-argument-is-claimed-or-enumerated', async () => {
+  const spawned = await spawnServer({ projectRoot: PROJECT_ROOT })
+  try {
+    const published = await listPublishedTools(spawned)
+    const items = argumentPopulation(published)
+    assert.ok(items.length > 0, 'expected the published tools to contribute at least one argument address to census')
+    assert.doesNotThrow(() =>
+      census([...items], (address) => classifyPublishedArgument(address, PUBLISHED_CLAIMS, ARGUMENT_GAPS))
+    )
+  } finally {
+    await spawned.close()
+  }
+})
+
+test('contract.published-schema-matches-enforced.arguments.control.an-unclaimed-and-unenumerated-argument-halts-as-unclassifiable', () => {
+  assert.equal(classifyPublishedArgument('probe_tool.mystery', {}, []), 'unclassifiable')
+  assert.throws(
+    () => census(['probe_tool.mystery'], (address) => classifyPublishedArgument(address, {}, [])),
+    (error: unknown) =>
+      error instanceof Error &&
+      error.message.includes('census halted on an unclassifiable item') &&
+      error.message.includes('probe_tool.mystery')
+  )
+})
+
+test('contract.published-schema-matches-enforced.arguments.control.an-enumerated-gap-with-a-blank-reason-halts-as-forbidden', () => {
+  const gaps: ArgumentGap[] = [{ address: 'probe_tool.mystery', reason: '   ' }]
+  assert.equal(classifyPublishedArgument('probe_tool.mystery', {}, gaps), 'forbidden')
+  assert.throws(
+    () => census(['probe_tool.mystery'], (address) => classifyPublishedArgument(address, {}, gaps)),
+    (error: unknown) =>
+      error instanceof Error &&
+      error.message.includes('census rejected a forbidden item') &&
+      error.message.includes('probe_tool.mystery')
+  )
+})
+
+test('contract.published-schema-matches-enforced.arguments.control.a-claimed-argument-is-allowed-even-when-not-enumerated', () => {
+  const claims = { probe_tool: [{ phrase: 'x', providers: ['probe_tool.mystery'] }] }
+  assert.equal(classifyPublishedArgument('probe_tool.mystery', claims, []), 'allowed')
+})
+
+test('contract.published-schema-matches-enforced.arguments.control.an-enumerated-gap-with-a-reason-is-allowed', () => {
+  const gaps: ArgumentGap[] = [
+    { address: 'probe_tool.mystery', reason: 'a specific, honest reason for this one address' }
+  ]
+  assert.equal(classifyPublishedArgument('probe_tool.mystery', {}, gaps), 'allowed')
+})
+
+test('contract.published-schema-matches-enforced.arguments.every-enumerated-gap-still-exists-on-the-live-surface', async () => {
+  const spawned = await spawnServer({ projectRoot: PROJECT_ROOT })
+  try {
+    const published = await listPublishedTools(spawned)
+    const population = argumentPopulation(published)
+    assert.ok(population.length > 0, 'expected the published tools to contribute at least one argument address to census')
+    const items = gapReachability(ARGUMENT_GAPS, population)
+    assert.ok(items.length > 0, 'expected ARGUMENT_GAPS to enumerate at least one address to census')
+    assert.doesNotThrow(() => census(items, classifyGapReachability))
+  } finally {
+    await spawned.close()
+  }
+})
+
+test('contract.published-schema-matches-enforced.arguments.every-enumerated-gap-carries-a-reason-distinct-from-every-other', () => {
+  const items = gapReasonDistinctness(ARGUMENT_GAPS)
+  assert.ok(items.length > 0, 'expected ARGUMENT_GAPS to carry at least one entry to census')
+  assert.doesNotThrow(() => census(items, classifyGapReasonDistinctness))
+})
+
+test('contract.published-schema-matches-enforced.arguments.control.a-stale-enumerated-gap-halts-while-a-live-one-passes', () => {
+  const population = ['probe_tool.value']
+  const gaps: ArgumentGap[] = [
+    { address: 'probe_tool.value', reason: 'live address, still on the surface' },
+    { address: 'probe_tool.ghost', reason: 'stale address, renamed or removed since this was written' }
+  ]
+  const items = gapReachability(gaps, population)
+  assert.deepEqual(items, [
+    { address: 'probe_tool.value', reachable: true },
+    { address: 'probe_tool.ghost', reachable: false }
+  ])
+  assert.deepEqual(items.map(classifyGapReachability), ['allowed', 'unclassifiable'])
+  assert.throws(
+    () => census(items, classifyGapReachability),
+    (error: unknown) =>
+      error instanceof Error &&
+      error.message.includes('census halted on an unclassifiable item') &&
+      error.message.includes('probe_tool.ghost') &&
+      !error.message.includes('census rejected a forbidden item')
+  )
+  assert.doesNotThrow(() =>
+    census(gapReachability([gaps[0] as ArgumentGap], population), classifyGapReachability)
+  )
+})
+
+test('contract.published-schema-matches-enforced.arguments.control.a-duplicated-gap-reason-halts-as-forbidden-while-distinct-reasons-pass', () => {
+  const duplicated: ArgumentGap[] = [
+    { address: 'probe_tool.first', reason: 'the exact same blanket reason copied everywhere' },
+    { address: 'probe_tool.second', reason: 'the exact same blanket reason copied everywhere' }
+  ]
+  const items = gapReasonDistinctness(duplicated)
+  assert.deepEqual(items.map((item) => item.duplicateOf), [null, 'probe_tool.first'])
+  assert.deepEqual(items.map(classifyGapReasonDistinctness), ['allowed', 'forbidden'])
+  assert.throws(
+    () => census(items, classifyGapReasonDistinctness),
+    (error: unknown) =>
+      error instanceof Error &&
+      error.message.includes('census rejected a forbidden item') &&
+      error.message.includes('probe_tool.second') &&
+      !error.message.includes('census halted on an unclassifiable item')
+  )
+  const distinct: ArgumentGap[] = [
+    { address: 'probe_tool.first', reason: 'this address is missing because of reason A' },
+    { address: 'probe_tool.second', reason: 'this address is missing because of an unrelated reason B' }
+  ]
+  assert.doesNotThrow(() => census(gapReasonDistinctness(distinct), classifyGapReasonDistinctness))
 })
