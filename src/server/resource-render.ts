@@ -147,6 +147,9 @@ const renderDetailBlockage = (blockedBy: string | null): string =>
 const renderDetailPointerStatus = (pointer: Pointer | null, threadId: string): string =>
   pointer !== null && pointer.thread_id === threadId ? 'Currently being worked: yes' : 'Currently being worked: no'
 
+const renderDetailLastSessionNote = (threadId: string): string =>
+  `(the line above is a stored hand-written summary that no tool writes any more; see logbook://sessions/${escapeStored(threadId)} for the recorded session log)`
+
 export const renderThreadDetail = (
   thread: Thread,
   decisionIntegrity: DecisionIntegrity,
@@ -179,6 +182,7 @@ export const renderThreadDetail = (
     `Active goal: ${escapeStored(thread.spine.active_goal)}`,
     `Next step: ${escapeStored(thread.spine.next_step)}`,
     `Last session: ${escapeStored(thread.spine.last_session)}`,
+    renderDetailLastSessionNote(thread.id),
     'Artifacts:',
     ...artifactLines,
     'Related:',

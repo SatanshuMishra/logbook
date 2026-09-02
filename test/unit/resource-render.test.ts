@@ -200,3 +200,21 @@ test('resource-render.sessions.marks-a-first-line-genuinely-over-budget', () => 
   const noteCount = rendered.split('\n').filter((line) => line.includes('shortened to fit this listing')).length
   assert.equal(noteCount, 1, `expected exactly one shortened-lines note line, got ${noteCount}`)
 })
+
+test('resource-render.thread.last-session-legacy-note-follows-the-unchanged-line', () => {
+  const thread: Thread = {
+    ...THREAD_WITHOUT_BINDINGS,
+    spine: { ...THREAD_WITHOUT_BINDINGS.spine, last_session: 'a hand-written last-session summary' }
+  }
+  const rendered = renderThreadDetail(thread, NO_DECISIONS, null, null, NO_BINDINGS)
+  const lines = rendered.split('\n')
+  const lastSessionIndex = lines.indexOf('Last session: a hand-written last-session summary')
+  assert.notEqual(lastSessionIndex, -1, `expected the Last session line to be byte-unchanged, got ${JSON.stringify(lines)}`)
+  const noteLine = lines[lastSessionIndex + 1]
+  assert.ok(
+    noteLine !== undefined &&
+      noteLine.includes('stored hand-written summary') &&
+      noteLine.includes(`logbook://sessions/${THREAD_WITHOUT_BINDINGS.id}`),
+    `expected the legacy note to follow the Last session line, got ${JSON.stringify(noteLine)}`
+  )
+})
