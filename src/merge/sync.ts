@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
@@ -45,7 +45,9 @@ type RecordSet = { threads: Map<string, Thread>; decisions: Map<string, Decision
 
 type PassthroughFile = { relPath: string }
 
-type ScratchRecordSet = RecordSet & { passthrough: PassthroughFile[] }
+type CarriedFile = { relPath: string; content: string }
+
+type ScratchRecordSet = RecordSet & { passthrough: PassthroughFile[]; carried: CarriedFile[] }
 
 type AttemptOutcome =
   | { kind: 'return'; outcome: SyncOutcome }
@@ -129,7 +131,56 @@ const readOursRecordSet = (rt: Runtime, store: Store, layout: StoreLayout): Reco
   return { threads, decisions, sessionsByThread }
 }
 
-const readScratchRecordSet = (root: string): ScratchRecordSet => {
+const RECORD_TOP_LEVEL_DIRS = new Set(['threads', 'decisions', 'sessions'])
+const CARRIED_FORBIDDEN_SEGMENTS = new Set(['..', '.git'])
+
+const carriedPathIsSafe = (root: string, relPath: string): boolean => {
+  if (path.isAbsolute(relPath)) return false
+  if (relPath.split(path.sep).some((segment) => CARRIED_FORBIDDEN_SEGMENTS.has(segment))) return false
+  const resolved = path.resolve(root, relPath)
+  return resolved === path.join(root, relPath) && resolved.startsWith(root + path.sep)
+}
+
+const readDirEntriesOrEmpty = (dir: string) => {
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
+  }
+}
+
+const walkCarriedFiles = (rt: Runtime, root: string, dir: string, acc: CarriedFile[]): void => {
+  for (const entry of readDirEntriesOrEmpty(dir)) {
+    if (dir === root && entry.isDirectory() && RECORD_TOP_LEVEL_DIRS.has(entry.name)) continue
+    const absolutePath = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      walkCarriedFiles(rt, root, absolutePath, acc)
+      continue
+    }
+    if (!entry.isFile()) continue
+    const relPath = path.relative(root, absolutePath)
+    if (!carriedPathIsSafe(root, relPath)) {
+      rt.log({ level: 'warn', event: 'sync.remote-file-not-carried', relPath, reason: 'the path is unsafe to carry' })
+      continue
+    }
+    let content: string
+    try {
+      content = readFileSync(absolutePath, 'utf8')
+    } catch (error) {
+      rt.log({
+        level: 'warn',
+        event: 'sync.remote-file-not-carried',
+        relPath,
+        reason: `could not be read: ${error instanceof Error ? error.message : String(error)}`
+      })
+      continue
+    }
+    acc.push({ relPath, content })
+  }
+}
+
+const readScratchRecordSet = (rt: Runtime, root: string): ScratchRecordSet => {
   const passthrough: PassthroughFile[] = []
   const captureQuarantined = (absolutePath: string): void => {
     passthrough.push({ relPath: path.relative(root, absolutePath) })
@@ -163,7 +214,9 @@ const readScratchRecordSet = (root: string): ScratchRecordSet => {
     }
     sessionsByThread.set(threadId, entries)
   }
-  return { threads, decisions, sessionsByThread, passthrough }
+  const carried: CarriedFile[] = []
+  walkCarriedFiles(rt, root, root, carried)
+  return { threads, decisions, sessionsByThread, passthrough, carried }
 }
 
 type MaterialiseResult = { ok: true; scratch: string } | { ok: false; detail: string }
@@ -237,6 +290,19 @@ const computeMerge = (
   }
 
   return { changes, conflicts }
+}
+
+const carriedChanges = (rt: Runtime, layout: StoreLayout, carried: CarriedFile[]): RecordChange[] => {
+  const changes: RecordChange[] = []
+  for (const file of carried) {
+    const localPath = path.join(layout.records, file.relPath)
+    if (existsSync(localPath)) {
+      rt.log({ level: 'warn', event: 'sync.remote-file-kept-local', relPath: file.relPath })
+      continue
+    }
+    changes.push({ kind: 'raw', relPath: file.relPath, content: file.content })
+  }
+  return changes
 }
 
 const conflictsPath = (layout: StoreLayout): string => path.join(layout.state, 'conflicts.json')
@@ -334,8 +400,8 @@ const performMerge = (
     }
     try {
       const ours = readOursRecordSet(rt, store, layout)
-      const theirs = readScratchRecordSet(theirsScratch)
-      const base = baseScratch !== null ? readScratchRecordSet(baseScratch) : null
+      const theirs = readScratchRecordSet(rt, theirsScratch)
+      const base = baseScratch !== null ? readScratchRecordSet(rt, baseScratch) : null
 
       if (base !== null && base.passthrough.length > 0) {
         rt.log({
@@ -374,12 +440,14 @@ const performMerge = (
         return { kind: 'return', outcome: { ok: false, reason: 'conflict', conflicts } }
       }
 
+      const allChanges = [...mergedChanges, ...carriedChanges(rt, layout, theirs.carried)]
+
       const message = `merge ${localVal.slice(0, 12)} with ${remoteVal.slice(0, 12)}`
       const writeOps = {
         extraParents: [remoteVal],
         ...(ops.beforeCas !== undefined ? { beforeCas: ops.beforeCas } : {})
       }
-      const commitResult = writeRecords(rt, layout, mergedChanges, message, writeOps)
+      const commitResult = writeRecords(rt, layout, allChanges, message, writeOps)
       if (!commitResult.ok) {
         if (commitResult.reason === 'ref-moved') return { kind: 'retry' }
         return { kind: 'return', outcome: { ok: false, reason: 'rejected', cause: 'local', detail: commitResult.detail } }

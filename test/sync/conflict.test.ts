@@ -198,6 +198,70 @@ test('sync.refuses-a-remote-record-it-cannot-parse', () => {
   })
 })
 
+test('sync.a-merge-carries-a-remote-only-binding-record-through', () => {
+  withTwoClones((ana, ben, remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+
+    const threadA = makeThread(ana.rt, 'binding-carry-thread-a')
+    const createA = ana.store.commit([threadA], 'ana: create thread a')
+    assert.equal(createA.ok, true)
+
+    const pushA = sync(ana.rt, ana.store, anaLayout)
+    assert.equal(pushA.ok, true)
+
+    const fastForwardBen = sync(ben.rt, ben.store, benLayout)
+    assert.equal(fastForwardBen.ok, true)
+
+    const bindingId = ben.rt.ulid()
+    const bindingRelPath = `bindings/${bindingId}.json`
+    const bindingContent = JSON.stringify({
+      id: bindingId,
+      thread_id: threadA.record.id,
+      branch: 'feat/binding-carry-fixture',
+      created_at: ben.rt.now()
+    })
+    const bindingWrite = writeRecords(
+      ben.rt,
+      benLayout,
+      [{ kind: 'raw', relPath: bindingRelPath, content: bindingContent }],
+      'ben: bind a branch to thread a'
+    )
+    assert.equal(bindingWrite.ok, true)
+
+    const pushBinding = sync(ben.rt, ben.store, benLayout)
+    assert.equal(pushBinding.ok, true)
+    if (!pushBinding.ok) return
+    assert.equal(pushBinding.action, 'pushed')
+
+    const threadB = makeThread(ana.rt, 'binding-carry-thread-b')
+    const createB = ana.store.commit([threadB], 'ana: create thread b')
+    assert.equal(createB.ok, true)
+
+    const mergeOutcome = sync(ana.rt, ana.store, anaLayout)
+
+    assert.equal(mergeOutcome.ok, true, 'a merge must carry through a remote-only record this version does not itself parse')
+    if (!mergeOutcome.ok) return
+    assert.equal(mergeOutcome.action, 'merged')
+
+    const materialisedPath = path.join(anaLayout.records, bindingRelPath)
+    assert.equal(
+      readFileSync(materialisedPath, 'utf8'),
+      bindingContent,
+      'the carried binding record must reach the materialised records with its bytes intact'
+    )
+
+    const pushedBindingContent = git(ana.rt, remote, ['cat-file', '-p', `${LEDGER_REF}:${bindingRelPath}`])
+    assert.equal(pushedBindingContent.ok, true)
+    if (!pushedBindingContent.ok) return
+    assert.equal(
+      pushedBindingContent.stdout,
+      bindingContent,
+      'the carried binding record must reach the pushed tree with its bytes intact'
+    )
+  })
+})
+
 test('sync.clears-a-stale-conflict-file-on-the-next-clean-sync', () => {
   withTwoClones((ana, ben, remote) => {
     const anaLayout = layoutIn(ana)
