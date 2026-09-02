@@ -87,7 +87,7 @@ const renderDetailCriterionLine = (criterion: Criterion): string =>
   [
     `c${criterion.ordinal} [${detailCriterionStatus(criterion)}] ${escapeStored(criterion.id)}: ${escapeStored(criterion.text)}`,
     renderDetailCriterionCheckLine(criterion),
-    renderDetailCriterionResultLine(criterion)
+    ...[criterion].filter((entry) => entry.done).map((entry) => renderDetailCriterionResultLine(entry))
   ].join('\n')
 
 const renderDetailArtifactLine = (artifact: Artifact): string =>
