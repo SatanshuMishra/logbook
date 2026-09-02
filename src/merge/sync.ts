@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
@@ -38,7 +38,7 @@ const LEASE_REJECTION_PATTERN = /stale info|non-fast-forward/
 
 type RecordSet = { threads: Map<string, Thread>; decisions: Map<string, Decision>; sessionsByThread: Map<string, SessionEntry[]> }
 
-type PassthroughFile = { relPath: string; content: string }
+type PassthroughFile = { relPath: string }
 
 type ScratchRecordSet = RecordSet & { passthrough: PassthroughFile[] }
 
@@ -111,7 +111,7 @@ const readOursRecordSet = (store: Store, layout: StoreLayout): RecordSet => {
 const readScratchRecordSet = (root: string): ScratchRecordSet => {
   const passthrough: PassthroughFile[] = []
   const captureQuarantined = (absolutePath: string): void => {
-    passthrough.push({ relPath: path.relative(root, absolutePath), content: readFileSync(absolutePath, 'utf8') })
+    passthrough.push({ relPath: path.relative(root, absolutePath) })
   }
 
   const threads = new Map<string, Thread>()
