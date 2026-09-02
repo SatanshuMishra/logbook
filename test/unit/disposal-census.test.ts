@@ -29,7 +29,6 @@ const CARRIED_CRITERION_BY_GROUP: Readonly<Record<string, string>> = Object.free
   'refusal-text-safety': '01M1FF7XPBMPE7G7HN21SS3CQV',
   'duplication-and-file-size': '01M1FF81JSTEH63T0T8YZ85W9W',
   'render-surface-consistency': '01M1FF8A1EF6S152A7PR68ECTF',
-  'frozen-document-contradictions': '01M1FF8JV77VSP56YC9RCS7ENV',
   'write-fidelity-residue': '01M1FF8W16XG1TJHGNPTG92CTE',
   'verification-honesty': '01M1FF90KY0JXYAPMH8Q2MXJ3F',
   'frozen-invariant-and-budget': '01M1FF95055JMHF4PRECMTGVEQ',
