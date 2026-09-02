@@ -1183,7 +1183,7 @@ test('resume.briefing-counts-and-addresses-an-unreadable-session-entry', async (
 
     assert.match(
       structured.briefing,
-      /- 1 session log entry could not be read; see logbook:\/\/sessions\//,
+      /- 1 session log entry on this thread could not be read; see logbook:\/\/sessions\//,
       'the briefing must count the one session entry that failed to parse'
     )
     assert.match(
