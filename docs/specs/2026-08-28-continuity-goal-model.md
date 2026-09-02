@@ -7,7 +7,7 @@
 | **Discharges** | criterion 3 (`01M130AYZX2STFEFM2MM8Z6FZM`) |
 | **Status** | Approved for planning. No code written against it yet. |
 | **Relates to** | `docs/specs/2026-08-25-post-cutover-repair.md`. That document numbers its **design rulings** `R1`–`R10`. This document numbers **goals** `LG#`/`DG#` and never uses a bare `R#`. Any citation of the older document is written `post-cutover ruling R3`. |
-| **Errata** | This document is unchanged from approval. Corrections to three of its statements live in `docs/specs/2026-08-28-continuity-goal-model-errata.md`. |
+| **Errata** | The body of this document is unchanged from approval. Corrections to three of its statements live in `docs/specs/2026-08-28-continuity-goal-model-errata.md`. |
 
 ---
 

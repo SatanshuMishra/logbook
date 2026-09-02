@@ -12,11 +12,14 @@ const ERRATA_PATH = path.join(ROOT, 'docs', 'specs', '2026-08-28-continuity-goal
 const SPEC_PATH = path.join(ROOT, 'docs', 'specs', '2026-08-28-continuity-goal-model.md')
 const ERRATA_RELATIVE_PATH = path.relative(ROOT, ERRATA_PATH).split(path.sep).join('/')
 
+const HEADING_LINE_PATTERN = /^#{1,6} /
 const HEADING_PATTERN = /^## (E\d+) — (.+)$/
+const ERRATUM_ID_HINT_PATTERN = /E\d+/
 const ANCHOR_PATTERN = /^- \*\*Anchor:\*\* `(.+)`$/
 const ERRATA_METADATA_ROW_PATTERN = /^\|\s*\*\*Errata\*\*\s*\|/
 
 type Erratum = { id: string; title: string; line: number; anchor: string | undefined }
+type HeadingCandidate = { line: number; text: string }
 
 const readErrataFile = (): string => {
   try {
@@ -37,7 +40,7 @@ const readSpecFile = (): string => {
 const findAnchorForEntry = (lines: readonly string[], headingIndex: number): string | undefined => {
   for (let index = headingIndex + 1; index < lines.length; index += 1) {
     const line = lines[index]
-    if (line === undefined || HEADING_PATTERN.test(line)) return undefined
+    if (line === undefined || HEADING_LINE_PATTERN.test(line)) return undefined
     const matched = ANCHOR_PATTERN.exec(line)
     if (matched !== null) return matched[1]
   }
@@ -62,6 +65,21 @@ const readErrata = (text: string): Erratum[] => {
   return errata
 }
 
+const extractHeadingCandidates = (text: string): HeadingCandidate[] =>
+  text
+    .split('\n')
+    .map((line, index) => ({ line: index + 1, text: line }))
+    .filter((candidate) => HEADING_LINE_PATTERN.test(candidate.text))
+
+const classifyHeadingCandidate = (candidate: HeadingCandidate): Verdict => {
+  if (HEADING_PATTERN.test(candidate.text)) return 'allowed'
+  if (ERRATUM_ID_HINT_PATTERN.test(candidate.text)) return 'unclassifiable'
+  return 'allowed'
+}
+
+const describeHeadingCandidate = (candidate: HeadingCandidate): string =>
+  `spec-errata-census: ${ERRATA_PATH}:${candidate.line} names an erratum id but does not match "## E<n> — <title>" exactly: ${candidate.text}`
+
 const guardNonEmpty = (errata: readonly Erratum[]): void => {
   assert.ok(
     errata.length > 0,
@@ -85,16 +103,46 @@ const classifyHasAnchor = (entry: Erratum): Verdict => (entry.anchor === undefin
 const describeHasAnchor = (entry: Erratum): string =>
   `spec-errata-census: ${entry.id} ("${entry.title}") carries no "- **Anchor:** \`...\`" line; every erratum must name a verbatim anchor in the specification it corrects`
 
-const classifyAnchorVerbatim = (specText: string) => (entry: Erratum): Verdict => {
-  if (entry.anchor === undefined) return 'unclassifiable'
-  return specText.includes(entry.anchor) ? 'allowed' : 'unclassifiable'
+const countOccurrences = (haystack: string, needle: string): number => {
+  if (needle.length === 0) return 0
+  let count = 0
+  let index = haystack.indexOf(needle)
+  while (index !== -1) {
+    count += 1
+    index = haystack.indexOf(needle, index + needle.length)
+  }
+  return count
 }
 
-const describeAnchorVerbatim = (entry: Erratum): string => {
+const classifyAnchorVerbatim = (specText: string) => (entry: Erratum): Verdict => {
+  if (entry.anchor === undefined) return 'unclassifiable'
+  return countOccurrences(specText, entry.anchor) === 1 ? 'allowed' : 'unclassifiable'
+}
+
+const describeAnchorVerbatim = (specText: string) => (entry: Erratum): string => {
   if (entry.anchor === undefined) {
     return `spec-errata-census: ${entry.id} carries no "- **Anchor:** \`...\`" line, so its anchor cannot be checked against ${SPEC_PATH}`
   }
-  return `spec-errata-census: ${entry.id}'s anchor \`${entry.anchor}\` does not occur verbatim in ${SPEC_PATH}; an erratum whose anchor cannot be found in the specification corrects nothing`
+  const count = countOccurrences(specText, entry.anchor)
+  if (count === 0) {
+    return `spec-errata-census: ${entry.id}'s anchor \`${entry.anchor}\` does not occur verbatim in ${SPEC_PATH}; an erratum whose anchor cannot be found in the specification corrects nothing`
+  }
+  return `spec-errata-census: ${entry.id}'s anchor \`${entry.anchor}\` occurs ${count} times in ${SPEC_PATH}; an anchor that does not occur exactly once is ambiguous about which site the erratum corrects`
+}
+
+const guardUniqueIds = (errata: readonly Erratum[]): void => {
+  const counts = new Map<string, number>()
+  for (const entry of errata) {
+    counts.set(entry.id, (counts.get(entry.id) ?? 0) + 1)
+  }
+  const duplicated = [...counts.entries()].filter(([, count]) => count > 1)
+  assert.equal(
+    duplicated.length,
+    0,
+    `spec-errata-census: ${ERRATA_PATH} repeats erratum id(s) ${duplicated
+      .map(([id, count]) => `${id} (${count}×)`)
+      .join(', ')}; a citation of a repeated id is ambiguous`
+  )
 }
 
 const findErrataMetadataRow = (specText: string): string | undefined =>
@@ -103,6 +151,45 @@ const findErrataMetadataRow = (specText: string): string | undefined =>
 test('spec-errata-census.the-population-of-errata-entries-is-non-empty', () => {
   const errata = readErrata(readErrataFile())
   guardNonEmpty(errata)
+})
+
+test('spec-errata-census.every-heading-that-names-an-erratum-id-matches-the-heading-pattern-exactly', () => {
+  const candidates = extractHeadingCandidates(readErrataFile())
+  assert.ok(
+    candidates.length > 0,
+    `spec-errata-census: ${ERRATA_PATH} holds no markdown heading at all; a census over an empty population proves nothing`
+  )
+  halts(candidates, classifyHeadingCandidate, describeHeadingCandidate)
+})
+
+test('spec-errata-census.every-heading-that-names-an-erratum-id-matches-the-heading-pattern-exactly.control.a-near-miss-heading-halts-the-census', () => {
+  const hyphenForm: HeadingCandidate = { line: 1, text: '## E4 - hyphen form' }
+  const enDashForm: HeadingCandidate = { line: 2, text: '## E4 – en dash form' }
+  const deeperLevel: HeadingCandidate = { line: 3, text: '### E4 — deeper' }
+  const genuine: HeadingCandidate = { line: 4, text: '## E4 — genuine form' }
+
+  assert.equal(classifyHeadingCandidate(hyphenForm), 'unclassifiable')
+  assert.equal(classifyHeadingCandidate(enDashForm), 'unclassifiable')
+  assert.equal(classifyHeadingCandidate(deeperLevel), 'unclassifiable')
+  assert.equal(classifyHeadingCandidate(genuine), 'allowed')
+
+  for (const nearMiss of [hyphenForm, enDashForm, deeperLevel]) {
+    assert.throws(
+      () => census([nearMiss], classifyHeadingCandidate),
+      /census halted on an unclassifiable item/,
+      `a near-miss heading must halt the census: ${nearMiss.text}`
+    )
+  }
+  assert.doesNotThrow(() => census([genuine], classifyHeadingCandidate))
+})
+
+test('spec-errata-census.every-heading-that-names-an-erratum-id-matches-the-heading-pattern-exactly.control.a-genuine-non-erratum-heading-is-allowed', () => {
+  const documentTitle: HeadingCandidate = { line: 1, text: '# Errata: SPEC Continuity Goal Model' }
+  const futureProseSection: HeadingCandidate = { line: 2, text: '## Appendix' }
+
+  assert.equal(classifyHeadingCandidate(documentTitle), 'allowed')
+  assert.equal(classifyHeadingCandidate(futureProseSection), 'allowed')
+  assert.doesNotThrow(() => census([documentTitle, futureProseSection], classifyHeadingCandidate))
 })
 
 test('spec-errata-census.every-erratum-carries-an-anchor-line', () => {
@@ -126,14 +213,57 @@ test('spec-errata-census.every-erratum-carries-an-anchor-line.control.an-entry-w
   assert.match(describeHasAnchor(withoutAnchor), /E10/)
 })
 
-test('spec-errata-census.every-anchor-occurs-verbatim-in-the-specification', () => {
+test('spec-errata-census.the-heading-and-anchor-parser-does-not-borrow-an-anchor-from-a-later-section', () => {
+  const fixture = [
+    '## E1 — no anchor of its own',
+    '',
+    '- **Ground:** this entry never states an anchor',
+    '',
+    '## Appendix',
+    '',
+    '- **Anchor:** `borrowed`'
+  ].join('\n')
+  const parsed = readErrata(fixture)
+  assert.equal(parsed.length, 1)
+  assert.equal(parsed[0]?.anchor, undefined)
+})
+
+test('spec-errata-census.every-erratum-id-is-unique', () => {
+  const errata = readErrata(readErrataFile())
+  guardNonEmpty(errata)
+  guardUniqueIds(errata)
+})
+
+test('spec-errata-census.every-erratum-id-is-unique.control.a-duplicated-id-fails-named-with-its-count', () => {
+  const fixture = [
+    '## E1 — first entry',
+    '',
+    '- **Anchor:** `first anchor text`',
+    '',
+    '## E1 — a second entry using the same id',
+    '',
+    '- **Anchor:** `second anchor text`'
+  ].join('\n')
+  const errata = readErrata(fixture)
+  assert.equal(errata.length, 2)
+  assert.throws(
+    () => guardUniqueIds(errata),
+    /E1 \(2×\)/,
+    'a duplicated erratum id must fail the uniqueness guard, named with its count'
+  )
+
+  const withoutDuplicate = readErrata(['## E1 — first entry', '', '- **Anchor:** `first anchor text`'].join('\n'))
+  assert.doesNotThrow(() => guardUniqueIds(withoutDuplicate))
+})
+
+test('spec-errata-census.every-anchor-occurs-exactly-once-in-the-specification', () => {
   const errata = readErrata(readErrataFile())
   guardNonEmpty(errata)
   const specText = readSpecFile()
-  halts(errata, classifyAnchorVerbatim(specText), describeAnchorVerbatim)
+  halts(errata, classifyAnchorVerbatim(specText), describeAnchorVerbatim(specText))
 })
 
-test('spec-errata-census.every-anchor-occurs-verbatim-in-the-specification.control.a-fabricated-anchor-halts-while-a-real-one-passes', () => {
+test('spec-errata-census.every-anchor-occurs-exactly-once-in-the-specification.control.a-fabricated-anchor-halts-while-a-real-one-passes', () => {
   const specText = 'The quick brown fox jumps over the lazy dog.'
   const realAnchor: Erratum = { id: 'E9', title: 'a fixture entry', line: 1, anchor: 'quick brown fox' }
   const fabricatedAnchor: Erratum = {
@@ -153,11 +283,28 @@ test('spec-errata-census.every-anchor-occurs-verbatim-in-the-specification.contr
     /census halted on an unclassifiable item/,
     'a fabricated anchor absent from the specification must halt the census'
   )
-  assert.match(describeAnchorVerbatim(fabricatedAnchor), /E10/)
+  assert.match(describeAnchorVerbatim(specText)(fabricatedAnchor), /E10/)
   assert.match(
-    describeAnchorVerbatim(fabricatedAnchor),
+    describeAnchorVerbatim(specText)(fabricatedAnchor),
     /a phrase invented for this control and never written in the fixture/
   )
+})
+
+test('spec-errata-census.every-anchor-occurs-exactly-once-in-the-specification.control.a-repeated-anchor-halts-with-its-count-stated-while-a-unique-one-passes', () => {
+  const specText = 'quick brown fox jumps; a quick brown fox naps.'
+  const repeatedAnchor: Erratum = { id: 'E12', title: 'a repeated-anchor fixture entry', line: 1, anchor: 'quick brown fox' }
+  const uniqueAnchor: Erratum = { id: 'E13', title: 'a unique-anchor fixture entry', line: 2, anchor: 'jumps; a quick' }
+
+  assert.equal(classifyAnchorVerbatim(specText)(repeatedAnchor), 'unclassifiable')
+  assert.equal(classifyAnchorVerbatim(specText)(uniqueAnchor), 'allowed')
+  assert.throws(
+    () => census([repeatedAnchor], classifyAnchorVerbatim(specText)),
+    /census halted on an unclassifiable item/,
+    'an anchor occurring more than once in the specification must halt the census'
+  )
+  assert.doesNotThrow(() => census([uniqueAnchor], classifyAnchorVerbatim(specText)))
+  assert.match(describeAnchorVerbatim(specText)(repeatedAnchor), /E12/)
+  assert.match(describeAnchorVerbatim(specText)(repeatedAnchor), /occurs 2 times/)
 })
 
 test('spec-errata-census.the-heading-and-anchor-parser-reads-the-real-em-dash-heading-form', () => {
