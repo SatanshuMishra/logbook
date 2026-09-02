@@ -261,6 +261,35 @@ test('sync.clears-a-stale-conflict-file-on-the-next-clean-sync', () => {
   })
 })
 
+test('sync.a-scratch-cleanup-failure-does-not-replace-the-merge-outcome', () => {
+  withTwoClones((ana, ben, _remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+
+    const threadA = makeThread(ana.rt, 'cleanup-thread-a')
+    assert.equal(ana.store.commit([threadA], 'ana: create thread a').ok, true)
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    const threadC = makeThread(ben.rt, 'cleanup-thread-c')
+    assert.equal(ben.store.commit([threadC], 'ben: create thread c').ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    const threadB = makeThread(ana.rt, 'cleanup-thread-b')
+    assert.equal(ana.store.commit([threadB], 'ana: create thread b').ok, true)
+
+    const removeScratch = (): void => {
+      throw new Error('scratch cleanup exploded')
+    }
+
+    const mergeOutcome = sync(ana.rt, ana.store, anaLayout, { removeScratch })
+
+    assert.equal(mergeOutcome.ok, true, 'a cleanup failure must not replace the merge outcome')
+    if (!mergeOutcome.ok) return
+    assert.equal(mergeOutcome.action, 'merged')
+  })
+})
+
 test('sync.does-not-swallow-a-non-enoent-sessions-directory-error', () => {
   withTwoClones((ana, ben, _remote) => {
     const anaLayout = layoutIn(ana)

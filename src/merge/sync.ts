@@ -8,7 +8,13 @@ import { ThreadRecord, type Thread } from '../schema/thread.ts'
 import { git } from '../store/git.ts'
 import type { StoreLayout } from '../store/layout.ts'
 import { materialiseTreeInto } from '../store/materialise-tree.ts'
-import { countedMaterialiseGit, countedMaterialiseGitBuffer, readAllRecordFiles, syncWorkingCopy } from '../store/read-path.ts'
+import {
+  countedMaterialiseGit,
+  countedMaterialiseGitBuffer,
+  discardScratchDir,
+  readAllRecordFiles,
+  syncWorkingCopy
+} from '../store/read-path.ts'
 import { LEDGER_REF, casUpdateRef } from '../store/ref.ts'
 import type { Store } from '../store/records.ts'
 import { writeRecords, type RecordChange } from '../store/write-path.ts'
@@ -23,7 +29,7 @@ export type SyncOutcome =
   | { ok: false; reason: 'unparseable'; records: string[] }
   | { ok: false; reason: 'offline' | 'rejected'; detail: string }
 
-export type SyncOps = { beforeCas?: () => void }
+export type SyncOps = { beforeCas?: () => void; removeScratch?: (rt: Runtime, dir: string) => void }
 
 const REMOTE_NAME = 'origin'
 export const TRACKING_REF = 'refs/logbook/sync/origin-ledger'
@@ -281,6 +287,19 @@ const performMerge = (
     return { kind: 'return', outcome: { ok: false, reason: 'rejected', detail: theirsResult.detail } }
   }
   const theirsScratch = theirsResult.scratch
+  const removeScratch = ops.removeScratch ?? discardScratchDir
+  const safelyRemoveScratch = (dir: string): void => {
+    try {
+      removeScratch(rt, dir)
+    } catch (error) {
+      rt.log({
+        level: 'error',
+        event: 'sync.scratch-cleanup-failed',
+        dir,
+        detail: error instanceof Error ? error.message : String(error)
+      })
+    }
+  }
   try {
     const mergeBaseResult = git(rt, layout.projectRoot, ['merge-base', localVal, remoteVal])
     const baseVal = mergeBaseResult.ok ? mergeBaseResult.stdout.trim() : null
@@ -356,10 +375,10 @@ const performMerge = (
         }
       }
     } finally {
-      if (baseScratch !== null) rmSync(baseScratch, { recursive: true, force: true })
+      if (baseScratch !== null) safelyRemoveScratch(baseScratch)
     }
   } finally {
-    rmSync(theirsScratch, { recursive: true, force: true })
+    safelyRemoveScratch(theirsScratch)
   }
 }
 
