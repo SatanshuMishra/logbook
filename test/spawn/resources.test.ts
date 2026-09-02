@@ -292,6 +292,8 @@ test('resource.read-is-pure', async () => {
       await fx.spawned.client.readResource({ uri })
     }
 
+    await fx.spawned.client.listResources()
+
     const after = snapshotLayout(layout.value, fx.repo)
     assertSnapshotsIdentical(before, after)
   })

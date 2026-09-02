@@ -6,6 +6,7 @@ import type { Runtime } from '../../src/runtime/runtime.ts'
 import type { ToolContext, ToolReply } from '../../src/server/register.ts'
 import type { Thread } from '../../src/schema/thread.ts'
 import type { Decision } from '../../src/schema/decision.ts'
+import type { Refusal } from '../../src/schema/declare.ts'
 import { openThreadTool } from '../../src/server/tools/open_thread.ts'
 import { updateThreadTool } from '../../src/server/tools/update_thread.ts'
 import { amendCriteriaTool } from '../../src/server/tools/amend_criteria.ts'
@@ -127,10 +128,13 @@ export const readSessionEntryRecord = (rt: Runtime, threadId: string, id: string
 }
 
 export type LandingSite = { site: string; omitted: unknown }
-export type RecipeResult = { path: string; refused: boolean; sites: LandingSite[] }
+export type RecipeRefusal = { field: string; message: string }
+export type RecipeResult = { path: string; refused: boolean; sites: LandingSite[]; refusal: RecipeRefusal | null }
 
 const siteIfDiffers = (site: string, omitted: unknown, sentinel: unknown): LandingSite | null =>
   JSON.stringify(omitted) === JSON.stringify(sentinel) ? null : { site, omitted }
+
+const refusalOf = (refusal: Refusal): RecipeRefusal => ({ field: refusal.field, message: refusal.message })
 
 export const mustGet = <T>(arr: readonly T[], index: number, what: string): T => {
   const value = arr[index]
@@ -161,7 +165,9 @@ const runOptionalArgRecipe = async <C>(
   const pair = await withFixturePair(setup)
   try {
     const omittedResult = await tool.handler(pair.a.rt, STUB_TOOL_CTX, omittedArgs(pair.a.ctx))
-    if (!omittedResult.ok) return { path, refused: true, sites: [] }
+    if (!omittedResult.ok) {
+      return { path, refused: true, sites: [], refusal: refusalOf(omittedResult.refusal) }
+    }
     const sentinelResult = await tool.handler(pair.b.rt, STUB_TOOL_CTX, sentinelArgs(pair.b.ctx))
     if (!sentinelResult.ok) {
       throw new Error(`optional-argument-recipes: expected the sentinel call for "${path}" to succeed`)
@@ -173,7 +179,7 @@ const runOptionalArgRecipe = async <C>(
       const derived = siteIfDiffers(key, omittedMap[key], sentinelMap[key])
       if (derived !== null) sites.push(derived)
     }
-    return { path, refused: false, sites }
+    return { path, refused: false, sites, refusal: null }
   } finally {
     pair.cleanup()
   }
@@ -494,11 +500,11 @@ const amendCriteriaPositionRecipe = (): Promise<RecipeResult> =>
     amendCriteriaTool,
     openAmendCriteriaPositionFixture,
     (ctx: AmendCriteriaPositionFixtureCtx) => amendPositionBaseArgs(ctx),
-    (ctx: AmendCriteriaPositionFixtureCtx) => ({ ...amendPositionBaseArgs(ctx), position: ctx.existingLength }),
-    (structured, rt, ctx: AmendCriteriaPositionFixtureCtx) => ({
-      criterion_id: structured.criterion_id,
-      order: readThreadRecord(rt, ctx.threadId)?.completion_criteria.map((c) => c.id).join(',') ?? ''
-    })
+    (ctx: AmendCriteriaPositionFixtureCtx) => ({ ...amendPositionBaseArgs(ctx), position: 0 }),
+    (structured, rt, ctx: AmendCriteriaPositionFixtureCtx) => {
+      const orderedIds = readThreadRecord(rt, ctx.threadId)?.completion_criteria.map((c) => c.id) ?? []
+      return { inserted_at_front: orderedIds[0] === structured.criterion_id }
+    }
   )
 
 const resumeThreadFocusRecipe = (): Promise<RecipeResult> =>
@@ -511,13 +517,14 @@ const resumeThreadFocusRecipe = (): Promise<RecipeResult> =>
     (structured) => ({ focus: structured.focus })
   )
 
-type ParkThreadFixtureCtx = { threadId: string }
+type ParkThreadFixtureCtx = { threadId: string; otherThreadId: string }
 
 const openParkThreadFixture = async (rt: Runtime): Promise<ParkThreadFixtureCtx> => {
   const { threadId } = await openFixtureThread(rt, 'park-thread')
+  const { threadId: otherThreadId } = await openFixtureThread(rt, 'park-thread-other')
   const resumed = await resumeThreadTool.handler(rt, STUB_TOOL_CTX, { thread_id: threadId })
   if (!resumed.ok) throw new Error('optional-argument-recipes: expected the park_thread fixture pointer to be set')
-  return { threadId }
+  return { threadId, otherThreadId }
 }
 
 type ParkFieldSpec = {
@@ -538,8 +545,8 @@ const PARK_FIELDS: ParkFieldSpec[] = [
   },
   {
     field: 'thread_id',
-    sentinelArgs: (ctx) => ({ thread_id: ctx.threadId }),
-    extract: (structured) => ({ status: structured.status, parked_thread_ids: (structured.parked_thread_ids as string[]).join(',') })
+    sentinelArgs: (ctx) => ({ thread_id: ctx.otherThreadId }),
+    extract: (structured) => ({ thread_id_mismatch: structured.status === 'not-the-worked-thread' })
   },
   {
     field: 'next_step',
@@ -635,9 +642,9 @@ const listThreadsCursorRecipe = (): Promise<RecipeResult> =>
     'list_threads.cursor',
     listThreadsTool,
     openListThreadsFixture,
-    () => ({}),
-    (ctx: ListThreadsFixtureCtx) => (ctx.knownCursor === null ? {} : { cursor: ctx.knownCursor }),
-    (structured) => ({ next_cursor: structured.next_cursor })
+    () => ({ limit: 1 }),
+    (ctx: ListThreadsFixtureCtx) => (ctx.knownCursor === null ? { limit: 1 } : { limit: 1, cursor: ctx.knownCursor }),
+    (structured) => ({ is_last_page: structured.next_cursor === null })
   )
 
 const listThreadsLimitRecipe = (): Promise<RecipeResult> =>

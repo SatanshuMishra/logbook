@@ -121,11 +121,8 @@
     {
       "ordinal": 16,
       "id": "F6e",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "test/spawn/forgery.test.ts declares a sixth surface covering resources/list; removing escapeStored from the title field in src/server/resources.ts turns render.roster-cannot-forge-instruction red naming that surface, and the production file was restored byte-identical"
     },
     {
       "ordinal": 17,
@@ -187,11 +184,8 @@
     {
       "ordinal": 24,
       "id": "F4a",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "test/contract/criteria-writers.test.ts replaces the property-name gate with a closed census keyed by tool name and path over the free-text leaves of the live tool registry; an unmapped leaf halts instead of passing"
     },
     {
       "ordinal": 25,
@@ -202,11 +196,8 @@
     {
       "ordinal": 26,
       "id": "F4c",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "test/support/published.ts adds the missing direction: every published top-level argument is classified, and one named by no claim and carrying no enumerated reason halts the census"
     },
     {
       "ordinal": 27,
@@ -220,11 +211,8 @@
     {
       "ordinal": 28,
       "id": "F7b",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "test/contract/render-census.test.ts resolves conditional-expression array producers and classifies the null literal as a server-authored terminal; the census now walks 179 sites including the session-start banner composition it previously dropped"
     },
     {
       "ordinal": 29,
@@ -523,11 +511,8 @@
     {
       "ordinal": 63,
       "id": "F2ac",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "closed",
+      "reason": "widening the escaping census to src/server/tools/ yields 114 unclassifiable sites across two opposite kinds of change, production escaping and resolver widening, and is its own unit; the one site named as a bypass is not one, because the slug pattern admits no character any escape rule targets"
     },
     {
       "ordinal": 64,
@@ -550,20 +535,14 @@
     {
       "ordinal": 66,
       "id": "F6a",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "test/contract/content-rendered.test.ts halts when a union member carries properties, items or a nested union, while the six live nullable-scalar unions still resolve"
     },
     {
       "ordinal": 67,
       "id": "F6b",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "test/contract/content-rendered.test.ts derives every record root from the record's own name, so a rename at the declare site reaches both derivations instead of only one"
     },
     {
       "ordinal": 68,
@@ -628,11 +607,8 @@
     {
       "ordinal": 75,
       "id": "F6j",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "test/spawn/resources.test.ts drives the resources/list entry point inside the read-is-pure snapshot window; writing a sentinel into the last-materialised stamp turns the invariant red naming that file"
     },
     {
       "ordinal": 76,
@@ -658,20 +634,14 @@
     {
       "ordinal": 79,
       "id": "F5g",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "test/support/briefing-sweep-fixture.ts populates the check, result and reference fields, and the sweep now asserts each populated branch fires on a within-cap record and on a breaching record"
     },
     {
       "ordinal": 80,
       "id": "F5h",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "test/unit/briefing-frontier-sweep.test.ts counts risks by a row pattern instead of every non-empty line, so a risk carrying references counts once; observed red at 4 of 1 held before the fix"
     },
     {
       "ordinal": 81,
@@ -757,29 +727,20 @@
     {
       "ordinal": 92,
       "id": "F9e",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "the list_threads cursor recipe supplies a page limit on both runs and extracts whether the page is the last one, so it now contributes an assertion instead of nothing"
     },
     {
       "ordinal": 93,
       "id": "F9f",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "the optional-argument census carries the refusal and allows it only when it names the argument under test; a refusal for any other reason halts"
     },
     {
       "ordinal": 94,
       "id": "F9g",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "shipped-here",
+      "evidence": "all 28 optional-argument recipes now produce a differing landing site or halt; the position, thread_id and cursor recipes each gained a real site and the four refused ones now name their field"
     },
     {
       "ordinal": 95,
@@ -817,11 +778,8 @@
     {
       "ordinal": 99,
       "id": "F10f",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF85RXZXAVFMGPN75NPAE0",
-      "group": "census-machinery"
+      "class": "closed",
+      "reason": "the test is correct, necessary and already named for what it proves, and the decoding path has its own receipt because emptying the inverse turns five sibling tests red; renaming it would strand three citations in a frozen plan document"
     },
     {
       "ordinal": 100,
