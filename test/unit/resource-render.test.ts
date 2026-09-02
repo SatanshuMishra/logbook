@@ -178,7 +178,7 @@ test('resource-render.sessions.grapheme-budget-not-exceeded-by-astral-first-line
     body: astralFirstLine,
     created_at: '2026-08-24T00:00:00.000Z'
   }
-  const rendered = renderSessionsResource({ threadId: entry.thread_id, entries: [entry], quarantined: [] })
+  const rendered = renderSessionsResource({ threadId: entry.thread_id, entries: [entry], quarantined: [], threadQuarantinedReason: null })
   assert.ok(!rendered.includes(CLIP_MARKER), 'expected no clip marker for a first line under the grapheme budget')
   assert.ok(
     !rendered.includes('shortened to fit this listing'),
@@ -195,7 +195,7 @@ test('resource-render.sessions.marks-a-first-line-genuinely-over-budget', () => 
     body: overBudgetFirstLine,
     created_at: '2026-08-24T00:00:00.000Z'
   }
-  const rendered = renderSessionsResource({ threadId: entry.thread_id, entries: [entry], quarantined: [] })
+  const rendered = renderSessionsResource({ threadId: entry.thread_id, entries: [entry], quarantined: [], threadQuarantinedReason: null })
   assert.ok(rendered.includes(CLIP_MARKER), 'expected the inline clip marker on a first line over the grapheme budget')
   const noteCount = rendered.split('\n').filter((line) => line.includes('shortened to fit this listing')).length
   assert.equal(noteCount, 1, `expected exactly one shortened-lines note line, got ${noteCount}`)

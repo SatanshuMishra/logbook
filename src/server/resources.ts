@@ -176,7 +176,8 @@ const readSessionsResourceBody = (rt: Runtime, threadId: string): string => {
   return renderSessionsResource({
     threadId,
     entries: [...loaded].reverse(),
-    quarantined
+    quarantined,
+    threadQuarantinedReason: slot.quarantined ? slot.reason : null
   })
 }
 

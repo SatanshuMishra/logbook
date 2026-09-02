@@ -405,6 +405,66 @@ test('resources.sessions-refuses-an-id-naming-no-thread-record', async () => {
   })
 })
 
+const SESSION_FIRST_LINE_ENTRIES_MAX = 50
+
+test('resource.sessions-caps-first-line-text-but-keeps-every-id', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+    const total = SESSION_FIRST_LINE_ENTRIES_MAX + 3
+    const entryIds: string[] = []
+    for (let i = 0; i < total; i += 1) {
+      entryIds.push(await logEntry(fx.spawned, ids.threadId, `cap fixture entry number ${i}`))
+    }
+
+    const listing = await readResourceText(fx.spawned, `logbook://sessions/${ids.threadId}`)
+
+    for (const entryId of entryIds) {
+      assert.ok(listing.includes(entryId), `expected the sessions listing to still name entry ${entryId}`)
+    }
+    assert.ok(
+      !listing.includes('cap fixture entry number 0\n') && !listing.includes('cap fixture entry number 0]'),
+      'expected the oldest entries beyond the cap to lose their first-line text'
+    )
+    assert.ok(
+      listing.includes(`cap fixture entry number ${total - 1}`),
+      'expected the newest entry to still show its first-line text'
+    )
+    assert.ok(
+      listing.includes('first line') && listing.includes('omitted'),
+      `expected a note naming how many first lines were omitted, got '${listing}'`
+    )
+  })
+})
+
+test('resource.sessions-still-answers-for-a-quarantined-thread-record', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+
+    const rt = testRuntime({
+      env: { HOME: fx.homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: fx.pluginData },
+      cwd: fx.repo
+    })
+    const layout = layoutFor(rt, fx.repo)
+    assert.equal(layout.ok, true)
+    if (!layout.ok) return
+
+    const threadRecordPath = join(layout.value.records, 'threads', `${ids.threadId}.json`)
+    writeFileSync(threadRecordPath, 'this is not valid json for a thread record')
+
+    const listing = await readResourceText(fx.spawned, `logbook://sessions/${ids.threadId}`)
+
+    assert.ok(
+      listing.includes(ids.sessionEntryId),
+      `expected the sessions listing to still name entry ${ids.sessionEntryId}`
+    )
+    assert.ok(
+      listing.includes('thread record quarantined'),
+      `expected the sessions listing to disclose the quarantined thread record, got '${listing}'`
+    )
+    assert.ok(listing.includes('invalid JSON'), 'expected the disclosure to carry the parse-failure reason')
+  })
+})
+
 test('resource.index-lists-the-sessions-address', async () => {
   await withFixture(async (fx) => {
     await fx.spawned.client.listTools()
