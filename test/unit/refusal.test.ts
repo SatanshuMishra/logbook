@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { refuse } from '../../src/schema/refusal.ts'
 import * as caps from '../../src/schema/caps.ts'
 import { escapeStored } from '../../src/render/escape.ts'
+import { CLIP_MARKER } from '../../src/render/clip.ts'
 
 const Shape = z.strictObject({ name: z.string().min(1) })
 const jsonSchema = z.toJSONSchema(Shape, { target: 'draft-7', io: 'input' }) as Record<string, unknown>
@@ -46,6 +47,29 @@ test('refusal.unrecognized-key-name-is-length-bounded', () => {
 
   const refusal = refuse(jsonSchema, issues)
   assert.ok(refusal.field.length <= caps.UNRECOGNIZED_KEY_NAME_MAX)
+})
+
+test('refusal.an-over-long-unrecognized-key-carries-the-clip-marker', () => {
+  const longKey = 'x'.repeat(caps.UNRECOGNIZED_KEY_NAME_MAX + 200)
+  const issues = rejectExtraKeys({ [longKey]: 'x' })
+
+  const refusal = refuse(jsonSchema, issues)
+  assert.ok(
+    refusal.field.endsWith(CLIP_MARKER),
+    `a key long enough to force a clip must carry the clip marker, got: ${refusal.field}`
+  )
+})
+
+test('refusal.an-unrecognized-key-that-fits-carries-no-clip-marker', () => {
+  const shortKey = 'x'.repeat(caps.UNRECOGNIZED_KEY_NAME_MAX - 10)
+  const issues = rejectExtraKeys({ [shortKey]: 'x' })
+
+  const refusal = refuse(jsonSchema, issues)
+  assert.equal(
+    refusal.field.endsWith(CLIP_MARKER),
+    false,
+    `a key that fits within the cap must not carry the clip marker, got: ${refusal.field}`
+  )
 })
 
 const isWellFormedUtf16 = (value: string): boolean => {
