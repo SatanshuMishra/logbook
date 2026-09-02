@@ -55,6 +55,15 @@ export const invalidBindingRefusal = (issue: string): Refusal => ({
   message: `the binding record failed its stored-shape validation: ${issue}`
 })
 
+export const invalidCommittedBindingRefusal = (detail: string): Refusal => ({
+  ok: false,
+  field: 'branch',
+  accepted: 'a binding whose recorded shape matches the stored binding schema',
+  example: 'feat/logbook-m4-lifecycle-tools',
+  retryable: false,
+  message: `the binding record failed its stored-shape validation at commit and will not succeed on retry: ${detail}`
+})
+
 export const bindBranchTool: ToolSpec<BindBranchInput, BindBranchOutput> = {
   name: 'bind_branch',
   title: 'Bind branch',
@@ -102,11 +111,17 @@ export const bindBranchTool: ToolSpec<BindBranchInput, BindBranchOutput> = {
     }
 
     const committed = store.commit(
-      [{ kind: 'raw', relPath: path.join('bindings', `${binding.id}.json`), content: JSON.stringify(validated.value) }],
+      [{ kind: 'binding', record: validated.value }],
       `bind branch ${escapedBranch} to thread ${thread.slug}`
     )
     if (!committed.ok) {
-      return { ok: false, refusal: commitFailureRefusal(committed.detail) }
+      return {
+        ok: false,
+        refusal:
+          committed.reason === 'invalid'
+            ? invalidCommittedBindingRefusal(committed.detail)
+            : commitFailureRefusal(committed.detail)
+      }
     }
 
     return {

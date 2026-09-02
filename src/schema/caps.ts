@@ -15,7 +15,7 @@ export const CRITERION_TEXT_MAX = 500
 export const CRITERION_CHECK_MAX = 500
 export const CRITERION_RESULT_MAX = 1000
 
-export const OPEN_RISKS_MAX_ELEMENTS = 40
+export const RISKS_PER_CALL_MAX_ELEMENTS = 40
 export const RISK_TEXT_MAX = 500
 export const RISK_SCOPE_MAX = 200
 export const RISK_REFS_MAX_ELEMENTS = 10

@@ -1,6 +1,7 @@
 import { opendirSync, readdirSync, type Dir } from 'node:fs'
 import path from 'node:path'
 import type { Ok, Refusal } from '../schema/declare.ts'
+import { BindingRecord } from '../schema/binding.ts'
 import { DecisionRecord, type Decision } from '../schema/decision.ts'
 import { SessionRecord, type SessionEntry } from '../schema/session.ts'
 import { ThreadRecord, type Thread, type Ulid } from '../schema/thread.ts'
@@ -40,17 +41,39 @@ export type Store = {
 }
 
 const validateChange = (change: RecordChange): Refusal | null => {
-  if (change.kind === 'raw') return null
-  if (change.kind === 'thread') {
-    const validated = ThreadRecord.parse(change.record)
-    return validated.ok ? null : validated
+  switch (change.kind) {
+    case 'raw':
+      return null
+    case 'thread': {
+      const validated = ThreadRecord.parse(change.record)
+      return validated.ok ? null : validated
+    }
+    case 'decision': {
+      const validated = DecisionRecord.parse(change.record)
+      return validated.ok ? null : validated
+    }
+    case 'binding': {
+      const validated = BindingRecord.parse(change.record)
+      return validated.ok ? null : validated
+    }
+    case 'session': {
+      const validated = SessionRecord.parse(change.record)
+      return validated.ok ? null : validated
+    }
+    default: {
+      const exhaustive: never = change
+      const observedKind = String((change as { kind: unknown }).kind)
+      void exhaustive
+      return {
+        ok: false,
+        field: 'kind',
+        accepted: 'thread, decision, binding, session, or raw',
+        example: 'thread',
+        retryable: false,
+        message: `the record change carries a kind this store does not recognise: ${observedKind}.`
+      }
+    }
   }
-  if (change.kind === 'decision') {
-    const validated = DecisionRecord.parse(change.record)
-    return validated.ok ? null : validated
-  }
-  const validated = SessionRecord.parse(change.record)
-  return validated.ok ? null : validated
 }
 
 const invalidChangeResult = (refusal: Refusal): CommitResult => ({

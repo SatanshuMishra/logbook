@@ -304,7 +304,7 @@ const sweep = (): SweptRecord[] => {
           const withinRecordCap = (shape: SweepShape): boolean =>
             serialisedRecordBytes(shape) <= caps.THREAD_RECORD_SERIALISED_MAX_BYTES
 
-          const bulkCount = largestSatisfying(caps.OPEN_RISKS_MAX_ELEMENTS, (candidate) =>
+          const bulkCount = largestSatisfying(caps.RISKS_PER_CALL_MAX_ELEMENTS, (candidate) =>
             withinRecordCap(shapeAt(0, candidate))
           )
 
