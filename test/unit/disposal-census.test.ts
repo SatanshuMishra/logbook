@@ -26,7 +26,6 @@ const LEGAL_CLASSES: Record<RegisterName, readonly string[]> = {
 
 const CARRIED_CRITERION_BY_GROUP: Readonly<Record<string, string>> = Object.freeze({
   'store-sync-robustness': '01M1FF7SD3QR5Z119AXS3RNCJD',
-  'refusal-text-safety': '01M1FF7XPBMPE7G7HN21SS3CQV',
   'duplication-and-file-size': '01M1FF81JSTEH63T0T8YZ85W9W',
   'write-side-validation': '01M1FF8E54JGWJKGV2E4T9S5R9',
   'frozen-document-contradictions': '01M1FF8JV77VSP56YC9RCS7ENV',

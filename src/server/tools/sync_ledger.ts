@@ -5,8 +5,10 @@ import type { Refusal } from '../../schema/declare.ts'
 import { layoutFor } from '../../store/layout.ts'
 import { sync } from '../../merge/sync.ts'
 import { withDetail } from '../../store/detail.ts'
-import { clipGraphemes, escapeStored } from '../../render/escape.ts'
+import { escapeStored } from '../../render/escape.ts'
+import { clipWithMarker } from '../../render/clip.ts'
 import * as caps from '../../schema/caps.ts'
+import { ULID_PATTERN } from '../../schema/ids.ts'
 import { openProjectStore } from '../tool-support.ts'
 
 const SyncLedgerInputSchema = NO_ARGUMENTS
@@ -55,18 +57,39 @@ export const rejectedRefusal = (detail: string): Refusal =>
     detail
   )
 
+const RECORD_DIRECTORIES = new Set(['threads', 'decisions', 'bindings'])
+const SESSIONS_DIRECTORY = 'sessions'
+const RECORD_FILE_SUFFIX = '.json'
+const PATH_SEPARATORS = /[\\/]/
+const NOT_WRITTEN_SUFFIX = ' (not a name this version writes)'
+
+const isWrittenShape = (relPath: string): boolean => {
+  const segments = relPath.split(PATH_SEPARATORS)
+  const last = segments[segments.length - 1]
+  if (last === undefined || !last.endsWith(RECORD_FILE_SUFFIX)) return false
+  const id = last.slice(0, last.length - RECORD_FILE_SUFFIX.length)
+  if (!ULID_PATTERN.test(id)) return false
+  if (segments.length === 2) return RECORD_DIRECTORIES.has(segments[0] as string)
+  if (segments.length === 3) return segments[0] === SESSIONS_DIRECTORY && ULID_PATTERN.test(segments[1] as string)
+  return false
+}
+
 export const unparseableRecordsRefusal = (records: readonly string[]): Refusal => {
-  const escaped = records.map((record) => clipGraphemes(escapeStored(record), caps.UNPARSEABLE_RECORD_NAME_MAX))
-  const shown = escaped.slice(0, caps.UNPARSEABLE_RECORDS_SHOWN_MAX)
-  const remainder = escaped.length - shown.length
-  const named = remainder > 0 ? `${shown.join(', ')} (+${remainder} more)` : shown.join(', ')
+  const shown = records.slice(0, caps.UNPARSEABLE_RECORDS_SHOWN_MAX)
+  const remainder = records.length - shown.length
+  const rendered = shown.map((record) => {
+    const escaped = clipWithMarker(escapeStored(record), caps.UNPARSEABLE_RECORD_NAME_MAX)
+    const bracketed = `<${escaped}>`
+    return isWrittenShape(record) ? bracketed : `${bracketed}${NOT_WRITTEN_SUFFIX}`
+  })
+  const named = remainder > 0 ? `${rendered.join(', ')} (+${remainder} more)` : rendered.join(', ')
   return {
     ok: false,
     field: 'sync',
     accepted: 'a shared ledger whose every record file this version can read',
     example: 'upgrade this plugin to the version that wrote those records, or have the teammate who wrote them repair or remove them on the shared copy',
     retryable: false,
-    message: `sync stopped before merging: the shared ledger carries ${escaped.length} record file(s) this version cannot read: ${named}. Nothing was merged and nothing was sent to origin. Repeating this call cannot help, because the bytes live on the shared copy: upgrade this plugin to the version that wrote those records, or have the teammate who wrote them repair or remove them, then run sync_ledger again.`
+    message: `sync stopped before merging: the shared ledger carries ${records.length} record file(s) this version cannot read: ${named}. Nothing was merged and nothing was sent to origin. Repeating this call cannot help, because the bytes live on the shared copy: upgrade this plugin to the version that wrote those records, or have the teammate who wrote them repair or remove them, then run sync_ledger again.`
   }
 }
 
