@@ -203,6 +203,112 @@ export const claimsReachable = (published: readonly PublishedTool[]): string[] =
     .filter((tool) => claimPopulation([tool]).every((item) => classifyPublishedClaim(item, published) === 'allowed'))
     .map((tool) => tool.name)
 
+export type ArgumentGap = { readonly address: string; readonly reason: string }
+
+export const ARGUMENT_GAPS: readonly ArgumentGap[] = [
+  {
+    address: 'open_thread.predecessor_id',
+    reason:
+      'the description names exactly three creation inputs (title, slug, completion_criteria) and never mentions succeeding an earlier thread; predecessor_id is optional continuation metadata the creation-focused prose makes no promise about'
+  },
+  {
+    address: 'update_thread.thread_id',
+    reason:
+      'the description explains what mid-session progress is recorded (criteria, summary fields, blockage, risks) but never states which argument addresses the thread being updated; the addressing parameter itself carries no prose promise'
+  },
+  {
+    address: 'update_thread.focus',
+    reason:
+      'the description enumerates exactly four record-able changes (criteria_done, the six summary fields, blockage, risks); session focus is not one of them and writes to the session pointer rather than the thread record'
+  },
+  {
+    address: 'amend_criteria.thread_id',
+    reason:
+      'the description explains the three operations and the decision_id requirement but never names the argument that selects which thread carries the criterion being amended, the same addressing gap as update_thread.thread_id'
+  },
+  {
+    address: 'amend_criteria.kind',
+    reason:
+      'the description shows "kind": "detour" inside the insert example JSON but no sentence in the prose states that kind exists or that it is required for insert, unlike check and position which each get their own sentence'
+  },
+  {
+    address: 'amend_criteria.check',
+    reason:
+      'the description does state that an inserted criterion carries a check and that an insert with no check is refused, but no entry in PUBLISHED_CLAIMS pairs that sentence with amend_criteria.check as a provider, so an existing prose promise is currently uncounted'
+  },
+  {
+    address: 'resume_thread.focus',
+    reason:
+      'the description covers exactly what resuming does, marking the thread worked and rendering the previous briefing, and never mentions recording session focus, the same argument this tool shares with update_thread and park_thread'
+  },
+  {
+    address: 'record_decision.scope',
+    reason:
+      'the description lists exactly five inputs (thread, title, context, options, outcome); scope, which anchors the decision link to a criterion or area, is absent from that list'
+  },
+  {
+    address: 'record_decision.criterion_id',
+    reason:
+      'the same five-input enumeration that omits scope also omits criterion_id, which anchors the decision to one specific completion criterion and is not mentioned anywhere in the description, including near the supersedes sentence'
+  }
+]
+
+const claimedAddresses = (claims: Readonly<Record<string, readonly PublishedClaim[]>>): Set<string> =>
+  new Set(Object.values(claims).flatMap((entries) => entries.flatMap((entry) => entry.providers)))
+
+export const argumentPopulation = (published: readonly PublishedTool[]): readonly string[] =>
+  published.flatMap((tool) => {
+    const properties = tool.inputSchema.properties
+    if (!isPlainObject(properties)) return []
+    return Object.keys(properties).map((key) => `${tool.name}.${key}`)
+  })
+
+export const classifyPublishedArgument = (
+  address: string,
+  claims: Readonly<Record<string, readonly PublishedClaim[]>>,
+  gaps: readonly ArgumentGap[]
+): Verdict => {
+  if (claimedAddresses(claims).has(address)) return 'allowed'
+  const gap = gaps.find((candidate) => candidate.address === address)
+  if (gap === undefined) return 'unclassifiable'
+  return gap.reason.trim().length > 0 ? 'allowed' : 'forbidden'
+}
+
+export type GapReachability = { address: string; reachable: boolean }
+
+export const gapReachability = (
+  gaps: readonly ArgumentGap[],
+  population: readonly string[]
+): GapReachability[] => gaps.map((gap) => ({ address: gap.address, reachable: population.includes(gap.address) }))
+
+export const classifyGapReachability = (item: GapReachability): Verdict => (item.reachable ? 'allowed' : 'unclassifiable')
+
+export const describeGapReachability = (item: GapReachability): string =>
+  `argument-gaps: ARGUMENT_GAPS enumerates "${item.address}", but no published tool argument at that address exists on the live surface; a stale entry stays legal forever and would silently pre-bless any future argument that reuses this address`
+
+export type GapReasonDistinctness = { address: string; reason: string; duplicateOf: string | null }
+
+const firstDuplicateAddress = (gaps: readonly ArgumentGap[], index: number): string | null => {
+  const reason = gaps[index]?.reason.trim() ?? ''
+  for (let earlier = 0; earlier < index; earlier += 1) {
+    if (gaps[earlier]?.reason.trim() === reason) return gaps[earlier]?.address ?? null
+  }
+  return null
+}
+
+export const gapReasonDistinctness = (gaps: readonly ArgumentGap[]): GapReasonDistinctness[] =>
+  gaps.map((gap, index) => ({
+    address: gap.address,
+    reason: gap.reason,
+    duplicateOf: firstDuplicateAddress(gaps, index)
+  }))
+
+export const classifyGapReasonDistinctness = (item: GapReasonDistinctness): Verdict =>
+  item.duplicateOf === null ? 'allowed' : 'forbidden'
+
+export const describeGapReasonDistinctness = (item: GapReasonDistinctness): string =>
+  `argument-gaps: "${item.address}" carries the same reason text as "${item.duplicateOf}"; a reason copied across entries proves nothing about either address`
+
 const TOOLS_DIR = fileURLToPath(new URL('../../src/server/tools', import.meta.url))
 
 const BARREL_BASENAME = 'index'
