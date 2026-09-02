@@ -192,8 +192,7 @@ const listThreadResources = (rt: Runtime): ListResourcesResult => {
     resources: selectRosterThreads(threads).map((thread) => ({
       uri: `logbook://thread/${escapeStored(thread.id)}`,
       name: escapeStored(thread.slug),
-      title: escapeStored(thread.title),
-      description: `one thread record in full: ${escapeStored(thread.title)}`,
+      description: 'one thread record in full, resolved by its id or its slug',
       mimeType: 'text/markdown'
     }))
   }

@@ -536,6 +536,40 @@ test('resource.thread-detail-degrades-when-bindings-cannot-be-read', async () =>
   })
 })
 
+const DISTINCTIVE_TITLE_SENTENCE = 'the quartz falcon migrated northward before the census closed'
+
+test('resource.list-carries-no-thread-title-prose', async () => {
+  await withFixture(async (fx) => {
+    await fx.spawned.client.listTools()
+    const opened = (await fx.spawned.client.callTool({
+      name: 'open_thread',
+      arguments: {
+        title: DISTINCTIVE_TITLE_SENTENCE,
+        slug: 'title-prose-fixture-thread',
+        completion_criteria: [{ text: 'a title prose fixture criterion', check: 'the title prose fixture check' }]
+      }
+    })) as CallToolResult
+    assertOkResult('open_thread (title prose fixture arrange)', opened)
+    const threadId = (opened.structuredContent as { thread_id: string }).thread_id
+
+    const listed = await fx.spawned.client.listResources()
+    const serialised = JSON.stringify(listed)
+
+    assert.ok(
+      !serialised.includes(DISTINCTIVE_TITLE_SENTENCE),
+      `expected resources/list to carry no thread title prose, got '${serialised}'`
+    )
+    assert.ok(
+      serialised.includes(`logbook://thread/${threadId}`),
+      'expected resources/list to still name the thread by uri'
+    )
+    assert.ok(
+      serialised.includes('title-prose-fixture-thread'),
+      'expected resources/list to still name the thread by its slug'
+    )
+  })
+})
+
 test('resource.list-enumerates-open-threads-and-not-decisions-or-session-entries', async () => {
   await withFixture(async (fx) => {
     const ids = await seedStore(fx.spawned)
