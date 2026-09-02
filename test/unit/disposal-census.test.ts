@@ -31,7 +31,7 @@ const CARRIED_CRITERION_BY_GROUP: Readonly<Record<string, string>> = Object.free
   'census-machinery': '01M1FF85RXZXAVFMGPN75NPAE0',
   'render-surface-consistency': '01M1FF8A1EF6S152A7PR68ECTF',
   'write-side-validation': '01M1FF8E54JGWJKGV2E4T9S5R9',
-  'durability-and-repo-posture': '01M1FF8QNQC25H6YX0PZ6C1A5A',
+  'frozen-document-contradictions': '01M1FF8JV77VSP56YC9RCS7ENV',
   'write-fidelity-residue': '01M1FF8W16XG1TJHGNPTG92CTE',
   'verification-honesty': '01M1FF90KY0JXYAPMH8Q2MXJ3F',
   'frozen-invariant-and-budget': '01M1FF95055JMHF4PRECMTGVEQ',

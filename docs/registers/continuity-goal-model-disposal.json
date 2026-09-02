@@ -16,29 +16,20 @@
     {
       "ordinal": 3,
       "id": "F0a",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8QNQC25H6YX0PZ6C1A5A",
-      "group": "durability-and-repo-posture"
+      "class": "shipped-here",
+      "evidence": "the stamp now advances only when it still names the commit's own parent, so the common case self-repairs on the next store open; proved by concurrent.a-record-that-landed-during-materialisation-survives, red before this change. One narrow race remains open, needing a cross-process lock that does not exist yet, and is filed rather than fixed here."
     },
     {
       "ordinal": 4,
       "id": "F0b",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8QNQC25H6YX0PZ6C1A5A",
-      "group": "durability-and-repo-posture"
+      "class": "closed",
+      "reason": "making a status check required is a repository-administration act that no agent performs; the exact steps a human applies are authored at docs/runbooks/main-required-status-checks.md, and the protection is NOT in force, re-measured 2026-09-01 as 404 Branch not protected with rulesets and rules both empty"
     },
     {
       "ordinal": 5,
       "id": "F0c",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8QNQC25H6YX0PZ6C1A5A",
-      "group": "durability-and-repo-posture"
+      "class": "shipped-here",
+      "evidence": "receipts.yml now pins actions/checkout and actions/setup-node to the same 40-character commit shas rebuild.yml already used, and workflow-hardening.action-refs-are-pinned-shas censuses every uses: across .github/workflows, forbidding a mutable ref and halting on one it cannot decompose"
     },
     {
       "ordinal": 6,
@@ -844,11 +835,8 @@
     {
       "ordinal": 101,
       "id": "F10h",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8QNQC25H6YX0PZ6C1A5A",
-      "group": "durability-and-repo-posture"
+      "class": "closed",
+      "reason": "reconciling the vendored node_modules against package-lock.json requires npm install, which is forbidden here because node_modules is git-tracked and installing rewrites tracked files and reddens the suite; F10h's own evidence is that a partial reconciliation across roughly 227 drifted packages is worse than none"
     },
     {
       "ordinal": 102,
@@ -868,11 +856,8 @@
     {
       "ordinal": 104,
       "id": "F10k",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8QNQC25H6YX0PZ6C1A5A",
-      "group": "durability-and-repo-posture"
+      "class": "shipped-here",
+      "evidence": "contract.shipped-code-imports-only-declared-runtime-dependencies walks every import specifier in src, bin and hooks from the TypeScript program and forbids any specifier outside package.json dependencies, node: builtins and relative paths, halting on any it cannot classify"
     },
     {
       "ordinal": 105,
@@ -906,29 +891,20 @@
     {
       "ordinal": 1,
       "id": "N1",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8QNQC25H6YX0PZ6C1A5A",
-      "group": "durability-and-repo-posture"
+      "class": "shipped-here",
+      "evidence": "the stamp now advances only when it still names the commit's own parent, so the common case self-repairs on the next store open; proved by concurrent.a-record-that-landed-during-materialisation-survives, red before this change. One narrow race remains open, needing a cross-process lock that does not exist yet, and is filed rather than fixed here."
     },
     {
       "ordinal": 2,
       "id": "N2",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8QNQC25H6YX0PZ6C1A5A",
-      "group": "durability-and-repo-posture"
+      "class": "shipped-here",
+      "evidence": "the exact required-status-check procedure a human applies is authored at docs/runbooks/main-required-status-checks.md, naming both the classic branch-protection and the rulesets route; the protection itself is a repository-administration act no agent performs and it is NOT in force as of 2026-09-01"
     },
     {
       "ordinal": 3,
       "id": "N3",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8QNQC25H6YX0PZ6C1A5A",
-      "group": "durability-and-repo-posture"
+      "class": "shipped-here",
+      "evidence": "receipts.yml now pins actions/checkout and actions/setup-node to the same 40-character commit shas rebuild.yml already used, and workflow-hardening.action-refs-are-pinned-shas censuses every uses: across .github/workflows, forbidding a mutable ref and halting on one it cannot decompose"
     },
     {
       "ordinal": 4,
