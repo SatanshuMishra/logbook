@@ -43,6 +43,13 @@ test('clip.a-shortened-value-never-exceeds-its-own-limit-and-carries-the-marker-
           text.startsWith(withoutMarker),
           `a shortened value must be the input's own prefix followed by the marker and nothing else, got: ${clipped}`
         )
+        if (text === ESCAPED_NEWLINE_TOKEN_TEXT) {
+          const contentCount = graphemeCount(withoutMarker)
+          assert.ok(
+            contentCount <= 50 || contentCount >= 56,
+            `clipping to ${max} graphemes must not cut inside the emitted U+000A escape token, got ${contentCount} graphemes of content`
+          )
+        }
       }
       if (!wasShortened) {
         assert.equal(clipped, text, `a value that fits ${max} graphemes must be returned unchanged`)
