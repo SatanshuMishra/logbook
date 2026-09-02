@@ -24,21 +24,27 @@ const LEGAL_CLASSES: Record<RegisterName, readonly string[]> = {
   NEW: ['shipped-here', 'own-thread', 'carried-as-criterion']
 }
 
-const CARRIED_GROUPS: readonly string[] = [
-  'store-sync-robustness',
-  'refusal-text-safety',
-  'duplication-and-file-size',
-  'census-machinery',
-  'render-surface-consistency',
-  'write-side-validation',
-  'frozen-document-contradictions',
-  'durability-and-repo-posture',
-  'write-fidelity-residue',
-  'verification-honesty',
-  'frozen-invariant-and-budget'
-]
+const CARRIED_CRITERION_BY_GROUP: Readonly<Record<string, string>> = Object.freeze({
+  'store-sync-robustness': '01M1FF7SD3QR5Z119AXS3RNCJD',
+  'refusal-text-safety': '01M1FF7XPBMPE7G7HN21SS3CQV',
+  'duplication-and-file-size': '01M1FF81JSTEH63T0T8YZ85W9W',
+  'census-machinery': '01M1FF85RXZXAVFMGPN75NPAE0',
+  'render-surface-consistency': '01M1FF8A1EF6S152A7PR68ECTF',
+  'write-side-validation': '01M1FF8E54JGWJKGV2E4T9S5R9',
+  'frozen-document-contradictions': '01M1FF8JV77VSP56YC9RCS7ENV',
+  'durability-and-repo-posture': '01M1FF8QNQC25H6YX0PZ6C1A5A',
+  'write-fidelity-residue': '01M1FF8W16XG1TJHGNPTG92CTE',
+  'verification-honesty': '01M1FF90KY0JXYAPMH8Q2MXJ3F',
+  'frozen-invariant-and-budget': '01M1FF95055JMHF4PRECMTGVEQ'
+})
+
+const CARRIED_GROUPS: readonly string[] = Object.keys(CARRIED_CRITERION_BY_GROUP)
 
 const NAMED_CARRIED_GROUPS = CARRIED_GROUPS.map((name) => `"${name}"`).join(', ')
+
+const NAMED_CARRIED_PAIRS = CARRIED_GROUPS.map(
+  (name) => `"${name}" to "${CARRIED_CRITERION_BY_GROUP[name]}"`
+).join(', ')
 
 const CARRIED_THREAD_ID = '01M130AYZYVWAGDKGHJX9AXPFG'
 const CARRIED_DECISION_ID = '01M1FF5VA6JCR7QH8Q727WBR1D'
@@ -46,7 +52,7 @@ const CARRIED_DECISION_ID = '01M1FF5VA6JCR7QH8Q727WBR1D'
 const EVIDENCE_REQUIREMENT: Record<string, string> = {
   'shipped-here': 'a non-empty "evidence" string',
   'own-thread': 'a 26-character Crockford base32 ULID in "thread_id", and the same shape in "decision_id" when it is present',
-  'carried-as-criterion': `a "thread_id" of exactly "${CARRIED_THREAD_ID}", a "decision_id" of exactly "${CARRIED_DECISION_ID}", and a "group" naming exactly one of ${NAMED_CARRIED_GROUPS}`,
+  'carried-as-criterion': `a "thread_id" of exactly "${CARRIED_THREAD_ID}", a "decision_id" of exactly "${CARRIED_DECISION_ID}", and a "group" naming exactly one of ${NAMED_CARRIED_GROUPS}, each bound to the one criterion it is carried into, the legal pairs being ${NAMED_CARRIED_PAIRS}`,
   bound: 'a "ruling" matching OR<number> and a "unit" matching U<number> with an optional -<LETTER> suffix',
   closed: 'a non-empty "reason" string'
 }
@@ -256,7 +262,8 @@ const isNonEmptyString = (value: unknown): boolean => typeof value === 'string' 
 
 const matches = (pattern: RegExp, value: unknown): boolean => typeof value === 'string' && pattern.test(value)
 
-const isCarriedGroup = (value: unknown): boolean => typeof value === 'string' && CARRIED_GROUPS.includes(value)
+const criterionForGroup = (group: unknown): string | undefined =>
+  typeof group === 'string' ? CARRIED_CRITERION_BY_GROUP[group] : undefined
 
 const hasRequiredEvidence = (entry: RegisterEntry): boolean => {
   const { raw } = entry
@@ -266,7 +273,12 @@ const hasRequiredEvidence = (entry: RegisterEntry): boolean => {
     case 'own-thread':
       return matches(ULID_PATTERN, raw.thread_id) && (raw.decision_id === undefined || matches(ULID_PATTERN, raw.decision_id))
     case 'carried-as-criterion':
-      return raw.thread_id === CARRIED_THREAD_ID && raw.decision_id === CARRIED_DECISION_ID && isCarriedGroup(raw.group)
+      return (
+        raw.thread_id === CARRIED_THREAD_ID &&
+        raw.decision_id === CARRIED_DECISION_ID &&
+        criterionForGroup(raw.group) !== undefined &&
+        raw.criterion_id === criterionForGroup(raw.group)
+      )
     case 'bound':
       return matches(RULING_PATTERN, raw.ruling) && matches(UNIT_PATTERN, raw.unit)
     case 'closed':
@@ -278,9 +290,17 @@ const hasRequiredEvidence = (entry: RegisterEntry): boolean => {
 
 const classifyEvidence = (entry: RegisterEntry): Verdict => (hasRequiredEvidence(entry) ? 'allowed' : 'unclassifiable')
 
+const requirementFor = (disposalClass: string, raw: Record<string, unknown>): string => {
+  const stated = EVIDENCE_REQUIREMENT[disposalClass] ?? 'evidence this census does not know how to check'
+  if (disposalClass !== 'carried-as-criterion') return stated
+  const criterion = criterionForGroup(raw.group)
+  if (criterion === undefined) return stated
+  return `${stated}, so a "group" of "${String(raw.group)}" requires a "criterion_id" of exactly "${criterion}" and no other`
+}
+
 const describeEvidence = (entry: RegisterEntry): string => {
   const { register, ordinal, id, disposalClass, raw } = entry
-  const requirement = EVIDENCE_REQUIREMENT[disposalClass] ?? 'evidence this census does not know how to check'
+  const requirement = requirementFor(disposalClass, raw)
   const carried = Object.keys(raw)
     .filter((key) => key !== 'ordinal' && key !== 'id' && key !== 'class')
     .map((key) => `${key}=${JSON.stringify(raw[key])}`)
@@ -479,50 +499,52 @@ test('disposal-census.every-disposed-entry-carries-the-evidence-its-class-requir
   const threadUlid = '01M130AYZYVWAGDKGHJX9AXPFG'
   const decisionUlid = '01M1FF5VA6JCR7QH8Q727WBR1D'
   const group = 'census-machinery'
+  const criterionUlid = '01M1FF85RXZXAVFMGPN75NPAE0'
   const carried = (evidence: Record<string, unknown>): RegisterEntry =>
     entryOf('FILED', 'carried-as-criterion', evidence)
+  const carriedComplete = carried({ thread_id: threadUlid, decision_id: decisionUlid, group, criterion_id: criterionUlid })
   assert.equal(
-    classifyEvidence(carried({ thread_id: threadUlid, decision_id: decisionUlid, group })),
+    classifyEvidence(carriedComplete),
     'allowed',
-    'the carrying thread, the authorising decision and a named group is the whole of the carried-as-criterion evidence'
+    'the carrying thread, the authorising decision, a named group and the criterion that group is bound to is the whole of the carried-as-criterion evidence'
   )
   assert.equal(
-    classifyEvidence(carried({ thread_id: threadUlid, group })),
+    classifyEvidence(carried({ thread_id: threadUlid, group, criterion_id: criterionUlid })),
     'unclassifiable',
     'a carried item without a decision_id names no authorisation'
   )
   assert.equal(
-    classifyEvidence(carried({ decision_id: decisionUlid, group })),
+    classifyEvidence(carried({ decision_id: decisionUlid, group, criterion_id: criterionUlid })),
     'unclassifiable',
     'a carried item without a thread_id names no thread that carries it'
   )
   assert.equal(
-    classifyEvidence(carried({ thread_id: threadUlid, decision_id: decisionUlid })),
+    classifyEvidence(carried({ thread_id: threadUlid, decision_id: decisionUlid, criterion_id: criterionUlid })),
     'unclassifiable',
-    'a carried item without a group names no criterion it was bound into'
+    'a carried item without a group names no vocabulary entry the criterion can be checked against'
   )
   assert.equal(
-    classifyEvidence(carried({ thread_id: threadUlid, decision_id: decisionUlid, group: 'store-sync' })),
+    classifyEvidence(carried({ thread_id: threadUlid, decision_id: decisionUlid, group: 'store-sync', criterion_id: criterionUlid })),
     'unclassifiable',
-    'a group outside the closed vocabulary halts rather than passing as a near miss'
+    'a group outside the closed vocabulary halts rather than passing as a near miss, even carrying a criterion some group is bound to'
   )
   assert.equal(
-    classifyEvidence(carried({ thread_id: 'a-slug-not-a-ulid', decision_id: decisionUlid, group })),
+    classifyEvidence(carried({ thread_id: 'a-slug-not-a-ulid', decision_id: decisionUlid, group, criterion_id: criterionUlid })),
     'unclassifiable',
     'a slug in thread_id is not the carrying thread'
   )
   assert.equal(
-    classifyEvidence(carried({ thread_id: threadUlid, decision_id: 'not-a-ulid', group })),
+    classifyEvidence(carried({ thread_id: threadUlid, decision_id: 'not-a-ulid', group, criterion_id: criterionUlid })),
     'unclassifiable',
     'a slug in decision_id is not the authorising decision'
   )
   assert.equal(
-    classifyEvidence(carried({ thread_id: ulid, decision_id: decisionUlid, group })),
+    classifyEvidence(carried({ thread_id: ulid, decision_id: decisionUlid, group, criterion_id: criterionUlid })),
     'unclassifiable',
     'a well-formed ULID that is not the carrying thread is refused, so this pins the identifier and not its shape'
   )
   assert.equal(
-    classifyEvidence(carried({ thread_id: threadUlid, decision_id: ulid, group })),
+    classifyEvidence(carried({ thread_id: threadUlid, decision_id: ulid, group, criterion_id: criterionUlid })),
     'unclassifiable',
     'a well-formed ULID that is not the authorising decision is refused, so this pins the identifier and not its shape'
   )
@@ -536,6 +558,100 @@ test('disposal-census.every-disposed-entry-carries-the-evidence-its-class-requir
     /requires a "thread_id" of exactly "01M130AYZYVWAGDKGHJX9AXPFG", a "decision_id" of exactly "01M1FF5VA6JCR7QH8Q727WBR1D", and a "group" naming exactly one of .*"census-machinery"/
   )
   assert.doesNotMatch(describeEvidence(carriedWithoutGroup), /evidence this census does not know how to check/)
+  assert.match(
+    describeEvidence(carriedWithoutGroup),
+    /the legal pairs being .*"census-machinery" to "01M1FF85RXZXAVFMGPN75NPAE0"/,
+    'an entry naming no group gets the whole binding table, because no single expected criterion can be named for it'
+  )
+})
+
+test('disposal-census.every-disposed-entry-carries-the-evidence-its-class-requires.control.a-group-and-a-criterion-that-do-not-name-each-other-halt', () => {
+  const threadUlid = '01M130AYZYVWAGDKGHJX9AXPFG'
+  const decisionUlid = '01M1FF5VA6JCR7QH8Q727WBR1D'
+  const group = 'census-machinery'
+  const criterionUlid = '01M1FF85RXZXAVFMGPN75NPAE0'
+  const otherGroup = 'store-sync-robustness'
+  const otherCriterionUlid = '01M1FF7SD3QR5Z119AXS3RNCJD'
+  const strangerUlid = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
+  const carried = (evidence: Record<string, unknown>): RegisterEntry => ({
+    register: 'FILED',
+    index: 0,
+    ordinal: 1,
+    id: 'F3a',
+    disposalClass: 'carried-as-criterion',
+    raw: { ordinal: 1, id: 'F3a', class: 'carried-as-criterion', thread_id: threadUlid, decision_id: decisionUlid, ...evidence }
+  })
+  const matchedPair = carried({ group, criterion_id: criterionUlid })
+  const otherMatchedPair = carried({ group: otherGroup, criterion_id: otherCriterionUlid })
+  const withoutCriterion = carried({ group })
+  const swappedCriterion = carried({ group, criterion_id: otherCriterionUlid })
+  const groupMovedOffItsCriterion = carried({ group: otherGroup, criterion_id: criterionUlid })
+  const criterionNoGroupIsBoundTo = carried({ group, criterion_id: strangerUlid })
+  const caseShiftedCriterion = carried({ group, criterion_id: criterionUlid.toLowerCase() })
+  const unknownGroupCarryingNoCriterion = carried({ group: 'store-sync' })
+  const neitherGroupNorCriterion = carried({})
+
+  assert.equal(
+    classifyEvidence(matchedPair),
+    'allowed',
+    'a group paired with the criterion it is bound to is the passing case this control is measured against'
+  )
+  assert.equal(
+    classifyEvidence(otherMatchedPair),
+    'allowed',
+    'a second group paired with its own criterion also passes, so the check is the binding itself and not one hardcoded pair'
+  )
+  assert.equal(
+    classifyEvidence(withoutCriterion),
+    'unclassifiable',
+    'a criterion_id that is absent binds the item to nothing, so the group alone cannot stand as the whole evidence'
+  )
+  assert.equal(
+    classifyEvidence(swappedCriterion),
+    'unclassifiable',
+    'a criterion_id that is another group criterion is refused, so a swap cannot pass on two fields that are each valid alone'
+  )
+  assert.equal(
+    classifyEvidence(groupMovedOffItsCriterion),
+    'unclassifiable',
+    'moving the group off a correct criterion_id is refused too, so the pair is checked from either side'
+  )
+  assert.equal(
+    classifyEvidence(criterionNoGroupIsBoundTo),
+    'unclassifiable',
+    'a well-formed ULID no group is bound to is refused, so this pins the identifier and not its shape'
+  )
+  assert.equal(
+    classifyEvidence(caseShiftedCriterion),
+    'unclassifiable',
+    'the bound identifier is matched exactly, so a case-shifted copy of the right criterion is not the right criterion'
+  )
+  assert.equal(
+    classifyEvidence(unknownGroupCarryingNoCriterion),
+    'unclassifiable',
+    'a group outside the vocabulary carrying no criterion_id is refused, so a group the map answers nothing for cannot match an absent criterion into a pass'
+  )
+  assert.equal(
+    classifyEvidence(neitherGroupNorCriterion),
+    'unclassifiable',
+    'an item naming neither a group nor a criterion is refused, so two absences cannot cancel each other into a binding'
+  )
+
+  assert.match(
+    describeEvidence(swappedCriterion),
+    /a "group" of "census-machinery" requires a "criterion_id" of exactly "01M1FF85RXZXAVFMGPN75NPAE0" and no other/,
+    'the remedy text must name the criterion the entry group is bound to, or it cannot be acted on'
+  )
+  assert.match(
+    describeEvidence(swappedCriterion),
+    /criterion_id="01M1FF7SD3QR5Z119AXS3RNCJD"/,
+    'the remedy text must also name the criterion the entry actually carries, so both halves of the mismatch are visible'
+  )
+  assert.match(
+    describeEvidence(groupMovedOffItsCriterion),
+    /a "group" of "store-sync-robustness" requires a "criterion_id" of exactly "01M1FF7SD3QR5Z119AXS3RNCJD" and no other/,
+    'the named expectation follows the group at hand rather than being fixed to one group'
+  )
 })
 
 test('disposal-census.every-group-the-closed-vocabulary-declares-is-carried-by-at-least-one-register-entry', () => {
