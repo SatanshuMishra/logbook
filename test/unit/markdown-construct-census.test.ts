@@ -327,7 +327,7 @@ const CONSTRUCTS: readonly Construct[] = [
     name: 'image',
     chapter: 6,
     section: 4,
-    probes: ['see ![alt](https://attacker.example/pixel.png) now'],
+    probes: ['see ![alt](https://attacker.example/pixel.png) now', '![alt](https://attacker.example/pixel.png)'],
     pattern: /!\[[^\]\n]*\]\([^)\n]*\)/,
     signal: { kind: 'node', type: 'image' },
     classification: 'accepted',
