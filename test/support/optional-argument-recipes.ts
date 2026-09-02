@@ -517,14 +517,14 @@ const resumeThreadFocusRecipe = (): Promise<RecipeResult> =>
     (structured) => ({ focus: structured.focus })
   )
 
-type ParkThreadFixtureCtx = { threadId: string; otherThreadId: string }
+type ParkThreadFixtureCtx = { threadId: string }
 
 const openParkThreadFixture = async (rt: Runtime): Promise<ParkThreadFixtureCtx> => {
   const { threadId } = await openFixtureThread(rt, 'park-thread')
-  const { threadId: otherThreadId } = await openFixtureThread(rt, 'park-thread-other')
+  await openFixtureThread(rt, 'park-thread-other')
   const resumed = await resumeThreadTool.handler(rt, STUB_TOOL_CTX, { thread_id: threadId })
   if (!resumed.ok) throw new Error('optional-argument-recipes: expected the park_thread fixture pointer to be set')
-  return { threadId, otherThreadId }
+  return { threadId }
 }
 
 const openParkThreadCrossSessionFixture = async (rt: Runtime): Promise<ParkThreadFixtureCtx> => {
