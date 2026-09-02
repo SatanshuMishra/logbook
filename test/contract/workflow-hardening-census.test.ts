@@ -490,3 +490,151 @@ test('workflow-hardening.trunk-verification', () => {
     describeViolations('trunk-verification', population, classifyTrunkVerification)
   )
 })
+
+const ACTION_REF_SEPARATOR = '@'
+const FULL_COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i
+
+type DecomposedActionReference = {
+  action: string
+  ref: string
+}
+
+const decomposeActionReference = (uses: string): DecomposedActionReference | undefined => {
+  const segments = uses.split(ACTION_REF_SEPARATOR)
+  if (segments.length !== 2) return undefined
+  const action = segments[0]
+  const ref = segments[1]
+  if (action === undefined || ref === undefined) return undefined
+  if (action.length === 0 || ref.length === 0) return undefined
+  if (!action.includes('/')) return undefined
+  return { action, ref }
+}
+
+type ActionPinItem = {
+  workflow: string
+  job: string
+  step: string
+  uses: string
+}
+
+const actionPinItemFor = (workflow: ParsedWorkflow, job: ParsedJob, step: ParsedStep): ActionPinItem | undefined => {
+  const uses = typeof step.uses === 'string' ? step.uses : undefined
+  if (uses === undefined) return undefined
+  return { workflow: workflow.file, job: job.id, step: stepLabel(step), uses }
+}
+
+const actionPinItemsFor = (workflows: readonly ParsedWorkflow[]): ActionPinItem[] =>
+  workflows.flatMap((workflow) =>
+    workflow.jobs.flatMap((job) =>
+      job.steps.flatMap((step) => {
+        const item = actionPinItemFor(workflow, job, step)
+        return item === undefined ? [] : [item]
+      })
+    )
+  )
+
+const classifyActionPin = (item: ActionPinItem): Classified<ActionPinItem>['verdict'] | 'unclassifiable' => {
+  const decomposed = decomposeActionReference(item.uses)
+  if (decomposed === undefined) return 'unclassifiable'
+  return FULL_COMMIT_SHA_PATTERN.test(decomposed.ref) ? 'allowed' : 'forbidden'
+}
+
+type ActionPinAgreementItem = {
+  action: string
+  shas: readonly string[]
+  occurrences: readonly { workflow: string; step: string }[]
+}
+
+const actionPinAgreementItemsFrom = (items: readonly ActionPinItem[]): ActionPinAgreementItem[] => {
+  const byAction = new Map<string, { shas: Set<string>; occurrences: { workflow: string; step: string }[] }>()
+  for (const item of items) {
+    const decomposed = decomposeActionReference(item.uses)
+    if (decomposed === undefined) continue
+    const entry = byAction.get(decomposed.action) ?? { shas: new Set<string>(), occurrences: [] }
+    entry.shas.add(decomposed.ref)
+    entry.occurrences.push({ workflow: item.workflow, step: item.step })
+    byAction.set(decomposed.action, entry)
+  }
+  return [...byAction.entries()].map(([action, entry]) => ({
+    action,
+    shas: [...entry.shas].sort(),
+    occurrences: entry.occurrences
+  }))
+}
+
+const classifyActionPinAgreement = (
+  item: ActionPinAgreementItem
+): Classified<ActionPinAgreementItem>['verdict'] | 'unclassifiable' => (item.shas.length === 1 ? 'allowed' : 'forbidden')
+
+test('workflow-hardening.action-refs-are-pinned-shas', () => {
+  const workflows = loadWorkflows()
+  const population = actionPinItemsFor(workflows)
+
+  assert.ok(
+    population.length > 0,
+    'workflow-hardening.action-refs-are-pinned-shas: zero uses: steps found across all workflows; a census over an empty population proves nothing'
+  )
+
+  assert.doesNotThrow(
+    () => census(population, classifyActionPin),
+    describeViolations('action-refs-are-pinned-shas', population, classifyActionPin)
+  )
+})
+
+test('workflow-hardening.action-refs-are-pinned-shas.control.a-mutable-tag-is-forbidden-and-an-undecomposable-reference-halts', () => {
+  assert.equal(classifyActionPin({ workflow: 'w', job: 'j', step: 's', uses: 'actions/checkout@v4' }), 'forbidden')
+  assert.equal(
+    classifyActionPin({
+      workflow: 'w',
+      job: 'j',
+      step: 's',
+      uses: 'actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5'
+    }),
+    'allowed'
+  )
+  assert.equal(
+    classifyActionPin({
+      workflow: 'w',
+      job: 'j',
+      step: 's',
+      uses: 'shaheershoaib/receipts/enforcer@c6127ba55f9a5669a95614639b08f5d49c3f228b'
+    }),
+    'allowed'
+  )
+  assert.equal(classifyActionPin({ workflow: 'w', job: 'j', step: 's', uses: './local-action' }), 'unclassifiable')
+  assert.equal(classifyActionPin({ workflow: 'w', job: 'j', step: 's', uses: 'checkout@v4' }), 'unclassifiable')
+})
+
+test('workflow-hardening.action-refs-agree-on-one-sha-per-action', () => {
+  const workflows = loadWorkflows()
+  const population = actionPinAgreementItemsFrom(actionPinItemsFor(workflows))
+
+  assert.ok(
+    population.length > 0,
+    'workflow-hardening.action-refs-agree-on-one-sha-per-action: zero pinned actions found across all workflows; a census over an empty population proves nothing'
+  )
+
+  assert.doesNotThrow(
+    () => census(population, classifyActionPinAgreement),
+    describeViolations('action-refs-agree-on-one-sha-per-action', population, classifyActionPinAgreement)
+  )
+})
+
+test('workflow-hardening.action-refs-agree-on-one-sha-per-action.control.a-transposed-sha-in-one-file-is-forbidden', () => {
+  assert.equal(
+    classifyActionPinAgreement({
+      action: 'actions/checkout',
+      shas: ['34e114876b0b11c390a56381ad16ebd13914f8d5', '43e114876b0b11c390a56381ad16ebd13914f8d5'],
+      occurrences: []
+    }),
+    'forbidden'
+  )
+  assert.equal(
+    classifyActionPinAgreement({
+      action: 'actions/checkout',
+      shas: ['34e114876b0b11c390a56381ad16ebd13914f8d5'],
+      occurrences: []
+    }),
+    'allowed'
+  )
+})
