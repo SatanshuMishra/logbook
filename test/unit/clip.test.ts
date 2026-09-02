@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES, clipWithMarker } from '../../src/render/clip.ts'
+import { escapeStored } from '../../src/render/escape.ts'
 
 const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
@@ -68,4 +69,18 @@ test('clip.a-limit-smaller-than-the-marker-yields-only-as-much-of-the-marker-as-
 test('clip.the-marker-is-one-grapheme-per-code-unit', () => {
   assert.equal(CLIP_MARKER, '...[shortened]')
   assert.equal(CLIP_MARKER_GRAPHEMES, CLIP_MARKER.length)
+})
+
+const LEADING_ESCAPE_TOKEN_TEXT = escapeStored(`\n${'z'.repeat(60)}`)
+
+test('clip.a-value-opening-with-an-escape-token-keeps-its-own-content-in-the-zero-content-band', () => {
+  for (let max = CLIP_MARKER_GRAPHEMES + 1; max <= CLIP_MARKER_GRAPHEMES + 5; max += 1) {
+    const clipped = clipWithMarker(LEADING_ESCAPE_TOKEN_TEXT, max)
+    assert.ok(clipped.endsWith(CLIP_MARKER), `clipping to ${max} graphemes must still end with the marker, got ${clipped}`)
+    const withoutMarker = clipped.slice(0, clipped.length - CLIP_MARKER.length)
+    assert.ok(
+      graphemeCount(withoutMarker) >= 1,
+      `clipping a value that opens with an escape token to ${max} graphemes must keep at least one grapheme of its own content, got ${JSON.stringify(clipped)}`
+    )
+  }
 })

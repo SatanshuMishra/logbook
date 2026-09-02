@@ -141,7 +141,7 @@ const escapeTokenSafeBoundary = (graphemes: readonly string[], max: number): num
       continue
     }
     const end = index + ESCAPE_PREFIX.length + decoded.width
-    if (end > max) return index
+    if (end > max) return index === 0 ? end : index
     index = end
   }
   return max
