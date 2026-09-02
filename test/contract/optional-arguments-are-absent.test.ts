@@ -9,11 +9,7 @@ import { RECIPES, TEST_2_CASES, isEmptyish, withSingleFixture } from '../support
 
 type Verdict = 'allowed' | 'forbidden' | 'unclassifiable'
 
-type EntryRefusal = { field: string; message: string }
-
-type LandingSiteEntry = { path: string; site: string; omitted: unknown; refusal: EntryRefusal | null }
-
-const NO_LANDING_SITE = 'no-landing-site'
+type LandingSiteEntry = { path: string; site: string; omitted: unknown; refused: boolean; noDifference: boolean }
 
 const parentPathOf = (path: string): string | null => {
   if (path.endsWith('[]')) return path.slice(0, -2)
@@ -52,10 +48,8 @@ const derivePopulation = (): string[] =>
   )
 
 const classifyLandingSite = (entry: LandingSiteEntry): Verdict => {
-  if (entry.refusal !== null) {
-    return entry.refusal.field === keyOf(entry.path) ? 'allowed' : 'unclassifiable'
-  }
-  if (entry.site === NO_LANDING_SITE) return 'unclassifiable'
+  if (entry.noDifference) return 'unclassifiable'
+  if (entry.refused) return 'allowed'
   if (isEmptyish(entry.omitted)) return 'allowed'
   const value = entry.omitted
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || Array.isArray(value)) {
@@ -81,21 +75,24 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute', asyn
     }
     const result = await recipe()
     if (result.refused) {
-      const refusal = result.refusal
-      if (refusal === null) {
-        throw new Error(`contract.optional-arguments-are-absent: "${path}" reported refused with no refusal payload`)
-      }
-      entries.push({ path, site: 'refused', omitted: undefined, refusal })
-      t.diagnostic(`${path}: the omitted run was refused (${refusal.field}): ${refusal.message}`)
+      entries.push({ path, site: 'refused', omitted: undefined, refused: true, noDifference: false })
+      t.diagnostic(`${path}: the omitted run was refused`)
       continue
     }
     if (result.sites.length === 0) {
       entries.push({ path, site: NO_LANDING_SITE, omitted: undefined, refusal: null })
       t.diagnostic(`${path}: no landing site differed between the omitted and sentinel runs`)
+      entries.push({
+        path,
+        site: 'no-landing-site',
+        omitted: `supplying ${path} changed nothing on the response, the stored record or the pointer`,
+        refused: false,
+        noDifference: true
+      })
       continue
     }
     for (const site of result.sites) {
-      entries.push({ path, site: site.site, omitted: site.omitted, refusal: null })
+      entries.push({ path, site: site.site, omitted: site.omitted, refused: false, noDifference: false })
       t.diagnostic(`${path}#${site.site}: omitted run carries ${JSON.stringify(site.omitted)}`)
     }
   }
@@ -114,7 +111,8 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.contro
     path: 'synthetic.probe',
     site: 'synthetic',
     omitted: 'criterion 1',
-    refusal: null
+    refused: false,
+    noDifference: false
   }
   assert.throws(
     () => census([forbidden], classifyLandingSite),
@@ -128,7 +126,8 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.contro
     path: 'synthetic.probe',
     site: 'synthetic',
     omitted: { nested: true },
-    refusal: null
+    refused: false,
+    noDifference: false
   }
   assert.throws(
     () => census([weird], classifyLandingSite),

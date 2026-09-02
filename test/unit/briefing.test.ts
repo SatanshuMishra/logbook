@@ -13,7 +13,7 @@ import {
 } from '../../src/render/briefing.ts'
 import { CLIP_MARKER } from '../../src/render/clip.ts'
 import { ThreadRecord, type Thread, type Criterion, type Risk, type KeyDecision, type OutOfScope } from '../../src/schema/thread.ts'
-import { CRITERIA_MAX_ELEMENTS, KEY_DECISION_TITLE_MAX, OPEN_RISKS_MAX_ELEMENTS, THREAD_SLUG_MAX } from '../../src/schema/caps.ts'
+import { CRITERIA_MAX_ELEMENTS, KEY_DECISION_TITLE_MAX, RISKS_PER_CALL_MAX_ELEMENTS, THREAD_SLUG_MAX } from '../../src/schema/caps.ts'
 import type { Pointer } from '../../src/domain/pointer.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { census } from '../support/census.ts'
@@ -752,7 +752,7 @@ const worstReachableAsciiShape: SweepShape = {
   criteriaCount: CRITERIA_MAX_ELEMENTS,
   keyDecisionCount: 0,
   criterionTextLength: WORST_REACHABLE_CRITERION_TEXT_LENGTH,
-  bulkCount: OPEN_RISKS_MAX_ELEMENTS
+  bulkCount: RISKS_PER_CALL_MAX_ELEMENTS
 }
 
 const RESUME_PAYLOAD_RESERVE_BYTES = 200

@@ -166,7 +166,18 @@ const nonProgramOrdinalSites = (): OrdinalSite[] =>
       )
   )
 
-const ASSERTED_ORDINAL_ROOTS = [`src${path.sep}render${path.sep}`, `src${path.sep}server${path.sep}tools${path.sep}`]
+const ASSERTED_ORDINAL_ROOTS = [`src${path.sep}`]
+
+const stripTrailingSep = (root: string): string => (root.endsWith(path.sep) ? root.slice(0, -path.sep.length) : root)
+
+const renderAssertedRootsProse = (roots: string[]): string => {
+  const names = roots.map(stripTrailingSep)
+  return names.reduce((prose, name, index) => {
+    if (index === 0) return name
+    if (index !== names.length - 1) return `${prose}, ${name}`
+    return names.length === 2 ? `${prose} or ${name}` : `${prose}, or ${name}`
+  }, '')
+}
 
 test('briefing.criterion-ordinal-is-read-only-to-render-a-display-label', (t) => {
   const { program, productionFiles, testFiles } = loadSourceProgram()
@@ -191,7 +202,7 @@ test('briefing.criterion-ordinal-is-read-only-to-render-a-display-label', (t) =>
   assert.ok(underAssertedRoots.length > 0, 'the asserted roots must read criterion.ordinal, or this assertion is vacuous')
   assert.doesNotThrow(
     () => census(underAssertedRoots, classifyOrdinalSite),
-    `every read of criterion.ordinal under src/render or src/server/tools must render a display label; any other read infers sequence from position:\n${underAssertedRoots
+    `every read of criterion.ordinal under ${renderAssertedRootsProse(ASSERTED_ORDINAL_ROOTS)} must render a display label; any other read infers sequence from position:\n${underAssertedRoots
       .filter((site) => classifyOrdinalSite(site) !== 'allowed')
       .map((site) => `${site.file}:${site.line} ${site.expression}`)
       .join('\n')}`

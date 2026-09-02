@@ -52,29 +52,20 @@
     {
       "ordinal": 8,
       "id": "F1a",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8E54JGWJKGV2E4T9S5R9",
-      "group": "write-side-validation"
+      "class": "closed",
+      "reason": "The filed defect is unreachable. update_thread's key_decisions_add is a z.strictObject carrying only decision_id, title and scope, so a caller cannot supply criterion_id at all and the key is rejected before the handler runs. A closed enumeration of every other writer found none that can store a dangling id: record_decision validates against the loaded thread before writing, backfillCriterionIds has no production caller, resolve_conflict re-parses whole threads, and a struck criterion keeps its id rather than being deleted. The real gap at that site is the mirror image, that key_decisions_add cannot anchor a decision to a criterion at all, which is a missing capability and a published-argument addition rather than the missing check this item describes; it is reported to the orchestrator as new material rather than folded in here."
     },
     {
       "ordinal": 9,
       "id": "F1b",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8E54JGWJKGV2E4T9S5R9",
-      "group": "write-side-validation"
+      "class": "shipped-here",
+      "evidence": "bind_branch now commits a binding as its own record kind rather than as an opaque raw blob, and the store's write-time validator parses it through BindingRecord before it reaches the ledger ref; relativePathFor gained an explicit bindings/<id>.json case. Both functions became exhaustive switches whose default assigns to never, so a future record kind cannot silently fall through to the sessions path and misfile itself. Proved by store.commit-refuses-a-schema-invalid-binding and store.commit-accepts-a-valid-binding-and-files-it-at-bindings-slash-id; deleting the binding branch from validateChange reddens the first, deleting the case from relativePathFor reddens the second, and each was restored byte-identical. Red on the parent is not obtainable because the binding kind does not compile there, so that obligation ships unverified-reasoned with the two inertness mutations as the proof."
     },
     {
       "ordinal": 10,
       "id": "F1c",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8E54JGWJKGV2E4T9S5R9",
-      "group": "write-side-validation"
+      "class": "shipped-here",
+      "evidence": "OPEN_RISKS_MAX_ELEMENTS is renamed RISKS_PER_CALL_MAX_ELEMENTS across all nine of its live occurrences, so the name now states what it bounds: one call's risks_add and risks_retire payload, not the stored open_risks collection it stopped bounding when the schema unit removed those two uses. The value 40 and the call-payload role in CAP_ROLES are unchanged, and no published refusal text moved, because every occurrence is a bare identifier in a .max() argument rather than a string. The caps census halted on the new name as designed and was answered by reclassifying the renamed constant, never by narrowing the census or pinning a count."
     },
     {
       "ordinal": 11,
@@ -163,11 +154,8 @@
     {
       "ordinal": 22,
       "id": "F5b",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF90KY0JXYAPMH8Q2MXJ3F",
-      "group": "verification-honesty"
+      "class": "shipped-here",
+      "evidence": "the forbidden read of Criterion.ordinal this item names is deleted with src/domain/criterion-backfill.ts; its supporting claim of no production caller was wrong and is corrected by F5d, which found scripts/backfill-criterion-id.mjs"
     },
     {
       "ordinal": 23,
@@ -220,11 +208,8 @@
     {
       "ordinal": 30,
       "id": "F5d",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF90KY0JXYAPMH8Q2MXJ3F",
-      "group": "verification-honesty"
+      "class": "shipped-here",
+      "evidence": "the module and its only caller scripts/backfill-criterion-id.mjs are both deleted, so the ownership question this item raised is answered by removal rather than left open"
     },
     {
       "ordinal": 31,
@@ -244,11 +229,8 @@
     {
       "ordinal": 33,
       "id": "F8c",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8E54JGWJKGV2E4T9S5R9",
-      "group": "write-side-validation"
+      "class": "closed",
+      "reason": "Closed on merits, on three independent grounds. The repair is forward-only and cannot touch entries already written, because no trace of session identity survives for them; state/active-thread.json is per-install and holds one pointer at a time. The actor-based derivation would have to remain as the fallback for unstamped entries, so stamping an id onto new entries creates a second source of truth for one boundary, which the specification's section 6.1 rule 2 forbids outright. And orchestrator ruling OR46 already judged this exact question a design change to how a session is delimited rather than a validation to add, routed it to architect, and recorded a competing remedy in which park_thread records the boundary entry's id on the thread spine; choosing between those two designs is the decision that ruling reserved, and this unit may not make it."
     },
     {
       "ordinal": 34,
@@ -280,11 +262,8 @@
     {
       "ordinal": 38,
       "id": "F9d",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF90KY0JXYAPMH8Q2MXJ3F",
-      "group": "verification-honesty"
+      "class": "shipped-here",
+      "evidence": "the optional-argument census now classifies a member that produces no difference on any surface as unclassifiable and halts, so an argument published but never written fails it"
     },
     {
       "ordinal": 39,
@@ -541,11 +520,8 @@
     {
       "ordinal": 69,
       "id": "F6d",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8E54JGWJKGV2E4T9S5R9",
-      "group": "write-side-validation"
+      "class": "shipped-here",
+      "evidence": "Fixed in commit 30682e98, merged as pull request 159: every caller-supplied identifier on the resource and completion surfaces is now validated against the ULID or slug shape before any filesystem path is built. The premise proved worse than filed, because a completion request carrying a traversal thread_id returned a record written only to a planted directory; that reproduction is red on the parent of that commit and green now. Four of the six gates had no test that could redden on their removal, so this change adds resources.sessions-refuses-a-thread-id-containing-a-backslash, resources.decision-refuses-an-id-containing-a-backslash, resources.session-refuses-a-thread-id-containing-a-backslash and resources.session-refuses-an-entry-id-containing-a-backslash, each observed red when its own gate is deleted and each gate restored byte-identical."
     },
     {
       "ordinal": 70,
@@ -622,11 +598,8 @@
     {
       "ordinal": 82,
       "id": "F5j",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF8E54JGWJKGV2E4T9S5R9",
-      "group": "write-side-validation"
+      "class": "shipped-here",
+      "evidence": "update_thread now refuses a risk reference that is empty or blank, so the briefing can no longer render a bullet with no content after it. A single space passed the first constraint written for this and reproduced the symptom exactly, which two independent reviews caught by executing it, so the constraint now requires at least one non-whitespace character. The refusal names the field by the schema's own dotted path, which is the form this repository already uses for a nested violation. The stored schema was deliberately left untouched: tightening it would quarantine any record already holding such a ref, turning a cosmetic render fault into a lost record, so the constraint sits on the input schema at the write boundary instead. Proved by update_thread.refuses-an-empty-risk-reference, which asserts both the empty string and a whitespace-only string are refused, red before the change and red again when the constraint is removed."
     },
     {
       "ordinal": 83,
@@ -766,11 +739,8 @@
     {
       "ordinal": 103,
       "id": "F10j",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF90KY0JXYAPMH8Q2MXJ3F",
-      "group": "verification-honesty"
+      "class": "shipped-here",
+      "evidence": "a closed audit of all 146 escapeStored call sites derived six position classes by rendering, a seventh uncovered class was added to the confirmation, and its payload population now imports the shipped guard set instead of a partial copy"
     },
     {
       "ordinal": 104,
@@ -843,11 +813,8 @@
     {
       "ordinal": 6,
       "id": "N6",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF90KY0JXYAPMH8Q2MXJ3F",
-      "group": "verification-honesty"
+      "class": "shipped-here",
+      "evidence": "every gate mode in receipts.config.json is now explicit rather than defaulted, five schema-violating keys are gone and the file validates; the receipt-gating flip and the coverage gate are deliberately deferred and their measured reasons are recorded on the criterion"
     },
     {
       "ordinal": 7,
@@ -861,11 +828,8 @@
     {
       "ordinal": 8,
       "id": "N8",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF90KY0JXYAPMH8Q2MXJ3F",
-      "group": "verification-honesty"
+      "class": "shipped-here",
+      "evidence": "the surviving read at src/domain/criterion-backfill.ts is deleted and the census blocking assertion is widened from two directories to all of src, so the next such read fails rather than printing"
     },
     {
       "ordinal": 9,
@@ -894,11 +858,8 @@
     {
       "ordinal": 12,
       "id": "N12",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF90KY0JXYAPMH8Q2MXJ3F",
-      "group": "verification-honesty"
+      "class": "shipped-here",
+      "evidence": "the same fix as F9d; this item restates that defect and is disposed with it"
     }
   ]
 }

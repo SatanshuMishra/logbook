@@ -61,7 +61,7 @@ test('caps.open-risks-accumulate-past-the-old-element-cap', () => {
   const rt = testRuntime()
   const makeRisk = (label: string): Risk => ({ id: rt.ulid(), scope: 'test', text: `risk ${label}`, refs: [] })
 
-  const risks40 = Array.from({ length: caps.OPEN_RISKS_MAX_ELEMENTS }, (_, i) => makeRisk(String(i)))
+  const risks40 = Array.from({ length: caps.RISKS_PER_CALL_MAX_ELEMENTS }, (_, i) => makeRisk(String(i)))
   const stored40: Spine = { ...baseSpine(), open_risks: risks40 }
 
   const acceptResult = contributeToSpine(stored40, { open_risks: [makeRisk('forty-first')] })
@@ -69,7 +69,7 @@ test('caps.open-risks-accumulate-past-the-old-element-cap', () => {
   if (!acceptResult.ok) {
     throw new Error('expected the 41st risk to be accepted; open_risks is bounded by record size, not element count')
   }
-  assert.equal(acceptResult.value.open_risks.length, caps.OPEN_RISKS_MAX_ELEMENTS + 1)
+  assert.equal(acceptResult.value.open_risks.length, caps.RISKS_PER_CALL_MAX_ELEMENTS + 1)
 })
 
 test('caps.key-decisions-still-refuse-on-their-element-cap', () => {

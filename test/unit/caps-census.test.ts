@@ -21,7 +21,7 @@ const CAP_ROLES: Record<string, CapRole> = {
   SPINE_NEXT_STEP_MAX: 'record-field',
   SPINE_LAST_SESSION_MAX: 'record-field',
   CRITERIA_MAX_ELEMENTS: 'call-payload',
-  OPEN_RISKS_MAX_ELEMENTS: 'call-payload',
+  RISKS_PER_CALL_MAX_ELEMENTS: 'call-payload',
   CRITERIA_RETENTION_MAX_ELEMENTS: 'record-field',
   CRITERION_TEXT_MAX: 'record-field',
   CRITERION_CHECK_MAX: 'record-field',
