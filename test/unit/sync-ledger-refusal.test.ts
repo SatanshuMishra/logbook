@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as caps from '../../src/schema/caps.ts'
 import { unparseableRecordsRefusal } from '../../src/server/tools/sync_ledger.ts'
+import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
 
 const NEWLINE = '\u000A'
 const BELL = '\u0007'
@@ -49,15 +50,33 @@ test('sync-ledger-refusal.escapes-a-hostile-record-name', () => {
 test('sync-ledger-refusal.clips-an-over-long-record-name', () => {
   const overLong = 'y'.repeat(caps.UNPARSEABLE_RECORD_NAME_MAX + 40)
   const refusal = unparseableRecordsRefusal([overLong])
+  const budget = caps.UNPARSEABLE_RECORD_NAME_MAX - CLIP_MARKER_GRAPHEMES
 
   assert.ok(
-    refusal.message.includes('y'.repeat(caps.UNPARSEABLE_RECORD_NAME_MAX)),
-    `the refusal must still show the record name up to its cap, but the message read: ${refusal.message}`
+    refusal.message.includes('y'.repeat(budget)),
+    `the refusal must still show the record name up to its shortened budget, but the message read: ${refusal.message}`
   )
   assert.equal(
-    refusal.message.includes('y'.repeat(caps.UNPARSEABLE_RECORD_NAME_MAX + 1)),
+    refusal.message.includes('y'.repeat(budget + 1)),
     false,
     `a record name longer than its cap must be clipped, but the message read: ${refusal.message}`
+  )
+})
+
+test('sync-ledger-refusal.marks-a-shortened-record-name-with-the-clip-marker', () => {
+  const overLong = 'y'.repeat(caps.UNPARSEABLE_RECORD_NAME_MAX + 40)
+  const refusal = unparseableRecordsRefusal([overLong])
+  const budget = caps.UNPARSEABLE_RECORD_NAME_MAX - CLIP_MARKER_GRAPHEMES
+  const expected = `${'y'.repeat(budget)}${CLIP_MARKER}`
+
+  assert.ok(
+    refusal.message.includes(expected),
+    `a shortened record name must show its budget of content followed by the clip marker and nothing more, but the message read: ${refusal.message}`
+  )
+  assert.equal(
+    refusal.message.includes(`${'y'.repeat(budget + 1)}${CLIP_MARKER}`),
+    false,
+    `a shortened record name must not carry one more character of content than its budget, but the message read: ${refusal.message}`
   )
 })
 

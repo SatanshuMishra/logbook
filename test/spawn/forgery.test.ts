@@ -1042,15 +1042,23 @@ test('render.clip-is-grapheme-safe', async () => {
         const field = slotOf(text, FIELD_LINE_PREFIX)
         assert.ok(field !== null, `${spec.name}: the refusal carried no field slot to inspect`)
         if (publishedPropertyCount(schema) > 0) {
-          assert.equal(
-            graphemesOf(field).length,
-            UNRECOGNIZED_KEY_NAME_MAX,
-            `${spec.name}: the unrecognised key was not clipped to exactly the declared cap`
-          )
           assert.ok(
-            escapedKey.startsWith(field),
-            `${spec.name}: the clipped key is not a grapheme prefix of the escaped key`
+            graphemesOf(field).length <= UNRECOGNIZED_KEY_NAME_MAX,
+            `${spec.name}: the unrecognised key was not clipped within the declared cap, got ${graphemesOf(field).length}`
           )
+          const withoutMarker = field.endsWith(CLIP_MARKER) ? field.slice(0, field.length - CLIP_MARKER.length) : field
+          assert.ok(
+            escapedKey.startsWith(withoutMarker),
+            `${spec.name}: the clipped key, with its clip marker removed, is not a grapheme prefix of the escaped key`
+          )
+          const truncatedEscapeTail = withoutMarker.match(/U\+[0-9A-F]*$/)
+          if (truncatedEscapeTail !== null) {
+            const digitCount = truncatedEscapeTail[0].length - 2
+            assert.ok(
+              [4, 5, 6].includes(digitCount),
+              `${spec.name}: the clip cut inside an emitted escape token, leaving ${truncatedEscapeTail[0]}`
+            )
+          }
           assertUtf8Clean(`${spec.name} clipped field`, field)
         } else {
           assert.equal(

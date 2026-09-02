@@ -5,7 +5,8 @@ import type { Refusal } from '../../schema/declare.ts'
 import { layoutFor } from '../../store/layout.ts'
 import { sync } from '../../merge/sync.ts'
 import { withDetail } from '../../store/detail.ts'
-import { clipGraphemes, escapeStored } from '../../render/escape.ts'
+import { escapeStored } from '../../render/escape.ts'
+import { clipWithMarker } from '../../render/clip.ts'
 import * as caps from '../../schema/caps.ts'
 import { openProjectStore } from '../tool-support.ts'
 
@@ -56,7 +57,7 @@ export const rejectedRefusal = (detail: string): Refusal =>
   )
 
 export const unparseableRecordsRefusal = (records: readonly string[]): Refusal => {
-  const escaped = records.map((record) => clipGraphemes(escapeStored(record), caps.UNPARSEABLE_RECORD_NAME_MAX))
+  const escaped = records.map((record) => clipWithMarker(escapeStored(record), caps.UNPARSEABLE_RECORD_NAME_MAX))
   const shown = escaped.slice(0, caps.UNPARSEABLE_RECORDS_SHOWN_MAX)
   const remainder = escaped.length - shown.length
   const named = remainder > 0 ? `${shown.join(', ')} (+${remainder} more)` : shown.join(', ')
