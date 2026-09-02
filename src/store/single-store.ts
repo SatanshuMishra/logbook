@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, lstatSync } from 'node:fs'
+import { readFileSync, readdirSync, lstatSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Ok, Refusal } from '../schema/declare.ts'
@@ -35,19 +35,29 @@ const readOriginProjectRoot = (pluginDataRoot: string, key: string): string | nu
   }
 }
 
+const canonicalOrSelf = (candidatePath: string): string => {
+  try {
+    return realpathSync.native(candidatePath)
+  } catch {
+    return candidatePath
+  }
+}
+
 const conflictsUnderOtherRoots = (
   rt: Runtime,
   pluginDataRoot: string,
   ownKey: string,
-  projectRoot: string
+  projectRoot: string,
+  ownRoot: string
 ): string[] => {
   const parent = path.dirname(pluginDataRoot)
   const ownRootName = path.basename(pluginDataRoot)
+  const ownRootCanonical = canonicalOrSelf(ownRoot)
 
   let rootNames: string[]
   try {
     rootNames = readdirSync(parent, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
+      .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
       .map((entry) => entry.name)
       .filter((name) => name !== ownRootName)
   } catch (error) {
@@ -58,15 +68,17 @@ const conflictsUnderOtherRoots = (
   const found: string[] = []
   for (const name of rootNames) {
     const rootPath = path.join(parent, name)
+    const candidatePath = path.join(rootPath, ownKey)
     let candidateIsDirectory = false
     try {
-      const candidate = lstatSync(path.join(rootPath, ownKey), { throwIfNoEntry: false })
+      const candidate = lstatSync(candidatePath, { throwIfNoEntry: false })
       candidateIsDirectory = candidate !== undefined && candidate.isDirectory()
     } catch (error) {
       rt.log({ level: 'error', event: 'store.cross-root-candidate-skipped', code: errnoCode(error) })
       continue
     }
     if (!candidateIsDirectory) continue
+    if (canonicalOrSelf(candidatePath) === ownRootCanonical) continue
     if (readOriginProjectRoot(rootPath, ownKey) === projectRoot) {
       found.push(`${name}/${ownKey}`)
     }
@@ -105,7 +117,7 @@ export const ensureSingleStore = (rt: Runtime, layout: StoreLayout): Ok<StoreLay
 
   const conflicts = [
     ...siblingKeys.filter((name) => readOriginProjectRoot(pluginDataRoot, name) === layout.projectRoot),
-    ...conflictsUnderOtherRoots(rt, pluginDataRoot, ownKey, layout.projectRoot)
+    ...conflictsUnderOtherRoots(rt, pluginDataRoot, ownKey, layout.projectRoot, layout.root)
   ]
 
   if (conflicts.length > 0) {

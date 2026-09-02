@@ -191,6 +191,46 @@ test('store.first-open-with-no-sibling-conflict-is-ok', () => {
   }
 })
 
+test('store.a-symlinked-sibling-install-root-is-detected', () => {
+  const pluginDataParent = mkdtempSync(path.join(tmpdir(), 'logbook-cross-root-'))
+  const externalInstall = mkdtempSync(path.join(tmpdir(), 'logbook-cross-root-external-'))
+  try {
+    const sharedKey = 'store-key-shared'
+    const projectRoot = '/tmp/some/shared/project'
+    writeOrigin(externalInstall, sharedKey, projectRoot)
+    symlinkSync(externalInstall, path.join(pluginDataParent, 'install-link'))
+
+    const ownRoot = path.join(pluginDataParent, 'install-own')
+    mkdirSync(path.join(ownRoot, sharedKey, 'state'), { recursive: true })
+
+    const layout: StoreLayout = {
+      root: path.join(ownRoot, sharedKey),
+      records: path.join(ownRoot, sharedKey, 'records'),
+      state: path.join(ownRoot, sharedKey, 'state'),
+      projectRoot
+    }
+
+    const rt = testRuntime()
+    const result = ensureSingleStore(rt, layout)
+
+    assert.equal(
+      result.ok,
+      false,
+      'a symlinked sibling install root holding a conflicting store must be refused'
+    )
+    if (result.ok) {
+      throw new Error('expected a refusal')
+    }
+    assert.equal(result.retryable, false)
+    assert.match(result.message, /install-link/)
+    assert.doesNotMatch(result.message, new RegExp(escapeRegExp(pluginDataParent)))
+    assert.doesNotMatch(result.message, new RegExp(escapeRegExp(externalInstall)))
+  } finally {
+    rmSync(pluginDataParent, { recursive: true, force: true })
+    rmSync(externalInstall, { recursive: true, force: true })
+  }
+})
+
 test('store.single-store-with-no-sibling-is-ok', () => {
   const pluginDataRoot = mkdtempSync(path.join(tmpdir(), 'logbook-single-store-'))
   try {
