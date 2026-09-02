@@ -333,6 +333,27 @@ const classifyGroupUsage = (item: GroupUsage): Verdict => (item.uses > 0 ? 'allo
 const describeGroupUsage = (item: GroupUsage): string =>
   `disposal-census: the closed group vocabulary declares "${item.group}", but no carried-as-criterion entry in ${REGISTER_PATH} names it; the vocabulary declares a group the register no longer uses, so a rename or a reclassification left a dead name that stays legal forever without ever being reached`
 
+type CriterionCollision = { criterionId: string; groups: readonly string[] }
+
+const criterionCollisions = (byGroup: Readonly<Record<string, string>>): CriterionCollision[] => {
+  const groupsByCriterion = new Map<string, string[]>()
+  for (const [group, criterionId] of Object.entries(byGroup)) {
+    const existing = groupsByCriterion.get(criterionId) ?? []
+    groupsByCriterion.set(criterionId, [...existing, group])
+  }
+  return [...groupsByCriterion.entries()]
+    .filter(([, groups]) => groups.length > 1)
+    .map(([criterionId, groups]) => ({ criterionId, groups }))
+}
+
+const describeCriterionCollisions = (collisions: readonly CriterionCollision[]): string =>
+  collisions
+    .map(
+      (collision) =>
+        `"${collision.criterionId}" is named by ${collision.groups.map((group) => `"${group}"`).join(' and ')}`
+    )
+    .join('; ')
+
 type OrdinalItem = { register: RegisterName; ordinal: number; id: string; occurrences: number; total: number }
 
 const ordinalItems = (entries: Record<RegisterName, RegisterEntry[]>): OrdinalItem[] =>
@@ -710,6 +731,37 @@ test('disposal-census.every-group-the-closed-vocabulary-declares-is-carried-by-a
   assert.match(
     describeGroupUsage({ group: 'renamed-away-group', uses: 0 }),
     /declares "renamed-away-group", but no carried-as-criterion entry in .* names it; the vocabulary declares a group the register no longer uses/
+  )
+})
+
+test('disposal-census.no-two-groups-in-the-closed-vocabulary-share-a-criterion', () => {
+  const collisions = criterionCollisions(CARRIED_CRITERION_BY_GROUP)
+  assert.equal(
+    new Set(Object.values(CARRIED_CRITERION_BY_GROUP)).size,
+    CARRIED_GROUPS.length,
+    `disposal-census: two or more groups in the closed vocabulary share a criterion id: ${describeCriterionCollisions(collisions)}; a criterion bound to two groups misdescribes at least one of them, and the census cannot tell which`
+  )
+})
+
+test('disposal-census.no-two-groups-in-the-closed-vocabulary-share-a-criterion.control.distinct-pairs-collide-with-nothing-while-a-shared-id-names-both-groups', () => {
+  const distinct: Readonly<Record<string, string>> = {
+    'group-a': '01M1FF7SD3QR5Z119AXS3RNCJD',
+    'group-b': '01M1FF7XPBMPE7G7HN21SS3CQV'
+  }
+  assert.deepEqual(criterionCollisions(distinct), [])
+
+  const sharedCriterionUlid = '01M1FF7SD3QR5Z119AXS3RNCJD'
+  const colliding: Readonly<Record<string, string>> = {
+    'group-a': sharedCriterionUlid,
+    'group-b': sharedCriterionUlid,
+    'group-c': '01M1FF7XPBMPE7G7HN21SS3CQV'
+  }
+  assert.deepEqual(criterionCollisions(colliding), [
+    { criterionId: sharedCriterionUlid, groups: ['group-a', 'group-b'] }
+  ])
+  assert.match(
+    describeCriterionCollisions(criterionCollisions(colliding)),
+    /"01M1FF7SD3QR5Z119AXS3RNCJD" is named by "group-a" and "group-b"/
   )
 })
 
