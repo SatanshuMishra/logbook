@@ -45,7 +45,17 @@ const canonicalise = (
   }
 }
 
-export const layoutFor = (rt: Runtime, projectRoot: string): Ok<StoreLayout> | Refusal => {
+export const layoutFor = (rt: Runtime, projectRoot: string | null): Ok<StoreLayout> | Refusal => {
+  if (projectRoot === null) {
+    return {
+      ok: false,
+      field: 'projectRoot',
+      accepted: 'an absolute path to an existing, readable directory',
+      example: '/Users/example/project',
+      retryable: false,
+      message: 'projectRoot is unavailable because the process could not read its own working directory; start the session from a readable directory'
+    }
+  }
   const canonical = canonicalise(projectRoot)
   if (!canonical.ok) {
     return withDetail(

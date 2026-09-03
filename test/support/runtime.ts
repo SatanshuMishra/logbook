@@ -11,7 +11,7 @@ export type TestRuntimeOptions = {
   start?: string
   stepMs?: number
   env?: Readonly<Record<string, string | undefined>>
-  cwd?: string
+  cwd?: string | null
   sessionId?: string
 }
 
@@ -45,7 +45,7 @@ export const testRuntime = (opts: TestRuntimeOptions = {}): Runtime => {
     now,
     ulid,
     env,
-    cwd: opts.cwd ?? '/test-cwd',
+    cwd: opts.cwd !== undefined ? opts.cwd : '/test-cwd',
     log: () => {},
     sessionId: opts.sessionId ?? DEFAULT_SESSION_ID
   }

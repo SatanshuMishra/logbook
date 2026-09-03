@@ -5,7 +5,7 @@ export type Runtime = {
   now: () => string
   ulid: () => string
   env: Readonly<Record<string, string | undefined>>
-  cwd: string
+  cwd: string | null
   log: (record: Record<string, unknown>) => void
   sessionId: string
 }
@@ -25,11 +25,22 @@ export const productionRuntime = (): Runtime => {
       reason: `${SESSION_ID_ENV_KEY} was not set in the environment; minted a ULID instead of the harness-supplied session id`
     })
   }
+  let cwd: string | null
+  try {
+    cwd = process.cwd()
+  } catch (error) {
+    cwd = null
+    log({
+      level: 'warn',
+      event: 'runtime.cwd-unreadable',
+      reason: `the process could not read its own working directory: ${error instanceof Error ? error.message : String(error)}`
+    })
+  }
   return {
     now: () => new Date().toISOString(),
     ulid: () => generateUlid(),
     env,
-    cwd: process.cwd(),
+    cwd,
     log,
     sessionId
   }

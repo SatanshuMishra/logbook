@@ -531,7 +531,7 @@ const openParkThreadFixture = async (rt: Runtime): Promise<ParkThreadFixtureCtx>
 
 const openParkThreadCrossSessionFixture = async (rt: Runtime): Promise<ParkThreadFixtureCtx> => {
   const { threadId } = await openFixtureThread(rt, 'park-thread-cross-session')
-  const otherSessionRt = testRuntime({ env: rt.env, cwd: rt.cwd, sessionId: 'a-different-session' })
+  const otherSessionRt = testRuntime({ env: rt.env, sessionId: 'a-different-session', cwd: rt.cwd })
   const resumed = await resumeThreadTool.handler(otherSessionRt, STUB_TOOL_CTX, { thread_id: threadId })
   if (!resumed.ok) throw new Error('optional-argument-recipes: expected the park_thread cross-session fixture pointer to be set')
   return { threadId }
