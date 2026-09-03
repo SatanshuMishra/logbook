@@ -735,11 +735,9 @@
     {
       "ordinal": 7,
       "id": "N7",
-      "class": "carried-as-criterion",
-      "thread_id": "01M130AYZYVWAGDKGHJX9AXPFG",
-      "decision_id": "01M1FF5VA6JCR7QH8Q727WBR1D",
-      "criterion_id": "01M1FF95055JMHF4PRECMTGVEQ",
-      "group": "frozen-invariant-and-budget"
+      "class": "own-thread",
+      "thread_id": "01M1GDTGNWVJWN3C2HSZZTT1YM",
+      "decision_id": "01M1JAFPN01HNQMSMPNRKQR8F4"
     },
     {
       "ordinal": 8,
