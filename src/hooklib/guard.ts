@@ -84,13 +84,18 @@ const commandTouchesStoreRoot = (command: string, cwd: string, canonicalRoot: st
 
 type PreToolUseEvent = { tool_name: string; tool_input: unknown; cwd: string; permission_mode: unknown }
 
-const parsePreToolUseEvent = (raw: unknown, fallbackCwd: string): PreToolUseEvent | null => {
+const parsePreToolUseEvent = (raw: unknown, fallbackCwd: string | null): PreToolUseEvent | null => {
   if (typeof raw !== 'object' || raw === null) return null
   const event = raw as Record<string, unknown>
   if (typeof event.tool_name !== 'string' || event.tool_name.length === 0) return null
   const cwd = typeof event.cwd === 'string' && event.cwd.length > 0 ? event.cwd : fallbackCwd
   return { tool_name: event.tool_name, tool_input: event.tool_input, cwd, permission_mode: event.permission_mode }
 }
+
+const unverifiedStoreVerdict = (isWriteTool: boolean): GuardVerdict =>
+  isWriteTool
+    ? { kind: 'deny', reason: `the Logbook store path could not be verified; ${USE_TOOLS}` }
+    : { kind: 'ask', reason: `the Logbook store path could not be verified; ${NOT_A_BOUNDARY}; ${USE_TOOLS}` }
 
 export const guardDecision = (rt: Runtime, raw: unknown): GuardVerdict => {
   const event = parsePreToolUseEvent(raw, rt.cwd)
@@ -105,13 +110,12 @@ export const guardDecision = (rt: Runtime, raw: unknown): GuardVerdict => {
   if (!isWriteTool && !isBash) return { kind: 'silent' }
   if (isBash && hasOptedOutOfBashPrompts(rt, event.permission_mode)) return { kind: 'silent' }
 
-  const storeRoot = resolveStoreRoot(rt, event.cwd)
+  const cwd = event.cwd
+  if (cwd === null) return unverifiedStoreVerdict(isWriteTool)
+
+  const storeRoot = resolveStoreRoot(rt, cwd)
   if (storeRoot.kind === 'unconfigured') return { kind: 'silent' }
-  if (storeRoot.kind === 'unresolvable') {
-    return isWriteTool
-      ? { kind: 'deny', reason: `the Logbook store path could not be verified; ${USE_TOOLS}` }
-      : { kind: 'ask', reason: `the Logbook store path could not be verified; ${NOT_A_BOUNDARY}; ${USE_TOOLS}` }
-  }
+  if (storeRoot.kind === 'unresolvable') return unverifiedStoreVerdict(isWriteTool)
 
   if (isWriteTool) {
     const target = targetPathOf(event.tool_input)
@@ -127,7 +131,7 @@ export const guardDecision = (rt: Runtime, raw: unknown): GuardVerdict => {
       reason: `the Logbook guard could not read this Bash command as a string and refused to judge it; ${NOT_A_BOUNDARY}; ${USE_TOOLS}`
     }
   }
-  const touches = commandTouchesConstant(command) || commandTouchesStoreRoot(command, event.cwd, storeRoot.canonicalPath)
+  const touches = commandTouchesConstant(command) || commandTouchesStoreRoot(command, cwd, storeRoot.canonicalPath)
   if (!touches) return { kind: 'silent' }
   if (isPureStoreRead(command, (text) => commandTouchesConstant(text) || commandTouchesStoreRoot(text, event.cwd, storeRoot.canonicalPath))) return { kind: 'silent' }
   return { kind: 'ask', reason: `this Bash command appears to touch the Logbook store; ${NOT_A_BOUNDARY}; ${USE_TOOLS}` }

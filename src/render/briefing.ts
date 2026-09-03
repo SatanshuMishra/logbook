@@ -67,7 +67,6 @@ const CRITERION_TEXT_NATURAL_MAX = 500
 const CRITERION_CHECK_NATURAL_MAX = 500
 const CRITERION_RESULT_NATURAL_MAX = 500
 const LAST_SESSION_TEXT_NATURAL_MAX = 500
-const SETTLED_TEXT_NATURAL_MAX = 120
 const ARTIFACT_LABEL_NATURAL_MAX = 200
 const ARTIFACT_POINTER_NATURAL_MAX = 500
 
@@ -87,7 +86,7 @@ const LEGACY_LAST_SESSION_MARKER =
   '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead'
 
 const TEXT_CLIPPED_BULLET =
-  '- some text on this briefing was shortened to fit the character budget; every shortened value ends with ...[shortened]'
+  '- some text on this briefing was shortened to fit the size budget for one reply; every shortened value ends with ...[shortened]'
 
 const clip = (text: string, max: number): string => clipWithMarker(escapeStored(text), max)
 
@@ -208,7 +207,8 @@ type RenderClip = {
   criterionCheck: number
   criterionResult: number
   lastSession: number
-  settled: number
+  settledRisk: number
+  settledKeyDecision: number
   artifactLabel: number
   artifactPointer: number
 }
@@ -224,7 +224,8 @@ const clipAt = (perItemClip: number): RenderClip => ({
   criterionCheck: Math.min(perItemClip, CRITERION_CHECK_NATURAL_MAX),
   criterionResult: Math.min(perItemClip, CRITERION_RESULT_NATURAL_MAX),
   lastSession: Math.min(perItemClip, LAST_SESSION_TEXT_NATURAL_MAX),
-  settled: Math.min(perItemClip, SETTLED_TEXT_NATURAL_MAX),
+  settledRisk: Math.min(perItemClip, RISK_TEXT_NATURAL_MAX),
+  settledKeyDecision: Math.min(perItemClip, KEY_DECISION_TITLE_NATURAL_MAX),
   artifactLabel: Math.min(perItemClip, ARTIFACT_LABEL_NATURAL_MAX),
   artifactPointer: Math.min(perItemClip, ARTIFACT_POINTER_NATURAL_MAX)
 })
@@ -240,7 +241,8 @@ const UNCLIPPED: RenderClip = {
   criterionCheck: NO_CLIP,
   criterionResult: NO_CLIP,
   lastSession: NO_CLIP,
-  settled: NO_CLIP,
+  settledRisk: NO_CLIP,
+  settledKeyDecision: NO_CLIP,
   artifactLabel: NO_CLIP,
   artifactPointer: NO_CLIP
 }
@@ -256,7 +258,6 @@ const MAX_ITEM_CLIP = Math.max(
   CRITERION_CHECK_NATURAL_MAX,
   CRITERION_RESULT_NATURAL_MAX,
   LAST_SESSION_TEXT_NATURAL_MAX,
-  SETTLED_TEXT_NATURAL_MAX,
   ARTIFACT_LABEL_NATURAL_MAX,
   ARTIFACT_POINTER_NATURAL_MAX
 )
@@ -333,8 +334,8 @@ const assembleBriefing = (
   const outOfScopeLines = outOfScope.map((item) => renderOutOfScopeLine(item, renderClip.outOfScope))
   const criterionBlocks = criteria.map((item) => renderCriterionBlock(item, renderClip))
   const settledLines = [
-    ...risks.settled.map((item) => renderSettledRiskLine(item, renderClip.settled)),
-    ...keyDecisions.settled.map((item) => renderSettledKeyDecisionLine(item, renderClip.settled))
+    ...risks.settled.map((item) => renderSettledRiskLine(item, renderClip.settledRisk)),
+    ...keyDecisions.settled.map((item) => renderSettledKeyDecisionLine(item, renderClip.settledKeyDecision))
   ]
 
   const notShownBulletLines = [

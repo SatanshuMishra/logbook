@@ -153,7 +153,8 @@ export const readIdentity = (rt: Runtime, repo: string): Ok<Identity> | Refusal 
   return { ok: true, value: { name: trimmedName, email: trimmedEmail } }
 }
 
-export const readProjectHead = (rt: Runtime, repo: string): string | null => {
+export const readProjectHead = (rt: Runtime, repo: string | null): string | null => {
+  if (repo === null) return null
   const result = git(rt, repo, ['rev-parse', 'HEAD'])
   return result.ok ? result.stdout.trim() : null
 }
