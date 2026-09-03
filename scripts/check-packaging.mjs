@@ -55,6 +55,19 @@ export const EVENT_HOOK_FILES = {
   Stop: 'stop'
 }
 
+export const USER_CONFIG_CONSUMER_ROOTS = ['src', 'hooks', 'bin']
+
+export const USER_CONFIG_CONSUMER_EXTENSIONS = new Set(['.ts', '.mts', '.json'])
+
+export const USER_CONFIG_KEY_PATTERN = /^[A-Za-z_]\w*$/
+
+export const USER_CONFIG_ENV_PREFIX = 'CLAUDE_PLUGIN_OPTION_'
+
+export const userConfigEnvKey = (key) => `${USER_CONFIG_ENV_PREFIX}${key.toUpperCase()}`
+
+export const mentionsEnvKey = (corpus, envKey) =>
+  new RegExp(`(?<![A-Za-z0-9_])${envKey}(?![A-Za-z0-9_])`).test(corpus)
+
 export const LEGACY_EXTENSION_ROOTS = ['bin', 'hooks', 'skills', 'src', 'test']
 export const LEGACY_EXTENSIONS = new Set(['.mjs', '.cjs'])
 
@@ -126,8 +139,43 @@ async function checkPackageManifest(root, problems) {
 async function checkPluginManifest(root, problems) {
   const plugin = await readJsonFile(root, '.claude-plugin/plugin.json', problems)
   if (!plugin) return
-  if ('userConfig' in plugin) {
-    problems.push('.claude-plugin/plugin.json: userConfig must be absent (former entries were controls that did nothing; a reappearing one is dead weight)')
+  if (!('userConfig' in plugin)) return
+
+  const userConfig = plugin.userConfig
+  if (typeof userConfig !== 'object' || userConfig === null || Array.isArray(userConfig)) {
+    problems.push(`.claude-plugin/plugin.json: userConfig must be an object keyed by option name (found ${JSON.stringify(userConfig)})`)
+    return
+  }
+
+  const sources = (
+    await Promise.all(USER_CONFIG_CONSUMER_ROOTS.map((dirName) => walkFiles(join(root, dirName))))
+  ).flat()
+  const readable = sources.filter((file) => USER_CONFIG_CONSUMER_EXTENSIONS.has(extname(file)))
+  const reads = await Promise.all(
+    readable.map(async (file) => {
+      try {
+        return { file, text: await readFile(file, 'utf8') }
+      } catch (err) {
+        return { file, error: err }
+      }
+    })
+  )
+  for (const read of reads) {
+    if (read.error) {
+      problems.push(`${relative(root, read.file)}: could not be read (${read.error.code ?? read.error.message}), so the userConfig audit could not see it`)
+    }
+  }
+  const corpus = reads.filter((read) => !read.error).map((read) => read.text).join('\n')
+
+  for (const key of Object.keys(userConfig)) {
+    if (!USER_CONFIG_KEY_PATTERN.test(key)) {
+      problems.push(`.claude-plugin/plugin.json: userConfig key ${JSON.stringify(key)} must match ${USER_CONFIG_KEY_PATTERN.source} (the CLI rejects anything else)`)
+      continue
+    }
+    const envKey = userConfigEnvKey(key)
+    if (!mentionsEnvKey(corpus, envKey)) {
+      problems.push(`.claude-plugin/plugin.json: userConfig.${key} is declared but no file under ${USER_CONFIG_CONSUMER_ROOTS.join('/, ')}/ names ${envKey} as a whole token (a control nothing names is dead weight)`)
+    }
   }
 }
 

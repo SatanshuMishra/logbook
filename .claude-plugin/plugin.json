@@ -14,5 +14,13 @@
     "handoff",
     "resume",
     "drift"
-  ]
+  ],
+  "userConfig": {
+    "disable_bash_guard": {
+      "type": "boolean",
+      "title": "Disable the Bash guard",
+      "description": "Stop asking for confirmation before a Bash command that touches the Logbook store. Editing the store by hand with Write, Edit, MultiEdit or NotebookEdit stays blocked either way.",
+      "default": false
+    }
+  }
 }
