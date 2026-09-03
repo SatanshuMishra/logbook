@@ -82,7 +82,7 @@ const commandTouchesStoreRoot = (command: string, cwd: string, canonicalRoot: st
   return tokens.some((token) => isWithinCanonicalRoot(resolve(cwd, token), canonicalRoot, false))
 }
 
-type PreToolUseEvent = { tool_name: string; tool_input: unknown; cwd: string; permission_mode: unknown }
+type PreToolUseEvent = { tool_name: string; tool_input: unknown; cwd: string | null; permission_mode: unknown }
 
 const parsePreToolUseEvent = (raw: unknown, fallbackCwd: string | null): PreToolUseEvent | null => {
   if (typeof raw !== 'object' || raw === null) return null
@@ -120,7 +120,7 @@ export const guardDecision = (rt: Runtime, raw: unknown): GuardVerdict => {
   if (isWriteTool) {
     const target = targetPathOf(event.tool_input)
     if (target === null) return { kind: 'silent' }
-    if (!isWithinCanonicalRoot(resolve(event.cwd, target), storeRoot.canonicalPath, true)) return { kind: 'silent' }
+    if (!isWithinCanonicalRoot(resolve(cwd, target), storeRoot.canonicalPath, true)) return { kind: 'silent' }
     return { kind: 'deny', reason: `${event.tool_name} into the Logbook store is not permitted; ${USE_TOOLS}` }
   }
 
@@ -133,6 +133,6 @@ export const guardDecision = (rt: Runtime, raw: unknown): GuardVerdict => {
   }
   const touches = commandTouchesConstant(command) || commandTouchesStoreRoot(command, cwd, storeRoot.canonicalPath)
   if (!touches) return { kind: 'silent' }
-  if (isPureStoreRead(command, (text) => commandTouchesConstant(text) || commandTouchesStoreRoot(text, event.cwd, storeRoot.canonicalPath))) return { kind: 'silent' }
+  if (isPureStoreRead(command, (text) => commandTouchesConstant(text) || commandTouchesStoreRoot(text, cwd, storeRoot.canonicalPath))) return { kind: 'silent' }
   return { kind: 'ask', reason: `this Bash command appears to touch the Logbook store; ${NOT_A_BOUNDARY}; ${USE_TOOLS}` }
 }
