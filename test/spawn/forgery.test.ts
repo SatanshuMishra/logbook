@@ -15,7 +15,7 @@ import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { openStore, type RecordChange } from '../../src/store/records.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import { escapeStored } from '../../src/render/escape.ts'
-import { CLIP_MARKER } from '../../src/render/clip.ts'
+import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
 import { BRIEFING_HEADING } from '../../src/render/briefing.ts'
 import { renderThreadListing } from '../../src/cli/session-start.ts'
 import { UNRECOGNIZED_KEY_NAME_MAX } from '../../src/schema/caps.ts'
@@ -32,6 +32,7 @@ const CONTROL_BLOCKAGE = 'a plainly benign blockage reason'
 const CONTROL_NEXT_STEP = 'a plainly benign next step'
 
 const FAMILY_EMOJI = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}'
+const WIDEST_ESCAPE_TOKEN_GRAPHEMES = 8
 const EMOJI_UNRECOGNISED_KEY = FAMILY_EMOJI.repeat(40)
 const EMOJI_TITLE = FAMILY_EMOJI.repeat(18)
 const EMOJI_NEXT_STEP = FAMILY_EMOJI.repeat(45)
@@ -340,12 +341,7 @@ const renderBriefingsFor = async (
 type SurfaceName = keyof Surfaces
 
 const BRIEFING_SURFACES: readonly (keyof BriefingSurfaces)[] = ['briefingTool', 'briefingResource']
-const ROSTER_SURFACES: readonly SurfaceName[] = [
-  'rosterTool',
-  'rosterResource',
-  'sessionStartRoster',
-  'threadListResource'
-]
+const ROSTER_SURFACES: readonly SurfaceName[] = ['rosterTool', 'rosterResource', 'sessionStartRoster']
 
 const assertPayloadIsInert = (surface: string, hostile: string, control: string): void => {
   assert.deepEqual(
@@ -405,7 +401,7 @@ const assertFragmentsShareOneLine = (surface: string, text: string, fragments: r
 
 const withTitleProbe = async (
   label: string,
-  fn: (hostile: Surfaces, control: Surfaces) => void
+  fn: (hostile: Surfaces, control: Surfaces, hostileId: string, controlId: string) => void
 ): Promise<void> => {
   const hostileFixture = makeFixture(`${label}h`)
   const controlFixture = makeFixture(`${label}c`)
@@ -423,7 +419,12 @@ const withTitleProbe = async (
       count: 1
     })
     assert.ok(hostileId !== undefined && controlId !== undefined, 'the fixture seeded no thread')
-    fn(await renderSurfaces(hostileFixture, hostileId), await renderSurfaces(controlFixture, controlId))
+    fn(
+      await renderSurfaces(hostileFixture, hostileId),
+      await renderSurfaces(controlFixture, controlId),
+      hostileId,
+      controlId
+    )
   } finally {
     disposeFixture(hostileFixture)
     disposeFixture(controlFixture)
@@ -456,9 +457,36 @@ test('render.title-cannot-forge-heading', async () => {
   })
 })
 
+const assertThreadListResourceCarriesNoTitle = (
+  hostile: Surfaces,
+  control: Surfaces,
+  hostileId: string
+): void => {
+  assert.ok(
+    control.threadListResource.length > 0,
+    'threadListResource: the control render was empty, so the absence check on the hostile render would prove nothing'
+  )
+  assert.ok(
+    hostile.threadListResource.length > 0,
+    'threadListResource: the hostile render was empty, so the absence check would prove nothing'
+  )
+  assert.ok(
+    hostile.threadListResource.includes(`logbook://thread/${hostileId}`),
+    'threadListResource: the hostile render dropped the thread uri, so the listing itself broke rather than proving the title is absent'
+  )
+  for (const fragment of [FORGED_TITLE, 'Injected', 'SYSTEM', 'Ignore the above']) {
+    assert.equal(
+      hostile.threadListResource.includes(fragment),
+      false,
+      `threadListResource: the stored title reached the listing, carrying ${JSON.stringify(fragment)}`
+    )
+  }
+}
+
 test('render.roster-cannot-forge-instruction', async () => {
-  await withTitleProbe('a3', (hostile, control) => {
+  await withTitleProbe('a3', (hostile, control, hostileId) => {
     assertTitleIsInertOn(ROSTER_SURFACES, hostile, control)
+    assertThreadListResourceCarriesNoTitle(hostile, control, hostileId)
   })
 })
 
@@ -1044,15 +1072,31 @@ test('render.clip-is-grapheme-safe', async () => {
         const field = slotOf(text, FIELD_LINE_PREFIX)
         assert.ok(field !== null, `${spec.name}: the refusal carried no field slot to inspect`)
         if (publishedPropertyCount(schema) > 0) {
-          assert.equal(
-            graphemesOf(field).length,
-            UNRECOGNIZED_KEY_NAME_MAX,
-            `${spec.name}: the unrecognised key was not clipped to exactly the declared cap`
+          assert.ok(
+            graphemesOf(field).length <= UNRECOGNIZED_KEY_NAME_MAX,
+            `${spec.name}: the unrecognised key was not clipped within the declared cap, got ${graphemesOf(field).length}`
           )
           assert.ok(
-            escapedKey.startsWith(field),
-            `${spec.name}: the clipped key is not a grapheme prefix of the escaped key`
+            graphemesOf(field).length >= UNRECOGNIZED_KEY_NAME_MAX - CLIP_MARKER_GRAPHEMES - WIDEST_ESCAPE_TOKEN_GRAPHEMES,
+            `${spec.name}: the clipped key lost far more content than the token-safe backoff can account for, got ${graphemesOf(field).length}`
           )
+          assert.ok(
+            field.endsWith(CLIP_MARKER),
+            `${spec.name}: a key long enough to force a clip must carry the clip marker, got: ${field}`
+          )
+          const withoutMarker = field.slice(0, field.length - CLIP_MARKER.length)
+          assert.ok(
+            escapedKey.startsWith(withoutMarker),
+            `${spec.name}: the clipped key, with its clip marker removed, is not a grapheme prefix of the escaped key`
+          )
+          const truncatedEscapeTail = withoutMarker.match(/U\+[0-9A-F]*$/)
+          if (truncatedEscapeTail !== null) {
+            const digitCount = truncatedEscapeTail[0].length - 2
+            assert.ok(
+              [4, 5, 6].includes(digitCount),
+              `${spec.name}: the clip cut inside an emitted escape token, leaving ${truncatedEscapeTail[0]}`
+            )
+          }
           assertUtf8Clean(`${spec.name} clipped field`, field)
         } else {
           assert.equal(

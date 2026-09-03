@@ -4,7 +4,7 @@ const CONTROL_CLASS = /\p{Cc}/u
 const ORDINARY_SPACE = ' '
 const LINE_SEPARATOR = '\u2028'
 const PARAGRAPH_SEPARATOR = '\u2029'
-const MARKDOWN_LEADING_CHARS = new Set(['#', '-', '*', '+', '>', '`', '~', '_', '=', '['])
+export const MARKDOWN_LEADING_CHARS: ReadonlySet<string> = new Set(['#', '-', '*', '+', '>', '`', '~', '_', '=', '['])
 const ANGLE_BRACKETS = new Set(['<', '>'])
 const MARKDOWN_INDENT_THRESHOLD = 4
 const ORDERED_LIST_DIGIT = /[0-9]/
@@ -130,8 +130,25 @@ export const unescapeStored = (text: string): string => {
   return out.join('')
 }
 
+const escapeTokenSafeBoundary = (graphemes: readonly string[], max: number): number => {
+  if (max >= graphemes.length) return graphemes.length
+  let index = 0
+  while (index < max) {
+    const decoded =
+      graphemes[index] === 'U' && graphemes[index + 1] === '+' ? decodedEscapeAt(graphemes, index) : null
+    if (decoded === null) {
+      index += 1
+      continue
+    }
+    const end = index + ESCAPE_PREFIX.length + decoded.width
+    if (end > max) return index === 0 ? end : index
+    index = end
+  }
+  return max
+}
+
 export const clipGraphemes = (text: string, max: number): string => {
   const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
   const graphemes = Array.from(segmenter.segment(text), (entry) => entry.segment)
-  return graphemes.slice(0, max).join('')
+  return graphemes.slice(0, escapeTokenSafeBoundary(graphemes, max)).join('')
 }

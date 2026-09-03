@@ -88,7 +88,8 @@ export const listThreadsTool: ToolSpec<ListThreadsInput, ListThreadsOutput> = {
     }
 
     const threads = slots.flatMap((slot) => (slot.quarantined ? [] : [slot.record]))
-    const rows: RosterRow[] = selectRosterThreads(threads).map(toRosterRow)
+    const selected = selectRosterThreads(threads)
+    const rows: RosterRow[] = selected.map(toRosterRow)
 
     const cursor = input.cursor ?? null
     const paginated = paginateRoster(rows, cursor, limit)
@@ -98,7 +99,7 @@ export const listThreadsTool: ToolSpec<ListThreadsInput, ListThreadsOutput> = {
 
     return {
       ok: true,
-      text: renderRoster(paginated.page),
+      text: renderRoster(paginated.page, threads.length - selected.length),
       structured: {
         threads: paginated.page.rows,
         next_cursor: paginated.page.next_cursor,

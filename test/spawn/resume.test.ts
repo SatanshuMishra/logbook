@@ -268,6 +268,9 @@ const threadRecordPath = (layout: StoreLayout, threadId: string): string =>
 const decisionRecordPath = (layout: StoreLayout, decisionId: string): string =>
   join(layout.records, 'decisions', `${decisionId}.json`)
 
+const sessionEntriesDir = (layout: StoreLayout, threadId: string): string =>
+  join(layout.records, 'sessions', threadId)
+
 const pointerFilePath = (layout: StoreLayout): string => join(layout.state, 'active-thread.json')
 
 const runRejectsInvalid = async (
@@ -1162,6 +1165,43 @@ test('log_session_event.refuses-any-reserved-prefixed-actor-not-only-the-park-bo
       firstTextOf(refused).split('\n')[0],
       'field: actor',
       'the refusal for a reserved-prefixed actor must name the field "actor"'
+    )
+  })
+})
+
+test('resume.briefing-counts-and-addresses-an-unreadable-session-entry', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+
+    const logged = (await fx.spawned.client.callTool({
+      name: 'log_session_event',
+      arguments: { thread_id: threadId, actor: 'claude', body: 'MARKER-READABLE-ENTRY this entry must survive intact' }
+    })) as CallToolResult
+    assertOkResult('log_session_event (unreadable session entry probe, readable entry)', logged)
+
+    const layout = layoutInFixture(fx.repo, fx.pluginData, fx.homeDir)
+    mkdirSync(sessionEntriesDir(layout, threadId), { recursive: true })
+    const rt = testRuntime({ env: { HOME: fx.homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: fx.pluginData }, cwd: fx.repo })
+    const unreadableEntryId = rt.ulid()
+    writeFileSync(join(sessionEntriesDir(layout, threadId), `${unreadableEntryId}.json`), '{not-json', 'utf8')
+
+    const resumed = await callResume(fx.spawned, fx.published, threadId)
+    assertOkResult('resume_thread (unreadable session entry probe)', resumed)
+    const structured = resumed.structuredContent as { briefing: string }
+
+    assert.match(
+      structured.briefing,
+      /- 1 session log entry on this thread could not be read; see logbook:\/\/sessions\//,
+      'the briefing must count the one session entry that failed to parse'
+    )
+    assert.match(
+      structured.briefing,
+      new RegExp(`logbook://sessions/${threadId}`),
+      'the briefing must carry the address that resolves to the thread\'s session log'
+    )
+    assert.ok(
+      structured.briefing.includes('MARKER-READABLE-ENTRY this entry must survive intact'),
+      'the one readable session entry must still render alongside the count of unreadable ones'
     )
   })
 })

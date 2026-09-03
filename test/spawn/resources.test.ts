@@ -14,6 +14,7 @@ import { census } from '../support/census.ts'
 import type { Classified } from '../support/census.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
+import { SESSION_FIRST_LINE_ENTRIES_MAX } from '../../src/server/resource-render.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const ENTRY = join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
@@ -409,6 +410,66 @@ test('resources.sessions-refuses-an-id-naming-no-thread-record', async () => {
   })
 })
 
+test('resource.sessions-caps-first-line-text-but-keeps-every-id', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+    const total = SESSION_FIRST_LINE_ENTRIES_MAX + 3
+    const entryIds: string[] = []
+    for (let i = 0; i < total; i += 1) {
+      entryIds.push(await logEntry(fx.spawned, ids.threadId, `cap fixture entry number ${i}`))
+    }
+
+    const listing = await readResourceText(fx.spawned, `logbook://sessions/${ids.threadId}`)
+
+    for (const entryId of entryIds) {
+      assert.ok(listing.includes(entryId), `expected the sessions listing to still name entry ${entryId}`)
+    }
+    assert.ok(
+      !listing.includes('cap fixture entry number 0\n') && !listing.includes('cap fixture entry number 0]'),
+      'expected the oldest entries beyond the cap to lose their first-line text'
+    )
+    assert.ok(
+      listing.includes(`cap fixture entry number ${total - 1}`),
+      'expected the newest entry to still show its first-line text'
+    )
+    const seededSessionEntryCount = 1
+    const droppedCount = total + seededSessionEntryCount - SESSION_FIRST_LINE_ENTRIES_MAX
+    assert.ok(
+      listing.includes(`${droppedCount} entry first lines omitted`),
+      `expected a note naming ${droppedCount} first lines omitted, got '${listing}'`
+    )
+  })
+})
+
+test('resource.sessions-still-answers-for-a-quarantined-thread-record', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+
+    const rt = testRuntime({
+      env: { HOME: fx.homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: fx.pluginData },
+      cwd: fx.repo
+    })
+    const layout = layoutFor(rt, fx.repo)
+    assert.equal(layout.ok, true)
+    if (!layout.ok) return
+
+    const threadRecordPath = join(layout.value.records, 'threads', `${ids.threadId}.json`)
+    writeFileSync(threadRecordPath, 'this is not valid json for a thread record')
+
+    const listing = await readResourceText(fx.spawned, `logbook://sessions/${ids.threadId}`)
+
+    assert.ok(
+      listing.includes(ids.sessionEntryId),
+      `expected the sessions listing to still name entry ${ids.sessionEntryId}`
+    )
+    assert.ok(
+      listing.includes('thread record quarantined'),
+      `expected the sessions listing to disclose the quarantined thread record, got '${listing}'`
+    )
+    assert.ok(listing.includes('invalid JSON'), 'expected the disclosure to carry the parse-failure reason')
+  })
+})
+
 test('resource.index-lists-the-sessions-address', async () => {
   await withFixture(async (fx) => {
     await fx.spawned.client.listTools()
@@ -416,6 +477,23 @@ test('resource.index-lists-the-sessions-address', async () => {
     assert.ok(
       parseIndexShapes(indexBody).includes('logbook://sessions/{thread_id}'),
       'expected logbook://index to list logbook://sessions/{thread_id}'
+    )
+  })
+})
+
+test('resource.index-sessions-description-does-not-promise-a-first-line-for-every-entry', async () => {
+  await withFixture(async (fx) => {
+    await fx.spawned.client.listTools()
+    const indexBody = await readIndexBody(fx.spawned)
+    const sessionsLine = indexBody.split('\n').find((line) => line.startsWith('logbook://sessions/{thread_id}'))
+    assert.ok(sessionsLine !== undefined, `expected logbook://index to carry a logbook://sessions/{thread_id} line, got '${indexBody}'`)
+    assert.ok(
+      !sessionsLine.includes('first line of each'),
+      `expected the sessions description to stop promising a first line for every entry, got '${sessionsLine}'`
+    )
+    assert.ok(
+      sessionsLine.includes(`newest ${SESSION_FIRST_LINE_ENTRIES_MAX} entries`),
+      `expected the sessions description to name the ${SESSION_FIRST_LINE_ENTRIES_MAX}-entry first-line cap, got '${sessionsLine}'`
     )
   })
 })
@@ -480,6 +558,40 @@ test('resource.thread-detail-degrades-when-bindings-cannot-be-read', async () =>
   })
 })
 
+const DISTINCTIVE_TITLE_SENTENCE = 'the quartz falcon migrated northward before the census closed'
+
+test('resource.list-carries-no-thread-title-prose', async () => {
+  await withFixture(async (fx) => {
+    await fx.spawned.client.listTools()
+    const opened = (await fx.spawned.client.callTool({
+      name: 'open_thread',
+      arguments: {
+        title: DISTINCTIVE_TITLE_SENTENCE,
+        slug: 'title-prose-fixture-thread',
+        completion_criteria: [{ text: 'a title prose fixture criterion', check: 'the title prose fixture check' }]
+      }
+    })) as CallToolResult
+    assertOkResult('open_thread (title prose fixture arrange)', opened)
+    const threadId = (opened.structuredContent as { thread_id: string }).thread_id
+
+    const listed = await fx.spawned.client.listResources()
+    const serialised = JSON.stringify(listed)
+
+    assert.ok(
+      !serialised.includes(DISTINCTIVE_TITLE_SENTENCE),
+      `expected resources/list to carry no thread title prose, got '${serialised}'`
+    )
+    assert.ok(
+      serialised.includes(`logbook://thread/${threadId}`),
+      'expected resources/list to still name the thread by uri'
+    )
+    assert.ok(
+      serialised.includes('title-prose-fixture-thread'),
+      'expected resources/list to still name the thread by its slug'
+    )
+  })
+})
+
 test('resource.list-enumerates-open-threads-and-not-decisions-or-session-entries', async () => {
   await withFixture(async (fx) => {
     const ids = await seedStore(fx.spawned)
@@ -512,32 +624,45 @@ test('resource.list-enumerates-open-threads-and-not-decisions-or-session-entries
   })
 })
 
-const THREAD_ID_BACKSLASH = '..\\PLANTED'
+const BACKSLASH_OFFENDER = '..\\PLANTED'
+
+const assertBackslashRefused = async (
+  spawned: SpawnedServer,
+  uri: string,
+  refusalPrefix: string
+): Promise<void> => {
+  const outcome = await spawned.client
+    .readResource({ uri })
+    .then((read) => ({ kind: 'resolved' as const, contentCount: read.contents.length }))
+    .catch((error: unknown) => ({ kind: 'refused' as const, error }))
+
+  assert.ok(
+    outcome.kind === 'refused',
+    `expected ${uri} to be refused, got a listing body carrying ${outcome.kind === 'resolved' ? outcome.contentCount : 0} content items`
+  )
+  const { error } = outcome
+  assert.ok(error instanceof McpError, `expected the refusal to be an McpError, got ${String(error)}`)
+  assert.equal(
+    error.code,
+    ErrorCode.InvalidParams,
+    `expected the refusal to carry ErrorCode.InvalidParams, got ${error.code}`
+  )
+  assert.ok(
+    error.message.includes(refusalPrefix),
+    `expected the refusal message to contain '${refusalPrefix}', got '${error.message}'`
+  )
+}
+
 const THREAD_ID_SHAPE_REFUSAL = "logbook://thread: 'id' must be a ULID matching"
 
 test('resources.thread-refuses-an-id-containing-a-backslash', async () => {
   await withFixture(async (fx) => {
     const ids = await seedStore(fx.spawned)
 
-    const outcome = await fx.spawned.client
-      .readResource({ uri: `logbook://thread/${THREAD_ID_BACKSLASH}` })
-      .then((read) => ({ kind: 'resolved' as const, contentCount: read.contents.length }))
-      .catch((error: unknown) => ({ kind: 'refused' as const, error }))
-
-    assert.ok(
-      outcome.kind === 'refused',
-      `expected the backslash id to be refused, got a listing body carrying ${outcome.kind === 'resolved' ? outcome.contentCount : 0} content items`
-    )
-    const { error } = outcome
-    assert.ok(error instanceof McpError, `expected the refusal to be an McpError, got ${String(error)}`)
-    assert.equal(
-      error.code,
-      ErrorCode.InvalidParams,
-      `expected the refusal to carry ErrorCode.InvalidParams, got ${error.code}`
-    )
-    assert.ok(
-      error.message.includes(THREAD_ID_SHAPE_REFUSAL),
-      `expected the refusal message to contain '${THREAD_ID_SHAPE_REFUSAL}', got '${error.message}'`
+    await assertBackslashRefused(
+      fx.spawned,
+      `logbook://thread/${BACKSLASH_OFFENDER}`,
+      THREAD_ID_SHAPE_REFUSAL
     )
 
     const byUlid = await readThreadResourceText(fx.spawned, ids.threadId)
@@ -548,5 +673,91 @@ test('resources.thread-refuses-an-id-containing-a-backslash', async () => {
 
     const bySlug = await fx.spawned.client.readResource({ uri: 'logbook://thread/resources-fixture-thread' })
     assert.ok(bySlug.contents.length > 0, 'expected a real slug to still resolve after the backslash id is refused')
+  })
+})
+
+const SESSIONS_ID_SHAPE_REFUSAL = "logbook://sessions: 'thread_id' must be a ULID matching"
+
+test('resources.sessions-refuses-a-thread-id-containing-a-backslash', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+
+    await assertBackslashRefused(
+      fx.spawned,
+      `logbook://sessions/${BACKSLASH_OFFENDER}`,
+      SESSIONS_ID_SHAPE_REFUSAL
+    )
+
+    const listing = await readResourceText(fx.spawned, `logbook://sessions/${ids.sessionThreadId}`)
+    assert.ok(
+      listing.includes(ids.sessionEntryId),
+      'expected a real ULID thread_id to still resolve after the backslash thread_id is refused'
+    )
+  })
+})
+
+const DECISION_ID_SHAPE_REFUSAL = "logbook://decision: 'id' must be a ULID matching"
+
+test('resources.decision-refuses-an-id-containing-a-backslash', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+
+    await assertBackslashRefused(
+      fx.spawned,
+      `logbook://decision/${BACKSLASH_OFFENDER}`,
+      DECISION_ID_SHAPE_REFUSAL
+    )
+
+    const decisionText = await readResourceText(fx.spawned, `logbook://decision/${ids.decisionId}`)
+    assert.ok(
+      decisionText.length > 0,
+      'expected a real ULID decision id to still resolve after the backslash id is refused'
+    )
+  })
+})
+
+const SESSION_THREAD_ID_SHAPE_REFUSAL = "logbook://session: 'thread_id' must be a ULID matching"
+
+test('resources.session-refuses-a-thread-id-containing-a-backslash', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+
+    await assertBackslashRefused(
+      fx.spawned,
+      `logbook://session/${BACKSLASH_OFFENDER}/${ids.sessionEntryId}`,
+      SESSION_THREAD_ID_SHAPE_REFUSAL
+    )
+
+    const entryText = await readResourceText(
+      fx.spawned,
+      `logbook://session/${ids.sessionThreadId}/${ids.sessionEntryId}`
+    )
+    assert.ok(
+      entryText.length > 0,
+      'expected a real ULID thread_id to still resolve after the backslash thread_id is refused'
+    )
+  })
+})
+
+const SESSION_ENTRY_ID_SHAPE_REFUSAL = "logbook://session: 'entry_id' must be a ULID matching"
+
+test('resources.session-refuses-an-entry-id-containing-a-backslash', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+
+    await assertBackslashRefused(
+      fx.spawned,
+      `logbook://session/${ids.sessionThreadId}/${BACKSLASH_OFFENDER}`,
+      SESSION_ENTRY_ID_SHAPE_REFUSAL
+    )
+
+    const entryText = await readResourceText(
+      fx.spawned,
+      `logbook://session/${ids.sessionThreadId}/${ids.sessionEntryId}`
+    )
+    assert.ok(
+      entryText.length > 0,
+      'expected a real ULID entry_id to still resolve after the backslash entry_id is refused'
+    )
   })
 })

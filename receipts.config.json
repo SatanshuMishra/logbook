@@ -1,5 +1,4 @@
 {
-  "$schema": "./receipts.config.schema.json",
   "version": 1,
   "claim": {
     "issue_link": "closes #(\\d+)",
@@ -11,17 +10,13 @@
   },
   "build": {
     "sha_source": "none",
-    "test_command": "node --test",
-    "suite_command": "npm test",
-    "integration_branch": "main"
+    "platform": "none"
   },
   "verify": {
     "test_command": "node --test {test}",
     "suite_command": "npm test",
     "require_fresh_base": "warn",
     "live_drive": null,
-    "scopedCheckCmd": "node --test",
-    "fullValidationCmd": "npm test",
     "on_load_error_red": "warn"
   },
   "degrade": {
@@ -31,10 +26,28 @@
   "gates": {
     "medium": "library",
     "enabled": "all",
+    "G6": {
+      "mode": "warn"
+    },
+    "G7": {
+      "mode": "warn"
+    },
     "G8": {
-      "integration_branch": "integration"
+      "integration_branch": "main"
     },
     "G10": {
+      "mode": "warn"
+    },
+    "G11": {
+      "mode": "block"
+    },
+    "G12": {
+      "mode": "warn"
+    },
+    "G13": {
+      "mode": "warn"
+    },
+    "G14": {
       "mode": "warn"
     }
   }

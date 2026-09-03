@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as caps from '../../src/schema/caps.ts'
 import { unparseableRecordsRefusal } from '../../src/server/tools/sync_ledger.ts'
+import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
 
 const NEWLINE = '\u000A'
 const BELL = '\u0007'
@@ -49,15 +50,33 @@ test('sync-ledger-refusal.escapes-a-hostile-record-name', () => {
 test('sync-ledger-refusal.clips-an-over-long-record-name', () => {
   const overLong = 'y'.repeat(caps.UNPARSEABLE_RECORD_NAME_MAX + 40)
   const refusal = unparseableRecordsRefusal([overLong])
+  const budget = caps.UNPARSEABLE_RECORD_NAME_MAX - CLIP_MARKER_GRAPHEMES
 
   assert.ok(
-    refusal.message.includes('y'.repeat(caps.UNPARSEABLE_RECORD_NAME_MAX)),
-    `the refusal must still show the record name up to its cap, but the message read: ${refusal.message}`
+    refusal.message.includes('y'.repeat(budget)),
+    `the refusal must still show the record name up to its shortened budget, but the message read: ${refusal.message}`
   )
   assert.equal(
-    refusal.message.includes('y'.repeat(caps.UNPARSEABLE_RECORD_NAME_MAX + 1)),
+    refusal.message.includes('y'.repeat(budget + 1)),
     false,
     `a record name longer than its cap must be clipped, but the message read: ${refusal.message}`
+  )
+})
+
+test('sync-ledger-refusal.marks-a-shortened-record-name-with-the-clip-marker', () => {
+  const overLong = 'y'.repeat(caps.UNPARSEABLE_RECORD_NAME_MAX + 40)
+  const refusal = unparseableRecordsRefusal([overLong])
+  const budget = caps.UNPARSEABLE_RECORD_NAME_MAX - CLIP_MARKER_GRAPHEMES
+  const expected = `${'y'.repeat(budget)}${CLIP_MARKER}`
+
+  assert.ok(
+    refusal.message.includes(expected),
+    `a shortened record name must show its budget of content followed by the clip marker and nothing more, but the message read: ${refusal.message}`
+  )
+  assert.equal(
+    refusal.message.includes(`${'y'.repeat(budget + 1)}${CLIP_MARKER}`),
+    false,
+    `a shortened record name must not carry one more character of content than its budget, but the message read: ${refusal.message}`
   )
 })
 
@@ -105,5 +124,94 @@ test('sync-ledger-refusal.counts-the-records-it-did-not-show', () => {
   assert.ok(
     refusal.message.includes(String(records.length)),
     `the refusal must say how many record files could not be read, but the message read: ${refusal.message}`
+  )
+})
+
+const CYRILLIC_A = '\u0430'
+
+test('sync-ledger-refusal.annotates-a-record-name-this-version-would-not-write', () => {
+  const genuine = 'decisions/01M0NDPM0ACCR9CD68PMHYWGGD.json'
+  const homoglyph = `decisions/01M0NDPM0${CYRILLIC_A}CCR9CD68PMHYWGGD.json`
+  const annotation = ' (not a name this version writes)'
+
+  const genuineRefusal = unparseableRecordsRefusal([genuine])
+  assert.equal(
+    genuineRefusal.message.includes(annotation),
+    false,
+    `a genuine record name this version writes must not carry the annotation, but the message read: ${genuineRefusal.message}`
+  )
+
+  const homoglyphRefusal = unparseableRecordsRefusal([homoglyph])
+  assert.ok(
+    homoglyphRefusal.message.includes(annotation),
+    `a record name outside the shape this version writes must carry the annotation, but the message read: ${homoglyphRefusal.message}`
+  )
+})
+
+const bracketedEntries = (message: string): string[] => message.match(/<[^>]*>/g) ?? []
+
+test('sync-ledger-refusal.a-forged-annotation-inside-a-record-name-renders-as-one-bracketed-entry', () => {
+  const forged = 'threads/01ARZ3NDEKTSV4RRFFQ69G5FAV.json (not a name this version writes), payload.json'
+  const refusal = unparseableRecordsRefusal([forged])
+
+  const entries = bracketedEntries(refusal.message)
+  assert.equal(
+    entries.length,
+    1,
+    `a single hostile record name must render as exactly one bracketed entry, but the message read: ${refusal.message}`
+  )
+  assert.ok(
+    refusal.message.includes('carries 1 record file(s)'),
+    `the message must report a record count of 1, not one inflated by the attacker's embedded comma, but the message read: ${refusal.message}`
+  )
+})
+
+test('sync-ledger-refusal.a-forged-annotation-sits-inside-the-brackets-and-the-real-one-sits-outside', () => {
+  const forged = 'threads/01ARZ3NDEKTSV4RRFFQ69G5FAV.json (not a name this version writes), payload.json'
+  const refusal = unparseableRecordsRefusal([forged])
+
+  const openIndex = refusal.message.indexOf('<')
+  const closeIndex = refusal.message.indexOf('>', openIndex)
+  assert.ok(
+    openIndex >= 0 && closeIndex > openIndex,
+    `the rendered entry must be wrapped in angle brackets, but the message read: ${refusal.message}`
+  )
+  const inside = refusal.message.slice(openIndex + 1, closeIndex)
+  const after = refusal.message.slice(closeIndex + 1)
+  assert.ok(
+    inside.includes('(not a name this version writes), payload.json'),
+    `the attacker's forged text must render inside the brackets, unable to escape them, but the entry read: ${inside}`
+  )
+  assert.ok(
+    after.startsWith(' (not a name this version writes)'),
+    `the authoritative annotation must sit after the closing bracket where an attacker cannot reach it, but the text after read: ${after}`
+  )
+})
+
+test('sync-ledger-refusal.a-genuine-record-name-is-bracketed-with-no-annotation-after-its-close', () => {
+  const genuine = 'threads/01ARZ3NDEKTSV4RRFFQ69G5FAV.json'
+  const refusal = unparseableRecordsRefusal([genuine])
+
+  const bracketed = `<${genuine}>`
+  assert.ok(
+    refusal.message.includes(bracketed),
+    `a genuine record name must render bracketed, but the message read: ${refusal.message}`
+  )
+  const after = refusal.message.slice(refusal.message.indexOf(bracketed) + bracketed.length)
+  assert.equal(
+    after.startsWith(' (not a name this version writes)'),
+    false,
+    `a genuine record name this version writes must carry no annotation after its closing bracket, but the text after read: ${after}`
+  )
+})
+
+test('sync-ledger-refusal.a-genuine-bindings-record-carries-no-annotation', () => {
+  const genuine = 'bindings/01ARZ3NDEKTSV4RRFFQ69G5FAV.json'
+  const refusal = unparseableRecordsRefusal([genuine])
+
+  assert.equal(
+    refusal.message.includes('(not a name this version writes)'),
+    false,
+    `a genuine bindings record this version writes must not carry the annotation, but the message read: ${refusal.message}`
   )
 })

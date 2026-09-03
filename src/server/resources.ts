@@ -40,7 +40,7 @@ const ADDRESSES: readonly Address[] = [
   { shape: 'logbook://decision/{id}', description: 'one decision record, resolved by its id' },
   {
     shape: 'logbook://sessions/{thread_id}',
-    description: 'every session-log entry id for one thread with the first line of each, newest first'
+    description: 'every session-log entry id for one thread with the first line shown for the newest 50 entries, newest first'
   },
   {
     shape: 'logbook://session/{thread_id}/{entry_id}',
@@ -195,7 +195,8 @@ const readSessionsResourceBody = (rt: Runtime, threadId: string): string => {
   return renderSessionsResource({
     threadId: validThreadId,
     entries: [...loaded].reverse(),
-    quarantined
+    quarantined,
+    threadQuarantinedReason: slot.quarantined ? slot.reason : null
   })
 }
 
@@ -210,8 +211,7 @@ const listThreadResources = (rt: Runtime): ListResourcesResult => {
     resources: selectRosterThreads(threads).map((thread) => ({
       uri: `logbook://thread/${escapeStored(thread.id)}`,
       name: escapeStored(thread.slug),
-      title: escapeStored(thread.title),
-      description: `one thread record in full: ${escapeStored(thread.title)}`,
+      description: 'one thread record in full, resolved by its id or its slug',
       mimeType: 'text/markdown'
     }))
   }
@@ -261,12 +261,13 @@ const readRosterResourceBody = (rt: Runtime): string => {
   const threads = store
     .readThreads()
     .flatMap((slot) => (slot.quarantined ? [] : [slot.record]))
-  const rows = selectRosterThreads(threads).map(toRosterRow)
+  const selected = selectRosterThreads(threads)
+  const rows = selected.map(toRosterRow)
   const paginated = paginateRoster(rows, null, Math.max(rows.length, 1))
   if (!paginated.ok) {
     throw new McpError(ErrorCode.InternalError, 'logbook://roster: the roster could not be paginated')
   }
-  return renderRoster(paginated.page)
+  return renderRoster(paginated.page, threads.length - selected.length)
 }
 
 export const registerResources = (server: McpServer, rt: Runtime): void => {
@@ -337,7 +338,7 @@ export const registerResources = (server: McpServer, rt: Runtime): void => {
     {
       title: 'Session log',
       description:
-        'Every session-log entry id for one thread with the first line of each, newest first. Read one in full at logbook://session/{thread_id}/{entry_id}.',
+        'Every session-log entry id for one thread with the first line shown for the newest 50 entries, newest first. Read one in full at logbook://session/{thread_id}/{entry_id}.',
       mimeType: 'text/markdown'
     },
     (uri, variables) => ({

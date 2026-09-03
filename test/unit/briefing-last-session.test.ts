@@ -136,3 +136,23 @@ test('briefing.a-session-entry-that-fits-renders-whole-with-no-marker', () => {
   assert.deepEqual(sectionOf(rendered, '**Last session:**'), [`- ${ids[0]} ${'y'.repeat(1200)}`])
   assert.equal(rendered.includes(CLIP_MARKER), false, 'a briefing that fits its budget must carry no clip marker')
 })
+
+test('briefing.unreadable-session-entries-are-counted-and-addressed-in-last-session', () => {
+  const thread = threadWith('')
+  const entries = [entryAt(0, thread.id, 'claude', 'a readable entry')]
+
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null, false, entries, 2)
+
+  assert.deepEqual(sectionOf(rendered, '**Last session:**'), [
+    `- ${ids[0]} a readable entry`,
+    `- 2 session log entries on this thread could not be read; see logbook://sessions/${thread.id} for the complete record`
+  ])
+})
+
+test('briefing.a-single-unreadable-session-entry-reads-singular', () => {
+  const thread = threadWith('')
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null, false, [], 1)
+  assert.deepEqual(sectionOf(rendered, '**Last session:**'), [
+    `- 1 session log entry on this thread could not be read; see logbook://sessions/${thread.id} for the complete record`
+  ])
+})

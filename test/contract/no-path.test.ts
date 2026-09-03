@@ -20,7 +20,7 @@ import type { ToolContext } from '../../src/server/register.ts'
 import { openThreadTool } from '../../src/server/tools/open_thread.ts'
 import { updateThreadTool } from '../../src/server/tools/update_thread.ts'
 import { closeThreadTool } from '../../src/server/tools/close_thread.ts'
-import { bindBranchTool } from '../../src/server/tools/bind_branch.ts'
+import { bindBranchTool, invalidCommittedBindingRefusal } from '../../src/server/tools/bind_branch.ts'
 import { amendCriteriaTool } from '../../src/server/tools/amend_criteria.ts'
 import { resumeThreadTool } from '../../src/server/tools/resume_thread.ts'
 import { parkThreadTool } from '../../src/server/tools/park_thread.ts'
@@ -91,6 +91,8 @@ const CLOSE_THREAD_WHOLE_RECORD_CAP_PRODUCER: ProducerId = 'server/tools/close_t
 const CLOSE_THREAD_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/close_thread.ts#commitFailureRefusal'
 const BIND_BRANCH_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/bind_branch.ts#commitFailureRefusal'
 const BIND_BRANCH_INVALID_BINDING_PRODUCER: ProducerId = 'server/tools/bind_branch.ts#invalidBindingRefusal'
+const BIND_BRANCH_INVALID_COMMITTED_BINDING_PRODUCER: ProducerId =
+  'server/tools/bind_branch.ts#invalidCommittedBindingRefusal'
 const AMEND_CRITERIA_MISSING_FIELD_PRODUCER: ProducerId = 'server/tools/amend_criteria.ts#missingFieldRefusal'
 const OPEN_PROJECT_STORE_PRODUCER: ProducerId = 'server/tool-support.ts#openProjectStore'
 const LOAD_THREAD_PRODUCER: ProducerId = 'server/tool-support.ts#loadThread'
@@ -619,6 +621,15 @@ const collectDefensiveGuardRefusals = (): TaggedRefusal[] => {
   refusals.push({
     producer: RESOLVE_CONFLICT_UNCLASSIFIABLE_RECORD_PRODUCER,
     refusal: unclassifiableRecordRefusal('binding:01ARZ3NDEKTSV4RRFFQ69G5FAV')
+  })
+
+  const invalidBindingAtCommit = BindingRecord.parse({ id: randomUUID(), thread_id: randomUUID(), branch: '', created_at: '2026-09-02T00:00:00.000Z' })
+  if (invalidBindingAtCommit.ok) throw new Error('expected BindingRecord.parse to refuse a binding with an empty branch')
+  refusals.push({
+    producer: BIND_BRANCH_INVALID_COMMITTED_BINDING_PRODUCER,
+    refusal: invalidCommittedBindingRefusal(
+      `${invalidBindingAtCommit.field} failed its stored-shape validation: ${invalidBindingAtCommit.message}`
+    )
   })
 
   withRepo((repo) => {

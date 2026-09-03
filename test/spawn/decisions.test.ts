@@ -521,6 +521,83 @@ test('update_thread.refuses-a-risk-naming-no-criterion-on-the-thread', async () 
   })
 })
 
+test('update_thread.refuses-an-empty-risk-reference', async () => {
+  await withSpawnFixture(async (fx) => {
+    const threadId = await createFixtureThread(fx.spawned, fx.published)
+
+    const refused = (await fx.spawned.client.callTool({
+      name: 'update_thread',
+      arguments: {
+        thread_id: threadId,
+        risks_add: [
+          {
+            text: 'a risk whose reference is the empty string',
+            scope: 'an area of the thread',
+            refs: ['']
+          }
+        ]
+      }
+    })) as CallToolResult
+
+    assert.equal(refused.isError, true, 'update_thread must refuse a risk reference that is the empty string')
+    const text = firstTextOf(refused)
+    assert.equal(text.split('\n')[0], 'field: risks_add.0.refs.0')
+    assert.match(text, /^accepted: /m)
+    assert.match(text, /^example: /m)
+    assert.match(text, /^retryable: (true|false)/m)
+
+    const storedAfterRefusal = readStoredThread(fx, threadId)
+    assert.equal(storedAfterRefusal.spine.open_risks.length, 0, 'the refused risk must not have been written to the spine')
+
+    const refusedWhitespace = (await fx.spawned.client.callTool({
+      name: 'update_thread',
+      arguments: {
+        thread_id: threadId,
+        risks_add: [
+          {
+            text: 'a risk whose reference is whitespace only',
+            scope: 'an area of the thread',
+            refs: ['   ']
+          }
+        ]
+      }
+    })) as CallToolResult
+
+    assert.equal(refusedWhitespace.isError, true, 'update_thread must refuse a risk reference that is whitespace only')
+    const whitespaceText = firstTextOf(refusedWhitespace)
+    assert.equal(whitespaceText.split('\n')[0], 'field: risks_add.0.refs.0')
+    assert.match(whitespaceText, /^accepted: /m)
+    assert.match(whitespaceText, /^example: /m)
+    assert.match(whitespaceText, /^retryable: (true|false)/m)
+
+    const storedAfterWhitespaceRefusal = readStoredThread(fx, threadId)
+    assert.equal(
+      storedAfterWhitespaceRefusal.spine.open_risks.length,
+      0,
+      'the whitespace-only refused risk must not have been written to the spine'
+    )
+
+    const accepted = (await fx.spawned.client.callTool({
+      name: 'update_thread',
+      arguments: {
+        thread_id: threadId,
+        risks_add: [
+          {
+            text: 'a risk whose reference is a real pointer',
+            scope: 'an area of the thread',
+            refs: ['docs/specs/goal-model.md#L120']
+          }
+        ]
+      }
+    })) as CallToolResult
+    assertOkResult('update_thread (non-empty risk reference)', accepted)
+
+    const storedAfterAccept = readStoredThread(fx, threadId)
+    assert.equal(storedAfterAccept.spine.open_risks.length, 1)
+    assert.deepEqual(storedAfterAccept.spine.open_risks[0]?.refs, ['docs/specs/goal-model.md#L120'])
+  })
+})
+
 test('decision.records-the-decision-and-reports-the-skipped-link-at-the-byte-cap', async () => {
   await withSpawnFixture(async (fx) => {
     const threadId = await createFixtureThread(fx.spawned, fx.published)

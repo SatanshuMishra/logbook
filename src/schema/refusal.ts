@@ -1,7 +1,8 @@
 import type { z } from 'zod'
 import type { Refusal } from './declare.ts'
 import { type JsonSchemaNode, resolveNode, synthesise } from './example.ts'
-import { clipGraphemes, escapeStored } from '../render/escape.ts'
+import { escapeStored } from '../render/escape.ts'
+import { clipWithMarker } from '../render/clip.ts'
 import * as caps from './caps.ts'
 
 const isNode = (value: unknown): value is JsonSchemaNode =>
@@ -34,7 +35,7 @@ const renderField = (path: (string | number | symbol)[]): string =>
 const renderUnrecognizedKeysField = (issue: z.core.$ZodIssue): string | null => {
   if (issue.code !== 'unrecognized_keys') return null
   const prefix = issue.path.map((segment) => String(segment)).join('.')
-  const escapedKeys = issue.keys.map((key) => clipGraphemes(escapeStored(key), caps.UNRECOGNIZED_KEY_NAME_MAX))
+  const escapedKeys = issue.keys.map((key) => clipWithMarker(escapeStored(key), caps.UNRECOGNIZED_KEY_NAME_MAX))
   const shown = escapedKeys.slice(0, caps.UNRECOGNIZED_KEYS_SHOWN_MAX)
   const remainder = escapedKeys.length - shown.length
   const keys = remainder > 0 ? `${shown.join(',')} (+${remainder} more)` : shown.join(',')
