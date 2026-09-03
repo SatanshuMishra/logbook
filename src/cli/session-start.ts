@@ -28,7 +28,7 @@ const renderThreadLine = (thread: Thread): string =>
   `- ${escapeStored(thread.slug)}: ${escapeStored(thread.title)} -- next: ` +
   `${escapeStored(thread.spine.next_step)} (id ${escapeStored(thread.id)})`
 
-export const renderThreadListing = (rt: Runtime, projectRoot: string): string => {
+export const renderThreadListing = (rt: Runtime, projectRoot: string | null): string => {
   const opened = openStore(rt, projectRoot)
   if (!opened.ok) {
     return ['Logbook: the thread store could not be opened (', escapeStored(opened.message), ').'].join('')

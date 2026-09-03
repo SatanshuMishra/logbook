@@ -233,7 +233,7 @@ const ensureMaterialised = (rt: Runtime, layout: StoreLayout): Ok<void> | Refusa
   return { ok: true, value: undefined }
 }
 
-export const openStore = (rt: Runtime, projectRoot: string): Ok<Store> | Refusal => {
+export const openStore = (rt: Runtime, projectRoot: string | null): Ok<Store> | Refusal => {
   const layout = layoutFor(rt, projectRoot)
   if (!layout.ok) return layout
 
