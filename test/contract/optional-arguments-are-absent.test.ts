@@ -9,7 +9,14 @@ import { RECIPES, TEST_2_CASES, isEmptyish, withSingleFixture } from '../support
 
 type Verdict = 'allowed' | 'forbidden' | 'unclassifiable'
 
-type LandingSiteEntry = { path: string; site: string; omitted: unknown; refused: boolean; noDifference: boolean }
+type LandingSiteEntry = {
+  path: string
+  site: string
+  omitted: unknown
+  refused: boolean
+  noDifference: boolean
+  refusal: { field: string; message: string } | null
+}
 
 const parentPathOf = (path: string): string | null => {
   if (path.endsWith('[]')) return path.slice(0, -2)
@@ -49,7 +56,7 @@ const derivePopulation = (): string[] =>
 
 const classifyLandingSite = (entry: LandingSiteEntry): Verdict => {
   if (entry.noDifference) return 'unclassifiable'
-  if (entry.refused) return 'allowed'
+  if (entry.refused) return entry.refusal !== null && entry.refusal.field === keyOf(entry.path) ? 'allowed' : 'unclassifiable'
   if (isEmptyish(entry.omitted)) return 'allowed'
   const value = entry.omitted
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || Array.isArray(value)) {
@@ -75,24 +82,24 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute', asyn
     }
     const result = await recipe()
     if (result.refused) {
-      entries.push({ path, site: 'refused', omitted: undefined, refused: true, noDifference: false })
-      t.diagnostic(`${path}: the omitted run was refused`)
+      entries.push({ path, site: 'refused', omitted: undefined, refused: true, noDifference: false, refusal: result.refusal })
+      t.diagnostic(`${path}: the omitted run was refused (${result.refusal?.field}): ${result.refusal?.message}`)
       continue
     }
     if (result.sites.length === 0) {
-      entries.push({ path, site: NO_LANDING_SITE, omitted: undefined, refusal: null })
       t.diagnostic(`${path}: no landing site differed between the omitted and sentinel runs`)
       entries.push({
         path,
         site: 'no-landing-site',
         omitted: `supplying ${path} changed nothing on the response, the stored record or the pointer`,
         refused: false,
-        noDifference: true
+        noDifference: true,
+        refusal: null
       })
       continue
     }
     for (const site of result.sites) {
-      entries.push({ path, site: site.site, omitted: site.omitted, refused: false, noDifference: false })
+      entries.push({ path, site: site.site, omitted: site.omitted, refused: false, noDifference: false, refusal: null })
       t.diagnostic(`${path}#${site.site}: omitted run carries ${JSON.stringify(site.omitted)}`)
     }
   }
@@ -112,7 +119,8 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.contro
     site: 'synthetic',
     omitted: 'criterion 1',
     refused: false,
-    noDifference: false
+    noDifference: false,
+    refusal: null
   }
   assert.throws(
     () => census([forbidden], classifyLandingSite),
@@ -127,7 +135,8 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.contro
     site: 'synthetic',
     omitted: { nested: true },
     refused: false,
-    noDifference: false
+    noDifference: false,
+    refusal: null
   }
   assert.throws(
     () => census([weird], classifyLandingSite),
@@ -141,6 +150,8 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.contro
     path: 'amend_criteria.criterion_id',
     site: 'refused',
     omitted: undefined,
+    refused: true,
+    noDifference: false,
     refusal: { field: 'criterion_id', message: 'criterion_id is required when operation is "rewrite".' }
   }
   assert.equal(
@@ -158,6 +169,8 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.contro
     path: 'amend_criteria.criterion_id',
     site: 'refused',
     omitted: undefined,
+    refused: true,
+    noDifference: false,
     refusal: { field: 'thread_id', message: 'thread_id must resolve to an existing thread.' }
   }
   assert.throws(
@@ -175,8 +188,10 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.contro
 test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.control.a-zero-site-non-refused-entry-halts-a-zero-site-refused-entry-does-not', () => {
   const zeroSiteNotRefused: LandingSiteEntry = {
     path: 'synthetic.probe',
-    site: NO_LANDING_SITE,
+    site: 'no-landing-site',
     omitted: undefined,
+    refused: false,
+    noDifference: true,
     refusal: null
   }
   assert.throws(
@@ -189,6 +204,8 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.contro
     path: 'synthetic.probe',
     site: 'refused',
     omitted: undefined,
+    refused: true,
+    noDifference: false,
     refusal: { field: 'probe', message: 'probe is required.' }
   }
   assert.doesNotThrow(
