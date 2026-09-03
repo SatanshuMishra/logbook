@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
-import { builtinModules } from 'node:module'
+import { builtinModules, isBuiltin } from 'node:module'
 import path from 'node:path'
 import { test } from 'node:test'
 import * as ts from 'typescript'
@@ -102,10 +102,6 @@ const shippedCodeFilesOnDisk = (): string[] =>
   )
 
 const BARE_BUILTIN_NAMES = new Set(builtinModules.filter((name) => !name.startsWith('node:')))
-const NODE_PREFIXED_BUILTIN_SPECIFIERS = new Set([
-  ...[...BARE_BUILTIN_NAMES].map((name) => `node:${name}`),
-  ...builtinModules.filter((name) => name.startsWith('node:'))
-])
 
 const isRelativeSpecifier = (specifier: string): boolean =>
   specifier === '.' || specifier === '..' || specifier.startsWith('./') || specifier.startsWith('../')
@@ -135,7 +131,7 @@ const classifySpecifierText = (
   }
   if (specifier.startsWith('#')) return 'unclassifiable'
   if (specifier.startsWith('node:')) {
-    return NODE_PREFIXED_BUILTIN_SPECIFIERS.has(specifier) ? 'allowed' : 'unclassifiable'
+    return isBuiltin(specifier) ? 'allowed' : 'unclassifiable'
   }
   if (specifier.startsWith('/')) return 'forbidden'
   if (specifier.includes(':')) return 'unclassifiable'
