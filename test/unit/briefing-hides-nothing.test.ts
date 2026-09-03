@@ -309,13 +309,23 @@ test('briefing.a-render-that-fits-its-budget-is-clipped-nowhere', () => {
 
 const SHORTENING_FIXTURE_CRITERION_COUNT = 100
 const SHORTENING_FIXTURE_CRITERION_TEXT_LENGTH = 300
+const SHORTENING_FIXTURE_KEY_DECISION_TITLE_LENGTH = caps.KEY_DECISION_TITLE_MAX
 
 const CRITERION_TEXT_PATTERN = /^- c\d+ \[(?:open|done|struck)\]: (.*) \(id [0-9A-HJKMNP-TV-Z]{26}\)$/
 const RISK_TEXT_PATTERN = /^- [0-9A-HJKMNP-TV-Z]{26} (.*)$/
+const SETTLED_RISK_TEXT_PATTERN = /^- risk [0-9A-HJKMNP-TV-Z]{26} (.*)$/
+const SETTLED_DECISION_TEXT_PATTERN = /^- decision [0-9A-HJKMNP-TV-Z]{26} (.*)$/
 const SUCCEEDS_TITLE_PATTERN = /^- succeeds: (.*) \([^)]*\)$/
 const CHECK_TEXT_PATTERN = /^ {2}- check: (.*)$/
 
-const SHORTENABLE_VALUE_PATTERNS = [CRITERION_TEXT_PATTERN, RISK_TEXT_PATTERN, SUCCEEDS_TITLE_PATTERN, CHECK_TEXT_PATTERN]
+const SHORTENABLE_VALUE_PATTERNS = [
+  CRITERION_TEXT_PATTERN,
+  RISK_TEXT_PATTERN,
+  SETTLED_RISK_TEXT_PATTERN,
+  SETTLED_DECISION_TEXT_PATTERN,
+  SUCCEEDS_TITLE_PATTERN,
+  CHECK_TEXT_PATTERN
+]
 
 const storedValueOf = (line: string): string | null => {
   for (const pattern of SHORTENABLE_VALUE_PATTERNS) {
@@ -327,14 +337,49 @@ const storedValueOf = (line: string): string | null => {
 
 test('briefing.every-shortened-value-carries-the-marker-inside-its-own-limit', () => {
   const criteria: Criterion[] = Array.from({ length: SHORTENING_FIXTURE_CRITERION_COUNT }, (_, index) =>
-    criterionOf({ ordinal: index + 1, text: 'x'.repeat(SHORTENING_FIXTURE_CRITERION_TEXT_LENGTH) })
+    criterionOf({
+      ordinal: index + 1,
+      text: 'x'.repeat(SHORTENING_FIXTURE_CRITERION_TEXT_LENGTH),
+      ...(index === 0 ? { done: true } : {})
+    })
   )
+  const metCriterion = criteria[0]
+  if (metCriterion === undefined) {
+    throw new Error('the shortening fixture must carry at least one criterion to anchor a settled risk on')
+  }
   const predecessor = threadOf({
     slug: 'a'.repeat(caps.THREAD_SLUG_MAX),
     title: 'p'.repeat(caps.THREAD_TITLE_MAX),
     status: 'done'
   })
-  const thread = threadOf({ predecessor_id: predecessor.id, completion_criteria: criteria })
+  const thread = threadOf({
+    predecessor_id: predecessor.id,
+    completion_criteria: criteria,
+    spine: {
+      active_goal: 'ship the renderer',
+      next_step: 'write the tests',
+      last_session: 'wrote the renderer',
+      open_risks: [
+        {
+          id: rt.ulid(),
+          scope: 's',
+          text: 'y'.repeat(SHORTENING_FIXTURE_CRITERION_TEXT_LENGTH),
+          refs: [],
+          criterion_id: metCriterion.id
+        }
+      ],
+      key_decisions: [
+        {
+          id: rt.ulid(),
+          decision_id: rt.ulid(),
+          title: 'z'.repeat(SHORTENING_FIXTURE_KEY_DECISION_TITLE_LENGTH),
+          scope: 's',
+          criterion_id: metCriterion.id
+        }
+      ],
+      out_of_scope: []
+    }
+  })
   assert.equal(ThreadRecord.parse(thread).ok, true, 'the shortening fixture must itself be schema-admissible')
   assert.equal(ThreadRecord.parse(predecessor).ok, true, 'the predecessor fixture must itself be schema-admissible')
 
@@ -361,7 +406,7 @@ test('briefing.every-shortened-value-carries-the-marker-inside-its-own-limit', (
 
   assert.ok(
     render.briefing.includes(
-      '- some text on this briefing was shortened to fit the character budget; every shortened value ends with ...[shortened]'
+      '- some text on this briefing was shortened to fit the size budget for one reply; every shortened value ends with ...[shortened]'
     ),
     'the not-shown block must say that text was shortened'
   )
