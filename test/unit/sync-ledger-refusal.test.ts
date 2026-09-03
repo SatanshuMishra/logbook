@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as caps from '../../src/schema/caps.ts'
-import { unparseableRecordsRefusal } from '../../src/server/tools/sync_ledger.ts'
+import { rejectedRefusal, unparseableRecordsRefusal } from '../../src/server/tools/sync_ledger.ts'
+import type { RejectedOutcome } from '../../src/merge/sync.ts'
 import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
 
 const NEWLINE = '\u000A'
@@ -213,5 +214,148 @@ test('sync-ledger-refusal.a-genuine-bindings-record-carries-no-annotation', () =
     refusal.message.includes('(not a name this version writes)'),
     false,
     `a genuine bindings record this version writes must not carry the annotation, but the message read: ${refusal.message}`
+  )
+})
+
+const rejectedOutcome = (cause: 'contention' | 'local', detail: string): RejectedOutcome => ({
+  ok: false,
+  reason: 'rejected',
+  cause,
+  detail
+})
+
+const invalidMergedRecordOutcome = (field: string, detail: string): RejectedOutcome => ({
+  ok: false,
+  reason: 'rejected',
+  cause: 'invalid-merged-record',
+  detail,
+  field
+})
+
+test('sync-ledger-refusal.a-ref-another-sync-keeps-moving-renders-contention-not-an-origin-rejection', () => {
+  const refusal = rejectedRefusal(rejectedOutcome('contention', 'the ledger ref moved under every attempt'))
+
+  assert.equal(
+    refusal.retryable,
+    true,
+    'a ref another sync keeps moving can be synced once that writer stops, so contention must be retryable'
+  )
+  assert.match(
+    refusal.accepted,
+    /not being moved by another sync/,
+    `contention must say it wanted a ref no other sync was moving, but accepted read: ${refusal.accepted}`
+  )
+  assert.equal(
+    refusal.example,
+    'retry the call',
+    `contention must tell the operator to retry and nothing more, but example read: ${refusal.example}`
+  )
+  assert.match(
+    refusal.message,
+    /ledger ref kept moving/,
+    `contention must name the moving ref as what stopped the sync, but the message read: ${refusal.message}`
+  )
+  assert.match(
+    refusal.message,
+    /nothing was pushed/,
+    `contention must tell the operator the shared copy was left where it was, but the message read: ${refusal.message}`
+  )
+  assert.doesNotMatch(
+    refusal.message,
+    /origin refused/,
+    `contention must not report a rejection origin never made, but the message read: ${refusal.message}`
+  )
+  assert.doesNotMatch(
+    refusal.message,
+    /could not be updated/,
+    `contention must not be rendered as a failure of this machine's own write, but the message read: ${refusal.message}`
+  )
+})
+
+test('sync-ledger-refusal.a-merged-record-failing-its-stored-shape-names-the-field-it-was-given', () => {
+  const overflowedField = 'spine.out_of_scope'
+  const refusal = rejectedRefusal(
+    invalidMergedRecordOutcome(overflowedField, 'the merged thread exceeded its stored array cap')
+  )
+
+  assert.equal(
+    refusal.retryable,
+    false,
+    'a merge that produced a record failing its stored shape cannot be made to pass by repeating the call'
+  )
+  assert.equal(
+    refusal.example,
+    overflowedField,
+    `the example must be the field that failed its shape, so the operator knows where to look, but it read: ${refusal.example}`
+  )
+  assert.ok(
+    refusal.message.includes(overflowedField),
+    `the message must name the field that failed its stored shape, but it read: ${refusal.message}`
+  )
+  assert.match(
+    refusal.message,
+    /does not match its stored shape/,
+    `the refusal must say the merge produced a record outside its stored shape, but the message read: ${refusal.message}`
+  )
+  assert.match(
+    refusal.message,
+    /nothing was written locally/,
+    `the refusal must tell the operator the local ledger was left untouched, but the message read: ${refusal.message}`
+  )
+
+  const otherField = 'completion_criteria'
+  const otherRefusal = rejectedRefusal(
+    invalidMergedRecordOutcome(otherField, 'the merged thread exceeded a different stored cap')
+  )
+
+  assert.equal(
+    otherRefusal.example,
+    otherField,
+    `the field the refusal names must be the one it was handed, not a fixed one, but example read: ${otherRefusal.example}`
+  )
+  assert.equal(
+    otherRefusal.message.includes(overflowedField),
+    false,
+    `a refusal about one field must not name a different one, but the message read: ${otherRefusal.message}`
+  )
+})
+
+test('sync-ledger-refusal.a-local-write-failure-says-this-machine-could-not-update-and-nothing-reached-origin', () => {
+  const refusal = rejectedRefusal(rejectedOutcome('local', 'writing the ledger ref failed with EACCES'))
+
+  assert.equal(
+    refusal.retryable,
+    true,
+    'a write this machine could not complete can be retried once whatever blocked it is cleared'
+  )
+  assert.match(
+    refusal.accepted,
+    /a local ledger write that this machine can complete/,
+    `the refusal must say it wanted a local write it could finish, but accepted read: ${refusal.accepted}`
+  )
+  assert.equal(
+    refusal.example,
+    'retry the call once the condition named below is cleared',
+    `the refusal must point the operator at the condition it reported before retrying, but example read: ${refusal.example}`
+  )
+  assert.match(
+    refusal.message,
+    /this machine's own ledger could not be updated/,
+    `the refusal must place the failure on this machine's own ledger, but the message read: ${refusal.message}`
+  )
+  assert.match(
+    refusal.message,
+    /nothing was sent to origin/,
+    `the refusal must tell the operator the shared copy never saw the write, but the message read: ${refusal.message}`
+  )
+  assert.doesNotMatch(
+    refusal.message,
+    /origin refused/,
+    `a failure on this machine must not be reported as a rejection origin never made, but the message read: ${refusal.message}`
+  )
+  assert.doesNotMatch(
+    refusal.message,
+    /ledger ref kept moving/,
+    `a write this machine could not complete must not be rendered as contention, but the message read: ${refusal.message}`
   )
 })
