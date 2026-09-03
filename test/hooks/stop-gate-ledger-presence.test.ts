@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Runtime } from '../../src/runtime/runtime.ts'
@@ -26,11 +26,13 @@ const BANNED_LITERALS = [
 ]
 
 const withPluginData = <T>(fn: (pluginData: string) => T): T => {
-  const dir = mkdtempSync(join(tmpdir(), 'logbook-stop-gate-presence-plugin-data-'))
+  const home = mkdtempSync(join(tmpdir(), 'logbook-stop-gate-presence-plugin-data-'))
+  const dir = join(home, 'plugin-data')
+  mkdirSync(dir)
   try {
     return fn(dir)
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
   }
 }
 

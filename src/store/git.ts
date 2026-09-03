@@ -72,6 +72,11 @@ const buildGitEnv = (rt: Runtime, indexFile: string, opts: GitOpts): Record<stri
   HOME: rt.env.HOME
 })
 
+const isBufferOverflow = (error: NodeJS.ErrnoException): boolean => error.code === 'ENOBUFS'
+
+const bufferOverflowMessage = (args: string[]): string =>
+  `git ${args.join(' ')} produced more than GIT_BUFFER_MAX_BYTES (${GIT_BUFFER_MAX_BYTES}) bytes of output; refusing rather than risk mistaking a truncated read for a short ledger`
+
 export const git = (rt: Runtime, repo: string, args: string[], opts: GitOpts = {}): GitResult => {
   const indexFile = opts.indexFile ?? freshIndexPath()
   const env = buildGitEnv(rt, indexFile, opts)
@@ -79,9 +84,13 @@ export const git = (rt: Runtime, repo: string, args: string[], opts: GitOpts = {
     const result = spawnSync('git', ['-C', repo, ...args], {
       env,
       encoding: 'utf8',
+      maxBuffer: GIT_BUFFER_MAX_BYTES,
       ...(opts.stdin !== undefined ? { input: opts.stdin } : {})
     })
     if (result.error) {
+      if (isBufferOverflow(result.error as NodeJS.ErrnoException)) {
+        return { ok: false, code: -1, stderr: bufferOverflowMessage(args) }
+      }
       return { ok: false, code: -1, stderr: result.error.message }
     }
     const code = result.status ?? -1
@@ -93,8 +102,6 @@ export const git = (rt: Runtime, repo: string, args: string[], opts: GitOpts = {
     removeSelfAllocatedIndex(indexFile, opts)
   }
 }
-
-const isBufferOverflow = (error: NodeJS.ErrnoException): boolean => error.code === 'ENOBUFS'
 
 export const gitBuffer = (rt: Runtime, repo: string, args: string[], opts: GitBufferOpts = {}): GitBufferResult => {
   const indexFile = opts.indexFile ?? freshIndexPath()
@@ -111,7 +118,7 @@ export const gitBuffer = (rt: Runtime, repo: string, args: string[], opts: GitBu
           ok: false,
           overflow: true,
           maxBuffer: GIT_BUFFER_MAX_BYTES,
-          stderr: `git ${args.join(' ')} produced more than GIT_BUFFER_MAX_BYTES (${GIT_BUFFER_MAX_BYTES}) bytes of output; refusing rather than risk mistaking a truncated read for a short ledger`
+          stderr: bufferOverflowMessage(args)
         }
       }
       return { ok: false, overflow: false, code: -1, stderr: result.error.message }

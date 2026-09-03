@@ -3,7 +3,7 @@ import type { ToolSpec } from '../register.ts'
 import { NO_ARGUMENTS } from '../no-arguments.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import { layoutFor } from '../../store/layout.ts'
-import { sync } from '../../merge/sync.ts'
+import { sync, type RejectedOutcome } from '../../merge/sync.ts'
 import { withDetail } from '../../store/detail.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { clipWithMarker } from '../../render/clip.ts'
@@ -44,18 +44,66 @@ export const offlineRefusal = (detail: string): Refusal =>
     detail
   )
 
-export const rejectedRefusal = (detail: string): Refusal =>
+const remoteRejectedRefusal = (detail: string): Refusal =>
   withDetail(
     {
       ok: false,
       field: 'sync',
-      accepted: 'a push the remote will accept without further changes',
-      example: 'retry the call',
-      retryable: true,
-      message: 'the push to the shared ledger to origin was rejected; retry the call.'
+      accepted: "a shared ledger that accepts this machine's push",
+      example: 'resolve the objection origin reported and run sync_ledger again',
+      retryable: false,
+      message:
+        'origin refused the push; nothing was merged into the shared copy, and repeating this call cannot change that on its own.'
     },
     detail
   )
+
+const contentionRefusal = (detail: string): Refusal =>
+  withDetail(
+    {
+      ok: false,
+      field: 'sync',
+      accepted: 'a ledger ref that is not being moved by another sync at the same time',
+      example: 'retry the call',
+      retryable: true,
+      message:
+        'the ledger ref kept moving while sync worked; nothing was pushed. A retry can succeed once the other writer stops.'
+    },
+    detail
+  )
+
+const localSyncFailureRefusal = (detail: string): Refusal =>
+  withDetail(
+    {
+      ok: false,
+      field: 'sync',
+      accepted: 'a local ledger write that this machine can complete',
+      example: 'retry the call once the condition named below is cleared',
+      retryable: true,
+      message: "this machine's own ledger could not be updated; nothing was sent to origin."
+    },
+    detail
+  )
+
+const invalidMergedRecordRefusal = (field: string, detail: string): Refusal =>
+  withDetail(
+    {
+      ok: false,
+      field: 'sync',
+      accepted: 'a merge whose every resulting record still matches its stored shape',
+      example: field,
+      retryable: false,
+      message: `the merge produced a record that does not match its stored shape (${field}); nothing was written locally and nothing was sent to origin.`
+    },
+    detail
+  )
+
+export const rejectedRefusal = (outcome: RejectedOutcome): Refusal => {
+  if (outcome.cause === 'remote-rejected') return remoteRejectedRefusal(outcome.detail)
+  if (outcome.cause === 'contention') return contentionRefusal(outcome.detail)
+  if (outcome.cause === 'invalid-merged-record') return invalidMergedRecordRefusal(outcome.field, outcome.detail)
+  return localSyncFailureRefusal(outcome.detail)
+}
 
 const RECORD_DIRECTORIES = new Set(['threads', 'decisions', 'bindings'])
 const SESSIONS_DIRECTORY = 'sessions'
@@ -145,6 +193,6 @@ export const syncLedgerTool: ToolSpec<SyncLedgerInput, SyncLedgerOutput> = {
     if (outcome.reason === 'offline') {
       return { ok: false, refusal: offlineRefusal(outcome.detail) }
     }
-    return { ok: false, refusal: rejectedRefusal(outcome.detail) }
+    return { ok: false, refusal: rejectedRefusal(outcome) }
   }
 }

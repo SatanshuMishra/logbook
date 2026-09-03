@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -12,11 +12,13 @@ import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { writeRecords, type RecordChange } from '../../src/store/write-path.ts'
 
 const withPluginData = <T>(fn: (pluginData: string) => T): T => {
-  const dir = mkdtempSync(join(tmpdir(), 'logbook-plugin-data-'))
+  const home = mkdtempSync(join(tmpdir(), 'logbook-plugin-data-'))
+  const dir = join(home, 'plugin-data')
+  mkdirSync(dir)
   try {
     return fn(dir)
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
   }
 }
 
@@ -313,3 +315,34 @@ test('ref.classifies-cas-mismatch-vs-io-failure', () => {
     }
   })
 })
+
+test('layout.refuses-a-relative-plugin-data-root', () => {
+  withRepo((repo) => {
+    const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: 'not/an/absolute/path' } })
+    const result = layoutFor(rt, repo)
+    assert.equal(result.ok, false)
+    if (result.ok) return
+    assert.equal(result.field, 'CLAUDE_PLUGIN_DATA')
+    assert.equal(result.retryable, true)
+    assert.match(result.accepted, /absolute/)
+    assert.ok(result.example.startsWith('/'))
+    assert.doesNotMatch(JSON.stringify(result), /not\/an\/absolute\/path/)
+  })
+})
+
+test('git.accepts-output-past-the-default-node-buffer', () => {
+  withRepo((repo) => {
+    const rt = testRuntime()
+    const oversized = 'a'.repeat(2 * 1024 * 1024)
+    writeFileSync(join(repo, 'oversized.txt'), oversized)
+    assert.equal(rawGit(repo, ['add', 'oversized.txt']).status, 0)
+    assert.equal(rawGit(repo, ['commit', '-m', 'oversized blob']).status, 0)
+    const blobSha = rawGit(repo, ['rev-parse', 'HEAD:oversized.txt']).stdout.trim()
+
+    const result = git(rt, repo, ['cat-file', '-p', blobSha])
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+    assert.equal(result.stdout.length, oversized.length)
+  })
+})
+

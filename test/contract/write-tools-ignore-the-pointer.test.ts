@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -68,7 +68,9 @@ const withFreshFixture = async (
   run: (spawned: SpawnedServer) => Promise<CallToolResult>
 ): Promise<CallToolResult> => {
   const repo = bootstrapRepo('logbook-s4-repo')
-  const pluginData = mkdtempSync(join(tmpdir(), 'logbook-s4-plugin-data-'))
+  const pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-s4-plugin-data-'))
+  const pluginData = join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   if (scenario === 'foreign') writeForeignPointer(repo, pluginData)
   const spawned = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
   try {
@@ -76,7 +78,7 @@ const withFreshFixture = async (
   } finally {
     await spawned.close()
     rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginData, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 }
 
@@ -168,7 +170,9 @@ const recipeSyncLedger: Recipe = async (scenario) => {
   if (addResult.status !== 0) {
     throw new Error(`write-tools.ignore-the-pointer: could not add the origin remote: ${addResult.stderr}`)
   }
-  const pluginData = mkdtempSync(join(tmpdir(), 'logbook-s4-sync-plugin-data-'))
+  const pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-s4-sync-plugin-data-'))
+  const pluginData = join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   if (scenario === 'foreign') writeForeignPointer(repo, pluginData)
   const spawned = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
   try {
@@ -176,12 +180,12 @@ const recipeSyncLedger: Recipe = async (scenario) => {
   } finally {
     await spawned.close()
     rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginData, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
     rmSync(bare, { recursive: true, force: true })
   }
 }
 
-type Teammate = { repo: string; pluginData: string; spawned: SpawnedServer }
+type Teammate = { repo: string; pluginData: string; pluginDataHome: string; spawned: SpawnedServer }
 
 const provisionTeammate = async (remote: string, name: string): Promise<Teammate> => {
   const repo = mkdtempSync(join(tmpdir(), `logbook-s4-resolve-${name}-repo-`))
@@ -197,9 +201,11 @@ const provisionTeammate = async (remote: string, name: string): Promise<Teammate
   if (emailResult.status !== 0) {
     throw new Error(`write-tools.ignore-the-pointer: could not set user.email for ${name}: ${emailResult.stderr}`)
   }
-  const pluginData = mkdtempSync(join(tmpdir(), `logbook-s4-resolve-${name}-plugin-data-`))
+  const pluginDataHome = mkdtempSync(join(tmpdir(), `logbook-s4-resolve-${name}-plugin-data-`))
+  const pluginData = join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   const spawned = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
-  return { repo, pluginData, spawned }
+  return { repo, pluginData, pluginDataHome, spawned }
 }
 
 const recipeResolveConflict: Recipe = async (scenario) => {
@@ -247,9 +253,9 @@ const recipeResolveConflict: Recipe = async (scenario) => {
     await ana.spawned.close()
     await ben.spawned.close()
     rmSync(ana.repo, { recursive: true, force: true })
-    rmSync(ana.pluginData, { recursive: true, force: true })
+    rmSync(ana.pluginDataHome, { recursive: true, force: true })
     rmSync(ben.repo, { recursive: true, force: true })
-    rmSync(ben.pluginData, { recursive: true, force: true })
+    rmSync(ben.pluginDataHome, { recursive: true, force: true })
     rmSync(remote, { recursive: true, force: true })
   }
 }

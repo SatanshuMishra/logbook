@@ -5,7 +5,7 @@ import path from 'node:path'
 import { layoutFor, createStoreDirectories } from '../../src/store/layout.ts'
 import { writePointer } from '../../src/domain/pointer.ts'
 import { testRuntime } from '../support/runtime.ts'
-import { controlledEnv, freshTmpDir, runHookProcessWithEvent, TREE_ROOT } from './hook-process.ts'
+import { controlledEnv, freshPluginDataDir, freshTmpDir, runHookProcessWithEvent, TREE_ROOT } from './hook-process.ts'
 
 const HANDOFF_FRAGMENT = 'was left marked as being worked when this session ended'
 
@@ -31,7 +31,7 @@ test('handoff.bound-to-session-end', () => {
 
 test('handoff.fires-once', () => {
   const projectRoot = freshTmpDir('logbook-handoff-project-')
-  const pluginDataRoot = freshTmpDir('logbook-handoff-plugin-data-')
+  const pluginDataRoot = freshPluginDataDir('logbook-handoff-plugin-data-').root
   const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: pluginDataRoot }, cwd: projectRoot })
 
   const layout = layoutFor(rt, projectRoot)
@@ -91,7 +91,7 @@ test('handoff.fires-once', () => {
 
 test('handoff.fires-once.no-pointer-set-fires-zero-times-at-session-end', () => {
   const projectRoot = freshTmpDir('logbook-handoff-negative-project-')
-  const pluginDataRoot = freshTmpDir('logbook-handoff-negative-plugin-data-')
+  const pluginDataRoot = freshPluginDataDir('logbook-handoff-negative-plugin-data-').root
   const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: pluginDataRoot }, cwd: projectRoot })
 
   const layout = layoutFor(rt, projectRoot)

@@ -269,7 +269,9 @@ const buildToolFixtureRepo = (): string => {
 
 const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
   const refusals: TaggedRefusal[] = []
-  const pluginDataRoot = mkdtempSync(join(tmpdir(), 'logbook-tool-fixture-plugin-data-'))
+  const pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-tool-fixture-plugin-data-'))
+  const pluginDataRoot = join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginDataRoot)
   const repo = buildToolFixtureRepo()
   try {
     const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: pluginDataRoot }, cwd: repo })
@@ -559,7 +561,7 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     refusals.push({ producer: LIST_THREADS_HANDLER_PRODUCER, refusal: listThreadsOutOfRangeLimit.refusal })
   } finally {
     rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginDataRoot, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 
   return refusals
@@ -647,6 +649,7 @@ type ResolveConflictFixture = {
   rt: Runtime
   repo: string
   pluginDataRoot: string
+  pluginDataHome: string
   store: Store
   layout: StoreLayout
   threadId: string
@@ -654,7 +657,9 @@ type ResolveConflictFixture = {
 }
 
 const buildResolveConflictFixture = async (): Promise<ResolveConflictFixture> => {
-  const pluginDataRoot = mkdtempSync(join(tmpdir(), 'logbook-resolve-fixture-plugin-data-'))
+  const pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-resolve-fixture-plugin-data-'))
+  const pluginDataRoot = join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginDataRoot)
   const repo = buildToolFixtureRepo()
   const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: pluginDataRoot }, cwd: repo })
 
@@ -676,6 +681,7 @@ const buildResolveConflictFixture = async (): Promise<ResolveConflictFixture> =>
     rt,
     repo,
     pluginDataRoot,
+    pluginDataHome,
     store: opened.value,
     layout: layout.value,
     threadId: openedThread.structured.thread_id,
@@ -685,7 +691,7 @@ const buildResolveConflictFixture = async (): Promise<ResolveConflictFixture> =>
 
 const cleanupResolveConflictFixture = (fixture: ResolveConflictFixture): void => {
   rmSync(fixture.repo, { recursive: true, force: true })
-  rmSync(fixture.pluginDataRoot, { recursive: true, force: true })
+  rmSync(fixture.pluginDataHome, { recursive: true, force: true })
 }
 
 const writeConflictsFixture = (fixture: ResolveConflictFixture, conflicts: readonly Record<string, unknown>[]): void => {
@@ -876,7 +882,14 @@ const withDistinctSyncFixtureUlids = (rt: Runtime, timePrefix: string): Runtime 
   }
 }
 
-type SyncFixtureRepo = { name: string; repo: string; pluginDataRoot: string; rt: Runtime; store: Store }
+type SyncFixtureRepo = {
+  name: string
+  repo: string
+  pluginDataRoot: string
+  pluginDataHome: string
+  rt: Runtime
+  store: Store
+}
 
 const buildSyncFixtureRepo = (
   remote: string,
@@ -888,11 +901,13 @@ const buildSyncFixtureRepo = (
   rawGit(repo, ['clone', remote, '.'])
   rawGit(repo, ['config', 'user.name', identity.name])
   rawGit(repo, ['config', 'user.email', identity.email])
-  const pluginDataRoot = mkdtempSync(join(tmpdir(), `logbook-sync-fixture-plugin-data-${name}-`))
+  const pluginDataHome = mkdtempSync(join(tmpdir(), `logbook-sync-fixture-plugin-data-${name}-`))
+  const pluginDataRoot = join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginDataRoot)
   const rt = withDistinctSyncFixtureUlids(testRuntime({ env: { CLAUDE_PLUGIN_DATA: pluginDataRoot }, cwd: repo }), ulidTimePrefix)
   const opened = openStore(rt, repo)
   if (!opened.ok) throw new Error(`expected openStore to open ${name}'s sync fixture store`)
-  return { name, repo, pluginDataRoot, rt, store: opened.value }
+  return { name, repo, pluginDataRoot, pluginDataHome, rt, store: opened.value }
 }
 
 const withTwoSyncFixtureRepos = async (
@@ -903,9 +918,9 @@ const withTwoSyncFixtureRepos = async (
   try {
     rawGit(remote, ['init', '--bare', '--initial-branch=main'])
     const ana = buildSyncFixtureRepo(remote, 'ana', { name: 'ana', email: 'ana@logbook.test' }, '01ANASYNCA')
-    cleanupDirs.push(ana.repo, ana.pluginDataRoot)
+    cleanupDirs.push(ana.repo, ana.pluginDataHome)
     const ben = buildSyncFixtureRepo(remote, 'ben', { name: 'ben', email: 'ben@logbook.test' }, '01BENSYNCB')
-    cleanupDirs.push(ben.repo, ben.pluginDataRoot)
+    cleanupDirs.push(ben.repo, ben.pluginDataHome)
     await fn(ana, ben, remote)
   } finally {
     for (const dir of cleanupDirs) rmSync(dir, { recursive: true, force: true })
@@ -1128,7 +1143,9 @@ const collectRealRefusals = async (): Promise<TaggedRefusal[]> => {
     rmSync(noPluginDataDir, { recursive: true, force: true })
   }
 
-  const pluginDataRoot = mkdtempSync(join(tmpdir(), 'logbook-plugin-data-'))
+  const pluginDataHomeForMissingPath = mkdtempSync(join(tmpdir(), 'logbook-plugin-data-'))
+  const pluginDataRoot = join(pluginDataHomeForMissingPath, 'plugin-data')
+  mkdirSync(pluginDataRoot)
   try {
     const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: pluginDataRoot } })
     const missingPath = join(pluginDataRoot, 'does-not-exist', 'nested')
@@ -1136,7 +1153,7 @@ const collectRealRefusals = async (): Promise<TaggedRefusal[]> => {
     if (result.ok) throw new Error('expected layoutFor to refuse on a missing projectRoot')
     refusals.push({ producer: LAYOUT_FOR_PRODUCER, refusal: result })
   } finally {
-    rmSync(pluginDataRoot, { recursive: true, force: true })
+    rmSync(pluginDataHomeForMissingPath, { recursive: true, force: true })
   }
 
   withRepo((repo) => {
@@ -1176,7 +1193,9 @@ const collectRealRefusals = async (): Promise<TaggedRefusal[]> => {
     refusals.push({ producer: READ_IDENTITY_PRODUCER, refusal: identityFailure })
   })
 
-  const duplicateStoreRoot = mkdtempSync(join(tmpdir(), 'logbook-duplicate-store-'))
+  const duplicateStoreHome = mkdtempSync(join(tmpdir(), 'logbook-duplicate-store-'))
+  const duplicateStoreRoot = join(duplicateStoreHome, 'plugin-data')
+  mkdirSync(duplicateStoreRoot)
   try {
     const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: duplicateStoreRoot } })
     const projectRoot = mkdtempSync(join(tmpdir(), 'logbook-duplicate-store-project-'))
@@ -1201,10 +1220,12 @@ const collectRealRefusals = async (): Promise<TaggedRefusal[]> => {
       rmSync(projectRoot, { recursive: true, force: true })
     }
   } finally {
-    rmSync(duplicateStoreRoot, { recursive: true, force: true })
+    rmSync(duplicateStoreHome, { recursive: true, force: true })
   }
 
-  const unreadableRecordsPluginData = mkdtempSync(join(tmpdir(), 'logbook-unreadable-records-'))
+  const unreadableRecordsPluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-unreadable-records-'))
+  const unreadableRecordsPluginData = join(unreadableRecordsPluginDataHome, 'plugin-data')
+  mkdirSync(unreadableRecordsPluginData)
   const unreadableRecordsProject = mkdtempSync(join(tmpdir(), 'logbook-unreadable-records-project-'))
   try {
     const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: unreadableRecordsPluginData } })
@@ -1223,7 +1244,7 @@ const collectRealRefusals = async (): Promise<TaggedRefusal[]> => {
       chmodSync(layout.value.records, 0o755)
     }
   } finally {
-    rmSync(unreadableRecordsPluginData, { recursive: true, force: true })
+    rmSync(unreadableRecordsPluginDataHome, { recursive: true, force: true })
     rmSync(unreadableRecordsProject, { recursive: true, force: true })
   }
 
@@ -1357,7 +1378,9 @@ test('error.discloses-no-path.field-closure-halts-on-an-unforeseen-field', () =>
 })
 
 test('error.discloses-no-path.non-emitted-detail-is-not-enumerable', () => {
-  const pluginDataRoot = mkdtempSync(join(tmpdir(), 'logbook-plugin-data-detail-'))
+  const pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-plugin-data-detail-'))
+  const pluginDataRoot = join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginDataRoot)
   try {
     const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: pluginDataRoot } })
     const missingPath = join(pluginDataRoot, 'does-not-exist', 'nested')
@@ -1369,7 +1392,7 @@ test('error.discloses-no-path.non-emitted-detail-is-not-enumerable', () => {
     assert.equal(Object.keys(result).includes('detail'), false)
     assert.equal(JSON.stringify(result).includes('detail'), false)
   } finally {
-    rmSync(pluginDataRoot, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 })
 

@@ -6,6 +6,7 @@ import { git } from '../../src/store/git.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
 import { sync } from '../../src/merge/sync.ts'
+import { rejectedRefusal } from '../../src/server/tools/sync_ledger.ts'
 import type { RecordChange } from '../../src/store/write-path.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import type { Teammate } from '../support/clone-fixture.ts'
@@ -120,11 +121,20 @@ test('sync.a-rejected-push-does-not-claim-pushed', () => {
     assert.equal(rejected.ok, false, 'a push the shared copy refuses must not be reported as a success')
     if (rejected.ok) return
     assert.equal(rejected.reason, 'rejected')
+    assert.equal(rejected.cause, 'remote-rejected', 'origin refusing the push is a remote-rejected cause, not a generic one')
 
     const localAfter = refIn(ana.rt, ana.repo)
     const remoteAfter = refIn(ana.rt, remote)
     assert.notEqual(localAfter, remoteAfter, 'the fixture requires the two sides to have genuinely diverged')
     assert.equal(remoteAfter, remoteBeforeRejection, 'a rejected push must leave the shared copy where it was')
+
+    const refusal = rejectedRefusal(rejected)
+    assert.equal(refusal.retryable, false, 'repeating an identical call cannot make origin accept a push it refused')
+    assert.doesNotMatch(
+      refusal.message,
+      /retry the call/i,
+      'an origin refusal must not tell the operator to retry, since retrying cannot help'
+    )
   })
 })
 
@@ -169,5 +179,41 @@ test('sync.an-unconfirmable-push-does-not-claim-pushed', () => {
     )
     assert.equal(receiptOf(outcome).local_sha, null, 'an unconfirmable push reports no local sha')
     assert.equal(receiptOf(outcome).remote_sha, null, 'an unconfirmable push reports no remote sha')
+  })
+})
+
+test('sync.a-ledger-ref-that-keeps-moving-is-a-contention-refusal-not-a-remote-rejection', () => {
+  withTwoClones((ana, ben, _remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+
+    seedAndCommit(ana, 'contention-thread-a')
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    seedAndCommit(ben, 'contention-thread-c')
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    seedAndCommit(ana, 'contention-thread-b')
+
+    let racerCount = 0
+    const raceOriginForward = (): void => {
+      racerCount += 1
+      seedAndCommit(ben, `contention-racer-${racerCount}`)
+      const racerPush = sync(ben.rt, ben.store, benLayout)
+      assert.equal(racerPush.ok, true, `expected the racer push #${racerCount} to land on origin`)
+    }
+
+    const result = sync(ana.rt, ana.store, anaLayout, { beforeCas: raceOriginForward })
+
+    assert.equal(result.ok, false, 'a ledger ref that never stops moving cannot be synced')
+    if (result.ok) return
+    assert.equal(result.reason, 'rejected')
+    assert.equal(racerCount >= 5, true, 'the racer must have moved origin on every attempt sync made')
+    assert.equal(
+      result.cause,
+      'contention',
+      'attempts running out while the ref keeps moving is contention, not an origin rejection'
+    )
   })
 })

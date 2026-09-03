@@ -1,15 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { symlinkSync } from 'node:fs'
+import { mkdirSync, symlinkSync } from 'node:fs'
 import path from 'node:path'
 import { guardDecision } from '../../src/hooklib/guard.ts'
 import { layoutFor, createStoreDirectories } from '../../src/store/layout.ts'
 import { testRuntime } from '../support/runtime.ts'
-import { freshTmpDir } from './hook-process.ts'
+import { freshPluginDataDir, freshTmpDir } from './hook-process.ts'
 
 test('hook.guard.denies-symlinked-store', () => {
   const projectRoot = freshTmpDir('logbook-guard-symlink-project-')
-  const pluginDataRoot = freshTmpDir('logbook-guard-symlink-plugin-data-')
+  const pluginDataRoot = freshPluginDataDir('logbook-guard-symlink-plugin-data-').root
   const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: pluginDataRoot }, cwd: projectRoot })
 
   const layout = layoutFor(rt, projectRoot)
@@ -56,7 +56,9 @@ test('hook.guard.denies-symlinked-store', () => {
 
 test('hook.guard.denies-symlinked-store.canonicalisation-failure-refuses-rather-than-narrows', () => {
   const projectRoot = freshTmpDir('logbook-guard-unresolvable-project-')
-  const pluginDataParent = freshTmpDir('logbook-guard-unresolvable-plugin-data-parent-')
+  const pluginDataGrandparent = freshTmpDir('logbook-guard-unresolvable-plugin-data-parent-')
+  const pluginDataParent = path.join(pluginDataGrandparent, 'plugin-data-parent')
+  mkdirSync(pluginDataParent)
   const loopPath = path.join(pluginDataParent, 'self-loop')
   symlinkSync(loopPath, loopPath)
 

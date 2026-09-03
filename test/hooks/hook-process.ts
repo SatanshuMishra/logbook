@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, mkdtempSync } from 'node:fs'
+import { existsSync, readFileSync, mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -191,3 +191,10 @@ export const controlledEnv = (overrides: Record<string, string> = {}): Record<st
 })
 
 export const freshTmpDir = (prefix: string): string => mkdtempSync(path.join(tmpdir(), prefix))
+
+export const freshPluginDataDir = (prefix: string): { home: string; root: string } => {
+  const home = freshTmpDir(prefix)
+  const root = path.join(home, 'plugin-data')
+  mkdirSync(root)
+  return { home, root }
+}

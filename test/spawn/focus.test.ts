@@ -45,7 +45,9 @@ type Fixture = { spawned: SpawnedServer; repo: string; pluginData: string; homeD
 
 const withFixture = async (fn: (fx: Fixture) => Promise<void>, env: Record<string, string> = {}): Promise<void> => {
   const repo = bootstrapRepo()
-  const pluginData = mkdtempSync(join(tmpdir(), 'logbook-focus-plugin-data-'))
+  const pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-focus-plugin-data-'))
+  const pluginData = join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   const homeDir = mkdtempSync(join(tmpdir(), 'logbook-focus-home-'))
   const spawned = await spawnServer({
     projectRoot: repo,
@@ -57,7 +59,7 @@ const withFixture = async (fn: (fx: Fixture) => Promise<void>, env: Record<strin
   } finally {
     await spawned.close()
     rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginData, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
     rmSync(homeDir, { recursive: true, force: true })
   }
 }
@@ -274,7 +276,9 @@ test('update_thread.reports-focus-not-written-when-the-pointer-names-another-thr
 
 test('update_thread.reports-focus-not-written-when-another-session-holds-the-pointer', async () => {
   const repo = bootstrapRepo()
-  const pluginData = mkdtempSync(join(tmpdir(), 'logbook-focus-two-session-plugin-data-'))
+  const pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-focus-two-session-plugin-data-'))
+  const pluginData = join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   try {
     const sessionA = await spawnServer({
       projectRoot: repo,
@@ -311,7 +315,7 @@ test('update_thread.reports-focus-not-written-when-another-session-holds-the-poi
     }
   } finally {
     rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginData, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 })
 

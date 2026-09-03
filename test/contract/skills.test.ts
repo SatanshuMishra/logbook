@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -454,12 +454,15 @@ test('skill.cannot-strand', async () => {
   assertContainsCallsInOrder(debriefCalls, ['park_thread'])
 
   let repo = ''
+  let pluginDataHome = ''
   let pluginData = ''
   let homeDir = ''
   let spawned: SpawnedServer | undefined
   try {
     repo = bootstrapRepo()
-    pluginData = mkdtempSync(join(tmpdir(), 'logbook-skills-plugin-data-'))
+    pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-skills-plugin-data-'))
+    pluginData = join(pluginDataHome, 'plugin-data')
+    mkdirSync(pluginData)
     homeDir = mkdtempSync(join(tmpdir(), 'logbook-skills-home-'))
     spawned = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
 
@@ -507,7 +510,7 @@ test('skill.cannot-strand', async () => {
   } finally {
     if (spawned !== undefined) await spawned.close()
     if (repo !== '') rmSync(repo, { recursive: true, force: true })
-    if (pluginData !== '') rmSync(pluginData, { recursive: true, force: true })
+    if (pluginDataHome !== '') rmSync(pluginDataHome, { recursive: true, force: true })
     if (homeDir !== '') rmSync(homeDir, { recursive: true, force: true })
   }
 })

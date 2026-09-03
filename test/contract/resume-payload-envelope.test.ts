@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Runtime } from '../../src/runtime/runtime.ts'
@@ -49,7 +49,9 @@ const setUpRepo = (repo: string): void => {
 
 const withHarness = async (fn: (harness: Harness) => Promise<void>): Promise<void> => {
   const repo = mkdtempSync(join(tmpdir(), 'logbook-resume-payload-repo-'))
-  const pluginData = mkdtempSync(join(tmpdir(), 'logbook-resume-payload-plugin-data-'))
+  const pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-resume-payload-plugin-data-'))
+  const pluginData = join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
   try {
     setUpRepo(repo)
     const events: LoggedRecord[] = []
@@ -62,7 +64,7 @@ const withHarness = async (fn: (harness: Harness) => Promise<void>): Promise<voi
     await fn({ events, runtimeFor })
   } finally {
     rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginData, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 }
 

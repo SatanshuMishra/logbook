@@ -134,7 +134,7 @@ const errnoOf = (error: unknown): string | null => {
   return null
 }
 
-const discardScratchDir = (rt: Runtime, dir: string): void => {
+export const discardScratchDir = (rt: Runtime, dir: string): void => {
   try {
     rmSync(dir, { recursive: true, force: true })
   } catch (error) {

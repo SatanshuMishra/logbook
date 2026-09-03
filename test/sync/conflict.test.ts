@@ -8,6 +8,7 @@ import { LEDGER_REF } from '../../src/store/ref.ts'
 import { sync } from '../../src/merge/sync.ts'
 import { writeRecords, type RecordChange } from '../../src/store/write-path.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
+import * as caps from '../../src/schema/caps.ts'
 import type { Teammate } from '../support/clone-fixture.ts'
 import { withTwoClones } from '../support/clone-fixture.ts'
 
@@ -198,6 +199,143 @@ test('sync.refuses-a-remote-record-it-cannot-parse', () => {
   })
 })
 
+test('sync.a-merge-carries-a-remote-only-binding-record-through', () => {
+  withTwoClones((ana, ben, remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+
+    const threadA = makeThread(ana.rt, 'binding-carry-thread-a')
+    const createA = ana.store.commit([threadA], 'ana: create thread a')
+    assert.equal(createA.ok, true)
+
+    const pushA = sync(ana.rt, ana.store, anaLayout)
+    assert.equal(pushA.ok, true)
+
+    const fastForwardBen = sync(ben.rt, ben.store, benLayout)
+    assert.equal(fastForwardBen.ok, true)
+
+    const bindingId = ben.rt.ulid()
+    const bindingRelPath = `bindings/${bindingId}.json`
+    const bindingContent = JSON.stringify({
+      id: bindingId,
+      thread_id: threadA.record.id,
+      branch: 'feat/binding-carry-fixture',
+      created_at: ben.rt.now()
+    })
+    const bindingWrite = writeRecords(
+      ben.rt,
+      benLayout,
+      [{ kind: 'raw', relPath: bindingRelPath, content: bindingContent }],
+      'ben: bind a branch to thread a'
+    )
+    assert.equal(bindingWrite.ok, true)
+
+    const pushBinding = sync(ben.rt, ben.store, benLayout)
+    assert.equal(pushBinding.ok, true)
+    if (!pushBinding.ok) return
+    assert.equal(pushBinding.action, 'pushed')
+
+    const threadB = makeThread(ana.rt, 'binding-carry-thread-b')
+    const createB = ana.store.commit([threadB], 'ana: create thread b')
+    assert.equal(createB.ok, true)
+
+    const mergeOutcome = sync(ana.rt, ana.store, anaLayout)
+
+    assert.equal(mergeOutcome.ok, true, 'a merge must carry through a remote-only record this version does not itself parse')
+    if (!mergeOutcome.ok) return
+    assert.equal(mergeOutcome.action, 'merged')
+
+    const materialisedPath = path.join(anaLayout.records, bindingRelPath)
+    assert.equal(
+      readFileSync(materialisedPath, 'utf8'),
+      bindingContent,
+      'the carried binding record must reach the materialised records with its bytes intact'
+    )
+
+    const pushedBindingContent = git(ana.rt, remote, ['cat-file', '-p', `${LEDGER_REF}:${bindingRelPath}`])
+    assert.equal(pushedBindingContent.ok, true)
+    if (!pushedBindingContent.ok) return
+    assert.equal(
+      pushedBindingContent.stdout,
+      bindingContent,
+      'the carried binding record must reach the pushed tree with its bytes intact'
+    )
+  })
+})
+
+test('sync.a-merge-that-would-overflow-a-stored-cap-refuses-and-writes-nothing', () => {
+  withTwoClones((ana, ben, _remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+
+    const original = makeThread(ana.rt, 'union-overflow-thread')
+    const created = ana.store.commit([original], 'ana: create thread for the union-overflow probe')
+    assert.equal(created.ok, true)
+
+    const firstAnaSync = sync(ana.rt, ana.store, anaLayout)
+    assert.equal(firstAnaSync.ok, true)
+
+    const firstBenSync = sync(ben.rt, ben.store, benLayout)
+    assert.equal(firstBenSync.ok, true)
+
+    const benSlot = ben.store.readThread(original.record.id)
+    assert.ok(benSlot !== null && !benSlot.quarantined)
+    if (benSlot === null || benSlot.quarantined) return
+    const benOutOfScope = Array.from({ length: caps.OUT_OF_SCOPE_MAX_ELEMENTS }, (_, i) => ({
+      id: ben.rt.ulid(),
+      text: `ben out-of-scope ${i}`
+    }))
+    const benEdit: RecordChange = {
+      kind: 'thread',
+      record: {
+        ...benSlot.record,
+        spine: { ...benSlot.record.spine, out_of_scope: benOutOfScope },
+        updated_at: ben.rt.now()
+      }
+    }
+    const benCommit = ben.store.commit([benEdit], 'ben: fill out-of-scope to the stored cap')
+    assert.equal(benCommit.ok, true)
+
+    const anaSlot = ana.store.readThread(original.record.id)
+    assert.ok(anaSlot !== null && !anaSlot.quarantined)
+    if (anaSlot === null || anaSlot.quarantined) return
+    const anaOutOfScope = Array.from({ length: caps.OUT_OF_SCOPE_MAX_ELEMENTS }, (_, i) => ({
+      id: ana.rt.ulid(),
+      text: `ana out-of-scope ${i}`
+    }))
+    const anaEdit: RecordChange = {
+      kind: 'thread',
+      record: {
+        ...anaSlot.record,
+        spine: { ...anaSlot.record.spine, out_of_scope: anaOutOfScope },
+        updated_at: ana.rt.now()
+      }
+    }
+    const anaCommit = ana.store.commit([anaEdit], 'ana: fill out-of-scope to the stored cap with disjoint ids')
+    assert.equal(anaCommit.ok, true)
+
+    const secondAnaSync = sync(ana.rt, ana.store, anaLayout)
+    assert.equal(secondAnaSync.ok, true)
+    if (!secondAnaSync.ok) return
+    assert.equal(secondAnaSync.action, 'pushed')
+
+    const benRecordPath = path.join(benLayout.records, 'threads', `${original.record.id}.json`)
+    const benRecordBefore = readFileSync(benRecordPath, 'utf8')
+
+    const secondBenSync = sync(ben.rt, ben.store, benLayout)
+
+    assert.equal(secondBenSync.ok, false, 'a merge whose union overflows a stored array cap must be refused')
+    if (secondBenSync.ok) return
+    assert.equal(secondBenSync.reason, 'rejected')
+    if (secondBenSync.reason !== 'rejected') return
+    assert.equal(secondBenSync.cause, 'invalid-merged-record')
+    assert.equal(secondBenSync.field, 'spine.out_of_scope')
+
+    const benRecordAfter = readFileSync(benRecordPath, 'utf8')
+    assert.equal(benRecordAfter, benRecordBefore, 'a refused merge must leave the local record on disk untouched')
+  })
+})
+
 test('sync.clears-a-stale-conflict-file-on-the-next-clean-sync', () => {
   withTwoClones((ana, ben, remote) => {
     const anaLayout = layoutIn(ana)
@@ -258,6 +396,186 @@ test('sync.clears-a-stale-conflict-file-on-the-next-clean-sync', () => {
     assert.equal(cleanBenSync.ok, true)
 
     assert.equal(existsSync(conflictsPath), false)
+  })
+})
+
+test('sync.a-failed-sync-leaves-a-pending-conflict-file-untouched', () => {
+  withTwoClones((ana, ben, _remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+
+    const original = makeThread(ana.rt, 'shared-thread-3')
+    const created = ana.store.commit([original], 'ana: create shared thread 3')
+    assert.equal(created.ok, true)
+
+    const firstAnaSync = sync(ana.rt, ana.store, anaLayout)
+    assert.equal(firstAnaSync.ok, true)
+
+    const firstBenSync = sync(ben.rt, ben.store, benLayout)
+    assert.equal(firstBenSync.ok, true)
+
+    const benSlot = ben.store.readThread(original.record.id)
+    assert.ok(benSlot !== null && !benSlot.quarantined)
+    if (benSlot === null || benSlot.quarantined) return
+    const benEdit: RecordChange = {
+      kind: 'thread',
+      record: { ...benSlot.record, spine: { ...benSlot.record.spine, next_step: 'ben moved it again' }, updated_at: ben.rt.now() }
+    }
+    assert.equal(ben.store.commit([benEdit], 'ben: change next step').ok, true)
+
+    const anaSlot = ana.store.readThread(original.record.id)
+    assert.ok(anaSlot !== null && !anaSlot.quarantined)
+    if (anaSlot === null || anaSlot.quarantined) return
+    const anaEdit: RecordChange = {
+      kind: 'thread',
+      record: { ...anaSlot.record, spine: { ...anaSlot.record.spine, next_step: 'ana moved it again' }, updated_at: ana.rt.now() }
+    }
+    assert.equal(ana.store.commit([anaEdit], 'ana: change next step').ok, true)
+
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+
+    const conflictingBenSync = sync(ben.rt, ben.store, benLayout)
+    assert.equal(conflictingBenSync.ok, false)
+    if (conflictingBenSync.ok) return
+    assert.equal(conflictingBenSync.reason, 'conflict')
+
+    const conflictsPath = path.join(benLayout.state, 'conflicts.json')
+    const conflictsBefore = readFileSync(conflictsPath, 'utf8')
+    assert.ok(conflictsBefore.length > 0)
+
+    ben.goOffline()
+
+    const offlineBenSync = sync(ben.rt, ben.store, benLayout)
+    assert.equal(offlineBenSync.ok, false)
+    if (offlineBenSync.ok) return
+    assert.equal(offlineBenSync.reason, 'offline')
+
+    const conflictsAfter = readFileSync(conflictsPath, 'utf8')
+    assert.equal(conflictsAfter, conflictsBefore, 'a failed sync must leave the pending conflict file byte-identical')
+  })
+})
+
+test('sync.a-locally-quarantined-record-is-logged-not-silently-dropped', () => {
+  withTwoClones((ana, ben, _remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+
+    const threadA = makeThread(ana.rt, 'local-quarantine-thread-a')
+    assert.equal(ana.store.commit([threadA], 'ana: create thread a').ok, true)
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    const threadC = makeThread(ben.rt, 'local-quarantine-thread-c')
+    assert.equal(ben.store.commit([threadC], 'ben: create thread c').ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    const badRelPath = 'decisions/local-quarantine-not-a-valid-decision.json'
+    const rawWrite = writeRecords(
+      ana.rt,
+      anaLayout,
+      [{ kind: 'raw', relPath: badRelPath, content: '{"this is not a valid decision record":true}' }],
+      'ana: record a decision the schema will reject'
+    )
+    assert.equal(rawWrite.ok, true)
+
+    const events: Record<string, unknown>[] = []
+    const watchRt: Runtime = { ...ana.rt, log: (record) => { events.push(record) } }
+
+    const mergeOutcome = sync(watchRt, ana.store, anaLayout)
+    assert.equal(mergeOutcome.ok, true, 'a locally-quarantined record must not block the merge')
+
+    const quarantineLogs = events.filter((record) => record.event === 'sync.local-record-quarantined')
+    assert.equal(quarantineLogs.length, 1, 'the locally-quarantined decision must be named to the operator exactly once')
+    assert.equal(quarantineLogs[0]?.level, 'warn')
+    assert.equal(quarantineLogs[0]?.kind, 'decision')
+    assert.equal(typeof quarantineLogs[0]?.reason, 'string')
+  })
+})
+
+test('sync.an-unparseable-ancestor-record-is-logged-not-silently-degraded', () => {
+  withTwoClones((ana, ben, _remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+
+    const threadA = makeThread(ana.rt, 'ancestor-thread-a')
+    assert.equal(ana.store.commit([threadA], 'ana: create thread a').ok, true)
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    const badRelPath = 'decisions/ancestor-not-a-valid-decision.json'
+    const badWrite = writeRecords(
+      ana.rt,
+      anaLayout,
+      [{ kind: 'raw', relPath: badRelPath, content: '{"this is not a valid decision record":true}' }],
+      'ana: record a decision the schema will reject'
+    )
+    assert.equal(badWrite.ok, true)
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    const validDecisionContent = JSON.stringify({
+      id: ben.rt.ulid(),
+      thread_id: threadA.record.id,
+      title: 'a decision fixed on top of the ancestor',
+      context: 'the ancestor carried a record this version could not parse',
+      options: ['leave it broken', 'fix it'],
+      outcome: 'fix it',
+      commit: null,
+      supersedes: [],
+      created_at: ben.rt.now()
+    })
+    const fixWrite = writeRecords(
+      ben.rt,
+      benLayout,
+      [{ kind: 'raw', relPath: badRelPath, content: validDecisionContent }],
+      'ben: fix the previously unparseable decision'
+    )
+    assert.equal(fixWrite.ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    const threadB = makeThread(ana.rt, 'ancestor-thread-b')
+    assert.equal(ana.store.commit([threadB], 'ana: create thread b').ok, true)
+
+    const events: Record<string, unknown>[] = []
+    const watchRt: Runtime = { ...ana.rt, log: (record) => { events.push(record) } }
+
+    const mergeOutcome = sync(watchRt, ana.store, anaLayout)
+    assert.equal(mergeOutcome.ok, true, 'an unparseable ancestor record must not block the merge')
+
+    const ancestorLogs = events.filter((record) => record.event === 'sync.ancestor-record-unparseable')
+    assert.equal(ancestorLogs.length, 1, 'the unparseable ancestor record must be named to the operator exactly once')
+    assert.equal(ancestorLogs[0]?.level, 'warn')
+    assert.equal(ancestorLogs[0]?.count, 1)
+    assert.deepEqual(ancestorLogs[0]?.records, [badRelPath])
+  })
+})
+
+test('sync.a-scratch-cleanup-failure-does-not-replace-the-merge-outcome', () => {
+  withTwoClones((ana, ben, _remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+
+    const threadA = makeThread(ana.rt, 'cleanup-thread-a')
+    assert.equal(ana.store.commit([threadA], 'ana: create thread a').ok, true)
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    const threadC = makeThread(ben.rt, 'cleanup-thread-c')
+    assert.equal(ben.store.commit([threadC], 'ben: create thread c').ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    const threadB = makeThread(ana.rt, 'cleanup-thread-b')
+    assert.equal(ana.store.commit([threadB], 'ana: create thread b').ok, true)
+
+    const removeScratch = (): void => {
+      throw new Error('scratch cleanup exploded')
+    }
+
+    const mergeOutcome = sync(ana.rt, ana.store, anaLayout, { removeScratch })
+
+    assert.equal(mergeOutcome.ok, true, 'a cleanup failure must not replace the merge outcome')
+    if (!mergeOutcome.ok) return
+    assert.equal(mergeOutcome.action, 'merged')
   })
 })
 

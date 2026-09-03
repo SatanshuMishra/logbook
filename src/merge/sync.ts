@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
@@ -8,22 +8,33 @@ import { ThreadRecord, type Thread } from '../schema/thread.ts'
 import { git } from '../store/git.ts'
 import type { StoreLayout } from '../store/layout.ts'
 import { materialiseTreeInto } from '../store/materialise-tree.ts'
-import { countedMaterialiseGit, countedMaterialiseGitBuffer, readAllRecordFiles, syncWorkingCopy } from '../store/read-path.ts'
+import {
+  countedMaterialiseGit,
+  countedMaterialiseGitBuffer,
+  discardScratchDir,
+  readAllRecordFiles,
+  syncWorkingCopy
+} from '../store/read-path.ts'
 import { LEDGER_REF, casUpdateRef } from '../store/ref.ts'
-import type { Store } from '../store/records.ts'
+import { checkChangeShape, type Store } from '../store/records.ts'
 import { writeRecords, type RecordChange } from '../store/write-path.ts'
 import { mergeDecision, mergeSession, mergeThread } from './field-merge.ts'
 import type { Conflict } from './conflict.ts'
 
 export type SyncAction = 'noop' | 'pushed' | 'pushed-unverified' | 'fast-forwarded' | 'merged'
 
+export type RejectedOutcome =
+  | { ok: false; reason: 'rejected'; cause: 'remote-rejected' | 'contention' | 'local'; detail: string }
+  | { ok: false; reason: 'rejected'; cause: 'invalid-merged-record'; detail: string; field: string }
+
 export type SyncOutcome =
   | { ok: true; action: SyncAction; ref: string; local_sha: string | null; remote_sha: string | null }
   | { ok: false; reason: 'conflict'; conflicts: Conflict[] }
   | { ok: false; reason: 'unparseable'; records: string[] }
-  | { ok: false; reason: 'offline' | 'rejected'; detail: string }
+  | { ok: false; reason: 'offline'; detail: string }
+  | RejectedOutcome
 
-export type SyncOps = { beforeCas?: () => void }
+export type SyncOps = { beforeCas?: () => void; removeScratch?: (rt: Runtime, dir: string) => void }
 
 const REMOTE_NAME = 'origin'
 export const TRACKING_REF = 'refs/logbook/sync/origin-ledger'
@@ -32,9 +43,11 @@ const LEASE_REJECTION_PATTERN = /stale info|non-fast-forward/
 
 type RecordSet = { threads: Map<string, Thread>; decisions: Map<string, Decision>; sessionsByThread: Map<string, SessionEntry[]> }
 
-type PassthroughFile = { relPath: string; content: string }
+type PassthroughFile = { relPath: string }
 
-type ScratchRecordSet = RecordSet & { passthrough: PassthroughFile[] }
+type CarriedFile = { relPath: string; content: string }
+
+type ScratchRecordSet = RecordSet & { passthrough: PassthroughFile[]; carried: CarriedFile[] }
 
 type AttemptOutcome =
   | { kind: 'return'; outcome: SyncOutcome }
@@ -82,30 +95,95 @@ const safeDirNames = (dir: string): string[] => {
   }
 }
 
-const readOursRecordSet = (store: Store, layout: StoreLayout): RecordSet => {
+const logLocalQuarantine = (rt: Runtime, kind: 'thread' | 'decision' | 'session', reason: string): void => {
+  rt.log({ level: 'warn', event: 'sync.local-record-quarantined', kind, reason })
+}
+
+const readOursRecordSet = (rt: Runtime, store: Store, layout: StoreLayout): RecordSet => {
   const threads = new Map<string, Thread>()
   for (const slot of store.readThreads()) {
-    if (!slot.quarantined) threads.set(slot.record.id, slot.record)
+    if (slot.quarantined) {
+      logLocalQuarantine(rt, 'thread', slot.reason)
+    } else {
+      threads.set(slot.record.id, slot.record)
+    }
   }
   const decisions = new Map<string, Decision>()
   for (const slot of readAllRecordFiles<Decision>(path.join(layout.records, 'decisions'), DecisionRecord)) {
-    if (!slot.quarantined) decisions.set(slot.record.id, slot.record)
+    if (slot.quarantined) {
+      logLocalQuarantine(rt, 'decision', slot.reason)
+    } else {
+      decisions.set(slot.record.id, slot.record)
+    }
   }
   const sessionsByThread = new Map<string, SessionEntry[]>()
   for (const threadId of safeDirNames(path.join(layout.records, 'sessions'))) {
     const entries: SessionEntry[] = []
     for (const slot of store.readSessionEntries(threadId)) {
-      if (!slot.quarantined) entries.push(slot.record)
+      if (slot.quarantined) {
+        logLocalQuarantine(rt, 'session', slot.reason)
+      } else {
+        entries.push(slot.record)
+      }
     }
     sessionsByThread.set(threadId, entries)
   }
   return { threads, decisions, sessionsByThread }
 }
 
-const readScratchRecordSet = (root: string): ScratchRecordSet => {
+const RECORD_TOP_LEVEL_DIRS = new Set(['threads', 'decisions', 'sessions'])
+const CARRIED_FORBIDDEN_SEGMENTS = new Set(['..', '.git'])
+
+const carriedPathIsSafe = (root: string, relPath: string): boolean => {
+  if (path.isAbsolute(relPath)) return false
+  if (relPath.split(path.sep).some((segment) => CARRIED_FORBIDDEN_SEGMENTS.has(segment))) return false
+  const resolved = path.resolve(root, relPath)
+  return resolved === path.join(root, relPath) && resolved.startsWith(root + path.sep)
+}
+
+const readDirEntriesOrEmpty = (dir: string) => {
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
+  }
+}
+
+const walkCarriedFiles = (rt: Runtime, root: string, dir: string, acc: CarriedFile[]): void => {
+  for (const entry of readDirEntriesOrEmpty(dir)) {
+    if (dir === root && entry.isDirectory() && RECORD_TOP_LEVEL_DIRS.has(entry.name)) continue
+    const absolutePath = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      walkCarriedFiles(rt, root, absolutePath, acc)
+      continue
+    }
+    if (!entry.isFile()) continue
+    const relPath = path.relative(root, absolutePath)
+    if (!carriedPathIsSafe(root, relPath)) {
+      rt.log({ level: 'warn', event: 'sync.remote-file-not-carried', relPath, reason: 'the path is unsafe to carry' })
+      continue
+    }
+    let content: string
+    try {
+      content = readFileSync(absolutePath, 'utf8')
+    } catch (error) {
+      rt.log({
+        level: 'warn',
+        event: 'sync.remote-file-not-carried',
+        relPath,
+        reason: `could not be read: ${error instanceof Error ? error.message : String(error)}`
+      })
+      continue
+    }
+    acc.push({ relPath, content })
+  }
+}
+
+const readScratchRecordSet = (rt: Runtime, root: string): ScratchRecordSet => {
   const passthrough: PassthroughFile[] = []
   const captureQuarantined = (absolutePath: string): void => {
-    passthrough.push({ relPath: path.relative(root, absolutePath), content: readFileSync(absolutePath, 'utf8') })
+    passthrough.push({ relPath: path.relative(root, absolutePath) })
   }
 
   const threads = new Map<string, Thread>()
@@ -136,7 +214,9 @@ const readScratchRecordSet = (root: string): ScratchRecordSet => {
     }
     sessionsByThread.set(threadId, entries)
   }
-  return { threads, decisions, sessionsByThread, passthrough }
+  const carried: CarriedFile[] = []
+  walkCarriedFiles(rt, root, root, carried)
+  return { threads, decisions, sessionsByThread, passthrough, carried }
 }
 
 type MaterialiseResult = { ok: true; scratch: string } | { ok: false; detail: string }
@@ -212,6 +292,19 @@ const computeMerge = (
   return { changes, conflicts }
 }
 
+const carriedChanges = (rt: Runtime, layout: StoreLayout, carried: CarriedFile[]): RecordChange[] => {
+  const changes: RecordChange[] = []
+  for (const file of carried) {
+    const localPath = path.join(layout.records, file.relPath)
+    if (existsSync(localPath)) {
+      rt.log({ level: 'warn', event: 'sync.remote-file-kept-local', relPath: file.relPath })
+      continue
+    }
+    changes.push({ kind: 'raw', relPath: file.relPath, content: file.content })
+  }
+  return changes
+}
+
 const conflictsPath = (layout: StoreLayout): string => path.join(layout.state, 'conflicts.json')
 
 type ConflictWriteResult = { ok: true } | { ok: false; detail: string }
@@ -246,7 +339,7 @@ const fastForward = (rt: Runtime, layout: StoreLayout, localVal: string | null, 
     }
   }
   if (cas.cause === 'ref-moved') return { kind: 'retry' }
-  return { kind: 'return', outcome: { ok: false, reason: 'rejected', detail: cas.message } }
+  return { kind: 'return', outcome: { ok: false, reason: 'rejected', cause: 'local', detail: cas.message } }
 }
 
 const pushPlain = (rt: Runtime, layout: StoreLayout): AttemptOutcome => {
@@ -265,7 +358,7 @@ const pushPlain = (rt: Runtime, layout: StoreLayout): AttemptOutcome => {
     }
   }
   if (isLeaseRejection(result.stderr)) return { kind: 'retry' }
-  return { kind: 'return', outcome: { ok: false, reason: 'rejected', detail: result.stderr.trim() } }
+  return { kind: 'return', outcome: { ok: false, reason: 'rejected', cause: 'remote-rejected', detail: result.stderr.trim() } }
 }
 
 const performMerge = (
@@ -278,9 +371,22 @@ const performMerge = (
 ): AttemptOutcome => {
   const theirsResult = materialiseRefToScratch(rt, layout, remoteVal)
   if (!theirsResult.ok) {
-    return { kind: 'return', outcome: { ok: false, reason: 'rejected', detail: theirsResult.detail } }
+    return { kind: 'return', outcome: { ok: false, reason: 'rejected', cause: 'local', detail: theirsResult.detail } }
   }
   const theirsScratch = theirsResult.scratch
+  const removeScratch = ops.removeScratch ?? discardScratchDir
+  const safelyRemoveScratch = (dir: string): void => {
+    try {
+      removeScratch(rt, dir)
+    } catch (error) {
+      rt.log({
+        level: 'error',
+        event: 'sync.scratch-cleanup-failed',
+        dir,
+        detail: error instanceof Error ? error.message : String(error)
+      })
+    }
+  }
   try {
     const mergeBaseResult = git(rt, layout.projectRoot, ['merge-base', localVal, remoteVal])
     const baseVal = mergeBaseResult.ok ? mergeBaseResult.stdout.trim() : null
@@ -288,14 +394,23 @@ const performMerge = (
     if (baseVal !== null) {
       const baseResult = materialiseRefToScratch(rt, layout, baseVal)
       if (!baseResult.ok) {
-        return { kind: 'return', outcome: { ok: false, reason: 'rejected', detail: baseResult.detail } }
+        return { kind: 'return', outcome: { ok: false, reason: 'rejected', cause: 'local', detail: baseResult.detail } }
       }
       baseScratch = baseResult.scratch
     }
     try {
-      const ours = readOursRecordSet(store, layout)
-      const theirs = readScratchRecordSet(theirsScratch)
-      const base = baseScratch !== null ? readScratchRecordSet(baseScratch) : null
+      const ours = readOursRecordSet(rt, store, layout)
+      const theirs = readScratchRecordSet(rt, theirsScratch)
+      const base = baseScratch !== null ? readScratchRecordSet(rt, baseScratch) : null
+
+      if (base !== null && base.passthrough.length > 0) {
+        rt.log({
+          level: 'warn',
+          event: 'sync.ancestor-record-unparseable',
+          count: base.passthrough.length,
+          records: base.passthrough.map((file) => file.relPath)
+        })
+      }
 
       if (theirs.passthrough.length > 0) {
         return {
@@ -314,10 +429,33 @@ const performMerge = (
         if (!written.ok) {
           return {
             kind: 'return',
-            outcome: { ok: false, reason: 'rejected', detail: `could not persist conflicts: ${written.detail}` }
+            outcome: {
+              ok: false,
+              reason: 'rejected',
+              cause: 'local',
+              detail: `could not persist conflicts: ${written.detail}`
+            }
           }
         }
         return { kind: 'return', outcome: { ok: false, reason: 'conflict', conflicts } }
+      }
+
+      const allChanges = [...mergedChanges, ...carriedChanges(rt, layout, theirs.carried)]
+
+      for (const change of allChanges) {
+        const shape = checkChangeShape(change)
+        if (!shape.ok) {
+          return {
+            kind: 'return',
+            outcome: {
+              ok: false,
+              reason: 'rejected',
+              cause: 'invalid-merged-record',
+              detail: shape.message,
+              field: shape.field
+            }
+          }
+        }
       }
 
       const message = `merge ${localVal.slice(0, 12)} with ${remoteVal.slice(0, 12)}`
@@ -325,10 +463,10 @@ const performMerge = (
         extraParents: [remoteVal],
         ...(ops.beforeCas !== undefined ? { beforeCas: ops.beforeCas } : {})
       }
-      const commitResult = writeRecords(rt, layout, mergedChanges, message, writeOps)
+      const commitResult = writeRecords(rt, layout, allChanges, message, writeOps)
       if (!commitResult.ok) {
         if (commitResult.reason === 'ref-moved') return { kind: 'retry' }
-        return { kind: 'return', outcome: { ok: false, reason: 'rejected', detail: commitResult.detail } }
+        return { kind: 'return', outcome: { ok: false, reason: 'rejected', cause: 'local', detail: commitResult.detail } }
       }
 
       syncWorkingCopy(rt, layout)
@@ -341,7 +479,10 @@ const performMerge = (
       ])
       if (!pushResult.ok) {
         if (isLeaseRejection(pushResult.stderr)) return { kind: 'retry' }
-        return { kind: 'return', outcome: { ok: false, reason: 'rejected', detail: pushResult.stderr.trim() } }
+        return {
+          kind: 'return',
+          outcome: { ok: false, reason: 'rejected', cause: 'remote-rejected', detail: pushResult.stderr.trim() }
+        }
       }
 
       const mergeReceipt = readBackAfterPush(rt, layout)
@@ -356,10 +497,10 @@ const performMerge = (
         }
       }
     } finally {
-      if (baseScratch !== null) rmSync(baseScratch, { recursive: true, force: true })
+      if (baseScratch !== null) safelyRemoveScratch(baseScratch)
     }
   } finally {
-    rmSync(theirsScratch, { recursive: true, force: true })
+    safelyRemoveScratch(theirsScratch)
   }
 }
 
@@ -420,7 +561,7 @@ export const sync = (rt: Runtime, store: Store, layout: StoreLayout, ops: Partia
   for (let attempt = 1; attempt <= MAX_SYNC_ATTEMPTS; attempt += 1) {
     const outcome = runAttempt(rt, store, layout, ops)
     if (outcome.kind === 'return') {
-      if (!(outcome.outcome.ok === false && outcome.outcome.reason === 'conflict')) {
+      if (outcome.outcome.ok === true) {
         clearConflicts(layout)
       }
       return outcome.outcome
@@ -429,8 +570,8 @@ export const sync = (rt: Runtime, store: Store, layout: StoreLayout, ops: Partia
   const timeoutOutcome: SyncOutcome = {
     ok: false,
     reason: 'rejected',
+    cause: 'contention',
     detail: `${LEDGER_REF} kept moving; giving up after ${MAX_SYNC_ATTEMPTS} attempts`
   }
-  clearConflicts(layout)
   return timeoutOutcome
 }

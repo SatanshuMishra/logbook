@@ -17,8 +17,15 @@ const writeOrigin = (pluginDataRoot: string, key: string, projectRoot: string): 
   writeFileSync(path.join(stateDir, 'origin.json'), JSON.stringify({ project_root: projectRoot }), 'utf8')
 }
 
+const freshNestedDir = (prefix: string, name: string): { home: string; root: string } => {
+  const home = mkdtempSync(path.join(tmpdir(), prefix))
+  const root = path.join(home, name)
+  mkdirSync(root)
+  return { home, root }
+}
+
 test('store.refuses-a-second-store', () => {
-  const pluginDataRoot = mkdtempSync(path.join(tmpdir(), 'logbook-single-store-'))
+  const { home: pluginDataHome, root: pluginDataRoot } = freshNestedDir('logbook-single-store-', 'plugin-data')
   try {
     const projectRoot = '/tmp/some/shared/project'
     writeOrigin(pluginDataRoot, 'store-key-a', projectRoot)
@@ -43,12 +50,12 @@ test('store.refuses-a-second-store', () => {
     assert.match(result.message, /store-key-b/)
     assert.doesNotMatch(result.message, new RegExp(escapeRegExp(pluginDataRoot)))
   } finally {
-    rmSync(pluginDataRoot, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 })
 
 test('store.refuses-a-second-store-under-another-plugin-data-root', () => {
-  const pluginDataParent = mkdtempSync(path.join(tmpdir(), 'logbook-cross-root-'))
+  const { home: pluginDataGrandparent, root: pluginDataParent } = freshNestedDir('logbook-cross-root-', 'cross-root')
   try {
     const projectRoot = '/tmp/some/shared/project'
     const sharedKey = 'store-key-shared'
@@ -74,12 +81,12 @@ test('store.refuses-a-second-store-under-another-plugin-data-root', () => {
     assert.match(result.message, new RegExp(escapeRegExp(sharedKey)))
     assert.doesNotMatch(result.message, new RegExp(escapeRegExp(pluginDataParent)))
   } finally {
-    rmSync(pluginDataParent, { recursive: true, force: true })
+    rmSync(pluginDataGrandparent, { recursive: true, force: true })
   }
 })
 
 test('store.a-second-store-for-another-project-under-another-root-is-ok', () => {
-  const pluginDataParent = mkdtempSync(path.join(tmpdir(), 'logbook-cross-root-'))
+  const { home: pluginDataGrandparent, root: pluginDataParent } = freshNestedDir('logbook-cross-root-', 'cross-root')
   try {
     const sharedKey = 'store-key-shared'
     writeOrigin(path.join(pluginDataParent, 'install-a'), sharedKey, '/tmp/project/one')
@@ -97,12 +104,12 @@ test('store.a-second-store-for-another-project-under-another-root-is-ok', () => 
 
     assert.equal(result.ok, true, 'a same-keyed store belonging to a different project must not be treated as a duplicate')
   } finally {
-    rmSync(pluginDataParent, { recursive: true, force: true })
+    rmSync(pluginDataGrandparent, { recursive: true, force: true })
   }
 })
 
 test('store.a-symlinked-cross-root-candidate-is-not-followed', () => {
-  const pluginDataParent = mkdtempSync(path.join(tmpdir(), 'logbook-cross-root-'))
+  const { home: pluginDataGrandparent, root: pluginDataParent } = freshNestedDir('logbook-cross-root-', 'cross-root')
   try {
     const sharedKey = 'store-key-shared'
     const projectRoot = '/tmp/some/shared/project'
@@ -125,12 +132,117 @@ test('store.a-symlinked-cross-root-candidate-is-not-followed', () => {
 
     assert.equal(result.ok, true, "a symlinked cross-root candidate must not be followed into the store's own root")
   } finally {
-    rmSync(pluginDataParent, { recursive: true, force: true })
+    rmSync(pluginDataGrandparent, { recursive: true, force: true })
+  }
+})
+
+test('store.first-open-runs-the-cross-root-check-before-own-root-exists', () => {
+  const { home: pluginDataGrandparent, root: pluginDataParent } = freshNestedDir('logbook-cross-root-', 'cross-root')
+  try {
+    const projectRoot = '/tmp/some/shared/project'
+    const sharedKey = 'store-key-shared'
+    writeOrigin(path.join(pluginDataParent, 'install-a'), sharedKey, projectRoot)
+
+    const pluginDataRoot = path.join(pluginDataParent, 'install-b')
+    const layout: StoreLayout = {
+      root: path.join(pluginDataRoot, sharedKey),
+      records: path.join(pluginDataRoot, sharedKey, 'records'),
+      state: path.join(pluginDataRoot, sharedKey, 'state'),
+      projectRoot
+    }
+
+    const rt = testRuntime()
+    const result = ensureSingleStore(rt, layout)
+
+    assert.equal(
+      result.ok,
+      false,
+      'the very first open for a new install must still catch a sibling holding the same project'
+    )
+    if (result.ok) {
+      throw new Error('expected a refusal')
+    }
+    assert.equal(result.retryable, false)
+    assert.match(result.message, /install-a/)
+    assert.doesNotMatch(result.message, new RegExp(escapeRegExp(pluginDataParent)))
+  } finally {
+    rmSync(pluginDataGrandparent, { recursive: true, force: true })
+  }
+})
+
+test('store.first-open-with-no-sibling-conflict-is-ok', () => {
+  const { home: pluginDataGrandparent, root: pluginDataParent } = freshNestedDir('logbook-cross-root-', 'cross-root')
+  try {
+    const projectRoot = '/tmp/only/one/first-open/project'
+    const sharedKey = 'store-key-shared'
+    writeOrigin(path.join(pluginDataParent, 'install-a'), sharedKey, '/tmp/a/different/project')
+
+    const pluginDataRoot = path.join(pluginDataParent, 'install-b')
+    const layout: StoreLayout = {
+      root: path.join(pluginDataRoot, sharedKey),
+      records: path.join(pluginDataRoot, sharedKey, 'records'),
+      state: path.join(pluginDataRoot, sharedKey, 'state'),
+      projectRoot
+    }
+
+    const rt = testRuntime()
+    const result = ensureSingleStore(rt, layout)
+
+    assert.equal(
+      result.ok,
+      true,
+      'the first open for a new install must still succeed when no sibling holds this project'
+    )
+  } finally {
+    rmSync(pluginDataGrandparent, { recursive: true, force: true })
+  }
+})
+
+test('store.a-symlinked-sibling-install-root-is-detected', () => {
+  const { home: pluginDataGrandparent, root: pluginDataParent } = freshNestedDir('logbook-cross-root-', 'cross-root')
+  const { home: externalInstallHome, root: externalInstall } = freshNestedDir(
+    'logbook-cross-root-external-',
+    'external-install'
+  )
+  try {
+    const sharedKey = 'store-key-shared'
+    const projectRoot = '/tmp/some/shared/project'
+    writeOrigin(externalInstall, sharedKey, projectRoot)
+    symlinkSync(externalInstall, path.join(pluginDataParent, 'install-link'))
+
+    const ownRoot = path.join(pluginDataParent, 'install-own')
+    mkdirSync(path.join(ownRoot, sharedKey, 'state'), { recursive: true })
+
+    const layout: StoreLayout = {
+      root: path.join(ownRoot, sharedKey),
+      records: path.join(ownRoot, sharedKey, 'records'),
+      state: path.join(ownRoot, sharedKey, 'state'),
+      projectRoot
+    }
+
+    const rt = testRuntime()
+    const result = ensureSingleStore(rt, layout)
+
+    assert.equal(
+      result.ok,
+      false,
+      'a symlinked sibling install root holding a conflicting store must be refused'
+    )
+    if (result.ok) {
+      throw new Error('expected a refusal')
+    }
+    assert.equal(result.retryable, false)
+    assert.match(result.message, /install-link/)
+    assert.doesNotMatch(result.message, new RegExp(escapeRegExp(pluginDataParent)))
+    assert.doesNotMatch(result.message, new RegExp(escapeRegExp(externalInstall)))
+  } finally {
+    rmSync(pluginDataGrandparent, { recursive: true, force: true })
+    rmSync(externalInstallHome, { recursive: true, force: true })
   }
 })
 
 test('store.single-store-with-no-sibling-is-ok', () => {
-  const pluginDataRoot = mkdtempSync(path.join(tmpdir(), 'logbook-single-store-'))
+  const { home: pluginDataHome, root: pluginDataRoot } = freshNestedDir('logbook-single-store-', 'plugin-data')
   try {
     const projectRoot = '/tmp/only/one/project'
     writeOrigin(pluginDataRoot, 'store-key-only', projectRoot)
@@ -147,7 +259,7 @@ test('store.single-store-with-no-sibling-is-ok', () => {
 
     assert.equal(result.ok, true)
   } finally {
-    rmSync(pluginDataRoot, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 })
 
@@ -169,7 +281,7 @@ test('layout.refuses-when-plugin-data-unset', () => {
 })
 
 test('layout.refuses-on-canonicalisation-failure', () => {
-  const pluginDataRoot = mkdtempSync(path.join(tmpdir(), 'logbook-plugin-data-'))
+  const { home: pluginDataHome, root: pluginDataRoot } = freshNestedDir('logbook-plugin-data-', 'plugin-data')
   try {
     const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: pluginDataRoot } })
     const missingPath = path.join(pluginDataRoot, 'does-not-exist', 'nested')
@@ -185,12 +297,12 @@ test('layout.refuses-on-canonicalisation-failure', () => {
     assert.doesNotMatch(result.message, new RegExp(escapeRegExp(missingPath)))
     assert.doesNotMatch(result.message, new RegExp(escapeRegExp(pluginDataRoot)))
   } finally {
-    rmSync(pluginDataRoot, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 })
 
 test('store.plugin-data-listing-failure-is-path-free', () => {
-  const pluginDataParent = mkdtempSync(path.join(tmpdir(), 'logbook-plugin-data-'))
+  const { home: pluginDataGrandparent, root: pluginDataParent } = freshNestedDir('logbook-plugin-data-', 'plugin-data-parent')
   const notADirectory = path.join(pluginDataParent, 'not-a-directory')
   writeFileSync(notADirectory, 'not a directory', 'utf8')
   try {
@@ -212,12 +324,12 @@ test('store.plugin-data-listing-failure-is-path-free', () => {
     assert.match(result.message, /ENOTDIR/)
     assert.doesNotMatch(result.message, new RegExp(escapeRegExp(notADirectory)))
   } finally {
-    rmSync(pluginDataParent, { recursive: true, force: true })
+    rmSync(pluginDataGrandparent, { recursive: true, force: true })
   }
 })
 
 test('store.refusal-leaves-no-new-directory', () => {
-  const pluginDataRoot = mkdtempSync(path.join(tmpdir(), 'logbook-single-store-'))
+  const { home: pluginDataHome, root: pluginDataRoot } = freshNestedDir('logbook-single-store-', 'plugin-data')
   const projectDir = mkdtempSync(path.join(tmpdir(), 'logbook-project-'))
   try {
     const canonicalProjectRoot = realpathSync.native(projectDir)
@@ -237,14 +349,14 @@ test('store.refusal-leaves-no-new-directory', () => {
     assert.deepEqual(after, before)
     assert.deepEqual(after, ['store-key-existing'])
   } finally {
-    rmSync(pluginDataRoot, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
     rmSync(projectDir, { recursive: true, force: true })
   }
 })
 
 test('layout.computes-paths-without-creating-directories', () => {
   const projectDir = mkdtempSync(path.join(tmpdir(), 'logbook-project-'))
-  const pluginDataRoot = mkdtempSync(path.join(tmpdir(), 'logbook-plugin-data-'))
+  const { home: pluginDataHome, root: pluginDataRoot } = freshNestedDir('logbook-plugin-data-', 'plugin-data')
   try {
     const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: pluginDataRoot } })
     const result = layoutFor(rt, projectDir)
@@ -258,13 +370,13 @@ test('layout.computes-paths-without-creating-directories', () => {
     assert.equal(existsSync(result.value.state), false)
   } finally {
     rmSync(projectDir, { recursive: true, force: true })
-    rmSync(pluginDataRoot, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 })
 
 test('layout.createStoreDirectories-materialises-the-layout', () => {
   const projectDir = mkdtempSync(path.join(tmpdir(), 'logbook-project-'))
-  const pluginDataRoot = mkdtempSync(path.join(tmpdir(), 'logbook-plugin-data-'))
+  const { home: pluginDataHome, root: pluginDataRoot } = freshNestedDir('logbook-plugin-data-', 'plugin-data')
   try {
     const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: pluginDataRoot } })
     const result = layoutFor(rt, projectDir)
@@ -284,13 +396,13 @@ test('layout.createStoreDirectories-materialises-the-layout', () => {
     assert.equal(origin.project_root, result.value.projectRoot)
   } finally {
     rmSync(projectDir, { recursive: true, force: true })
-    rmSync(pluginDataRoot, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 })
 
 test('layout.same-project-root-yields-same-layout', () => {
   const projectDir = mkdtempSync(path.join(tmpdir(), 'logbook-project-'))
-  const pluginDataRoot = mkdtempSync(path.join(tmpdir(), 'logbook-plugin-data-'))
+  const { home: pluginDataHome, root: pluginDataRoot } = freshNestedDir('logbook-plugin-data-', 'plugin-data')
   try {
     const rt = testRuntime({ env: { CLAUDE_PLUGIN_DATA: pluginDataRoot } })
     const first = layoutFor(rt, projectDir)
@@ -304,6 +416,6 @@ test('layout.same-project-root-yields-same-layout', () => {
     assert.deepEqual(first.value, second.value)
   } finally {
     rmSync(projectDir, { recursive: true, force: true })
-    rmSync(pluginDataRoot, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
   }
 })
