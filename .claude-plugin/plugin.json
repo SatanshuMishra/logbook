@@ -6,7 +6,7 @@
   "author": {
     "name": "Logbook Plugin"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": [
     "logbook",
     "ledger",

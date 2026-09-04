@@ -20,7 +20,9 @@ const REPO_INFRA_EXACT_FILES = new Set([
   'package-lock.json',
   'receipts.config.json',
   'tsconfig.json',
-  'inspector.config.json'
+  'inspector.config.json',
+  'LICENSE',
+  'NOTICE'
 ])
 
 const NEW_TREE_ROOTS = new Set(['bin', 'hooks', 'skills', 'src', 'test'])
