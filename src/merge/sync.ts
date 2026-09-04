@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
+import { BindingRecord, type Binding } from '../schema/binding.ts'
 import { DecisionRecord, type Decision } from '../schema/decision.ts'
 import { SessionRecord, type SessionEntry } from '../schema/session.ts'
 import { ThreadRecord, type Thread } from '../schema/thread.ts'
@@ -213,6 +214,9 @@ const readScratchRecordSet = (rt: Runtime, root: string): ScratchRecordSet => {
       }
     }
     sessionsByThread.set(threadId, entries)
+  }
+  for (const slot of readAllRecordFiles<Binding>(path.join(root, 'bindings'), BindingRecord)) {
+    if (slot.quarantined) captureQuarantined(slot.path)
   }
   const carried: CarriedFile[] = []
   walkCarriedFiles(rt, root, root, carried)
