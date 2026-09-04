@@ -212,7 +212,9 @@ const materialiseTree = (rt: Runtime, layout: StoreLayout, ref: string): Materia
   return swapRecordsTreeIntoPlace(rt, layout, newTreeDir)
 }
 
-export type SyncWorkingCopyOutcome = { ok: true; materialised: boolean } | { ok: false; detail: string }
+export type SyncWorkingCopyOutcome =
+  | { ok: true; materialised: boolean; ref: string | null }
+  | { ok: false; detail: string }
 
 export const syncWorkingCopy = (
   rt: Runtime,
@@ -223,11 +225,11 @@ export const syncWorkingCopy = (
   const currentValue = current.ok ? current.stdout.trim() : null
   const cached = readStamp(layout)
 
-  if (currentValue === cached) return { ok: true, materialised: false }
+  if (currentValue === cached) return { ok: true, materialised: false, ref: currentValue }
 
   if (currentValue === null) {
     writeStamp(layout, '')
-    return { ok: true, materialised: false }
+    return { ok: true, materialised: false, ref: currentValue }
   }
 
   const outcome = materialiseTree(rt, layout, currentValue)
@@ -237,7 +239,7 @@ export const syncWorkingCopy = (
   }
 
   writeStamp(layout, currentValue)
-  return { ok: true, materialised: true }
+  return { ok: true, materialised: true, ref: currentValue }
 }
 
 export const readRecordFile = <T>(filePath: string, declared: Declared<T>): Slot<T> | null => {

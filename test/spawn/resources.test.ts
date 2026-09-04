@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { UriTemplate } from '@modelcontextprotocol/sdk/shared/uriTemplate.js'
@@ -165,14 +165,26 @@ const snapshotLayout = (layout: StoreLayout, repo: string): StoreSnapshot => {
   return { files, ledgerRef }
 }
 
+const RESUMABLE_CACHE_SUFFIX = `${sep}state${sep}resumable.json`
+
+const isSanctionedReadTimeCache = (file: string): boolean => file.endsWith(RESUMABLE_CACHE_SUFFIX)
+
 const assertSnapshotsIdentical = (before: StoreSnapshot, after: StoreSnapshot): void => {
   assert.equal(after.ledgerRef, before.ledgerRef, 'the ledger ref must not move as a result of a resource read')
-  assert.deepEqual(
-    [...after.files.keys()].sort(),
-    [...before.files.keys()].sort(),
-    'a resource read must not add or remove files under records/ or state/'
+
+  const unexpectedNew = [...after.files.keys()].filter(
+    (file) => !before.files.has(file) && !isSanctionedReadTimeCache(file)
   )
+  const unexpectedRemoved = [...before.files.keys()].filter((file) => !after.files.has(file))
+  assert.deepEqual(
+    unexpectedNew,
+    [],
+    'a resource read must not add any file other than the derived resumable-roster cache under state/'
+  )
+  assert.deepEqual(unexpectedRemoved, [], 'a resource read must not remove any file under records/ or state/')
+
   for (const [file, contentBefore] of before.files) {
+    if (isSanctionedReadTimeCache(file)) continue
     assert.equal(after.files.get(file), contentBefore, `a resource read must not change the contents of ${file}`)
   }
 }

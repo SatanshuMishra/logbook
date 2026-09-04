@@ -18,6 +18,7 @@ import {
 } from './read-path.ts'
 import { LEDGER_REF } from './ref.ts'
 import { ensureSingleStore } from './single-store.ts'
+import { maintainResumableCacheAfterCommit, readResumable, type ResumableRead } from './resumable.ts'
 import { writeRecords } from './write-path.ts'
 import type { Loaded, Quarantined, Slot } from './read-path.ts'
 import type { CommitResult, RecordChange } from './write-path.ts'
@@ -33,6 +34,7 @@ export type DecisionProbe = { resolved: number; dangling: Ulid[]; quarantined: U
 export type Store = {
   readThread: (id: Ulid) => Slot<Thread> | null
   readThreads: () => Slot<Thread>[]
+  readResumable: () => ResumableRead
   readDecision: (id: Ulid) => Slot<Decision> | null
   readSessionEntry: (threadId: Ulid, entryId: Ulid) => Slot<SessionEntry> | null
   readSessionEntries: (threadId: Ulid) => Slot<SessionEntry>[]
@@ -220,16 +222,16 @@ const materialisationRefusal = (detail: string): Refusal =>
     detail
   )
 
-const ensureMaterialised = (rt: Runtime, layout: StoreLayout): Ok<void> | Refusal => {
+const ensureMaterialised = (rt: Runtime, layout: StoreLayout): Ok<string | null> | Refusal => {
   const outcome = syncWorkingCopy(rt, layout)
   if (!outcome.ok) return materialisationRefusal(outcome.detail)
 
-  if (outcome.materialised) return { ok: true, value: undefined }
+  if (outcome.materialised) return { ok: true, value: outcome.ref }
 
-  if (holdsAnyRecord(layout.records)) return { ok: true, value: undefined }
+  if (holdsAnyRecord(layout.records)) return { ok: true, value: outcome.ref }
 
   const inRef = refRecordCount(rt, layout)
-  if (inRef === null || inRef === 0) return { ok: true, value: undefined }
+  if (inRef === null || inRef === 0) return { ok: true, value: outcome.ref }
 
   rt.log({
     level: 'error',
@@ -239,7 +241,7 @@ const ensureMaterialised = (rt: Runtime, layout: StoreLayout): Ok<void> | Refusa
     detail: 'the ledger ref holds records this store has not materialised'
   })
 
-  return { ok: true, value: undefined }
+  return { ok: true, value: outcome.ref }
 }
 
 export const openStore = (rt: Runtime, projectRoot: string | null): Ok<Store> | Refusal => {
@@ -259,9 +261,12 @@ export const openStore = (rt: Runtime, projectRoot: string | null): Ok<Store> | 
   const materialisation = ensureMaterialised(rt, storeLayout)
   if (!materialisation.ok) return materialisation
 
+  let currentRef = materialisation.value
+
   const store: Store = {
     readThread: (id) => readRecordFile<Thread>(threadPath(storeLayout, id), ThreadRecord),
     readThreads: () => readAllRecordFiles<Thread>(path.join(storeLayout.records, 'threads'), ThreadRecord),
+    readResumable: () => readResumable(rt, storeLayout, currentRef),
     readDecision: (id) => readRecordFile<Decision>(decisionPath(storeLayout, id), DecisionRecord),
     readSessionEntry: (threadId, entryId) =>
       readRecordFile<SessionEntry>(sessionEntryPath(storeLayout, threadId, entryId), SessionRecord),
@@ -288,6 +293,8 @@ export const openStore = (rt: Runtime, projectRoot: string | null): Ok<Store> | 
             observed: advance.observed
           })
         }
+        maintainResumableCacheAfterCommit(rt, storeLayout, result.before, result.after, changes)
+        currentRef = result.after
       }
       return result
     }

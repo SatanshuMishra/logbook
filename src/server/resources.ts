@@ -199,9 +199,9 @@ const listThreadResources = (rt: Runtime): ListResourcesResult => {
     rt.log({ level: 'error', event: 'resource.thread-list-unavailable', detail: opened.refusal.message })
     return { resources: [] }
   }
-  const threads = opened.value.readThreads().flatMap((slot) => (slot.quarantined ? [] : [slot.record]))
+  const { resumable } = opened.value.readResumable()
   return {
-    resources: selectRosterThreads(threads).map((thread) => ({
+    resources: selectRosterThreads(resumable).map((thread) => ({
       uri: `logbook://thread/${escapeStored(thread.id)}`,
       name: escapeStored(thread.slug),
       description: 'one thread record in full, resolved by its id or its slug',
@@ -251,16 +251,14 @@ const readSessionEntryResourceBody = (rt: Runtime, threadId: string, entryId: st
 
 const readRosterResourceBody = (rt: Runtime): string => {
   const store = openStoreForRead(rt, 'logbook://roster')
-  const threads = store
-    .readThreads()
-    .flatMap((slot) => (slot.quarantined ? [] : [slot.record]))
-  const selected = selectRosterThreads(threads)
+  const { resumable, terminal } = store.readResumable()
+  const selected = selectRosterThreads(resumable)
   const rows = selected.map(toRosterRow)
   const paginated = paginateRoster(rows, null, Math.max(rows.length, 1))
   if (!paginated.ok) {
     throw new McpError(ErrorCode.InternalError, 'logbook://roster: the roster could not be paginated')
   }
-  return renderRoster(paginated.page, threads.length - selected.length)
+  return renderRoster(paginated.page, terminal)
 }
 
 export const registerResources = (server: McpServer, rt: Runtime): void => {
