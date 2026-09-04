@@ -82,7 +82,7 @@ What the repository does not state: neither `.claude-plugin/plugin.json:1-9` nor
 | `docs/` | Development documentation. Includes `docs/specs/`, `docs/audits/`, and `docs/rules/` — the last of these holding the standing continuity rule this repository authors for an operator to install |
 | `.claude-plugin/` | The plugin manifest (`plugin.json`) and the marketplace manifest (`marketplace.json`) |
 
-At the repository root: `package.json`, `tsconfig.json`, `.npmrc`, `.mcp.json` (declares the MCP server under the server key `ledger`, `.mcp.json:3`, pointing at `bin/logbook-server.ts`, `.mcp.json:5`), `stryker.config.json`, `inspector.config.json`.
+At the repository root: `package.json`, `tsconfig.json`, `.npmrc`, `.mcp.json` (declares the MCP server under the server key `ledger`, `.mcp.json:3`, pointing at `bin/logbook-server.ts`, `.mcp.json:5`), `inspector.config.json`.
 
 The MCP server registers twelve tools, listed in one place: `src/server/tools/index.ts:15-28` (`open_thread`, `update_thread`, `close_thread`, `amend_criteria`, `bind_branch`, `resume_thread`, `park_thread`, `record_decision`, `log_session_event`, `sync_ledger`, `resolve_conflict`, `list_threads`).
 
@@ -151,5 +151,3 @@ There is no build script. Nothing here compiles the TypeScript — `npm test` an
 | `npm run typecheck` | `tsc -p tsconfig.json --noEmit` | Type-checks the whole tree without emitting output (`package.json:14`) |
 | `npm run inspect` | `mcp-inspector --config inspector.config.json --server logbook` | Opens the MCP Inspector against this server (`package.json:15`) |
 | `npm run inspect:cli` | `mcp-inspector --cli --config inspector.config.json --server logbook --method tools/list` | Lists the server's tools from the command line (`package.json:16`) |
-| `npm run mutate` | `stryker run stryker.config.json` | Runs mutation testing (`package.json:17`) |
-| `npm run coverage` | `node --experimental-test-coverage --test "test/unit/**/*.test.ts"` | Runs the unit suite with coverage instrumentation (`package.json:18`) |

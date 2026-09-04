@@ -13,9 +13,7 @@
     "prepare": "node scripts/install-githooks.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "inspect": "mcp-inspector --config inspector.config.json --server logbook",
-    "inspect:cli": "mcp-inspector --cli --config inspector.config.json --server logbook --method tools/list",
-    "mutate": "stryker run stryker.config.json",
-    "coverage": "node --experimental-test-coverage --test \"test/unit/**/*.test.ts\""
+    "inspect:cli": "mcp-inspector --cli --config inspector.config.json --server logbook --method tools/list"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
@@ -24,7 +22,6 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/inspector": "2.3.0",
-    "@stryker-mutator/core": "10.0.0",
     "@types/node": "22.20.1",
     "commonmark": "0.31.2",
     "typescript": "5.9.3",

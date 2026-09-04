@@ -20,7 +20,6 @@ const REPO_INFRA_EXACT_FILES = new Set([
   'package-lock.json',
   'receipts.config.json',
   'tsconfig.json',
-  'stryker.config.json',
   'inspector.config.json'
 ])
 

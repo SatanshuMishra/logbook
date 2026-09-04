@@ -2,7 +2,6 @@
 .DS_Store
 /dist/
 .inspector-data/
-.stryker-tmp/
 reports/
 *.tmp-*
 .evidence/
