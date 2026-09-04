@@ -80,7 +80,10 @@ const renderBlockedBySuffix = (blockedBy: string | null): string =>
     : ` (blocked by ${clipWithMarker(escapeStored(blockedBy), ROSTER_BLOCKED_BY_CLIP_GRAPHEMES)})`
 
 const renderThreadNameCell = (row: RosterRow): string =>
-  `${escapeStored(row.slug)} - ${escapeStored(row.title)}${renderBlockedBySuffix(row.blocked_by)}`
+  escapeStored(
+    `${escapeStored(row.slug)} - ${escapeStored(row.title)}${renderBlockedBySuffix(row.blocked_by)}`,
+    'table-cell'
+  )
 
 const renderRosterRow = (row: RosterRow, index: number): string =>
   `| ${index + 1} | ${escapeStored(row.id)} | ${renderThreadNameCell(row)} | ${row.criteria_done} / ${row.criteria_total} criteria | ${escapeStored(formatLastActivity(row.updated_at))} |`

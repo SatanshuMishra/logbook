@@ -57,6 +57,15 @@ const cellsOf = (line: string): string[] => line.split('|').slice(1, -1).map((ce
 const HEADER_LINE_PATTERN = /^\|\s*#\s*\|/
 const FIRST_DATA_LINE_PATTERN = /^\|\s*1\s*\|/
 
+const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+const graphemeCount = (text: string): number => Array.from(GRAPHEME_SEGMENTER.segment(text)).length
+
+const blockedBySegmentOf = (cell: string): string => {
+  const match = cell.match(/\(blocked by (.*)\)$/)
+  assert.ok(match !== null, `expected a blocked-by suffix in ${JSON.stringify(cell)}`)
+  return (match as RegExpMatchArray)[1] as string
+}
+
 const BLOCKED_WORD_PATTERN = /\bblocked\b/i
 
 type BlockedCandidate = { line: number; hasInterpolation: boolean }
@@ -374,6 +383,72 @@ test('roster.render-pipe-in-any-free-text-field-does-not-fracture-the-table-row'
       `pipe in ${JSON.stringify(overrides)} must not change the row's cell count`
     )
   }
+})
+
+test('roster.render-clipped-blockage-reason-with-a-pipe-near-the-clip-boundary-keeps-the-pipe-token-whole', () => {
+  const carrierBeforePipe = 'x'.repeat(44)
+  const carrierAfterPipe = 'x'.repeat(25)
+  const longReasonWithPipe = `${carrierBeforePipe}|${carrierAfterPipe}`
+  assert.ok(
+    longReasonWithPipe.length > ROSTER_BLOCKED_BY_CLIP_GRAPHEMES,
+    'the reason must exceed the clip ceiling for this case to exercise clipping'
+  )
+  const row = baseRow({ blocked_by: longReasonWithPipe })
+  const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
+  const dataLine = rendered.split('\n').find((line) => FIRST_DATA_LINE_PATTERN.test(line))
+  assert.ok(dataLine !== undefined)
+  const cells = cellsOf(dataLine as string)
+  assert.equal(cells.length, 5)
+  assert.ok(cells[2]?.includes(CLIP_MARKER))
+  assert.ok(
+    cells[2]?.includes('U+007C'),
+    'the clipped pipe must survive as a whole U+007C token, not a truncated fragment'
+  )
+})
+
+test('roster.render-clip-marker-survives-the-outer-table-cell-escape-pass-byte-for-byte', () => {
+  const longReason = 'x'.repeat(ROSTER_BLOCKED_BY_CLIP_GRAPHEMES + 20)
+  const row = baseRow({ blocked_by: longReason })
+  const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
+  const dataLine = rendered.split('\n').find((line) => FIRST_DATA_LINE_PATTERN.test(line))
+  assert.ok(dataLine !== undefined)
+  const cells = cellsOf(dataLine as string)
+  assert.equal(cells.length, 5)
+  assert.ok(
+    cells[2]?.endsWith(`${CLIP_MARKER})`),
+    `expected the clip marker to sit intact immediately before the closing paren, got ${JSON.stringify(cells[2])}`
+  )
+  assert.equal(
+    cells[2]?.includes('U+005B'),
+    false,
+    'the marker leading [ never sits at a line start mid-cell, so the outer table-cell escape pass must leave it unescaped'
+  )
+})
+
+test('roster.render-pipe-expansion-after-the-clip-overruns-the-blockage-budget-by-design', () => {
+  const carrierWithPipes = 'a|b|c|d|e|f|g|h|'
+  const carrierTail = 'z'.repeat(60)
+  const longReasonWithPipes = `${carrierWithPipes}${carrierTail}`
+  const pipeCount = (longReasonWithPipes.match(/\|/g) ?? []).length
+  assert.equal(pipeCount, 8)
+  const row = baseRow({ blocked_by: longReasonWithPipes })
+  const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
+  const dataLine = rendered.split('\n').find((line) => FIRST_DATA_LINE_PATTERN.test(line))
+  assert.ok(dataLine !== undefined)
+  const cells = cellsOf(dataLine as string)
+  assert.equal(cells.length, 5)
+  const blockedBySegment = blockedBySegmentOf(cells[2] as string)
+  const survivingPipeTokens = (blockedBySegment.match(/U\+007C/g) ?? []).length
+  assert.equal(
+    survivingPipeTokens,
+    pipeCount,
+    'every pipe ahead of the clip boundary must land inside the clipped window for this case to measure the overrun'
+  )
+  assert.equal(
+    graphemeCount(blockedBySegment),
+    ROSTER_BLOCKED_BY_CLIP_GRAPHEMES + 5 * survivingPipeTokens,
+    'the clip sizes the text to the 60-grapheme budget before the outer pass turns each 1-grapheme pipe into the 6-grapheme U+007C token, so the finished segment runs 5 graphemes over budget per surviving pipe by design'
+  )
 })
 
 test('roster.render-single-row-exact-output', () => {

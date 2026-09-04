@@ -5,11 +5,12 @@ const ORDINARY_SPACE = ' '
 const LINE_SEPARATOR = '\u2028'
 const PARAGRAPH_SEPARATOR = '\u2029'
 export const MARKDOWN_LEADING_CHARS: ReadonlySet<string> = new Set(['#', '-', '*', '+', '>', '`', '~', '_', '=', '['])
-const ALWAYS_ESCAPED_CHARS = new Set(['<', '>', '|'])
+const ALWAYS_ESCAPED_CHARS = new Set(['<'])
 const MARKDOWN_INDENT_THRESHOLD = 4
 const ORDERED_LIST_DIGIT = /[0-9]/
 const ORDERED_LIST_PUNCTUATION = new Set(['.', ')'])
 const ORDERED_LIST_TERMINATOR = /\s/
+export const TABLE_CELL_ESCAPED_CHARS: ReadonlySet<string> = new Set(['|'])
 
 const isBlank = (char: string): boolean => {
   if (char === LINE_SEPARATOR || char === PARAGRAPH_SEPARATOR) return true
@@ -44,7 +45,9 @@ const orderedListMarkerEnd = (chars: readonly string[], start: number): number |
   return cursor + 1
 }
 
-export const escapeStored = (text: string): string => {
+export type EscapeSurface = 'prose' | 'table-cell'
+
+export const escapeStored = (text: string, surface: EscapeSurface = 'prose'): string => {
   const chars = Array.from(text)
   const out: string[] = []
   let atLineStart = true
@@ -81,7 +84,7 @@ export const escapeStored = (text: string): string => {
         continue
       }
     }
-    out.push(escapeChar(char))
+    out.push(surface === 'table-cell' && TABLE_CELL_ESCAPED_CHARS.has(char) ? toEscaped(char) : escapeChar(char))
     atLineStart = char === '\n' || char === '\r'
     spaceRun = 0
     index += 1
