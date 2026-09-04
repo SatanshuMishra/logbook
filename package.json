@@ -1,10 +1,11 @@
 {
   "name": "logbook",
-  "version": "4.1.1",
+  "version": "5.0.0",
   "private": true,
   "type": "module",
   "description": "Git-native, multi-user, drift-aware logbook plugin for Claude Code.",
-  "license": "MIT",
+  "author": "Satanshu Mishra <satanshumishra@outlook.com>",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=22.19"
   },

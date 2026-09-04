@@ -1,12 +1,14 @@
 {
   "name": "logbook",
-  "version": "4.1.1",
+  "version": "5.0.0",
   "displayName": "Logbook",
   "description": "Git-native, multi-user, drift-aware session continuity for Claude Code.",
   "author": {
-    "name": "Logbook Plugin"
+    "name": "Satanshu Mishra",
+    "email": "satanshumishra@outlook.com",
+    "url": "https://github.com/SatanshuMishra"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": [
     "logbook",
     "ledger",
