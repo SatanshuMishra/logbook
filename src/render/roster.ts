@@ -63,8 +63,15 @@ export const paginateRoster = (rows: RosterRow[], cursor: string | null, limit: 
   return { ok: true, page: { rows: page, next_cursor: nextCursor, total } }
 }
 
-const ROSTER_TABLE_HEADER = '| # | Thread ID | Thread Name | Progress | Last Activity |'
-const ROSTER_TABLE_SEPARATOR = '| --- | --- | --- | --- | --- |'
+const ROSTER_TABLE_COLUMNS = ['#', 'Thread ID', 'Thread Name', 'Progress', 'Last Activity'] as const
+const ROSTER_TABLE_COLUMNS_WITH_BLOCKAGE = [
+  '#',
+  'Thread ID',
+  'Thread Name',
+  'Blocked By',
+  'Progress',
+  'Last Activity'
+] as const
 const ISO_DATE_TIME_SEPARATOR = 'T'
 const LAST_ACTIVITY_SECONDS_PATTERN = /:\d{2}\.\d{3}Z$/
 const LAST_ACTIVITY_SUFFIX = ' UTC'
@@ -74,19 +81,31 @@ const formatLastActivity = (updatedAt: Iso8601): string => {
   return updatedAt.replace(ISO_DATE_TIME_SEPARATOR, ' ').replace(LAST_ACTIVITY_SECONDS_PATTERN, LAST_ACTIVITY_SUFFIX)
 }
 
-const renderBlockedBySuffix = (blockedBy: string | null): string =>
-  blockedBy === null
-    ? ''
-    : ` (blocked by ${clipWithMarker(escapeStored(blockedBy, 'paren-wrapped'), ROSTER_BLOCKED_BY_CLIP_GRAPHEMES)})`
+const renderTableSeparatorLine = (columns: readonly string[]): string =>
+  `| ${columns.map(() => '---').join(' | ')} |`
+
+const ROSTER_BLOCKED_BY_REASON_NOT_RECORDED = 'reason not recorded'
+
+const renderBlockedByCell = (blockedBy: string | null): string => {
+  if (blockedBy === null) return ''
+  const rendered = escapeStored(clipWithMarker(escapeStored(blockedBy), ROSTER_BLOCKED_BY_CLIP_GRAPHEMES), 'table-cell')
+  return rendered.trim() === '' ? ROSTER_BLOCKED_BY_REASON_NOT_RECORDED : rendered
+}
 
 const renderThreadNameCell = (row: RosterRow): string =>
-  escapeStored(
-    `${escapeStored(row.slug)} - ${escapeStored(row.title)}${renderBlockedBySuffix(row.blocked_by)}`,
-    'table-cell'
-  )
+  escapeStored(`${escapeStored(row.slug)} - ${escapeStored(row.title)}`, 'table-cell')
 
-const renderRosterRow = (row: RosterRow, index: number): string =>
-  `| ${index + 1} | ${escapeStored(row.id)} | ${renderThreadNameCell(row)} | ${row.criteria_done} / ${row.criteria_total} criteria | ${escapeStored(formatLastActivity(row.updated_at))} |`
+const renderRosterRow = (row: RosterRow, index: number, hasBlockage: boolean): string => {
+  const cells = [
+    `${index + 1}`,
+    escapeStored(row.id),
+    renderThreadNameCell(row),
+    ...(hasBlockage ? [renderBlockedByCell(row.blocked_by)] : []),
+    `${row.criteria_done} / ${row.criteria_total} criteria`,
+    escapeStored(formatLastActivity(row.updated_at))
+  ]
+  return `| ${cells.join(' | ')} |`
+}
 
 const renderExcludedLine = (excludedByRelevance: number): string =>
   `Excluded: ${excludedByRelevance} terminal thread${excludedByRelevance === 1 ? '' : 's'} not shown; read ${
@@ -103,6 +122,12 @@ export const renderRoster = (page: RosterPage, excludedByRelevance: number): str
     return [headerBlock, footer].join('\n')
   }
 
-  const tableLines = [ROSTER_TABLE_HEADER, ROSTER_TABLE_SEPARATOR, ...page.rows.map(renderRosterRow)]
+  const hasBlockage = page.rows.some((row) => row.blocked_by !== null)
+  const columns = hasBlockage ? ROSTER_TABLE_COLUMNS_WITH_BLOCKAGE : ROSTER_TABLE_COLUMNS
+  const tableLines = [
+    `| ${columns.join(' | ')} |`,
+    renderTableSeparatorLine(columns),
+    ...page.rows.map((row, index) => renderRosterRow(row, index, hasBlockage))
+  ]
   return [headerBlock, tableLines.join('\n'), footer].join('\n\n')
 }

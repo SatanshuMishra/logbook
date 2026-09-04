@@ -1,22 +1,20 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import path from 'node:path'
-import * as ts from 'typescript'
 import {
   paginateRoster,
   renderRoster,
   selectRosterThreads,
   toRosterRow,
   ROSTER_BLOCKED_BY_CLIP_GRAPHEMES,
-  type RosterRow
+  type RosterRow,
+  type RosterPage
 } from '../../src/render/roster.ts'
-import { escapeStored } from '../../src/render/escape.ts'
-import { CLIP_MARKER } from '../../src/render/clip.ts'
+import { escapeStored, MARKDOWN_LEADING_CHARS, TABLE_CELL_ESCAPED_CHARS } from '../../src/render/escape.ts'
+import { CLIP_MARKER, clipWithMarker } from '../../src/render/clip.ts'
 import type { Thread } from '../../src/schema/thread.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { census } from '../support/census.ts'
 import type { Classified } from '../support/census.ts'
-import { REBUILD_ROOT, forEachDescendant, lineOf, loadSourceProgram, sourceFileFor } from '../support/source-census.ts'
 
 const rt = testRuntime()
 
@@ -60,58 +58,33 @@ const FIRST_DATA_LINE_PATTERN = /^\|\s*1\s*\|/
 const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 const graphemeCount = (text: string): number => Array.from(GRAPHEME_SEGMENTER.segment(text)).length
 
-const blockedBySegmentOf = (cell: string): string => {
-  const match = cell.match(/\(blocked by (.*)\)$/)
-  assert.ok(match !== null, `expected a blocked-by suffix in ${JSON.stringify(cell)}`)
-  return (match as RegExpMatchArray)[1] as string
-}
-
 const BLOCKED_WORD_PATTERN = /\bblocked\b/i
 
-type BlockedCandidate = { line: number; hasInterpolation: boolean }
-
-const isTemplateSpanPart = (node: ts.Node): boolean =>
-  ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)
-
-const belongsToInterpolatedTemplate = (node: ts.Node): boolean =>
-  isTemplateSpanPart(node) && ts.isTemplateExpression(node.parent)
-
-const collectBlockedCandidates = (sourceFile: ts.SourceFile): BlockedCandidate[] => {
-  const found: BlockedCandidate[] = []
-  forEachDescendant(sourceFile, (node) => {
-    const isLiteralWithText =
-      ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || isTemplateSpanPart(node)
-    if (!isLiteralWithText) return
-    const raw = node.getText(sourceFile)
-    if (!BLOCKED_WORD_PATTERN.test(raw)) return
-    const line = lineOf(sourceFile, node)
-    found.push({ line, hasInterpolation: belongsToInterpolatedTemplate(node) })
-  })
-  return found
+const headerAndDataCellsOf = (rendered: string): { headerCells: string[]; dataCells: string[] } => {
+  const lines = rendered.split('\n')
+  const headerLine = lines.find((line) => HEADER_LINE_PATTERN.test(line))
+  assert.ok(headerLine !== undefined, `expected a header line in ${JSON.stringify(rendered)}`)
+  const dataLine = lines.find((line) => FIRST_DATA_LINE_PATTERN.test(line))
+  assert.ok(dataLine !== undefined, `expected a first data row in ${JSON.stringify(rendered)}`)
+  return { headerCells: cellsOf(headerLine as string), dataCells: cellsOf(dataLine as string) }
 }
 
-const classifyBlockedCandidate = (candidate: BlockedCandidate): Classified<BlockedCandidate>['verdict'] | 'unclassifiable' =>
-  candidate.hasInterpolation ? 'allowed' : 'forbidden'
-
-test('roster.renders-blockage-reason-inline-in-the-thread-name-cell-when-at-or-under-the-clip-ceiling', () => {
+test('roster.renders-blockage-reason-in-its-own-column-when-at-or-under-the-clip-ceiling', () => {
   const thread = baseThread({ blocked_by: 'waiting on the infra approval' })
   const row = toRosterRow(thread)
   const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
-  const dataLine = rendered.split('\n').find((line) => FIRST_DATA_LINE_PATTERN.test(line))
-  assert.ok(dataLine !== undefined)
-  const cells = cellsOf(dataLine as string)
-  assert.equal(cells.length, 5)
-  assert.ok(cells[2]?.endsWith('(blocked by waiting on the infra approval)'))
-
-  const { program } = loadSourceProgram()
-  const rosterPath = path.join(REBUILD_ROOT, 'src', 'render', 'roster.ts')
-  const sourceFile = sourceFileFor(program, rosterPath)
-  const candidates = collectBlockedCandidates(sourceFile)
-  assert.ok(candidates.length > 0, 'expected at least one occurrence of the word blocked in roster.ts')
-  assert.doesNotThrow(() => census(candidates, classifyBlockedCandidate))
-
-  const synthetic: BlockedCandidate[] = [{ line: 1, hasInterpolation: false }]
-  assert.throws(() => census(synthetic, classifyBlockedCandidate))
+  const { headerCells, dataCells } = headerAndDataCellsOf(rendered)
+  const blockedByIndex = blockedByColumnIndex(headerCells)
+  assert.equal(
+    dataCells.length,
+    headerCells.length,
+    `every data row must carry one cell per header column: ${JSON.stringify(dataCells)} against ${JSON.stringify(headerCells)}`
+  )
+  assert.equal(
+    dataCells[blockedByIndex],
+    'waiting on the infra approval',
+    `a blockage reason at or under the clip ceiling must render verbatim in its own Blocked By cell: got ${JSON.stringify(dataCells[blockedByIndex])}`
+  )
 })
 
 test('roster.blockage-none-when-not-blocked', () => {
@@ -122,56 +95,42 @@ test('roster.blockage-none-when-not-blocked', () => {
   assert.equal(rendered.split('\n').some((line) => BLOCKED_WORD_PATTERN.test(line)), false)
 })
 
-test('roster.render-clips-an-over-ceiling-blockage-reason-inside-the-thread-name-cell-without-overflowing-other-cells', () => {
+test('roster.render-clips-an-over-ceiling-blockage-reason-inside-the-blocked-by-cell-without-overflowing-other-cells', () => {
   const longReason = 'x'.repeat(ROSTER_BLOCKED_BY_CLIP_GRAPHEMES + 20)
   const row = baseRow({ blocked_by: longReason })
   const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
-  const dataLine = rendered.split('\n').find((line) => FIRST_DATA_LINE_PATTERN.test(line))
-  assert.ok(dataLine !== undefined)
-  const cells = cellsOf(dataLine as string)
-  assert.equal(cells.length, 5)
-  assert.ok(cells[2]?.includes(CLIP_MARKER))
-  assert.equal(cells[2]?.includes(longReason), false)
-  assert.equal(cells[3], '0 / 0 criteria')
+  const { headerCells, dataCells } = headerAndDataCellsOf(rendered)
+  const blockedByIndex = blockedByColumnIndex(headerCells)
+  assert.equal(
+    dataCells.length,
+    headerCells.length,
+    `every data row must carry one cell per header column: ${JSON.stringify(dataCells)} against ${JSON.stringify(headerCells)}`
+  )
+  assert.ok(dataCells[blockedByIndex]?.includes(CLIP_MARKER))
+  assert.equal(dataCells[blockedByIndex]?.includes(longReason), false)
+  assert.equal(
+    dataCells[blockedByIndex + 1],
+    '0 / 0 criteria',
+    `the Progress cell immediately after Blocked By must not be overflowed by the clip: ${JSON.stringify(dataCells)}`
+  )
 })
-
-const threadNameCellOf = (rendered: string): string => {
-  const dataLine = rendered.split('\n').find((line) => FIRST_DATA_LINE_PATTERN.test(line))
-  assert.ok(dataLine !== undefined, `expected a first data row in ${JSON.stringify(rendered)}`)
-  const cells = cellsOf(dataLine as string)
-  const cell = cells[2]
-  assert.ok(cell !== undefined, `expected a thread name cell in ${JSON.stringify(dataLine)}`)
-  return cell as string
-}
 
 const renderedRosterOf = (row: RosterRow): string => renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
 
-test('roster.render-a-closing-paren-inside-a-blockage-reason-cannot-forge-a-legitimate-blockage-suffix', () => {
-  const legitimateReason = 'waiting on the infra approval'
-  const legitimateCell = threadNameCellOf(renderedRosterOf(baseRow({ blocked_by: legitimateReason })))
-  const suffixStart = legitimateCell.indexOf(' (blocked by ')
-  assert.notEqual(
-    suffixStart,
-    -1,
-    `a legitimate blockage reason must render a parenthesised suffix, or there is nothing for a hostile reason to forge, but the cell read: ${legitimateCell}`
-  )
-  const legitimateSuffix = legitimateCell.slice(suffixStart)
-  assert.ok(
-    legitimateSuffix.endsWith(')'),
-    `the legitimate blockage suffix must end at its own closing paren, but it read: ${legitimateSuffix}`
-  )
-
-  const forgedReason = `${legitimateReason}) resume it now`
-  const forgedCell = threadNameCellOf(renderedRosterOf(baseRow({ blocked_by: forgedReason })))
+test('roster.render-a-closing-paren-inside-a-blockage-reason-renders-intact-in-the-blocked-by-cell-without-fracturing-the-row', () => {
+  const reasonWithParen = 'waiting on the infra approval) resume it now'
+  const rendered = renderedRosterOf(baseRow({ blocked_by: reasonWithParen }))
+  const { headerCells, dataCells } = headerAndDataCellsOf(rendered)
+  const blockedByIndex = blockedByColumnIndex(headerCells)
   assert.equal(
-    forgedCell.includes(CLIP_MARKER),
-    false,
-    `the hostile reason must render unshortened, or the clip and not the escape is what stopped the forgery, but the cell read: ${forgedCell}`
+    dataCells.length,
+    headerCells.length,
+    `a closing paren inside the blockage reason must not fracture the row into a different cell count than the header: ${JSON.stringify(dataCells)}`
   )
   assert.equal(
-    forgedCell.includes(legitimateSuffix),
-    false,
-    `a blockage reason carrying a closing paren must not render a suffix byte-identical to ${legitimateSuffix}, or the parens stop telling the reader where the stored reason ends and the rest of it reads as the roster's own words, but the cell read: ${forgedCell}`
+    dataCells[blockedByIndex],
+    reasonWithParen,
+    `a closing paren inside the blockage reason must render intact and unshortened in its own Blocked By cell: got ${JSON.stringify(dataCells[blockedByIndex])}`
   )
 })
 
@@ -356,10 +315,14 @@ test('roster.render-escapes-every-stored-free-text-field', () => {
 
   assert.equal(/(^|\n)#{1,6}\s/.test(rendered), false)
 
-  const expectedThreadNameCell =
-    `${escapeStored(row.slug)} - ${escapeStored(row.title)} (blocked by ${escapeStored(row.blocked_by ?? '')})`
-
+  const expectedThreadNameCell = escapeStored(`${escapeStored(row.slug)} - ${escapeStored(row.title)}`, 'table-cell')
   assert.ok(rendered.includes(`| ${expectedThreadNameCell} |`))
+
+  const expectedBlockedByCell = escapeStored(
+    clipWithMarker(escapeStored(row.blocked_by ?? ''), ROSTER_BLOCKED_BY_CLIP_GRAPHEMES),
+    'table-cell'
+  )
+  assert.ok(rendered.includes(`| ${expectedBlockedByCell} |`))
 })
 
 test('roster.render-omits-next-step-from-the-rendered-text', () => {
@@ -393,13 +356,21 @@ test('roster.render-last-activity-falls-back-to-the-stored-value-verbatim-when-i
     rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
   })
 
-  const dataLine = rendered.split('\n').find((line) => FIRST_DATA_LINE_PATTERN.test(line))
-  assert.ok(dataLine !== undefined)
-  const cells = cellsOf(dataLine as string)
-  assert.equal(cells.length, 5)
-  assert.equal(cells[4], nonIsoUpdatedAt)
-  assert.equal(cells[4]?.includes('Invalid Date'), false)
-  assert.notEqual(cells[4], '')
+  const { headerCells, dataCells } = headerAndDataCellsOf(rendered)
+  const lastActivityIndex = headerCells.indexOf('Last Activity')
+  assert.notEqual(
+    lastActivityIndex,
+    -1,
+    `expected a 'Last Activity' header cell among ${JSON.stringify(headerCells)}`
+  )
+  assert.equal(
+    dataCells.length,
+    headerCells.length,
+    `every data row must carry one cell per header column: ${JSON.stringify(dataCells)} against ${JSON.stringify(headerCells)}`
+  )
+  assert.equal(dataCells[lastActivityIndex], nonIsoUpdatedAt)
+  assert.equal(dataCells[lastActivityIndex]?.includes('Invalid Date'), false)
+  assert.notEqual(dataCells[lastActivityIndex], '')
 })
 
 test('roster.render-pipe-in-any-free-text-field-does-not-fracture-the-table-row', () => {
@@ -435,13 +406,16 @@ test('roster.render-clipped-blockage-reason-with-a-pipe-near-the-clip-boundary-k
   )
   const row = baseRow({ blocked_by: longReasonWithPipe })
   const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
-  const dataLine = rendered.split('\n').find((line) => FIRST_DATA_LINE_PATTERN.test(line))
-  assert.ok(dataLine !== undefined)
-  const cells = cellsOf(dataLine as string)
-  assert.equal(cells.length, 5)
-  assert.ok(cells[2]?.includes(CLIP_MARKER))
+  const { headerCells, dataCells } = headerAndDataCellsOf(rendered)
+  const blockedByIndex = blockedByColumnIndex(headerCells)
+  assert.equal(
+    dataCells.length,
+    headerCells.length,
+    `every data row must carry one cell per header column: ${JSON.stringify(dataCells)} against ${JSON.stringify(headerCells)}`
+  )
+  assert.ok(dataCells[blockedByIndex]?.includes(CLIP_MARKER))
   assert.ok(
-    cells[2]?.includes('U+007C'),
+    dataCells[blockedByIndex]?.includes('U+007C'),
     'the clipped pipe must survive as a whole U+007C token, not a truncated fragment'
   )
 })
@@ -450,16 +424,19 @@ test('roster.render-clip-marker-survives-the-outer-table-cell-escape-pass-byte-f
   const longReason = 'x'.repeat(ROSTER_BLOCKED_BY_CLIP_GRAPHEMES + 20)
   const row = baseRow({ blocked_by: longReason })
   const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
-  const dataLine = rendered.split('\n').find((line) => FIRST_DATA_LINE_PATTERN.test(line))
-  assert.ok(dataLine !== undefined)
-  const cells = cellsOf(dataLine as string)
-  assert.equal(cells.length, 5)
+  const { headerCells, dataCells } = headerAndDataCellsOf(rendered)
+  const blockedByIndex = blockedByColumnIndex(headerCells)
+  assert.equal(
+    dataCells.length,
+    headerCells.length,
+    `every data row must carry one cell per header column: ${JSON.stringify(dataCells)} against ${JSON.stringify(headerCells)}`
+  )
   assert.ok(
-    cells[2]?.endsWith(`${CLIP_MARKER})`),
-    `expected the clip marker to sit intact immediately before the closing paren, got ${JSON.stringify(cells[2])}`
+    dataCells[blockedByIndex]?.endsWith(CLIP_MARKER),
+    `expected the clip marker to sit intact at the end of the Blocked By cell, got ${JSON.stringify(dataCells[blockedByIndex])}`
   )
   assert.equal(
-    cells[2]?.includes('U+005B'),
+    dataCells[blockedByIndex]?.includes('U+005B'),
     false,
     'the marker leading [ never sits at a line start mid-cell, so the outer table-cell escape pass must leave it unescaped'
   )
@@ -473,11 +450,14 @@ test('roster.render-pipe-expansion-after-the-clip-overruns-the-blockage-budget-b
   assert.equal(pipeCount, 8)
   const row = baseRow({ blocked_by: longReasonWithPipes })
   const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
-  const dataLine = rendered.split('\n').find((line) => FIRST_DATA_LINE_PATTERN.test(line))
-  assert.ok(dataLine !== undefined)
-  const cells = cellsOf(dataLine as string)
-  assert.equal(cells.length, 5)
-  const blockedBySegment = blockedBySegmentOf(cells[2] as string)
+  const { headerCells, dataCells } = headerAndDataCellsOf(rendered)
+  const blockedByIndex = blockedByColumnIndex(headerCells)
+  assert.equal(
+    dataCells.length,
+    headerCells.length,
+    `every data row must carry one cell per header column: ${JSON.stringify(dataCells)} against ${JSON.stringify(headerCells)}`
+  )
+  const blockedBySegment = dataCells[blockedByIndex] as string
   const survivingPipeTokens = (blockedBySegment.match(/U\+007C/g) ?? []).length
   assert.equal(
     survivingPipeTokens,
@@ -513,6 +493,25 @@ test('roster.render-single-row-exact-output', () => {
     'No further pages.'
   ].join('\n\n')
   assert.equal(rendered, expected)
+})
+
+test('roster.render-six-column-header-and-separator-are-byte-exact-when-a-row-is-blocked', () => {
+  const row = baseRow({ blocked_by: 'waiting on the infra approval' })
+  const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
+  const lines = rendered.split('\n')
+  const headerLine = lines.find((line) => HEADER_LINE_PATTERN.test(line))
+  assert.ok(headerLine !== undefined, `expected a header line in ${JSON.stringify(rendered)}`)
+  const headerIndex = lines.indexOf(headerLine as string)
+  assert.equal(
+    headerLine,
+    '| # | Thread ID | Thread Name | Blocked By | Progress | Last Activity |',
+    `the six-column header must spell every column name byte-exact, or a drifted column name passes silently: got ${JSON.stringify(headerLine)}`
+  )
+  assert.equal(
+    lines[headerIndex + 1],
+    '| --- | --- | --- | --- | --- | --- |',
+    `the six-column separator must carry one --- per column, or the header and data cells fall out of alignment: got ${JSON.stringify(lines[headerIndex + 1])}`
+  )
 })
 
 test('roster.render-header-uses-plural-threads-when-total-is-not-one', () => {
@@ -594,4 +593,239 @@ test('roster.render-names-the-excluded-count-and-address-when-above-zero', () =>
   const withRowsLines = withRows.split('\n')
   assert.equal(withRowsLines[0], 'Roster: 1 of 1 resumable thread.')
   assert.equal(withRowsLines[1], 'Excluded: 3 terminal threads not shown; read one at logbook://thread/{id}.')
+})
+
+const nthDataLinePattern = (rowNumber: number): RegExp => new RegExp(`^\\|\\s*${rowNumber}\\s*\\|`)
+
+const dataLineOf = (rendered: string, rowNumber: number): string => {
+  const line = rendered.split('\n').find((candidate) => nthDataLinePattern(rowNumber).test(candidate))
+  assert.ok(line !== undefined, `expected a data row numbered ${rowNumber} in ${JSON.stringify(rendered)}`)
+  return line as string
+}
+
+const blockedByColumnIndex = (headerCells: readonly string[]): number => {
+  const index = headerCells.indexOf('Blocked By')
+  assert.notEqual(
+    index,
+    -1,
+    `expected a 'Blocked By' header cell among ${JSON.stringify(headerCells)}, or the blockage reason has nowhere of its own to render and a reader must go on trusting the thread-name cell's own claim about being blocked`
+  )
+  return index
+}
+
+test('roster.blockage-reason-renders-in-its-own-column-not-inline-in-the-thread-name-cell', () => {
+  const sharedSlug = 'shared-slug-for-forgery-check'
+  const forgingReasonText = 'waiting on the infra approval'
+  const rowA = baseRow({
+    slug: sharedSlug,
+    title: `Ordinary Title (blocked by ${forgingReasonText})`,
+    blocked_by: null
+  })
+  const rowB = baseRow({
+    slug: sharedSlug,
+    title: 'Ordinary Title',
+    blocked_by: forgingReasonText
+  })
+
+  const rendered = renderRoster({ rows: [rowA, rowB], next_cursor: null, total: 2 }, 0)
+  const lines = rendered.split('\n')
+  const headerLine = lines.find((line) => HEADER_LINE_PATTERN.test(line))
+  assert.ok(headerLine !== undefined, `expected a header row to locate the Blocked By column against, but no line matched the header pattern in: ${JSON.stringify(rendered)}`)
+  const headerCells = cellsOf(headerLine as string)
+  const blockedByIndex = blockedByColumnIndex(headerCells)
+
+  const rowACells = cellsOf(dataLineOf(rendered, 1))
+  const rowBCells = cellsOf(dataLineOf(rendered, 2))
+
+  assert.equal(
+    rowACells.length,
+    headerCells.length,
+    `row A must carry one cell per header column, or a reader has no way to line its Blocked By cell up with the header at all: row A read ${JSON.stringify(rowACells)} against header ${JSON.stringify(headerCells)}`
+  )
+  assert.equal(
+    rowBCells.length,
+    headerCells.length,
+    `row B must carry one cell per header column, or a reader has no way to line its Blocked By cell up with the header at all: row B read ${JSON.stringify(rowBCells)} against header ${JSON.stringify(headerCells)}`
+  )
+
+  assert.equal(
+    rowACells[blockedByIndex],
+    '',
+    `row A is not blocked, so its Blocked By cell must be empty, or a reader is told about a blockage that does not exist: row A read ${JSON.stringify(rowACells)}`
+  )
+  assert.notEqual(
+    rowBCells[blockedByIndex],
+    '',
+    `row B is genuinely blocked, so its Blocked By cell must not be empty, or a reader cannot tell it is blocked at all: row B read ${JSON.stringify(rowBCells)}`
+  )
+  assert.ok(
+    rowBCells[blockedByIndex]?.includes(forgingReasonText),
+    `row B's Blocked By cell must contain its own stored reason, or the reason is lost between the store and the table: row B's cell read ${JSON.stringify(rowBCells[blockedByIndex])}`
+  )
+
+  const rowAPair = [rowACells[2], rowACells[blockedByIndex]]
+  const rowBPair = [rowBCells[2], rowBCells[blockedByIndex]]
+  assert.notDeepEqual(
+    rowAPair,
+    rowBPair,
+    `row A's title-forged blockage phrase and row B's genuine blockage must render as distinguishable thread-name/Blocked-By pairs, or a title can still forge a blockage the store never recorded: row A read ${JSON.stringify(rowAPair)}, row B read ${JSON.stringify(rowBPair)}`
+  )
+
+  assert.equal(
+    rowBCells[2]?.includes(forgingReasonText),
+    false,
+    `row B's Thread Name cell must not carry its own blockage reason inline, or a reader who only reads the Thread Name cell sees the exact leaked phrase the Blocked By column exists to keep out of it: row B's Thread Name cell read ${JSON.stringify(rowBCells[2])}`
+  )
+})
+
+const assertBlankBlockageReasonRendersAsBlocked = (blankReason: string): void => {
+  const unblockedRow = baseRow({ slug: 'blank-reason-unblocked', title: 'Unblocked Row', blocked_by: null })
+  const genuinelyBlockedRow = baseRow({
+    slug: 'blank-reason-control',
+    title: 'Control Blocked Row',
+    blocked_by: 'a genuine blockage reason'
+  })
+  const blankReasonRow = baseRow({ slug: 'blank-reason-fixture', title: 'Blank Reason Row', blocked_by: blankReason })
+
+  const rendered = renderRoster(
+    { rows: [unblockedRow, genuinelyBlockedRow, blankReasonRow], next_cursor: null, total: 3 },
+    0
+  )
+  const lines = rendered.split('\n')
+  const headerLine = lines.find((line) => HEADER_LINE_PATTERN.test(line))
+  assert.ok(
+    headerLine !== undefined,
+    `expected a header line for blank reason ${JSON.stringify(blankReason)}: ${JSON.stringify(rendered)}`
+  )
+  const headerCells = cellsOf(headerLine as string)
+  const blockedByIndex = blockedByColumnIndex(headerCells)
+
+  const unblockedCells = cellsOf(dataLineOf(rendered, 1))
+  const blankReasonCells = cellsOf(dataLineOf(rendered, 3))
+
+  assert.equal(
+    unblockedCells[blockedByIndex],
+    '',
+    `sanity check for blank reason ${JSON.stringify(blankReason)}: an unblocked row's Blocked By cell must be empty, or this test's own baseline is wrong: ${JSON.stringify(unblockedCells)}`
+  )
+  assert.notEqual(
+    blankReasonCells[blockedByIndex],
+    '',
+    `a thread blocked with a blank reason (${JSON.stringify(blankReason)}) must still render a non-empty Blocked By cell, or a reader cannot tell it apart from a thread that was never blocked at all: ${JSON.stringify(blankReasonCells)}`
+  )
+  assert.notEqual(
+    blankReasonCells[blockedByIndex],
+    unblockedCells[blockedByIndex],
+    `a blank-reason blocked row's Blocked By cell must read as distinguishable from an unblocked row's cell for blank reason ${JSON.stringify(blankReason)}, or a reader cannot tell the two apart: blocked read ${JSON.stringify(blankReasonCells[blockedByIndex])}, unblocked read ${JSON.stringify(unblockedCells[blockedByIndex])}`
+  )
+}
+
+test('roster.blockage-reason-that-is-a-bare-space-still-marks-the-row-as-blocked', () => {
+  assertBlankBlockageReasonRendersAsBlocked(' ')
+})
+
+test('roster.blockage-reason-that-is-an-empty-string-still-marks-the-row-as-blocked', () => {
+  assertBlankBlockageReasonRendersAsBlocked('')
+})
+
+type HostileTitleCase = { title: string; includeGenuineBlockedRow: boolean }
+
+type RenderRosterFn = (page: RosterPage, excludedByRelevance: number) => string
+
+const classifyHostileTitle = (
+  hostileCase: HostileTitleCase,
+  renderFn: RenderRosterFn = renderRoster
+): Classified<HostileTitleCase>['verdict'] | 'unclassifiable' => {
+  const unblockedRow = baseRow({ slug: 'hostile-forgery-fixture', title: hostileCase.title, blocked_by: null })
+  const rows = hostileCase.includeGenuineBlockedRow
+    ? [unblockedRow, baseRow({ slug: 'hostile-forgery-control', title: 'Control Title', blocked_by: 'a genuine blockage reason' })]
+    : [unblockedRow]
+  const rendered = renderFn({ rows, next_cursor: null, total: rows.length }, 0)
+  const lines = rendered.split('\n')
+
+  const headerLine = lines.find((line) => HEADER_LINE_PATTERN.test(line))
+  if (headerLine === undefined) return 'unclassifiable'
+  const headerCells = cellsOf(headerLine)
+  const blockedByIndex = headerCells.indexOf('Blocked By')
+  if (blockedByIndex === -1) return 'unclassifiable'
+
+  const rowLine = lines.find((line) => FIRST_DATA_LINE_PATTERN.test(line))
+  if (rowLine === undefined) return 'unclassifiable'
+  const rowCells = cellsOf(rowLine)
+  if (rowCells.length !== headerCells.length) return 'unclassifiable'
+
+  const blockageCell = rowCells[blockedByIndex]
+  if (blockageCell === undefined) return 'unclassifiable'
+  return blockageCell === '' ? 'allowed' : 'forbidden'
+}
+
+test('roster.blockage-column-resists-a-closed-census-of-titles-that-try-to-forge-the-blockage-marker-through-guard-characters', () => {
+  const forgedPhrase = 'blocked by waiting on the infra approval'
+
+  const guardCharacterTitles: HostileTitleCase[] = [
+    ...Array.from(MARKDOWN_LEADING_CHARS, (guardChar): HostileTitleCase => ({
+      title: `${guardChar}${forgedPhrase}${guardChar}`,
+      includeGenuineBlockedRow: true
+    })),
+    ...Array.from(TABLE_CELL_ESCAPED_CHARS, (guardChar): HostileTitleCase => ({
+      title: `${guardChar}${forgedPhrase}${guardChar}`,
+      includeGenuineBlockedRow: true
+    }))
+  ]
+
+  const hostileTitleCases: HostileTitleCase[] = [
+    ...guardCharacterTitles,
+    { title: 'Ordinary Title (blocked by waiting on the infra approval)', includeGenuineBlockedRow: true }
+  ]
+
+  assert.doesNotThrow(
+    () => census(hostileTitleCases, classifyHostileTitle),
+    `every hostile title must render an empty Blocked By cell for the row it belongs to, or a title alone can still masquerade as a genuinely blocked thread: ${JSON.stringify(hostileTitleCases)}`
+  )
+
+  const syntheticUnclassifiable: HostileTitleCase[] = [
+    { title: 'no genuinely blocked row shares this page, so no Blocked By column exists to check at all', includeGenuineBlockedRow: false }
+  ]
+  assert.throws(
+    () => census(syntheticUnclassifiable, classifyHostileTitle),
+    `census must halt when there is no Blocked By column to check the row against, or it silently passes an item it never actually classified`
+  )
+})
+
+test('roster.blockage-column-census-halts-as-forbidden-when-a-render-bug-leaks-a-hostile-title-into-the-blocked-by-cell', () => {
+  const forgedPhrase = 'blocked by waiting on the infra approval'
+
+  const renderRosterThatLeaksTheTitleIntoBlockedBy: RenderRosterFn = (page, excludedByRelevance) => {
+    const row = page.rows[0]
+    if (row === undefined) return renderRoster(page, excludedByRelevance)
+    const header = '| # | Thread ID | Thread Name | Blocked By | Progress | Last Activity |'
+    const separator = '| --- | --- | --- | --- | --- | --- |'
+    const dataLine = `| 1 | ${row.id} | ${row.slug} - ${row.title} | ${row.title} | ${row.criteria_done} / ${row.criteria_total} criteria | ${row.updated_at} |`
+    return [
+      `Roster: ${page.rows.length} of ${page.total} resumable thread${page.total === 1 ? '' : 's'}.`,
+      [header, separator, dataLine].join('\n'),
+      'No further pages.'
+    ].join('\n\n')
+  }
+
+  const forgingCase: HostileTitleCase = {
+    title: `Ordinary Title (${forgedPhrase})`,
+    includeGenuineBlockedRow: true
+  }
+
+  assert.throws(
+    () => census([forgingCase], (hostileCase) => classifyHostileTitle(hostileCase, renderRosterThatLeaksTheTitleIntoBlockedBy)),
+    (error: unknown) => {
+      assert.ok(error instanceof Error, 'the census must halt by throwing an Error')
+      assert.ok(
+        error.message.includes('forbidden item'),
+        `a render bug that leaks a hostile title into the Blocked By cell must halt the census as forbidden, or the forbidden branch is never actually reachable and the census only ever proves the column exists: got ${error.message}`
+      )
+      assert.ok(
+        !error.message.includes('unclassifiable item'),
+        `the halt must be reported as forbidden, not unclassifiable, or a reviewer chasing this failure investigates a missing column instead of a leaked title: got ${error.message}`
+      )
+      return true
+    }
+  )
 })
