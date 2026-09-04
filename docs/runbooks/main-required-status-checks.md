@@ -50,26 +50,15 @@ parentheses. Reading `.github/workflows/rebuild.yml` job by job:
 |---|---|---|
 | `typecheck` | no | `typecheck` |
 | `test` | yes, one axis: `node-version: ['22.19.x', '24.x', '26.x']` | `test (22.19.x)`, `test (24.x)`, `test (26.x)` |
-| `coverage` | no | `coverage` |
-| `mutation` | no | `mutation` |
 | `inspector` | no | `inspector` |
 | `seeded-mutation` | no | `seeded-mutation` |
 
-None of the six jobs sets an explicit `name:` field, so the check name is the bare job id (with
+None of the four jobs sets an explicit `name:` field, so the check name is the bare job id (with
 the matrix suffix where one applies); this table was built by reading the job ids and the
-`strategy.matrix` block directly out of the workflow file, not guessed.
-
-One caveat that changes which jobs are safe to mark required for the push-to-main case this
-runbook is about: the `mutation` job carries `if: github.event_name == 'pull_request'`, so on a
-plain push to `main` (as opposed to a pull request), that job does not run at all and reports no
-check. A required status check that a push event never produces blocks every future push to
-`main` from ever becoming mergeable-clean, because GitHub is left waiting on a check that will
-never arrive for that event type. Do not mark `mutation` as a required check for the push-to-main
-protection this runbook sets up; the other five jobs (`typecheck`, `test`, `coverage`,
-`inspector`, `seeded-mutation`) do run on every push to `main`, and because `test` alone reports
-three check names, those five jobs together produce seven check names (`typecheck`,
-`test (22.19.x)`, `test (24.x)`, `test (26.x)`, `coverage`, `inspector`, `seeded-mutation`) that
-are safe candidates.
+`strategy.matrix` block directly out of the workflow file, not guessed. All four jobs run on
+every push to `main`, and because `test` alone reports three check names, they together produce
+six check names (`typecheck`, `test (22.19.x)`, `test (24.x)`, `test (26.x)`, `inspector`,
+`seeded-mutation`).
 
 ## 3. Two ways to make a check required — pick one
 
@@ -81,7 +70,7 @@ so either of these is a fresh setup, not an edit of something existing.
 **UI path:** repository page -> `Settings` -> `Branches` (left sidebar, under "Code and
 automation") -> `Add branch protection rule` -> in "Branch name pattern" enter `main` -> check
 "Require status checks to pass before merging" -> in the search box that appears, add each check
-name from the table above (skip `mutation`, per the caveat) -> `Create` (or `Save changes` if a
+name from the table above -> `Create` (or `Save changes` if a
 rule for `main` already exists by the time you read this).
 
 **`gh api` command (for a human to run; do not run this from an agent):**
@@ -98,7 +87,6 @@ gh api --method PUT repos/SatanshuMishra/logbook/branches/main/protection \
       "test (22.19.x)",
       "test (24.x)",
       "test (26.x)",
-      "coverage",
       "inspector",
       "seeded-mutation"
     ]
@@ -127,7 +115,7 @@ check, exactly as if this runbook had never been applied for that one class of u
 ruleset` -> give it a name (for example `main-required-status-checks`) -> set "Enforcement
 status" to `Active` -> under "Target branches" click `Add target` -> `Include default branch` (or
 add `main` explicitly) -> under "Branch rules" check "Require status checks to pass" -> `Add
-checks` and add each of the seven check names from the table above except `mutation` -> `Create`.
+checks` and add each of the six check names from the table above -> `Create`.
 
 **`gh api` command (for a human to run; do not run this from an agent):**
 
@@ -155,7 +143,6 @@ gh api --method POST repos/SatanshuMishra/logbook/rulesets \
           { "context": "test (22.19.x)" },
           { "context": "test (24.x)" },
           { "context": "test (26.x)" },
-          { "context": "coverage" },
           { "context": "inspector" },
           { "context": "seeded-mutation" }
         ]
@@ -178,7 +165,7 @@ if the current API has changed them.
 Today, with neither branch protection nor a ruleset in place on `main`, the `push`-triggered jobs
 in `.github/workflows/rebuild.yml` run and report their pass/fail state, but nothing reads that
 state to block anything. A push straight to `main` that fails every one of `typecheck`, `test`,
-`coverage`, `inspector` and `seeded-mutation` still lands on `main` exactly as if CI had never
+`inspector` and `seeded-mutation` still lands on `main` exactly as if CI had never
 run. Section 3 is what turns "runs and reports" into "runs and blocks."
 
 ## 5. Verifying afterward
