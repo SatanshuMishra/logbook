@@ -7,6 +7,7 @@ reports/
 *.tmp-*
 .evidence/
 .playwright-mcp/
+.serena/
 graphify-out/
 .claude/settings.local.json
 .claude/worktrees/

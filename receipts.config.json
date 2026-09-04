@@ -10,7 +10,10 @@
   },
   "build": {
     "sha_source": "none",
-    "platform": "none"
+    "platform": "none",
+    "deploy_host_patterns": [],
+    "environments": {},
+    "verify_against": "none"
   },
   "verify": {
     "test_command": "node --test {test}",
@@ -23,9 +26,24 @@
     "on_no_receipt": "require-downgrade-tag",
     "on_unreachable_build": "sha-bind-only"
   },
+  "agent": {
+    "loop_skills": ["gates"],
+    "staging_query_patterns": [],
+    "drive": {
+      "confirmed": true,
+      "auth": "none needed - logbook is an MCP server plus local hook scripts with no authenticated surface",
+      "bypass": "none - there is no sign-in to bypass",
+      "data": "self-seeding - each test builds its own disposable store in a temp directory; no shared seeded environment",
+      "browser_surfaces": []
+    },
+    "closeout_fixed_statuses": ["Pending Retest", "Verified"],
+    "repo_name": "logbook",
+    "receipts_version": "0.5.2"
+  },
   "gates": {
     "medium": "library",
     "enabled": "all",
+    "disabled": ["G4", "G5"],
     "G6": {
       "mode": "warn"
     },
@@ -42,9 +60,6 @@
       "mode": "block"
     },
     "G12": {
-      "mode": "warn"
-    },
-    "G13": {
       "mode": "warn"
     },
     "G14": {
