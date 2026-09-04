@@ -11,6 +11,12 @@ const ORDERED_LIST_DIGIT = /[0-9]/
 const ORDERED_LIST_PUNCTUATION = new Set(['.', ')'])
 const ORDERED_LIST_TERMINATOR = /\s/
 export const TABLE_CELL_ESCAPED_CHARS: ReadonlySet<string> = new Set(['|'])
+const PROSE_ESCAPED_CHARS: ReadonlySet<string> = new Set()
+const ANGLE_WRAPPED_ESCAPED_CHARS: ReadonlySet<string> = new Set(['>'])
+const BRACKET_WRAPPED_ESCAPED_CHARS: ReadonlySet<string> = new Set([']'])
+const PAREN_WRAPPED_ESCAPED_CHARS: ReadonlySet<string> = new Set([')'])
+const DOUBLE_QUOTED_ESCAPED_CHARS: ReadonlySet<string> = new Set(['"'])
+const SINGLE_QUOTED_ESCAPED_CHARS: ReadonlySet<string> = new Set(["'"])
 
 const isBlank = (char: string): boolean => {
   if (char === LINE_SEPARATOR || char === PARAGRAPH_SEPARATOR) return true
@@ -45,9 +51,27 @@ const orderedListMarkerEnd = (chars: readonly string[], start: number): number |
   return cursor + 1
 }
 
-export type EscapeSurface = 'prose' | 'table-cell'
+export type EscapeSurface =
+  | 'prose'
+  | 'table-cell'
+  | 'angle-wrapped'
+  | 'bracket-wrapped'
+  | 'paren-wrapped'
+  | 'double-quoted'
+  | 'single-quoted'
+
+const SURFACE_ESCAPED_CHARS: Readonly<Record<EscapeSurface, ReadonlySet<string>>> = {
+  prose: PROSE_ESCAPED_CHARS,
+  'table-cell': TABLE_CELL_ESCAPED_CHARS,
+  'angle-wrapped': ANGLE_WRAPPED_ESCAPED_CHARS,
+  'bracket-wrapped': BRACKET_WRAPPED_ESCAPED_CHARS,
+  'paren-wrapped': PAREN_WRAPPED_ESCAPED_CHARS,
+  'double-quoted': DOUBLE_QUOTED_ESCAPED_CHARS,
+  'single-quoted': SINGLE_QUOTED_ESCAPED_CHARS
+}
 
 export const escapeStored = (text: string, surface: EscapeSurface = 'prose'): string => {
+  const surfaceEscapedChars = SURFACE_ESCAPED_CHARS[surface]
   const chars = Array.from(text)
   const out: string[] = []
   let atLineStart = true
@@ -84,7 +108,7 @@ export const escapeStored = (text: string, surface: EscapeSurface = 'prose'): st
         continue
       }
     }
-    out.push(surface === 'table-cell' && TABLE_CELL_ESCAPED_CHARS.has(char) ? toEscaped(char) : escapeChar(char))
+    out.push(surfaceEscapedChars.has(char) ? toEscaped(char) : escapeChar(char))
     atLineStart = char === '\n' || char === '\r'
     spaceRun = 0
     index += 1

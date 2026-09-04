@@ -77,7 +77,7 @@ const formatLastActivity = (updatedAt: Iso8601): string => {
 const renderBlockedBySuffix = (blockedBy: string | null): string =>
   blockedBy === null
     ? ''
-    : ` (blocked by ${clipWithMarker(escapeStored(blockedBy), ROSTER_BLOCKED_BY_CLIP_GRAPHEMES)})`
+    : ` (blocked by ${clipWithMarker(escapeStored(blockedBy, 'paren-wrapped'), ROSTER_BLOCKED_BY_CLIP_GRAPHEMES)})`
 
 const renderThreadNameCell = (row: RosterRow): string =>
   escapeStored(

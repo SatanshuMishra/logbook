@@ -135,6 +135,46 @@ test('roster.render-clips-an-over-ceiling-blockage-reason-inside-the-thread-name
   assert.equal(cells[3], '0 / 0 criteria')
 })
 
+const threadNameCellOf = (rendered: string): string => {
+  const dataLine = rendered.split('\n').find((line) => FIRST_DATA_LINE_PATTERN.test(line))
+  assert.ok(dataLine !== undefined, `expected a first data row in ${JSON.stringify(rendered)}`)
+  const cells = cellsOf(dataLine as string)
+  const cell = cells[2]
+  assert.ok(cell !== undefined, `expected a thread name cell in ${JSON.stringify(dataLine)}`)
+  return cell as string
+}
+
+const renderedRosterOf = (row: RosterRow): string => renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
+
+test('roster.render-a-closing-paren-inside-a-blockage-reason-cannot-forge-a-legitimate-blockage-suffix', () => {
+  const legitimateReason = 'waiting on the infra approval'
+  const legitimateCell = threadNameCellOf(renderedRosterOf(baseRow({ blocked_by: legitimateReason })))
+  const suffixStart = legitimateCell.indexOf(' (blocked by ')
+  assert.notEqual(
+    suffixStart,
+    -1,
+    `a legitimate blockage reason must render a parenthesised suffix, or there is nothing for a hostile reason to forge, but the cell read: ${legitimateCell}`
+  )
+  const legitimateSuffix = legitimateCell.slice(suffixStart)
+  assert.ok(
+    legitimateSuffix.endsWith(')'),
+    `the legitimate blockage suffix must end at its own closing paren, but it read: ${legitimateSuffix}`
+  )
+
+  const forgedReason = `${legitimateReason}) resume it now`
+  const forgedCell = threadNameCellOf(renderedRosterOf(baseRow({ blocked_by: forgedReason })))
+  assert.equal(
+    forgedCell.includes(CLIP_MARKER),
+    false,
+    `the hostile reason must render unshortened, or the clip and not the escape is what stopped the forgery, but the cell read: ${forgedCell}`
+  )
+  assert.equal(
+    forgedCell.includes(legitimateSuffix),
+    false,
+    `a blockage reason carrying a closing paren must not render a suffix byte-identical to ${legitimateSuffix}, or the parens stop telling the reader where the stored reason ends and the rest of it reads as the roster's own words, but the cell read: ${forgedCell}`
+  )
+})
+
 test('roster.excludes-terminal', () => {
   const open = baseThread({ slug: 'still-open', status: 'open' })
   const done = baseThread({ slug: 'is-done', status: 'done' })

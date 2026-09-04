@@ -19,7 +19,7 @@ const preflightMessage = (thread: string | undefined): GetPromptResult => ({
         text:
           thread === undefined
             ? PREFLIGHT_DEFAULT_TEXT
-            : `Call resume_thread for "${escapeStored(thread)}" and show me the returned briefing verbatim.`
+            : `Call resume_thread for "${escapeStored(thread, 'double-quoted')}" and show me the returned briefing verbatim.`
       }
     }
   ]
