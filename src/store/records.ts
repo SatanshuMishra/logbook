@@ -98,9 +98,18 @@ const sessionEntryPath = (layout: StoreLayout, threadId: Ulid, entryId: Ulid): s
 
 type PresentDecisionIds = { listed: true; ids: Set<string> } | { listed: false }
 
+let decisionListingCount = 0
+
+export const resetDecisionListingCounter = (): void => {
+  decisionListingCount = 0
+}
+
+export const getDecisionListingCounter = (): number => decisionListingCount
+
 const presentDecisionIds = (layout: StoreLayout): PresentDecisionIds => {
   try {
     const names = readdirSync(decisionsDir(layout)).filter((name) => name.endsWith('.json'))
+    decisionListingCount += names.length
     return { listed: true, ids: new Set(names.map((name) => name.slice(0, -'.json'.length))) }
   } catch (error) {
     if (errnoCode(error) === 'ENOENT') return { listed: true, ids: new Set() }

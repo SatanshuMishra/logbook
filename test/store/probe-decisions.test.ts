@@ -6,7 +6,8 @@ import { test } from 'node:test'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import type { Decision } from '../../src/schema/decision.ts'
 import { layoutFor } from '../../src/store/layout.ts'
-import { openStore, type Slot } from '../../src/store/records.ts'
+import { getRecordReadCounter, resetRecordReadCounter } from '../../src/store/read-path.ts'
+import { getDecisionListingCounter, openStore, resetDecisionListingCounter, type Slot } from '../../src/store/records.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { withRepo } from '../support/git-fixture.ts'
 
@@ -159,6 +160,89 @@ test('probe.missing-decisions-directory-yields-every-id-dangling', () => {
       const ids = [rt.ulid(), rt.ulid()]
       const probe = store.probeDecisions(ids)
       assert.deepEqual(probe, { resolved: 0, dangling: ids, quarantined: [] })
+    })
+  })
+})
+
+test('probe.read-counter-counts-only-the-present-ids-a-per-link-loop-would-also-open', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const opened = openStore(rt, repo)
+      assert.equal(opened.ok, true)
+      if (!opened.ok) return
+      const store = opened.value
+
+      const threadId = rt.ulid()
+      const resolvedOne = makeDecision(rt, threadId, 'resolved one')
+      const resolvedTwo = makeDecision(rt, threadId, 'resolved two')
+      const committed = store.commit(
+        [
+          { kind: 'decision', record: resolvedOne },
+          { kind: 'decision', record: resolvedTwo }
+        ],
+        'seed resolving decisions'
+      )
+      assert.equal(committed.ok, true)
+
+      const layout = layoutFor(rt, repo)
+      assert.equal(layout.ok, true)
+      if (!layout.ok) return
+      const quarantinedId = rt.ulid()
+      writeFileSync(join(layout.value.records, 'decisions', `${quarantinedId}.json`), '{not-json', 'utf8')
+
+      const danglingOne = rt.ulid()
+      const danglingTwo = rt.ulid()
+
+      const ids = [resolvedOne.id, danglingOne, resolvedTwo.id, quarantinedId, danglingTwo]
+      const presentCount = ids.filter((id) => id !== danglingOne && id !== danglingTwo).length
+
+      resetRecordReadCounter()
+      const oldLoopResult = oldPerLinkLoop(store.readDecision, ids)
+      const oldLoopReadCount = getRecordReadCounter()
+
+      resetRecordReadCounter()
+      const probeResult = store.probeDecisions(ids)
+      const probeReadCount = getRecordReadCounter()
+
+      assert.deepEqual(probeResult, oldLoopResult)
+      assert.equal(oldLoopReadCount, ids.length, 'the old per-link loop opens (or attempts to open) every linked file, dangling ones included')
+      assert.equal(probeReadCount, presentCount, 'probeDecisions opens only the files the directory listing reports present')
+    })
+  })
+})
+
+test('probe.listing-counter-scales-with-total-store-size-not-with-the-link-count', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const opened = openStore(rt, repo)
+      assert.equal(opened.ok, true)
+      if (!opened.ok) return
+      const store = opened.value
+
+      const threadId = rt.ulid()
+      const decoys = Array.from({ length: 100 }, (_, index) => makeDecision(rt, threadId, `decoy decision ${index}`))
+      const linkedOne = makeDecision(rt, threadId, 'linked one')
+      const linkedTwo = makeDecision(rt, threadId, 'linked two')
+      const allDecisions = [...decoys, linkedOne, linkedTwo]
+
+      const committed = store.commit(
+        allDecisions.map((record) => ({ kind: 'decision' as const, record })),
+        'seed a store far larger than the thread it is probed for'
+      )
+      assert.equal(committed.ok, true)
+
+      resetDecisionListingCounter()
+      const probe = store.probeDecisions([linkedOne.id, linkedTwo.id])
+      const listingCount = getDecisionListingCounter()
+
+      assert.equal(probe.resolved, 2)
+      assert.equal(
+        listingCount,
+        allDecisions.length,
+        `expected the listing counter (${listingCount}) to equal the total decision count in the store (${allDecisions.length}), not the 2-id link count`
+      )
     })
   })
 })

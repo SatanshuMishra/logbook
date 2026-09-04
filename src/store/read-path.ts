@@ -14,6 +14,7 @@ export type Slot<T> = Loaded<T> | Quarantined
 
 let subprocessCallCount = 0
 let materialiseCallCount = 0
+let recordReadCount = 0
 
 export const resetSubprocessCallCounter = (): void => {
   subprocessCallCount = 0
@@ -26,6 +27,12 @@ export const resetMaterialiseCallCounter = (): void => {
 }
 
 export const getMaterialiseCallCounter = (): number => materialiseCallCount
+
+export const resetRecordReadCounter = (): void => {
+  recordReadCount = 0
+}
+
+export const getRecordReadCounter = (): number => recordReadCount
 
 const countedGit: typeof git = (rt, repo, args, opts) => {
   subprocessCallCount += 1
@@ -234,6 +241,7 @@ export const syncWorkingCopy = (
 }
 
 export const readRecordFile = <T>(filePath: string, declared: Declared<T>): Slot<T> | null => {
+  recordReadCount += 1
   let raw: string
   try {
     raw = readFileSync(filePath, 'utf8')

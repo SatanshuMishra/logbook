@@ -94,24 +94,17 @@ const resolveThreadSlot = (store: Store, id: string): Slot<Thread> | null => {
 }
 
 const decisionIntegrityForThread = (rt: Runtime, store: Store, thread: Thread): DecisionIntegrity => {
-  const outcomes = thread.spine.key_decisions.map((keyDecision) => ({
-    decisionId: keyDecision.decision_id,
-    slot: store.readDecision(keyDecision.decision_id)
-  }))
+  const ids = thread.spine.key_decisions.map((keyDecision) => keyDecision.decision_id)
+  const probe = store.probeDecisions(ids)
 
-  const dangling: string[] = []
-  const quarantined: string[] = []
-  for (const outcome of outcomes) {
-    if (outcome.slot === null) {
-      dangling.push(outcome.decisionId)
-      rt.log({ level: 'error', event: 'resource.thread-decision-dangling', decision_id: outcome.decisionId })
-    } else if (outcome.slot.quarantined) {
-      quarantined.push(outcome.decisionId)
-      rt.log({ level: 'error', event: 'resource.thread-decision-quarantined', decision_id: outcome.decisionId })
-    }
+  for (const decisionId of probe.dangling) {
+    rt.log({ level: 'error', event: 'resource.thread-decision-dangling', decision_id: decisionId })
+  }
+  for (const decisionId of probe.quarantined) {
+    rt.log({ level: 'error', event: 'resource.thread-decision-quarantined', decision_id: decisionId })
   }
 
-  return { resolved: outcomes.length - dangling.length - quarantined.length, dangling, quarantined }
+  return probe
 }
 
 const readBindingsForThread = (rt: Runtime, threadId: string): BindingIntegrity => {
