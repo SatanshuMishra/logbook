@@ -1,18 +1,23 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import type { StoreLayout } from '../../src/store/layout.ts'
 import type { RecordChange } from '../../src/store/write-path.ts'
+import type { ToolContext } from '../../src/server/register.ts'
 import { layoutFor } from '../../src/store/layout.ts'
 import { openStore } from '../../src/store/records.ts'
+import { LEDGER_REF } from '../../src/store/ref.ts'
 import { writePointer } from '../../src/domain/pointer.ts'
 import { runSessionStart } from '../../src/cli/session-start.ts'
 import { stopGateVerdict } from '../../src/hooklib/stop-gate.ts'
+import { resumeThreadTool } from '../../src/server/tools/resume_thread.ts'
 import { testRuntime } from '../support/runtime.ts'
-import { withRepo } from '../support/git-fixture.ts'
+import { rawGit } from '../support/git-fixture.ts'
+
+const STUB_TOOL_CTX = {} as unknown as ToolContext
 
 const SESSION_ID = 'stop-gate-ledger-presence-session'
 const OTHER_SESSION_ID = 'stop-gate-ledger-presence-other-session'
@@ -25,15 +30,21 @@ const BANNED_LITERALS = [
   ['approaching the ', 'compaction threshold'].join('')
 ]
 
-const withPluginData = <T>(fn: (pluginData: string) => T): T => {
-  const home = mkdtempSync(join(tmpdir(), 'logbook-stop-gate-presence-plugin-data-'))
-  const dir = join(home, 'plugin-data')
-  mkdirSync(dir)
-  try {
-    return fn(dir)
-  } finally {
-    rmSync(home, { recursive: true, force: true })
+const setupFixtureRepo = (repo: string): void => {
+  const steps: string[][] = [
+    ['init', '--initial-branch=main'],
+    ['config', 'user.name', 'Logbook Fixture'],
+    ['config', 'user.email', 'fixture@logbook.test']
+  ]
+  for (const args of steps) {
+    const result = rawGit(repo, args)
+    assert.equal(result.status, 0, `fixture setup failed: git ${args.join(' ')}: ${result.stderr}`)
   }
+  writeFileSync(join(repo, 'README.md'), 'logbook fixture repository\n')
+  const added = rawGit(repo, ['add', 'README.md'])
+  assert.equal(added.status, 0, `fixture setup failed: git add README.md: ${added.stderr}`)
+  const committed = rawGit(repo, ['commit', '-m', 'fixture: initial commit'])
+  assert.equal(committed.status, 0, `fixture setup failed: git commit: ${committed.stderr}`)
 }
 
 const makeThread = (rt: Runtime, slug: string): Extract<RecordChange, { kind: 'thread' }> => ({
@@ -60,16 +71,22 @@ const makeThread = (rt: Runtime, slug: string): Extract<RecordChange, { kind: 't
 
 type Fixture = { rt: Runtime; repo: string; layout: StoreLayout }
 
-const withFixture = (fn: (fixture: Fixture) => void): void => {
-  withRepo((repo) => {
-    withPluginData((pluginData) => {
-      const rt = testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: pluginData }, cwd: repo })
-      const layout = layoutFor(rt, repo)
-      assert.equal(layout.ok, true)
-      if (!layout.ok) return
-      fn({ rt, repo, layout: layout.value })
-    })
-  })
+const withFixture = async (fn: (fixture: Fixture) => Promise<void>): Promise<void> => {
+  const home = mkdtempSync(join(tmpdir(), 'logbook-stop-gate-presence-plugin-data-'))
+  const repo = mkdtempSync(join(tmpdir(), 'logbook-stop-gate-presence-repo-'))
+  try {
+    setupFixtureRepo(repo)
+    const pluginData = join(home, 'plugin-data')
+    mkdirSync(pluginData)
+    const rt = testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: pluginData }, cwd: repo })
+    const layout = layoutFor(rt, repo)
+    assert.equal(layout.ok, true)
+    if (!layout.ok) return
+    await fn({ rt, repo, layout: layout.value })
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  }
 }
 
 const commitOneThread = (rt: Runtime, repo: string, slug: string): string => {
@@ -86,6 +103,12 @@ const startSession = (rt: Runtime, repo: string, sessionId: string): void => {
   runSessionStart(rt, { session_id: sessionId, source: 'startup', cwd: repo })
 }
 
+const resumeAs = async (rt: Runtime, sessionId: string, threadId: string): Promise<void> => {
+  const resumeRt: Runtime = { ...rt, sessionId }
+  const reply = await resumeThreadTool.handler(resumeRt, STUB_TOOL_CTX, { thread_id: threadId })
+  assert.equal(reply.ok, true, 'resume_thread must succeed for the fixture to establish a resume baseline')
+}
+
 const stopEventFor = (repo: string, sessionId: string, stopHookActive: boolean) => ({
   session_id: sessionId,
   cwd: repo,
@@ -93,22 +116,22 @@ const stopEventFor = (repo: string, sessionId: string, stopHookActive: boolean) 
   stop_hook_active: stopHookActive
 })
 
-test('hook.stop-gate-blocks-when-nothing-reached-the-ledger-since-resume', () => {
-  withFixture(({ rt, repo, layout }) => {
+test('hook.stop-gate-blocks-when-nothing-reached-the-ledger-since-resume', async () => {
+  await withFixture(async ({ rt, repo }) => {
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
     startSession(rt, repo, SESSION_ID)
-    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID, focus: [] })
+    await resumeAs(rt, SESSION_ID, threadId)
 
     const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
     assert.equal(verdict.kind, 'block', 'the stop gate must block when the ledger ref has not moved since resume')
   })
 })
 
-test('hook.stop-gate-clears-the-moment-something-reaches-the-ledger', () => {
-  withFixture(({ rt, repo, layout }) => {
+test('hook.stop-gate-clears-the-moment-something-reaches-the-ledger', async () => {
+  await withFixture(async ({ rt, repo }) => {
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
     startSession(rt, repo, SESSION_ID)
-    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID, focus: [] })
+    await resumeAs(rt, SESSION_ID, threadId)
 
     assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind, 'block')
 
@@ -119,11 +142,11 @@ test('hook.stop-gate-clears-the-moment-something-reaches-the-ledger', () => {
   })
 })
 
-test('hook.stop-gate-re-evaluates-rather-than-latching', () => {
-  withFixture(({ rt, repo, layout }) => {
+test('hook.stop-gate-re-evaluates-rather-than-latching', async () => {
+  await withFixture(async ({ rt, repo }) => {
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
     startSession(rt, repo, SESSION_ID)
-    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID, focus: [] })
+    await resumeAs(rt, SESSION_ID, threadId)
 
     assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind, 'block')
     assert.equal(
@@ -137,19 +160,19 @@ test('hook.stop-gate-re-evaluates-rather-than-latching', () => {
   })
 })
 
-test('hook.stop-gate-is-silent-when-the-stop-hook-is-already-active', () => {
-  withFixture(({ rt, repo, layout }) => {
+test('hook.stop-gate-is-silent-when-the-stop-hook-is-already-active', async () => {
+  await withFixture(async ({ rt, repo }) => {
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
     startSession(rt, repo, SESSION_ID)
-    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID, focus: [] })
+    await resumeAs(rt, SESSION_ID, threadId)
 
     const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, true))
     assert.equal(verdict.kind, 'silent', 'blocking while the stop hook is already active would not terminate')
   })
 })
 
-test('hook.stop-gate-is-silent-when-no-thread-is-being-worked-by-this-session', () => {
-  withFixture(({ rt, repo, layout }) => {
+test('hook.stop-gate-is-silent-when-no-thread-is-being-worked-by-this-session', async () => {
+  await withFixture(async ({ rt, repo, layout }) => {
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
     startSession(rt, repo, SESSION_ID)
 
@@ -173,33 +196,38 @@ test('hook.stop-gate-is-silent-when-no-thread-is-being-worked-by-this-session', 
   })
 })
 
-test('hook.stop-gate-is-silent-when-this-session-recorded-no-baseline', () => {
-  withFixture(({ rt, repo, layout }) => {
+test('hook.stop-gate-is-silent-when-this-session-recorded-no-resume-baseline', async () => {
+  await withFixture(async ({ rt, repo, layout }) => {
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
     startSession(rt, repo, OTHER_SESSION_ID)
+    await resumeAs(rt, OTHER_SESSION_ID, threadId)
     writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID, focus: [] })
 
     const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
-    assert.equal(verdict.kind, 'silent', 'without a baseline for this session there is no window to compare against')
+    assert.equal(verdict.kind, 'silent', 'without a resume baseline for this session there is no window to compare against')
   })
 })
 
-test('hook.stop-gate-is-silent-when-the-project-had-no-ledger-ref-at-session-start', () => {
-  withFixture(({ rt, repo, layout }) => {
-    startSession(rt, repo, SESSION_ID)
+test('hook.stop-gate-is-silent-when-the-project-had-no-ledger-ref-at-resume', async () => {
+  await withFixture(async ({ rt, repo }) => {
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
-    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID, focus: [] })
+    startSession(rt, repo, SESSION_ID)
+
+    const deleted = rawGit(repo, ['update-ref', '-d', LEDGER_REF])
+    assert.equal(deleted.status, 0, `the fixture must be able to remove the ledger ref: ${deleted.stderr}`)
+
+    await resumeAs(rt, SESSION_ID, threadId)
 
     const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
-    assert.equal(verdict.kind, 'silent', 'a session that began before the ledger ref existed has no window to compare against')
+    assert.equal(verdict.kind, 'silent', 'a resume that recorded no ledger head has no window to compare against')
   })
 })
 
-test('hook.stop-gate-ledger-message-claims-presence-and-never-completeness', () => {
-  withFixture(({ rt, repo, layout }) => {
+test('hook.stop-gate-ledger-message-claims-presence-and-never-completeness', async () => {
+  await withFixture(async ({ rt, repo }) => {
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
     startSession(rt, repo, SESSION_ID)
-    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID, focus: [] })
+    await resumeAs(rt, SESSION_ID, threadId)
 
     const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
     assert.equal(verdict.kind, 'block')
@@ -216,5 +244,24 @@ test('hook.stop-gate-ledger-message-claims-presence-and-never-completeness', () 
         `the blocking message carries the retired compaction-nudge literal ${JSON.stringify(literal)}`
       )
     }
+  })
+})
+
+test('hook.stop-gate-blocks-when-a-ledger-write-lands-before-resume-and-nothing-after', async () => {
+  await withFixture(async ({ rt, repo }) => {
+    const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
+    startSession(rt, repo, SESSION_ID)
+
+    commitOneThread(rt, repo, 'stop-gate-presence-pre-resume')
+
+    await resumeAs(rt, SESSION_ID, threadId)
+
+    const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
+    assert.equal(
+      verdict.kind,
+      'block',
+      'the stop gate must block when nothing has reached the ledger since resume_thread ran, even though ' +
+        'a write landed between session start and the resume'
+    )
   })
 })

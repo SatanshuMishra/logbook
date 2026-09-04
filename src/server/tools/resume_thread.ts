@@ -5,6 +5,7 @@ import { ULID_PATTERN } from '../../schema/ids.ts'
 import * as caps from '../../schema/caps.ts'
 import { layoutFor } from '../../store/layout.ts'
 import { readPointer, writePointer, type Pointer } from '../../domain/pointer.ts'
+import { recordResumeBaseline } from '../../hooklib/ledger-presence.ts'
 import { renderBriefingWithPasses, resumePayloadBytes, type DecisionIntegrity } from '../../render/briefing.ts'
 import { openProjectStore, loadThread, resolvePredecessor } from '../tool-support.ts'
 
@@ -96,6 +97,7 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
 
     const writtenPointer: Pointer = { thread_id: thread.id, written_at: rt.now(), session_id: rt.sessionId, focus: focusIds }
     writePointer(rt, layout.value, writtenPointer)
+    recordResumeBaseline(rt, layout.value, rt.sessionId)
 
     const decisionIds = thread.spine.key_decisions.map((keyDecision) => keyDecision.decision_id)
     const probe = store.probeDecisions(decisionIds)

@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
+import { BindingRecord, type Binding } from '../../src/schema/binding.ts'
 import { git } from '../../src/store/git.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
+import { readAllRecordFiles } from '../../src/store/read-path.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
 import { sync } from '../../src/merge/sync.ts'
 import { writeRecords, type RecordChange } from '../../src/store/write-path.ts'
@@ -241,7 +243,7 @@ test('sync.a-merge-carries-a-remote-only-binding-record-through', () => {
 
     const mergeOutcome = sync(ana.rt, ana.store, anaLayout)
 
-    assert.equal(mergeOutcome.ok, true, 'a merge must carry through a remote-only record this version does not itself parse')
+    assert.equal(mergeOutcome.ok, true, 'a merge must carry a well-formed remote-only binding record through')
     if (!mergeOutcome.ok) return
     assert.equal(mergeOutcome.action, 'merged')
 
@@ -260,6 +262,84 @@ test('sync.a-merge-carries-a-remote-only-binding-record-through', () => {
       bindingContent,
       'the carried binding record must reach the pushed tree with its bytes intact'
     )
+
+    const carriedSlots = readAllRecordFiles<Binding>(path.join(anaLayout.records, 'bindings'), BindingRecord)
+    const carriedSlot = carriedSlots.find((slot) => !slot.quarantined && slot.record.id === bindingId)
+    assert.ok(
+      carriedSlot !== undefined && !carriedSlot.quarantined,
+      'the carried binding record must have passed the binding schema the merge validates against'
+    )
+  })
+})
+
+test('sync.refuses-a-remote-binding-record-it-cannot-parse', () => {
+  withTwoClones((ana, ben, remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+
+    const threadA = makeThread(ana.rt, 'malformed-binding-thread-a')
+    const createA = ana.store.commit([threadA], 'ana: create thread a')
+    assert.equal(createA.ok, true)
+
+    const pushA = sync(ana.rt, ana.store, anaLayout)
+    assert.equal(pushA.ok, true)
+
+    const fastForwardBen = sync(ben.rt, ben.store, benLayout)
+    assert.equal(fastForwardBen.ok, true)
+
+    const bindingId = ben.rt.ulid()
+    const bindingRelPath = `bindings/${bindingId}.json`
+    const malformedContent = '{"id":"not-a-ulid"}'
+    const bindingWrite = writeRecords(
+      ben.rt,
+      benLayout,
+      [{ kind: 'raw', relPath: bindingRelPath, content: malformedContent }],
+      'ben: record a binding the schema will reject'
+    )
+    assert.equal(bindingWrite.ok, true)
+
+    const pushBadBinding = sync(ben.rt, ben.store, benLayout)
+    assert.equal(pushBadBinding.ok, true)
+    if (!pushBadBinding.ok) return
+    assert.equal(pushBadBinding.action, 'pushed')
+
+    const threadB = makeThread(ana.rt, 'malformed-binding-thread-b')
+    const createB = ana.store.commit([threadB], 'ana: create thread b')
+    assert.equal(createB.ok, true)
+
+    const anaRefBefore = git(ana.rt, ana.repo, ['rev-parse', LEDGER_REF])
+    assert.equal(anaRefBefore.ok, true)
+    if (!anaRefBefore.ok) return
+
+    const mergeOutcome = sync(ana.rt, ana.store, anaLayout)
+
+    assert.equal(mergeOutcome.ok, false, 'a merge carrying a remote binding record the schema rejects must be refused')
+    if (mergeOutcome.ok) return
+    assert.equal(mergeOutcome.reason, 'unparseable')
+    if (mergeOutcome.reason !== 'unparseable') return
+    assert.deepEqual(mergeOutcome.records, [bindingRelPath])
+
+    const anaRefAfter = git(ana.rt, ana.repo, ['rev-parse', LEDGER_REF])
+    assert.equal(anaRefAfter.ok, true)
+    if (!anaRefAfter.ok) return
+    assert.equal(anaRefAfter.stdout.trim(), anaRefBefore.stdout.trim(), 'the refused merge must not advance the local ledger ref')
+
+    const refusedRecordInRef = git(ana.rt, ana.repo, ['cat-file', '-p', `${LEDGER_REF}:${bindingRelPath}`])
+    assert.equal(refusedRecordInRef.ok, false, 'the malformed binding record must never reach the local ledger ref')
+
+    const localListing = git(ana.rt, ana.repo, ['ls-tree', '-r', '--name-only', LEDGER_REF])
+    assert.equal(localListing.ok, true)
+    if (!localListing.ok) return
+    assert.equal(
+      localListing.stdout.includes(bindingRelPath),
+      false,
+      'the malformed binding record must be absent from every path in the local ledger ref'
+    )
+
+    const remoteRecordContent = git(ana.rt, remote, ['cat-file', '-p', `${LEDGER_REF}:${bindingRelPath}`])
+    assert.equal(remoteRecordContent.ok, true, 'the refusal must leave the remote copy of the record intact')
+    if (!remoteRecordContent.ok) return
+    assert.equal(remoteRecordContent.stdout, malformedContent)
   })
 })
 

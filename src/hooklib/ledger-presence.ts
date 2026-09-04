@@ -6,9 +6,9 @@ import { durableWrite } from '../store/durable-write.ts'
 import { git } from '../store/git.ts'
 import { LEDGER_REF } from '../store/ref.ts'
 
-const BASELINE_FILE_NAME = 'session-baseline.json'
+const BASELINE_FILE_NAME = 'resume-baseline.json'
 
-export type SessionBaseline = { session_id: string; ledger_head: string | null }
+export type ResumeBaseline = { session_id: string; ledger_head: string | null }
 
 const baselinePathFor = (stateDir: string): string => path.join(stateDir, BASELINE_FILE_NAME)
 
@@ -26,14 +26,14 @@ export const readLedgerHead = (rt: Runtime, projectRoot: string): string | null 
   return trimmed.length === 0 ? null : trimmed
 }
 
-export const readSessionBaseline = (layout: StoreLayout): SessionBaseline | null => {
+export const readResumeBaseline = (layout: StoreLayout): ResumeBaseline | null => {
   const target = baselinePathFor(layout.state)
   let raw: string
   try {
     raw = readFileSync(target, 'utf8')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw new Error(`readSessionBaseline: failed to read ${target}: ${(error as Error).message}`)
+    throw new Error(`readResumeBaseline: failed to read ${target}: ${(error as Error).message}`)
   }
   let parsed: unknown
   try {
@@ -50,10 +50,8 @@ export const readSessionBaseline = (layout: StoreLayout): SessionBaseline | null
   return { session_id: sessionId, ledger_head: ledgerHead }
 }
 
-export const recordSessionBaseline = (rt: Runtime, layout: StoreLayout, sessionId: string): SessionBaseline => {
-  const existing = readSessionBaseline(layout)
-  if (existing !== null && existing.session_id === sessionId) return existing
-  const baseline: SessionBaseline = { session_id: sessionId, ledger_head: readLedgerHead(rt, layout.projectRoot) }
+export const recordResumeBaseline = (rt: Runtime, layout: StoreLayout, sessionId: string): ResumeBaseline => {
+  const baseline: ResumeBaseline = { session_id: sessionId, ledger_head: readLedgerHead(rt, layout.projectRoot) }
   createStateDirectory(layout)
   durableWrite(baselinePathFor(layout.state), JSON.stringify(baseline), { log: rt.log })
   return baseline
