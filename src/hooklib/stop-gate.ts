@@ -4,7 +4,7 @@ import type { Runtime } from '../runtime/runtime.ts'
 import { createStateDirectory, layoutFor, type StoreLayout } from '../store/layout.ts'
 import { durableWrite } from '../store/durable-write.ts'
 import { readPointer } from '../domain/pointer.ts'
-import { readLedgerHead, readSessionBaseline } from './ledger-presence.ts'
+import { readLedgerHead, readResumeBaseline } from './ledger-presence.ts'
 import { collectAssistantTexts, findLastResumeBriefing } from './transcript.ts'
 
 const GATE_FILE_NAME = 'stop-gate.json'
@@ -80,7 +80,7 @@ const ledgerPresenceVerdict = (rt: Runtime, event: StopEvent, layout: StoreLayou
   if (pointerRead.kind !== 'pointer') return { kind: 'silent' }
   if (pointerRead.value.session_id !== event.session_id) return { kind: 'silent' }
 
-  const baseline = readSessionBaseline(layout)
+  const baseline = readResumeBaseline(layout)
   if (baseline === null) return { kind: 'silent' }
   if (baseline.session_id !== event.session_id) return { kind: 'silent' }
   if (baseline.ledger_head === null) return { kind: 'silent' }
