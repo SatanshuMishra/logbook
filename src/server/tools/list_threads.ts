@@ -38,7 +38,8 @@ const ListThreadsOutputSchema = z.object({
     .string()
     .nullable()
     .describe('pass this back as cursor to read the next page, or null when this page reaches the end'),
-  total: z.number().describe('how many threads are in the whole resumable roster, not just this page')
+  total: z.number().describe('how many threads are in the whole resumable roster, not just this page'),
+  roster: z.string().describe('the finished roster table for this page, ready to be shown as it stands')
 })
 
 type ListThreadsInput = z.infer<typeof ListThreadsInputSchema>
@@ -97,13 +98,16 @@ export const listThreadsTool: ToolSpec<ListThreadsInput, ListThreadsOutput> = {
       return { ok: false, refusal: unknownCursorRefusal(cursor) }
     }
 
+    const roster = renderRoster(paginated.page, threads.length - selected.length)
+
     return {
       ok: true,
-      text: renderRoster(paginated.page, threads.length - selected.length),
+      text: roster,
       structured: {
         threads: paginated.page.rows,
         next_cursor: paginated.page.next_cursor,
-        total: paginated.page.total
+        total: paginated.page.total,
+        roster
       }
     }
   }
