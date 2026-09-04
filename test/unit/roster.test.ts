@@ -7,9 +7,11 @@ import {
   renderRoster,
   selectRosterThreads,
   toRosterRow,
+  ROSTER_BLOCKED_BY_CLIP_GRAPHEMES,
   type RosterRow
 } from '../../src/render/roster.ts'
 import { escapeStored } from '../../src/render/escape.ts'
+import { CLIP_MARKER } from '../../src/render/clip.ts'
 import type { Thread } from '../../src/schema/thread.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { census } from '../support/census.ts'
@@ -50,6 +52,11 @@ const baseRow = (overrides: Partial<RosterRow> = {}): RosterRow => ({
   ...overrides
 })
 
+const cellsOf = (line: string): string[] => line.split('|').slice(1, -1).map((cell) => cell.trim())
+
+const HEADER_LINE_PATTERN = /^\|\s*#\s*\|/
+const FIRST_DATA_LINE_PATTERN = /^\|\s*1\s*\|/
+
 const BLOCKED_WORD_PATTERN = /\bblocked\b/i
 
 type BlockedCandidate = { line: number; hasInterpolation: boolean }
@@ -77,12 +84,15 @@ const collectBlockedCandidates = (sourceFile: ts.SourceFile): BlockedCandidate[]
 const classifyBlockedCandidate = (candidate: BlockedCandidate): Classified<BlockedCandidate>['verdict'] | 'unclassifiable' =>
   candidate.hasInterpolation ? 'allowed' : 'forbidden'
 
-test('roster.renders-blockage-reason', () => {
+test('roster.renders-blockage-reason-inline-in-the-thread-name-cell-when-at-or-under-the-clip-ceiling', () => {
   const thread = baseThread({ blocked_by: 'waiting on the infra approval' })
   const row = toRosterRow(thread)
   const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
-  assert.ok(rendered.split('\n').some((line) => line.includes('waiting on the infra approval')))
-  assert.ok(rendered.includes('Blocked: waiting on the infra approval'))
+  const dataLine = rendered.split('\n').find((line) => FIRST_DATA_LINE_PATTERN.test(line))
+  assert.ok(dataLine !== undefined)
+  const cells = cellsOf(dataLine as string)
+  assert.equal(cells.length, 5)
+  assert.ok(cells[2]?.endsWith('(blocked by waiting on the infra approval)'))
 
   const { program } = loadSourceProgram()
   const rosterPath = path.join(REBUILD_ROOT, 'src', 'render', 'roster.ts')
@@ -99,7 +109,21 @@ test('roster.blockage-none-when-not-blocked', () => {
   const thread = baseThread({ blocked_by: null })
   const row = toRosterRow(thread)
   const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
-  assert.ok(rendered.split('\n').includes('Blockage: none'))
+  assert.equal(rendered.includes('(blocked by'), false)
+  assert.equal(rendered.split('\n').some((line) => BLOCKED_WORD_PATTERN.test(line)), false)
+})
+
+test('roster.render-clips-an-over-ceiling-blockage-reason-inside-the-thread-name-cell-without-overflowing-other-cells', () => {
+  const longReason = 'x'.repeat(ROSTER_BLOCKED_BY_CLIP_GRAPHEMES + 20)
+  const row = baseRow({ blocked_by: longReason })
+  const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
+  const dataLine = rendered.split('\n').find((line) => FIRST_DATA_LINE_PATTERN.test(line))
+  assert.ok(dataLine !== undefined)
+  const cells = cellsOf(dataLine as string)
+  assert.equal(cells.length, 5)
+  assert.ok(cells[2]?.includes(CLIP_MARKER))
+  assert.equal(cells[2]?.includes(longReason), false)
+  assert.equal(cells[3], '0 / 0 criteria')
 })
 
 test('roster.excludes-terminal', () => {
@@ -277,21 +301,23 @@ test('roster.render-escapes-every-stored-free-text-field', () => {
   const row = baseRow({
     title: '# heading title\nsecond line',
     slug: 'escape-fixture',
-    blocked_by: '# heading blockage\nsecond line',
-    next_step: '# heading next step\nsecond line'
+    blocked_by: '# heading blockage\nsecond line'
   })
   const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
 
-  assert.equal(rendered.includes('#'), false)
   assert.equal(/(^|\n)#{1,6}\s/.test(rendered), false)
 
-  const expectedTitleLine = `Thread: ${escapeStored(row.title)} (${escapeStored(row.slug)})`
-  const expectedBlockedLine = `Blocked: ${escapeStored(row.blocked_by ?? '')}`
-  const expectedNextStepLine = `Next step: ${escapeStored(row.next_step)}`
+  const expectedThreadNameCell =
+    `${escapeStored(row.slug)} - ${escapeStored(row.title)} (blocked by ${escapeStored(row.blocked_by ?? '')})`
 
-  assert.ok(rendered.includes(expectedTitleLine))
-  assert.ok(rendered.includes(expectedBlockedLine))
-  assert.ok(rendered.includes(expectedNextStepLine))
+  assert.ok(rendered.includes(`| ${expectedThreadNameCell} |`))
+})
+
+test('roster.render-omits-next-step-from-the-rendered-text', () => {
+  const distinctiveNextStep = 'zz-distinctive-next-step-marker-8f2c1a'
+  const row = baseRow({ next_step: distinctiveNextStep })
+  const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
+  assert.equal(rendered.includes(distinctiveNextStep), false)
 })
 
 test('roster.render-escapes-the-identifier-timestamp-and-cursor-fields', () => {
@@ -302,11 +328,34 @@ test('roster.render-escapes-the-identifier-timestamp-and-cursor-fields', () => {
   })
   const rendered = renderRoster({ rows: [row], next_cursor: '#cursor\u2028tail', total: 2 }, 0)
 
-  assert.ok(rendered.includes('Id: 01ARZU+2028TAIL'))
-  assert.ok(rendered.includes('Updated: 2024-01-01T00:00:05.000ZU+000AX'))
-  assert.ok(rendered.includes('Next cursor: U+0023cursorU+2028tail'))
+  assert.ok(rendered.includes(`| ${escapeStored(row.id)} |`))
+  assert.ok(rendered.includes(escapeStored(row.updated_at)))
+  assert.ok(rendered.includes(`Next cursor: ${escapeStored('#cursor\u2028tail')}`))
   assert.equal(rendered.includes('\u2028'), false)
   assert.equal(rendered.includes('01ARZ\u2028TAIL'), false)
+})
+
+test('roster.render-pipe-in-any-free-text-field-does-not-fracture-the-table-row', () => {
+  const fieldsWithPipes: Array<Partial<RosterRow>> = [
+    { title: 'alpha | beta' },
+    { slug: 'alpha|beta' },
+    { blocked_by: 'alpha | beta' }
+  ]
+
+  for (const overrides of fieldsWithPipes) {
+    const row = baseRow(overrides)
+    const rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
+    const lines = rendered.split('\n')
+    const headerLine = lines.find((line) => HEADER_LINE_PATTERN.test(line))
+    const dataLine = lines.find((line) => FIRST_DATA_LINE_PATTERN.test(line))
+    assert.ok(headerLine !== undefined, `expected a header line for overrides ${JSON.stringify(overrides)}`)
+    assert.ok(dataLine !== undefined, `expected a data line for overrides ${JSON.stringify(overrides)}`)
+    assert.equal(
+      cellsOf(dataLine as string).length,
+      cellsOf(headerLine as string).length,
+      `pipe in ${JSON.stringify(overrides)} must not change the row's cell count`
+    )
+  }
 })
 
 test('roster.render-single-row-exact-output', () => {
@@ -324,12 +373,9 @@ test('roster.render-single-row-exact-output', () => {
   const expected = [
     'Roster: 1 of 1 resumable thread.',
     [
-      'Thread: Exact Output Thread (exact-output)',
-      `Id: ${row.id}`,
-      'Blockage: none',
-      'Progress: 2/5 criteria done',
-      'Next step: ship the next step',
-      'Updated: 2024-01-01T00:00:05.000Z'
+      '| # | Thread ID | Thread Name | Progress | Last Activity |',
+      '| --- | --- | --- | --- | --- |',
+      `| 1 | ${row.id} | exact-output - Exact Output Thread | 2 / 5 criteria | 2024-01-01 00:00 UTC |`
     ].join('\n'),
     'No further pages.'
   ].join('\n\n')
@@ -350,12 +396,14 @@ test('roster.render-empty-page-joins-header-and-footer-with-a-single-newline', (
   assert.equal(rendered, 'Roster: 0 of 0 resumable threads.\nNo further pages.')
 })
 
-test('roster.render-separates-multiple-rows-with-a-blank-line', () => {
+test('roster.render-keeps-multiple-rows-within-a-single-table-block', () => {
   const rowOne = baseRow({ id: rt.ulid(), slug: 'row-one' })
   const rowTwo = baseRow({ id: rt.ulid(), slug: 'row-two' })
   const rendered = renderRoster({ rows: [rowOne, rowTwo], next_cursor: 'a-cursor', total: 2 }, 0)
   const segments = rendered.split('\n\n')
-  assert.equal(segments.length, 4)
+  assert.equal(segments.length, 3)
+  const tableLines = segments[1]?.split('\n') ?? []
+  assert.equal(tableLines.length, 4)
   assert.equal(segments[segments.length - 1], 'Next cursor: a-cursor')
 })
 

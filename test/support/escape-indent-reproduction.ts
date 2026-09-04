@@ -8,7 +8,7 @@ const CONTROL_CLASS = /\p{Cc}/u
 const ORDINARY_SPACE = ' '
 const LINE_SEPARATOR = '\u2028'
 const PARAGRAPH_SEPARATOR = '\u2029'
-const ANGLE_BRACKETS = new Set(['<', '>'])
+const ALWAYS_ESCAPED_CHARS = new Set(['<', '>', '|'])
 const ORDERED_LIST_DIGIT = /[0-9]/
 const ORDERED_LIST_PUNCTUATION = new Set(['.', ')'])
 const ORDERED_LIST_TERMINATOR = /\s/
@@ -20,7 +20,7 @@ const isBlank = (char: string): boolean => {
 }
 
 const isEscapable = (char: string): boolean =>
-  ANGLE_BRACKETS.has(char) || FORMAT_CLASS.test(char) || isBlank(char)
+  ALWAYS_ESCAPED_CHARS.has(char) || FORMAT_CLASS.test(char) || isBlank(char)
 
 const toEscaped = (char: string): string => {
   const codePoint = char.codePointAt(0) ?? 0

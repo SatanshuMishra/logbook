@@ -287,7 +287,7 @@ export const registerResources = (server: McpServer, rt: Runtime): void => {
     'logbook://roster',
     {
       title: 'Resumable roster',
-      description: 'Every non-terminal thread with its state, progress and next step, same content as list_threads.',
+      description: 'Every non-terminal thread with its progress toward completion, same content as list_threads.',
       mimeType: 'text/markdown'
     },
     (uri) => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: readRosterResourceBody(rt) }] })
