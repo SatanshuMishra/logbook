@@ -516,3 +516,58 @@ test('resource.list-enumerates-open-threads-and-not-decisions-or-session-entries
     )
   })
 })
+
+test('resource.thread-detail-renders-resolved-dangling-and-quarantined-decisions-together', async () => {
+  await withFixture(async (fx) => {
+    const ids = await seedStore(fx.spawned)
+
+    const secondDecision = (await fx.spawned.client.callTool({
+      name: 'record_decision',
+      arguments: {
+        thread_id: ids.threadId,
+        title: 'second thread-detail fixture decision',
+        context: 'a second thread-detail fixture context',
+        options: ['option a', 'option b'],
+        outcome: 'chose option a'
+      }
+    })) as CallToolResult
+    assertOkResult('record_decision (second thread-detail fixture decision)', secondDecision)
+    const secondDecisionId = (secondDecision.structuredContent as { decision_id: string }).decision_id
+
+    const thirdDecision = (await fx.spawned.client.callTool({
+      name: 'record_decision',
+      arguments: {
+        thread_id: ids.threadId,
+        title: 'third thread-detail fixture decision',
+        context: 'a third thread-detail fixture context',
+        options: ['option a', 'option b'],
+        outcome: 'chose option a'
+      }
+    })) as CallToolResult
+    assertOkResult('record_decision (third thread-detail fixture decision)', thirdDecision)
+    const thirdDecisionId = (thirdDecision.structuredContent as { decision_id: string }).decision_id
+
+    const rt = testRuntime({
+      env: { HOME: fx.homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: fx.pluginData },
+      cwd: fx.repo
+    })
+    const layout = layoutFor(rt, fx.repo)
+    assert.equal(layout.ok, true)
+    if (!layout.ok) return
+
+    rmSync(join(layout.value.records, 'decisions', `${secondDecisionId}.json`))
+    writeFileSync(join(layout.value.records, 'decisions', `${thirdDecisionId}.json`), 'this is not valid json')
+
+    const detail = await readThreadResourceText(fx.spawned, ids.threadId)
+
+    assert.ok(detail.includes('resolved: 1'), `expected 'resolved: 1', got '${detail}'`)
+    assert.ok(
+      detail.includes(`dangling: ${secondDecisionId}`),
+      `expected a dangling line for ${secondDecisionId}, got '${detail}'`
+    )
+    assert.ok(
+      detail.includes(`quarantined: ${thirdDecisionId}`),
+      `expected a quarantined line for ${thirdDecisionId}, got '${detail}'`
+    )
+  })
+})
