@@ -329,10 +329,28 @@ test('roster.render-escapes-the-identifier-timestamp-and-cursor-fields', () => {
   const rendered = renderRoster({ rows: [row], next_cursor: '#cursor\u2028tail', total: 2 }, 0)
 
   assert.ok(rendered.includes(`| ${escapeStored(row.id)} |`))
-  assert.ok(rendered.includes(escapeStored(row.updated_at)))
-  assert.ok(rendered.includes(`Next cursor: ${escapeStored('#cursor\u2028tail')}`))
+  assert.ok(rendered.includes('| 2024-01-01T00:00:05.000ZU+000AX |'))
+  assert.ok(rendered.includes('Next cursor: U+0023cursorU+2028tail'))
   assert.equal(rendered.includes('\u2028'), false)
   assert.equal(rendered.includes('01ARZ\u2028TAIL'), false)
+})
+
+test('roster.render-last-activity-falls-back-to-the-stored-value-verbatim-when-it-does-not-match-the-exact-iso-shape', () => {
+  const nonIsoUpdatedAt = '2024-01-01 00:00:05'
+  const row = baseRow({ updated_at: nonIsoUpdatedAt })
+
+  let rendered = ''
+  assert.doesNotThrow(() => {
+    rendered = renderRoster({ rows: [row], next_cursor: null, total: 1 }, 0)
+  })
+
+  const dataLine = rendered.split('\n').find((line) => FIRST_DATA_LINE_PATTERN.test(line))
+  assert.ok(dataLine !== undefined)
+  const cells = cellsOf(dataLine as string)
+  assert.equal(cells.length, 5)
+  assert.equal(cells[4], nonIsoUpdatedAt)
+  assert.equal(cells[4]?.includes('Invalid Date'), false)
+  assert.notEqual(cells[4], '')
 })
 
 test('roster.render-pipe-in-any-free-text-field-does-not-fracture-the-table-row', () => {
@@ -394,6 +412,39 @@ test('roster.render-header-uses-plural-threads-when-total-is-not-one', () => {
 test('roster.render-empty-page-joins-header-and-footer-with-a-single-newline', () => {
   const rendered = renderRoster({ rows: [], next_cursor: null, total: 0 }, 0)
   assert.equal(rendered, 'Roster: 0 of 0 resumable threads.\nNo further pages.')
+})
+
+const tableDataLinesOf = (rendered: string, rowCount: number): string[] => {
+  const tableBlock = rendered.split('\n\n')[1] ?? ''
+  return tableBlock.split('\n').slice(2, 2 + rowCount)
+}
+
+test('roster.render-numbers-rows-1-based-within-the-page-and-restarts-at-1-on-a-later-page', () => {
+  const rows = Array.from({ length: 4 }, (_, index) => baseRow({ id: rt.ulid(), slug: `numbered-${index}` }))
+
+  const firstPageResult = paginateRoster(rows, null, 2)
+  assert.equal(firstPageResult.ok, true)
+  if (!firstPageResult.ok) return
+  const firstRendered = renderRoster(firstPageResult.page, 0)
+  const firstDataLines = tableDataLinesOf(firstRendered, 2)
+  assert.equal(cellsOf(firstDataLines[0] as string)[0], '1')
+  assert.equal(cellsOf(firstDataLines[1] as string)[0], '2')
+
+  const secondPageResult = paginateRoster(rows, firstPageResult.page.next_cursor, 2)
+  assert.equal(secondPageResult.ok, true)
+  if (!secondPageResult.ok) return
+  const secondRendered = renderRoster(secondPageResult.page, 0)
+  const secondDataLines = tableDataLinesOf(secondRendered, 2)
+  assert.equal(
+    cellsOf(secondDataLines[0] as string)[0],
+    '1',
+    'a later page must restart its own row numbering at 1 rather than continuing a global count'
+  )
+  assert.equal(
+    cellsOf(secondDataLines[1] as string)[0],
+    '2',
+    'a later page must restart its own row numbering at 1 rather than continuing a global count'
+  )
 })
 
 test('roster.render-keeps-multiple-rows-within-a-single-table-block', () => {
