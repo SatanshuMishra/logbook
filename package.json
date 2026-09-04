@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Git-native, multi-user, drift-aware logbook plugin for Claude Code.",
+  "author": "Satanshu Mishra <satanshumishra@outlook.com>",
   "license": "Apache-2.0",
   "engines": {
     "node": ">=22.19"
