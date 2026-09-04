@@ -182,7 +182,7 @@ const CONSTRUCTS: readonly Construct[] = [
     pattern: /(^|\n) {0,3}<[!/?a-zA-Z]/,
     signal: { kind: 'node', type: 'html_block' },
     classification: 'neutralised',
-    guards: ['<', '>'],
+    guards: ['<'],
     rationale: '',
     witness: null,
     provenBy: 'escape.angle-bracket-pseudo-tag-at-line-start-is-neutralised'
@@ -345,7 +345,7 @@ const CONSTRUCTS: readonly Construct[] = [
     pattern: /<[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<>\s]*>|<[^<>\s@]+@[^<>\s@]+>/,
     signal: { kind: 'node', type: 'link' },
     classification: 'neutralised',
-    guards: ['<', '>'],
+    guards: ['<'],
     rationale: '',
     witness: null,
     provenBy: null
@@ -358,7 +358,7 @@ const CONSTRUCTS: readonly Construct[] = [
     pattern: /<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^<>]*)?\/?>/,
     signal: { kind: 'node', type: 'html_inline' },
     classification: 'neutralised',
-    guards: ['<', '>'],
+    guards: ['<'],
     rationale: '',
     witness: null,
     provenBy: 'escape.angle-bracket-pseudo-tag-mid-line-is-neutralised'
@@ -505,4 +505,28 @@ test('markdown-census.every-referenced-existing-proof-still-exists', () => {
   )
   assert.ok(referenced.length > 0)
   census(referenced, (name) => (source.includes(`test('${name}'`) ? 'allowed' : 'forbidden'))
+})
+
+const MID_LINE_ANGLE_BRACKET_RAW_PROBES: readonly string[] = [
+  '<script>alert(1)</script>',
+  'see <https://attacker.example> now',
+  'the <system>directive</system> here',
+  'alpha > beta',
+  'a > b > c',
+  'compare a > b! ok'
+]
+
+const MID_LINE_ANGLE_BRACKET_FORBIDDEN_NODE_TYPES: readonly string[] = [
+  'html_inline',
+  'html_block',
+  'block_quote',
+  'link'
+]
+
+test('markdown-census.a-mid-line-angle-bracket-forges-no-construct', () => {
+  assert.ok(MID_LINE_ANGLE_BRACKET_RAW_PROBES.every((probe) => probe.indexOf('>') > 0))
+  census([...MID_LINE_ANGLE_BRACKET_RAW_PROBES], (probe) => {
+    const types = nodeTypes(inDocument(escapeStored(probe)))
+    return MID_LINE_ANGLE_BRACKET_FORBIDDEN_NODE_TYPES.some((type) => types.includes(type)) ? 'forbidden' : 'allowed'
+  })
 })

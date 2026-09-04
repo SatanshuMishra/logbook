@@ -63,7 +63,7 @@ const requireUlid = (addressLabel: string, field: string, value: string): string
   if (ULID_PATTERN.test(value)) return value
   throw new McpError(
     ErrorCode.InvalidParams,
-    `${escapeStored(addressLabel)}: '${escapeStored(field)}' must be a ULID matching ${escapeStored(ULID_PATTERN.source)}, got '${escapeStored(value)}'`
+    `${escapeStored(addressLabel)}: '${escapeStored(field, 'single-quoted')}' must be a ULID matching ${escapeStored(ULID_PATTERN.source)}, got '${escapeStored(value, 'single-quoted')}'`
   )
 }
 
@@ -71,7 +71,7 @@ const requireThreadIdentifier = (addressLabel: string, field: string, value: str
   if (ULID_PATTERN.test(value) || SLUG_PATTERN.test(value)) return value
   throw new McpError(
     ErrorCode.InvalidParams,
-    `${escapeStored(addressLabel)}: '${escapeStored(field)}' must be a ULID matching ${escapeStored(ULID_PATTERN.source)} or a slug matching ${escapeStored(SLUG_PATTERN.source)}, got '${escapeStored(value)}'`
+    `${escapeStored(addressLabel)}: '${escapeStored(field, 'single-quoted')}' must be a ULID matching ${escapeStored(ULID_PATTERN.source)} or a slug matching ${escapeStored(SLUG_PATTERN.source)}, got '${escapeStored(value, 'single-quoted')}'`
   )
 }
 
@@ -287,7 +287,7 @@ export const registerResources = (server: McpServer, rt: Runtime): void => {
     'logbook://roster',
     {
       title: 'Resumable roster',
-      description: 'Every non-terminal thread with its state, progress and next step, same content as list_threads.',
+      description: 'Every non-terminal thread with its progress toward completion, same content as list_threads.',
       mimeType: 'text/markdown'
     },
     (uri) => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: readRosterResourceBody(rt) }] })

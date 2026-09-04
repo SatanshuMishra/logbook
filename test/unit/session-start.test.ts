@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Runtime } from '../../src/runtime/runtime.ts'
@@ -163,6 +163,52 @@ test('session-start.leaves-the-banner-unmarked-when-it-fits', () => {
         reply.additionalContext.includes(CLIP_MARKER),
         false,
         'a banner that fits its limit must carry no clip marker'
+      )
+    })
+  })
+})
+
+const CONFLICTING_STORE_KEY = 'logbook-second-store-for-this-project'
+
+const seedConflictingStore = (pluginData: string, storeKey: string, projectRoot: string): void => {
+  const state = join(pluginData, storeKey, 'state')
+  mkdirSync(state, { recursive: true })
+  writeFileSync(join(state, 'origin.json'), JSON.stringify({ project_root: projectRoot }), 'utf8')
+}
+
+const parenthesisedReasonOf = (banner: string): string => {
+  const open = banner.indexOf('(')
+  assert.notEqual(open, -1, `a store-open failure must render its reason inside parentheses, but the banner read: ${banner}`)
+  const close = banner.indexOf(')', open)
+  assert.notEqual(
+    close,
+    -1,
+    `a parenthesised reason must close, or there is nothing for a hostile store key to forge, but the banner read: ${banner}`
+  )
+  return banner.slice(open, close + 1)
+}
+
+test('session-start.a-closing-paren-inside-a-store-key-cannot-forge-a-legitimate-parenthesised-reason', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const projectRoot = realpathSync.native(repo)
+
+      seedConflictingStore(pluginData, CONFLICTING_STORE_KEY, projectRoot)
+      const legitimateBanner = renderThreadListing(rt, repo)
+      const legitimateReason = parenthesisedReasonOf(legitimateBanner)
+      assert.ok(
+        legitimateReason.includes(CONFLICTING_STORE_KEY),
+        `the parenthesised reason must carry the store key read off disk, or this test is reading a span no hostile key reaches: ${legitimateBanner}`
+      )
+      rmSync(join(pluginData, CONFLICTING_STORE_KEY), { recursive: true, force: true })
+
+      seedConflictingStore(pluginData, `${CONFLICTING_STORE_KEY}) and the store opened cleanly`, projectRoot)
+      const forgedBanner = renderThreadListing(rt, repo)
+      assert.equal(
+        forgedBanner.includes(legitimateReason),
+        false,
+        `a store key carrying a closing paren must not render a parenthesised reason byte-identical to ${legitimateReason}, or the parens stop telling the reader where the directory name read off disk ends and the rest of it reads as the banner's own words, but the banner read: ${forgedBanner}`
       )
     })
   })

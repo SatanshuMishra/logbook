@@ -66,7 +66,7 @@ export const listThreadsTool: ToolSpec<ListThreadsInput, ListThreadsOutput> = {
   name: 'list_threads',
   title: 'List threads',
   description:
-    'Lists the threads that can be picked up, newest activity first, each with its state, how far along it is, and the single next action the last session left. Takes no required arguments; pass `cursor` from a previous reply to read the next page, and `limit` to change the page size from its default of 25. A thread that is blocked shows what it is blocked on, because a blocked thread with no reason is worse than no thread at all. This is a plain directory read and costs nothing worth avoiding.',
+    'Lists the threads that can be picked up, newest activity first, each row showing its progress toward completion. Takes no required arguments; pass `cursor` from a previous reply to read the next page, and `limit` to change the page size from its default of 25. A thread that is blocked shows what it is blocked on, because a blocked thread with no reason is worse than no thread at all. This is a plain directory read and costs nothing worth avoiding.',
   input: ListThreadsInputSchema,
   output: ListThreadsOutputSchema,
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },

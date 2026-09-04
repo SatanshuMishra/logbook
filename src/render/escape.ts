@@ -5,11 +5,18 @@ const ORDINARY_SPACE = ' '
 const LINE_SEPARATOR = '\u2028'
 const PARAGRAPH_SEPARATOR = '\u2029'
 export const MARKDOWN_LEADING_CHARS: ReadonlySet<string> = new Set(['#', '-', '*', '+', '>', '`', '~', '_', '=', '['])
-const ANGLE_BRACKETS = new Set(['<', '>'])
+const ALWAYS_ESCAPED_CHARS = new Set(['<'])
 const MARKDOWN_INDENT_THRESHOLD = 4
 const ORDERED_LIST_DIGIT = /[0-9]/
 const ORDERED_LIST_PUNCTUATION = new Set(['.', ')'])
 const ORDERED_LIST_TERMINATOR = /\s/
+export const TABLE_CELL_ESCAPED_CHARS: ReadonlySet<string> = new Set(['|'])
+const PROSE_ESCAPED_CHARS: ReadonlySet<string> = new Set()
+const ANGLE_WRAPPED_ESCAPED_CHARS: ReadonlySet<string> = new Set(['>'])
+const BRACKET_WRAPPED_ESCAPED_CHARS: ReadonlySet<string> = new Set([']'])
+const PAREN_WRAPPED_ESCAPED_CHARS: ReadonlySet<string> = new Set([')'])
+const DOUBLE_QUOTED_ESCAPED_CHARS: ReadonlySet<string> = new Set(['"'])
+const SINGLE_QUOTED_ESCAPED_CHARS: ReadonlySet<string> = new Set(["'"])
 
 const isBlank = (char: string): boolean => {
   if (char === LINE_SEPARATOR || char === PARAGRAPH_SEPARATOR) return true
@@ -18,7 +25,7 @@ const isBlank = (char: string): boolean => {
 }
 
 const isEscapable = (char: string): boolean =>
-  ANGLE_BRACKETS.has(char) || FORMAT_CLASS.test(char) || isBlank(char)
+  ALWAYS_ESCAPED_CHARS.has(char) || FORMAT_CLASS.test(char) || isBlank(char)
 
 export const isEmittedEscape = (char: string): boolean =>
   isEscapable(char) ||
@@ -44,7 +51,27 @@ const orderedListMarkerEnd = (chars: readonly string[], start: number): number |
   return cursor + 1
 }
 
-export const escapeStored = (text: string): string => {
+export type EscapeSurface =
+  | 'prose'
+  | 'table-cell'
+  | 'angle-wrapped'
+  | 'bracket-wrapped'
+  | 'paren-wrapped'
+  | 'double-quoted'
+  | 'single-quoted'
+
+const SURFACE_ESCAPED_CHARS: Readonly<Record<EscapeSurface, ReadonlySet<string>>> = {
+  prose: PROSE_ESCAPED_CHARS,
+  'table-cell': TABLE_CELL_ESCAPED_CHARS,
+  'angle-wrapped': ANGLE_WRAPPED_ESCAPED_CHARS,
+  'bracket-wrapped': BRACKET_WRAPPED_ESCAPED_CHARS,
+  'paren-wrapped': PAREN_WRAPPED_ESCAPED_CHARS,
+  'double-quoted': DOUBLE_QUOTED_ESCAPED_CHARS,
+  'single-quoted': SINGLE_QUOTED_ESCAPED_CHARS
+}
+
+export const escapeStored = (text: string, surface: EscapeSurface = 'prose'): string => {
+  const surfaceEscapedChars = SURFACE_ESCAPED_CHARS[surface]
   const chars = Array.from(text)
   const out: string[] = []
   let atLineStart = true
@@ -81,7 +108,7 @@ export const escapeStored = (text: string): string => {
         continue
       }
     }
-    out.push(escapeChar(char))
+    out.push(surfaceEscapedChars.has(char) ? toEscaped(char) : escapeChar(char))
     atLineStart = char === '\n' || char === '\r'
     spaceRun = 0
     index += 1

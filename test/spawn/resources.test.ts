@@ -1,115 +1,26 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { UriTemplate } from '@modelcontextprotocol/sdk/shared/uriTemplate.js'
 import { rawGit } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
-import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
+import type { SpawnedServer } from '../support/spawn-client.ts'
+import {
+  assertOkResult,
+  readResourceText,
+  readThreadResourceText,
+  seedStore,
+  withFixture,
+  type SeededIds
+} from '../support/resources-fixture.ts'
 import { census } from '../support/census.ts'
 import type { Classified } from '../support/census.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
 import { SESSION_FIRST_LINE_ENTRIES_MAX } from '../../src/server/resource-render.ts'
-
-const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
-const ENTRY = join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
-
-type Fixture = {
-  spawned: SpawnedServer
-  repo: string
-  pluginData: string
-  homeDir: string
-}
-
-const runSetupStep = (repo: string, args: string[]): void => {
-  const result = rawGit(repo, args)
-  if (result.status !== 0) {
-    throw new Error(`resources fixture setup failed: git ${args.join(' ')}: ${result.stderr}`)
-  }
-}
-
-const bootstrapRepo = (): string => {
-  const repo = mkdtempSync(join(tmpdir(), 'logbook-resources-repo-'))
-  runSetupStep(repo, ['init', '--initial-branch=main'])
-  runSetupStep(repo, ['config', 'user.name', 'Logbook Resources Fixture'])
-  runSetupStep(repo, ['config', 'user.email', 'resources@logbook.test'])
-  writeFileSync(join(repo, 'README.md'), 'logbook resources fixture repository\n')
-  runSetupStep(repo, ['add', 'README.md'])
-  runSetupStep(repo, ['commit', '-m', 'fixture: initial commit'])
-  return repo
-}
-
-const withFixture = async (fn: (fx: Fixture) => Promise<void>): Promise<void> => {
-  const repo = bootstrapRepo()
-  const pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-resources-plugin-data-'))
-  const pluginData = join(pluginDataHome, 'plugin-data')
-  mkdirSync(pluginData)
-  const homeDir = mkdtempSync(join(tmpdir(), 'logbook-resources-home-'))
-  const spawned = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
-  try {
-    await fn({ spawned, repo, pluginData, homeDir })
-  } finally {
-    await spawned.close()
-    rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginDataHome, { recursive: true, force: true })
-    rmSync(homeDir, { recursive: true, force: true })
-  }
-}
-
-const assertOkResult = (toolName: string, result: CallToolResult): void => {
-  assert.notEqual(result.isError, true, `${toolName} expected a successful call, got a refusal: ${JSON.stringify(result.content)}`)
-}
-
-type SeededIds = { threadId: string; decisionId: string; sessionThreadId: string; sessionEntryId: string }
-
-const seedStore = async (spawned: SpawnedServer): Promise<SeededIds> => {
-  await spawned.client.listTools()
-
-  const opened = (await spawned.client.callTool({
-    name: 'open_thread',
-    arguments: {
-      title: 'resources fixture thread',
-      slug: 'resources-fixture-thread',
-      completion_criteria: [{ text: 'a resources fixture criterion', check: 'the resources fixture check' }]
-    }
-  })) as CallToolResult
-  assertOkResult('open_thread (resources fixture arrange)', opened)
-  const openedStructured = opened.structuredContent as { thread_id: string }
-  const threadId = openedStructured.thread_id
-
-  const decision = (await spawned.client.callTool({
-    name: 'record_decision',
-    arguments: {
-      thread_id: threadId,
-      title: 'resources fixture decision',
-      context: 'a resources fixture context',
-      options: ['option a', 'option b'],
-      outcome: 'chose option a'
-    }
-  })) as CallToolResult
-  assertOkResult('record_decision (resources fixture arrange)', decision)
-  const decisionStructured = decision.structuredContent as { decision_id: string }
-  const decisionId = decisionStructured.decision_id
-
-  const sessionEvent = (await spawned.client.callTool({
-    name: 'log_session_event',
-    arguments: { thread_id: threadId, actor: 'claude', body: 'a resources fixture session entry' }
-  })) as CallToolResult
-  assertOkResult('log_session_event (resources fixture arrange)', sessionEvent)
-  const sessionStructured = sessionEvent.structuredContent as { thread_id: string; session_entry_id: string }
-
-  return {
-    threadId,
-    decisionId,
-    sessionThreadId: sessionStructured.thread_id,
-    sessionEntryId: sessionStructured.session_entry_id
-  }
-}
 
 type ThreadDetailIds = { threadId: string; criterionIds: string[]; riskIds: string[] }
 
@@ -302,15 +213,6 @@ test('resource.read-is-pure', async () => {
   })
 })
 
-const readThreadResourceText = async (spawned: SpawnedServer, threadId: string): Promise<string> => {
-  const read = await spawned.client.readResource({ uri: `logbook://thread/${threadId}` })
-  const [content] = read.contents
-  assert.ok(
-    content !== undefined && 'text' in content && typeof content.text === 'string',
-    'expected logbook://thread to return text content'
-  )
-  return (content as { text: string }).text
-}
 
 test('resource.thread-detail-shows-every-risk-and-criterion-id', async () => {
   await withFixture(async (fx) => {
@@ -332,15 +234,6 @@ test('resource.thread-detail-shows-every-risk-and-criterion-id', async () => {
   })
 })
 
-const readResourceText = async (spawned: SpawnedServer, uri: string): Promise<string> => {
-  const read = await spawned.client.readResource({ uri })
-  const [content] = read.contents
-  assert.ok(
-    content !== undefined && 'text' in content && typeof content.text === 'string',
-    `expected ${uri} to return text content`
-  )
-  return (content as { text: string }).text
-}
 
 const logEntry = async (spawned: SpawnedServer, threadId: string, body: string): Promise<string> => {
   const result = (await spawned.client.callTool({
@@ -620,144 +513,6 @@ test('resource.list-enumerates-open-threads-and-not-decisions-or-session-entries
     assert.ok(
       !afterClose.resources.map((resource) => resource.uri).includes(`logbook://thread/${ids.threadId}`),
       'expected resources/list to drop a terminal thread'
-    )
-  })
-})
-
-const BACKSLASH_OFFENDER = '..\\PLANTED'
-
-const assertBackslashRefused = async (
-  spawned: SpawnedServer,
-  uri: string,
-  refusalPrefix: string
-): Promise<void> => {
-  const outcome = await spawned.client
-    .readResource({ uri })
-    .then((read) => ({ kind: 'resolved' as const, contentCount: read.contents.length }))
-    .catch((error: unknown) => ({ kind: 'refused' as const, error }))
-
-  assert.ok(
-    outcome.kind === 'refused',
-    `expected ${uri} to be refused, got a listing body carrying ${outcome.kind === 'resolved' ? outcome.contentCount : 0} content items`
-  )
-  const { error } = outcome
-  assert.ok(error instanceof McpError, `expected the refusal to be an McpError, got ${String(error)}`)
-  assert.equal(
-    error.code,
-    ErrorCode.InvalidParams,
-    `expected the refusal to carry ErrorCode.InvalidParams, got ${error.code}`
-  )
-  assert.ok(
-    error.message.includes(refusalPrefix),
-    `expected the refusal message to contain '${refusalPrefix}', got '${error.message}'`
-  )
-}
-
-const THREAD_ID_SHAPE_REFUSAL = "logbook://thread: 'id' must be a ULID matching"
-
-test('resources.thread-refuses-an-id-containing-a-backslash', async () => {
-  await withFixture(async (fx) => {
-    const ids = await seedStore(fx.spawned)
-
-    await assertBackslashRefused(
-      fx.spawned,
-      `logbook://thread/${BACKSLASH_OFFENDER}`,
-      THREAD_ID_SHAPE_REFUSAL
-    )
-
-    const byUlid = await readThreadResourceText(fx.spawned, ids.threadId)
-    assert.ok(
-      byUlid.includes(`Id: ${ids.threadId}`),
-      'expected a real ULID to still resolve after the backslash id is refused'
-    )
-
-    const bySlug = await fx.spawned.client.readResource({ uri: 'logbook://thread/resources-fixture-thread' })
-    assert.ok(bySlug.contents.length > 0, 'expected a real slug to still resolve after the backslash id is refused')
-  })
-})
-
-const SESSIONS_ID_SHAPE_REFUSAL = "logbook://sessions: 'thread_id' must be a ULID matching"
-
-test('resources.sessions-refuses-a-thread-id-containing-a-backslash', async () => {
-  await withFixture(async (fx) => {
-    const ids = await seedStore(fx.spawned)
-
-    await assertBackslashRefused(
-      fx.spawned,
-      `logbook://sessions/${BACKSLASH_OFFENDER}`,
-      SESSIONS_ID_SHAPE_REFUSAL
-    )
-
-    const listing = await readResourceText(fx.spawned, `logbook://sessions/${ids.sessionThreadId}`)
-    assert.ok(
-      listing.includes(ids.sessionEntryId),
-      'expected a real ULID thread_id to still resolve after the backslash thread_id is refused'
-    )
-  })
-})
-
-const DECISION_ID_SHAPE_REFUSAL = "logbook://decision: 'id' must be a ULID matching"
-
-test('resources.decision-refuses-an-id-containing-a-backslash', async () => {
-  await withFixture(async (fx) => {
-    const ids = await seedStore(fx.spawned)
-
-    await assertBackslashRefused(
-      fx.spawned,
-      `logbook://decision/${BACKSLASH_OFFENDER}`,
-      DECISION_ID_SHAPE_REFUSAL
-    )
-
-    const decisionText = await readResourceText(fx.spawned, `logbook://decision/${ids.decisionId}`)
-    assert.ok(
-      decisionText.length > 0,
-      'expected a real ULID decision id to still resolve after the backslash id is refused'
-    )
-  })
-})
-
-const SESSION_THREAD_ID_SHAPE_REFUSAL = "logbook://session: 'thread_id' must be a ULID matching"
-
-test('resources.session-refuses-a-thread-id-containing-a-backslash', async () => {
-  await withFixture(async (fx) => {
-    const ids = await seedStore(fx.spawned)
-
-    await assertBackslashRefused(
-      fx.spawned,
-      `logbook://session/${BACKSLASH_OFFENDER}/${ids.sessionEntryId}`,
-      SESSION_THREAD_ID_SHAPE_REFUSAL
-    )
-
-    const entryText = await readResourceText(
-      fx.spawned,
-      `logbook://session/${ids.sessionThreadId}/${ids.sessionEntryId}`
-    )
-    assert.ok(
-      entryText.length > 0,
-      'expected a real ULID thread_id to still resolve after the backslash thread_id is refused'
-    )
-  })
-})
-
-const SESSION_ENTRY_ID_SHAPE_REFUSAL = "logbook://session: 'entry_id' must be a ULID matching"
-
-test('resources.session-refuses-an-entry-id-containing-a-backslash', async () => {
-  await withFixture(async (fx) => {
-    const ids = await seedStore(fx.spawned)
-
-    await assertBackslashRefused(
-      fx.spawned,
-      `logbook://session/${ids.sessionThreadId}/${BACKSLASH_OFFENDER}`,
-      SESSION_ENTRY_ID_SHAPE_REFUSAL
-    )
-
-    const entryText = await readResourceText(
-      fx.spawned,
-      `logbook://session/${ids.sessionThreadId}/${ids.sessionEntryId}`
-    )
-    assert.ok(
-      entryText.length > 0,
-      'expected a real ULID entry_id to still resolve after the backslash entry_id is refused'
     )
   })
 })

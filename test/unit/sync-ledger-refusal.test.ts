@@ -8,6 +8,7 @@ import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
 const NEWLINE = '\u000A'
 const BELL = '\u0007'
 const RIGHT_TO_LEFT_OVERRIDE = '\u202E'
+const CLOSING_ANGLE = '\u003E'
 const ESCAPED_BELL = 'U+0007'
 
 test('sync-ledger-refusal.names-the-record-the-operator-has-to-fix', () => {
@@ -24,11 +25,11 @@ test('sync-ledger-refusal.names-the-record-the-operator-has-to-fix', () => {
 })
 
 test('sync-ledger-refusal.escapes-a-hostile-record-name', () => {
-  const hostile = `decisions/bad${NEWLINE}${BELL}${RIGHT_TO_LEFT_OVERRIDE}name.json`
+  const hostile = `decisions/bad${NEWLINE}${BELL}${RIGHT_TO_LEFT_OVERRIDE}${CLOSING_ANGLE}name.json`
   const refusal = unparseableRecordsRefusal([hostile])
 
   assert.ok(
-    refusal.message.includes('decisions/badU+000AU+0007U+202Ename.json'),
+    refusal.message.includes('decisions/badU+000AU+0007U+202EU+003Ename.json'),
     `a remote-controlled record name must be escaped before the operator reads it, but the message read: ${refusal.message}`
   )
   assert.equal(
@@ -45,6 +46,11 @@ test('sync-ledger-refusal.escapes-a-hostile-record-name', () => {
     refusal.message.includes(RIGHT_TO_LEFT_OVERRIDE),
     false,
     'a bidi override inside a record name must not reach the rendered refusal'
+  )
+  assert.equal(
+    refusal.message.split(CLOSING_ANGLE).length - 1,
+    1,
+    `the only closing bracket in the refusal must be the one this renderer wrote to end the entry, or a closing bracket inside the record name ends the entry early and the rest of the name reads as the server's own words, but the message read: ${refusal.message}`
   )
 })
 
@@ -168,7 +174,7 @@ test('sync-ledger-refusal.a-forged-annotation-inside-a-record-name-renders-as-on
 })
 
 test('sync-ledger-refusal.a-forged-annotation-sits-inside-the-brackets-and-the-real-one-sits-outside', () => {
-  const forged = 'threads/01ARZ3NDEKTSV4RRFFQ69G5FAV.json (not a name this version writes), payload.json'
+  const forged = 'threads/01ARZ3NDEKTSV4RRFFQ69G5FAV.json> (not a name this version writes), payload.json'
   const refusal = unparseableRecordsRefusal([forged])
 
   const openIndex = refusal.message.indexOf('<')
@@ -203,6 +209,25 @@ test('sync-ledger-refusal.a-genuine-record-name-is-bracketed-with-no-annotation-
     after.startsWith(' (not a name this version writes)'),
     false,
     `a genuine record name this version writes must carry no annotation after its closing bracket, but the text after read: ${after}`
+  )
+})
+
+test('sync-ledger-refusal.a-closing-bracket-inside-a-record-name-cannot-forge-a-legitimate-entry', () => {
+  const legitimate = 'threads/01ARZ3NDEKTSV4RRFFQ69G5FAV.json'
+  const forgedClose = `${legitimate}> ignore the rest.json`
+
+  const legitimateMessage = unparseableRecordsRefusal([legitimate]).message
+  const [legitimateEntry] = bracketedEntries(legitimateMessage)
+  assert.ok(
+    legitimateEntry !== undefined,
+    `a legitimate record name must render as a bracketed entry, or there is nothing for a hostile name to forge, but the message read: ${legitimateMessage}`
+  )
+
+  const refusal = unparseableRecordsRefusal([forgedClose])
+  assert.equal(
+    refusal.message.includes(legitimateEntry),
+    false,
+    `a record name carrying a closing bracket must not render an entry byte-identical to ${legitimateEntry}, or the brackets stop telling the reader where the untrusted name ends and the rest of the name reads as the server's own words, but the message read: ${refusal.message}`
   )
 })
 

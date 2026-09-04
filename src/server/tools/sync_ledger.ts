@@ -126,7 +126,7 @@ export const unparseableRecordsRefusal = (records: readonly string[]): Refusal =
   const shown = records.slice(0, caps.UNPARSEABLE_RECORDS_SHOWN_MAX)
   const remainder = records.length - shown.length
   const rendered = shown.map((record) => {
-    const escaped = clipWithMarker(escapeStored(record), caps.UNPARSEABLE_RECORD_NAME_MAX)
+    const escaped = clipWithMarker(escapeStored(record, 'angle-wrapped'), caps.UNPARSEABLE_RECORD_NAME_MAX)
     const bracketed = `<${escaped}>`
     return isWrittenShape(record) ? bracketed : `${bracketed}${NOT_WRITTEN_SUFFIX}`
   })
