@@ -81,15 +81,12 @@ export const listThreadsTool: ToolSpec<ListThreadsInput, ListThreadsOutput> = {
       return { ok: false, refusal: limitOutOfRangeRefusal(limit) }
     }
 
-    const slots = store.readThreads()
-    for (const slot of slots) {
-      if (slot.quarantined) {
-        rt.log({ level: 'error', event: 'roster.thread-quarantined', path: slot.path, reason: slot.reason })
-      }
+    const { resumable, terminal, quarantined } = store.readResumable()
+    for (const slot of quarantined) {
+      rt.log({ level: 'error', event: 'roster.thread-quarantined', path: slot.path, reason: slot.reason })
     }
 
-    const threads = slots.flatMap((slot) => (slot.quarantined ? [] : [slot.record]))
-    const selected = selectRosterThreads(threads)
+    const selected = selectRosterThreads(resumable)
     const rows: RosterRow[] = selected.map(toRosterRow)
 
     const cursor = input.cursor ?? null
@@ -98,7 +95,7 @@ export const listThreadsTool: ToolSpec<ListThreadsInput, ListThreadsOutput> = {
       return { ok: false, refusal: unknownCursorRefusal(cursor) }
     }
 
-    const roster = renderRoster(paginated.page, threads.length - selected.length)
+    const roster = renderRoster(paginated.page, terminal)
 
     return {
       ok: true,

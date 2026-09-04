@@ -33,11 +33,7 @@ export const renderThreadListing = (rt: Runtime, projectRoot: string | null): st
   if (!opened.ok) {
     return ['Logbook: the thread store could not be opened (', escapeStored(opened.message, 'paren-wrapped'), ').'].join('')
   }
-  const threads = opened.value
-    .readThreads()
-    .filter((slot): slot is { quarantined: false; record: Thread } => !slot.quarantined)
-    .map((slot) => slot.record)
-    .filter((thread) => thread.status === 'open')
+  const { resumable: threads } = opened.value.readResumable()
   if (threads.length === 0) return NO_RESUMABLE_THREADS
   const threadLines = threads.map(renderThreadLine)
   return [`Logbook resumable threads (${threads.length}):`, ...threadLines].join('\n')
