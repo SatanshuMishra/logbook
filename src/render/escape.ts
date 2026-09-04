@@ -2,6 +2,7 @@ const FORMAT_CLASS = /\p{Cf}/u
 const SEPARATOR_CLASS = /\p{Zs}/u
 const CONTROL_CLASS = /\p{Cc}/u
 const ORDINARY_SPACE = ' '
+const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 const LINE_SEPARATOR = '\u2028'
 const PARAGRAPH_SEPARATOR = '\u2029'
 export const MARKDOWN_LEADING_CHARS: ReadonlySet<string> = new Set(['#', '-', '*', '+', '>', '`', '~', '_', '=', '['])
@@ -175,7 +176,6 @@ const escapeTokenSafeBoundary = (graphemes: readonly string[], max: number): num
 }
 
 export const clipGraphemes = (text: string, max: number): string => {
-  const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
-  const graphemes = Array.from(segmenter.segment(text), (entry) => entry.segment)
+  const graphemes = Array.from(GRAPHEME_SEGMENTER.segment(text), (entry) => entry.segment)
   return graphemes.slice(0, escapeTokenSafeBoundary(graphemes, max)).join('')
 }
