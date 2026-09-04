@@ -239,6 +239,18 @@ test('list_threads.spawn.contract', async () => {
   })
 })
 
+test('list_threads.roster-reaches-structured', async () => {
+  await withFixture(async (fx) => {
+    const slug = 'roster-structured-check'
+    await openThread(fx.spawned, fx.published, slug)
+    const result = await callListThreads(fx.spawned, {})
+    assertOkResult('list_threads (roster-reaches-structured)', result)
+    const structured = result.structuredContent as { roster: string }
+    assert.match(structured.roster, /^\| # \| Thread ID \| Thread Name \| Progress \| Last Activity \|$/m)
+    assert.match(structured.roster, new RegExp(`\\|.*${slug}.*\\|`))
+  })
+})
+
 test('list_threads.rejects-invalid', async () => {
   await withFixture(async (fx) => {
     await runRejectsInvalid(fx, 'list_threads', ['required', 'maxLength', 'pattern', 'minItems'])
