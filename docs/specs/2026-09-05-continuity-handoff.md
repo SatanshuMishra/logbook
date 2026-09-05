@@ -101,7 +101,7 @@ The tombstone is a boolean rather than a ULID naming a decision, unlike `Criteri
 
 **U3.** `artifacts` is wired into `mergeThreadTraced` and into the merged object literal — the two edits the existing census does not distinguish, which is why the field passes its check today while being dropped by every merge. The tombstone field participates in the content comparison, so a removal on one side and not the other raises a conflict rather than losing. A new census asserts that every field in the strategy table is actually read by the merge, which is `I6`.
 
-**U4.** `park_thread` accepts `landed` alongside `next_step`; both stay optional, so omitting them remains a pure pointer release. `open_thread` accepts an initial artifact list. `update_thread` gains `artifacts_add` and `artifacts_retire`, matching the shape of `risks_add` and `risks_retire`. `risks_retire` stops filtering the array and sets `retired_by` instead.
+**U4.** `park_thread` accepts `landed` alongside `next_step`; both stay optional, so omitting them remains a pure pointer release. `open_thread` accepts an initial artifact list. `update_thread` gains `artifacts_add` and `artifacts_retire`, matching the shape of `risks_add` and `risks_retire`. `risks_retire` stops filtering the array and sets `retired` instead.
 
 **U5.** The briefing renders `landed` immediately before the next step, under a heading naming the two together as the hand-off. Retired artifacts and retired risks are excluded from the render. The slot vacated by the deleted Focus line carries the continuation rule, verbatim:
 
