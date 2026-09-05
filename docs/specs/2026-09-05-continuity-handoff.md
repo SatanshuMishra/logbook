@@ -79,7 +79,7 @@ Seven units across five waves. Files are disjoint within a wave; across waves th
 |---|---|---|---|---|---|
 | **U1** | Remove focus | 1 | `src/domain/pointer.ts`, `src/render/briefing.ts`, `src/server/tools/resume_thread.ts`, `src/server/tools/update_thread.ts`, `skills/preflight/SKILL.md`, `test/unit/briefing-focus.test.ts`, `test/spawn/focus.test.ts`, `test/support/published.ts`, `test/support/optional-argument-recipes.ts` | `resume_thread` rejects a `focus` argument as an unrecognised key, and the briefing renders no Focus line | no |
 | **U7** | Stop gate names the thread | 1 | `src/hooklib/stop-gate.ts` | A commit touching only an unrelated thread leaves the gate blocking | no |
-| **U2** | Schema | 2 | `src/schema/thread.ts`, `src/schema/caps.ts` | `spine.landed`, `Artifact.retired_by` and `Risk.retired_by` each parse and default as declared; nothing reads them | yes |
+| **U2** | Schema | 2 | `src/schema/thread.ts`, `src/schema/caps.ts` | `spine.landed`, `Artifact.retired` and `Risk.retired` each parse and default as declared; nothing reads them | yes |
 | **U3** | Merge | 3 | `src/merge/field-merge.ts` | A one-sided artifact survives a merge, a one-sided tombstone raises a conflict, and the census fails on a declared-but-unwired field | no |
 | **U4** | Writers | 4 | `src/server/tools/park_thread.ts`, `src/server/tools/update_thread.ts`, `src/server/tools/open_thread.ts` | `park_thread` stores `landed`; `artifacts_add` and `artifacts_retire` round-trip; `risks_retire` marks rather than deletes | no |
 | **U5** | Briefing | 5 | `src/render/briefing.ts` | `landed` renders beside the next step, a retired artifact and a retired risk render nowhere, and the continuation rule renders verbatim | no |
@@ -95,7 +95,9 @@ Seven units across five waves. Files are disjoint within a wave; across waves th
 
 **U7.** `ledgerPresenceVerdict` gains a path filter. It already holds the ledger head recorded at resume, so it diffs that commit against the current head and clears only when a changed path names the held thread — the thread record itself, or a session entry beneath it. The blocking message says which thread it is waiting for.
 
-**U2.** `spine.landed` is added as a nullable string capped at 500 characters, matching the other spine scalars. `Artifact` gains `retired_by: Ulid | null`. `Risk` gains `retired_by: Ulid | null`. Both tombstones name the decision or session that retired the entry rather than carrying a bare boolean, matching `Criterion.struck_by`.
+**U2.** `spine.landed` is added as a nullable string capped at 500 characters, matching the other spine scalars. `Artifact` gains `retired: boolean`, defaulting false. `Risk` gains the same.
+
+The tombstone is a boolean rather than a ULID naming a decision, unlike `Criterion.struck_by`. Two reasons. Striking a criterion is a scope decision and is worth attributing; removing a supporting document is not, and requiring a recorded decision to drop a stale bookmark is disproportionate — `risks_retire` takes no decision today. And a boolean merges correctly where a timestamp does not: two machines that independently retire the same entry both hold `true` and agree, where two differing timestamps would raise a conflict that means nothing. Since `I2` keeps the field out of every rendering, it carries no information a reader would ever see, so it is sized for the merge alone.
 
 **U3.** `artifacts` is wired into `mergeThreadTraced` and into the merged object literal — the two edits the existing census does not distinguish, which is why the field passes its check today while being dropped by every merge. The tombstone field participates in the content comparison, so a removal on one side and not the other raises a conflict rather than losing. A new census asserts that every field in the strategy table is actually read by the merge, which is `I6`.
 
