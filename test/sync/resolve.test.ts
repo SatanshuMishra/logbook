@@ -7,6 +7,8 @@ import { test } from 'node:test'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { openStore } from '../../src/store/records.ts'
 import { layoutFor } from '../../src/store/layout.ts'
+import { writeRecords } from '../../src/store/write-path.ts'
+import type { Thread } from '../../src/schema/thread.ts'
 import { rawGit } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
@@ -291,6 +293,111 @@ const buildTwoFieldConflict = async (
 
   return { threadId, anaConflictSync }
 }
+
+const writeThreadOf = (teammate: SpawnedTeammate, threadId: string, mutate: (thread: Thread) => Thread): void => {
+  const rt = testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: teammate.pluginData } })
+  const opened = openStore(rt, teammate.repo)
+  if (!opened.ok) throw new Error(`resolve: could not open ${teammate.name}'s store to plant a divergent thread field`)
+  const slot = opened.value.readThread(threadId)
+  if (slot === null || slot.quarantined) {
+    throw new Error(`resolve: thread "${threadId}" could not be re-read from ${teammate.name}'s store before planting a divergent field`)
+  }
+  const layout = layoutFor(rt, teammate.repo)
+  if (!layout.ok) throw new Error(`resolve: layoutFor refused for ${teammate.name} while planting a divergent thread field`)
+  const mutated: Thread = { ...mutate(slot.record), updated_at: rt.now() }
+  const write = writeRecords(
+    rt,
+    layout.value,
+    [{ kind: 'thread', record: mutated }],
+    `${teammate.name}: plant a divergent thread field for a resolve_conflict fixture`
+  )
+  if (!write.ok) throw new Error(`resolve: writeRecords failed for ${teammate.name} while planting a divergent thread field: ${write.detail}`)
+}
+
+const openAndConvergeThread = async (ana: SpawnedTeammate, ben: SpawnedTeammate, slug: string): Promise<string> => {
+  const opened = await callTool(ana, 'open_thread', {
+    title: 'resolve conflict fixture thread',
+    slug,
+    completion_criteria: [{ text: 'a criterion for the resolve fixture', check: 'the resolve fixture check' }]
+  })
+  assertOkResult('open_thread', opened)
+  const threadId = (opened.structuredContent as { thread_id: string }).thread_id
+
+  assertOkResult('sync_ledger (ana initial push)', await callTool(ana, 'sync_ledger', {}))
+  assertOkResult('sync_ledger (ben initial fast-forward)', await callTool(ben, 'sync_ledger', {}))
+
+  return threadId
+}
+
+const ARTIFACT_CONFLICT_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAA'
+
+test('resolve.spine-landed-conflict-resolves', async () => {
+  await withTwoSpawnedTeammates(async (ana, ben) => {
+    const threadId = await openAndConvergeThread(ana, ben, 'resolve-spine-landed-thread')
+
+    writeThreadOf(ben, threadId, (thread) => ({ ...thread, spine: { ...thread.spine, landed: 'ben has landed the write path' } }))
+    const benPush = await callTool(ben, 'sync_ledger', {})
+    assertOkResult('sync_ledger (ben pushes his landed edit)', benPush)
+    assert.equal((benPush.structuredContent as { action: string }).action, 'pushed')
+
+    writeThreadOf(ana, threadId, (thread) => ({ ...thread, spine: { ...thread.spine, landed: 'ana has landed the write path' } }))
+
+    const anaConflictSync = await callTool(ana, 'sync_ledger', {})
+    assert.equal(anaConflictSync.isError, true, 'expected the second sync to be refused with a spine.landed conflict')
+    const conflictText = firstTextOf(anaConflictSync)
+    assert.match(conflictText, new RegExp(`thread:${threadId} spine\\.landed`))
+
+    const resolved = await callTool(ana, 'resolve_conflict', {
+      resolutions: [{ record: `thread:${threadId}`, field: 'spine.landed', winner: 'local' }]
+    })
+    assertOkResult('resolve_conflict', resolved)
+
+    const mergedThread = readThreadOf(ana, threadId)
+    assert.equal(mergedThread.spine.landed, 'ana has landed the write path', 'the local winner must be applied verbatim')
+
+    const pushedAfterResolve = await callTool(ana, 'sync_ledger', {})
+    assertOkResult('sync_ledger (after resolve_conflict, must push)', pushedAfterResolve)
+  })
+})
+
+test('resolve.artifacts-conflict-resolves', async () => {
+  await withTwoSpawnedTeammates(async (ana, ben) => {
+    const threadId = await openAndConvergeThread(ana, ben, 'resolve-artifacts-thread')
+
+    writeThreadOf(ben, threadId, (thread) => ({
+      ...thread,
+      artifacts: [{ id: ARTIFACT_CONFLICT_ID, label: 'ben plan', pointer: 'docs/plans/ben.md', retired: false }]
+    }))
+    const benPush = await callTool(ben, 'sync_ledger', {})
+    assertOkResult('sync_ledger (ben pushes his artifact edit)', benPush)
+    assert.equal((benPush.structuredContent as { action: string }).action, 'pushed')
+
+    writeThreadOf(ana, threadId, (thread) => ({
+      ...thread,
+      artifacts: [{ id: ARTIFACT_CONFLICT_ID, label: 'ana plan', pointer: 'docs/plans/ana.md', retired: false }]
+    }))
+
+    const anaConflictSync = await callTool(ana, 'sync_ledger', {})
+    assert.equal(anaConflictSync.isError, true, 'expected the second sync to be refused with an artifacts conflict')
+    const conflictText = firstTextOf(anaConflictSync)
+    assert.match(conflictText, new RegExp(`thread:${threadId} artifacts\\[${ARTIFACT_CONFLICT_ID}\\]`))
+
+    const resolved = await callTool(ana, 'resolve_conflict', {
+      resolutions: [{ record: `thread:${threadId}`, field: `artifacts[${ARTIFACT_CONFLICT_ID}]`, winner: 'remote' }]
+    })
+    assertOkResult('resolve_conflict', resolved)
+
+    const mergedThread = readThreadOf(ana, threadId)
+    assert.deepEqual(
+      mergedThread.artifacts,
+      [{ id: ARTIFACT_CONFLICT_ID, label: 'ben plan', pointer: 'docs/plans/ben.md', retired: false }],
+      'the remote winner must be applied verbatim'
+    )
+
+    const pushedAfterResolve = await callTool(ana, 'sync_ledger', {})
+    assertOkResult('sync_ledger (after resolve_conflict, must push)', pushedAfterResolve)
+  })
+})
 
 test('conflict.resolve-names-the-winner', async () => {
   await withTwoSpawnedTeammates(async (ana, ben) => {
