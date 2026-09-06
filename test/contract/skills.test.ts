@@ -430,6 +430,33 @@ test('skill.preflight-presents-and-stops', () => {
   assert.equal(firstWordOf(lastStep), 'Stop', 'expected the final step to be nothing but stopping')
 })
 
+test('skill.debrief-passes-both-hand-off-fields', () => {
+  const debrief = readSkillFile(DEBRIEF_SKILL_PATH).content
+
+  assert.ok(
+    debrief.includes('park_thread.landed'),
+    'expected the debrief sequence to pass park_thread.landed'
+  )
+  assert.ok(
+    debrief.includes('park_thread.next_step'),
+    'expected the debrief sequence to pass park_thread.next_step'
+  )
+})
+
+test('skill.preflight-resumes-before-it-asks-anything', () => {
+  const preflight = readSkillFile(PREFLIGHT_SKILL_PATH).content
+  const resumeAt = preflight.indexOf('Call `resume_thread`')
+  const briefingAt = preflight.indexOf('Print the returned `resume_thread.briefing`')
+
+  assert.notEqual(resumeAt, -1, 'expected a step calling resume_thread in the preflight sequence')
+  assert.ok(briefingAt > resumeAt, 'expected the briefing print to follow the resume_thread call')
+  assert.equal(
+    preflight.includes('Wait for the human to name the completion criteria'),
+    false,
+    'expected no step demanding completion criteria ids before the briefing is printed'
+  )
+})
+
 test('skill.cannot-strand', async () => {
   const preflight = parseSkill(readSkillFile(PREFLIGHT_SKILL_PATH))
   const debrief = parseSkill(readSkillFile(DEBRIEF_SKILL_PATH))
