@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -328,6 +328,89 @@ test('close.a-refused-closure-leaves-the-pointer-so-park-can-still-record', asyn
       parkedStructured.status,
       'parked',
       'the session must still be able to park and record its work after a closure attempt was refused'
+    )
+  })
+})
+
+test('close.a-commit-failure-leaves-the-pointer-so-park-can-still-record', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published, { slug: 'close-commit-failure-leaves-pointer' })
+    await callResume(fx.spawned, fx.published, threadId)
+
+    const layout = layoutInFixture(fx.repo, fx.pluginData, fx.homeDir)
+    assert.notEqual(
+      readPointerFile(layout),
+      null,
+      'the fixture must start with a pointer naming the thread this session just resumed'
+    )
+
+    const ledgerRefPath = join(fx.repo, '.git', 'refs', 'logbook', 'ledger')
+    assert.ok(
+      existsSync(ledgerRefPath),
+      'the fixture repo must hold refs/logbook/ledger as a loose ref file for the ref-lock trick below to be load-bearing'
+    )
+
+    const lockPath = `${ledgerRefPath}.lock`
+    writeFileSync(lockPath, '')
+    let refused: CallToolResult
+    try {
+      refused = await callClose(fx.spawned, fx.published, {
+        thread_id: threadId,
+        outcome: 'abandoned',
+        detail: 'a concurrent writer is holding the ledger ref lock during this close attempt'
+      })
+    } finally {
+      unlinkSync(lockPath)
+    }
+
+    assert.equal(
+      refused.isError,
+      true,
+      'closing while another writer holds the ledger ref lock must be refused, since the commit itself cannot land'
+    )
+    const text = firstTextOf(refused)
+    assert.equal(
+      text.split('\n').at(-1),
+      'the ledger commit for this closure did not complete; retry the call.',
+      `the refusal must be the commit-failure refusal specific to close_thread, distinguishing it from every sibling tool's own commit-failure message and from the whole-record-cap refusal that also carries field thread: ${text}`
+    )
+
+    const pointerAfterRefusal = readPointerFile(layout)
+    assert.notEqual(
+      pointerAfterRefusal,
+      null,
+      'a close refused because its own ledger commit failed must not have released the pointer; the release must sit after the commit, never before it'
+    )
+    assert.equal(
+      pointerAfterRefusal?.thread_id,
+      threadId,
+      'the pointer left behind by the commit-failure refusal must still name the thread the refusal was about'
+    )
+
+    const parked = await callPark(fx.spawned, fx.published, {
+      thread_id: threadId,
+      outcome: 'the close attempt failed its ledger commit, so this session still needs to record its outcome through park_thread'
+    })
+    assertOkResult('park_thread (after the commit-failure refusal)', parked)
+    const parkedStructured = parked.structuredContent as {
+      status: string
+      parked_thread_ids: string[]
+      session_entry_ids: string[]
+    }
+    assert.equal(
+      parkedStructured.status,
+      'parked',
+      'the session must still be able to park and record its work after a close attempt failed its own ledger commit'
+    )
+    assert.deepEqual(
+      parkedStructured.parked_thread_ids,
+      [threadId],
+      'park_thread must record against the thread the failed close left marked as being worked'
+    )
+    assert.equal(
+      parkedStructured.session_entry_ids.length,
+      1,
+      'park_thread must have actually written the outcome to the session log, not merely reported status parked'
     )
   })
 })
