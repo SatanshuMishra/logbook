@@ -47,6 +47,22 @@ U1, U2 and U7 are file-disjoint: U1 owns the pointer, the briefing, both tools a
 
 When a parent merges to `main`, GitHub retargets its child automatically. Do not rebase a child onto a moved parent; merge the parent in.
 
+### Merge order for round 1, and why it is not optional
+
+`U2` makes `landed` and `retired` required, so the typecheck forces it into fixture files that `U1` and `U7` own. The three branches are disjoint in intent and overlapping in fact. **Merge in this order:**
+
+1. **`U1` first.** It deletes `test/unit/briefing-focus.test.ts` and `test/spawn/focus.test.ts`. Against `U2`'s edits to the same files this is a delete/modify conflict with an unambiguous resolution — the files go away.
+2. **`U2` second.** Merge `main` in and resolve. Its edits to `src/server/tools/update_thread.ts` sit in a different region from `U1`'s deletions and should merge cleanly; check rather than assume.
+3. **`U7` third.** Merge `main` in and re-add `retired: false` to any pointer or risk fixture `U2` introduced into `test/hooks/stop-gate-ledger-presence.test.ts`.
+
+Resolve every one of these by merging, never by rebasing.
+
+### One census the earlier draft of this plan missed
+
+`test/contract/content-rendered.test.ts` is a closed census: it plants a sentinel in every `content(...)`-classed schema node, renders through `renderThreadDetail`, and fails on any node whose sentinel does not surface. So wrapping `spine.landed` in `content(...)` **forces** a rendering surface in `src/server/resource-render.ts`, whether or not the unit intended one.
+
+`U2` therefore does ship a user-visible change: `logbook://thread/{id}` gains a `Landed:` line. Nothing asserts it, so every thread currently renders `Landed: ` with an empty value. **`U5` owns closing that** — add an assertion for the populated and the empty case when it renders `landed` in the briefing.
+
 ---
 
 ## Task 1: U1 — Remove declared focus

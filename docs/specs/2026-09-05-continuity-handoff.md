@@ -87,7 +87,12 @@ Seven units across five waves. Files are disjoint within a wave; across waves th
 
 `U1` runs first because it is a pure deletion, and because it frees `briefing.ts` and `update_thread.ts` for the later waves.
 
-`U2` lands every new field nullable. Nothing reads them in that wave, so the unit ships without a behaviour change.
+`U2`'s fields land **required**, not nullable. Nullable was the earlier form, and it is wrong here for a reason the merge decides: `unionByIdWithConflict` compares whole items, so an artifact written by a build without the field and one written with `retired: false` would not be equal, and every artifact would conflict between builds. Migration is ruled out by `H6`, so the usual reason to land a field nullable does not apply.
+
+Two consequences follow, both accepted:
+
+- Making the fields required breaks every fixture that builds a `Spine`, `Risk` or `Artifact`. The typecheck is the census that names them.
+- `U2` is therefore **not** file-disjoint from `U1` and `U7` in practice, because those fixtures live in files they own. Merge order resolves it, below.
 
 ### What each unit changes
 
