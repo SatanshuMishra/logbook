@@ -167,7 +167,7 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
 
   assert.equal(ThreadRecord.parse(thread).ok, true, 'the exact-output fixture must itself be schema-admissible')
 
-  const pointer: Pointer = { thread_id: threadId, written_at: rt.now(), session_id: 'session-x', focus: [] }
+  const pointer: Pointer = { thread_id: threadId, written_at: rt.now(), session_id: 'session-x' }
 
   const integrity: DecisionIntegrity = { resolved: 2, dangling: [], quarantined: [] }
   const rendered = renderBriefing(thread, integrity, pointer, null)
@@ -179,7 +179,6 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     '**Status:** open',
     '**Blockage:** none',
     '**Currently being worked:** yes',
-    '**Focus:** not set. Risks and key decisions render as one group in the order they were recorded, apart from those on a goal already met or struck.',
     '',
     '**Artifacts:**',
     '- the implementation plan: docs/plans/u5.md',
@@ -235,7 +234,6 @@ test('briefing.omits-empty-list-sections-entirely', () => {
     '**Status:** done',
     '**Blocked:** still finishing docs',
     '**Currently being worked:** no',
-    '**Focus:** not set. Risks and key decisions render as one group in the order they were recorded, apart from those on a goal already met or struck.',
     '',
     '**Active goal:**',
     '',
@@ -268,9 +266,18 @@ test('briefing.omits-empty-list-sections-entirely', () => {
   }
 })
 
+test('briefing.renders-no-focus-line', () => {
+  const thread = baseThread()
+  const pointer: Pointer = { thread_id: thread.id, written_at: '2026-09-05T00:00:00.000Z', session_id: 'session-a' }
+
+  const briefing = renderBriefing(thread, EMPTY_INTEGRITY, pointer, null)
+
+  assert.equal(briefing.includes('**Focus:**'), false)
+})
+
 test('briefing.pointer-status-is-no-for-a-different-thread', () => {
   const thread = baseThread()
-  const pointer: Pointer = { thread_id: rt.ulid(), written_at: rt.now(), session_id: 'someone-else', focus: [] }
+  const pointer: Pointer = { thread_id: rt.ulid(), written_at: rt.now(), session_id: 'someone-else' }
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, pointer, null)
   assert.ok(rendered.split('\n').includes('**Currently being worked:** no'))
 })
@@ -350,7 +357,7 @@ const CRITERION_ROW_PATTERN = /^- c\d+ \[(open|done|struck)\]: /
 const criterionRowCount = (rendered: string): number =>
   rendered.split('\n').filter((line) => CRITERION_ROW_PATTERN.test(line)).length
 
-test('briefing.with-no-focus-declared-every-live-risk-renders-in-the-order-it-was-recorded', () => {
+test('briefing.live-risks-render-in-the-order-they-were-recorded', () => {
   const first = criterion({ ordinal: 1, text: 'the first criterion' })
   const other = criterion({ ordinal: 2, text: 'a later live criterion' })
   const otherRisk = risk({ text: 'risk tied to a later criterion', criterion_id: other.id })
@@ -376,13 +383,7 @@ test('briefing.with-no-focus-declared-every-live-risk-renders-in-the-order-it-wa
   assert.deepEqual(
     [lines[openRisksIndex + 1], lines[openRisksIndex + 2]],
     [`- ${otherRisk.id} risk tied to a later criterion`, `- ${firstRisk.id} risk tied to the first criterion`],
-    'with no focus declared there is no lane A: both live risks render as one group, in the order they were recorded'
-  )
-  assert.ok(
-    lines.includes(
-      '**Focus:** not set. Risks and key decisions render as one group in the order they were recorded, apart from those on a goal already met or struck.'
-    ),
-    'the briefing must state that focus is not set'
+    'live risks render as one group, in the order they were recorded'
   )
 })
 

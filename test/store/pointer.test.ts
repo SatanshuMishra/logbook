@@ -40,7 +40,7 @@ test('pointer.is-never-committed', () => {
       const layout = layoutIn(rt, repo)
 
       const threadId = rt.ulid()
-      writePointer(rt, layout, { thread_id: threadId, written_at: rt.now(), session_id: 'store-session', focus: [] })
+      writePointer(rt, layout, { thread_id: threadId, written_at: rt.now(), session_id: 'store-session' })
 
       const change = {
         kind: 'thread' as const,

@@ -33,7 +33,7 @@ const RISK_REF_LENGTH = 60
 const OPEN_RISK_COUNT = 7
 const SPINE_FIELD_LENGTH = 200
 const SESSION_ENTRY_COUNT = 6
-const SESSION_ENTRY_LENGTH = 1200
+const SESSION_ENTRY_LENGTH = 1500
 
 const setUpRepo = (repo: string): void => {
   writeFileSync(join(repo, 'README.md'), 'settled lane clip budget fixture repository\n')

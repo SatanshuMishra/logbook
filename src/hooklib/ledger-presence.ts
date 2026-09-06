@@ -26,6 +26,15 @@ export const readLedgerHead = (rt: Runtime, projectRoot: string): string | null 
   return trimmed.length === 0 ? null : trimmed
 }
 
+export const ledgerPathsChangedSince = (rt: Runtime, projectRoot: string, baselineHead: string): string[] => {
+  const result = git(rt, projectRoot, ['diff', '--name-only', baselineHead, LEDGER_REF, '--'])
+  if (!result.ok) {
+    rt.log({ level: 'warn', event: 'stop-gate.ledger-diff-unreadable', code: result.code, detail: result.stderr.trim() })
+    return []
+  }
+  return result.stdout.split('\n').map((line) => line.trim()).filter((line) => line.length > 0)
+}
+
 export const readResumeBaseline = (layout: StoreLayout): ResumeBaseline | null => {
   const target = baselinePathFor(layout.state)
   let raw: string

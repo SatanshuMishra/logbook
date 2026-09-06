@@ -41,7 +41,7 @@ test('handoff.fires-once', () => {
 
   const sessionId = 'handoff-fires-once-session'
   const threadId = rt.ulid()
-  writePointer(rt, layout.value, { thread_id: threadId, written_at: rt.now(), session_id: sessionId, focus: [] })
+  writePointer(rt, layout.value, { thread_id: threadId, written_at: rt.now(), session_id: sessionId })
 
   const env = controlledEnv({ CLAUDE_PLUGIN_DATA: pluginDataRoot })
   const transcriptPath = path.join(projectRoot, 'transcript.jsonl')

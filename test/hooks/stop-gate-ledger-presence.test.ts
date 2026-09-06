@@ -30,6 +30,8 @@ const BANNED_LITERALS = [
   ['approaching the ', 'compaction threshold'].join('')
 ]
 
+const RECORDS_REACHED_BUT_NOT_FILED_UNDER_THREAD = 'but none of them is filed under thread'
+
 const setupFixtureRepo = (repo: string): void => {
   const steps: string[][] = [
     ['init', '--initial-branch=main'],
@@ -47,10 +49,10 @@ const setupFixtureRepo = (repo: string): void => {
   assert.equal(committed.status, 0, `fixture setup failed: git commit: ${committed.stderr}`)
 }
 
-const makeThread = (rt: Runtime, slug: string): Extract<RecordChange, { kind: 'thread' }> => ({
+const makeThread = (rt: Runtime, slug: string, id?: string): Extract<RecordChange, { kind: 'thread' }> => ({
   kind: 'thread',
   record: {
-    id: rt.ulid(),
+    id: id ?? rt.ulid(),
     slug,
     title: 'a stop gate presence thread',
     status: 'open',
@@ -100,6 +102,35 @@ const commitOneThread = (rt: Runtime, repo: string, slug: string): string => {
   return change.record.id
 }
 
+const commitToThread = (rt: Runtime, repo: string, threadId: string, slug: string): void => {
+  const opened = openStore(rt, repo)
+  assert.equal(opened.ok, true, 'the fixture store must open')
+  if (!opened.ok) throw new Error('unreachable')
+  const change = makeThread(rt, slug, threadId)
+  const committed = opened.value.commit([change], `seed ${slug}`)
+  assert.equal(committed.ok, true, 'the fixture write must reach the ledger ref')
+}
+
+const makeSessionEntry = (rt: Runtime, threadId: string, body: string): Extract<RecordChange, { kind: 'session' }> => ({
+  kind: 'session',
+  record: {
+    id: rt.ulid(),
+    thread_id: threadId,
+    actor: 'stop-gate-presence-fixture',
+    body,
+    created_at: rt.now()
+  }
+})
+
+const commitSessionEntry = (rt: Runtime, repo: string, threadId: string, body: string): void => {
+  const opened = openStore(rt, repo)
+  assert.equal(opened.ok, true, 'the fixture store must open')
+  if (!opened.ok) throw new Error('unreachable')
+  const change = makeSessionEntry(rt, threadId, body)
+  const committed = opened.value.commit([change], `seed session entry for ${threadId}`)
+  assert.equal(committed.ok, true, 'the fixture write must reach the ledger ref')
+}
+
 const startSession = (rt: Runtime, repo: string, sessionId: string): void => {
   runSessionStart(rt, { session_id: sessionId, source: 'startup', cwd: repo })
 }
@@ -128,7 +159,7 @@ test('hook.stop-gate-blocks-when-nothing-reached-the-ledger-since-resume', async
   })
 })
 
-test('hook.stop-gate-clears-the-moment-something-reaches-the-ledger', async () => {
+test('hook.stop-gate-clears-when-the-held-thread-reaches-the-ledger', async () => {
   await withFixture(async ({ rt, repo }) => {
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
     startSession(rt, repo, SESSION_ID)
@@ -136,10 +167,82 @@ test('hook.stop-gate-clears-the-moment-something-reaches-the-ledger', async () =
 
     assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind, 'block')
 
-    commitOneThread(rt, repo, 'stop-gate-presence-recorded')
+    commitToThread(rt, repo, threadId, 'stop-gate-presence-recorded')
 
     const cleared = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
-    assert.equal(cleared.kind, 'silent', 'the stop gate must clear once something has reached the ledger ref')
+    assert.equal(cleared.kind, 'silent', 'the stop gate must clear once the held thread itself has reached the ledger ref')
+  })
+})
+
+test('hook.stop-gate-still-blocks-when-only-an-unrelated-thread-moved', async () => {
+  await withFixture(async ({ rt, repo }) => {
+    const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
+    startSession(rt, repo, SESSION_ID)
+    await resumeAs(rt, SESSION_ID, threadId)
+
+    assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind, 'block')
+
+    commitOneThread(rt, repo, 'stop-gate-presence-unrelated')
+
+    const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
+    assert.equal(
+      verdict.kind,
+      'block',
+      'the stop gate must keep blocking when the ledger moved only for a thread other than the one this session holds'
+    )
+    if (verdict.kind === 'block') {
+      assert.ok(
+        verdict.reason.includes(threadId),
+        `the blocking message must name the held thread ${threadId}, got: ${verdict.reason}`
+      )
+      assert.ok(
+        verdict.reason.includes(RECORDS_REACHED_BUT_NOT_FILED_UNDER_THREAD),
+        `the blocking message must say records reached the ledger but not this thread, got: ${verdict.reason}`
+      )
+      assert.ok(
+        verdict.reason.includes('makes no claim that what is recorded is complete'),
+        `the blocking message must disclaim completeness, got: ${verdict.reason}`
+      )
+    }
+  })
+})
+
+test('hook.stop-gate-clears-on-a-session-entry-for-the-held-thread', async () => {
+  await withFixture(async ({ rt, repo }) => {
+    const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
+    startSession(rt, repo, SESSION_ID)
+    await resumeAs(rt, SESSION_ID, threadId)
+
+    assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind, 'block')
+
+    commitSessionEntry(rt, repo, threadId, 'a session log entry filed under the held thread')
+
+    const cleared = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
+    assert.equal(
+      cleared.kind,
+      'silent',
+      'the stop gate must clear once a session entry filed under the held thread reaches the ledger ref'
+    )
+  })
+})
+
+test('hook.stop-gate-still-blocks-on-a-session-entry-for-another-thread', async () => {
+  await withFixture(async ({ rt, repo }) => {
+    const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
+    const otherThreadId = rt.ulid()
+    startSession(rt, repo, SESSION_ID)
+    await resumeAs(rt, SESSION_ID, threadId)
+
+    assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind, 'block')
+
+    commitSessionEntry(rt, repo, otherThreadId, 'a session log entry filed under a different thread')
+
+    const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
+    assert.equal(
+      verdict.kind,
+      'block',
+      'the stop gate must keep blocking when the session entry that reached the ledger is filed under a different thread'
+    )
   })
 })
 
@@ -156,7 +259,7 @@ test('hook.stop-gate-re-evaluates-rather-than-latching', async () => {
       'the verdict is evaluated at every turn end, never latched to fire once per session'
     )
 
-    commitOneThread(rt, repo, 'stop-gate-presence-recorded')
+    commitToThread(rt, repo, threadId, 'stop-gate-presence-recorded')
     assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind, 'silent')
   })
 })
@@ -186,8 +289,7 @@ test('hook.stop-gate-is-silent-when-no-thread-is-being-worked-by-this-session', 
     writePointer(rt, layout, {
       thread_id: threadId,
       written_at: '2024-01-01T00:00:00.000Z',
-      session_id: OTHER_SESSION_ID,
-      focus: []
+      session_id: OTHER_SESSION_ID
     })
     assert.equal(
       stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind,
@@ -202,7 +304,7 @@ test('hook.stop-gate-is-silent-when-this-session-recorded-no-resume-baseline', a
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
     startSession(rt, repo, OTHER_SESSION_ID)
     await resumeAs(rt, OTHER_SESSION_ID, threadId)
-    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID, focus: [] })
+    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID })
 
     const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
     assert.equal(verdict.kind, 'silent', 'without a resume baseline for this session there is no window to compare against')
@@ -234,6 +336,15 @@ test('hook.stop-gate-ledger-message-claims-presence-and-never-completeness', asy
     assert.equal(verdict.kind, 'block')
     if (verdict.kind !== 'block') return
 
+    assert.ok(
+      verdict.reason.includes(threadId),
+      `the blocking message must name the held thread ${threadId}, got: ${verdict.reason}`
+    )
+    assert.equal(
+      verdict.reason.includes(RECORDS_REACHED_BUT_NOT_FILED_UNDER_THREAD),
+      false,
+      `the blocking message must not claim records reached the ledger when nothing did, got: ${verdict.reason}`
+    )
     assert.ok(
       verdict.reason.includes('makes no claim that what is recorded is complete'),
       `the blocking message must disclaim completeness, got: ${verdict.reason}`

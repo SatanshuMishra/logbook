@@ -358,11 +358,6 @@ const SIMPLE_UPDATE_FIELDS: SimpleUpdateFieldSpec[] = [
     field: 'out_of_scope_add',
     sentinelExtra: () => ({ out_of_scope_add: ['sentinel out of scope statement'] }),
     extract: (structured) => ({ out_of_scope_added: structured.out_of_scope_added })
-  },
-  {
-    field: 'focus',
-    sentinelExtra: (ctx) => ({ focus: [mustGet(ctx.criterionIds, 0, 'the first fixture criterion id')] }),
-    extract: (structured) => ({ focus_written: structured.focus_written, focus_not_written_reason: structured.focus_not_written_reason })
   }
 ]
 
@@ -507,16 +502,6 @@ const amendCriteriaPositionRecipe = (): Promise<RecipeResult> =>
       const order = readThreadRecord(rt, ctx.threadId)?.completion_criteria.map((c) => c.id) ?? []
       return { inserted_at_front: order[0] === structured.criterion_id }
     }
-  )
-
-const resumeThreadFocusRecipe = (): Promise<RecipeResult> =>
-  runOptionalArgRecipe(
-    'resume_thread.focus',
-    resumeThreadTool,
-    (rt) => openFixtureThread(rt, 'resume-thread'),
-    (ctx: ThreadFixtureCtx) => ({ thread_id: ctx.threadId }),
-    (ctx: ThreadFixtureCtx) => ({ thread_id: ctx.threadId, focus: [mustGet(ctx.criterionIds, 0, 'the resume fixture criterion id')] }),
-    (structured) => ({ focus: structured.focus })
   )
 
 type ParkThreadFixtureCtx = { threadId: string }
@@ -688,7 +673,6 @@ export const RECIPES: ReadonlyMap<string, () => Promise<RecipeResult>> = new Map
   ['amend_criteria.kind', amendCriteriaKindRecipe],
   ['amend_criteria.check', amendCriteriaCheckRecipe],
   ['amend_criteria.position', amendCriteriaPositionRecipe],
-  ['resume_thread.focus', resumeThreadFocusRecipe],
   ...parkThreadRecipes,
   ...recordDecisionSimpleRecipes,
   ['record_decision.supersedes', recordDecisionSupersedesRecipe],
@@ -728,9 +712,7 @@ export const TEST_2_CASES: Test2Case[] = [
       risks_retired: structured.risks_retired,
       key_decisions_added: structured.key_decisions_added,
       out_of_scope_added: structured.out_of_scope_added,
-      blocked_by_set: structured.blocked_by_set,
-      focus_written: structured.focus_written,
-      focus_not_written_reason: structured.focus_not_written_reason
+      blocked_by_set: structured.blocked_by_set
     })
   },
   {
@@ -754,7 +736,7 @@ export const TEST_2_CASES: Test2Case[] = [
     handler: resumeThreadTool,
     setup: async (rt) => openFixtureThread(rt, 'test-2 resume_thread'),
     minimalArgs: (ctx) => ({ thread_id: ctx.threadId }),
-    attributable: (structured) => ({ focus: structured.focus })
+    attributable: () => ({})
   },
   {
     tool: 'park_thread',
