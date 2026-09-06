@@ -126,8 +126,8 @@ Call `record_decision` when a decision is locked, not at wrap-up.
   document.
 - It writes the link into the thread's running summary itself, in the same commit as the decision.
   There is no second call.
-- `record_decision.scope` is optional. Supplied, it is used verbatim. Omitted, it is derived as the
-  lowest-numbered criterion that is neither done nor struck, rendered as `criterion N`.
+- `record_decision.scope` is optional. Supplied, it is used verbatim. Omitted, it is stored as an
+  empty string and reported back as `null`, with no derivation from any criterion.
 - If the thread record would exceed its byte cap the decision is still written and only the link is
   skipped. The result reports `record_decision.linked` and `record_decision.link_skipped_reason`, and
   the call still succeeds.
