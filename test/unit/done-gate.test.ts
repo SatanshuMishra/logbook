@@ -34,6 +34,7 @@ const makeThread = (rt: Runtime, criteria: Criterion[]): Thread => ({
   spine: {
     active_goal: 'ship the done gate',
     next_step: 'close it out',
+    landed: '',
     last_session: 'wrote the gate',
     open_risks: [],
     key_decisions: [],

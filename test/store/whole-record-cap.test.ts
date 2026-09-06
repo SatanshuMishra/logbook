@@ -45,6 +45,7 @@ const baseThread = (rt: Runtime): Thread => ({
   spine: {
     active_goal: 'prove the byte cap refusal names the field and the number',
     next_step: 'read the refusal',
+    landed: '',
     last_session: 'none',
     open_risks: [],
     key_decisions: [],

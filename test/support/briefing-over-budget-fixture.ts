@@ -26,6 +26,7 @@ export const overBudgetThread = (rt: Runtime): Thread => ({
   spine: {
     active_goal: escapeExpandingFill(caps.SPINE_ACTIVE_GOAL_MAX),
     next_step: escapeExpandingFill(caps.SPINE_NEXT_STEP_MAX),
+    landed: '',
     last_session: escapeExpandingFill(caps.SPINE_LAST_SESSION_MAX),
     open_risks: [],
     key_decisions: [],

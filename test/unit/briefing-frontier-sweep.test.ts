@@ -368,13 +368,15 @@ const oneRiskWithSeveralReferencesThread = (): Thread => ({
   spine: {
     active_goal: 'control',
     next_step: 'control',
+    landed: '',
     last_session: 'control',
     open_risks: [
       {
         id: rt.ulid(),
         scope: 'control',
         text: 'one risk backed by several external references',
-        refs: ['first reference', 'second reference', 'third reference']
+        refs: ['first reference', 'second reference', 'third reference'],
+        retired: false
       }
     ],
     key_decisions: [],

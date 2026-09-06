@@ -18,6 +18,7 @@ const legacyThreadShape = (): Record<string, unknown> => ({
   spine: {
     active_goal: 'ship it',
     next_step: 'write the tests',
+    landed: '',
     last_session: 'read the spec',
     open_risks: [],
     key_decisions: [],
@@ -40,9 +41,13 @@ test('goal-model.parsing-adds-no-bytes-to-a-record-written-before-this-change', 
   )
 })
 
-test('goal-model.a-record-written-before-this-change-still-parses', () => {
+test('goal-model.a-record-carrying-none-of-the-optional-goal-model-fields-still-parses', () => {
   const result = ThreadRecord.parse(legacyThreadShape())
-  assert.equal(result.ok, true, 'a stored record carrying none of the new fields must still parse')
+  assert.equal(
+    result.ok,
+    true,
+    'a stored record carrying no artifacts and no criterion check, result or result_status must still parse'
+  )
   if (!result.ok) return
   assert.equal(result.value.artifacts, undefined)
   assert.equal(result.value.completion_criteria[0]?.check, undefined)
@@ -80,7 +85,7 @@ test('goal-model.result-status-accepts-only-the-two-recorded-states', () => {
 test('goal-model.a-thread-carrying-artifacts-round-trips', () => {
   const result = ThreadRecord.parse({
     ...legacyThreadShape(),
-    artifacts: [{ id: ARTIFACT_ID, label: 'the implementation plan', pointer: 'docs/plans/a-plan.md' }]
+    artifacts: [{ id: ARTIFACT_ID, label: 'the implementation plan', pointer: 'docs/plans/a-plan.md', retired: false }]
   })
   assert.equal(result.ok, true)
   if (!result.ok) return

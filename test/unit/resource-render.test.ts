@@ -46,6 +46,7 @@ const THREAD_WITHOUT_BINDINGS: Thread = {
   spine: {
     active_goal: 'render the bindings block',
     next_step: 'assert the unread marker',
+    landed: '',
     last_session: 'none',
     open_risks: [],
     key_decisions: [],
@@ -172,7 +173,8 @@ const RISK_BASE: Risk = {
   id: '01ARZ3NDEKTSV4RRFFQ69G5FE0',
   scope: 'criterion 2',
   text: 'the escaper is dispatched per surface and no census covers the sync refusal',
-  refs: []
+  refs: [],
+  retired: false
 }
 
 const KEY_DECISION_BASE: KeyDecision = {

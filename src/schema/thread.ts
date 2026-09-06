@@ -21,14 +21,15 @@ export type Criterion = {
   struck_by: Ulid | null
 }
 
-export type Risk = { id: Ulid; scope: string; text: string; refs: string[]; criterion_id?: Ulid | undefined }
+export type Risk = { id: Ulid; scope: string; text: string; refs: string[]; criterion_id?: Ulid | undefined; retired: boolean }
 export type KeyDecision = { id: Ulid; decision_id: Ulid; title: string; scope: string; criterion_id?: Ulid | undefined }
 export type OutOfScope = { id: Ulid; text: string }
-export type Artifact = { id: Ulid; label: string; pointer: string }
+export type Artifact = { id: Ulid; label: string; pointer: string; retired: boolean }
 
 export type Spine = {
   active_goal: string
   next_step: string
+  landed: string
   last_session: string
   open_risks: Risk[]
   key_decisions: KeyDecision[]
@@ -110,7 +111,10 @@ const RiskSchema = structural(
       .max(caps.RISK_REFS_MAX_ELEMENTS)
       .describe('external pointers backing this risk')
       .meta({ class: 'pointer' }),
-    criterion_id: optionalUlidField('the criterion this risk ranks against, absent when the risk is unanchored')
+    criterion_id: optionalUlidField('the criterion this risk ranks against, absent when the risk is unanchored'),
+    retired: structural(
+      z.boolean().describe('whether this risk has been retired')
+    )
   })
 )
 
@@ -139,13 +143,19 @@ const ArtifactSchema = structural(
   z.object({
     id: ulidField('the artifact entry identity, a ULID'),
     label: content(z.string().min(1).max(caps.ARTIFACT_LABEL_MAX).describe('what this artifact is, in a few words')),
-    pointer: pointer(caps.ARTIFACT_POINTER_MAX, 'a path or url naming where this artifact lives')
+    pointer: pointer(caps.ARTIFACT_POINTER_MAX, 'a path or url naming where this artifact lives'),
+    retired: structural(
+      z.boolean().describe('whether this artifact has been retired')
+    )
   })
 )
 
 const SpineSchema = z.object({
   active_goal: content(z.string().max(caps.SPINE_ACTIVE_GOAL_MAX).describe('the thread goal currently being worked')),
   next_step: content(z.string().max(caps.SPINE_NEXT_STEP_MAX).describe('the next concrete step in this thread')),
+  landed: content(
+    z.string().max(caps.SPINE_LANDED_MAX).describe('what this thread has landed and verified so far, as the previous session left it')
+  ),
   last_session: content(z.string().max(caps.SPINE_LAST_SESSION_MAX).describe('a summary of the most recent session')),
   open_risks: z.array(RiskSchema).describe('risks still open on this thread').meta({ class: 'structural' }),
   key_decisions: z

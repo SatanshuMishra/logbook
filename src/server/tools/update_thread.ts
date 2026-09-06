@@ -288,7 +288,8 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
       scope: r.scope,
       text: r.text,
       refs: r.refs ?? [],
-      criterion_id: r.criterion_id
+      criterion_id: r.criterion_id,
+      retired: false
     }))
     const danglingRiskCriteria = newRisks.filter(
       (r) => r.criterion_id !== undefined && !thread.completion_criteria.some((c) => c.id === r.criterion_id)

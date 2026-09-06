@@ -38,6 +38,7 @@ const makeThread = (rt: Runtime, slug: string): Extract<RecordChange, { kind: 't
     spine: {
       active_goal: 'goal',
       next_step: 'write the next test',
+      landed: '',
       last_session: 'last',
       open_risks: [],
       key_decisions: [],
@@ -108,6 +109,7 @@ const makeLongThread = (rt: Runtime, index: number): Extract<RecordChange, { kin
     spine: {
       active_goal: 'goal',
       next_step: LONG_NEXT_STEP,
+      landed: '',
       last_session: 'last',
       open_risks: [],
       key_decisions: [],

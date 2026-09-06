@@ -30,6 +30,7 @@ const makeThread = (rt: Runtime, criteria: Criterion[]): Thread => ({
   spine: {
     active_goal: 'amend criteria only through a resolving decision',
     next_step: 'write the tests',
+    landed: '',
     last_session: 'read the sibling modules',
     open_risks: [],
     key_decisions: [],

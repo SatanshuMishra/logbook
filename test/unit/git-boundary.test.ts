@@ -28,6 +28,7 @@ const baseThread = (): Thread => ({
   spine: {
     active_goal: 'ship it',
     next_step: 'write the tests',
+    landed: '',
     last_session: 'read the spec',
     open_risks: [],
     key_decisions: [],
@@ -41,7 +42,7 @@ const threadWithRiskRef = (ref: string): Thread => {
   const thread = baseThread()
   return {
     ...thread,
-    spine: { ...thread.spine, open_risks: [{ id: RISK_ID, scope: 'ship it', text: 'a risk', refs: [ref] }] }
+    spine: { ...thread.spine, open_risks: [{ id: RISK_ID, scope: 'ship it', text: 'a risk', refs: [ref], retired: false }] }
   }
 }
 
@@ -85,7 +86,7 @@ test('git-boundary.a-risk-ref-that-is-an-address-is-accepted', () => {
 test('git-boundary.an-artifact-pointer-carrying-a-code-fence-is-refused', () => {
   const result = ThreadRecord.parse({
     ...baseThread(),
-    artifacts: [{ id: ARTIFACT_ID, label: 'the plan', pointer: 'see ```ts' }]
+    artifacts: [{ id: ARTIFACT_ID, label: 'the plan', pointer: 'see ```ts', retired: false }]
   })
   assert.equal(result.ok, false, 'an artifact pointer carrying a code fence must be refused')
   if (result.ok) return

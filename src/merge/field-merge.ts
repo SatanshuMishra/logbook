@@ -27,6 +27,7 @@ export const THREAD_RULES: Record<keyof Thread | `spine.${keyof Spine}`, FieldRu
   updated_at: 'take-later',
   'spine.active_goal': 'conflict-on-divergence',
   'spine.next_step': 'conflict-on-divergence',
+  'spine.landed': 'conflict-on-divergence',
   'spine.last_session': 'conflict-on-divergence',
   'spine.open_risks': 'union-by-id',
   'spine.key_decisions': 'union-by-id',
@@ -45,6 +46,7 @@ const SCALAR_DESCRIPTORS: ScalarDescriptor[] = [
   { path: 'created_at', rule: THREAD_RULES.created_at, get: (t) => t.created_at },
   { path: 'spine.active_goal', rule: THREAD_RULES['spine.active_goal'], get: (t) => t.spine.active_goal },
   { path: 'spine.next_step', rule: THREAD_RULES['spine.next_step'], get: (t) => t.spine.next_step },
+  { path: 'spine.landed', rule: THREAD_RULES['spine.landed'], get: (t) => t.spine.landed },
   { path: 'spine.last_session', rule: THREAD_RULES['spine.last_session'], get: (t) => t.spine.last_session }
 ]
 
@@ -250,6 +252,7 @@ export const mergeThreadTraced = (base: Thread | null, ours: Thread, theirs: Thr
     spine: {
       active_goal: byPath.get('spine.active_goal') as Spine['active_goal'],
       next_step: byPath.get('spine.next_step') as Spine['next_step'],
+      landed: byPath.get('spine.landed') as Spine['landed'],
       last_session: byPath.get('spine.last_session') as Spine['last_session'],
       open_risks: openRisksResolution.merged,
       key_decisions: keyDecisionsResolution.merged,

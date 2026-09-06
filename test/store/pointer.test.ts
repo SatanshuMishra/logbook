@@ -54,6 +54,7 @@ test('pointer.is-never-committed', () => {
           spine: {
             active_goal: 'goal',
             next_step: 'next',
+            landed: '',
             last_session: 'last',
             open_risks: [],
             key_decisions: [],

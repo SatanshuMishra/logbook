@@ -183,6 +183,7 @@ export const renderThreadDetail = (
     renderDetailBlockage(thread.blocked_by),
     renderDetailPointerStatus(pointer, thread.id),
     `Active goal: ${escapeStored(thread.spine.active_goal)}`,
+    `Landed: ${escapeStored(thread.spine.landed)}`,
     `Next step: ${escapeStored(thread.spine.next_step)}`,
     `Last session: ${escapeStored(thread.spine.last_session)}`,
     ...lastSessionNoteLines,

@@ -49,6 +49,7 @@ const ULID_DECISION_2 = '01ARZ3NDEKTSV4RRFFQ69G5FD2'
 const baseSpine = (): Spine => ({
   active_goal: 'ship the merge engine',
   next_step: 'write the field rules',
+  landed: 'read the spec',
   last_session: 'read the spec',
   open_risks: [],
   key_decisions: [],
@@ -195,10 +196,10 @@ test('merge.criteria-conflict-on-done-divergence', () => {
 test('merge.spine-open-risks-conflict-on-divergence', () => {
   const base = baseThread({ spine: { ...baseSpine(), open_risks: [] } })
   const ours = baseThread({
-    spine: { ...baseSpine(), open_risks: [{ id: ULID_D, scope: 'merge', text: 'ours risk text', refs: [] }] }
+    spine: { ...baseSpine(), open_risks: [{ id: ULID_D, scope: 'merge', text: 'ours risk text', refs: [], retired: false }] }
   })
   const theirs = baseThread({
-    spine: { ...baseSpine(), open_risks: [{ id: ULID_D, scope: 'merge', text: 'theirs risk text', refs: [] }] }
+    spine: { ...baseSpine(), open_risks: [{ id: ULID_D, scope: 'merge', text: 'theirs risk text', refs: [], retired: false }] }
   })
 
   const result = mergeThread(base, ours, theirs)
@@ -218,13 +219,13 @@ test('merge.spine-open-risks-conflict-on-criterion-id-divergence', () => {
   const ours = baseThread({
     spine: {
       ...baseSpine(),
-      open_risks: [{ id: ULID_D, scope: 'merge', text: 'shared risk text', refs: [], criterion_id: ULID_A }]
+      open_risks: [{ id: ULID_D, scope: 'merge', text: 'shared risk text', refs: [], criterion_id: ULID_A, retired: false }]
     }
   })
   const theirs = baseThread({
     spine: {
       ...baseSpine(),
-      open_risks: [{ id: ULID_D, scope: 'merge', text: 'shared risk text', refs: [], criterion_id: ULID_B }]
+      open_risks: [{ id: ULID_D, scope: 'merge', text: 'shared risk text', refs: [], criterion_id: ULID_B, retired: false }]
     }
   })
 
@@ -238,12 +239,12 @@ test('merge.spine-open-risks-conflict-on-criterion-id-divergence', () => {
   const found = result.conflicts[0]
   assert.ok(found)
   assert.equal(found.field, `spine.open_risks[${ULID_D}]`)
-  assert.deepEqual(found.ours, { id: ULID_D, scope: 'merge', text: 'shared risk text', refs: [], criterion_id: ULID_A })
-  assert.deepEqual(found.theirs, { id: ULID_D, scope: 'merge', text: 'shared risk text', refs: [], criterion_id: ULID_B })
+  assert.deepEqual(found.ours, { id: ULID_D, scope: 'merge', text: 'shared risk text', refs: [], criterion_id: ULID_A, retired: false })
+  assert.deepEqual(found.theirs, { id: ULID_D, scope: 'merge', text: 'shared risk text', refs: [], criterion_id: ULID_B, retired: false })
 })
 
 test('merge.spine-open-risks-one-sided-add-with-criterion-id-survives-intact', () => {
-  const risk: Risk = { id: ULID_D, scope: 'merge', text: 'anchored risk', refs: [], criterion_id: ULID_A }
+  const risk: Risk = { id: ULID_D, scope: 'merge', text: 'anchored risk', refs: [], criterion_id: ULID_A, retired: false }
   const base = baseThread({ spine: { ...baseSpine(), open_risks: [] } })
   const ours = baseThread({ spine: { ...baseSpine(), open_risks: [risk] } })
   const theirs = baseThread({ spine: { ...baseSpine(), open_risks: [] } })
@@ -404,6 +405,7 @@ test('merge.rule-table-is-covered.walk-finds-spine-and-top-level-paths', () => {
       'spine',
       'spine.active_goal',
       'spine.key_decisions',
+      'spine.landed',
       'spine.last_session',
       'spine.next_step',
       'spine.out_of_scope',
