@@ -67,6 +67,9 @@ const SETTLED_HEADING = '**Settled items (on goals already met or struck):**'
 
 const LAST_SESSION_HEADING = '**Last session:**'
 
+const CONTINUATION_RULE =
+  'Artifacts carry the route this thread is following. The goals are what the work must satisfy: check what lands against them as it lands, not only at the end.'
+
 const LEGACY_LAST_SESSION_MARKER =
   '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead'
 
@@ -265,6 +268,7 @@ const assembleBriefing = (
   decisionIntegrity: DecisionIntegrity,
   pointer: Pointer | null,
   predecessor: Thread | null,
+  artifacts: readonly Artifact[],
   risks: Laned<Risk>,
   keyDecisions: Laned<KeyDecision>,
   outOfScope: readonly OutOfScope[],
@@ -287,9 +291,9 @@ const assembleBriefing = (
     previousEntries.length + legacyLastSessionText.length + unreadableSessionEntryLines.length === 0
       ? []
       : [LAST_SESSION_HEADING]
+  const landedLines = thread.spine.landed.length === 0 ? [] : [thread.spine.landed]
   const nextStepLines = thread.spine.next_step.length === 0 ? [] : [thread.spine.next_step]
 
-  const artifacts = thread.artifacts ?? []
   const relatedThreads = predecessor === null ? [] : [predecessor]
   const relatedLines = relatedThreads.map((item) => renderRelatedLine(item, renderClip))
   const artifactLines = artifacts.map((item) => renderArtifactLine(item, renderClip))
@@ -316,6 +320,8 @@ const assembleBriefing = (
     `**Status:** ${escapeStored(thread.status)}`,
     renderBlockage(thread.blocked_by),
     renderPointerStatus(pointer, thread.id),
+    '',
+    CONTINUATION_RULE,
     ...artifactLines.slice(0, 1).map(() => ''),
     ...artifactLines.slice(0, 1).map(() => '**Artifacts:**'),
     ...artifactLines,
@@ -330,6 +336,10 @@ const assembleBriefing = (
     ...legacyLastSessionText.slice(0, 1).map(() => LEGACY_LAST_SESSION_MARKER),
     ...legacyLastSessionText.map((value) => escapeStored(value)),
     ...unreadableSessionEntryLines,
+    ...landedLines.slice(0, 1).map(() => ''),
+    ...landedLines.slice(0, 1).map(() => '**Landed:**'),
+    ...landedLines.slice(0, 1).map(() => ''),
+    ...landedLines.map((value) => escapeStored(value)),
     ...nextStepLines.slice(0, 1).map(() => ''),
     ...nextStepLines.slice(0, 1).map(() => '**Next step:**'),
     ...nextStepLines.slice(0, 1).map(() => ''),
@@ -379,7 +389,10 @@ export const renderBriefingWithPasses = (
 ): BriefingRender => {
   const criteriaById = new Map(thread.completion_criteria.map((criterion) => [criterion.id, criterion] as const))
 
-  const risks = laneSplit(thread.spine.open_risks, criteriaById)
+  const liveRisks = thread.spine.open_risks.filter((risk) => !risk.retired)
+  const liveArtifacts = (thread.artifacts ?? []).filter((artifact) => !artifact.retired)
+
+  const risks = laneSplit(liveRisks, criteriaById)
   const keyDecisions = laneSplit(thread.spine.key_decisions, criteriaById)
   const previousEntries = previousSessionEntries(sessionEntries)
 
@@ -389,6 +402,7 @@ export const renderBriefingWithPasses = (
       decisionIntegrity,
       pointer,
       predecessor,
+      liveArtifacts,
       risks,
       keyDecisions,
       thread.spine.out_of_scope,

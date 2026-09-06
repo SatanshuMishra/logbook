@@ -327,3 +327,32 @@ test('resource-render.thread.last-session-legacy-note-is-omitted-when-last-sessi
     `expected no legacy note when last_session is empty, got ${JSON.stringify(noteLine)}`
   )
 })
+
+const landedLinesOf = (rendered: string): string[] =>
+  rendered.split('\n').filter((line) => line.startsWith('Landed:'))
+
+test('resource-render.thread.renders-the-recorded-landed-value', () => {
+  const thread: Thread = {
+    ...THREAD_WITHOUT_BINDINGS,
+    spine: { ...THREAD_WITHOUT_BINDINGS.spine, landed: 'the census forced a rendering surface' }
+  }
+  const rendered = renderThreadDetail(thread, NO_DECISIONS, null, null, NO_BINDINGS)
+  assert.deepEqual(
+    landedLinesOf(rendered),
+    ['Landed: the census forced a rendering surface'],
+    `expected exactly one Landed line carrying the stored value, got ${JSON.stringify(rendered)}`
+  )
+})
+
+test('resource-render.thread.renders-an-empty-landed-line-when-nothing-has-landed', () => {
+  const thread: Thread = {
+    ...THREAD_WITHOUT_BINDINGS,
+    spine: { ...THREAD_WITHOUT_BINDINGS.spine, landed: '' }
+  }
+  const rendered = renderThreadDetail(thread, NO_DECISIONS, null, null, NO_BINDINGS)
+  assert.deepEqual(
+    landedLinesOf(rendered),
+    ['Landed: '],
+    `expected the Landed line to render unguarded, with its trailing space, when nothing has landed, got ${JSON.stringify(rendered)}`
+  )
+})

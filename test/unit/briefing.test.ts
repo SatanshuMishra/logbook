@@ -132,7 +132,7 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     spine: {
       active_goal: 'ship the renderer',
       next_step: 'add tests',
-      landed: '',
+      landed: 'the renderer landed with its golden pinned',
       last_session: 'wrote the first draft',
       open_risks: [
         {
@@ -180,6 +180,8 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     '**Blockage:** none',
     '**Currently being worked:** yes',
     '',
+    'Artifacts carry the route this thread is following. The goals are what the work must satisfy: check what lands against them as it lands, not only at the end.',
+    '',
     '**Artifacts:**',
     '- the implementation plan: docs/plans/u5.md',
     '',
@@ -191,6 +193,10 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     '',
     '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead',
     'wrote the first draft',
+    '',
+    '**Landed:**',
+    '',
+    'the renderer landed with its golden pinned',
     '',
     '**Next step:**',
     '',
@@ -234,6 +240,8 @@ test('briefing.omits-empty-list-sections-entirely', () => {
     '**Status:** done',
     '**Blocked:** still finishing docs',
     '**Currently being worked:** no',
+    '',
+    'Artifacts carry the route this thread is following. The goals are what the work must satisfy: check what lands against them as it lands, not only at the end.',
     '',
     '**Active goal:**',
     '',
@@ -879,5 +887,95 @@ test('briefing.within-budget-is-true-on-an-ordinary-thread-and-false-when-the-re
     breaching.withinBudget,
     false,
     `a render past the character cap must report as outside budget, got a render of ${breaching.briefing.length} characters reported as within budget`
+  )
+})
+
+const LANDED_TEXT = 'the landed block renders above the next step'
+
+const CONTINUATION_RULE =
+  'Artifacts carry the route this thread is following. The goals are what the work must satisfy: check what lands against them as it lands, not only at the end.'
+
+test('briefing.renders-landed-before-the-next-step', () => {
+  const base = baseThread()
+  const thread = baseThread({ spine: { ...base.spine, landed: LANDED_TEXT } })
+  assert.equal(ThreadRecord.parse(thread).ok, true, 'the landed fixture must itself be schema-admissible')
+
+  const lines = renderBriefing(thread, EMPTY_INTEGRITY, null, null).split('\n')
+  const landedHeadingAt = lines.indexOf('**Landed:**')
+  const landedTextAt = lines.indexOf(LANDED_TEXT)
+  const nextStepAt = lines.indexOf('**Next step:**')
+
+  assert.ok(
+    landedHeadingAt > -1,
+    `the briefing must carry a landed block, or what has already landed is invisible to the next session; got ${JSON.stringify(lines)}`
+  )
+  assert.ok(
+    landedTextAt > landedHeadingAt,
+    `the stored landed text must render under the landed heading, got the heading at ${landedHeadingAt} and the text at ${landedTextAt}`
+  )
+  assert.ok(
+    nextStepAt > landedTextAt,
+    `the briefing must read state then action: landed before the next step, got landed at ${landedHeadingAt} and the next step at ${nextStepAt}`
+  )
+})
+
+test('briefing.renders-the-continuation-rule', () => {
+  const thread = baseThread()
+  assert.equal(ThreadRecord.parse(thread).ok, true, 'the continuation-rule fixture must itself be schema-admissible')
+
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
+
+  assert.ok(
+    rendered.includes(CONTINUATION_RULE),
+    `the briefing must state verbatim how the artifacts and the goals are to be used; got ${JSON.stringify(rendered)}`
+  )
+})
+
+test('briefing.a-retired-artifact-renders-nowhere', () => {
+  const live = { id: rt.ulid(), label: 'the route being followed', pointer: 'docs/plans/live.md', retired: false }
+  const retired = { id: rt.ulid(), label: 'the route already abandoned', pointer: 'docs/plans/retired.md', retired: true }
+  const thread = baseThread({ artifacts: [live, retired] })
+  assert.equal(ThreadRecord.parse(thread).ok, true, 'the artifact retirement fixture must itself be schema-admissible')
+
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
+
+  assert.ok(
+    rendered.split('\n').includes(`- ${live.label}: ${live.pointer}`),
+    `a live artifact must still render in full, or this test would pass against a renderer that drops every artifact; got ${JSON.stringify(rendered)}`
+  )
+  assert.equal(
+    rendered.includes(retired.label),
+    false,
+    `a retired artifact must not render its label, or the briefing keeps pointing at a route the thread has left; got ${JSON.stringify(rendered)}`
+  )
+  assert.equal(
+    rendered.includes(retired.pointer),
+    false,
+    `a retired artifact must not render its pointer; got ${JSON.stringify(rendered)}`
+  )
+})
+
+test('briefing.a-retired-risk-renders-nowhere', () => {
+  const base = baseThread()
+  const live = risk({ text: 'a risk the thread is still carrying' })
+  const retired = risk({ text: 'a risk that has since been retired', retired: true })
+  const thread = baseThread({ spine: { ...base.spine, open_risks: [live, retired] } })
+  assert.equal(ThreadRecord.parse(thread).ok, true, 'the risk retirement fixture must itself be schema-admissible')
+
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
+
+  assert.ok(
+    rendered.split('\n').includes(`- ${live.id} ${live.text}`),
+    `a live risk must still render in full, or this test would pass against a renderer that drops every risk; got ${JSON.stringify(rendered)}`
+  )
+  assert.equal(
+    rendered.includes(retired.text),
+    false,
+    `a retired risk must not render its text, or a settled worry keeps costing the next session attention; got ${JSON.stringify(rendered)}`
+  )
+  assert.equal(
+    rendered.includes(retired.id),
+    false,
+    `a retired risk must not render its id; got ${JSON.stringify(rendered)}`
   )
 })
