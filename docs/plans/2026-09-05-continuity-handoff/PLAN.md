@@ -795,8 +795,16 @@ Every `risks_add` path sets `retired: false` on the new risk. The output field `
 
 It stays latent only until something writes `landed`, which is this unit. So close it here:
 
-- Add the `spine.landed` case beside `spine.last_session` in both `escapeChosenThreadValue` and `applyThreadField`.
-- Add a census deriving the resolvable-path list from the `conflict-on-divergence` entries of `THREAD_RULES`, so the next such field cannot ship without a resolver. This is the same class of gap as the declared-but-unwired merge rule `U3` closes.
+There are **three** hand-written switches enumerating the spine scalars, not two — at roughly `resolve_conflict.ts:302`, `:362` and `:385`. All three omit `spine.landed`. Add it to each.
+
+Then derive them from `THREAD_RULES` rather than leaving three hand-written lists. The census must key on the **`conflict-on-divergence` entries including the `spine.` prefixed ones** — `U3`'s census deliberately filters `spine.` paths out, so it does not and cannot cover this. A census that inherits that filter would pass while the gap stayed open.
+
+- [ ] **Step 5c: Two more hand-written lists that omit `landed`**
+
+Both were found by `U2`'s review and both bite only once a writer exists, which is this unit.
+
+- `src/domain/spine.ts` carries a hand-written `ScalarField` union and a `SCALAR_CAP` table, neither of which knows about `landed`. Without the entry the writer's cap check never fires, and the schema's own limit becomes the only guard — with a different refusal shape than every other spine scalar. Add it, and derive the union from the `Spine` type if that is cheap.
+- `test/spawn/forgery.test.ts` pins a three-element `SPINE_FIELDS` list that does not sweep the new `Landed:` label. Escaping is applied today so nothing is unescaped, but the probe does not cover it. Add the label, and derive the list from the `Spine` scalar keys so the next field forces its own probe.
 
 - [ ] **Step 6: Add artifacts to open_thread**
 
