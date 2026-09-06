@@ -128,7 +128,9 @@ const renderDetailBindingLine = (binding: Binding): string =>
   `- ${escapeStored(binding.id)} ${escapeStored(binding.branch)}`
 
 const renderDetailRiskLine = (risk: Risk): string =>
-  `- ${escapeStored(risk.id)} [${escapeStored(risk.scope, 'bracket-wrapped')}] ${escapeStored(risk.text)}`
+  risk.scope === ''
+    ? `- ${escapeStored(risk.id)} ${escapeStored(risk.text)}`
+    : `- ${escapeStored(risk.id)} [${escapeStored(risk.scope, 'bracket-wrapped')}] ${escapeStored(risk.text)}`
 
 const renderDetailKeyDecisionLine = (keyDecision: KeyDecision): string =>
   keyDecision.scope === ''

@@ -261,6 +261,29 @@ test('resource-render.thread.a-closing-bracket-inside-a-key-decision-scope-canno
   )
 })
 
+test('resource-render.thread.risk-line-carries-no-empty-bracket-pair-when-scope-is-empty', () => {
+  const rendered = renderedDetail(threadWithRisk({ ...RISK_BASE, scope: '' }))
+  const riskLine = linesBetween(rendered, 'Open risks:', 'Key decisions:')[0]
+  assert.ok(riskLine !== undefined, `expected the risk to still render a line, got ${JSON.stringify(rendered)}`)
+  const line = riskLine as string
+  assert.ok(
+    !line.includes('[]'),
+    `expected no empty bracket pair when scope is empty, but the line read: ${line}`
+  )
+  assert.ok(
+    line.includes(RISK_BASE.id),
+    `expected the risk id to still render, but the line read: ${line}`
+  )
+  assert.ok(
+    line.includes(RISK_BASE.text),
+    `expected the risk text to still render, but the line read: ${line}`
+  )
+  assert.ok(
+    !line.includes('  '),
+    `expected no doubled space left where the bracket segment was removed, but the line read: ${line}`
+  )
+})
+
 test('resource-render.thread.key-decision-line-carries-no-empty-bracket-pair-when-scope-is-empty', () => {
   const rendered = renderedDetail(threadWithKeyDecision({ ...KEY_DECISION_BASE, scope: '' }))
   const keyDecisionLine = linesBetween(rendered, 'Key decisions:', 'Out of scope:')[0]
