@@ -5,7 +5,15 @@ import { z } from 'zod'
 import type { ToolSpec } from '../register.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import type { Runtime } from '../../runtime/runtime.ts'
-import { ThreadRecord, type Thread, type Criterion, type Risk, type KeyDecision, type OutOfScope } from '../../schema/thread.ts'
+import {
+  ThreadRecord,
+  type Thread,
+  type Criterion,
+  type Risk,
+  type KeyDecision,
+  type OutOfScope,
+  type Artifact
+} from '../../schema/thread.ts'
 import { DecisionRecord, type Decision } from '../../schema/decision.ts'
 import type { Store } from '../../store/records.ts'
 import { layoutFor } from '../../store/layout.ts'
@@ -14,6 +22,7 @@ import { advanceMaterialisedStampIfStillCurrent } from '../../store/read-path.ts
 import { writeRecords, type RecordChange } from '../../store/write-path.ts'
 import type { Conflict } from '../../merge/conflict.ts'
 import { TRACKING_REF } from '../../merge/sync.ts'
+import { THREAD_RULES } from '../../merge/field-merge.ts'
 import { LEDGER_REF } from '../../store/ref.ts'
 import { withDetail } from '../../store/detail.ts'
 import { clipGraphemes, escapeStored } from '../../render/escape.ts'
@@ -25,7 +34,6 @@ const FIELD_MAX = 300
 const RECORD_PATTERN = /^(thread|decision):[0-9A-HJKMNP-TV-Z]{26}$/
 const THREAD_RECORD_PATTERN = /^thread:([0-9A-HJKMNP-TV-Z]{26})$/
 const DECISION_RECORD_PATTERN = /^decision:([0-9A-HJKMNP-TV-Z]{26})$/
-const INDEXED_FIELD_PATTERN = /^(?:spine\.)?(completion_criteria|open_risks|key_decisions|out_of_scope)\[([0-9A-HJKMNP-TV-Z]{26})\]$/
 
 const ResolutionSchema = z
   .strictObject({
@@ -297,49 +305,6 @@ const loadDecisionRaw = (store: Store, id: string): Decision | null => {
   return slot.record
 }
 
-type FieldLookup = { recognized: true; value: unknown } | { recognized: false }
-
-const currentThreadFieldValue = (thread: Thread, field: string): FieldLookup => {
-  switch (field) {
-    case 'slug':
-      return { recognized: true, value: thread.slug }
-    case 'title':
-      return { recognized: true, value: thread.title }
-    case 'status':
-      return { recognized: true, value: thread.status }
-    case 'blocked_by':
-      return { recognized: true, value: thread.blocked_by }
-    case 'spine.active_goal':
-      return { recognized: true, value: thread.spine.active_goal }
-    case 'spine.next_step':
-      return { recognized: true, value: thread.spine.next_step }
-    case 'spine.last_session':
-      return { recognized: true, value: thread.spine.last_session }
-    default:
-      break
-  }
-
-  const indexed = INDEXED_FIELD_PATTERN.exec(field)
-  if (indexed === null) return { recognized: false }
-  const arrayName = indexed[1]
-  const id = indexed[2]
-  if (arrayName === undefined || id === undefined) return { recognized: false }
-
-  if (arrayName === 'completion_criteria') {
-    return { recognized: true, value: thread.completion_criteria.find((item) => item.id === id) ?? null }
-  }
-  if (arrayName === 'open_risks') {
-    return { recognized: true, value: thread.spine.open_risks.find((item) => item.id === id) ?? null }
-  }
-  if (arrayName === 'key_decisions') {
-    return { recognized: true, value: thread.spine.key_decisions.find((item) => item.id === id) ?? null }
-  }
-  if (arrayName === 'out_of_scope') {
-    return { recognized: true, value: thread.spine.out_of_scope.find((item) => item.id === id) ?? null }
-  }
-  return { recognized: false }
-}
-
 const escapeIfString = (value: unknown): unknown => (typeof value === 'string' ? escapeStored(value) : value)
 
 const escapeCriterion = (criterion: Criterion): Criterion => ({ ...criterion, text: escapeStored(criterion.text) })
@@ -359,19 +324,180 @@ const escapeKeyDecision = (keyDecision: KeyDecision): KeyDecision => ({
 
 const escapeOutOfScope = (outOfScope: OutOfScope): OutOfScope => ({ ...outOfScope, text: escapeStored(outOfScope.text) })
 
-const escapeChosenThreadValue = (field: string, value: unknown): unknown => {
-  if (field === 'title' || field === 'blocked_by' || field === 'spine.active_goal' || field === 'spine.next_step' || field === 'spine.last_session') {
-    return escapeIfString(value)
+const escapeArtifact = (artifact: Artifact): Artifact => ({
+  ...artifact,
+  label: escapeStored(artifact.label),
+  pointer: escapeStored(artifact.pointer)
+})
+
+type ScalarFieldHandling = {
+  kind: 'scalar'
+  read: (thread: Thread) => unknown
+  apply: (thread: Thread, value: unknown) => Thread
+  escape: (value: unknown) => unknown
+}
+
+type IndexedFieldHandling = {
+  kind: 'indexed'
+  find: (thread: Thread, id: string) => unknown
+  replace: (thread: Thread, id: string, value: unknown) => Thread
+  escape: (value: unknown) => unknown
+}
+
+type NoConflictFieldHandling = { kind: 'no-conflict' }
+
+export type FieldHandling = ScalarFieldHandling | IndexedFieldHandling | NoConflictFieldHandling
+
+const NO_CONFLICT_FIELD: NoConflictFieldHandling = { kind: 'no-conflict' }
+
+export const FIELD_HANDLING_TABLE: Record<keyof typeof THREAD_RULES, FieldHandling> = {
+  id: NO_CONFLICT_FIELD,
+  slug: {
+    kind: 'scalar',
+    read: (thread) => thread.slug,
+    apply: (thread, value) => ({ ...thread, slug: value as Thread['slug'] }),
+    escape: (value) => value
+  },
+  title: {
+    kind: 'scalar',
+    read: (thread) => thread.title,
+    apply: (thread, value) => ({ ...thread, title: value as Thread['title'] }),
+    escape: escapeIfString
+  },
+  status: {
+    kind: 'scalar',
+    read: (thread) => thread.status,
+    apply: (thread, value) => ({ ...thread, status: value as Thread['status'] }),
+    escape: (value) => value
+  },
+  blocked_by: {
+    kind: 'scalar',
+    read: (thread) => thread.blocked_by,
+    apply: (thread, value) => ({ ...thread, blocked_by: value as Thread['blocked_by'] }),
+    escape: escapeIfString
+  },
+  predecessor_id: NO_CONFLICT_FIELD,
+  completion_criteria: {
+    kind: 'indexed',
+    find: (thread, id) => thread.completion_criteria.find((item) => item.id === id) ?? null,
+    replace: (thread, id, value) => ({
+      ...thread,
+      completion_criteria: withRecomputedOrdinals(replaceById(thread.completion_criteria, id, value as Criterion))
+    }),
+    escape: (value) => escapeCriterion(value as Criterion)
+  },
+  artifacts: {
+    kind: 'indexed',
+    find: (thread, id) => (thread.artifacts ?? []).find((item) => item.id === id) ?? null,
+    replace: (thread, id, value) => ({ ...thread, artifacts: replaceById(thread.artifacts ?? [], id, value as Artifact) }),
+    escape: (value) => escapeArtifact(value as Artifact)
+  },
+  spine: NO_CONFLICT_FIELD,
+  created_at: NO_CONFLICT_FIELD,
+  updated_at: NO_CONFLICT_FIELD,
+  'spine.active_goal': {
+    kind: 'scalar',
+    read: (thread) => thread.spine.active_goal,
+    apply: (thread, value) => ({ ...thread, spine: { ...thread.spine, active_goal: value as string } }),
+    escape: escapeIfString
+  },
+  'spine.next_step': {
+    kind: 'scalar',
+    read: (thread) => thread.spine.next_step,
+    apply: (thread, value) => ({ ...thread, spine: { ...thread.spine, next_step: value as string } }),
+    escape: escapeIfString
+  },
+  'spine.landed': {
+    kind: 'scalar',
+    read: (thread) => thread.spine.landed,
+    apply: (thread, value) => ({ ...thread, spine: { ...thread.spine, landed: value as string } }),
+    escape: escapeIfString
+  },
+  'spine.last_session': {
+    kind: 'scalar',
+    read: (thread) => thread.spine.last_session,
+    apply: (thread, value) => ({ ...thread, spine: { ...thread.spine, last_session: value as string } }),
+    escape: escapeIfString
+  },
+  'spine.open_risks': {
+    kind: 'indexed',
+    find: (thread, id) => thread.spine.open_risks.find((item) => item.id === id) ?? null,
+    replace: (thread, id, value) => ({
+      ...thread,
+      spine: { ...thread.spine, open_risks: replaceById(thread.spine.open_risks, id, value as Risk) }
+    }),
+    escape: (value) => escapeRisk(value as Risk)
+  },
+  'spine.key_decisions': {
+    kind: 'indexed',
+    find: (thread, id) => thread.spine.key_decisions.find((item) => item.id === id) ?? null,
+    replace: (thread, id, value) => ({
+      ...thread,
+      spine: { ...thread.spine, key_decisions: replaceById(thread.spine.key_decisions, id, value as KeyDecision) }
+    }),
+    escape: (value) => escapeKeyDecision(value as KeyDecision)
+  },
+  'spine.out_of_scope': {
+    kind: 'indexed',
+    find: (thread, id) => thread.spine.out_of_scope.find((item) => item.id === id) ?? null,
+    replace: (thread, id, value) => ({
+      ...thread,
+      spine: { ...thread.spine, out_of_scope: replaceById(thread.spine.out_of_scope, id, value as OutOfScope) }
+    }),
+    escape: (value) => escapeOutOfScope(value as OutOfScope)
+  }
+}
+
+const escapeRegexLiteral = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const INDEXED_FIELD_PATHS: readonly string[] = (Object.keys(FIELD_HANDLING_TABLE) as (keyof typeof THREAD_RULES)[]).filter(
+  (path) => FIELD_HANDLING_TABLE[path].kind === 'indexed'
+)
+
+export const INDEXED_FIELD_PATTERN = new RegExp(
+  `^(${INDEXED_FIELD_PATHS.map(escapeRegexLiteral).join('|')})\\[([0-9A-HJKMNP-TV-Z]{26})\\]$`
+)
+
+const FIELD_HANDLING_KEYS = new Set<string>(Object.keys(FIELD_HANDLING_TABLE))
+
+const handlingFor = (field: string): FieldHandling | undefined =>
+  FIELD_HANDLING_KEYS.has(field) ? FIELD_HANDLING_TABLE[field as keyof typeof THREAD_RULES] : undefined
+
+const parseIndexedField = (field: string): { path: string; id: string } | null => {
+  const match = INDEXED_FIELD_PATTERN.exec(field)
+  if (match === null) return null
+  const path = match[1]
+  const id = match[2]
+  if (path === undefined || id === undefined) return null
+  return { path, id }
+}
+
+type FieldLookup = { recognized: true; value: unknown } | { recognized: false }
+
+const currentThreadFieldValue = (thread: Thread, field: string): FieldLookup => {
+  const scalar = handlingFor(field)
+  if (scalar !== undefined && scalar.kind === 'scalar') {
+    return { recognized: true, value: scalar.read(thread) }
   }
 
-  const indexed = INDEXED_FIELD_PATTERN.exec(field)
+  const indexed = parseIndexedField(field)
+  if (indexed === null) return { recognized: false }
+  const indexedHandling = handlingFor(indexed.path)
+  if (indexedHandling === undefined || indexedHandling.kind !== 'indexed') return { recognized: false }
+  return { recognized: true, value: indexedHandling.find(thread, indexed.id) }
+}
+
+const escapeChosenThreadValue = (field: string, value: unknown): unknown => {
+  const scalar = handlingFor(field)
+  if (scalar !== undefined && scalar.kind === 'scalar') {
+    return scalar.escape(value)
+  }
+
+  const indexed = parseIndexedField(field)
   if (indexed === null) return value
-  const arrayName = indexed[1]
-  if (arrayName === 'completion_criteria') return escapeCriterion(value as Criterion)
-  if (arrayName === 'open_risks') return escapeRisk(value as Risk)
-  if (arrayName === 'key_decisions') return escapeKeyDecision(value as KeyDecision)
-  if (arrayName === 'out_of_scope') return escapeOutOfScope(value as OutOfScope)
-  return value
+  const indexedHandling = handlingFor(indexed.path)
+  if (indexedHandling === undefined || indexedHandling.kind !== 'indexed') return value
+  return indexedHandling.escape(value)
 }
 
 const escapeChosenDecision = (decision: Decision): Decision => ({
@@ -383,45 +509,16 @@ const escapeChosenDecision = (decision: Decision): Decision => ({
 })
 
 const applyThreadField = (thread: Thread, field: string, value: unknown): Thread | null => {
-  switch (field) {
-    case 'slug':
-      return { ...thread, slug: value as Thread['slug'] }
-    case 'title':
-      return { ...thread, title: value as Thread['title'] }
-    case 'status':
-      return { ...thread, status: value as Thread['status'] }
-    case 'blocked_by':
-      return { ...thread, blocked_by: value as Thread['blocked_by'] }
-    case 'spine.active_goal':
-      return { ...thread, spine: { ...thread.spine, active_goal: value as string } }
-    case 'spine.next_step':
-      return { ...thread, spine: { ...thread.spine, next_step: value as string } }
-    case 'spine.last_session':
-      return { ...thread, spine: { ...thread.spine, last_session: value as string } }
-    default:
-      break
+  const scalar = handlingFor(field)
+  if (scalar !== undefined && scalar.kind === 'scalar') {
+    return scalar.apply(thread, value)
   }
 
-  const indexed = INDEXED_FIELD_PATTERN.exec(field)
+  const indexed = parseIndexedField(field)
   if (indexed === null) return null
-  const arrayName = indexed[1]
-  const id = indexed[2]
-  if (arrayName === undefined || id === undefined) return null
-
-  if (arrayName === 'completion_criteria') {
-    const next = replaceById(thread.completion_criteria, id, value as Criterion)
-    return { ...thread, completion_criteria: withRecomputedOrdinals(next) }
-  }
-  if (arrayName === 'open_risks') {
-    return { ...thread, spine: { ...thread.spine, open_risks: replaceById(thread.spine.open_risks, id, value as Risk) } }
-  }
-  if (arrayName === 'key_decisions') {
-    return { ...thread, spine: { ...thread.spine, key_decisions: replaceById(thread.spine.key_decisions, id, value as KeyDecision) } }
-  }
-  if (arrayName === 'out_of_scope') {
-    return { ...thread, spine: { ...thread.spine, out_of_scope: replaceById(thread.spine.out_of_scope, id, value as OutOfScope) } }
-  }
-  return null
+  const indexedHandling = handlingFor(indexed.path)
+  if (indexedHandling === undefined || indexedHandling.kind !== 'indexed') return null
+  return indexedHandling.replace(thread, indexed.id, value)
 }
 
 type RemotePathIdentity =
