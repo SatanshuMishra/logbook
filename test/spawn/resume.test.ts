@@ -664,8 +664,8 @@ test('park.refuses-a-last-session-argument', async () => {
     const updated = outputProperties.spine_fields_updated as { items?: { enum?: unknown } }
     assert.deepEqual(
       updated.items?.enum,
-      ['next_step'],
-      'park_thread must publish next_step as the only spine field its reply can report'
+      ['next_step', 'landed'],
+      'park_thread must publish next_step and landed as the only spine fields its reply can report'
     )
   })
 })

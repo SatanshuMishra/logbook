@@ -1,11 +1,11 @@
 import { z } from 'zod'
 import type { ToolSpec } from '../register.ts'
 import type { Refusal } from '../../schema/declare.ts'
-import type { Criterion, Thread } from '../../schema/thread.ts'
+import type { Artifact, Criterion, Thread } from '../../schema/thread.ts'
 import { SLUG_PATTERN, ULID_PATTERN } from '../../schema/ids.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
-import { commitThread, loadThreadForReference, openProjectStore } from '../tool-support.ts'
+import { ArtifactAddSchema, commitThread, loadThreadForReference, mintArtifacts, openProjectStore } from '../tool-support.ts'
 
 const CriterionCreateSchema = z
   .strictObject({
@@ -39,7 +39,12 @@ const OpenThreadInputSchema = z.strictObject({
     .array(CriterionCreateSchema)
     .min(1)
     .max(caps.CRITERIA_MAX_ELEMENTS)
-    .describe('what finishing looks like; at least one criterion is required or the thread can never be closed')
+    .describe('what finishing looks like; at least one criterion is required or the thread can never be closed'),
+  artifacts: z
+    .array(ArtifactAddSchema)
+    .max(caps.ARTIFACTS_PER_CALL_MAX_ELEMENTS)
+    .optional()
+    .describe('documents this thread already needs; each one is minted a stable id, exactly as artifacts_add does on update_thread')
 })
 
 const OpenThreadOutputSchema = z.object({
@@ -160,6 +165,8 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
       struck_by: null
     }))
 
+    const mintedArtifacts: Artifact[] = mintArtifacts(rt, input.artifacts ?? [])
+
     const thread: Thread = {
       id: rt.ulid(),
       slug: input.slug,
@@ -168,6 +175,7 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
       blocked_by: null,
       ...(predecessorId === undefined ? {} : { predecessor_id: predecessorId }),
       completion_criteria: completionCriteria,
+      ...(mintedArtifacts.length === 0 ? {} : { artifacts: mintedArtifacts }),
       spine: {
         active_goal: '',
         next_step: '',

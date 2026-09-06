@@ -50,11 +50,14 @@ const FREE_TEXT_LEAF_DISPOSITIONS: Readonly<Record<string, LeafDisposition>> = {
   'open_thread::title': 'allowed',
   'open_thread::completion_criteria[].text': 'sensitive',
   'open_thread::completion_criteria[].check': 'allowed',
+  'open_thread::artifacts[].label': 'allowed',
+  'open_thread::artifacts[].pointer': 'allowed',
   'close_thread::detail': 'allowed',
   'log_session_event::actor': 'allowed',
   'log_session_event::body': 'allowed',
   'park_thread::outcome': 'allowed',
   'park_thread::next_step': 'allowed',
+  'park_thread::landed': 'allowed',
   'record_decision::title': 'allowed',
   'record_decision::context': 'allowed',
   'record_decision::options[]': 'allowed',
@@ -71,6 +74,8 @@ const FREE_TEXT_LEAF_DISPOSITIONS: Readonly<Record<string, LeafDisposition>> = {
   'update_thread::key_decisions_add[].title': 'allowed',
   'update_thread::key_decisions_add[].scope': 'allowed',
   'update_thread::out_of_scope_add[]': 'allowed',
+  'update_thread::artifacts_add[].label': 'allowed',
+  'update_thread::artifacts_add[].pointer': 'allowed',
   'resolve_conflict::resolutions[].field': 'allowed',
   'list_threads::cursor': 'allowed'
 }

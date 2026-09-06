@@ -6,21 +6,20 @@ import { escapeStored } from '../render/escape.ts'
 export type SpineContribution = {
   active_goal?: string
   next_step?: string
+  landed?: string
   last_session?: string
   open_risks?: Risk[]
   key_decisions?: KeyDecision[]
   out_of_scope?: OutOfScope[]
 }
 
-type ScalarField = 'active_goal' | 'next_step' | 'last_session'
-type CollectionField = 'open_risks' | 'key_decisions' | 'out_of_scope'
-
-const SCALAR_FIELDS: ScalarField[] = ['active_goal', 'next_step', 'last_session']
-const COLLECTION_FIELDS: CollectionField[] = ['open_risks', 'key_decisions', 'out_of_scope']
+type ScalarField = { [K in keyof Spine]: Spine[K] extends string ? K : never }[keyof Spine]
+type CollectionField = { [K in keyof Spine]: Spine[K] extends unknown[] ? K : never }[keyof Spine]
 
 const SCALAR_CAP: Record<ScalarField, number> = {
   active_goal: caps.SPINE_ACTIVE_GOAL_MAX,
   next_step: caps.SPINE_NEXT_STEP_MAX,
+  landed: caps.SPINE_LANDED_MAX,
   last_session: caps.SPINE_LAST_SESSION_MAX
 }
 
@@ -35,6 +34,9 @@ const CALLER_FIELD: Record<CollectionField, string> = {
   key_decisions: 'key_decisions_add',
   out_of_scope: 'out_of_scope_add'
 }
+
+const SCALAR_FIELDS: ScalarField[] = Object.keys(SCALAR_CAP) as ScalarField[]
+const COLLECTION_FIELDS: CollectionField[] = Object.keys(COLLECTION_ELEMENTS_CAP) as CollectionField[]
 
 const capRefusal = (field: string, limit: number, observed: number, unit: string, remedy: string): Refusal => ({
   ok: false,
@@ -207,7 +209,7 @@ const escapeOutOfScope = (entry: OutOfScope): OutOfScope => ({
 const mergeSpine = (stored: Spine, contribution: SpineContribution): Spine => ({
   active_goal: contribution.active_goal !== undefined ? escapeStored(contribution.active_goal) : stored.active_goal,
   next_step: contribution.next_step !== undefined ? escapeStored(contribution.next_step) : stored.next_step,
-  landed: stored.landed,
+  landed: contribution.landed !== undefined ? escapeStored(contribution.landed) : stored.landed,
   last_session: contribution.last_session !== undefined ? escapeStored(contribution.last_session) : stored.last_session,
   open_risks:
     contribution.open_risks !== undefined

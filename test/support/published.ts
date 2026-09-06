@@ -240,6 +240,26 @@ export const ARGUMENT_GAPS: readonly ArgumentGap[] = [
     address: 'record_decision.criterion_id',
     reason:
       'the same five-input enumeration that omits scope also omits criterion_id, which anchors the decision to one specific completion criterion and is not mentioned anywhere in the description, including near the supersedes sentence'
+  },
+  {
+    address: 'park_thread.landed',
+    reason:
+      'the description states only that this call "refreshes the next_step field"; landed is a second hand-off field this unit adds and the prose makes no promise about it'
+  },
+  {
+    address: 'update_thread.artifacts_add',
+    reason:
+      'the description enumerates what this call records as criteria, the six running-summary fields, blockage, and risks, and never mentions the thread-level artifact list this unit makes writable'
+  },
+  {
+    address: 'update_thread.artifacts_retire',
+    reason:
+      'the same enumeration that omits artifacts_add also omits its removal counterpart; "add or retire risks" names risks only, never an artifact'
+  },
+  {
+    address: 'open_thread.artifacts',
+    reason:
+      'the description names exactly three creation inputs (title, slug, completion_criteria), the same enumeration that already excuses predecessor_id, and never mentions an initial artifact list'
   }
 ]
 

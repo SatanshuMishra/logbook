@@ -35,7 +35,14 @@ const ParkThreadInputSchema = z.strictObject({
     .string()
     .max(caps.SPINE_NEXT_STEP_MAX)
     .optional()
-    .describe('replaces the spine next_step field when supplied; omit to leave it unchanged')
+    .describe('replaces the spine next_step field when supplied; omit to leave it unchanged'),
+  landed: z
+    .string()
+    .max(caps.SPINE_LANDED_MAX)
+    .optional()
+    .describe(
+      'what this thread has landed and verified, replacing the stored value when supplied; omit to leave it unchanged'
+    )
 })
 
 const ParkThreadOutputSchema = z.object({
@@ -56,7 +63,7 @@ const ParkThreadOutputSchema = z.object({
     .array(z.string())
     .describe('the id of the session log entry this call wrote, empty when none was written'),
   spine_fields_updated: z
-    .array(z.enum(['next_step']))
+    .array(z.enum(['next_step', 'landed']))
     .describe('which spine fields this call changed'),
   pointer_released: z
     .boolean()
@@ -246,9 +253,13 @@ const parkResolvedThread = (
   }
 
   const spineContribution: SpineContribution = {
-    ...(input.next_step !== undefined ? { next_step: input.next_step } : {})
+    ...(input.next_step !== undefined ? { next_step: input.next_step } : {}),
+    ...(input.landed !== undefined ? { landed: input.landed } : {})
   }
-  const spineFieldsUpdated: 'next_step'[] = [...(input.next_step !== undefined ? (['next_step'] as const) : [])]
+  const spineFieldsUpdated: ('next_step' | 'landed')[] = [
+    ...(input.next_step !== undefined ? (['next_step'] as const) : []),
+    ...(input.landed !== undefined ? (['landed'] as const) : [])
+  ]
 
   const contributed = contributeToSpine(thread.spine, spineContribution)
   if (!contributed.ok) {

@@ -244,7 +244,23 @@ const openThreadPredecessorIdRecipe = (): Promise<RecipeResult> =>
     })
   )
 
-type UpdateThreadFixtureCtx = ThreadFixtureCtx & { riskId: string; decisionId: string }
+const openThreadArtifactsRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'open_thread.artifacts',
+    openThreadTool,
+    async () => undefined,
+    () => successorThreadArgs(),
+    () => ({
+      ...successorThreadArgs(),
+      artifacts: [{ label: 'sentinel open_thread artifact', pointer: 'docs/sentinel-open-thread-artifact.md' }]
+    }),
+    (structured, rt) => ({
+      artifacts:
+        readThreadRecord(rt, mustBeString(structured.thread_id, 'the opened thread id'))?.artifacts ?? []
+    })
+  )
+
+type UpdateThreadFixtureCtx = ThreadFixtureCtx & { riskId: string; decisionId: string; artifactId: string }
 
 const openUpdateThreadFixture = async (rt: Runtime): Promise<UpdateThreadFixtureCtx> => {
   const { threadId, criterionIds } = await openFixtureThread(rt, 'update-thread', 2)
@@ -254,8 +270,14 @@ const openUpdateThreadFixture = async (rt: Runtime): Promise<UpdateThreadFixture
   })
   if (!withRisk.ok) throw new Error('optional-argument-recipes: expected the pre-existing risk to be added')
   const riskId = mustGet(withRisk.structured.risks_added as string[], 0, 'a minted risk id')
+  const withArtifact = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
+    thread_id: threadId,
+    artifacts_add: [{ label: 'a pre-existing fixture artifact', pointer: 'docs/pre-existing-fixture.md' }]
+  })
+  if (!withArtifact.ok) throw new Error('optional-argument-recipes: expected the pre-existing artifact to be added')
+  const artifactId = mustGet(withArtifact.structured.artifacts_added as string[], 0, 'a minted artifact id')
   const decisionId = await recordFixtureDecision(rt, threadId, 'a pre-existing fixture decision')
-  return { threadId, criterionIds, riskId, decisionId }
+  return { threadId, criterionIds, riskId, decisionId, artifactId }
 }
 
 const runUpdateThreadRecipe = (
@@ -358,6 +380,18 @@ const SIMPLE_UPDATE_FIELDS: SimpleUpdateFieldSpec[] = [
     field: 'out_of_scope_add',
     sentinelExtra: () => ({ out_of_scope_add: ['sentinel out of scope statement'] }),
     extract: (structured) => ({ out_of_scope_added: structured.out_of_scope_added })
+  },
+  {
+    field: 'artifacts_add',
+    sentinelExtra: () => ({
+      artifacts_add: [{ label: 'sentinel artifacts_add label', pointer: 'docs/sentinel-artifact.md' }]
+    }),
+    extract: (structured) => ({ artifacts_added: structured.artifacts_added })
+  },
+  {
+    field: 'artifacts_retire',
+    sentinelExtra: (ctx) => ({ artifacts_retire: [ctx.artifactId] }),
+    extract: (structured) => ({ artifacts_retired: structured.artifacts_retired })
   }
 ]
 
@@ -557,6 +591,15 @@ const PARK_FIELDS: ParkFieldSpec[] = [
       spine_fields_updated: structured.spine_fields_updated,
       next_step: readThreadRecord(rt, ctx.threadId)?.spine.next_step ?? ''
     })
+  },
+  {
+    field: 'landed',
+    setup: openParkThreadFixture,
+    sentinelArgs: () => ({ landed: 'sentinel park landed text' }),
+    extract: (structured, rt, ctx) => ({
+      spine_fields_updated: structured.spine_fields_updated,
+      landed: readThreadRecord(rt, ctx.threadId)?.spine.landed ?? ''
+    })
   }
 ]
 
@@ -665,6 +708,7 @@ const listThreadsLimitRecipe = (): Promise<RecipeResult> =>
 
 export const RECIPES: ReadonlyMap<string, () => Promise<RecipeResult>> = new Map([
   ['open_thread.predecessor_id', openThreadPredecessorIdRecipe],
+  ['open_thread.artifacts', openThreadArtifactsRecipe],
   ...simpleUpdateThreadRecipes,
   ['update_thread.risks_add[].refs', updateThreadRisksAddRefsRecipe],
   ['update_thread.risks_add[].criterion_id', updateThreadRisksAddCriterionIdRecipe],
@@ -712,6 +756,8 @@ export const TEST_2_CASES: Test2Case[] = [
       risks_retired: structured.risks_retired,
       key_decisions_added: structured.key_decisions_added,
       out_of_scope_added: structured.out_of_scope_added,
+      artifacts_added: structured.artifacts_added,
+      artifacts_retired: structured.artifacts_retired,
       blocked_by_set: structured.blocked_by_set
     })
   },

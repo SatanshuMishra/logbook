@@ -2,11 +2,11 @@ import { z } from 'zod'
 import type { ToolSpec } from '../register.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import { ULID_PATTERN } from '../../schema/ids.ts'
-import type { KeyDecision, Risk, Spine, Thread } from '../../schema/thread.ts'
+import type { Artifact, KeyDecision, Risk, Spine, Thread } from '../../schema/thread.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
-import { commitThread, loadThread, openProjectStore } from '../tool-support.ts'
+import { ArtifactAddSchema, commitThread, loadThread, mintArtifacts, openProjectStore } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 const optionalUlidField = (description: string) => z.string().regex(ULID_PATTERN).optional().describe(description)
@@ -98,7 +98,19 @@ const UpdateThreadInputSchema = z.strictObject({
     .array(z.string().min(1).max(caps.OUT_OF_SCOPE_TEXT_MAX).describe('one statement of what this thread explicitly excludes'))
     .max(caps.OUT_OF_SCOPE_MAX_ELEMENTS)
     .optional()
-    .describe('out-of-scope statements to append; each one is minted a stable id')
+    .describe('out-of-scope statements to append; each one is minted a stable id'),
+  artifacts_add: z
+    .array(ArtifactAddSchema)
+    .max(caps.ARTIFACTS_PER_CALL_MAX_ELEMENTS)
+    .optional()
+    .describe('documents to append to this thread; each one is minted a stable id'),
+  artifacts_retire: z
+    .array(ulidField('the id of an artifact currently on this thread'))
+    .max(caps.ARTIFACTS_PER_CALL_MAX_ELEMENTS)
+    .optional()
+    .describe(
+      'artifact ids to remove; the entry is marked rather than deleted so the removal survives a sync'
+    )
 })
 
 const UpdateThreadOutputSchema = z.object({
@@ -108,9 +120,11 @@ const UpdateThreadOutputSchema = z.object({
     .array(z.enum(['active_goal', 'next_step', 'last_session']))
     .describe('which scalar spine fields this call changed'),
   risks_added: z.array(z.string()).describe('ids minted for risks this call added'),
-  risks_retired: z.array(z.string()).describe('ids of risks this call removed from the spine'),
+  risks_retired: z.array(z.string()).describe('ids of risks this call marked removed'),
   key_decisions_added: z.array(z.string()).describe('ids minted for key decisions this call linked into the spine'),
   out_of_scope_added: z.array(z.string()).describe('ids minted for out-of-scope statements this call added'),
+  artifacts_added: z.array(z.string()).describe('ids minted for artifacts this call added'),
+  artifacts_retired: z.array(z.string()).describe('ids of artifacts this call marked removed'),
   blocked_by_set: z.boolean().describe('whether this call changed what the thread is blocked on, by either setting or clearing it')
 })
 
@@ -281,7 +295,14 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
 
     const retireIds = input.risks_retire ?? []
     const retiredIds = retireIds.filter((id) => thread.spine.open_risks.some((r) => r.id === id))
-    const survivingRisks = thread.spine.open_risks.filter((r) => !retireIds.includes(r.id))
+    const survivingRisks = thread.spine.open_risks.map((r) => (retireIds.includes(r.id) ? { ...r, retired: true } : r))
+
+    const retireArtifactIds = input.artifacts_retire ?? []
+    const retiredArtifactIds = retireArtifactIds.filter((id) => (thread.artifacts ?? []).some((a) => a.id === id))
+    const survivingArtifacts = (thread.artifacts ?? []).map((a) =>
+      retireArtifactIds.includes(a.id) ? { ...a, retired: true } : a
+    )
+    const newArtifacts: Artifact[] = mintArtifacts(rt, input.artifacts_add ?? [])
 
     const newRisks: Risk[] = (input.risks_add ?? []).map((r) => ({
       id: rt.ulid(),
@@ -349,6 +370,8 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
       newRisks.length === 0 &&
       newKeyDecisions.length === 0 &&
       newOutOfScope.length === 0 &&
+      newArtifacts.length === 0 &&
+      retiredArtifactIds.length === 0 &&
       spineFieldsUpdated.length === 0 &&
       !blockageChanged
 
@@ -364,6 +387,8 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
           risks_retired: [],
           key_decisions_added: [],
           out_of_scope_added: [],
+          artifacts_added: [],
+          artifacts_retired: [],
           blocked_by_set: false
         }
       }
@@ -375,10 +400,13 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
       return { ok: false, refusal: contributed }
     }
 
+    const combinedArtifacts = [...survivingArtifacts, ...newArtifacts]
+
     const nextThread: Thread = {
       ...thread,
       blocked_by: blockedByCleared ? null : (escapedBlockedBy ?? thread.blocked_by),
       completion_criteria: nextCriteria,
+      ...(combinedArtifacts.length === 0 && thread.artifacts === undefined ? {} : { artifacts: combinedArtifacts }),
       spine: contributed.value,
       updated_at: rt.now()
     }
@@ -397,6 +425,8 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
         risks_retired: retiredIds,
         key_decisions_added: newKeyDecisions.map((kd) => kd.id),
         out_of_scope_added: newOutOfScope.map((o) => o.id),
+        artifacts_added: newArtifacts.map((a) => a.id),
+        artifacts_retired: retiredArtifactIds,
         blocked_by_set: blockageChanged
       }
     }
