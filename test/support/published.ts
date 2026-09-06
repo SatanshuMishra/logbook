@@ -114,7 +114,10 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
     { phrase: 'Takes one thread id', providers: ['resume_thread.thread_id'] }
   ],
   park_thread: [
-    { phrase: 'refreshes the next_step field', providers: ['park_thread.next_step'] },
+    {
+      phrase: 'refreshes the next_step and landed fields',
+      providers: ['park_thread.next_step', 'park_thread.landed']
+    },
     {
       phrase: 'The last_session field is no longer accepted here; it is derived from the session log.',
       providers: []
@@ -240,11 +243,6 @@ export const ARGUMENT_GAPS: readonly ArgumentGap[] = [
     address: 'record_decision.criterion_id',
     reason:
       'the same five-input enumeration that omits scope also omits criterion_id, which anchors the decision to one specific completion criterion and is not mentioned anywhere in the description, including near the supersedes sentence'
-  },
-  {
-    address: 'park_thread.landed',
-    reason:
-      'the description states only that this call "refreshes the next_step field"; landed is a second hand-off field this unit adds and the prose makes no promise about it'
   },
   {
     address: 'update_thread.artifacts_add',
