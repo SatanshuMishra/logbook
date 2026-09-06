@@ -41,9 +41,13 @@ test('goal-model.parsing-adds-no-bytes-to-a-record-written-before-this-change', 
   )
 })
 
-test('goal-model.a-record-written-before-this-change-still-parses', () => {
+test('goal-model.a-record-carrying-none-of-the-optional-goal-model-fields-still-parses', () => {
   const result = ThreadRecord.parse(legacyThreadShape())
-  assert.equal(result.ok, true, 'a stored record carrying none of the new fields must still parse')
+  assert.equal(
+    result.ok,
+    true,
+    'a stored record carrying no artifacts and no criterion check, result or result_status must still parse'
+  )
   if (!result.ok) return
   assert.equal(result.value.artifacts, undefined)
   assert.equal(result.value.completion_criteria[0]?.check, undefined)

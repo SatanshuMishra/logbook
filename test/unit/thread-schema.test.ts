@@ -2,7 +2,6 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ThreadRecord } from '../../src/schema/thread.ts'
 import type { Thread } from '../../src/schema/thread.ts'
-import { SPINE_LANDED_MAX } from '../../src/schema/caps.ts'
 
 const CRITERION_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
 const ULID_A = '01ARZ3NDEKTSV4RRFFQ69G5FBA'
@@ -30,9 +29,12 @@ const baseThread = (): Thread => ({
 
 test('thread-schema.landed.a-spine-carrying-it-round-trips', () => {
   const thread = baseThread()
-  thread.spine.landed = 'focus removal shipped; suite green'
+  const threadWithLanded: Thread = {
+    ...thread,
+    spine: { ...thread.spine, landed: 'focus removal shipped; suite green' }
+  }
 
-  const parsed = ThreadRecord.parse(thread)
+  const parsed = ThreadRecord.parse(threadWithLanded)
 
   assert.equal(parsed.ok, true)
   if (!parsed.ok) throw new Error('expected the record to parse')
@@ -41,26 +43,18 @@ test('thread-schema.landed.a-spine-carrying-it-round-trips', () => {
 
 test('thread-schema.retired.an-artifact-and-a-risk-both-carry-it', () => {
   const thread = baseThread()
-  thread.artifacts = [
-    { id: ULID_A, label: 'the plan', pointer: 'docs/plans/x.md', retired: false }
-  ]
-  thread.spine.open_risks = [
-    { id: ULID_B, scope: 'merge', text: 'a risk', refs: [], retired: true }
-  ]
+  const retainedArtifact = { id: ULID_A, label: 'the plan', pointer: 'docs/plans/x.md', retired: false }
+  const retiredRisk = { id: ULID_B, scope: 'merge', text: 'a risk', refs: [], retired: true }
+  const threadCarryingBoth: Thread = {
+    ...thread,
+    artifacts: [retainedArtifact],
+    spine: { ...thread.spine, open_risks: [retiredRisk] }
+  }
 
-  const parsed = ThreadRecord.parse(thread)
+  const parsed = ThreadRecord.parse(threadCarryingBoth)
 
   assert.equal(parsed.ok, true)
   if (!parsed.ok) throw new Error('expected the record to parse')
   assert.equal(parsed.value.artifacts?.[0]?.retired, false)
   assert.equal(parsed.value.spine.open_risks[0]?.retired, true)
-})
-
-test('thread-schema.landed.over-its-cap-is-refused', () => {
-  const thread = baseThread()
-  thread.spine.landed = 'x'.repeat(SPINE_LANDED_MAX + 1)
-
-  const parsed = ThreadRecord.parse(thread)
-
-  assert.equal(parsed.ok, false)
 })

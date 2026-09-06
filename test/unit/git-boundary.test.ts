@@ -86,7 +86,7 @@ test('git-boundary.a-risk-ref-that-is-an-address-is-accepted', () => {
 test('git-boundary.an-artifact-pointer-carrying-a-code-fence-is-refused', () => {
   const result = ThreadRecord.parse({
     ...baseThread(),
-    artifacts: [{ id: ARTIFACT_ID, label: 'the plan', pointer: 'see ```ts' }]
+    artifacts: [{ id: ARTIFACT_ID, label: 'the plan', pointer: 'see ```ts', retired: false }]
   })
   assert.equal(result.ok, false, 'an artifact pointer carrying a code fence must be refused')
   if (result.ok) return
