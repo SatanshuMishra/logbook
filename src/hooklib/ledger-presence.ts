@@ -5,6 +5,7 @@ import { createStateDirectory, type StoreLayout } from '../store/layout.ts'
 import { durableWrite } from '../store/durable-write.ts'
 import { git } from '../store/git.ts'
 import { LEDGER_REF } from '../store/ref.ts'
+import { SHA_PATTERN } from '../schema/ids.ts'
 
 const BASELINE_FILE_NAME = 'resume-baseline.json'
 
@@ -26,13 +27,21 @@ export const readLedgerHead = (rt: Runtime, projectRoot: string): string | null 
   return trimmed.length === 0 ? null : trimmed
 }
 
-export const ledgerPathsChangedSince = (rt: Runtime, projectRoot: string, baselineHead: string): string[] => {
-  const result = git(rt, projectRoot, ['diff', '--name-only', baselineHead, LEDGER_REF, '--'])
-  if (!result.ok) {
-    rt.log({ level: 'warn', event: 'stop-gate.ledger-diff-unreadable', code: result.code, detail: result.stderr.trim() })
-    return []
+export type LedgerDiff = { ok: true; paths: string[] } | { ok: false; detail: string }
+
+export const ledgerPathsChangedSince = (rt: Runtime, projectRoot: string, baselineHead: string): LedgerDiff => {
+  if (!SHA_PATTERN.test(baselineHead)) {
+    const detail = 'the recorded ledger head is not an object id'
+    rt.log({ level: 'warn', event: 'stop-gate.ledger-baseline-not-an-object-id', detail })
+    return { ok: false, detail }
   }
-  return result.stdout.split('\n').map((line) => line.trim()).filter((line) => line.length > 0)
+  const result = git(rt, projectRoot, ['diff', '--name-only', '--end-of-options', baselineHead, LEDGER_REF, '--'])
+  if (!result.ok) {
+    const detail = result.stderr.trim()
+    rt.log({ level: 'warn', event: 'stop-gate.ledger-diff-unreadable', code: result.code, detail })
+    return { ok: false, detail }
+  }
+  return { ok: true, paths: result.stdout.split('\n').map((line) => line.trim()).filter((line) => line.length > 0) }
 }
 
 export const readResumeBaseline = (layout: StoreLayout): ResumeBaseline | null => {
@@ -56,6 +65,7 @@ export const readResumeBaseline = (layout: StoreLayout): ResumeBaseline | null =
   const ledgerHead = candidate.ledger_head
   if (typeof sessionId !== 'string' || sessionId.length === 0) return null
   if (ledgerHead !== null && typeof ledgerHead !== 'string') return null
+  if (ledgerHead !== null && !SHA_PATTERN.test(ledgerHead)) return null
   return { session_id: sessionId, ledger_head: ledgerHead }
 }
 
