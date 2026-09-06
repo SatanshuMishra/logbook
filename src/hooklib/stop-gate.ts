@@ -4,7 +4,7 @@ import type { Runtime } from '../runtime/runtime.ts'
 import { createStateDirectory, layoutFor, type StoreLayout } from '../store/layout.ts'
 import { durableWrite } from '../store/durable-write.ts'
 import { readPointer } from '../domain/pointer.ts'
-import { readLedgerHead, readResumeBaseline } from './ledger-presence.ts'
+import { ledgerPathsChangedSince, readLedgerHead, readResumeBaseline } from './ledger-presence.ts'
 import { collectAssistantTexts, findLastResumeBriefing } from './transcript.ts'
 
 const GATE_FILE_NAME = 'stop-gate.json'
@@ -49,11 +49,17 @@ const verbatimReason = (owedText: string): string =>
   `separator and ordering. Print the text below exactly as it stands, with nothing added, removed, reordered or ` +
   `reworded.\n\n${owedText}`
 
-export const LEDGER_PRESENCE_REASON =
-  `Logbook: nothing has reached this project's ledger since the thread was resumed. Record what was established ` +
-  `with record_decision, note progress with update_thread, or end this session's work on the thread with ` +
-  `park_thread. This verdict reports only that something reached the ledger; it makes no claim that what is ` +
+const ledgerUntouchedReason = (threadId: string): string =>
+  `Logbook: nothing has reached this project's ledger since the thread ${threadId} was resumed. Record what was ` +
+  `established with record_decision, note progress with update_thread, or end this session's work on the thread ` +
+  `with park_thread. This verdict reports only that something reached the ledger; it makes no claim that what is ` +
   `recorded is complete.`
+
+const ledgerMismatchReason = (threadId: string): string =>
+  `Logbook: records have reached this project's ledger, but none of them is filed under thread ${threadId}. Record ` +
+  `what was established with record_decision, note progress with update_thread, or end this session's work on the ` +
+  `thread with park_thread. This verdict reports only that something reached the ledger; it makes no claim that ` +
+  `what is recorded is complete.`
 
 const verbatimEchoVerdict = (rt: Runtime, event: StopEvent, layout: StoreLayout): StopVerdict => {
   const gate = readGate(layout.state)
@@ -86,9 +92,19 @@ const ledgerPresenceVerdict = (rt: Runtime, event: StopEvent, layout: StoreLayou
   if (baseline.ledger_head === null) return { kind: 'silent' }
 
   const head = readLedgerHead(rt, layout.projectRoot)
-  if (head !== baseline.ledger_head) return { kind: 'silent' }
+  if (head === null) return { kind: 'silent' }
+  if (head === baseline.ledger_head) return { kind: 'block', reason: ledgerUntouchedReason(pointerRead.value.thread_id) }
 
-  return { kind: 'block', reason: LEDGER_PRESENCE_REASON }
+  const changed = ledgerPathsChangedSince(rt, layout.projectRoot, baseline.ledger_head)
+  if (changed.length === 0) return { kind: 'silent' }
+
+  const threadId = pointerRead.value.thread_id
+  const touchesHeldThread = changed.some(
+    (changedPath) => changedPath === `threads/${threadId}.json` || changedPath.startsWith(`sessions/${threadId}/`)
+  )
+  if (touchesHeldThread) return { kind: 'silent' }
+
+  return { kind: 'block', reason: ledgerMismatchReason(threadId) }
 }
 
 export const stopGateVerdict = (rt: Runtime, event: StopEvent): StopVerdict => {
