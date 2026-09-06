@@ -47,6 +47,33 @@ U1, U2 and U7 are file-disjoint: U1 owns the pointer, the briefing, both tools a
 
 When a parent merges to `main`, GitHub retargets its child automatically. Do not rebase a child onto a moved parent; merge the parent in.
 
+### Merge order for round 1, and why it is not optional
+
+`U2` makes `landed` and `retired` required, so the typecheck forces it into fixture files that `U1` and `U7` own. The three branches are disjoint in intent and overlapping in fact. **Merge in this order:**
+
+1. **`U1` first.** It deletes `test/unit/briefing-focus.test.ts` and `test/spawn/focus.test.ts`. Against `U2`'s edits to the same files this is a delete/modify conflict with an unambiguous resolution — the files go away.
+2. **`U2` second.** Merge `main` in and resolve. Its edits to `src/server/tools/update_thread.ts` sit in a different region from `U1`'s deletions and should merge cleanly; check rather than assume.
+3. **`U7` third.** Merge `main` in and re-add `retired: false` to any pointer or risk fixture `U2` introduced into `test/hooks/stop-gate-ledger-presence.test.ts`.
+
+Resolve every one of these by merging, never by rebasing.
+
+### Three closed censuses, not two — and one degrades silently
+
+`U1` found that this plan's Task 1 named two closed censuses and there are **three**. The third is the dangerous one.
+
+`test/contract/no-path.test.ts` carries refusal-producer constants and blocks that call each tool with the argument under test. It runs scan-to-tagged, so removing a producer does **not** halt it — the blocks keep passing a key the strict schema now rejects, and tag the resulting parse refusal under a producer id that no longer exists. Silent degradation rather than a loud failure. Any unit removing or renaming a tool argument must check it.
+
+Two smaller misses worth carrying forward, both relevant to `U5`:
+
+- `test/contract/write-tools-ignore-the-pointer.test.ts` holds a pointer literal this plan filed under `test/hooks/*`.
+- `test/contract/resume-settled-lane-clip-budget.test.ts` was not mentioned at all. Its fixture must exceed the payload byte budget for the clip search to run, and deleting the roughly 147-byte Focus line dropped it under. **`U5` adds a `Landed:` block and a continuation sentence to the same render**, so it moves that fixture again — in the other direction. Check it rather than assuming.
+
+### One census the earlier draft of this plan missed
+
+`test/contract/content-rendered.test.ts` is a closed census: it plants a sentinel in every `content(...)`-classed schema node, renders through `renderThreadDetail`, and fails on any node whose sentinel does not surface. So wrapping `spine.landed` in `content(...)` **forces** a rendering surface in `src/server/resource-render.ts`, whether or not the unit intended one.
+
+`U2` therefore does ship a user-visible change: `logbook://thread/{id}` gains a `Landed:` line. Nothing asserts it, so every thread currently renders `Landed: ` with an empty value. **`U5` owns closing that** — add an assertion for the populated and the empty case when it renders `landed` in the briefing.
+
 ---
 
 ## Task 1: U1 — Remove declared focus
@@ -374,6 +401,40 @@ export type Risk = { id: Ulid; scope: string; text: string; refs: string[]; crit
 
 `test/unit/field-merge.test.ts` — add `'spine.landed'` to the array in `merge.rule-table-is-covered.walk-finds-spine-and-top-level-paths`. Add `landed: 'read the spec'` to `baseSpine()`, and `retired: false` to any `Risk` fixture.
 
+- [ ] **Step 5b: Deal honestly with the legacy-record test**
+
+`test/unit/goal-model-fields.test.ts` carries `goal-model.a-record-written-before-this-change-still-parses`, whose assertion reads "a stored record carrying none of the new fields must still parse". Making the new fields required makes that claim false.
+
+**Do not add a migration, and do not edit the fixture until the test goes green.** `H6` rules migration out; a record written by an earlier version is not carried forward. Editing `legacyThreadShape` to add `landed: ''` leaves a test that passes while proving nothing, which is worse than no test at all.
+
+Delete it, or rewrite it to assert what is now true — that a record missing the new fields is refused, and the refusal names the field. A test with no true claim left to make is deleted, never quietly rebased onto a weaker one.
+
+- [ ] **Step 5c: Make the merge fixture prove the descriptor**
+
+`baseSpine()` in `test/unit/field-merge.test.ts` must give `landed` a value **distinct from `last_session`**. Aliased, a descriptor that accidentally reads `t.spine.last_session` passes the entire suite.
+
+```ts
+test('merge.spine-landed-conflicts-on-divergence', () => {
+  const base = baseThread()
+  const ours = baseThread({ spine: { ...baseSpine(), landed: 'ours landed text' } })
+  const theirs = baseThread({ spine: { ...baseSpine(), landed: 'theirs landed text' } })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(result.ok, false)
+  if (result.ok) throw new Error('expected the merge to refuse')
+  const found = result.conflicts[0]
+  assert.ok(found)
+  assert.equal(found.field, 'spine.landed')
+})
+```
+
+- [ ] **Step 5d: Close three test-quality gaps**
+
+- **No in-place mutation.** The Step 1 snippets assign into `baseThread()`'s result, violating the binding immutability rule. Build with a spread, copying `test/unit/thread-schema-criterion-id.test.ts`.
+- **The cap test must name the field.** `assert.equal(parsed.ok, false)` cannot distinguish a `landed` cap refusal from any other. Assert the refusal names `spine.landed`, and add the at-cap case — exactly `SPINE_LANDED_MAX` characters parses.
+- **Describe the field, not the future.** The `retired` descriptions must not promise "renders nowhere and never returns on a sync". Nothing reads the field in this unit and `risks_retire` still hard-deletes until `U4`. Descriptions are not inert: `src/schema/refusal.ts` copies them verbatim into refusal text an agent reads.
+
 - [ ] **Step 6: Run the tests to verify they pass**
 
 ```bash
@@ -381,6 +442,8 @@ npm run typecheck && npm test
 ```
 
 Expected: typecheck clean, suite green. Every fixture that builds a `Spine`, `Risk` or `Artifact` needs the new field; the typecheck names each one.
+
+Note for the PR: the commit subject for this unit is 77 characters. `pr-create` caps a **title** at 72, so the PR title must be shorter than the commit subject.
 
 - [ ] **Step 7: Commit**
 
@@ -726,6 +789,23 @@ const survivingRisks = thread.spine.open_risks.map((r) => (retireIds.includes(r.
 
 Every `risks_add` path sets `retired: false` on the new risk. The output field `risks_retired` keeps its name; its description becomes `'ids of risks this call marked removed'`.
 
+- [ ] **Step 5b: Close the dead end U2 opens in resolve_conflict**
+
+`spine.landed` is declared `conflict-on-divergence`, so a divergent sync emits a conflict whose field is `spine.landed`. But `resolve_conflict`'s `escapeChosenThreadValue` and its `applyThreadField` switch both stop at `spine.last_session`, so that conflict reaches `unclassifiableFieldRefusal`. Because the tool demands a winner for **every** reported conflict, one unresolvable path refuses the whole resolution — and the sync cannot be cleared by any tool.
+
+It stays latent only until something writes `landed`, which is this unit. So close it here:
+
+There are **three** hand-written switches enumerating the spine scalars, not two — at roughly `resolve_conflict.ts:302`, `:362` and `:385`. All three omit `spine.landed`. Add it to each.
+
+Then derive them from `THREAD_RULES` rather than leaving three hand-written lists. The census must key on the **`conflict-on-divergence` entries including the `spine.` prefixed ones** — `U3`'s census deliberately filters `spine.` paths out, so it does not and cannot cover this. A census that inherits that filter would pass while the gap stayed open.
+
+- [ ] **Step 5c: Two more hand-written lists that omit `landed`**
+
+Both were found by `U2`'s review and both bite only once a writer exists, which is this unit.
+
+- `src/domain/spine.ts` carries a hand-written `ScalarField` union and a `SCALAR_CAP` table, neither of which knows about `landed`. Without the entry the writer's cap check never fires, and the schema's own limit becomes the only guard — with a different refusal shape than every other spine scalar. Add it, and derive the union from the `Spine` type if that is cheap.
+- `test/spawn/forgery.test.ts` pins a three-element `SPINE_FIELDS` list that does not sweep the new `Landed:` label. Escaping is applied today so nothing is unescaped, but the probe does not cover it. Add the label, and derive the list from the `Spine` scalar keys so the next field forces its own probe.
+
 - [ ] **Step 6: Add artifacts to open_thread**
 
 Input gains an optional `artifacts` array of `ArtifactAddSchema` shape. The handler mints an id per entry and sets `retired: false`, exactly as it does for criteria.
@@ -930,6 +1010,29 @@ After `U1`'s renumbering, preflight ends at step 9 (`Print the returned resume_t
 11. Stop.
 ```
 
+- [ ] **Step 4b: Cover the session-entry branch**
+
+`sessions/<id>/` is the shape `log_session_event` and `park_thread` produce — the two most common recording calls — and no existing test covers it. A missing trailing slash leaves every other test green while the gate stops clearing for both. Add:
+
+```ts
+test('hook.stop-gate-clears-when-a-session-entry-for-the-held-thread-reaches-the-ledger', async () => {
+  const rt = testRuntime()
+  const held = await openFixtureThread(rt, 'held-3')
+  await resumeThreadTool.handler(rt, { thread_id: held.threadId })
+
+  await logSessionEventTool.handler(rt, { thread_id: held.threadId, actor: 'ana', body: 'established something' })
+
+  const verdict = stopGateVerdict(rt, {
+    session_id: rt.sessionId,
+    cwd: rt.cwd,
+    transcript_path: null,
+    stop_hook_active: false
+  })
+
+  assert.equal(verdict.kind, 'silent')
+})
+```
+
 - [ ] **Step 5: Run the tests to verify they pass**
 
 ```bash
@@ -1014,16 +1117,30 @@ Expected: `hook.stop-gate-still-blocks-when-only-an-unrelated-thread-moved` FAIL
 
 In `src/hooklib/ledger-presence.ts`:
 
+The return type must distinguish a failed diff from an empty one. Collapsing both into `string[]` is what makes the gate clear on a content-free head move, which is the same defect this unit exists to close.
+
 ```ts
-export const ledgerPathsChangedSince = (rt: Runtime, projectRoot: string, baselineHead: string): string[] => {
-  const result = git(rt, projectRoot, ['diff', '--name-only', baselineHead, LEDGER_REF])
-  if (!result.ok) {
-    rt.log({ level: 'warn', event: 'stop-gate.ledger-diff-unreadable', code: result.code, detail: result.stderr.trim() })
-    return []
+export type LedgerDiff = { ok: true; paths: string[] } | { ok: false; detail: string }
+
+export const ledgerPathsChangedSince = (rt: Runtime, projectRoot: string, baselineHead: string): LedgerDiff => {
+  if (!SHA_PATTERN.test(baselineHead)) {
+    return { ok: false, detail: 'the recorded ledger head is not an object id' }
   }
-  return result.stdout.split('\n').map((line) => line.trim()).filter((line) => line.length > 0)
+  const result = git(rt, projectRoot, ['diff', '--name-only', '--end-of-options', baselineHead, LEDGER_REF])
+  if (!result.ok) {
+    const detail = result.stderr.trim()
+    rt.log({ level: 'warn', event: 'stop-gate.ledger-diff-unreadable', code: result.code, detail })
+    return { ok: false, detail }
+  }
+  return { ok: true, paths: result.stdout.split('\n').map((line) => line.trim()).filter((line) => line.length > 0) }
 }
 ```
+
+Two guards here are not optional.
+
+`SHA_PATTERN` from `src/schema/ids.ts` matches every value `readLedgerHead` can produce. Without it, a `resume-baseline.json` holding `--output=/some/path` reaches git's argv as an **option** rather than a revision, and git writes its diff to that path and prints nothing — clearing the gate. That field was inert before this unit; this diff is what makes it a subprocess argument. Also reject it in `readResumeBaseline` at the read boundary, exactly as `src/store/resumable.ts` already does for the same class of value in the same directory.
+
+`--end-of-options` stops git parsing later arguments as options. Do **not** use `--` instead: it separates revisions from pathspecs, so both arguments get reclassified as paths and the command exits clean with no output — a silent wrong answer rather than an error.
 
 - [ ] **Step 4: Tighten the verdict**
 
@@ -1034,27 +1151,40 @@ export const ledgerPathsChangedSince = (rt: Runtime, projectRoot: string, baseli
   if (head === null) return { kind: 'silent' }
   if (head === baseline.ledger_head) return { kind: 'block', reason: heldThreadReason(pointerRead.value.thread_id) }
 
-  const changed = ledgerPathsChangedSince(rt, layout.projectRoot, baseline.ledger_head)
-  if (changed.length === 0) return { kind: 'silent' }
-
   const threadId = pointerRead.value.thread_id
-  const touchesHeldThread = changed.some(
-    (path) => path === `threads/${threadId}.json` || path.startsWith(`sessions/${threadId}/`)
+  const diff = ledgerPathsChangedSince(rt, layout.projectRoot, baseline.ledger_head)
+  if (!diff.ok) return { kind: 'silent' }
+  if (diff.paths.length === 0) return { kind: 'block', reason: ledgerUntouchedReason(threadId) }
+
+  const touchesHeldThread = diff.paths.some(
+    (changedPath) => changedPath === `threads/${threadId}.json` || changedPath.startsWith(`sessions/${threadId}/`)
   )
   if (touchesHeldThread) return { kind: 'silent' }
 
-  return { kind: 'block', reason: heldThreadReason(threadId) }
+  return { kind: 'block', reason: ledgerMismatchReason(threadId) }
 ```
 
-with the message:
+`!diff.ok` clears because a broken git cannot be satisfied by any action a session can take. An empty **successful** diff blocks, because the ledger tree did not change and so cannot have touched the held thread — and `record_decision`, `update_thread` and `park_thread` all satisfy it. Naming the lambda parameter `changedPath` rather than `path` avoids shadowing the `node:path` import.
+
+**Two messages, not one.** The gate blocks in two different situations and no single text is honest in both. When the ref never moved, nothing reached the ledger at all. When it moved without touching this thread, records genuinely did land — they just belong elsewhere. A message asserting records landed is false in the first case; one asserting nothing was recorded is false in the second.
+
+So write two builders, each true where it is used, both naming the thread and both keeping the honesty clause:
 
 ```ts
-const heldThreadReason = (threadId: string): string =>
-  `Logbook: nothing has reached thread ${threadId} since it was resumed. Records landed on the ledger, but none of ` +
-  `them belongs to the thread this session is working. Record what was established with record_decision, note ` +
-  `progress with update_thread, or end this session's work on the thread with park_thread. This verdict reports ` +
-  `only that something reached this thread; it makes no claim that what is recorded is complete.`
+const nothingReachedLedgerReason = (threadId: string): string =>
+  `Logbook: nothing has reached this project's ledger since thread ${threadId} was resumed. Record what was ` +
+  `established with record_decision, note progress with update_thread, or end this session's work on the thread ` +
+  `with park_thread. This verdict reports only that something reached the thread; it makes no claim that what is ` +
+  `recorded is complete.`
+
+const nothingReachedThreadReason = (threadId: string): string =>
+  `Logbook: records reached this project's ledger since thread ${threadId} was resumed, but none of them belongs ` +
+  `to the thread this session is working. Record what was established with record_decision, note progress with ` +
+  `update_thread, or end this session's work on the thread with park_thread. This verdict reports only that ` +
+  `something reached the thread; it makes no claim that what is recorded is complete.`
 ```
+
+Use the first where `head === baseline.ledger_head`, the second where the ref moved but no changed path names the held thread.
 
 Keep `LEDGER_PRESENCE_REASON` exported if any test imports it; otherwise delete it and update the message assertion in `hook.stop-gate-ledger-message-claims-presence-and-never-completeness`.
 
@@ -1064,7 +1194,11 @@ Keep `LEDGER_PRESENCE_REASON` exported if any test imports it; otherwise delete 
 npm run typecheck && npm test
 ```
 
-Expected: `hook.stop-gate-clears-the-moment-something-reaches-the-ledger` will need its fixture changed — it currently commits an unrelated thread on purpose. Rename it to `hook.stop-gate-clears-when-the-held-thread-reaches-the-ledger` and point its write at the held thread.
+**Three existing tests assert the old behaviour and all three need correcting**, not the two an earlier draft of this plan named:
+
+- `hook.stop-gate-clears-the-moment-something-reaches-the-ledger` commits an unrelated thread and expects `silent`. Rename it to `hook.stop-gate-clears-when-the-held-thread-reaches-the-ledger` and point its write at the held thread.
+- `hook.stop-gate-re-evaluates-rather-than-latching` does the same thing for the same wrong reason. Point its write at the held thread; the re-evaluation behaviour it covers is unchanged.
+- `hook.stop-gate-ledger-message-claims-presence-and-never-completeness` asserts on the message text you are replacing. It now has two messages to cover.
 
 - [ ] **Step 6: Commit and open the PR**
 
