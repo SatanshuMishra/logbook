@@ -415,6 +415,7 @@ test('merge.a-one-sided-artifact-removal-conflicts-rather-than-losing', () => {
 
   assert.equal(result.ok, false)
   if (result.ok) throw new Error('expected the merge to refuse')
+  assert.equal(result.conflicts.length, 1)
   const found = result.conflicts[0]
   assert.ok(found)
   assert.equal(found.field, `artifacts[${ULID_C}]`)
@@ -431,16 +432,38 @@ test('merge.a-one-sided-risk-removal-conflicts-rather-than-losing', () => {
 
   assert.equal(result.ok, false)
   if (result.ok) throw new Error('expected the merge to refuse')
+  assert.equal(result.conflicts.length, 1)
   const found = result.conflicts[0]
   assert.ok(found)
   assert.equal(found.field, `spine.open_risks[${ULID_C}]`)
 })
 
 test('merge.every-declared-rule-path-is-written-by-the-merge', () => {
-  const declared = Object.keys(THREAD_RULES).filter((path) => !path.startsWith('spine.') && path !== 'spine')
-  const written = mergedThreadFieldPaths()
+  const artifact = { id: ULID_C, label: 'the plan', pointer: 'docs/plans/x.md', retired: false }
+  const populated = (): Thread => baseThread({ predecessor_id: ULID_A, artifacts: [artifact] })
+
+  const result = mergeThread(populated(), populated(), populated())
+
+  assert.equal(result.ok, true)
+  if (!result.ok) throw new Error('expected the merge to succeed')
+
+  const written = [
+    ...Object.keys(result.merged),
+    ...Object.keys(result.merged.spine).map((key) => `spine.${key}`)
+  ]
+  const declared = Object.keys(THREAD_RULES)
 
   census(declared, (path) => (written.includes(path) ? 'allowed' : 'unclassifiable'))
+  census(written, (path) => (path in THREAD_RULES ? 'allowed' : 'unclassifiable'))
+  census(mergedThreadFieldPaths(), (path) => (written.includes(path) ? 'allowed' : 'unclassifiable'))
+})
+
+test('merge.a-thread-with-no-artifacts-gains-no-artifacts-key', () => {
+  const result = mergeThread(baseThread(), baseThread(), baseThread())
+
+  assert.equal(result.ok, true)
+  if (!result.ok) throw new Error('expected the merge to succeed')
+  assert.equal('artifacts' in result.merged, false)
 })
 
 test('merge.rule-table-is-covered.walk-finds-spine-and-top-level-paths', () => {
