@@ -172,6 +172,7 @@ const threadFromSpec = (rt: Runtime, spec: SeedSpec, index: number): Thread => {
     spine: {
       active_goal: spec.activeGoal ?? SEEDED_ACTIVE_GOAL,
       next_step: spec.nextStep,
+      landed: '',
       last_session: spec.lastSession ?? SEEDED_LAST_SESSION,
       open_risks: [],
       key_decisions: [],

@@ -18,6 +18,7 @@ const baseThread = (): Thread => ({
   spine: {
     active_goal: 'ship it',
     next_step: 'write the tests',
+    landed: '',
     last_session: 'read the spec',
     open_risks: [],
     key_decisions: [],
@@ -29,7 +30,7 @@ const baseThread = (): Thread => ({
 
 test('thread-schema.criterion-id.a-risk-carrying-it-round-trips', () => {
   const thread = baseThread()
-  const riskWithCriterionId = { id: RISK_ID, scope: 'ship it', text: 'a risk', refs: [], criterion_id: CRITERION_ID }
+  const riskWithCriterionId = { id: RISK_ID, scope: 'ship it', text: 'a risk', refs: [], criterion_id: CRITERION_ID, retired: false }
   const threadWithTaggedRisk: Thread = {
     ...thread,
     spine: { ...thread.spine, open_risks: [riskWithCriterionId] }
@@ -69,7 +70,7 @@ test('thread-schema.criterion-id.a-key-decision-carrying-it-round-trips', () => 
 
 test('thread-schema.criterion-id.a-risk-without-it-still-parses-unanchored', () => {
   const thread = baseThread()
-  const untaggedRisk = { id: RISK_ID, scope: 'shipped regressions', text: 'a risk naming no criterion', refs: [] }
+  const untaggedRisk = { id: RISK_ID, scope: 'shipped regressions', text: 'a risk naming no criterion', refs: [], retired: false }
   const threadWithUntaggedRisk: Thread = {
     ...thread,
     spine: { ...thread.spine, open_risks: [untaggedRisk] }

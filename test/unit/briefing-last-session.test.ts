@@ -24,6 +24,7 @@ const threadWith = (lastSession: string): Thread => ({
   spine: {
     active_goal: 'ship the derivation',
     next_step: 'write the tests',
+    landed: '',
     last_session: lastSession,
     open_risks: [],
     key_decisions: [],

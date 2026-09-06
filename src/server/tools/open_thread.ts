@@ -171,6 +171,7 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
       spine: {
         active_goal: '',
         next_step: '',
+        landed: '',
         last_session: '',
         open_risks: [],
         key_decisions: [],

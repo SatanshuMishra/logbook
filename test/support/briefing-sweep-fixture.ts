@@ -64,6 +64,7 @@ export const buildSweepFixture = (rt: Runtime, shape: SweepShape): SweepFixture 
     scope: 'sweep',
     text: fillOf(caps.RISK_TEXT_MAX),
     refs: [fillOf(RISK_REF_HELD_LENGTH)],
+    retired: false,
     ...anchor
   }))
 
@@ -90,6 +91,7 @@ export const buildSweepFixture = (rt: Runtime, shape: SweepShape): SweepFixture 
     spine: {
       active_goal: 'closed',
       next_step: 'closed',
+      landed: '',
       last_session: 'closed',
       open_risks: [],
       key_decisions: [],
@@ -110,6 +112,7 @@ export const buildSweepFixture = (rt: Runtime, shape: SweepShape): SweepFixture 
     spine: {
       active_goal: fillOf(caps.SPINE_ACTIVE_GOAL_MAX),
       next_step: fillOf(caps.SPINE_NEXT_STEP_MAX),
+      landed: '',
       last_session: fillOf(caps.SPINE_LAST_SESSION_MAX),
       open_risks: risks,
       key_decisions: keyDecisions,

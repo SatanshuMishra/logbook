@@ -8,6 +8,7 @@ export const BINDING_BRANCH_MAX = 255
 export const SPINE_ACTIVE_GOAL_MAX = 500
 export const SPINE_NEXT_STEP_MAX = 500
 export const SPINE_LAST_SESSION_MAX = 500
+export const SPINE_LANDED_MAX = 500
 
 export const CRITERIA_MAX_ELEMENTS = 40
 export const CRITERIA_RETENTION_MAX_ELEMENTS = 200
@@ -30,6 +31,7 @@ export const OUT_OF_SCOPE_TEXT_MAX = 300
 
 export const ARTIFACT_LABEL_MAX = 200
 export const ARTIFACT_POINTER_MAX = 500
+export const ARTIFACTS_PER_CALL_MAX_ELEMENTS = 40
 
 export const DECISION_TITLE_MAX = 200
 export const DECISION_CONTEXT_MAX = 4000

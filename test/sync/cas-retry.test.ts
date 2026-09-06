@@ -31,6 +31,7 @@ const makeThread = (rt: Runtime, slug: string): Extract<RecordChange, { kind: 't
     spine: {
       active_goal: 'goal',
       next_step: 'next',
+      landed: '',
       last_session: 'last',
       open_risks: [],
       key_decisions: [],
@@ -92,6 +93,7 @@ test('sync.cas-retry', () => {
       spine: {
         active_goal: 'goal',
         next_step: 'next',
+        landed: '',
         last_session: 'last',
         open_risks: [],
         key_decisions: [],

@@ -36,6 +36,7 @@ const baseThread = (overrides: Partial<Thread> = {}): Thread => ({
   spine: {
     active_goal: 'ship the thing',
     next_step: 'write the tests',
+    landed: '',
     last_session: 'wrote the renderer',
     open_risks: [],
     key_decisions: [],
@@ -127,14 +128,28 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     status: 'open',
     blocked_by: null,
     completion_criteria: [criterionA, criterionB],
-    artifacts: [{ id: artifactId, label: 'the implementation plan', pointer: 'docs/plans/u5.md' }],
+    artifacts: [{ id: artifactId, label: 'the implementation plan', pointer: 'docs/plans/u5.md', retired: false }],
     spine: {
       active_goal: 'ship the renderer',
       next_step: 'add tests',
+      landed: '',
       last_session: 'wrote the first draft',
       open_risks: [
-        { id: riskId, scope: 'renderer', text: 'escaping might be incomplete', refs: ['docs/specs/goal-model.md#L120'] },
-        { id: settledRiskId, scope: 'renderer', text: 'a risk on a met goal', refs: [], criterion_id: criterionA.id }
+        {
+          id: riskId,
+          scope: 'renderer',
+          text: 'escaping might be incomplete',
+          refs: ['docs/specs/goal-model.md#L120'],
+          retired: false
+        },
+        {
+          id: settledRiskId,
+          scope: 'renderer',
+          text: 'a risk on a met goal',
+          refs: [],
+          criterion_id: criterionA.id,
+          retired: false
+        }
       ],
       key_decisions: [
         { id: rt.ulid(), decision_id: liveDecisionId, title: 'use postgres', scope: 'storage' },
@@ -293,8 +308,9 @@ test('briefing.escapes-every-free-text-field', () => {
     spine: {
       active_goal: '# goal heading',
       next_step: '# next heading',
+      landed: '',
       last_session: '# session heading',
-      open_risks: [{ id: rt.ulid(), scope: 's', text: '# risk heading', refs: [] }],
+      open_risks: [{ id: rt.ulid(), scope: 's', text: '# risk heading', refs: [], retired: false }],
       key_decisions: [{ id: rt.ulid(), decision_id: rt.ulid(), title: '# decision heading', scope: 's' }],
       out_of_scope: [{ id: rt.ulid(), text: '# oos heading' }]
     }
@@ -325,6 +341,7 @@ const risk = (overrides: Partial<Risk> = {}): Risk => ({
   scope: 'x',
   text: 'a risk',
   refs: [],
+  retired: false,
   ...overrides
 })
 
@@ -344,6 +361,7 @@ test('briefing.with-no-focus-declared-every-live-risk-renders-in-the-order-it-wa
     spine: {
       active_goal: 'g',
       next_step: 'n',
+      landed: '',
       last_session: 'l',
       open_risks: [otherRisk, firstRisk],
       key_decisions: [],
@@ -377,6 +395,7 @@ test('briefing.every-out-of-scope-item-renders-and-none-is-counted-away', () => 
     spine: {
       active_goal: 'g',
       next_step: 'n',
+      landed: '',
       last_session: 'l',
       open_risks: [],
       key_decisions: [],
@@ -438,6 +457,7 @@ test('briefing.a-risk-on-a-met-goal-renders-last-and-compact-under-the-settled-h
     spine: {
       active_goal: 'g',
       next_step: 'n',
+      landed: '',
       last_session: 'l',
       open_risks: [settledRisk, unanchoredRisk],
       key_decisions: [],
@@ -485,6 +505,7 @@ test('briefing.a-criterion-beyond-the-forty-that-the-deleted-cap-once-showed-ren
     spine: {
       active_goal: 'g',
       next_step: 'n',
+      landed: '',
       last_session: 'l',
       open_risks: [settledRisk],
       key_decisions: [],
@@ -518,6 +539,7 @@ test('briefing.a-risk-naming-a-criterion-that-no-longer-resolves-is-treated-as-u
     spine: {
       active_goal: 'g',
       next_step: 'n',
+      landed: '',
       last_session: 'l',
       open_risks: [wrongTagRisk],
       key_decisions: [],
@@ -537,7 +559,7 @@ test('briefing.every-unanchored-risk-renders-and-none-is-counted-away', () => {
   const risks: Risk[] = Array.from({ length: 6 }, (_, index) => risk({ text: `unanchored risk number ${index}` }))
   const thread = baseThread({
     completion_criteria: [live],
-    spine: { active_goal: 'g', next_step: 'n', last_session: 'l', open_risks: risks, key_decisions: [], out_of_scope: [] }
+    spine: { active_goal: 'g', next_step: 'n', landed: '', last_session: 'l', open_risks: risks, key_decisions: [], out_of_scope: [] }
   })
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
   for (const item of risks) {
@@ -556,6 +578,7 @@ test('briefing.omits-the-not-shown-tail-when-nothing-was-cut', () => {
     spine: {
       active_goal: 'g',
       next_step: 'n',
+      landed: '',
       last_session: 'l',
       open_risks: [risk()],
       key_decisions: [],
@@ -588,7 +611,7 @@ test('briefing.every-completion-criterion-renders-and-none-is-counted-away', () 
   )
 })
 
-const CRITERION_TEXT_AT_RECORD_BYTE_CEILING = 18
+const CRITERION_TEXT_AT_RECORD_BYTE_CEILING = 14
 const KEY_DECISIONS_AT_RECORD_BYTE_CEILING = 5
 
 const decisionRecordSizedThread = (): Thread => {
@@ -605,7 +628,8 @@ const decisionRecordSizedThread = (): Thread => {
     id: rt.ulid(),
     scope: 'x',
     text: text(500),
-    refs: []
+    refs: [],
+    retired: false
   }))
   const keyDecisions: KeyDecision[] = Array.from({ length: KEY_DECISIONS_AT_RECORD_BYTE_CEILING }, () => ({
     id: rt.ulid(),
@@ -624,6 +648,7 @@ const decisionRecordSizedThread = (): Thread => {
     spine: {
       active_goal: text(500),
       next_step: text(500),
+      landed: '',
       last_session: text(500),
       open_risks: risks,
       key_decisions: keyDecisions,
@@ -700,6 +725,7 @@ const ordinarySmallThread = (): Thread =>
     spine: {
       active_goal: 'make the briefing budget guard byte-denominated',
       next_step: 'assert the ordinary path never enters the clip search',
+      landed: '',
       last_session: 'replaced the single-shot shrink with a convergent search',
       open_risks: [risk({ text: 'the character cap cannot bound multi-byte output' })],
       key_decisions: [],

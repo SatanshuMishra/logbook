@@ -207,6 +207,7 @@ const escapeOutOfScope = (entry: OutOfScope): OutOfScope => ({
 const mergeSpine = (stored: Spine, contribution: SpineContribution): Spine => ({
   active_goal: contribution.active_goal !== undefined ? escapeStored(contribution.active_goal) : stored.active_goal,
   next_step: contribution.next_step !== undefined ? escapeStored(contribution.next_step) : stored.next_step,
+  landed: stored.landed,
   last_session: contribution.last_session !== undefined ? escapeStored(contribution.last_session) : stored.last_session,
   open_risks:
     contribution.open_risks !== undefined

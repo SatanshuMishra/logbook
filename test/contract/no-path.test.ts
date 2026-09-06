@@ -176,6 +176,7 @@ const censusFixtureThread = (rt: Runtime): Thread => ({
   spine: {
     active_goal: 'census fixture goal',
     next_step: 'census fixture next step',
+    landed: '',
     last_session: 'census fixture last session',
     open_risks: [],
     key_decisions: [],
@@ -207,6 +208,7 @@ const buildThreadAtWholeRecordCapEdge = (rt: Runtime): Thread => {
     spine: {
       active_goal: 'census over-cap goal',
       next_step: 'census over-cap next step',
+      landed: '',
       last_session: 'census over-cap last session',
       open_risks: [],
       key_decisions: [],
@@ -938,6 +940,7 @@ const syncFixtureThread = (rt: Runtime, slug: string, title: string): Thread => 
   spine: {
     active_goal: 'sync fixture goal',
     next_step: 'sync fixture next step',
+    landed: '',
     last_session: 'sync fixture last session',
     open_risks: [],
     key_decisions: [],

@@ -28,6 +28,7 @@ const baseThread = (overrides: Partial<Thread> = {}): Thread => ({
   spine: {
     active_goal: 'ship the roster',
     next_step: 'write the tests',
+    landed: '',
     last_session: 'wrote the renderer',
     open_risks: [],
     key_decisions: [],
@@ -211,6 +212,7 @@ test('roster.to-row-maps-next-step-from-spine', () => {
     spine: {
       active_goal: 'a goal',
       next_step: 'the exact next step text',
+      landed: '',
       last_session: 'a session',
       open_risks: [],
       key_decisions: [],

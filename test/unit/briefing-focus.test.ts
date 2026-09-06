@@ -27,6 +27,7 @@ const risk = (overrides: Partial<Risk> = {}): Risk => ({
   scope: 'x',
   text: 'a risk',
   refs: [],
+  retired: false,
   ...overrides
 })
 
@@ -48,6 +49,7 @@ const baseThread = (overrides: Partial<Thread> = {}): Thread => ({
   spine: {
     active_goal: 'ship the thing',
     next_step: 'write the tests',
+    landed: '',
     last_session: 'wrote the renderer',
     open_risks: [],
     key_decisions: [],
@@ -80,6 +82,7 @@ test('briefing.focus.focused-risks-and-key-decisions-render-first', () => {
     spine: {
       active_goal: 'g',
       next_step: 'n',
+      landed: '',
       last_session: 'l',
       open_risks: [riskOnC2, riskOnC1],
       key_decisions: [kdOnC2, kdOnC1],

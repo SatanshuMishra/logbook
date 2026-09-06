@@ -105,6 +105,7 @@ test('lineage.a-record-written-before-this-change-still-parses-and-rosters', asy
         spine: {
           active_goal: 'the goal',
           next_step: 'the next step',
+          landed: '',
           last_session: 'the last session',
           open_risks: [],
           key_decisions: [],

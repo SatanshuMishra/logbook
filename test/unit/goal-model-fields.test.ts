@@ -18,6 +18,7 @@ const legacyThreadShape = (): Record<string, unknown> => ({
   spine: {
     active_goal: 'ship it',
     next_step: 'write the tests',
+    landed: '',
     last_session: 'read the spec',
     open_risks: [],
     key_decisions: [],
@@ -80,7 +81,7 @@ test('goal-model.result-status-accepts-only-the-two-recorded-states', () => {
 test('goal-model.a-thread-carrying-artifacts-round-trips', () => {
   const result = ThreadRecord.parse({
     ...legacyThreadShape(),
-    artifacts: [{ id: ARTIFACT_ID, label: 'the implementation plan', pointer: 'docs/plans/a-plan.md' }]
+    artifacts: [{ id: ARTIFACT_ID, label: 'the implementation plan', pointer: 'docs/plans/a-plan.md', retired: false }]
   })
   assert.equal(result.ok, true)
   if (!result.ok) return

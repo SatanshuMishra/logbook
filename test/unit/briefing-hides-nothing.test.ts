@@ -242,6 +242,7 @@ const threadOf = (overrides: Partial<Thread> = {}): Thread => ({
   spine: {
     active_goal: 'ship the renderer',
     next_step: 'write the tests',
+    landed: '',
     last_session: 'wrote the renderer',
     open_risks: [],
     key_decisions: [],
@@ -266,8 +267,17 @@ test('briefing.a-render-that-fits-its-budget-is-clipped-nowhere', () => {
     spine: {
       active_goal: 'g',
       next_step: 'n',
+      landed: '',
       last_session: 'l',
-      open_risks: [{ id: rt.ulid(), scope: 's', text: ESCAPE_EXPANDING_CHAR.repeat(caps.RISK_TEXT_MAX), refs: [] }],
+      open_risks: [
+        {
+          id: rt.ulid(),
+          scope: 's',
+          text: ESCAPE_EXPANDING_CHAR.repeat(caps.RISK_TEXT_MAX),
+          refs: [],
+          retired: false
+        }
+      ],
       key_decisions: [],
       out_of_scope: []
     }
@@ -358,6 +368,7 @@ test('briefing.every-shortened-value-carries-the-marker-inside-its-own-limit', (
     spine: {
       active_goal: 'ship the renderer',
       next_step: 'write the tests',
+      landed: '',
       last_session: 'wrote the renderer',
       open_risks: [
         {
@@ -365,7 +376,8 @@ test('briefing.every-shortened-value-carries-the-marker-inside-its-own-limit', (
           scope: 's',
           text: 'y'.repeat(SHORTENING_FIXTURE_CRITERION_TEXT_LENGTH),
           refs: [],
-          criterion_id: metCriterion.id
+          criterion_id: metCriterion.id,
+          retired: false
         }
       ],
       key_decisions: [
@@ -422,7 +434,7 @@ test('briefing.every-shortened-value-carries-the-marker-inside-its-own-limit', (
 
 test('briefing.artifacts-render-before-the-spine', () => {
   const thread = threadOf({
-    artifacts: [{ id: rt.ulid(), label: 'the implementation plan', pointer: 'docs/plans/u5.md' }]
+    artifacts: [{ id: rt.ulid(), label: 'the implementation plan', pointer: 'docs/plans/u5.md', retired: false }]
   })
   assert.equal(ThreadRecord.parse(thread).ok, true, 'the artifact fixture must itself be schema-admissible')
 
