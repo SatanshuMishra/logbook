@@ -377,3 +377,82 @@ test('hook.stop-gate-blocks-when-a-ledger-write-lands-before-resume-and-nothing-
     )
   })
 })
+
+test('hook.stop-gate-blocks-when-the-ledger-head-moves-without-changing-the-tree', async () => {
+  await withFixture(async ({ rt, repo }) => {
+    const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
+    startSession(rt, repo, SESSION_ID)
+    await resumeAs(rt, SESSION_ID, threadId)
+
+    assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind, 'block')
+
+    const rawGitOutput = (args: string[], step: string): string => {
+      const result = rawGit(repo, args)
+      assert.equal(result.status, 0, `${step} failed: git ${args.join(' ')}: ${result.stderr}`)
+      return result.stdout.trim()
+    }
+
+    const baselineHead = rawGitOutput(['rev-parse', LEDGER_REF], 'reading the ledger head')
+    const baselineTree = rawGitOutput(['rev-parse', `${baselineHead}^{tree}`], 'reading the ledger head tree')
+    const movedHead = rawGitOutput(
+      ['commit-tree', baselineTree, '-p', baselineHead, '-m', 'a ledger head move that changes no path'],
+      'creating a commit carrying the baseline tree'
+    )
+    rawGitOutput(['update-ref', LEDGER_REF, movedHead], 'pointing the ledger ref at the content-free commit')
+    const movedTree = rawGitOutput(['rev-parse', `${movedHead}^{tree}`], 'reading the moved head tree')
+
+    assert.notEqual(movedHead, baselineHead, 'the fixture must actually move the ledger head')
+    assert.equal(movedTree, baselineTree, 'the fixture head move must leave the ledger tree identical')
+
+    const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
+    assert.equal(
+      verdict.kind,
+      'block',
+      'a head move whose tree is identical to the baseline touched no ledger path, so it cannot have touched the held thread'
+    )
+    if (verdict.kind === 'block') {
+      assert.equal(
+        verdict.reason.includes(RECORDS_REACHED_BUT_NOT_FILED_UNDER_THREAD),
+        false,
+        `no path changed, so the blocking message must not claim records reached the ledger, got: ${verdict.reason}`
+      )
+    }
+  })
+})
+
+test('hook.stop-gate-still-blocks-when-the-worktree-holds-a-file-named-for-the-baseline-head', async () => {
+  await withFixture(async ({ rt, repo }) => {
+    const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
+    startSession(rt, repo, SESSION_ID)
+    await resumeAs(rt, SESSION_ID, threadId)
+
+    assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind, 'block')
+
+    const headRead = rawGit(repo, ['rev-parse', LEDGER_REF])
+    assert.equal(headRead.status, 0, `the fixture must be able to read the baseline ledger head: ${headRead.stderr}`)
+    const baselineHead = headRead.stdout.trim()
+    writeFileSync(join(repo, baselineHead), 'a worktree file whose name is also the baseline ledger head\n')
+
+    commitOneThread(rt, repo, 'stop-gate-presence-unrelated')
+
+    const unseparated = rawGit(repo, ['diff', '--name-only', '--end-of-options', baselineHead, LEDGER_REF])
+    assert.notEqual(
+      unseparated.status,
+      0,
+      'git must refuse this diff while no separator ends the revisions, or the decoy poses no hazard and this test binds nothing'
+    )
+
+    const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
+    assert.equal(
+      verdict.kind,
+      'block',
+      'a worktree file sharing its name with the baseline ledger head must not turn the ledger diff into a cleared gate'
+    )
+    if (verdict.kind === 'block') {
+      assert.ok(
+        verdict.reason.includes(RECORDS_REACHED_BUT_NOT_FILED_UNDER_THREAD),
+        `the changed ledger paths must still be read despite the name collision, got: ${verdict.reason}`
+      )
+    }
+  })
+})

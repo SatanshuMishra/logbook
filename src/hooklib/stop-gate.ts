@@ -95,11 +95,12 @@ const ledgerPresenceVerdict = (rt: Runtime, event: StopEvent, layout: StoreLayou
   if (head === null) return { kind: 'silent' }
   if (head === baseline.ledger_head) return { kind: 'block', reason: ledgerUntouchedReason(pointerRead.value.thread_id) }
 
-  const changed = ledgerPathsChangedSince(rt, layout.projectRoot, baseline.ledger_head)
-  if (changed.length === 0) return { kind: 'silent' }
-
   const threadId = pointerRead.value.thread_id
-  const touchesHeldThread = changed.some(
+  const diff = ledgerPathsChangedSince(rt, layout.projectRoot, baseline.ledger_head)
+  if (!diff.ok) return { kind: 'silent' }
+  if (diff.paths.length === 0) return { kind: 'block', reason: ledgerUntouchedReason(threadId) }
+
+  const touchesHeldThread = diff.paths.some(
     (changedPath) => changedPath === `threads/${threadId}.json` || changedPath.startsWith(`sessions/${threadId}/`)
   )
   if (touchesHeldThread) return { kind: 'silent' }
