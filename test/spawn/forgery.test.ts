@@ -19,7 +19,7 @@ import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
 import { BRIEFING_HEADING } from '../../src/render/briefing.ts'
 import { renderThreadListing } from '../../src/cli/session-start.ts'
 import { UNRECOGNIZED_KEY_NAME_MAX } from '../../src/schema/caps.ts'
-import type { Thread } from '../../src/schema/thread.ts'
+import type { Spine, Thread } from '../../src/schema/thread.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const ENTRY = path.join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
@@ -153,10 +153,12 @@ type SeedSpec = {
   count: number
   activeGoal?: string
   lastSession?: string
+  landed?: string
 }
 
 const SEEDED_ACTIVE_GOAL = 'the seeded active goal'
 const SEEDED_LAST_SESSION = 'the seeded last session'
+const SEEDED_LANDED = 'the seeded landed text'
 
 const threadFromSpec = (rt: Runtime, spec: SeedSpec, index: number): Thread => {
   const stamp = rt.now()
@@ -172,7 +174,7 @@ const threadFromSpec = (rt: Runtime, spec: SeedSpec, index: number): Thread => {
     spine: {
       active_goal: spec.activeGoal ?? SEEDED_ACTIVE_GOAL,
       next_step: spec.nextStep,
-      landed: '',
+      landed: spec.landed ?? SEEDED_LANDED,
       last_session: spec.lastSession ?? SEEDED_LAST_SESSION,
       open_risks: [],
       key_decisions: [],
@@ -557,10 +559,18 @@ const controlSpineValue = (index: number): string => `a plainly benign spine pro
 const BENIGN_SPINE_ACTIVE_GOAL = 'a plainly benign active goal'
 const BENIGN_SPINE_LAST_SESSION = 'a plainly benign last session summary'
 const BENIGN_SPINE_NEXT_STEP = 'a plainly benign next step for the spine probe'
+const BENIGN_SPINE_LANDED = 'a plainly benign landed summary'
 
-type SpineField = 'active_goal' | 'last_session' | 'next_step'
+type SpineField = { [K in keyof Spine]: Spine[K] extends unknown[] ? never : K }[keyof Spine]
 
-const SPINE_FIELDS: readonly SpineField[] = ['active_goal', 'last_session', 'next_step']
+const SPINE_RESOURCE_LABELS: Readonly<Record<SpineField, string>> = {
+  active_goal: 'Active goal: ',
+  last_session: 'Last session: ',
+  landed: 'Landed: ',
+  next_step: 'Next step: '
+}
+
+const SPINE_FIELDS: readonly SpineField[] = Object.keys(SPINE_RESOURCE_LABELS) as SpineField[]
 
 const seedSpecForSpineField = (field: SpineField, value: string): SeedSpec => {
   const base: SeedSpec = {
@@ -569,10 +579,12 @@ const seedSpecForSpineField = (field: SpineField, value: string): SeedSpec => {
     nextStep: BENIGN_SPINE_NEXT_STEP,
     activeGoal: BENIGN_SPINE_ACTIVE_GOAL,
     lastSession: BENIGN_SPINE_LAST_SESSION,
+    landed: BENIGN_SPINE_LANDED,
     count: 1
   }
   if (field === 'active_goal') return { ...base, activeGoal: value }
   if (field === 'last_session') return { ...base, lastSession: value }
+  if (field === 'landed') return { ...base, landed: value }
   return { ...base, nextStep: value }
 }
 
@@ -587,12 +599,6 @@ const forgesStructureAtLineStart = (text: string): boolean =>
 
 const linesEqualTo = (text: string, wanted: string): number =>
   linesOf(text).filter((line) => line === wanted).length
-
-const SPINE_RESOURCE_LABELS: Readonly<Record<SpineField, string>> = {
-  active_goal: 'Active goal: ',
-  last_session: 'Last session: ',
-  next_step: 'Next step: '
-}
 
 const spineValuePrefixOn = (surface: keyof BriefingSurfaces, field: SpineField): string =>
   surface === 'briefingResource' ? SPINE_RESOURCE_LABELS[field] : ''
