@@ -9,6 +9,8 @@ import { ThreadRecord, type Thread } from '../../schema/thread.ts'
 import { openProjectStore, loadThread } from '../tool-support.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import { withDetail } from '../../store/detail.ts'
+import { layoutFor } from '../../store/layout.ts'
+import { releasePointerIfOwned } from '../../domain/pointer.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 
@@ -101,6 +103,9 @@ export const closeThreadTool: ToolSpec<CloseThreadInput, CloseThreadOutput> = {
     if (!opened.ok) return { ok: false, refusal: opened.refusal }
     const store = opened.value
 
+    const layout = layoutFor(rt, rt.cwd)
+    if (!layout.ok) return { ok: false, refusal: layout }
+
     const loaded = loadThread(store, 'thread_id', input.thread_id)
     if (!loaded.ok) return { ok: false, refusal: loaded.refusal }
     const thread = loaded.value
@@ -138,6 +143,8 @@ export const closeThreadTool: ToolSpec<CloseThreadInput, CloseThreadOutput> = {
     if (!committed.ok) {
       return { ok: false, refusal: commitFailureRefusal(committed.detail) }
     }
+
+    releasePointerIfOwned(rt, layout.value, thread.id)
 
     const split = resultStatusSplitOf(validated.value)
 
