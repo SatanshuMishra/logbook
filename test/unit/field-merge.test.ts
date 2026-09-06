@@ -12,7 +12,8 @@ import {
   mergeThreadTraced,
   mergeDecision,
   mergeSession,
-  resolveScalarField
+  resolveScalarField,
+  mergedThreadFieldPaths
 } from '../../src/merge/field-merge.ts'
 import type { FieldRule } from '../../src/merge/field-merge.ts'
 
@@ -388,6 +389,81 @@ test('merge.rule-table-is-covered', () => {
   for (const rule of usedRules) {
     assert.ok(exercisedRules.has(rule), `no rule dispatch in field-merge.ts exercised ${rule}`)
   }
+})
+
+test('merge.artifacts-survive-the-merge', () => {
+  const artifact = { id: ULID_C, label: 'the plan', pointer: 'docs/plans/x.md', retired: false }
+  const base = baseThread({ artifacts: [] })
+  const ours = baseThread({ artifacts: [artifact] })
+  const theirs = baseThread({ artifacts: [] })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(result.ok, true)
+  if (!result.ok) throw new Error('expected the merge to succeed')
+  assert.deepEqual(result.merged.artifacts, [artifact])
+})
+
+test('merge.a-one-sided-artifact-removal-conflicts-rather-than-losing', () => {
+  const live = { id: ULID_C, label: 'the plan', pointer: 'docs/plans/x.md', retired: false }
+  const gone = { ...live, retired: true }
+  const base = baseThread({ artifacts: [live] })
+  const ours = baseThread({ artifacts: [gone] })
+  const theirs = baseThread({ artifacts: [live] })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(result.ok, false)
+  if (result.ok) throw new Error('expected the merge to refuse')
+  assert.equal(result.conflicts.length, 1)
+  const found = result.conflicts[0]
+  assert.ok(found)
+  assert.equal(found.field, `artifacts[${ULID_C}]`)
+})
+
+test('merge.a-one-sided-risk-removal-conflicts-rather-than-losing', () => {
+  const live = { id: ULID_C, scope: 'merge', text: 'a risk', refs: [], retired: false }
+  const gone = { ...live, retired: true }
+  const base = baseThread()
+  const ours = baseThread({ spine: { ...baseSpine(), open_risks: [gone] } })
+  const theirs = baseThread({ spine: { ...baseSpine(), open_risks: [live] } })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(result.ok, false)
+  if (result.ok) throw new Error('expected the merge to refuse')
+  assert.equal(result.conflicts.length, 1)
+  const found = result.conflicts[0]
+  assert.ok(found)
+  assert.equal(found.field, `spine.open_risks[${ULID_C}]`)
+})
+
+test('merge.every-declared-rule-path-is-written-by-the-merge', () => {
+  const artifact = { id: ULID_C, label: 'the plan', pointer: 'docs/plans/x.md', retired: false }
+  const populated = (): Thread => baseThread({ predecessor_id: ULID_A, artifacts: [artifact] })
+
+  const result = mergeThread(populated(), populated(), populated())
+
+  assert.equal(result.ok, true)
+  if (!result.ok) throw new Error('expected the merge to succeed')
+
+  const written = [
+    ...Object.keys(result.merged),
+    ...Object.keys(result.merged.spine).map((key) => `spine.${key}`)
+  ]
+  const declared = Object.keys(THREAD_RULES)
+
+  census(declared, (path) => (written.includes(path) ? 'allowed' : 'unclassifiable'))
+  census(written, (path) => (path in THREAD_RULES ? 'allowed' : 'unclassifiable'))
+  census(mergedThreadFieldPaths(), (path) => (written.includes(path) ? 'allowed' : 'unclassifiable'))
+})
+
+test('merge.a-thread-with-no-artifacts-gains-no-artifacts-key', () => {
+  const result = mergeThread(baseThread(), baseThread(), baseThread())
+
+  assert.equal(result.ok, true)
+  if (!result.ok) throw new Error('expected the merge to succeed')
+  assert.equal('artifacts' in result.merged, false)
 })
 
 test('merge.rule-table-is-covered.walk-finds-spine-and-top-level-paths', () => {

@@ -214,6 +214,12 @@ export const mergeThreadTraced = (base: Thread | null, ours: Thread, theirs: Thr
     ours.spine.out_of_scope,
     theirs.spine.out_of_scope
   )
+  const artifactsResolution = unionByIdWithConflict(
+    recordName,
+    'artifacts',
+    ours.artifacts ?? [],
+    theirs.artifacts ?? []
+  )
   const updatedAtResolution = resolveUpdatedAt(ours, theirs)
 
   const dispatchedRules: FieldRule[] = [
@@ -222,6 +228,7 @@ export const mergeThreadTraced = (base: Thread | null, ours: Thread, theirs: Thr
     openRisksResolution.dispatchedRule,
     keyDecisionsResolution.dispatchedRule,
     outOfScopeResolution.dispatchedRule,
+    artifactsResolution.dispatchedRule,
     updatedAtResolution.dispatchedRule
   ]
 
@@ -230,7 +237,8 @@ export const mergeThreadTraced = (base: Thread | null, ours: Thread, theirs: Thr
     ...criteriaResolution.conflicts,
     ...openRisksResolution.conflicts,
     ...keyDecisionsResolution.conflicts,
-    ...outOfScopeResolution.conflicts
+    ...outOfScopeResolution.conflicts,
+    ...artifactsResolution.conflicts
   ]
 
   if (conflicts.length > 0) {
@@ -249,6 +257,9 @@ export const mergeThreadTraced = (base: Thread | null, ours: Thread, theirs: Thr
     blocked_by: byPath.get('blocked_by') as Thread['blocked_by'],
     ...(mergedPredecessorId === undefined ? {} : { predecessor_id: mergedPredecessorId }),
     completion_criteria: criteriaResolution.merged,
+    ...(artifactsResolution.merged.length === 0 && ours.artifacts === undefined && theirs.artifacts === undefined
+      ? {}
+      : { artifacts: artifactsResolution.merged }),
     spine: {
       active_goal: byPath.get('spine.active_goal') as Spine['active_goal'],
       next_step: byPath.get('spine.next_step') as Spine['next_step'],
@@ -264,6 +275,20 @@ export const mergeThreadTraced = (base: Thread | null, ours: Thread, theirs: Thr
 
   return { result: { ok: true, merged }, dispatchedRules }
 }
+
+export const mergedThreadFieldPaths = (): string[] => [
+  'id',
+  'slug',
+  'title',
+  'status',
+  'blocked_by',
+  'predecessor_id',
+  'completion_criteria',
+  'artifacts',
+  'spine',
+  'created_at',
+  'updated_at'
+]
 
 export const mergeThread = (base: Thread | null, ours: Thread, theirs: Thread): MergeResult<Thread> =>
   mergeThreadTraced(base, ours, theirs).result
