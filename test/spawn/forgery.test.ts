@@ -561,7 +561,7 @@ const BENIGN_SPINE_LAST_SESSION = 'a plainly benign last session summary'
 const BENIGN_SPINE_NEXT_STEP = 'a plainly benign next step for the spine probe'
 const BENIGN_SPINE_LANDED = 'a plainly benign landed summary'
 
-type SpineField = { [K in keyof Spine]: Spine[K] extends string ? K : never }[keyof Spine]
+type SpineField = { [K in keyof Spine]: Spine[K] extends unknown[] ? never : K }[keyof Spine]
 
 const SPINE_RESOURCE_LABELS: Readonly<Record<SpineField, string>> = {
   active_goal: 'Active goal: ',

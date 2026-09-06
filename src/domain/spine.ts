@@ -13,7 +13,7 @@ export type SpineContribution = {
   out_of_scope?: OutOfScope[]
 }
 
-type ScalarField = { [K in keyof Spine]: Spine[K] extends string ? K : never }[keyof Spine]
+type ScalarField = { [K in keyof Spine]: Spine[K] extends unknown[] ? never : K }[keyof Spine]
 type CollectionField = { [K in keyof Spine]: Spine[K] extends unknown[] ? K : never }[keyof Spine]
 
 const SCALAR_CAP: Record<ScalarField, number> = {

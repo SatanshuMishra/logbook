@@ -135,6 +135,58 @@ test('artifacts.retire-marks-the-entry-and-never-deletes-it', async () => {
   })
 })
 
+test('artifacts.re-retiring-an-entry-changes-nothing', async () => {
+  await withHarness('artifacts-session-re-retire', async ({ rt }) => {
+    const threadId = await openFixtureThread(rt, 're-retire-fixture')
+
+    const added = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      risks_add: [{ text: 'a risk to retire twice', scope: 're-retire' }]
+    })
+    assert.equal(added.ok, true, 'expected the risk add call to succeed')
+    if (!added.ok) throw new Error('expected the add to succeed')
+    const riskId = mustGet(added.structured.risks_added, 0, 'the minted risk id')
+
+    const firstRetire = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      risks_retire: [riskId]
+    })
+    assert.equal(firstRetire.ok, true, 'expected the first risk retire call to succeed')
+    if (!firstRetire.ok) throw new Error('expected the first retire to succeed')
+    assert.deepEqual(
+      firstRetire.structured.risks_retired,
+      [riskId],
+      'expected the first retire to report the id as retired'
+    )
+
+    const afterFirstRetire = readThreadRecord(rt, threadId)
+    assert.ok(afterFirstRetire !== null, 'expected the thread to still have a stored record')
+    if (afterFirstRetire === null) throw new Error('expected a stored thread record')
+    const updatedAtAfterFirstRetire = afterFirstRetire.updated_at
+
+    const secondRetire = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      risks_retire: [riskId]
+    })
+    assert.equal(secondRetire.ok, true, 'expected the second risk retire call to succeed')
+    if (!secondRetire.ok) throw new Error('expected the second retire to succeed')
+    assert.deepEqual(
+      secondRetire.structured.risks_retired,
+      [],
+      'expected re-retiring the same id to report nothing retired'
+    )
+
+    const afterSecondRetire = readThreadRecord(rt, threadId)
+    assert.ok(afterSecondRetire !== null, 'expected the thread to still have a stored record')
+    if (afterSecondRetire === null) throw new Error('expected a stored thread record')
+    assert.equal(
+      afterSecondRetire.updated_at,
+      updatedAtAfterFirstRetire,
+      'expected re-retiring the same id to leave updated_at unchanged'
+    )
+  })
+})
+
 test('artifacts.risks-retire-marks-the-entry-and-never-deletes-it', async () => {
   await withHarness('artifacts-session-risks-retire', async ({ rt }) => {
     const threadId = await openFixtureThread(rt, 'artifacts-risks-retire')

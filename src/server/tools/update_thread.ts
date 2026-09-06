@@ -88,7 +88,9 @@ const UpdateThreadInputSchema = z.strictObject({
     .array(ulidField('the id of an open risk currently on this thread'))
     .max(caps.RISKS_PER_CALL_MAX_ELEMENTS)
     .optional()
-    .describe('risk ids to remove from the spine, for example ["01ARZ3NDEKTSV4RRFFQ69G5FAV"]; retiring an id already gone is not an error'),
+    .describe(
+      'risk ids to retire, for example ["01ARZ3NDEKTSV4RRFFQ69G5FAV"]; the entry is marked rather than deleted so the removal survives a sync'
+    ),
   key_decisions_add: z
     .array(KeyDecisionAddSchema)
     .max(caps.KEY_DECISIONS_MAX_ELEMENTS)
@@ -294,11 +296,11 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     })
 
     const retireIds = input.risks_retire ?? []
-    const retiredIds = retireIds.filter((id) => thread.spine.open_risks.some((r) => r.id === id))
+    const retiredIds = retireIds.filter((id) => thread.spine.open_risks.some((r) => r.id === id && !r.retired))
     const survivingRisks = thread.spine.open_risks.map((r) => (retireIds.includes(r.id) ? { ...r, retired: true } : r))
 
     const retireArtifactIds = input.artifacts_retire ?? []
-    const retiredArtifactIds = retireArtifactIds.filter((id) => (thread.artifacts ?? []).some((a) => a.id === id))
+    const retiredArtifactIds = retireArtifactIds.filter((id) => (thread.artifacts ?? []).some((a) => a.id === id && !a.retired))
     const survivingArtifacts = (thread.artifacts ?? []).map((a) =>
       retireArtifactIds.includes(a.id) ? { ...a, retired: true } : a
     )
