@@ -320,6 +320,7 @@ const assembleBriefing = (
     `**Status:** ${escapeStored(thread.status)}`,
     renderBlockage(thread.blocked_by),
     renderPointerStatus(pointer, thread.id),
+    '',
     CONTINUATION_RULE,
     ...artifactLines.slice(0, 1).map(() => ''),
     ...artifactLines.slice(0, 1).map(() => '**Artifacts:**'),

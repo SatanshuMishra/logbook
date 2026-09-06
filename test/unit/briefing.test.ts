@@ -132,7 +132,7 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     spine: {
       active_goal: 'ship the renderer',
       next_step: 'add tests',
-      landed: '',
+      landed: 'the renderer landed with its golden pinned',
       last_session: 'wrote the first draft',
       open_risks: [
         {
@@ -179,6 +179,7 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     '**Status:** open',
     '**Blockage:** none',
     '**Currently being worked:** yes',
+    '',
     'Artifacts carry the route this thread is following. The goals are what the work must satisfy: check what lands against them as it lands, not only at the end.',
     '',
     '**Artifacts:**',
@@ -192,6 +193,10 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     '',
     '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead',
     'wrote the first draft',
+    '',
+    '**Landed:**',
+    '',
+    'the renderer landed with its golden pinned',
     '',
     '**Next step:**',
     '',
@@ -235,6 +240,7 @@ test('briefing.omits-empty-list-sections-entirely', () => {
     '**Status:** done',
     '**Blocked:** still finishing docs',
     '**Currently being worked:** no',
+    '',
     'Artifacts carry the route this thread is following. The goals are what the work must satisfy: check what lands against them as it lands, not only at the end.',
     '',
     '**Active goal:**',
@@ -914,11 +920,7 @@ test('briefing.renders-landed-before-the-next-step', () => {
 })
 
 test('briefing.renders-the-continuation-rule', () => {
-  const base = baseThread()
-  const thread = baseThread({
-    artifacts: [{ id: rt.ulid(), label: 'the implementation plan', pointer: 'docs/plans/u5.md', retired: false }],
-    spine: { ...base.spine, landed: LANDED_TEXT }
-  })
+  const thread = baseThread()
   assert.equal(ThreadRecord.parse(thread).ok, true, 'the continuation-rule fixture must itself be schema-admissible')
 
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
