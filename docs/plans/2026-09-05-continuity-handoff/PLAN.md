@@ -390,6 +390,40 @@ export type Risk = { id: Ulid; scope: string; text: string; refs: string[]; crit
 
 `test/unit/field-merge.test.ts` — add `'spine.landed'` to the array in `merge.rule-table-is-covered.walk-finds-spine-and-top-level-paths`. Add `landed: 'read the spec'` to `baseSpine()`, and `retired: false` to any `Risk` fixture.
 
+- [ ] **Step 5b: Deal honestly with the legacy-record test**
+
+`test/unit/goal-model-fields.test.ts` carries `goal-model.a-record-written-before-this-change-still-parses`, whose assertion reads "a stored record carrying none of the new fields must still parse". Making the new fields required makes that claim false.
+
+**Do not add a migration, and do not edit the fixture until the test goes green.** `H6` rules migration out; a record written by an earlier version is not carried forward. Editing `legacyThreadShape` to add `landed: ''` leaves a test that passes while proving nothing, which is worse than no test at all.
+
+Delete it, or rewrite it to assert what is now true — that a record missing the new fields is refused, and the refusal names the field. A test with no true claim left to make is deleted, never quietly rebased onto a weaker one.
+
+- [ ] **Step 5c: Make the merge fixture prove the descriptor**
+
+`baseSpine()` in `test/unit/field-merge.test.ts` must give `landed` a value **distinct from `last_session`**. Aliased, a descriptor that accidentally reads `t.spine.last_session` passes the entire suite.
+
+```ts
+test('merge.spine-landed-conflicts-on-divergence', () => {
+  const base = baseThread()
+  const ours = baseThread({ spine: { ...baseSpine(), landed: 'ours landed text' } })
+  const theirs = baseThread({ spine: { ...baseSpine(), landed: 'theirs landed text' } })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(result.ok, false)
+  if (result.ok) throw new Error('expected the merge to refuse')
+  const found = result.conflicts[0]
+  assert.ok(found)
+  assert.equal(found.field, 'spine.landed')
+})
+```
+
+- [ ] **Step 5d: Close three test-quality gaps**
+
+- **No in-place mutation.** The Step 1 snippets assign into `baseThread()`'s result, violating the binding immutability rule. Build with a spread, copying `test/unit/thread-schema-criterion-id.test.ts`.
+- **The cap test must name the field.** `assert.equal(parsed.ok, false)` cannot distinguish a `landed` cap refusal from any other. Assert the refusal names `spine.landed`, and add the at-cap case — exactly `SPINE_LANDED_MAX` characters parses.
+- **Describe the field, not the future.** The `retired` descriptions must not promise "renders nowhere and never returns on a sync". Nothing reads the field in this unit and `risks_retire` still hard-deletes until `U4`. Descriptions are not inert: `src/schema/refusal.ts` copies them verbatim into refusal text an agent reads.
+
 - [ ] **Step 6: Run the tests to verify they pass**
 
 ```bash
@@ -397,6 +431,8 @@ npm run typecheck && npm test
 ```
 
 Expected: typecheck clean, suite green. Every fixture that builds a `Spine`, `Risk` or `Artifact` needs the new field; the typecheck names each one.
+
+Note for the PR: the commit subject for this unit is 77 characters. `pr-create` caps a **title** at 72, so the PR title must be shorter than the commit subject.
 
 - [ ] **Step 7: Commit**
 
@@ -741,6 +777,15 @@ const survivingRisks = thread.spine.open_risks.map((r) => (retireIds.includes(r.
 ```
 
 Every `risks_add` path sets `retired: false` on the new risk. The output field `risks_retired` keeps its name; its description becomes `'ids of risks this call marked removed'`.
+
+- [ ] **Step 5b: Close the dead end U2 opens in resolve_conflict**
+
+`spine.landed` is declared `conflict-on-divergence`, so a divergent sync emits a conflict whose field is `spine.landed`. But `resolve_conflict`'s `escapeChosenThreadValue` and its `applyThreadField` switch both stop at `spine.last_session`, so that conflict reaches `unclassifiableFieldRefusal`. Because the tool demands a winner for **every** reported conflict, one unresolvable path refuses the whole resolution — and the sync cannot be cleared by any tool.
+
+It stays latent only until something writes `landed`, which is this unit. So close it here:
+
+- Add the `spine.landed` case beside `spine.last_session` in both `escapeChosenThreadValue` and `applyThreadField`.
+- Add a census deriving the resolvable-path list from the `conflict-on-divergence` entries of `THREAD_RULES`, so the next such field cannot ship without a resolver. This is the same class of gap as the declared-but-unwired merge rule `U3` closes.
 
 - [ ] **Step 6: Add artifacts to open_thread**
 
