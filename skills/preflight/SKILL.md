@@ -13,5 +13,6 @@ description: Use at the start of work to pick up an existing thread.
 6. Present the returned `list_threads.roster` verbatim, with nothing added, absent a single resolved match.
 7. Wait for the human to choose one thread from that roster, absent a single resolved match.
 8. Call `resume_thread` with `resume_thread.thread_id` set to the resolved or chosen thread id.
-9. Print the returned `resume_thread.briefing` verbatim.
-10. Stop.
+9. Print that this session records as it goes, calling `log_session_event` as each meaningful piece of work is established rather than holding everything until hand-off.
+10. Print the returned `resume_thread.briefing` verbatim.
+11. Stop.

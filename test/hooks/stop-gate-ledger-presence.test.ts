@@ -14,6 +14,7 @@ import { writePointer } from '../../src/domain/pointer.ts'
 import { runSessionStart } from '../../src/cli/session-start.ts'
 import { stopGateVerdict } from '../../src/hooklib/stop-gate.ts'
 import { resumeThreadTool } from '../../src/server/tools/resume_thread.ts'
+import { logSessionEventTool } from '../../src/server/tools/log_session_event.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { rawGit } from '../support/git-fixture.ts'
 
@@ -222,6 +223,30 @@ test('hook.stop-gate-clears-on-a-session-entry-for-the-held-thread', async () =>
       cleared.kind,
       'silent',
       'the stop gate must clear once a session entry filed under the held thread reaches the ledger ref'
+    )
+  })
+})
+
+test('hook.stop-gate-clears-when-log-session-event-records-against-the-held-thread', async () => {
+  await withFixture(async ({ rt, repo }) => {
+    const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
+    startSession(rt, repo, SESSION_ID)
+    await resumeAs(rt, SESSION_ID, threadId)
+
+    assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind, 'block')
+
+    const reply = await logSessionEventTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      actor: 'stop-gate-presence-tool-caller',
+      body: 'a session log entry filed through the real log_session_event tool'
+    })
+    assert.equal(reply.ok, true, 'log_session_event must succeed against an open thread held by this session')
+
+    const cleared = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
+    assert.equal(
+      cleared.kind,
+      'silent',
+      'the stop gate must clear once log_session_event has recorded an entry against the held thread'
     )
   })
 })
