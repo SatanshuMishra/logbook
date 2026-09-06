@@ -57,6 +57,17 @@ When a parent merges to `main`, GitHub retargets its child automatically. Do not
 
 Resolve every one of these by merging, never by rebasing.
 
+### Three closed censuses, not two — and one degrades silently
+
+`U1` found that this plan's Task 1 named two closed censuses and there are **three**. The third is the dangerous one.
+
+`test/contract/no-path.test.ts` carries refusal-producer constants and blocks that call each tool with the argument under test. It runs scan-to-tagged, so removing a producer does **not** halt it — the blocks keep passing a key the strict schema now rejects, and tag the resulting parse refusal under a producer id that no longer exists. Silent degradation rather than a loud failure. Any unit removing or renaming a tool argument must check it.
+
+Two smaller misses worth carrying forward, both relevant to `U5`:
+
+- `test/contract/write-tools-ignore-the-pointer.test.ts` holds a pointer literal this plan filed under `test/hooks/*`.
+- `test/contract/resume-settled-lane-clip-budget.test.ts` was not mentioned at all. Its fixture must exceed the payload byte budget for the clip search to run, and deleting the roughly 147-byte Focus line dropped it under. **`U5` adds a `Landed:` block and a continuation sentence to the same render**, so it moves that fixture again — in the other direction. Check it rather than assuming.
+
 ### One census the earlier draft of this plan missed
 
 `test/contract/content-rendered.test.ts` is a closed census: it plants a sentinel in every `content(...)`-classed schema node, renders through `renderThreadDetail`, and fails on any node whose sentinel does not surface. So wrapping `spine.landed` in `content(...)` **forces** a rendering surface in `src/server/resource-render.ts`, whether or not the unit intended one.
