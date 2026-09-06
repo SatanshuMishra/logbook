@@ -113,7 +113,7 @@ const RiskSchema = structural(
       .meta({ class: 'pointer' }),
     criterion_id: optionalUlidField('the criterion this risk ranks against, absent when the risk is unanchored'),
     retired: structural(
-      z.boolean().describe('whether this risk has been removed; a retired risk renders nowhere and never returns on a sync')
+      z.boolean().describe('whether this risk has been retired')
     )
   })
 )
@@ -145,7 +145,7 @@ const ArtifactSchema = structural(
     label: content(z.string().min(1).max(caps.ARTIFACT_LABEL_MAX).describe('what this artifact is, in a few words')),
     pointer: pointer(caps.ARTIFACT_POINTER_MAX, 'a path or url naming where this artifact lives'),
     retired: structural(
-      z.boolean().describe('whether this artifact has been removed; a retired artifact renders nowhere and never returns on a sync')
+      z.boolean().describe('whether this artifact has been retired')
     )
   })
 )
