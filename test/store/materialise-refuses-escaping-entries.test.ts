@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import { git, gitBuffer } from '../../src/store/git.ts'
-import { materialiseTreeInto } from '../../src/store/materialise-tree.ts'
+import { materialiseTreeInto, plainUnsyncedWrite } from '../../src/store/materialise-tree.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { withRepo } from '../support/git-fixture.ts'
 
@@ -70,7 +70,8 @@ test('store.a-tree-entry-escaping-the-destination-is-refused', () => {
     withDestination((destination) => {
       const outcome = materialiseTreeInto(rt, repo, rootTreeId, destination, {
         runGit: git,
-        runGitBuffer: gitBuffer
+        runGitBuffer: gitBuffer,
+        write: plainUnsyncedWrite
       })
 
       assert.equal(

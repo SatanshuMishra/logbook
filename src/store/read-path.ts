@@ -1,12 +1,22 @@
-import { randomUUID } from 'node:crypto'
-import { readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type { Declared } from '../schema/declare.ts'
 import type { Runtime } from '../runtime/runtime.ts'
+import { describeError } from './detail.ts'
+import { durableWrite } from './durable-write.ts'
 import { git, gitBuffer } from './git.ts'
 import type { StoreLayout } from './layout.ts'
-import { materialiseTreeInto } from './materialise-tree.ts'
+import {
+  pruneRecordsAbsentFromRef,
+  refuseSymlinkedRecordsDirectory,
+  verifyMaterialisedNamesRoundTrip,
+  type MaterialiseFailureCause,
+  type MaterialiseOutcome
+} from './materialise-in-place.ts'
+import { listMaterialisableEntries, writeMaterialisedEntries } from './materialise-tree.ts'
 import { LEDGER_REF } from './ref.ts'
+
+export type { MaterialiseFailureCause, MaterialiseOutcome } from './materialise-in-place.ts'
 
 export type Quarantined = { quarantined: true; path: string; reason: string }
 export type Loaded<T> = { quarantined: false; record: T }
@@ -122,25 +132,6 @@ export const advanceMaterialisedStampIfStillCurrent = (
   return { advanced: true }
 }
 
-export type MaterialiseOutcome = { ok: true } | { ok: false; detail: string }
-
-const RECORDS_SCRATCH_DIR_NAME = 'records-scratch'
-
-const recordsScratchRoot = (layout: StoreLayout): string => path.join(layout.root, RECORDS_SCRATCH_DIR_NAME)
-
-const freshRecordsScratchDir = (layout: StoreLayout): string =>
-  path.join(recordsScratchRoot(layout), randomUUID())
-
-const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error))
-
-const errnoOf = (error: unknown): string | null => {
-  if (typeof error === 'object' && error !== null && 'code' in error) {
-    const code = (error as { code?: unknown }).code
-    if (typeof code === 'string') return code
-  }
-  return null
-}
-
 export const discardScratchDir = (rt: Runtime, dir: string): void => {
   try {
     rmSync(dir, { recursive: true, force: true })
@@ -154,67 +145,39 @@ export const discardScratchDir = (rt: Runtime, dir: string): void => {
   }
 }
 
-const swapRecordsTreeIntoPlace = (rt: Runtime, layout: StoreLayout, newTreeDir: string): MaterialiseOutcome => {
-  const displacedDir = freshRecordsScratchDir(layout)
-  let recordsWasDisplaced = false
-
-  try {
-    renameSync(layout.records, displacedDir)
-    recordsWasDisplaced = true
-  } catch (error) {
-    if (errnoOf(error) !== 'ENOENT') {
-      discardScratchDir(rt, newTreeDir)
-      return { ok: false, detail: `renameSync(records -> scratch) failed: ${describeError(error)}` }
-    }
-  }
-
-  try {
-    renameSync(newTreeDir, layout.records)
-  } catch (error) {
-    const placeDetail = `renameSync(scratch -> records) failed: ${describeError(error)}`
-    if (!recordsWasDisplaced) {
-      discardScratchDir(rt, newTreeDir)
-      return { ok: false, detail: placeDetail }
-    }
-    try {
-      renameSync(displacedDir, layout.records)
-    } catch (restoreError) {
-      discardScratchDir(rt, newTreeDir)
-      discardScratchDir(rt, displacedDir)
-      return {
-        ok: false,
-        detail: `${placeDetail}; restoring the displaced records tree also failed: ${describeError(restoreError)}`
-      }
-    }
-    discardScratchDir(rt, newTreeDir)
-    return { ok: false, detail: placeDetail }
-  }
-
-  if (recordsWasDisplaced) {
-    discardScratchDir(rt, displacedDir)
-  }
-
-  return { ok: true }
+const readLedgerRefForPrune = (rt: Runtime, layout: StoreLayout): string | null => {
+  const result = countedMaterialiseGit(rt, layout.projectRoot, ['rev-parse', LEDGER_REF])
+  return result.ok ? result.stdout.trim() : null
 }
 
 const materialiseTree = (rt: Runtime, layout: StoreLayout, ref: string): MaterialiseOutcome => {
-  const newTreeDir = freshRecordsScratchDir(layout)
+  const realDirectory = refuseSymlinkedRecordsDirectory(layout.records)
+  if (!realDirectory.ok) return realDirectory
 
-  const materialised = materialiseTreeInto(rt, layout.projectRoot, ref, newTreeDir, {
-    runGit: countedMaterialiseGit,
-    runGitBuffer: countedMaterialiseGitBuffer
+  const planned = listMaterialisableEntries(rt, layout.projectRoot, ref, layout.records, {
+    runGit: countedMaterialiseGit
   })
-  if (!materialised.ok) {
-    discardScratchDir(rt, newTreeDir)
-    return { ok: false, detail: materialised.detail }
-  }
+  if (!planned.ok) return { ok: false, cause: 'materialisation', detail: planned.detail }
 
-  return swapRecordsTreeIntoPlace(rt, layout, newTreeDir)
+  const pruned = pruneRecordsAbsentFromRef(rt, layout.records, ref, planned.plan.relPaths, () =>
+    readLedgerRefForPrune(rt, layout)
+  )
+  if (!pruned.ok) return pruned
+
+  const written = writeMaterialisedEntries(rt, layout.projectRoot, ref, planned.plan, {
+    runGitBuffer: countedMaterialiseGitBuffer,
+    write: (target, contents) => {
+      durableWrite(target, contents, { log: rt.log })
+    }
+  })
+  if (!written.ok) return { ok: false, cause: 'materialisation', detail: written.detail }
+
+  return verifyMaterialisedNamesRoundTrip(layout.records, ref, planned.plan.relPaths)
 }
 
 export type SyncWorkingCopyOutcome =
   | { ok: true; materialised: boolean; ref: string | null }
-  | { ok: false; detail: string }
+  | { ok: false; cause: MaterialiseFailureCause; detail: string }
 
 export const syncWorkingCopy = (
   rt: Runtime,

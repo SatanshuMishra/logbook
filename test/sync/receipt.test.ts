@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { chmodSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { git } from '../../src/store/git.ts'
@@ -180,6 +181,57 @@ test('sync.an-unconfirmable-push-does-not-claim-pushed', () => {
     )
     assert.equal(receiptOf(outcome).local_sha, null, 'an unconfirmable push reports no local sha')
     assert.equal(receiptOf(outcome).remote_sha, null, 'an unconfirmable push reports no remote sha')
+  })
+})
+
+test('sync.a-fast-forward-whose-records-tree-cannot-be-materialised-does-not-claim-fast-forwarded', () => {
+  withTwoClones((ana, ben, _remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+
+    seedAndCommit(ana, 'unmaterialisable-fast-forward-thread')
+    assert.equal(
+      sync(ana.rt, ana.store, anaLayout).ok,
+      true,
+      'the fixture requires ana to leave a commit on the shared copy for ben to fast-forward to'
+    )
+
+    const elsewhere = mkdtempSync(join(tmpdir(), 'logbook-receipt-unmaterialisable-'))
+    try {
+      rmSync(benLayout.records, { recursive: true, force: true })
+      symlinkSync(elsewhere, benLayout.records)
+
+      const outcome = sync(ben.rt, ben.store, benLayout)
+
+      assert.equal(
+        outcome.ok,
+        false,
+        `a fast-forward whose records tree could not be materialised must not be reported as a success; sync returned ${JSON.stringify(outcome)} while the records tree holds ${JSON.stringify(readdirSync(benLayout.records))}`
+      )
+      if (outcome.ok) return
+      assert.equal(outcome.reason, 'rejected')
+      assert.equal(
+        outcome.cause,
+        'local',
+        'a records tree this machine could not write is a local failure, not an origin rejection'
+      )
+
+      assert.deepEqual(
+        readdirSync(elsewhere),
+        [],
+        'the fixture requires the records tree to have genuinely stayed unmaterialised, so that the refused fast-forward is the thing under assertion'
+      )
+
+      const refusal = rejectedRefusal(outcome)
+      assert.match(
+        refusal.message,
+        /this machine's own ledger could not be updated/,
+        `the operator must be told the failure sits on this machine, but the refusal read: ${refusal.message}`
+      )
+    } finally {
+      rmSync(benLayout.records, { force: true })
+      rmSync(elsewhere, { recursive: true, force: true })
+    }
   })
 })
 

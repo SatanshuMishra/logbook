@@ -21,12 +21,45 @@ const reducePathSegmentForForbiddenComparison = (segment: string): string =>
 export type GitRunner = (rt: Runtime, repo: string, args: string[], opts?: GitOpts) => GitResult
 export type GitBufferRunner = (rt: Runtime, repo: string, args: string[], opts?: GitBufferOpts) => GitBufferResult
 
-export type MaterialiseTreeDeps = { runGit: GitRunner; runGitBuffer: GitBufferRunner }
+export type MaterialiseWrite = (target: string, contents: Uint8Array) => void
 
-export type MaterialiseTreeOutcome = { ok: true } | { ok: false; detail: string }
+export type MaterialiseListingDeps = {
+  runGit: GitRunner
+}
+
+export type MaterialiseWriteDeps = {
+  runGitBuffer: GitBufferRunner
+  write: MaterialiseWrite
+}
+
+export type MaterialiseTreeDeps = MaterialiseListingDeps & MaterialiseWriteDeps
+
+export type MaterialiseTreeOutcome =
+  | { ok: true; relPaths: readonly string[] }
+  | { ok: false; detail: string }
+
+export const plainUnsyncedWrite: MaterialiseWrite = (target, contents) => {
+  writeFileSync(target, contents)
+}
 
 type RawTreeEntry = { mode: string; type: string; objectId: string; relPath: string }
-type ValidatedTreeEntry = { objectId: string; relPath: string }
+
+declare const validatedTreeEntryBrand: unique symbol
+
+export type ValidatedTreeEntry = {
+  readonly objectId: string
+  readonly relPath: string
+  readonly [validatedTreeEntryBrand]: true
+}
+
+export type MaterialisationPlan = {
+  readonly destination: string
+  readonly entries: readonly ValidatedTreeEntry[]
+  readonly relPaths: readonly string[]
+}
+
+const mintValidatedTreeEntry = (objectId: string, relPath: string): ValidatedTreeEntry =>
+  ({ objectId, relPath }) as ValidatedTreeEntry
 
 const parseTreeListing = (
   listing: string
@@ -85,14 +118,14 @@ const validateEntries = (
     if (!resolved.startsWith(destination + path.sep)) {
       return { ok: false, detail: `ledger tree entry ${entry.relPath} resolves outside the materialisation destination` }
     }
-    validated.push({ objectId: entry.objectId, relPath: entry.relPath })
+    validated.push(mintValidatedTreeEntry(entry.objectId, entry.relPath))
   }
   return { ok: true, entries: validated }
 }
 
 const readBatchContents = (
   buffer: Buffer,
-  entries: ValidatedTreeEntry[]
+  entries: readonly ValidatedTreeEntry[]
 ): { ok: true; contents: Buffer[] } | { ok: false; detail: string } => {
   const contents: Buffer[] = []
   let offset = 0
@@ -130,31 +163,30 @@ const readBatchContents = (
   return { ok: true, contents }
 }
 
-const writeEntries = (destination: string, entries: ValidatedTreeEntry[], contents: Buffer[]): void => {
-  entries.forEach((entry, index) => {
-    const destPath = path.resolve(destination, entry.relPath)
+const writeEntries = (
+  plan: MaterialisationPlan,
+  contents: Buffer[],
+  write: MaterialiseWrite
+): void => {
+  plan.entries.forEach((entry, index) => {
+    const destPath = path.resolve(plan.destination, entry.relPath)
     mkdirSync(path.dirname(destPath), { recursive: true })
-    writeFileSync(destPath, contents[index] as Buffer)
+    write(destPath, contents[index] as Buffer)
   })
 }
 
-export const materialiseTreeInto = (
+export type MaterialiseListingOutcome = { ok: true; plan: MaterialisationPlan } | { ok: false; detail: string }
+
+export type MaterialiseWriteOutcome = { ok: true } | { ok: false; detail: string }
+
+export const listMaterialisableEntries = (
   rt: Runtime,
   repo: string,
   ref: string,
   destination: string,
-  deps: MaterialiseTreeDeps
-): MaterialiseTreeOutcome => {
+  deps: MaterialiseListingDeps
+): MaterialiseListingOutcome => {
   const destinationAbs = path.resolve(destination)
-
-  try {
-    mkdirSync(destinationAbs, { recursive: true })
-  } catch (error) {
-    return {
-      ok: false,
-      detail: `the materialisation destination ${destinationAbs} could not be created: ${error instanceof Error ? error.message : String(error)}`
-    }
-  }
 
   const listing = deps.runGit(rt, repo, ['ls-tree', '-r', '-z', '--full-tree', ref])
   if (!listing.ok) {
@@ -167,9 +199,35 @@ export const materialiseTreeInto = (
   const validated = validateEntries(parsed.entries, destinationAbs)
   if (!validated.ok) return validated
 
-  if (validated.entries.length === 0) return { ok: true }
+  return {
+    ok: true,
+    plan: {
+      destination: destinationAbs,
+      entries: validated.entries,
+      relPaths: validated.entries.map((entry) => entry.relPath)
+    }
+  }
+}
 
-  const batchInput = `${validated.entries.map((entry) => entry.objectId).join('\n')}\n`
+export const writeMaterialisedEntries = (
+  rt: Runtime,
+  repo: string,
+  ref: string,
+  plan: MaterialisationPlan,
+  deps: MaterialiseWriteDeps
+): MaterialiseWriteOutcome => {
+  try {
+    mkdirSync(plan.destination, { recursive: true })
+  } catch (error) {
+    return {
+      ok: false,
+      detail: `the materialisation destination ${plan.destination} could not be created: ${error instanceof Error ? error.message : String(error)}`
+    }
+  }
+
+  if (plan.entries.length === 0) return { ok: true }
+
+  const batchInput = `${plan.entries.map((entry) => entry.objectId).join('\n')}\n`
   const batch = deps.runGitBuffer(rt, repo, ['cat-file', '--batch'], { stdin: batchInput })
   if (!batch.ok) {
     const detail = batch.overflow
@@ -178,17 +236,33 @@ export const materialiseTreeInto = (
     return { ok: false, detail }
   }
 
-  const contentsResult = readBatchContents(batch.stdout, validated.entries)
+  const contentsResult = readBatchContents(batch.stdout, plan.entries)
   if (!contentsResult.ok) return contentsResult
 
   try {
-    writeEntries(destinationAbs, validated.entries, contentsResult.contents)
+    writeEntries(plan, contentsResult.contents, deps.write)
   } catch (error) {
     return {
       ok: false,
-      detail: `a materialised file could not be written under ${destinationAbs}: ${error instanceof Error ? error.message : String(error)}`
+      detail: `a materialised file could not be written under ${plan.destination}: ${error instanceof Error ? error.message : String(error)}`
     }
   }
 
   return { ok: true }
+}
+
+export const materialiseTreeInto = (
+  rt: Runtime,
+  repo: string,
+  ref: string,
+  destination: string,
+  deps: MaterialiseTreeDeps
+): MaterialiseTreeOutcome => {
+  const planned = listMaterialisableEntries(rt, repo, ref, destination, deps)
+  if (!planned.ok) return planned
+
+  const written = writeMaterialisedEntries(rt, repo, ref, planned.plan, deps)
+  if (!written.ok) return written
+
+  return { ok: true, relPaths: planned.plan.relPaths }
 }

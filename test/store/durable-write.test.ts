@@ -161,7 +161,7 @@ test('write.write-is-injectable', () => {
     const target = join(dir, 'thread.json')
     writeFileSync(target, 'original contents')
 
-    const writes: { fd: number; contents: string }[] = []
+    const writes: { fd: number; contents: string | Uint8Array }[] = []
     const closes: number[] = []
 
     durableWrite(target, 'captured contents', {

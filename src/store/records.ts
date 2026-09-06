@@ -14,7 +14,8 @@ import {
   readAllRecordFiles,
   readRecordFile,
   readRecordVerdict,
-  syncWorkingCopy
+  syncWorkingCopy,
+  type MaterialiseFailureCause
 } from './read-path.ts'
 import { LEDGER_REF } from './ref.ts'
 import { ensureSingleStore } from './single-store.ts'
@@ -222,9 +223,66 @@ const materialisationRefusal = (detail: string): Refusal =>
     detail
   )
 
+const symlinkedRecordsRefusal = (detail: string): Refusal =>
+  withDetail(
+    {
+      ok: false,
+      field: 'records',
+      accepted: 'a records directory that is a real directory, not a symbolic link',
+      example: 'ls -ld <records-directory>',
+      retryable: true,
+      message:
+        "the store's records directory is a symbolic link, so materialising it would write into and delete from a tree the store does not own; the store was not opened"
+    },
+    detail
+  )
+
+const nameRoundTripRefusal = (detail: string): Refusal =>
+  withDetail(
+    {
+      ok: false,
+      field: 'records',
+      accepted: 'a records directory on a filesystem that keeps every record name the ledger ref carries distinct',
+      example:
+        'point CLAUDE_PLUGIN_DATA at a filesystem that preserves case and does not normalise names, then open the store again',
+      retryable: false,
+      message:
+        "this filesystem folded one of the ledger ref's record names onto another, so that record would be read back carrying a different record's bytes; the store was not opened, and repeating this call refuses again until the store directory sits on a filesystem that keeps those names apart"
+    },
+    detail
+  )
+
+const staleRecordUnremovableRefusal = (detail: string): Refusal =>
+  withDetail(
+    {
+      ok: false,
+      field: 'records',
+      accepted: 'a records directory this store may delete stale record files from',
+      example:
+        'grant this store write permission on the directory holding the file the error log names, then open the store again',
+      retryable: false,
+      message:
+        'a record file the ledger ref no longer carries could not be deleted, so the records tree disagrees with the ledger ref and the store was not opened; the store logged the file it could not delete, and repeating this call refuses again until that file can be removed'
+    },
+    detail
+  )
+
+const materialiseFailureRefusal = (cause: MaterialiseFailureCause, detail: string): Refusal => {
+  switch (cause) {
+    case 'symlinked-records-directory':
+      return symlinkedRecordsRefusal(detail)
+    case 'name-round-trip':
+      return nameRoundTripRefusal(detail)
+    case 'stale-record-unremovable':
+      return staleRecordUnremovableRefusal(detail)
+    case 'materialisation':
+      return materialisationRefusal(detail)
+  }
+}
+
 const ensureMaterialised = (rt: Runtime, layout: StoreLayout): Ok<string | null> | Refusal => {
   const outcome = syncWorkingCopy(rt, layout)
-  if (!outcome.ok) return materialisationRefusal(outcome.detail)
+  if (!outcome.ok) return materialiseFailureRefusal(outcome.cause, outcome.detail)
 
   if (outcome.materialised) return { ok: true, value: outcome.ref }
 
