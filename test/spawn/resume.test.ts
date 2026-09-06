@@ -954,12 +954,17 @@ test('park.releases-the-pointer-when-the-thread-is-already-terminal', async () =
     const { threadId } = await createFixtureThread(fx.spawned, fx.published)
     await callResume(fx.spawned, fx.published, threadId)
 
+    const layout = layoutInFixture(fx.repo, fx.pluginData, fx.homeDir)
+    const pointerBytesWhileOpen = readFileSync(pointerFilePath(layout), 'utf8')
+
     const closed = await callClose(fx.spawned, fx.published, {
       thread_id: threadId,
       outcome: 'abandoned',
       detail: 'no longer needed for this test'
     })
     assertOkResult('close_thread (terminal setup)', closed)
+
+    writeFileSync(pointerFilePath(layout), pointerBytesWhileOpen, 'utf8')
 
     const beforePark = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
 

@@ -93,6 +93,9 @@ pointer does not declare is ignored rather than reported corrupt.
 - `resume_thread` writes the whole pointer and returns `resume_thread.briefing`.
 - `park_thread` releases it. The thread stays `open`; parking is not closing, and a parked thread
   appears in the next roster.
+- `close_thread` releases it too, but only when the pointer names the thread being closed; a pointer
+  naming a different thread is left untouched, so closing one thread never takes another session's
+  hold.
 - At session start, a pointer left behind by a different session is reported as a crash report,
   because its `pointer.session_id` does not match this session's. That comparison is on session
   identity, never on elapsed time.
