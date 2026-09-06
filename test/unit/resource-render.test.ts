@@ -261,6 +261,59 @@ test('resource-render.thread.a-closing-bracket-inside-a-key-decision-scope-canno
   )
 })
 
+test('resource-render.thread.risk-line-carries-no-empty-bracket-pair-when-scope-is-empty', () => {
+  const rendered = renderedDetail(threadWithRisk({ ...RISK_BASE, scope: '' }))
+  const riskLine = linesBetween(rendered, 'Open risks:', 'Key decisions:')[0]
+  assert.ok(riskLine !== undefined, `expected the risk to still render a line, got ${JSON.stringify(rendered)}`)
+  const line = riskLine as string
+  assert.ok(
+    !line.includes('[]'),
+    `expected no empty bracket pair when scope is empty, but the line read: ${line}`
+  )
+  assert.ok(
+    line.includes(RISK_BASE.id),
+    `expected the risk id to still render, but the line read: ${line}`
+  )
+  assert.ok(
+    line.includes(RISK_BASE.text),
+    `expected the risk text to still render, but the line read: ${line}`
+  )
+  assert.ok(
+    !line.includes('  '),
+    `expected no doubled space left where the bracket segment was removed, but the line read: ${line}`
+  )
+})
+
+test('resource-render.thread.key-decision-line-carries-no-empty-bracket-pair-when-scope-is-empty', () => {
+  const rendered = renderedDetail(threadWithKeyDecision({ ...KEY_DECISION_BASE, scope: '' }))
+  const keyDecisionLine = linesBetween(rendered, 'Key decisions:', 'Out of scope:')[0]
+  assert.ok(
+    keyDecisionLine !== undefined,
+    `expected the key decision to still render a line, got ${JSON.stringify(rendered)}`
+  )
+  const line = keyDecisionLine as string
+  assert.ok(
+    !line.includes('[]'),
+    `expected no empty bracket pair when scope is empty, but the line read: ${line}`
+  )
+  assert.ok(
+    line.includes(KEY_DECISION_BASE.id),
+    `expected the key decision id to still render, but the line read: ${line}`
+  )
+  assert.ok(
+    line.includes(KEY_DECISION_BASE.decision_id),
+    `expected the key decision's decision_id to still render, but the line read: ${line}`
+  )
+  assert.ok(
+    line.includes(KEY_DECISION_BASE.title),
+    `expected the key decision title to still render, but the line read: ${line}`
+  )
+  assert.ok(
+    !line.includes('  '),
+    `expected no doubled space left where the bracket segment was removed, but the line read: ${line}`
+  )
+})
+
 test('resource-render.sessions.grapheme-budget-not-exceeded-by-astral-first-line', () => {
   const decomposedFirstLine = 'é'.repeat(150)
   assert.ok(decomposedFirstLine.length > 200, 'expected the fixture first line to exceed 200 UTF-16 code units')

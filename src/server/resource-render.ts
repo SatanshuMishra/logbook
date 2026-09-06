@@ -128,10 +128,14 @@ const renderDetailBindingLine = (binding: Binding): string =>
   `- ${escapeStored(binding.id)} ${escapeStored(binding.branch)}`
 
 const renderDetailRiskLine = (risk: Risk): string =>
-  `- ${escapeStored(risk.id)} [${escapeStored(risk.scope, 'bracket-wrapped')}] ${escapeStored(risk.text)}`
+  risk.scope === ''
+    ? `- ${escapeStored(risk.id)} ${escapeStored(risk.text)}`
+    : `- ${escapeStored(risk.id)} [${escapeStored(risk.scope, 'bracket-wrapped')}] ${escapeStored(risk.text)}`
 
 const renderDetailKeyDecisionLine = (keyDecision: KeyDecision): string =>
-  `- ${escapeStored(keyDecision.id)} -> ${escapeStored(keyDecision.decision_id)} [${escapeStored(keyDecision.scope, 'bracket-wrapped')}] ${escapeStored(keyDecision.title)}`
+  keyDecision.scope === ''
+    ? `- ${escapeStored(keyDecision.id)} -> ${escapeStored(keyDecision.decision_id)} ${escapeStored(keyDecision.title)}`
+    : `- ${escapeStored(keyDecision.id)} -> ${escapeStored(keyDecision.decision_id)} [${escapeStored(keyDecision.scope, 'bracket-wrapped')}] ${escapeStored(keyDecision.title)}`
 
 const renderDetailOutOfScopeLine = (outOfScope: OutOfScope): string =>
   `- ${escapeStored(outOfScope.id)} ${escapeStored(outOfScope.text)}`
