@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,6 +11,9 @@ import { listPublishedTools, type PublishedTool } from '../support/published.ts'
 import { generateSchemaCases, type JsonSchemaNode } from '../support/schema-arbitrary.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
+import { writePointer } from '../../src/domain/pointer.ts'
+import { escapeStored } from '../../src/render/escape.ts'
+import * as caps from '../../src/schema/caps.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const ENTRY = join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
@@ -258,6 +261,194 @@ test('close.leaves-a-pointer-naming-another-thread', async () => {
       pointer?.thread_id,
       b.threadId,
       'the pointer must still name thread B after an unrelated thread is closed'
+    )
+  })
+})
+
+test('close.a-refused-closure-leaves-the-pointer-so-park-can-still-record', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published, { slug: 'close-refused-leaves-pointer' })
+    await callResume(fx.spawned, fx.published, threadId)
+
+    const layout = layoutInFixture(fx.repo, fx.pluginData, fx.homeDir)
+    assert.notEqual(
+      readPointerFile(layout),
+      null,
+      'the fixture must start with a pointer naming the thread this session just resumed'
+    )
+
+    const RAW_DETAIL = '<'.repeat(caps.THREAD_CLOSURE_DETAIL_MAX)
+    const escapedLength = escapeStored(RAW_DETAIL).length
+    assert.ok(
+      escapedLength > caps.SESSION_BODY_MAX,
+      'the fixture value must exceed the session-body cap only after escaping'
+    )
+
+    const refused = await callClose(fx.spawned, fx.published, {
+      thread_id: threadId,
+      outcome: 'abandoned',
+      detail: RAW_DETAIL
+    })
+    assert.equal(refused.isError, true, 'a closure detail whose escaped form exceeds the session-body cap must be refused')
+    const text = firstTextOf(refused)
+    assert.equal(
+      text.split('\n')[0],
+      'field: detail',
+      `the refusal must name field detail: ${text}`
+    )
+    assert.match(
+      text,
+      /exceeds its cap of \d+ characters after escaping/,
+      `the refusal message must be the post-escape session-body cap check, distinguishing it from the abandon-reason and closure-statement refusals that also carry field detail: ${text}`
+    )
+    assert.ok(
+      text.includes(String(escapedLength)),
+      `the refusal must name the observed escaped length ${escapedLength}: ${text}`
+    )
+
+    const pointerAfterRefusal = readPointerFile(layout)
+    assert.notEqual(
+      pointerAfterRefusal,
+      null,
+      'a refused closure must not have released the pointer; the release happens only after the commit the refusal never reached'
+    )
+    assert.equal(
+      pointerAfterRefusal?.thread_id,
+      threadId,
+      'the pointer left behind by the refused closure must still name the thread the refusal was about'
+    )
+
+    const parked = await callPark(fx.spawned, fx.published, {
+      thread_id: threadId,
+      outcome: 'the closure attempt was refused, so this session still needs to record its outcome through park_thread'
+    })
+    assertOkResult('park_thread (after the refused closure)', parked)
+    const parkedStructured = parked.structuredContent as { status: string }
+    assert.equal(
+      parkedStructured.status,
+      'parked',
+      'the session must still be able to park and record its work after a closure attempt was refused'
+    )
+  })
+})
+
+test('close.a-commit-failure-leaves-the-pointer-so-park-can-still-record', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published, { slug: 'close-commit-failure-leaves-pointer' })
+    await callResume(fx.spawned, fx.published, threadId)
+
+    const layout = layoutInFixture(fx.repo, fx.pluginData, fx.homeDir)
+    assert.notEqual(
+      readPointerFile(layout),
+      null,
+      'the fixture must start with a pointer naming the thread this session just resumed'
+    )
+
+    const ledgerRefPath = join(fx.repo, '.git', 'refs', 'logbook', 'ledger')
+    assert.ok(
+      existsSync(ledgerRefPath),
+      'the fixture repo must hold refs/logbook/ledger as a loose ref file for the ref-lock trick below to be load-bearing'
+    )
+
+    const lockPath = `${ledgerRefPath}.lock`
+    writeFileSync(lockPath, '')
+    let refused: CallToolResult
+    try {
+      refused = await callClose(fx.spawned, fx.published, {
+        thread_id: threadId,
+        outcome: 'abandoned',
+        detail: 'a concurrent writer is holding the ledger ref lock during this close attempt'
+      })
+    } finally {
+      unlinkSync(lockPath)
+    }
+
+    assert.equal(
+      refused.isError,
+      true,
+      'closing while another writer holds the ledger ref lock must be refused, since the commit itself cannot land'
+    )
+    const text = firstTextOf(refused)
+    assert.equal(
+      text.split('\n').at(-1),
+      'the ledger commit for this closure did not complete; retry the call.',
+      `the refusal must be the commit-failure refusal specific to close_thread, distinguishing it from every sibling tool's own commit-failure message and from the whole-record-cap refusal that also carries field thread: ${text}`
+    )
+
+    const pointerAfterRefusal = readPointerFile(layout)
+    assert.notEqual(
+      pointerAfterRefusal,
+      null,
+      'a close refused because its own ledger commit failed must not have released the pointer; the release must sit after the commit, never before it'
+    )
+    assert.equal(
+      pointerAfterRefusal?.thread_id,
+      threadId,
+      'the pointer left behind by the commit-failure refusal must still name the thread the refusal was about'
+    )
+
+    const parked = await callPark(fx.spawned, fx.published, {
+      thread_id: threadId,
+      outcome: 'the close attempt failed its ledger commit, so this session still needs to record its outcome through park_thread'
+    })
+    assertOkResult('park_thread (after the commit-failure refusal)', parked)
+    const parkedStructured = parked.structuredContent as {
+      status: string
+      parked_thread_ids: string[]
+      session_entry_ids: string[]
+    }
+    assert.equal(
+      parkedStructured.status,
+      'parked',
+      'the session must still be able to park and record its work after a close attempt failed its own ledger commit'
+    )
+    assert.deepEqual(
+      parkedStructured.parked_thread_ids,
+      [threadId],
+      'park_thread must record against the thread the failed close left marked as being worked'
+    )
+    assert.equal(
+      parkedStructured.session_entry_ids.length,
+      1,
+      'park_thread must have actually written the outcome to the session log, not merely reported status parked'
+    )
+  })
+})
+
+test('close.releases-a-pointer-held-by-a-foreign-session', async () => {
+  await withFixture(async (fx) => {
+    const { threadId } = await createFixtureThread(fx.spawned, fx.published, { slug: 'close-releases-foreign-session' })
+
+    const layout = layoutInFixture(fx.repo, fx.pluginData, fx.homeDir)
+    const rt = testRuntime({ env: { HOME: fx.homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: fx.pluginData }, cwd: fx.repo })
+    writePointer(rt, layout, {
+      thread_id: threadId,
+      written_at: rt.now(),
+      session_id: 'a-foreign-session-never-held-by-this-server-process'
+    })
+    const pointerBeforeClose = readPointerFile(layout)
+    assert.notEqual(
+      pointerBeforeClose,
+      null,
+      'the fixture must start with a pointer naming the thread this test is about to close'
+    )
+    assert.equal(
+      pointerBeforeClose?.thread_id,
+      threadId,
+      'the fixture pointer must name the thread this test is about to close'
+    )
+
+    const closed = await callClose(fx.spawned, fx.published, {
+      thread_id: threadId,
+      outcome: 'abandoned',
+      detail: 'closing a thread whose pointer was written by a different session than this one'
+    })
+    assertOkResult('close_thread (pointer held by a foreign session)', closed)
+
+    assert.equal(
+      readPointerFile(layout),
+      null,
+      'closing the thread a pointer names must release that pointer regardless of which session wrote it; a terminal thread can no longer be resumed, parked with an outcome, or updated, so a session-id mismatch would protect nothing'
     )
   })
 })

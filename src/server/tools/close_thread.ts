@@ -94,7 +94,7 @@ export const closeThreadTool: ToolSpec<CloseThreadInput, CloseThreadOutput> = {
   name: 'close_thread',
   title: 'Close thread',
   description:
-    'Closes one thread as either done or abandoned, and this cannot be undone through any tool. Closing as done is gated: every criterion that has not been struck must already be marked done and a closure statement must be supplied, and if any criterion is still open the call is refused and names each one. Closing as abandoned needs a reason instead, which is written to the session log rather than onto the thread. Reopening later means creating a new thread that references this one. The reply reports how the met criteria divide between checks that were run and checks that could not be, and neither count is ever a reason to refuse.',
+    'Closes one thread as either done or abandoned, and this cannot be undone through any tool. Closing as done is gated: every criterion that has not been struck must already be marked done and a closure statement must be supplied, and if any criterion is still open the call is refused and names each one. Closing as abandoned needs a reason instead, which is written to the session log rather than onto the thread. Closing also releases the record of what is being worked, but only when that record names the thread being closed. Reopening later means creating a new thread that references this one. The reply reports how the met criteria divide between checks that were run and checks that could not be, and neither count is ever a reason to refuse.',
   input: CloseThreadInputSchema,
   output: CloseThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
