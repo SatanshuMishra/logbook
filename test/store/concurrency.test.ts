@@ -493,6 +493,70 @@ test('concurrent.a-record-that-landed-during-materialisation-survives', () => {
   })
 })
 
+test('concurrent.the-opener-reads-back-a-record-that-landed-during-its-own-materialisation', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+
+      const seeded = openStore(rt, repo)
+      assert.equal(seeded.ok, true)
+      if (!seeded.ok) return
+
+      const seedThread = makeThread(rt, 'seed-thread')
+      const seedCommit = seeded.value.commit([seedThread], 'seed thread zero')
+      assert.equal(seedCommit.ok, true)
+      if (!seedCommit.ok) return
+
+      const layout = layoutIn(rt, repo)
+      rmSync(path.join(layout.state, 'last-materialised'), { force: true })
+
+      const landedThread = makeThread(rt, 'landed-thread')
+
+      const scratchDir = mkdtempSync(path.join(tmpdir(), 'logbook-concurrency-fulltree-race-'))
+      try {
+        const winnerScriptPath = buildWinnerScript(scratchDir)
+        const shim = buildFullTreeGitShim({
+          winnerScriptPath,
+          winnerPayload: {
+            repo,
+            pluginData,
+            home: process.env.HOME,
+            change: landedThread,
+            message: 'land a record mid-materialisation'
+          }
+        })
+
+        try {
+          const raceRt = testRuntime({
+            env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: pluginData, PATH: shim.dir }
+          })
+
+          const opened = openStore(raceRt, repo)
+          assert.equal(opened.ok, true, 'the racing opener must be able to open the store')
+          if (!opened.ok) return
+
+          const winnerOutcome = readFullTreeWinnerOutcome(shim)
+          assert.equal(
+            winnerOutcome.ok,
+            true,
+            'the competing writer must land its record before materialisation completes'
+          )
+
+          const survivor = expectLoaded(
+            opened.value.readThread(landedThread.record.id),
+            'a record the competing writer had already committed to the ledger ref and already written to disk, read through the store that was materialising while it landed'
+          )
+          assert.deepEqual(survivor, landedThread.record)
+        } finally {
+          shim.cleanup()
+        }
+      } finally {
+        rmSync(scratchDir, { recursive: true, force: true })
+      }
+    })
+  })
+})
+
 test('concurrent.second-process-destroys-nothing', () => {
   withRepo((repo) => {
     withPluginData((pluginData) => {

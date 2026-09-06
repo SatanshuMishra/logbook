@@ -1,5 +1,7 @@
 import type { Refusal } from '../schema/declare.ts'
 
+export const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
 export const errnoCode = (error: unknown): string => {
   if (typeof error === 'object' && error !== null && 'code' in error) {
     const code = (error as { code?: unknown }).code

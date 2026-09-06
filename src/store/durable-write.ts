@@ -5,7 +5,7 @@ import { basename, dirname, join } from 'node:path'
 export type DurableWriteOps = {
   open: (path: string, flags: string) => number
   fsync: (fd: number) => void
-  write: (fd: number, contents: string) => void
+  write: (fd: number, contents: string | Uint8Array) => void
   rename: (from: string, to: string) => void
   close: (fd: number) => void
   log: (record: Record<string, unknown>) => void
@@ -17,7 +17,7 @@ const defaultFsOps: Omit<DurableWriteOps, 'log'> = {
   open: (path, flags) => openSync(path, flags),
   fsync: (fd) => fsyncSync(fd),
   write: (fd, contents) => {
-    writeSync(fd, contents)
+    writeSync(fd, typeof contents === 'string' ? Buffer.from(contents, 'utf8') : contents)
   },
   rename: (from, to) => renameSync(from, to),
   close: (fd) => closeSync(fd)
@@ -57,7 +57,7 @@ const swallowCloseError = (close: (fd: number) => void, fd: number): void => {
   }
 }
 
-export const durableWrite = (target: string, contents: string, ops: DurableWriteInput): void => {
+export const durableWrite = (target: string, contents: string | Uint8Array, ops: DurableWriteInput): void => {
   const resolved: DurableWriteOps = { ...defaultFsOps, ...ops }
   const dir = dirname(target)
   const tmpPath = tmpPathFor(target)

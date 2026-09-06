@@ -8,13 +8,14 @@ import { SessionRecord, type SessionEntry } from '../schema/session.ts'
 import { ThreadRecord, type Thread } from '../schema/thread.ts'
 import { git } from '../store/git.ts'
 import type { StoreLayout } from '../store/layout.ts'
-import { materialiseTreeInto } from '../store/materialise-tree.ts'
+import { materialiseTreeInto, plainUnsyncedWrite } from '../store/materialise-tree.ts'
 import {
   countedMaterialiseGit,
   countedMaterialiseGitBuffer,
   discardScratchDir,
   readAllRecordFiles,
-  syncWorkingCopy
+  syncWorkingCopy,
+  type SyncWorkingCopyOutcome
 } from '../store/read-path.ts'
 import { LEDGER_REF, casUpdateRef } from '../store/ref.ts'
 import { checkChangeShape, type Store } from '../store/records.ts'
@@ -53,6 +54,8 @@ type ScratchRecordSet = RecordSet & { passthrough: PassthroughFile[]; carried: C
 type AttemptOutcome =
   | { kind: 'return'; outcome: SyncOutcome }
   | { kind: 'retry' }
+
+type FailedSyncWorkingCopy = Extract<SyncWorkingCopyOutcome, { ok: false }>
 
 const readRef = (rt: Runtime, repo: string, ref: string): string | null => {
   const result = git(rt, repo, ['rev-parse', ref])
@@ -229,7 +232,8 @@ const materialiseRefToScratch = (rt: Runtime, layout: StoreLayout, ref: string):
   const scratch = mkdtempSync(path.join(tmpdir(), 'logbook-sync-scratch-'))
   const materialised = materialiseTreeInto(rt, layout.projectRoot, ref, scratch, {
     runGit: countedMaterialiseGit,
-    runGitBuffer: countedMaterialiseGitBuffer
+    runGitBuffer: countedMaterialiseGitBuffer,
+    write: plainUnsyncedWrite
   })
   if (!materialised.ok) {
     rmSync(scratch, { recursive: true, force: true })
@@ -333,10 +337,23 @@ const clearConflicts = (layout: StoreLayout): void => {
   }
 }
 
+const materialisationRejection = (where: string, outcome: FailedSyncWorkingCopy): AttemptOutcome => ({
+  kind: 'return',
+  outcome: {
+    ok: false,
+    reason: 'rejected',
+    cause: 'local',
+    detail: `${where}: the records tree could not be materialised from ${LEDGER_REF} (${outcome.cause}): ${outcome.detail}`
+  }
+})
+
 const fastForward = (rt: Runtime, layout: StoreLayout, localVal: string | null, remoteVal: string): AttemptOutcome => {
   const cas = casUpdateRef(rt, layout.projectRoot, LEDGER_REF, remoteVal, localVal)
   if (cas.ok) {
-    syncWorkingCopy(rt, layout)
+    const materialised = syncWorkingCopy(rt, layout)
+    if (!materialised.ok) {
+      return materialisationRejection(`the ledger ref was fast-forwarded to ${remoteVal}`, materialised)
+    }
     return {
       kind: 'return',
       outcome: { ok: true, action: 'fast-forwarded', ref: LEDGER_REF, local_sha: remoteVal, remote_sha: remoteVal }
@@ -473,7 +490,10 @@ const performMerge = (
         return { kind: 'return', outcome: { ok: false, reason: 'rejected', cause: 'local', detail: commitResult.detail } }
       }
 
-      syncWorkingCopy(rt, layout)
+      const materialised = syncWorkingCopy(rt, layout)
+      if (!materialised.ok) {
+        return materialisationRejection('the merge commit was written to the local ledger ref', materialised)
+      }
 
       const pushResult = git(rt, layout.projectRoot, [
         'push',
@@ -511,7 +531,10 @@ const performMerge = (
 const runAttempt = (rt: Runtime, store: Store, layout: StoreLayout, ops: Partial<SyncOps>): AttemptOutcome => {
   const repo = layout.projectRoot
 
-  syncWorkingCopy(rt, layout)
+  const materialised = syncWorkingCopy(rt, layout)
+  if (!materialised.ok) {
+    return materialisationRejection('sync read the local ledger before contacting origin', materialised)
+  }
 
   const lsRemote = git(rt, repo, ['ls-remote', REMOTE_NAME, LEDGER_REF])
   if (!lsRemote.ok) {
