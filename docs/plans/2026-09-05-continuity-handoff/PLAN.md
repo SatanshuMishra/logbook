@@ -930,6 +930,29 @@ After `U1`'s renumbering, preflight ends at step 9 (`Print the returned resume_t
 11. Stop.
 ```
 
+- [ ] **Step 4b: Cover the session-entry branch**
+
+`sessions/<id>/` is the shape `log_session_event` and `park_thread` produce — the two most common recording calls — and no existing test covers it. A missing trailing slash leaves every other test green while the gate stops clearing for both. Add:
+
+```ts
+test('hook.stop-gate-clears-when-a-session-entry-for-the-held-thread-reaches-the-ledger', async () => {
+  const rt = testRuntime()
+  const held = await openFixtureThread(rt, 'held-3')
+  await resumeThreadTool.handler(rt, { thread_id: held.threadId })
+
+  await logSessionEventTool.handler(rt, { thread_id: held.threadId, actor: 'ana', body: 'established something' })
+
+  const verdict = stopGateVerdict(rt, {
+    session_id: rt.sessionId,
+    cwd: rt.cwd,
+    transcript_path: null,
+    stop_hook_active: false
+  })
+
+  assert.equal(verdict.kind, 'silent')
+})
+```
+
 - [ ] **Step 5: Run the tests to verify they pass**
 
 ```bash
@@ -1014,16 +1037,30 @@ Expected: `hook.stop-gate-still-blocks-when-only-an-unrelated-thread-moved` FAIL
 
 In `src/hooklib/ledger-presence.ts`:
 
+The return type must distinguish a failed diff from an empty one. Collapsing both into `string[]` is what makes the gate clear on a content-free head move, which is the same defect this unit exists to close.
+
 ```ts
-export const ledgerPathsChangedSince = (rt: Runtime, projectRoot: string, baselineHead: string): string[] => {
-  const result = git(rt, projectRoot, ['diff', '--name-only', baselineHead, LEDGER_REF])
-  if (!result.ok) {
-    rt.log({ level: 'warn', event: 'stop-gate.ledger-diff-unreadable', code: result.code, detail: result.stderr.trim() })
-    return []
+export type LedgerDiff = { ok: true; paths: string[] } | { ok: false; detail: string }
+
+export const ledgerPathsChangedSince = (rt: Runtime, projectRoot: string, baselineHead: string): LedgerDiff => {
+  if (!SHA_PATTERN.test(baselineHead)) {
+    return { ok: false, detail: 'the recorded ledger head is not an object id' }
   }
-  return result.stdout.split('\n').map((line) => line.trim()).filter((line) => line.length > 0)
+  const result = git(rt, projectRoot, ['diff', '--name-only', '--end-of-options', baselineHead, LEDGER_REF])
+  if (!result.ok) {
+    const detail = result.stderr.trim()
+    rt.log({ level: 'warn', event: 'stop-gate.ledger-diff-unreadable', code: result.code, detail })
+    return { ok: false, detail }
+  }
+  return { ok: true, paths: result.stdout.split('\n').map((line) => line.trim()).filter((line) => line.length > 0) }
 }
 ```
+
+Two guards here are not optional.
+
+`SHA_PATTERN` from `src/schema/ids.ts` matches every value `readLedgerHead` can produce. Without it, a `resume-baseline.json` holding `--output=/some/path` reaches git's argv as an **option** rather than a revision, and git writes its diff to that path and prints nothing — clearing the gate. That field was inert before this unit; this diff is what makes it a subprocess argument. Also reject it in `readResumeBaseline` at the read boundary, exactly as `src/store/resumable.ts` already does for the same class of value in the same directory.
+
+`--end-of-options` stops git parsing later arguments as options. Do **not** use `--` instead: it separates revisions from pathspecs, so both arguments get reclassified as paths and the command exits clean with no output — a silent wrong answer rather than an error.
 
 - [ ] **Step 4: Tighten the verdict**
 
@@ -1034,17 +1071,20 @@ export const ledgerPathsChangedSince = (rt: Runtime, projectRoot: string, baseli
   if (head === null) return { kind: 'silent' }
   if (head === baseline.ledger_head) return { kind: 'block', reason: heldThreadReason(pointerRead.value.thread_id) }
 
-  const changed = ledgerPathsChangedSince(rt, layout.projectRoot, baseline.ledger_head)
-  if (changed.length === 0) return { kind: 'silent' }
-
   const threadId = pointerRead.value.thread_id
-  const touchesHeldThread = changed.some(
-    (path) => path === `threads/${threadId}.json` || path.startsWith(`sessions/${threadId}/`)
+  const diff = ledgerPathsChangedSince(rt, layout.projectRoot, baseline.ledger_head)
+  if (!diff.ok) return { kind: 'silent' }
+  if (diff.paths.length === 0) return { kind: 'block', reason: ledgerUntouchedReason(threadId) }
+
+  const touchesHeldThread = diff.paths.some(
+    (changedPath) => changedPath === `threads/${threadId}.json` || changedPath.startsWith(`sessions/${threadId}/`)
   )
   if (touchesHeldThread) return { kind: 'silent' }
 
-  return { kind: 'block', reason: heldThreadReason(threadId) }
+  return { kind: 'block', reason: ledgerMismatchReason(threadId) }
 ```
+
+`!diff.ok` clears because a broken git cannot be satisfied by any action a session can take. An empty **successful** diff blocks, because the ledger tree did not change and so cannot have touched the held thread — and `record_decision`, `update_thread` and `park_thread` all satisfy it. Naming the lambda parameter `changedPath` rather than `path` avoids shadowing the `node:path` import.
 
 **Two messages, not one.** The gate blocks in two different situations and no single text is honest in both. When the ref never moved, nothing reached the ledger at all. When it moved without touching this thread, records genuinely did land — they just belong elsewhere. A message asserting records landed is false in the first case; one asserting nothing was recorded is false in the second.
 

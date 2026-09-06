@@ -67,7 +67,7 @@ Seven units, listed in section 5. Together they delete declared focus, give the 
 - **I6 — A declared merge strategy is wired.** No field appears in the merge strategy table without the merge reading it. A census asserts the two are the same set.
 - **I7 — Red on parent.** Each unit ships a test that fails on its parent commit and passes on the unit.
 - **I8 — The goals are the authority.** A route is a proposal for satisfying the goals. Where a route and the goals diverge, the goals win, and no code or rendering may present a route as authoritative over a goal.
-- **I9 — The Stop gate proves the held thread.** The gate clears only on ledger movement that touches the thread this session holds. Movement on any other thread does not clear it.
+- **I9 — The Stop gate proves the held thread.** A readable diff that names no held-thread path does not clear the gate, whatever else it touched. Where the diff cannot be read at all — the ledger ref is unreadable or deleted, or `git diff` fails — the gate clears and logs, because a session facing a broken git cannot satisfy it by any action available to it and blocking would wedge the session. Every other clearing requires movement that touches the thread this session holds.
 
 ---
 
