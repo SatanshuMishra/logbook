@@ -43,8 +43,7 @@ const writeForeignPointer = (repo: string, pluginData: string): void => {
   writePointer(rt, layout.value, {
     thread_id: rt.ulid(),
     written_at: rt.now(),
-    session_id: 'a-foreign-session-untouched-by-this-call',
-    focus: []
+    session_id: 'a-foreign-session-untouched-by-this-call'
   })
 }
 

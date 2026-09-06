@@ -430,21 +430,6 @@ test('skill.preflight-presents-and-stops', () => {
   assert.equal(firstWordOf(lastStep), 'Stop', 'expected the final step to be nothing but stopping')
 })
 
-test('skill.preflight-passes-the-declared-focus', () => {
-  const preflight = parseSkill(readSkillFile(PREFLIGHT_SKILL_PATH))
-  const steps = preflight.steps
-
-  const resumeCallIndex = steps.findIndex((step) => stepContainsSpan(step, 'resume_thread'))
-  assert.notEqual(resumeCallIndex, -1, 'expected a step calling `resume_thread` in the preflight sequence')
-
-  const resumeCallStep = steps[resumeCallIndex]
-  assert.ok(resumeCallStep !== undefined)
-  assert.ok(
-    stepContainsSpan(resumeCallStep, 'resume_thread.focus'),
-    'expected the step calling `resume_thread` to also pass `resume_thread.focus`'
-  )
-})
-
 test('skill.cannot-strand', async () => {
   const preflight = parseSkill(readSkillFile(PREFLIGHT_SKILL_PATH))
   const debrief = parseSkill(readSkillFile(DEBRIEF_SKILL_PATH))

@@ -217,11 +217,6 @@ export const ARGUMENT_GAPS: readonly ArgumentGap[] = [
       'the description explains what mid-session progress is recorded (criteria, summary fields, blockage, risks) but never states which argument addresses the thread being updated; the addressing parameter itself carries no prose promise'
   },
   {
-    address: 'update_thread.focus',
-    reason:
-      'the description enumerates exactly four record-able changes (criteria_done, the six summary fields, blockage, risks); session focus is not one of them and writes to the session pointer rather than the thread record'
-  },
-  {
     address: 'amend_criteria.thread_id',
     reason:
       'the description explains the three operations and the decision_id requirement but never names the argument that selects which thread carries the criterion being amended, the same addressing gap as update_thread.thread_id'
@@ -235,11 +230,6 @@ export const ARGUMENT_GAPS: readonly ArgumentGap[] = [
     address: 'amend_criteria.check',
     reason:
       'the description does state that an inserted criterion carries a check and that an insert with no check is refused, but no entry in PUBLISHED_CLAIMS pairs that sentence with amend_criteria.check as a provider, so an existing prose promise is currently uncounted'
-  },
-  {
-    address: 'resume_thread.focus',
-    reason:
-      'the description covers exactly what resuming does, marking the thread worked and rendering the previous briefing, and never mentions recording session focus, the same argument this tool shares with update_thread and park_thread'
   },
   {
     address: 'record_decision.scope',

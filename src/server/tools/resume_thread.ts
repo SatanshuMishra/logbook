@@ -1,8 +1,6 @@
 import { z } from 'zod'
 import type { ToolSpec } from '../register.ts'
-import type { Refusal } from '../../schema/declare.ts'
 import { ULID_PATTERN } from '../../schema/ids.ts'
-import * as caps from '../../schema/caps.ts'
 import { layoutFor } from '../../store/layout.ts'
 import { readPointer, writePointer, type Pointer } from '../../domain/pointer.ts'
 import { recordResumeBaseline } from '../../hooklib/ledger-presence.ts'
@@ -14,32 +12,7 @@ const ulidField = (description: string) => z.string().regex(ULID_PATTERN).descri
 const ResumeThreadInputSchema = z.strictObject({
   thread_id: ulidField(
     'the id of the thread to resume, a 26-character ULID such as 01M0NDPM0ACCR9CD68PMHYWGGD, from list_threads or the roster resource'
-  ),
-  focus: z
-    .array(ulidField('a completion criterion this session is focused on; refused when it names no criterion on this thread'))
-    .max(caps.CRITERIA_RETENTION_MAX_ELEMENTS)
-    .optional()
-    .describe(
-      'which completion criteria this session is focused on, recorded on the session pointer this call writes and never on the thread record; omit for none'
-    )
-})
-
-export const unknownFocusRefusal = (ids: string[]): Refusal => ({
-  ok: false,
-  field: 'focus',
-  accepted: 'a criterion_id that names a completion criterion already present on this thread',
-  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
-  retryable: true,
-  message: `focus names ids not present on this thread: ${ids.join(', ')}.`
-})
-
-const duplicateFocusRefusal = (ids: string[]): Refusal => ({
-  ok: false,
-  field: 'focus',
-  accepted: 'at most one entry per criterion id in a single call',
-  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
-  retryable: true,
-  message: `focus names the same criterion more than once: ${ids.join(', ')}.`
+  )
 })
 
 const PreviousSessionSchema = z.object({
@@ -52,8 +25,7 @@ const ResumeThreadOutputSchema = z.object({
   briefing: z.string().describe('the finished briefing text for this thread, ready to be shown as it stands'),
   previous_session: PreviousSessionSchema.nullable().describe(
     'the thread a previous session left marked as being worked, or null when this session already held the pointer or nothing was marked'
-  ),
-  focus: z.array(z.string()).describe('the focus this call recorded on the session pointer, exactly as stored; empty when none was supplied')
+  )
 })
 
 type ResumeThreadInput = z.infer<typeof ResumeThreadInputSchema>
@@ -76,16 +48,6 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
     if (!loaded.ok) return { ok: false, refusal: loaded.refusal }
     const thread = loaded.value
 
-    const focusIds = input.focus ?? []
-    const duplicatedFocusIds = focusIds.filter((id, index) => focusIds.indexOf(id) !== index)
-    if (duplicatedFocusIds.length > 0) {
-      return { ok: false, refusal: duplicateFocusRefusal([...new Set(duplicatedFocusIds)]) }
-    }
-    const unknownFocusIds = focusIds.filter((id) => !thread.completion_criteria.some((c) => c.id === id))
-    if (unknownFocusIds.length > 0) {
-      return { ok: false, refusal: unknownFocusRefusal(unknownFocusIds) }
-    }
-
     const layout = layoutFor(rt, rt.cwd)
     if (!layout.ok) return { ok: false, refusal: layout }
 
@@ -95,7 +57,7 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
         ? { thread_id: priorPointerRead.value.thread_id, written_at: priorPointerRead.value.written_at }
         : null
 
-    const writtenPointer: Pointer = { thread_id: thread.id, written_at: rt.now(), session_id: rt.sessionId, focus: focusIds }
+    const writtenPointer: Pointer = { thread_id: thread.id, written_at: rt.now(), session_id: rt.sessionId }
     writePointer(rt, layout.value, writtenPointer)
     recordResumeBaseline(rt, layout.value, rt.sessionId)
 
@@ -135,7 +97,7 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
         level: 'error',
         event: 'briefing.budget-exceeded',
         chars: briefing.length,
-        bytes: resumePayloadBytes(briefing, thread.id, hasPreviousSession, focusIds.length)
+        bytes: resumePayloadBytes(briefing, thread.id, hasPreviousSession)
       })
     }
 
@@ -145,8 +107,7 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
       structured: {
         thread_id: thread.id,
         briefing,
-        previous_session: previousSession,
-        focus: focusIds
+        previous_session: previousSession
       }
     }
   }
