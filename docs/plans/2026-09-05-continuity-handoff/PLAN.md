@@ -1046,15 +1046,25 @@ export const ledgerPathsChangedSince = (rt: Runtime, projectRoot: string, baseli
   return { kind: 'block', reason: heldThreadReason(threadId) }
 ```
 
-with the message:
+**Two messages, not one.** The gate blocks in two different situations and no single text is honest in both. When the ref never moved, nothing reached the ledger at all. When it moved without touching this thread, records genuinely did land — they just belong elsewhere. A message asserting records landed is false in the first case; one asserting nothing was recorded is false in the second.
+
+So write two builders, each true where it is used, both naming the thread and both keeping the honesty clause:
 
 ```ts
-const heldThreadReason = (threadId: string): string =>
-  `Logbook: nothing has reached thread ${threadId} since it was resumed. Records landed on the ledger, but none of ` +
-  `them belongs to the thread this session is working. Record what was established with record_decision, note ` +
-  `progress with update_thread, or end this session's work on the thread with park_thread. This verdict reports ` +
-  `only that something reached this thread; it makes no claim that what is recorded is complete.`
+const nothingReachedLedgerReason = (threadId: string): string =>
+  `Logbook: nothing has reached this project's ledger since thread ${threadId} was resumed. Record what was ` +
+  `established with record_decision, note progress with update_thread, or end this session's work on the thread ` +
+  `with park_thread. This verdict reports only that something reached the thread; it makes no claim that what is ` +
+  `recorded is complete.`
+
+const nothingReachedThreadReason = (threadId: string): string =>
+  `Logbook: records reached this project's ledger since thread ${threadId} was resumed, but none of them belongs ` +
+  `to the thread this session is working. Record what was established with record_decision, note progress with ` +
+  `update_thread, or end this session's work on the thread with park_thread. This verdict reports only that ` +
+  `something reached the thread; it makes no claim that what is recorded is complete.`
 ```
+
+Use the first where `head === baseline.ledger_head`, the second where the ref moved but no changed path names the held thread.
 
 Keep `LEDGER_PRESENCE_REASON` exported if any test imports it; otherwise delete it and update the message assertion in `hook.stop-gate-ledger-message-claims-presence-and-never-completeness`.
 
@@ -1064,7 +1074,11 @@ Keep `LEDGER_PRESENCE_REASON` exported if any test imports it; otherwise delete 
 npm run typecheck && npm test
 ```
 
-Expected: `hook.stop-gate-clears-the-moment-something-reaches-the-ledger` will need its fixture changed — it currently commits an unrelated thread on purpose. Rename it to `hook.stop-gate-clears-when-the-held-thread-reaches-the-ledger` and point its write at the held thread.
+**Three existing tests assert the old behaviour and all three need correcting**, not the two an earlier draft of this plan named:
+
+- `hook.stop-gate-clears-the-moment-something-reaches-the-ledger` commits an unrelated thread and expects `silent`. Rename it to `hook.stop-gate-clears-when-the-held-thread-reaches-the-ledger` and point its write at the held thread.
+- `hook.stop-gate-re-evaluates-rather-than-latching` does the same thing for the same wrong reason. Point its write at the held thread; the re-evaluation behaviour it covers is unchanged.
+- `hook.stop-gate-ledger-message-claims-presence-and-never-completeness` asserts on the message text you are replacing. It now has two messages to cover.
 
 - [ ] **Step 6: Commit and open the PR**
 
