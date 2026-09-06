@@ -185,8 +185,7 @@ test('hook.stop-gate-is-silent-when-no-thread-is-being-worked-by-this-session', 
     writePointer(rt, layout, {
       thread_id: threadId,
       written_at: '2024-01-01T00:00:00.000Z',
-      session_id: OTHER_SESSION_ID,
-      focus: []
+      session_id: OTHER_SESSION_ID
     })
     assert.equal(
       stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind,
@@ -201,7 +200,7 @@ test('hook.stop-gate-is-silent-when-this-session-recorded-no-resume-baseline', a
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
     startSession(rt, repo, OTHER_SESSION_ID)
     await resumeAs(rt, OTHER_SESSION_ID, threadId)
-    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID, focus: [] })
+    writePointer(rt, layout, { thread_id: threadId, written_at: '2024-01-01T00:00:00.000Z', session_id: SESSION_ID })
 
     const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
     assert.equal(verdict.kind, 'silent', 'without a resume baseline for this session there is no window to compare against')

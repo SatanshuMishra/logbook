@@ -1,16 +1,12 @@
 import { z } from 'zod'
 import type { ToolSpec } from '../register.ts'
 import type { Refusal } from '../../schema/declare.ts'
-import type { Runtime } from '../../runtime/runtime.ts'
 import { ULID_PATTERN } from '../../schema/ids.ts'
-import type { KeyDecision, Risk, Spine, Thread, Ulid } from '../../schema/thread.ts'
+import type { KeyDecision, Risk, Spine, Thread } from '../../schema/thread.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
-import { layoutFor, type StoreLayout } from '../../store/layout.ts'
-import { readPointer, writePointer, type Pointer, type PointerRead } from '../../domain/pointer.ts'
-import { commitThread, loadThread, openProjectStore, type Attempt } from '../tool-support.ts'
-import { errnoCode } from '../../store/detail.ts'
+import { commitThread, loadThread, openProjectStore } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 const optionalUlidField = (description: string) => z.string().regex(ULID_PATTERN).optional().describe(description)
@@ -102,14 +98,7 @@ const UpdateThreadInputSchema = z.strictObject({
     .array(z.string().min(1).max(caps.OUT_OF_SCOPE_TEXT_MAX).describe('one statement of what this thread explicitly excludes'))
     .max(caps.OUT_OF_SCOPE_MAX_ELEMENTS)
     .optional()
-    .describe('out-of-scope statements to append; each one is minted a stable id'),
-  focus: z
-    .array(ulidField('a completion criterion this session is focused on; refused when it names no criterion on this thread'))
-    .max(caps.CRITERIA_RETENTION_MAX_ELEMENTS)
-    .optional()
-    .describe(
-      'which completion criteria this session is focused on, written to this session\'s pointer only, never to the thread record; omit to leave it unchanged'
-    )
+    .describe('out-of-scope statements to append; each one is minted a stable id')
 })
 
 const UpdateThreadOutputSchema = z.object({
@@ -122,12 +111,7 @@ const UpdateThreadOutputSchema = z.object({
   risks_retired: z.array(z.string()).describe('ids of risks this call removed from the spine'),
   key_decisions_added: z.array(z.string()).describe('ids minted for key decisions this call linked into the spine'),
   out_of_scope_added: z.array(z.string()).describe('ids minted for out-of-scope statements this call added'),
-  blocked_by_set: z.boolean().describe('whether this call changed what the thread is blocked on, by either setting or clearing it'),
-  focus_written: z.boolean().describe('whether this call wrote focus to this session\'s pointer'),
-  focus_not_written_reason: z
-    .string()
-    .nullable()
-    .describe('why focus was not written to this session\'s pointer, or null when it was written or focus was not supplied')
+  blocked_by_set: z.boolean().describe('whether this call changed what the thread is blocked on, by either setting or clearing it')
 })
 
 type UpdateThreadInput = z.infer<typeof UpdateThreadInputSchema>
@@ -223,73 +207,6 @@ const danglingRiskCriterionRefusal = (ids: string[]): Refusal => ({
   message: `risks_add names criterion ids not present on this thread: ${ids.join(', ')}.`
 })
 
-export const unknownFocusRefusal = (ids: string[]): Refusal => ({
-  ok: false,
-  field: 'focus',
-  accepted: 'a criterion_id that names a completion criterion already present on this thread',
-  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
-  retryable: true,
-  message: `focus names ids not present on this thread: ${ids.join(', ')}.`
-})
-
-const duplicateFocusRefusal = (ids: string[]): Refusal => ({
-  ok: false,
-  field: 'focus',
-  accepted: 'at most one entry per criterion id in a single call',
-  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
-  retryable: true,
-  message: `focus names the same criterion more than once: ${ids.join(', ')}.`
-})
-
-type FocusOutcome = { written: boolean; reason: string | null }
-
-export const NO_WORKED_THREAD_FOCUS_REASON =
-  'no thread is marked as being worked on this machine, so there was no session focus to set'
-export const DIFFERENT_THREAD_FOCUS_REASON =
-  "the thread marked as being worked is a different thread, so this thread's focus was not set"
-export const OTHER_SESSION_FOCUS_REASON =
-  'another session holds the record of what is being worked, so this session did not overwrite its focus'
-export const UNREADABLE_POINTER_FOCUS_REASON =
-  "the record of what is being worked could not be read, so this session's focus was not set"
-
-type FocusPlan = { outcome: FocusOutcome; pending: { layout: StoreLayout; next: Pointer } | null }
-
-const decideFocusOutcome = (rt: Runtime, threadId: string, focusIds: Ulid[] | undefined): Attempt<FocusPlan> => {
-  if (focusIds === undefined) return { ok: true, value: { outcome: { written: false, reason: null }, pending: null } }
-
-  const layout = layoutFor(rt, rt.cwd)
-  if (!layout.ok) return { ok: false, refusal: layout }
-
-  let pointerRead: PointerRead
-  try {
-    pointerRead = readPointer(rt, layout.value)
-  } catch (error) {
-    rt.log({ level: 'error', event: 'focus.pointer-unreadable', code: errnoCode(error), detail: (error as Error).message })
-    return { ok: true, value: { outcome: { written: false, reason: UNREADABLE_POINTER_FOCUS_REASON }, pending: null } }
-  }
-  if (pointerRead.kind !== 'pointer') {
-    return { ok: true, value: { outcome: { written: false, reason: NO_WORKED_THREAD_FOCUS_REASON }, pending: null } }
-  }
-  if (pointerRead.value.thread_id !== threadId) {
-    return { ok: true, value: { outcome: { written: false, reason: DIFFERENT_THREAD_FOCUS_REASON }, pending: null } }
-  }
-  if (pointerRead.value.session_id !== rt.sessionId) {
-    return { ok: true, value: { outcome: { written: false, reason: OTHER_SESSION_FOCUS_REASON }, pending: null } }
-  }
-
-  return {
-    ok: true,
-    value: {
-      outcome: { written: true, reason: null },
-      pending: { layout: layout.value, next: { ...pointerRead.value, focus: focusIds } }
-    }
-  }
-}
-
-const applyFocusPlan = (rt: Runtime, plan: FocusPlan): void => {
-  if (plan.pending !== null) writePointer(rt, plan.pending.layout, plan.pending.next)
-}
-
 export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> = {
   name: 'update_thread',
   title: 'Update thread',
@@ -306,17 +223,6 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     const loaded = loadThread(store, 'thread_id', input.thread_id)
     if (!loaded.ok) return { ok: false, refusal: loaded.refusal }
     const thread = loaded.value
-
-    const focusIds = input.focus
-    const focusIdsPresent = focusIds ?? []
-    const duplicatedFocusIds = focusIdsPresent.filter((id, index) => focusIdsPresent.indexOf(id) !== index)
-    if (duplicatedFocusIds.length > 0) {
-      return { ok: false, refusal: duplicateFocusRefusal([...new Set(duplicatedFocusIds)]) }
-    }
-    const unknownFocusIds = focusIdsPresent.filter((id) => !thread.completion_criteria.some((c) => c.id === id))
-    if (unknownFocusIds.length > 0) {
-      return { ok: false, refusal: unknownFocusRefusal(unknownFocusIds) }
-    }
 
     const criteriaDone = input.criteria_done ?? []
     const criteriaDoneIds = criteriaDone.map((entry) => entry.criterion_id)
@@ -445,11 +351,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
       spineFieldsUpdated.length === 0 &&
       !blockageChanged
 
-    const focusPlan = decideFocusOutcome(rt, thread.id, focusIds)
-    if (!focusPlan.ok) return { ok: false, refusal: focusPlan.refusal }
-
     if (nothingChanged) {
-      applyFocusPlan(rt, focusPlan.value)
       return {
         ok: true,
         text: `no fields were supplied; thread ${thread.slug} is unchanged.`,
@@ -461,9 +363,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
           risks_retired: [],
           key_decisions_added: [],
           out_of_scope_added: [],
-          blocked_by_set: false,
-          focus_written: focusPlan.value.outcome.written,
-          focus_not_written_reason: focusPlan.value.outcome.reason
+          blocked_by_set: false
         }
       }
     }
@@ -485,7 +385,6 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     const committed = commitThread(store, nextThread, `update thread ${thread.slug}`)
     if (!committed.ok) return { ok: false, refusal: committed.refusal }
 
-    applyFocusPlan(rt, focusPlan.value)
     return {
       ok: true,
       text: `updated thread ${thread.slug}: ${markedDone.length} criteria marked done, ${newRisks.length} risks added, ${retiredIds.length} risks retired.`,
@@ -497,9 +396,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
         risks_retired: retiredIds,
         key_decisions_added: newKeyDecisions.map((kd) => kd.id),
         out_of_scope_added: newOutOfScope.map((o) => o.id),
-        blocked_by_set: blockageChanged,
-        focus_written: focusPlan.value.outcome.written,
-        focus_not_written_reason: focusPlan.value.outcome.reason
+        blocked_by_set: blockageChanged
       }
     }
   }
