@@ -1,4 +1,5 @@
 import type { Thread, Criterion, Risk, KeyDecision, OutOfScope, Artifact } from '../schema/thread.ts'
+import { criterionSettledness } from '../schema/thread.ts'
 import type { SessionEntry } from '../schema/session.ts'
 import type { Pointer } from '../domain/pointer.ts'
 import { previousSessionEntries } from '../domain/session-log.ts'
@@ -54,6 +55,7 @@ const OUT_OF_SCOPE_TEXT_NATURAL_MAX = 300
 const CRITERION_TEXT_NATURAL_MAX = 500
 const CRITERION_CHECK_NATURAL_MAX = 500
 const CRITERION_RESULT_NATURAL_MAX = 500
+const CRITERION_SETTLED_BY_NATURAL_MAX = 500
 const LAST_SESSION_TEXT_NATURAL_MAX = 500
 const ARTIFACT_LABEL_NATURAL_MAX = 200
 const ARTIFACT_POINTER_NATURAL_MAX = 500
@@ -73,6 +75,8 @@ const CONTINUATION_RULE =
 const LEGACY_LAST_SESSION_MARKER =
   '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead'
 
+const CRITERIA_OWED_LINE = '- none recorded; a definition of done is still owed.'
+
 const TEXT_CLIPPED_BULLET =
   '- some text on this briefing was shortened to fit the size budget for one reply; every shortened value ends with ...[shortened]'
 
@@ -83,9 +87,16 @@ const criterionStatus = (criterion: Criterion): string => {
   return criterion.done ? 'done' : 'open'
 }
 
+const settlednessLabel = (criterion: Criterion): string => {
+  const settledness = criterionSettledness(criterion)
+  if (settledness === 'confirmed') return 'confirmed'
+  if (settledness === 'unsettled') return 'unsettled'
+  return 'proposed'
+}
+
 const renderCriterionLine = (criterion: Criterion, textClip: number): string => {
   const text = clip(criterion.text, textClip)
-  const label = `- c${criterion.ordinal} [${criterionStatus(criterion)}]:`
+  const label = `- c${criterion.ordinal} [${criterionStatus(criterion)}] [${settlednessLabel(criterion)}]:`
   const withText = text.length === 0 ? label : `${label} ${text}`
   return `${withText} (id ${escapeStored(criterion.id)})`
 }
@@ -94,6 +105,11 @@ const renderCheckLine = (criterion: Criterion, textClip: number): string =>
   typeof criterion.check === 'string'
     ? `  - check: ${clip(criterion.check, textClip)}`
     : `  - check: ${NOT_RECORDED}`
+
+const renderSettledByLine = (criterion: Criterion, textClip: number): string =>
+  typeof criterion.settled_by === 'string'
+    ? `  - settled by: ${clip(criterion.settled_by, textClip)}`
+    : `  - settled by: ${NOT_RECORDED}`
 
 const renderResultStatus = (criterion: Criterion): string => escapeStored(criterion.result_status ?? NOT_RECORDED)
 
@@ -106,7 +122,10 @@ const renderCriterionBlock = (criterion: Criterion, renderClip: RenderClip): str
   [
     renderCriterionLine(criterion, renderClip.criterion),
     renderCheckLine(criterion, renderClip.criterionCheck),
-    ...[criterion].filter((entry) => entry.done).map((entry) => renderResultLine(entry, renderClip.criterionResult))
+    ...[criterion].filter((entry) => entry.done).map((entry) => renderResultLine(entry, renderClip.criterionResult)),
+    ...[criterion]
+      .filter((entry) => criterionSettledness(entry) === 'confirmed')
+      .map((entry) => renderSettledByLine(entry, renderClip.criterionSettledBy))
   ].join('\n')
 
 const renderRiskBlock = (risk: Risk, renderClip: RenderClip): string =>
@@ -177,6 +196,7 @@ type RenderClip = {
   criterion: number
   criterionCheck: number
   criterionResult: number
+  criterionSettledBy: number
   lastSession: number
   settledRisk: number
   settledKeyDecision: number
@@ -194,6 +214,7 @@ const clipAt = (perItemClip: number): RenderClip => ({
   criterion: Math.min(perItemClip, CRITERION_TEXT_NATURAL_MAX),
   criterionCheck: Math.min(perItemClip, CRITERION_CHECK_NATURAL_MAX),
   criterionResult: Math.min(perItemClip, CRITERION_RESULT_NATURAL_MAX),
+  criterionSettledBy: Math.min(perItemClip, CRITERION_SETTLED_BY_NATURAL_MAX),
   lastSession: Math.min(perItemClip, LAST_SESSION_TEXT_NATURAL_MAX),
   settledRisk: Math.min(perItemClip, RISK_TEXT_NATURAL_MAX),
   settledKeyDecision: Math.min(perItemClip, KEY_DECISION_TITLE_NATURAL_MAX),
@@ -211,6 +232,7 @@ const UNCLIPPED: RenderClip = {
   criterion: NO_CLIP,
   criterionCheck: NO_CLIP,
   criterionResult: NO_CLIP,
+  criterionSettledBy: NO_CLIP,
   lastSession: NO_CLIP,
   settledRisk: NO_CLIP,
   settledKeyDecision: NO_CLIP,
@@ -228,6 +250,7 @@ const MAX_ITEM_CLIP = Math.max(
   CRITERION_TEXT_NATURAL_MAX,
   CRITERION_CHECK_NATURAL_MAX,
   CRITERION_RESULT_NATURAL_MAX,
+  CRITERION_SETTLED_BY_NATURAL_MAX,
   LAST_SESSION_TEXT_NATURAL_MAX,
   ARTIFACT_LABEL_NATURAL_MAX,
   ARTIFACT_POINTER_NATURAL_MAX
@@ -300,7 +323,8 @@ const assembleBriefing = (
   const riskBlocks = risks.live.map((item) => renderRiskBlock(item, renderClip))
   const keyDecisionLines = keyDecisions.live.map((item) => renderKeyDecisionLine(item, renderClip.keyDecision))
   const outOfScopeLines = outOfScope.map((item) => renderOutOfScopeLine(item, renderClip.outOfScope))
-  const criterionBlocks = criteria.map((item) => renderCriterionBlock(item, renderClip))
+  const criterionBlocks =
+    criteria.length === 0 ? [CRITERIA_OWED_LINE] : criteria.map((item) => renderCriterionBlock(item, renderClip))
   const settledLines = [
     ...risks.settled.map((item) => renderSettledRiskLine(item, renderClip.settledRisk)),
     ...keyDecisions.settled.map((item) => renderSettledKeyDecisionLine(item, renderClip.settledKeyDecision))

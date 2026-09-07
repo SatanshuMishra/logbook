@@ -4,6 +4,7 @@ import type { Binding } from '../schema/binding.ts'
 import type { Decision } from '../schema/decision.ts'
 import type { SessionEntry } from '../schema/session.ts'
 import type { Artifact, Criterion, KeyDecision, OutOfScope, Risk, Thread } from '../schema/thread.ts'
+import { criterionSettledness } from '../schema/thread.ts'
 import type { Pointer } from '../domain/pointer.ts'
 import type { DecisionIntegrity } from '../render/briefing.ts'
 
@@ -114,11 +115,26 @@ const renderDetailCriterionResultLine = (criterion: Criterion): string => {
   return `  result: ${escapeStored(criterion.result)} (${status})`
 }
 
+const detailSettlednessLabel = (criterion: Criterion): string => {
+  const settledness = criterionSettledness(criterion)
+  if (settledness === 'confirmed') return 'confirmed'
+  if (settledness === 'unsettled') return 'unsettled'
+  return 'proposed'
+}
+
+const renderDetailSettledByLine = (criterion: Criterion): string =>
+  typeof criterion.settled_by === 'string'
+    ? `  settled by: ${escapeStored(criterion.settled_by)}`
+    : `  settled by: ${NOT_RECORDED}`
+
 const renderDetailCriterionLine = (criterion: Criterion): string =>
   [
-    `c${criterion.ordinal} [${detailCriterionStatus(criterion)}] ${escapeStored(criterion.id)}: ${escapeStored(criterion.text)}`,
+    `c${criterion.ordinal} [${detailCriterionStatus(criterion)}] [${detailSettlednessLabel(criterion)}] ${escapeStored(criterion.id)}: ${escapeStored(criterion.text)}`,
     renderDetailCriterionCheckLine(criterion),
-    ...[criterion].filter((entry) => entry.done).map((entry) => renderDetailCriterionResultLine(entry))
+    ...[criterion].filter((entry) => entry.done).map((entry) => renderDetailCriterionResultLine(entry)),
+    ...[criterion]
+      .filter((entry) => criterionSettledness(entry) === 'confirmed')
+      .map((entry) => renderDetailSettledByLine(entry))
   ].join('\n')
 
 const renderDetailArtifactLine = (artifact: Artifact): string =>

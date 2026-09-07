@@ -321,7 +321,8 @@ const SHORTENING_FIXTURE_CRITERION_COUNT = 100
 const SHORTENING_FIXTURE_CRITERION_TEXT_LENGTH = 300
 const SHORTENING_FIXTURE_KEY_DECISION_TITLE_LENGTH = caps.KEY_DECISION_TITLE_MAX
 
-const CRITERION_TEXT_PATTERN = /^- c\d+ \[(?:open|done|struck)\]: (.*) \(id [0-9A-HJKMNP-TV-Z]{26}\)$/
+const CRITERION_TEXT_PATTERN =
+  /^- c\d+ \[(?:open|done|struck)\] \[(?:confirmed|proposed|unsettled)\]: (.*) \(id [0-9A-HJKMNP-TV-Z]{26}\)$/
 const RISK_TEXT_PATTERN = /^- [0-9A-HJKMNP-TV-Z]{26} (.*)$/
 const SETTLED_RISK_TEXT_PATTERN = /^- risk [0-9A-HJKMNP-TV-Z]{26} (.*)$/
 const SETTLED_DECISION_TEXT_PATTERN = /^- decision [0-9A-HJKMNP-TV-Z]{26} (.*)$/
