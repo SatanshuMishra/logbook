@@ -40,7 +40,7 @@ const LEGACY_PATHS = [
 const CENSUS_ROOTS = ['bin', 'hooks', 'skills', 'src', 'test']
 const FORBIDDEN_EXTENSIONS = ['.mjs', '.cjs']
 
-const EXPECTED_SKILL_FILES = ['skills/debrief/SKILL.md', 'skills/preflight/SKILL.md']
+const EXPECTED_SKILL_FILES = ['skills/debrief/SKILL.md', 'skills/file/SKILL.md', 'skills/preflight/SKILL.md']
 
 type MaterialisedTree = {
   workDir: string

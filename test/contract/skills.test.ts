@@ -18,6 +18,7 @@ const ENTRY = join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
 const SKILLS_DIR = join(PROJECT_ROOT, 'skills')
 const PREFLIGHT_SKILL_PATH = join(PROJECT_ROOT, 'skills', 'preflight', 'SKILL.md')
 const DEBRIEF_SKILL_PATH = join(PROJECT_ROOT, 'skills', 'debrief', 'SKILL.md')
+const FILE_SKILL_PATH = join(PROJECT_ROOT, 'skills', 'file', 'SKILL.md')
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -281,51 +282,144 @@ const isPointerShaped = (value: unknown): value is Pointer =>
 
 const STATE_DIR_NON_POINTER_SENTINELS = new Set(['origin.json', 'last-synced', 'last-materialised'])
 
-const countPointers = (repo: string, pluginData: string, homeDir: string): number => {
+const readPointerRecords = (repo: string, pluginData: string, homeDir: string): Pointer[] => {
   const rt = testRuntime({ env: { HOME: homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: pluginData }, cwd: repo })
   const layout = layoutFor(rt, repo)
   if (!layout.ok) {
-    throw new Error(`skills.test: could not resolve the store layout to count pointers: ${layout.message}`)
+    throw new Error(`skills.test: could not resolve the store layout to read pointers: ${layout.message}`)
   }
-  if (!existsSync(layout.value.state)) return 0
+  if (!existsSync(layout.value.state)) return []
   const entries = readdirSync(layout.value.state, { withFileTypes: true }).filter(
     (entry) => entry.isFile() && !STATE_DIR_NON_POINTER_SENTINELS.has(entry.name)
   )
-  return entries.filter((entry) => {
+  return entries.reduce<Pointer[]>((acc, entry) => {
     const target = join(layout.value.state, entry.name)
     let parsed: unknown
     try {
       parsed = JSON.parse(readFileSync(target, 'utf8'))
     } catch (error) {
       throw new Error(
-        `skills.test: could not parse "${target}" as JSON while counting pointers: ${error instanceof Error ? error.message : String(error)}`
+        `skills.test: could not parse "${target}" as JSON while reading pointers: ${error instanceof Error ? error.message : String(error)}`
       )
     }
-    return isPointerShaped(parsed)
-  }).length
+    return isPointerShaped(parsed) ? [...acc, parsed] : acc
+  }, [])
 }
 
-type DriveContext = { threadId: string; outcome: string }
+const countPointers = (repo: string, pluginData: string, homeDir: string): number =>
+  readPointerRecords(repo, pluginData, homeDir).length
+
+const solePointerThreadId = (repo: string, pluginData: string, homeDir: string): string => {
+  const pointers = readPointerRecords(repo, pluginData, homeDir)
+  if (pointers.length !== 1) {
+    throw new Error(
+      `skills.test: expected exactly one pointer file to read a surviving thread id from, found ${pointers.length}`
+    )
+  }
+  const pointer = pointers[0]
+  if (pointer === undefined) {
+    throw new Error('skills.test: pointer array reported length 1 but held no entry at index 0')
+  }
+  return pointer.thread_id
+}
+
+type DriveContext = { threadId: string; outcome: string; criterionId: string }
 
 const CALL_ARGS_BY_TOOL: Record<string, (ctx: DriveContext) => Record<string, unknown>> = {
   list_threads: () => ({}),
   resume_thread: (ctx) => ({ thread_id: ctx.threadId }),
-  park_thread: (ctx) => ({ outcome: ctx.outcome })
+  park_thread: (ctx) => ({ outcome: ctx.outcome }),
+  open_thread: () => ({
+    title: 'skills contract fixture file-skill throwaway thread',
+    slug: 'skills-contract-fixture-file-skill',
+    active_goal: 'exercise the documented file skill sequence',
+    next_step: 'exercise the documented file skill sequence',
+    completion_criteria: [
+      {
+        text: 'exercise the documented file skill sequence',
+        check: 'the skills contract test drives the file sequence end to end',
+        settledness: 'proposed'
+      }
+    ]
+  }),
+  update_thread: (ctx) => ({
+    thread_id: ctx.threadId,
+    criteria_settled: [
+      {
+        criterion_id: ctx.criterionId,
+        settledness: 'confirmed',
+        settled_by: 'the human confirmed this criterion in the fixture'
+      }
+    ]
+  }),
+  log_session_event: (ctx) => ({
+    thread_id: ctx.threadId,
+    actor: 'claude',
+    body: 'exercised the documented file skill sequence before the thread existed'
+  })
 }
 
-const driveCallSequence = async (spawned: SpawnedServer, toolNames: string[], ctx: DriveContext): Promise<void> => {
+const openedThreadIdFrom = (structured: Record<string, unknown>): string => {
+  const threadId = structured.thread_id
+  if (typeof threadId !== 'string' || threadId.length === 0) {
+    throw new Error(
+      `skills.test: open_thread reply's structuredContent carried no string "thread_id": ${JSON.stringify(structured)}`
+    )
+  }
+  return threadId
+}
+
+const openedCriterionIdFrom = (structured: Record<string, unknown>): string => {
+  const completionCriteria = structured.completion_criteria
+  if (!Array.isArray(completionCriteria) || completionCriteria.length === 0) {
+    throw new Error(
+      `skills.test: open_thread reply's structuredContent carried no non-empty "completion_criteria" array: ${JSON.stringify(structured)}`
+    )
+  }
+  const firstCriterion = completionCriteria[0]
+  if (!isPlainObject(firstCriterion) || typeof firstCriterion.id !== 'string' || firstCriterion.id.length === 0) {
+    throw new Error(
+      `skills.test: open_thread reply's structuredContent carried no string "completion_criteria[0].id": ${JSON.stringify(structured)}`
+    )
+  }
+  return firstCriterion.id
+}
+
+const foldOpenedThreadInto = (ctx: DriveContext, result: CallToolResult): DriveContext => {
+  const structured = result.structuredContent
+  if (!isPlainObject(structured)) {
+    throw new Error(
+      `skills.test: open_thread reply carried no plain-object "structuredContent" to fold into the drive context: ${JSON.stringify(result.content)}`
+    )
+  }
+  return { ...ctx, threadId: openedThreadIdFrom(structured), criterionId: openedCriterionIdFrom(structured) }
+}
+
+type DriveOutcome = { ctx: DriveContext; openedThreadId: string | undefined }
+
+const driveCallSequence = async (
+  spawned: SpawnedServer,
+  toolNames: string[],
+  ctx: DriveContext
+): Promise<DriveOutcome> => {
+  let outcome: DriveOutcome = { ctx, openedThreadId: undefined }
   for (const toolName of toolNames) {
     const resolveArgs = CALL_ARGS_BY_TOOL[toolName]
     if (resolveArgs === undefined) {
       throw new Error(`skills.test: no fixture argument resolver registered for tool "${toolName}"`)
     }
-    const result = (await spawned.client.callTool({ name: toolName, arguments: resolveArgs(ctx) })) as CallToolResult
+    const result = (await spawned.client.callTool({ name: toolName, arguments: resolveArgs(outcome.ctx) })) as CallToolResult
     assert.notEqual(
       result.isError,
       true,
       `skills.test: driving "${toolName}" from the documented sequence failed: ${JSON.stringify(result.content)}`
     )
+    if (toolName === 'open_thread') {
+      const foldedCtx = foldOpenedThreadInto(outcome.ctx, result)
+      outcome = { ctx: foldedCtx, openedThreadId: foldedCtx.threadId }
+    }
   }
+  return outcome
 }
 
 const isHaltedOnUnclassifiable = (error: unknown): boolean =>
@@ -460,10 +554,13 @@ test('skill.preflight-resumes-before-it-asks-anything', () => {
 test('skill.cannot-strand', async () => {
   const preflight = parseSkill(readSkillFile(PREFLIGHT_SKILL_PATH))
   const debrief = parseSkill(readSkillFile(DEBRIEF_SKILL_PATH))
+  const file = parseSkill(readSkillFile(FILE_SKILL_PATH))
   const preflightCalls = extractCallSequence(preflight.steps)
   const debriefCalls = extractCallSequence(debrief.steps)
+  const fileCalls = extractCallSequence(file.steps)
   assertContainsCallsInOrder(preflightCalls, ['list_threads', 'resume_thread'])
   assertContainsCallsInOrder(debriefCalls, ['park_thread'])
+  assertContainsCallsInOrder(fileCalls, ['open_thread', 'update_thread', 'log_session_event', 'resume_thread'])
 
   let repo = ''
   let pluginDataHome = ''
@@ -501,10 +598,17 @@ test('skill.cannot-strand', async () => {
       true,
       `skills.test: fixture open_thread call failed: ${JSON.stringify(opened.content)}`
     )
-    const threadId = (opened.structuredContent as { thread_id: string }).thread_id
+    const openedStructured = opened.structuredContent as {
+      thread_id: string
+      completion_criteria: { id: string }[]
+    }
+    const threadId = openedStructured.thread_id
+    const criterionId = openedStructured.completion_criteria[0]?.id
+    assert.ok(criterionId !== undefined, 'skills.test: fixture open_thread reply carried no completion criterion id')
 
     await driveCallSequence(spawned, preflightCalls, {
       threadId,
+      criterionId,
       outcome: 'exercised the documented preflight sequence'
     })
     assert.equal(
@@ -515,12 +619,29 @@ test('skill.cannot-strand', async () => {
 
     await driveCallSequence(spawned, debriefCalls, {
       threadId,
+      criterionId,
       outcome: 'exercised the documented debrief sequence'
     })
     assert.equal(
       countPointers(repo, pluginData, homeDir),
       0,
       'expected no pointer to remain set after driving the documented debrief sequence'
+    )
+
+    const fileDrive = await driveCallSequence(spawned, fileCalls, {
+      threadId,
+      criterionId,
+      outcome: 'exercised the documented file sequence'
+    })
+    assert.equal(
+      countPointers(repo, pluginData, homeDir),
+      1,
+      'expected exactly one pointer to be set after driving the documented file sequence'
+    )
+    assert.equal(
+      solePointerThreadId(repo, pluginData, homeDir),
+      fileDrive.openedThreadId,
+      'expected the pointer surviving the file sequence to name the thread the file sequence itself opened, not the pre-existing fixture thread'
     )
   } finally {
     if (spawned !== undefined) await spawned.close()

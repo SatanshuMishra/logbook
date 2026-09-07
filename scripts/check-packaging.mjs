@@ -15,6 +15,7 @@ export const REQUIRED_FILES = [
   'hooks/stop.ts',
   'hooks/user-prompt-submit.ts',
   'skills/debrief/SKILL.md',
+  'skills/file/SKILL.md',
   'skills/preflight/SKILL.md',
   '.claude-plugin/plugin.json',
   '.claude-plugin/marketplace.json',
