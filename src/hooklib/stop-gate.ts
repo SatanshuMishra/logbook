@@ -128,7 +128,7 @@ const ledgerPresenceVerdict = (rt: Runtime, event: StopEvent, layout: StoreLayou
   if (head === null) return { kind: 'silent' }
 
   const threadId = pointerRead.value.thread_id
-  const gateState = readRecordingGateState(layout.state)
+  const gateState = readRecordingGateState(rt, layout.state)
   const fireState = fireStateFor(gateState, event.session_id, threadId)
 
   if (
