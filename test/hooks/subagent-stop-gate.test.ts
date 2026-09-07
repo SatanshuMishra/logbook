@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { layoutFor } from '../../src/store/layout.ts'
 import { subagentStopGateVerdict } from '../../src/hooklib/subagent-stop-gate.ts'
+import { runHookProcessWithEvent } from './hook-process.ts'
 import {
   commitOneThread,
   commitSessionEntry,
@@ -139,6 +140,49 @@ test('hook.subagent-gate-is-silent-on-a-session-id-that-cannot-be-a-path-segment
       existsSync(join(layout.value.state, 'subagent-gate')),
       false,
       'a rejected session_id must not create any marker directory'
+    )
+  })
+})
+
+test('hook.subagent-gate-is-silent-on-an-empty-agent-type', async () => {
+  await withFixture(async ({ rt, repo }) => {
+    commitOneThread(rt, repo, 'subagent-gate-empty-agent-type')
+    startSession(rt, repo, SESSION_ID)
+
+    const verdict = subagentStopGateVerdict(rt, subagentEventFor(repo, SESSION_ID, 'agent-one', ''))
+
+    assert.equal(verdict.kind, 'silent', 'an empty agent_type marks an internal fork, not a real subagent')
+
+    const layout = layoutFor(rt, repo)
+    assert.equal(layout.ok, true)
+    if (!layout.ok) return
+    assert.equal(
+      existsSync(join(layout.value.state, 'subagent-gate')),
+      false,
+      'an internal fork must not create any marker directory'
+    )
+  })
+})
+
+test('hook.subagent-stop-process-does-not-block-when-agent-type-is-absent-from-payload', async () => {
+  await withFixture(async ({ rt, repo }) => {
+    commitOneThread(rt, repo, 'subagent-stop-process-agent-type-absent')
+    startSession(rt, repo, SESSION_ID)
+
+    const pluginDataRoot = rt.env.CLAUDE_PLUGIN_DATA
+    assert.equal(typeof pluginDataRoot, 'string', 'the fixture runtime must carry a CLAUDE_PLUGIN_DATA path')
+    if (typeof pluginDataRoot !== 'string') return
+
+    const eventWithNoAgentType = { session_id: SESSION_ID, cwd: repo, agent_id: 'agent-one' }
+
+    const result = runHookProcessWithEvent('subagent-stop', eventWithNoAgentType, {
+      env: { CLAUDE_PLUGIN_DATA: pluginDataRoot }
+    })
+
+    assert.equal(
+      result.status,
+      0,
+      `expected the subagent-stop hook process to not block when agent_type is absent from the payload, got status ${String(result.status)} stderr: ${result.stderr}`
     )
   })
 })
