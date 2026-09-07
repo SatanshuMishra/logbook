@@ -39,7 +39,9 @@ test('lineage.briefing-renders-the-predecessor-it-was-opened-with', async () => 
     const first = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
       title: 'The thread that came first',
       slug: 'came-first',
-      completion_criteria: [{ text: 'the first criterion', check: 'the lineage fixture check' }]
+      active_goal: 'exercise the lineage fixture',
+      next_step: 'exercise the lineage fixture',
+      completion_criteria: [{ text: 'the first criterion', check: 'the lineage fixture check', settledness: 'proposed' }]
     })
     assert.equal(first.ok, true)
     if (!first.ok) throw new Error('expected the predecessor thread to open')
@@ -47,7 +49,9 @@ test('lineage.briefing-renders-the-predecessor-it-was-opened-with', async () => 
     const second = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
       title: 'The thread that succeeds it',
       slug: 'succeeds-it',
-      completion_criteria: [{ text: 'the second criterion', check: 'the lineage fixture check' }],
+      active_goal: 'exercise the lineage fixture',
+      next_step: 'exercise the lineage fixture',
+      completion_criteria: [{ text: 'the second criterion', check: 'the lineage fixture check', settledness: 'proposed' }],
       predecessor_id: first.structured.thread_id
     })
     assert.equal(second.ok, true)
@@ -71,7 +75,9 @@ test('lineage.unresolvable-predecessor-is-refused-at-write-time', async () => {
     const refused = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
       title: 'A thread naming a predecessor that does not exist',
       slug: 'dangling-predecessor',
-      completion_criteria: [{ text: 'the only criterion', check: 'the lineage fixture check' }],
+      active_goal: 'exercise the lineage fixture',
+      next_step: 'exercise the lineage fixture',
+      completion_criteria: [{ text: 'the only criterion', check: 'the lineage fixture check', settledness: 'proposed' }],
       predecessor_id: rt.ulid()
     })
     assert.equal(refused.ok, false)

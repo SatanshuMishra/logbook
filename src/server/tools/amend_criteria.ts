@@ -31,7 +31,23 @@ const AmendCriteriaInputSchema = z.strictObject({
     .min(1)
     .max(caps.CRITERION_CHECK_MAX)
     .optional()
-    .describe('the re-runnable check that decides whether an inserted criterion is true; required for insert, ignored otherwise'),
+    .describe(
+      'the re-runnable check that decides whether an inserted criterion is true; required for insert unless settledness is unsettled, ignored otherwise'
+    ),
+  settledness: z
+    .enum(['confirmed', 'proposed', 'unsettled'])
+    .optional()
+    .describe(
+      'who stands behind an inserted criterion: confirmed when the human stated or agreed it, proposed when you derived it, unsettled when done is genuinely not known for this part yet; required for insert, ignored otherwise'
+    ),
+  settled_by: z
+    .string()
+    .regex(/\S/)
+    .max(caps.CRITERION_SETTLED_BY_MAX)
+    .optional()
+    .describe(
+      'the human words behind a confirmed inserted criterion, quoted verbatim; required when settledness is confirmed, refused on any other settledness'
+    ),
   position: z
     .number()
     .int()
@@ -65,11 +81,38 @@ export const missingFieldRefusal = (field: string, forOperation: string): Refusa
   message: `${field} is required when operation is "${forOperation}".`
 })
 
+const checkOwedRefusal = (settledness: string): Refusal => ({
+  ok: false,
+  field: 'check',
+  accepted: 'a check on every confirmed or proposed criterion',
+  example: 'npm test exits 0',
+  retryable: true,
+  message: `check is required when operation is "insert" and settledness is "${settledness}"; a criterion that asserts something needs something to decide it; remedy: add a check, or record it as unsettled if done is not known for this part yet.`
+})
+
+const quoteOwedRefusal = (): Refusal => ({
+  ok: false,
+  field: 'settled_by',
+  accepted: 'the human words behind a confirmed criterion, quoted verbatim',
+  example: 'it has to block before the turn ends',
+  retryable: true,
+  message: 'settled_by is required when operation is "insert" and settledness is "confirmed"; remedy: quote what the human said, or record it as proposed.'
+})
+
+const quoteNotOwedRefusal = (settledness: string): Refusal => ({
+  ok: false,
+  field: 'settled_by',
+  accepted: 'settled_by only on a confirmed criterion',
+  example: 'omit settled_by',
+  retryable: true,
+  message: `settled_by is refused when settledness is "${settledness}"; remedy: drop the quote, or record the criterion as confirmed if the human really said it.`
+})
+
 export const amendCriteriaTool: ToolSpec<AmendCriteriaInput, AmendCriteriaOutput> = {
   name: 'amend_criteria',
   title: 'Amend criteria',
   description:
-    'Amends one completion criterion on a thread by inserting a new one, rewriting the text of an existing one, or striking it, and no other kind of edit reaches a criterion once it exists. Every amendment carries a decision_id that must resolve to a decision record already stored on this project; an id that resolves to nothing is refused. Striking a criterion keeps it on the thread marked struck rather than deleting it, so a struck criterion still renders in the history it came from. An inserted criterion also carries a check, the re-runnable thing that decides whether it is true, and an insert with no check is refused. Insert also takes an optional zero-based position: {"operation": "insert", "text": "the merge test passes in both push orders", "check": "npm test exits 0", "kind": "detour", "decision_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV", "position": 0} inserts a criterion at the very front of the list, and omitting position appends it at the end instead.',
+    'Amends one completion criterion on a thread by inserting a new one, rewriting the text of an existing one, or striking it, and no other kind of edit reaches a criterion once it exists. Every amendment carries a decision_id that must resolve to a decision record already stored on this project; an id that resolves to nothing is refused. Striking a criterion keeps it on the thread marked struck rather than deleting it, so a struck criterion still renders in the history it came from. An inserted criterion records who stands behind it: confirmed when the human said so, proposed when derived, or unsettled when done is not yet known. A confirmed or proposed insert also carries a check, the re-runnable thing that decides whether it is true, and an insert missing what its settledness requires is refused. A confirmed insert also carries settled_by, the human\'s own words quoted verbatim, and a settled_by given on any other settledness is refused. Insert also takes an optional zero-based position: {"operation": "insert", "text": "the merge test passes in both push orders", "check": "npm test exits 0", "settledness": "proposed", "kind": "detour", "decision_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV", "position": 0} inserts a criterion at the very front of the list, and omitting position appends it at the end instead.',
   input: AmendCriteriaInputSchema,
   output: AmendCriteriaOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -90,7 +133,16 @@ export const amendCriteriaTool: ToolSpec<AmendCriteriaInput, AmendCriteriaOutput
     if (input.operation === 'insert') {
       if (input.text === undefined) return { ok: false, refusal: missingFieldRefusal('text', 'insert') }
       if (input.kind === undefined) return { ok: false, refusal: missingFieldRefusal('kind', 'insert') }
-      if (input.check === undefined) return { ok: false, refusal: missingFieldRefusal('check', 'insert') }
+      if (input.settledness === undefined) return { ok: false, refusal: missingFieldRefusal('settledness', 'insert') }
+      if (input.settledness !== 'unsettled' && input.check === undefined) {
+        return { ok: false, refusal: checkOwedRefusal(input.settledness) }
+      }
+      if (input.settledness === 'confirmed' && (input.settled_by === undefined || input.settled_by.length === 0)) {
+        return { ok: false, refusal: quoteOwedRefusal() }
+      }
+      if (input.settledness !== 'confirmed' && input.settled_by !== undefined) {
+        return { ok: false, refusal: quoteNotOwedRefusal(input.settledness) }
+      }
 
       const result = insertCriterion(
         rt,
@@ -100,6 +152,8 @@ export const amendCriteriaTool: ToolSpec<AmendCriteriaInput, AmendCriteriaOutput
           check: input.check,
           kind: input.kind,
           decisionId: input.decision_id,
+          settledness: input.settledness,
+          settledBy: input.settled_by,
           ...(input.position !== undefined ? { position: input.position } : {})
         },
         resolveDecision

@@ -213,10 +213,10 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     '- does not cover the CLI',
     '',
     '**Completion criteria:**',
-    `- c1 [done]: first criterion (id ${criterionA.id})`,
+    `- c1 [done] [proposed]: first criterion (id ${criterionA.id})`,
     '  - check: npm test',
     '  - result: 436 tests, 0 fail (verified)',
-    `- c2 [struck]: second criterion (id ${criterionB.id})`,
+    `- c2 [struck] [proposed]: second criterion (id ${criterionB.id})`,
     '  - check: not recorded',
     '',
     '**Settled items (on goals already met or struck):**',
@@ -256,6 +256,9 @@ test('briefing.omits-empty-list-sections-entirely', () => {
     '',
     'write the tests',
     '',
+    '**Completion criteria:**',
+    '- none recorded; a definition of done is still owed.',
+    '',
     '**Decisions:**',
     '- resolved: 0'
   ].join('\n')
@@ -266,7 +269,6 @@ test('briefing.omits-empty-list-sections-entirely', () => {
     '**Open risks:**',
     '**Key decisions:**',
     '**Out of scope:**',
-    '**Completion criteria:**',
     '**Settled items (on goals already met or struck):**',
     '**Not shown:**'
   ]) {
@@ -294,7 +296,7 @@ test('briefing.criterion-status-is-open-when-undone-and-unstruck', () => {
   const criterion = { id: rt.ulid(), ordinal: 1, text: 'not started yet', done: false, kind: 'planned' as const, struck_by: null }
   const thread = baseThread({ completion_criteria: [criterion] })
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  assert.ok(rendered.split('\n').includes(`- c1 [open]: not started yet (id ${criterion.id})`))
+  assert.ok(rendered.split('\n').includes(`- c1 [open] [proposed]: not started yet (id ${criterion.id})`))
 })
 
 test('briefing.renders-dangling-and-quarantined-decisions-in-order', () => {
@@ -360,10 +362,60 @@ const risk = (overrides: Partial<Risk> = {}): Risk => ({
   ...overrides
 })
 
-const CRITERION_ROW_PATTERN = /^- c\d+ \[(open|done|struck)\]: /
+const CRITERION_ROW_PATTERN = /^- c\d+ \[(open|done|struck)\] \[(confirmed|proposed|unsettled)\]: /
 
 const criterionRowCount = (rendered: string): number =>
   rendered.split('\n').filter((line) => CRITERION_ROW_PATTERN.test(line)).length
+
+test('briefing.criterion-line-carries-its-settledness', () => {
+  const thread = baseThread({ completion_criteria: [criterion({ settledness: 'proposed', done: false })] })
+
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
+
+  assert.match(
+    rendered,
+    /- c1 \[open\] \[proposed\]:/,
+    'settledness renders beside the status, on the criterion own line'
+  )
+})
+
+test('briefing.confirmed-criterion-renders-the-human-words', () => {
+  const thread = baseThread({
+    completion_criteria: [
+      criterion({ settledness: 'confirmed', settled_by: 'it has to block before the turn ends' })
+    ]
+  })
+
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
+
+  assert.ok(
+    rendered.includes('- settled by: it has to block before the turn ends'),
+    `a confirmed criterion shows whose words back it, got: ${rendered}`
+  )
+})
+
+test('briefing.unconfirmed-criterion-shows-no-settled-by-line', () => {
+  const thread = baseThread({ completion_criteria: [criterion({ settledness: 'proposed', settled_by: null })] })
+
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
+
+  assert.equal(rendered.includes('settled by:'), false, 'there is nobody to quote on a criterion nobody confirmed')
+})
+
+test('briefing.a-thread-with-no-criteria-says-the-definition-of-done-is-owed', () => {
+  const thread = baseThread({ completion_criteria: [] })
+
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
+
+  assert.ok(
+    rendered.includes('**Completion criteria:**'),
+    'the section renders rather than being suppressed, so silence is never mistaken for a clipped section'
+  )
+  assert.ok(
+    rendered.includes('none recorded; a definition of done is still owed'),
+    `the empty case says so in words, got: ${rendered}`
+  )
+})
 
 test('briefing.live-risks-render-in-the-order-they-were-recorded', () => {
   const first = criterion({ ordinal: 1, text: 'the first criterion' })
@@ -525,7 +577,9 @@ test('briefing.a-criterion-beyond-the-forty-that-the-deleted-cap-once-showed-ren
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
 
   assert.ok(
-    rendered.split('\n').some((line) => line.startsWith('- c41 [done]: finished after the old shown slots ran out (id ')),
+    rendered
+      .split('\n')
+      .some((line) => line.startsWith('- c41 [done] [proposed]: finished after the old shown slots ran out (id ')),
     'the criterion at ordinal 41 must render; the display cap that withheld it is deleted'
   )
   assert.ok(

@@ -192,7 +192,9 @@ const overCapProbeCriterion = (rt: Runtime, text: string): Criterion => ({
   text,
   done: false,
   kind: 'planned',
-  struck_by: null
+  struck_by: null,
+  settledness: 'proposed',
+  settled_by: null
 })
 
 const buildThreadAtWholeRecordCapEdge = (rt: Runtime): Thread => {
@@ -279,7 +281,9 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     const firstOpen = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
       title: 'census tool fixture thread',
       slug: 'census-tool-fixture',
-      completion_criteria: [{ text: 'a census criterion', check: 'the census check' }]
+      active_goal: 'ship the census tool fixture',
+      next_step: 'exercise the census tool fixture',
+      completion_criteria: [{ text: 'a census criterion', check: 'the census check', settledness: 'proposed' }]
     })
     if (!firstOpen.ok) throw new Error('expected openThreadTool to open the census tool fixture thread')
     const threadId = firstOpen.structured.thread_id
@@ -316,7 +320,9 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     const duplicateOpen = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
       title: 'census tool fixture thread again',
       slug: 'census-tool-fixture',
-      completion_criteria: [{ text: 'a census criterion', check: 'the census check' }]
+      active_goal: 'ship the census tool fixture',
+      next_step: 'exercise the census tool fixture',
+      completion_criteria: [{ text: 'a census criterion', check: 'the census check', settledness: 'proposed' }]
     })
     if (duplicateOpen.ok) throw new Error('expected openThreadTool to refuse a duplicate slug')
     refusals.push({ producer: OPEN_THREAD_DUPLICATE_SLUG_PRODUCER, refusal: duplicateOpen.refusal })
@@ -659,7 +665,9 @@ const buildResolveConflictFixture = async (): Promise<ResolveConflictFixture> =>
   const openedThread = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
     title: threadTitle,
     slug: 'census-resolve-fixture',
-    completion_criteria: [{ text: 'a census criterion', check: 'the census check' }]
+    active_goal: 'ship the resolve-conflict fixture',
+    next_step: 'exercise the resolve-conflict fixture',
+    completion_criteria: [{ text: 'a census criterion', check: 'the census check', settledness: 'proposed' }]
   })
   if (!openedThread.ok) throw new Error('expected openThreadTool to open the resolve-conflict fixture thread')
 
@@ -1242,7 +1250,7 @@ const collectRealRefusals = async (): Promise<TaggedRefusal[]> => {
   const insertResult = insertCriterion(
     domainRt,
     domainThread,
-    { text: 'a census criterion', check: 'the census check', kind: 'planned', decisionId: undefined },
+    { text: 'a census criterion', check: 'the census check', kind: 'planned', decisionId: undefined, settledness: 'proposed' },
     neverResolves
   )
   if (insertResult.ok) throw new Error('expected insertCriterion to refuse without a decision id')

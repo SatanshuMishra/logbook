@@ -66,7 +66,9 @@ export const seedStore = async (spawned: SpawnedServer): Promise<SeededIds> => {
     arguments: {
       title: 'resources fixture thread',
       slug: 'resources-fixture-thread',
-      completion_criteria: [{ text: 'a resources fixture criterion', check: 'the resources fixture check' }]
+      active_goal: 'exercise the resources fixture',
+      next_step: 'exercise the resources fixture',
+      completion_criteria: [{ text: 'a resources fixture criterion', check: 'the resources fixture check', settledness: 'proposed' }]
     }
   })) as CallToolResult
   assertOkResult('open_thread (resources fixture arrange)', opened)

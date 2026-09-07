@@ -46,7 +46,9 @@ const openFixtureThread = async (
   const opened = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
     title: `criterion contract fixture ${slug}`,
     slug,
-    completion_criteria: criteria
+    active_goal: 'ship the criterion contract fixture',
+    next_step: 'exercise the criterion under test',
+    completion_criteria: criteria.map((entry) => ({ ...entry, settledness: 'proposed' as const }))
   })
   if (!opened.ok) throw new Error(`criterion fixture: open_thread refused: ${opened.refusal.message}`)
   return {
@@ -75,18 +77,20 @@ const readStoredCriteria = (rt: Runtime, threadId: string): Criterion[] => {
   return slot.record.completion_criteria
 }
 
-test('criterion.open-thread-refuses-a-criterion-carrying-no-check', () => {
+test('criterion.open-thread-refuses-a-criterion-carrying-no-settledness', () => {
   const declared = declare<unknown>(openThreadTool.name, openThreadTool.input)
   const refusal = declared.parse({
-    title: 'a thread whose criterion states no check',
-    slug: 'no-check-thread',
-    completion_criteria: [{ text: 'the health check ships' }]
+    title: 'a thread whose criterion states no settledness',
+    slug: 'no-settledness-thread',
+    active_goal: 'ship the criterion contract fixture',
+    next_step: 'exercise the criterion under test',
+    completion_criteria: [{ text: 'the health check ships', check: 'npm test exits 0' }]
   })
   assert.equal(refusal.ok, false)
-  if (refusal.ok) throw new Error('expected open_thread to refuse a criterion carrying no check')
-  assert.equal(refusal.field, 'completion_criteria.0.check')
+  if (refusal.ok) throw new Error('expected open_thread to refuse a criterion carrying no settledness')
+  assert.equal(refusal.field, 'completion_criteria.0.settledness')
   assert.equal(refusal.retryable, true)
-  assert.match(refusal.accepted, /the re-runnable check that decides whether this criterion is true/)
+  assert.match(refusal.accepted, /who stands behind this criterion/)
 })
 
 test('criterion.open-thread-stores-the-check-it-was-given', async () => {
@@ -113,15 +117,19 @@ test('criterion.amend-criteria-refuses-an-insert-carrying-no-check', async () =>
       operation: 'insert',
       decision_id: decisionId,
       text: 'a criterion inserted with no check',
-      kind: 'detour'
+      kind: 'detour',
+      settledness: 'proposed'
     })
     assert.equal(refused.ok, false)
     if (refused.ok) throw new Error('expected amend_criteria to refuse an insert carrying no check')
     assert.equal(refused.refusal.field, 'check')
-    assert.equal(refused.refusal.accepted, 'a value for check when operation is "insert"')
+    assert.equal(refused.refusal.accepted, 'a check on every confirmed or proposed criterion')
     assert.equal(refused.refusal.example, 'npm test exits 0')
     assert.equal(refused.refusal.retryable, true)
-    assert.equal(refused.refusal.message, 'check is required when operation is "insert".')
+    assert.equal(
+      refused.refusal.message,
+      'check is required when operation is "insert" and settledness is "proposed"; a criterion that asserts something needs something to decide it; remedy: add a check, or record it as unsettled if done is not known for this part yet.'
+    )
     assert.equal(readStoredCriteria(rt, threadId).length, 1)
   })
 })
@@ -138,7 +146,8 @@ test('criterion.amend-criteria-stores-the-check-on-an-inserted-criterion', async
       decision_id: decisionId,
       text: 'the merge test passes in both push orders',
       check: 'node --test test/sync/two-clones.test.ts exits 0',
-      kind: 'detour'
+      kind: 'detour',
+      settledness: 'proposed'
     })
     assert.equal(inserted.ok, true)
     if (!inserted.ok) throw new Error('expected amend_criteria to insert a criterion carrying a check')
@@ -153,8 +162,10 @@ test('criterion.open-thread-refuses-a-check-that-overflows-its-cap-once-escaped'
     const refused = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
       title: 'a thread whose criterion check overflows its cap once escaped',
       slug: 'over-cap-check-thread',
+      active_goal: 'ship the criterion contract fixture',
+      next_step: 'exercise the criterion under test',
       completion_criteria: [
-        { text: 'the health check ships', check: String.fromCharCode(1).repeat(84) }
+        { text: 'the health check ships', check: String.fromCharCode(1).repeat(84), settledness: 'proposed' }
       ]
     })
     assert.equal(refused.ok, false)
@@ -169,6 +180,29 @@ test('criterion.open-thread-refuses-a-check-that-overflows-its-cap-once-escaped'
     assert.equal(
       refused.refusal.message,
       `completion_criteria[0].check exceeds its cap of ${caps.CRITERION_CHECK_MAX} characters after escaping; observed 504; remedy: shorten the check and retry.`
+    )
+    const opened = openStore(rt, rt.cwd)
+    if (!opened.ok) throw new Error('criterion fixture: the store did not open')
+    assert.equal(opened.value.readThreads().length, 0)
+  })
+})
+
+test('criterion.open-thread-refuses-an-active-goal-that-overflows-its-cap-once-escaped', async () => {
+  await withCriterionFixture(async (rt) => {
+    const refused = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
+      title: 'a thread whose active goal overflows its cap once escaped',
+      slug: 'over-cap-active-goal-thread',
+      active_goal: String.fromCharCode(1).repeat(84),
+      next_step: 'exercise the criterion under test'
+    })
+    assert.equal(refused.ok, false)
+    if (refused.ok) throw new Error('expected open_thread to refuse an active_goal that overflows its cap once escaped')
+    assert.equal(refused.refusal.field, 'active_goal')
+    assert.equal(refused.refusal.accepted, `at most ${caps.SPINE_ACTIVE_GOAL_MAX} characters after escaping`)
+    assert.equal(refused.refusal.retryable, true)
+    assert.equal(
+      refused.refusal.message,
+      `active_goal exceeds its cap of ${caps.SPINE_ACTIVE_GOAL_MAX} characters after escaping; observed 504; remedy: shorten the value and retry.`
     )
     const opened = openStore(rt, rt.cwd)
     if (!opened.ok) throw new Error('criterion fixture: the store did not open')

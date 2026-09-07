@@ -195,9 +195,12 @@ const openFixtureThread = async (rt: Runtime, label: string, criteriaCount = 1):
   const opened = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
     title: `${label} fixture thread`,
     slug: `${label.replace(/[^a-z0-9]+/gi, '-')}-fixture-thread`,
+    active_goal: `exercise the ${label} fixture`,
+    next_step: `exercise the ${label} fixture`,
     completion_criteria: Array.from({ length: criteriaCount }, (_, index) => ({
       text: `${label} criterion ${index + 1}`,
-      check: `${label} check ${index + 1}`
+      check: `${label} check ${index + 1}`,
+      settledness: 'proposed' as const
     }))
   })
   if (!opened.ok) throw new Error(`optional-argument-recipes: expected the ${label} fixture thread to open`)
@@ -229,7 +232,9 @@ const recordFixtureDecision = async (rt: Runtime, threadId: string, label: strin
 const successorThreadArgs = (): Record<string, unknown> => ({
   title: 'successor fixture thread',
   slug: 'successor-fixture-thread',
-  completion_criteria: [{ text: 'a successor criterion', check: 'a successor check' }]
+  active_goal: 'exercise the successor fixture',
+  next_step: 'exercise the successor fixture',
+  completion_criteria: [{ text: 'a successor criterion', check: 'a successor check', settledness: 'proposed' }]
 })
 
 const openThreadPredecessorIdRecipe = (): Promise<RecipeResult> =>
@@ -257,6 +262,99 @@ const openThreadArtifactsRecipe = (): Promise<RecipeResult> =>
     (structured, rt) => ({
       artifacts:
         readThreadRecord(rt, mustBeString(structured.thread_id, 'the opened thread id'))?.artifacts ?? []
+    })
+  )
+
+const openThreadNoCriteriaArgs = (): Record<string, unknown> => ({
+  title: 'completion criteria optionality fixture thread',
+  slug: 'completion-criteria-optionality-fixture-thread',
+  active_goal: 'exercise the completion-criteria optionality fixture',
+  next_step: 'exercise the completion-criteria optionality fixture'
+})
+
+const openThreadCompletionCriteriaRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'open_thread.completion_criteria',
+    openThreadTool,
+    async () => undefined,
+    () => openThreadNoCriteriaArgs(),
+    () => ({
+      ...openThreadNoCriteriaArgs(),
+      completion_criteria: [
+        {
+          text: 'a completion-criteria optionality fixture criterion',
+          check: 'a completion-criteria optionality fixture check',
+          settledness: 'proposed'
+        }
+      ]
+    }),
+    (structured, rt) => ({
+      completion_criteria:
+        readThreadRecord(rt, mustBeString(structured.thread_id, 'the opened thread id'))?.completion_criteria ?? []
+    })
+  )
+
+const openThreadCriterionCheckRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'open_thread.completion_criteria[].check',
+    openThreadTool,
+    async () => undefined,
+    () => ({
+      title: 'criterion check optionality fixture thread',
+      slug: 'criterion-check-optionality-fixture-thread',
+      active_goal: 'exercise the criterion-check optionality fixture',
+      next_step: 'exercise the criterion-check optionality fixture',
+      completion_criteria: [{ text: 'what counts as acceptable latency is not decided', settledness: 'unsettled' }]
+    }),
+    () => ({
+      title: 'criterion check optionality fixture thread',
+      slug: 'criterion-check-optionality-fixture-thread',
+      active_goal: 'exercise the criterion-check optionality fixture',
+      next_step: 'exercise the criterion-check optionality fixture',
+      completion_criteria: [
+        {
+          text: 'what counts as acceptable latency is not decided',
+          settledness: 'unsettled',
+          check: 'a criterion-check optionality fixture check'
+        }
+      ]
+    }),
+    (structured, rt) => ({
+      check:
+        readThreadRecord(rt, mustBeString(structured.thread_id, 'the opened thread id'))?.completion_criteria[0]?.check ?? null
+    })
+  )
+
+const openThreadCriterionSettledByRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'open_thread.completion_criteria[].settled_by',
+    openThreadTool,
+    async () => undefined,
+    () => ({
+      title: 'criterion settled_by optionality fixture thread',
+      slug: 'criterion-settled-by-optionality-fixture-thread',
+      active_goal: 'exercise the criterion settled_by optionality fixture',
+      next_step: 'exercise the criterion settled_by optionality fixture',
+      completion_criteria: [{ text: 'the suite is green', check: 'npm test exits 0', settledness: 'proposed' }]
+    }),
+    () => ({
+      title: 'criterion settled_by optionality fixture thread',
+      slug: 'criterion-settled-by-optionality-fixture-thread',
+      active_goal: 'exercise the criterion settled_by optionality fixture',
+      next_step: 'exercise the criterion settled_by optionality fixture',
+      completion_criteria: [
+        {
+          text: 'the gate fires',
+          check: 'the stop-gate tests pass',
+          settledness: 'confirmed',
+          settled_by: 'it has to block'
+        }
+      ]
+    }),
+    (structured, rt) => ({
+      settled_by:
+        readThreadRecord(rt, mustBeString(structured.thread_id, 'the opened thread id'))?.completion_criteria[0]
+          ?.settled_by ?? null
     })
   )
 
@@ -322,18 +420,24 @@ const SIMPLE_UPDATE_FIELDS: SimpleUpdateFieldSpec[] = [
   {
     field: 'active_goal',
     sentinelExtra: () => ({ active_goal: 'sentinel active goal text' }),
-    extract: (structured, rt, ctx) => ({
-      spine_fields_updated: structured.spine_fields_updated,
-      active_goal: readThreadRecord(rt, ctx.threadId)?.spine.active_goal ?? ''
-    })
+    extract: (structured, rt, ctx) => {
+      const value = readThreadRecord(rt, ctx.threadId)?.spine.active_goal ?? ''
+      return {
+        spine_fields_updated: structured.spine_fields_updated,
+        active_goal: value === 'exercise the update-thread fixture' ? '' : value
+      }
+    }
   },
   {
     field: 'next_step',
     sentinelExtra: () => ({ next_step: 'sentinel next step text' }),
-    extract: (structured, rt, ctx) => ({
-      spine_fields_updated: structured.spine_fields_updated,
-      next_step: readThreadRecord(rt, ctx.threadId)?.spine.next_step ?? ''
-    })
+    extract: (structured, rt, ctx) => {
+      const value = readThreadRecord(rt, ctx.threadId)?.spine.next_step ?? ''
+      return {
+        spine_fields_updated: structured.spine_fields_updated,
+        next_step: value === 'exercise the update-thread fixture' ? '' : value
+      }
+    }
   },
   {
     field: 'last_session',
@@ -490,22 +594,36 @@ const amendInsertRecipe = (
 const amendCriteriaTextRecipe = (): Promise<RecipeResult> =>
   amendInsertRecipe(
     'amend_criteria.text',
-    { kind: 'planned', check: 'sentinel insert check' },
+    { kind: 'planned', check: 'sentinel insert check', settledness: 'proposed' },
     { text: 'sentinel insert text' }
   )
 
 const amendCriteriaKindRecipe = (): Promise<RecipeResult> =>
   amendInsertRecipe(
     'amend_criteria.kind',
-    { text: 'sentinel insert text', check: 'sentinel insert check' },
+    { text: 'sentinel insert text', check: 'sentinel insert check', settledness: 'proposed' },
     { kind: 'planned' }
   )
 
 const amendCriteriaCheckRecipe = (): Promise<RecipeResult> =>
   amendInsertRecipe(
     'amend_criteria.check',
-    { text: 'sentinel insert text', kind: 'planned' },
+    { text: 'sentinel insert text', kind: 'planned', settledness: 'proposed' },
     { check: 'sentinel insert check' }
+  )
+
+const amendCriteriaSettlednessRecipe = (): Promise<RecipeResult> =>
+  amendInsertRecipe(
+    'amend_criteria.settledness',
+    { text: 'sentinel insert text', kind: 'planned', check: 'sentinel insert check' },
+    { settledness: 'proposed' }
+  )
+
+const amendCriteriaSettledByRecipe = (): Promise<RecipeResult> =>
+  amendInsertRecipe(
+    'amend_criteria.settled_by',
+    { text: 'sentinel insert text', kind: 'planned', check: 'sentinel insert check', settledness: 'confirmed' },
+    { settled_by: 'sentinel settled_by quote' }
   )
 
 type AmendCriteriaPositionFixtureCtx = { threadId: string; decisionId: string }
@@ -522,7 +640,8 @@ const amendPositionBaseArgs = (ctx: AmendCriteriaPositionFixtureCtx): Record<str
   decision_id: ctx.decisionId,
   text: 'sentinel position text',
   kind: 'planned',
-  check: 'sentinel position check'
+  check: 'sentinel position check',
+  settledness: 'proposed'
 })
 
 const amendCriteriaPositionRecipe = (): Promise<RecipeResult> =>
@@ -587,10 +706,13 @@ const PARK_FIELDS: ParkFieldSpec[] = [
     field: 'next_step',
     setup: openParkThreadFixture,
     sentinelArgs: () => ({ next_step: 'sentinel park next step text' }),
-    extract: (structured, rt, ctx) => ({
-      spine_fields_updated: structured.spine_fields_updated,
-      next_step: readThreadRecord(rt, ctx.threadId)?.spine.next_step ?? ''
-    })
+    extract: (structured, rt, ctx) => {
+      const value = readThreadRecord(rt, ctx.threadId)?.spine.next_step ?? ''
+      return {
+        spine_fields_updated: structured.spine_fields_updated,
+        next_step: value === 'exercise the park-thread fixture' ? '' : value
+      }
+    }
   },
   {
     field: 'landed',
@@ -709,6 +831,9 @@ const listThreadsLimitRecipe = (): Promise<RecipeResult> =>
 export const RECIPES: ReadonlyMap<string, () => Promise<RecipeResult>> = new Map([
   ['open_thread.predecessor_id', openThreadPredecessorIdRecipe],
   ['open_thread.artifacts', openThreadArtifactsRecipe],
+  ['open_thread.completion_criteria', openThreadCompletionCriteriaRecipe],
+  ['open_thread.completion_criteria[].check', openThreadCriterionCheckRecipe],
+  ['open_thread.completion_criteria[].settled_by', openThreadCriterionSettledByRecipe],
   ...simpleUpdateThreadRecipes,
   ['update_thread.risks_add[].refs', updateThreadRisksAddRefsRecipe],
   ['update_thread.risks_add[].criterion_id', updateThreadRisksAddCriterionIdRecipe],
@@ -716,6 +841,8 @@ export const RECIPES: ReadonlyMap<string, () => Promise<RecipeResult>> = new Map
   ['amend_criteria.text', amendCriteriaTextRecipe],
   ['amend_criteria.kind', amendCriteriaKindRecipe],
   ['amend_criteria.check', amendCriteriaCheckRecipe],
+  ['amend_criteria.settledness', amendCriteriaSettlednessRecipe],
+  ['amend_criteria.settled_by', amendCriteriaSettledByRecipe],
   ['amend_criteria.position', amendCriteriaPositionRecipe],
   ...parkThreadRecipes,
   ...recordDecisionSimpleRecipes,
@@ -740,7 +867,8 @@ export const TEST_2_CASES: Test2Case[] = [
     minimalArgs: () => ({
       title: 'test-2 open_thread fixture thread',
       slug: 'test-2-open-thread-fixture-thread',
-      completion_criteria: [{ text: 'a test-2 fixture criterion', check: 'a test-2 fixture check' }]
+      active_goal: 'exercise the test-2 open_thread fixture',
+      next_step: 'exercise the test-2 open_thread fixture'
     }),
     attributable: () => ({})
   },

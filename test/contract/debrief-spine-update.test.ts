@@ -124,8 +124,14 @@ test('debrief.returns-a-non-empty-spine-update', async () => {
     const opened = await callOk(spawned, 'open_thread', {
       title: 'debrief spine update fixture thread',
       slug: 'debrief-spine-update-fixture',
+      active_goal: 'exercise the debrief spine-update fixture',
+      next_step: 'exercise the debrief spine-update fixture',
       completion_criteria: [
-        { text: 'prove the documented debrief sequence refreshes the running summary', check: 'the debrief spine update scenario check' }
+        {
+          text: 'prove the documented debrief sequence refreshes the running summary',
+          check: 'the debrief spine update scenario check',
+          settledness: 'proposed'
+        }
       ]
     })
     const threadId = (opened.structuredContent as { thread_id: string }).thread_id

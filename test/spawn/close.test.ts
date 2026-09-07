@@ -86,7 +86,10 @@ const createFixtureThread = async (
   overrides: Record<string, unknown> = {}
 ): Promise<{ threadId: string; criterionId: string }> => {
   const schema = schemaFor(published, 'open_thread')
-  const { valid } = generateSchemaCases('open_thread', schema, overrides)
+  const { valid } = generateSchemaCases('open_thread', schema, {
+    completion_criteria: [{ text: 'a close fixture criterion', check: 'the close fixture check', settledness: 'proposed' }],
+    ...overrides
+  })
   const result = (await spawned.client.callTool({ name: 'open_thread', arguments: valid })) as CallToolResult
   assertOkResult('open_thread (fixture arrange)', result)
   const structured = result.structuredContent as { thread_id: string; completion_criteria: { id: string }[] }

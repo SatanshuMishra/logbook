@@ -189,7 +189,9 @@ const createFixtureThread = async (
   published: PublishedTool[]
 ): Promise<{ threadId: string; criterionId: string }> => {
   const schema = schemaFor(published, 'open_thread')
-  const { valid } = generateSchemaCases('open_thread', schema)
+  const { valid } = generateSchemaCases('open_thread', schema, {
+    completion_criteria: [{ text: 'a lifecycle fixture criterion', check: 'the lifecycle fixture check', settledness: 'proposed' }]
+  })
   const result = (await spawned.client.callTool({ name: 'open_thread', arguments: valid })) as CallToolResult
   assertOkResult('open_thread (fixture arrange)', result)
   const structured = result.structuredContent as { thread_id: string; completion_criteria: { id: string }[] }
@@ -264,7 +266,7 @@ test('open_thread.spawn.contract', async () => {
 
 test('open_thread.rejects-invalid', async () => {
   await withFixture(async (fx) => {
-    await runRejectsInvalid(fx, 'open_thread', [])
+    await runRejectsInvalid(fx, 'open_thread', ['minItems'])
   })
 })
 
@@ -360,7 +362,8 @@ test('amend_criteria.spawn.contract', async () => {
       operation: insertOperation,
       text: synthesiseValue(schema, propOf(schema, 'text')),
       check: synthesiseValue(schema, propOf(schema, 'check')),
-      kind: synthesiseValue(schema, propOf(schema, 'kind'))
+      kind: synthesiseValue(schema, propOf(schema, 'kind')),
+      settledness: 'proposed'
     })
     const result = (await fx.spawned.client.callTool({ name: 'amend_criteria', arguments: valid })) as CallToolResult
     assertOkResult('amend_criteria', result)
@@ -493,11 +496,18 @@ test('amend_criteria.retention-cap-matches-stored-shape', async () => {
   await withFixture(async (fx) => {
     const criteria = Array.from({ length: caps.CRITERIA_MAX_ELEMENTS }, (_, i) => ({
       text: `criterion ${i}`,
-      check: `the check for criterion ${i}`
+      check: `the check for criterion ${i}`,
+      settledness: 'proposed'
     }))
     const opened = (await fx.spawned.client.callTool({
       name: 'open_thread',
-      arguments: { title: 'retention cap thread', slug: 'retention-cap-thread', completion_criteria: criteria }
+      arguments: {
+        title: 'retention cap thread',
+        slug: 'retention-cap-thread',
+        active_goal: 'exercise the retention cap fixture',
+        next_step: 'exercise the retention cap fixture',
+        completion_criteria: criteria
+      }
     })) as CallToolResult
     assertOkResult('open_thread (retention cap fixture)', opened)
     const openedStructured = opened.structuredContent as { thread_id: string; completion_criteria: { id: string }[] }
@@ -521,7 +531,8 @@ test('amend_criteria.retention-cap-matches-stored-shape', async () => {
         decision_id: decisionId,
         text: 'a new criterion inserted after the strike freed capacity',
         check: 'the check for the criterion inserted after the strike',
-        kind: 'detour'
+        kind: 'detour',
+        settledness: 'proposed'
       }
     })) as CallToolResult
     assertOkResult(
@@ -644,7 +655,9 @@ test('open_thread.title-cap-is-checked-after-escaping', async () => {
       arguments: {
         title: oversizedTitle,
         slug: 'title-cap-thread',
-        completion_criteria: [{ text: 'a criterion', check: 'the title-cap fixture check' }]
+        active_goal: 'exercise the title-cap fixture',
+        next_step: 'exercise the title-cap fixture',
+        completion_criteria: [{ text: 'a criterion', check: 'the title-cap fixture check', settledness: 'proposed' }]
       }
     })) as CallToolResult
 
@@ -720,9 +733,11 @@ test('update_thread.refuses-marking-a-struck-criterion-done', async () => {
       arguments: {
         title: 'struck-criteria thread',
         slug: 'struck-criteria-thread',
+        active_goal: 'exercise the struck-criteria fixture',
+        next_step: 'exercise the struck-criteria fixture',
         completion_criteria: [
-          { text: 'first criterion', check: 'the first check' },
-          { text: 'second criterion', check: 'the second check' }
+          { text: 'first criterion', check: 'the first check', settledness: 'proposed' },
+          { text: 'second criterion', check: 'the second check', settledness: 'proposed' }
         ]
       }
     })) as CallToolResult

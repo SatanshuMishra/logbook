@@ -217,7 +217,9 @@ const openThreadWithCriteria = async (
     arguments: {
       title: `${slug} fixture`,
       slug,
-      completion_criteria: criteria.map((text) => ({ text, check: 'the spawn fixture check' }))
+      active_goal: 'exercise the decisions spawn fixture',
+      next_step: 'exercise the decisions spawn fixture',
+      completion_criteria: criteria.map((text) => ({ text, check: 'the spawn fixture check', settledness: 'proposed' }))
     }
   })) as CallToolResult
   assertOkResult(`open_thread (${slug})`, opened)
@@ -714,7 +716,9 @@ test('decision.supersede-retains', async () => {
     const opened = await callTool(openThreadTool.handler, rt, {
       title: 'supersede fixture thread',
       slug: 'supersede-fixture-thread',
-      completion_criteria: [{ text: 'a criterion for the supersede fixture', check: 'the supersede fixture check' }]
+      active_goal: 'exercise the supersede fixture',
+      next_step: 'exercise the supersede fixture',
+      completion_criteria: [{ text: 'a criterion for the supersede fixture', check: 'the supersede fixture check', settledness: 'proposed' }]
     })
     assert.equal(opened.ok, true)
     if (!opened.ok) return
@@ -792,8 +796,10 @@ test('decision.records-project-head', async () => {
       const opened = await callTool(openThreadTool.handler, rt, {
         title: 'project head fixture thread',
         slug: 'project-head-fixture-thread',
+        active_goal: 'exercise the project-head fixture',
+        next_step: 'exercise the project-head fixture',
         completion_criteria: [
-          { text: 'a criterion for the project head fixture', check: 'the project head fixture check' }
+          { text: 'a criterion for the project head fixture', check: 'the project head fixture check', settledness: 'proposed' }
         ]
       })
       assert.equal(opened.ok, true)
@@ -965,8 +971,10 @@ test('concurrent.distinct-ids', async () => {
     const opened = await callTool(openThreadTool.handler, parentRt, {
       title: 'concurrency fixture thread',
       slug: 'concurrency-fixture-thread',
+      active_goal: 'exercise the concurrency fixture',
+      next_step: 'exercise the concurrency fixture',
       completion_criteria: [
-        { text: 'a criterion for the concurrency fixture', check: 'the concurrency fixture check' }
+        { text: 'a criterion for the concurrency fixture', check: 'the concurrency fixture check', settledness: 'proposed' }
       ]
     })
     assert.equal(opened.ok, true)
@@ -1158,7 +1166,9 @@ const mintThread = async (rt: Runtime, criteria: string[]): Promise<{ threadId: 
   const reply = await callTool(openThreadTool.handler, rt, {
     title: 'census fixture thread',
     slug: `census-fixture-thread-${randomUUID()}`,
-    completion_criteria: criteria.map((text) => ({ text, check: 'the census fixture check' }))
+    active_goal: 'exercise the census fixture',
+    next_step: 'exercise the census fixture',
+    completion_criteria: criteria.map((text) => ({ text, check: 'the census fixture check', settledness: 'proposed' }))
   })
   if (!reply.ok) {
     throw new Error(`census fixture: open_thread refused while minting a fixture thread: ${JSON.stringify(reply.refusal)}`)
@@ -1181,8 +1191,14 @@ const buildDriver = (tool: ToolSpec<never, never>, world: CensusWorld): CensusDr
           input: {
             title: 'census probe: open_thread accepted call',
             slug: `census-open-thread-probe-${randomUUID()}`,
+            active_goal: 'exercise the open_thread census probe',
+            next_step: 'exercise the open_thread census probe',
             completion_criteria: [
-              { text: 'a criterion minted purely for the open_thread census probe', check: 'the census probe check' }
+              {
+                text: 'a criterion minted purely for the open_thread census probe',
+                check: 'the census probe check',
+                settledness: 'proposed'
+              }
             ]
           }
         }
@@ -1246,7 +1262,8 @@ const buildDriver = (tool: ToolSpec<never, never>, world: CensusWorld): CensusDr
               decision_id: world.decisionId,
               text: 'a criterion inserted by the amend_criteria census probe',
               check: 'the amend_criteria census probe check',
-              kind: 'planned'
+              kind: 'planned',
+              settledness: 'proposed'
             }
           }
         ]
@@ -1547,10 +1564,12 @@ test('decision.is-immutable', async () => {
     const seedThread = await callTool(openThreadTool.handler, anaToolRt, {
       title: 'census seed thread',
       slug: 'census-seed-thread',
+      active_goal: 'exercise the census seed fixture',
+      next_step: 'exercise the census seed fixture',
       completion_criteria: [
-        { text: 'first seed criterion', check: 'the first seed check' },
-        { text: 'second seed criterion', check: 'the second seed check' },
-        { text: 'third seed criterion', check: 'the third seed check' }
+        { text: 'first seed criterion', check: 'the first seed check', settledness: 'proposed' },
+        { text: 'second seed criterion', check: 'the second seed check', settledness: 'proposed' },
+        { text: 'third seed criterion', check: 'the third seed check', settledness: 'proposed' }
       ]
     })
     assert.equal(seedThread.ok, true)

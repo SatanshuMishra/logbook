@@ -171,7 +171,7 @@ const openThread = async (spawned: SpawnedServer, published: PublishedTool[], sl
   const { valid } = generateSchemaCases('open_thread', schema, {
     title: `roster thread ${slug}`,
     slug,
-    completion_criteria: [{ text: 'a roster fixture criterion', check: 'the roster fixture check' }]
+    completion_criteria: [{ text: 'a roster fixture criterion', check: 'the roster fixture check', settledness: 'proposed' }]
   })
   const result = (await spawned.client.callTool({ name: 'open_thread', arguments: valid })) as CallToolResult
   assertOkResult('open_thread (roster fixture arrange)', result)

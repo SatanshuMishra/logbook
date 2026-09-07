@@ -169,6 +169,24 @@ test('resource-render.thread.open-criterion-omits-the-result-line', () => {
   )
 })
 
+test('resource-render.thread-detail-carries-the-settled-by-quote', () => {
+  const rendered = renderThreadDetail(
+    threadWithCriterion({
+      ...CRITERION_BASE,
+      settledness: 'confirmed',
+      settled_by: 'it has to block before the turn ends'
+    }),
+    NO_DECISIONS,
+    null,
+    null,
+    NO_BINDINGS
+  )
+  assert.ok(
+    rendered.includes('it has to block before the turn ends'),
+    'the content-class census renders through this function, so the quote must reach it'
+  )
+})
+
 const RISK_BASE: Risk = {
   id: '01ARZ3NDEKTSV4RRFFQ69G5FE0',
   scope: 'criterion 2',

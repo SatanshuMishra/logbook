@@ -1,5 +1,5 @@
 import type { Runtime } from '../runtime/runtime.ts'
-import type { Thread, Criterion } from '../schema/thread.ts'
+import type { Thread, Criterion, Settledness } from '../schema/thread.ts'
 import type { Ok, Refusal } from '../schema/declare.ts'
 import * as caps from '../schema/caps.ts'
 import { escapeStored } from '../render/escape.ts'
@@ -8,9 +8,11 @@ export type DecisionResolver = (decisionId: string) => boolean
 
 export type InsertCriterionInput = {
   text: string
-  check: string
+  check: string | null | undefined
   kind: 'planned' | 'detour'
   decisionId: string | null | undefined
+  settledness: Settledness
+  settledBy?: string | null | undefined
   position?: number
 }
 
@@ -152,13 +154,24 @@ export const insertCriterion = (
     )
   }
 
-  const escapedCheck = escapeStored(input.check)
-  if (escapedCheck.length > caps.CRITERION_CHECK_MAX) {
+  const escapedCheck = input.check === null || input.check === undefined ? undefined : escapeStored(input.check)
+  if (escapedCheck !== undefined && escapedCheck.length > caps.CRITERION_CHECK_MAX) {
     return textCapRefusal(
       'criteria.insert.check',
       escapedCheck.length,
       caps.CRITERION_CHECK_MAX,
       'shorten the check and retry'
+    )
+  }
+
+  const escapedSettledBy =
+    input.settledBy === null || input.settledBy === undefined ? undefined : escapeStored(input.settledBy)
+  if (escapedSettledBy !== undefined && escapedSettledBy.length > caps.CRITERION_SETTLED_BY_MAX) {
+    return textCapRefusal(
+      'criteria.insert.settled_by',
+      escapedSettledBy.length,
+      caps.CRITERION_SETTLED_BY_MAX,
+      'shorten the quote and retry'
     )
   }
 
@@ -168,10 +181,12 @@ export const insertCriterion = (
     text: escapedText,
     done: false,
     kind: input.kind,
-    check: escapedCheck,
+    check: escapedCheck ?? null,
     result: null,
     result_status: null,
-    struck_by: null
+    struck_by: null,
+    settledness: input.settledness,
+    settled_by: escapedSettledBy ?? null
   }
 
   const next = [...existing.slice(0, position), inserted, ...existing.slice(position)]

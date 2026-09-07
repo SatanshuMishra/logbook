@@ -68,7 +68,7 @@ const wrongTypeValue = (toolName: string, field: string, node: JsonSchemaNode): 
   return WRONG_TYPE_PROBES[type]
 }
 
-const VIOLATION_PROBE_CHARS = ['!', '~', '#', '*', '@']
+const VIOLATION_PROBE_CHARS = ['!', '~', '#', '*', '@', ' ']
 
 const violatePattern = (toolName: string, field: string, node: JsonSchemaNode, validValue: string): string => {
   const pattern = node.pattern

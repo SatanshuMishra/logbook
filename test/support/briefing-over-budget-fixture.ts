@@ -20,7 +20,9 @@ export const overBudgetThread = (rt: Runtime): Thread => ({
       text: 'the renderer reports that this record does not fit the resume payload budget',
       done: false,
       kind: 'planned',
-      struck_by: null
+      struck_by: null,
+      settledness: 'proposed',
+      settled_by: null
     }
   ],
   spine: {

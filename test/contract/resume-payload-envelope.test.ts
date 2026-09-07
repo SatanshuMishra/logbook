@@ -72,8 +72,10 @@ const openOrdinaryThread = async (rt: Runtime, slug: string): Promise<string> =>
   const opened = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
     title: 'guard the resume payload byte budget',
     slug,
+    active_goal: 'guard the resume payload byte budget',
+    next_step: 'exercise the resume payload envelope fixture',
     completion_criteria: [
-      { text: 'the predicted payload size bounds the serialised reply', check: 'the envelope test asserts it' }
+      { text: 'the predicted payload size bounds the serialised reply', check: 'the envelope test asserts it', settledness: 'proposed' }
     ]
   })
   if (!opened.ok) {

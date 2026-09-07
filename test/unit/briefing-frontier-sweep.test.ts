@@ -101,7 +101,7 @@ const sectionMatchingLineCount = (lines: readonly string[], heading: string, pat
   return count
 }
 
-const CRITERION_ROW_PATTERN = /^- c\d+ \[(?:open|done|struck)\]:/
+const CRITERION_ROW_PATTERN = /^- c\d+ \[(?:open|done|struck)\] \[(?:confirmed|proposed|unsettled)\]:/
 const CHECK_ROW_PATTERN = /^ {2}- check: /
 const RESULT_ROW_PATTERN = /^ {2}- result: /
 const RISK_REF_ROW_PATTERN = /^ {2}- ref: /

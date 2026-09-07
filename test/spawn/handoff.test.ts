@@ -54,7 +54,9 @@ const openFixtureThread = async (rt: Runtime, slug: string): Promise<string> => 
   const opened = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
     title: `${slug} fixture thread`,
     slug,
-    completion_criteria: [{ text: 'the hand-off fields round-trip', check: 'the test asserts it' }]
+    active_goal: 'exercise the hand-off fixture',
+    next_step: 'exercise the hand-off fixture',
+    completion_criteria: [{ text: 'the hand-off fields round-trip', check: 'the test asserts it', settledness: 'proposed' }]
   })
   if (!opened.ok) {
     throw new Error(`expected open_thread to create the fixture thread, it refused: ${opened.refusal.message}`)

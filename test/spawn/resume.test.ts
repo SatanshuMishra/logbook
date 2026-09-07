@@ -205,7 +205,10 @@ const createFixtureThread = async (
   overrides: Record<string, unknown> = {}
 ): Promise<{ threadId: string; criterionId: string }> => {
   const schema = schemaFor(published, 'open_thread')
-  const { valid } = generateSchemaCases('open_thread', schema, overrides)
+  const { valid } = generateSchemaCases('open_thread', schema, {
+    completion_criteria: [{ text: 'a resume fixture criterion', check: 'the resume fixture check', settledness: 'proposed' }],
+    ...overrides
+  })
   const result = (await spawned.client.callTool({ name: 'open_thread', arguments: valid })) as CallToolResult
   assertOkResult('open_thread (fixture arrange)', result)
   const structured = result.structuredContent as { thread_id: string; completion_criteria: { id: string }[] }
@@ -358,7 +361,7 @@ test('resume_thread.spawn.contract', async () => {
     const { threadId } = await createFixtureThread(fx.spawned, fx.published, {
       title: fixtureTitle,
       slug: 'resume-wiring-proof',
-      completion_criteria: [{ text: fixtureCriterion, check: 'the resume wiring proof check' }]
+      completion_criteria: [{ text: fixtureCriterion, check: 'the resume wiring proof check', settledness: 'proposed' }]
     })
     const outputSchema = outputSchemaFor(fx.outputSchemas, 'resume_thread')
     const result = await callResume(fx.spawned, fx.published, threadId)

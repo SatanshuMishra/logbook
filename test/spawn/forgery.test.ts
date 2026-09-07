@@ -169,7 +169,16 @@ const threadFromSpec = (rt: Runtime, spec: SeedSpec, index: number): Thread => {
     status: 'open',
     blocked_by: spec.blockedBy,
     completion_criteria: [
-      { id: rt.ulid(), ordinal: 1, text: 'the seeded criterion', done: false, kind: 'planned', struck_by: null }
+      {
+        id: rt.ulid(),
+        ordinal: 1,
+        text: 'the seeded criterion',
+        done: false,
+        kind: 'planned',
+        struck_by: null,
+        settledness: 'proposed',
+        settled_by: null
+      }
     ],
     spine: {
       active_goal: spec.activeGoal ?? SEEDED_ACTIVE_GOAL,
