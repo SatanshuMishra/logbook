@@ -38,7 +38,7 @@ const AmendCriteriaInputSchema = z.strictObject({
     .enum(['confirmed', 'proposed', 'unsettled'])
     .optional()
     .describe(
-      'who stands behind an inserted criterion: confirmed when the human stated or agreed it, proposed when you derived it, unsettled when done is genuinely not known for this part yet; required for insert, ignored otherwise'
+      'who stands behind an inserted criterion: confirmed when the human stated or agreed it, proposed when you derived it, unsettled when done is genuinely not known for this part yet; required for insert, and refused on rewrite and strike because neither writes it'
     ),
   settled_by: z
     .string()
@@ -46,7 +46,7 @@ const AmendCriteriaInputSchema = z.strictObject({
     .max(caps.CRITERION_SETTLED_BY_MAX)
     .optional()
     .describe(
-      'the human words behind a confirmed inserted criterion, quoted verbatim; required when settledness is confirmed, refused on any other settledness'
+      'the human words behind a confirmed inserted criterion, quoted verbatim; required when settledness is confirmed, refused on any other settledness, and refused on rewrite and strike because neither writes it'
     ),
   position: z
     .number()
@@ -106,6 +106,15 @@ const quoteNotOwedRefusal = (settledness: string): Refusal => ({
   example: 'omit settled_by',
   retryable: true,
   message: `settled_by is refused when settledness is "${settledness}"; remedy: drop the quote, or record the criterion as confirmed if the human really said it.`
+})
+
+const settlednessNotAmendableRefusal = (field: string, forOperation: string): Refusal => ({
+  ok: false,
+  field,
+  accepted: `${field} only on an insert`,
+  example: `omit ${field}`,
+  retryable: true,
+  message: `${field} is refused when operation is "${forOperation}"; settledness is not a text edit and no amendment writes it, so accepting it here would drop it silently; remedy: drop ${field}, and record the human answer with criteria_settled on update_thread instead.`
 })
 
 export const amendCriteriaTool: ToolSpec<AmendCriteriaInput, AmendCriteriaOutput> = {
@@ -177,6 +186,12 @@ export const amendCriteriaTool: ToolSpec<AmendCriteriaInput, AmendCriteriaOutput
     }
 
     if (input.operation === 'rewrite') {
+      if (input.settledness !== undefined) {
+        return { ok: false, refusal: settlednessNotAmendableRefusal('settledness', 'rewrite') }
+      }
+      if (input.settled_by !== undefined) {
+        return { ok: false, refusal: settlednessNotAmendableRefusal('settled_by', 'rewrite') }
+      }
       if (input.criterion_id === undefined) return { ok: false, refusal: missingFieldRefusal('criterion_id', 'rewrite') }
       if (input.text === undefined) return { ok: false, refusal: missingFieldRefusal('text', 'rewrite') }
 
@@ -198,6 +213,12 @@ export const amendCriteriaTool: ToolSpec<AmendCriteriaInput, AmendCriteriaOutput
       }
     }
 
+    if (input.settledness !== undefined) {
+      return { ok: false, refusal: settlednessNotAmendableRefusal('settledness', 'strike') }
+    }
+    if (input.settled_by !== undefined) {
+      return { ok: false, refusal: settlednessNotAmendableRefusal('settled_by', 'strike') }
+    }
     if (input.criterion_id === undefined) return { ok: false, refusal: missingFieldRefusal('criterion_id', 'strike') }
 
     const result = strikeCriterion(

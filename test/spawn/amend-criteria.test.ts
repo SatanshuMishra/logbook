@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { rawGit } from '../support/git-fixture.ts'
+import { readThreadResourceText } from '../support/resources-fixture.ts'
 import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -83,6 +84,31 @@ const openInsertFixture = async (fx: Fixture, slug: string): Promise<{ threadId:
   const threadId = await openFixtureThread(fx, slug)
   const decisionId = await recordFixtureDecision(fx, threadId, slug)
   return { threadId, decisionId }
+}
+
+const STANDING_CRITERION_TEXT = 'the standing criterion nothing may quietly rewrite'
+
+type AmendableFixture = { threadId: string; decisionId: string; criterionId: string }
+
+const openAmendableFixture = async (fx: Fixture, slug: string): Promise<AmendableFixture> => {
+  const opened = (await fx.spawned.client.callTool({
+    name: 'open_thread',
+    arguments: {
+      title: `amend-criteria fixture thread ${slug}`,
+      slug,
+      active_goal: 'exercise the amend-criteria fixture',
+      next_step: 'exercise the amend-criteria fixture',
+      completion_criteria: [
+        { text: STANDING_CRITERION_TEXT, check: 'npm test exits 0', settledness: 'proposed' }
+      ]
+    }
+  })) as CallToolResult
+  assertOkResult('open_thread (amend-criteria amendable fixture arrange)', opened)
+  const structured = opened.structuredContent as { thread_id: string; completion_criteria: { id: string }[] }
+  const first = structured.completion_criteria[0]
+  assert.ok(first !== undefined, 'amend-criteria fixture: open_thread minted no completion criterion to amend')
+  const decisionId = await recordFixtureDecision(fx, structured.thread_id, slug)
+  return { threadId: structured.thread_id, decisionId, criterionId: first.id }
 }
 
 const callAmendCriteria = async (fx: Fixture, args: Record<string, unknown>): Promise<CallToolResult> =>
@@ -206,5 +232,68 @@ test('amend_criteria.accepts-all-three-settledness-values-on-insert', async () =
     assert.equal(proposed.isError, undefined, 'no call is ever refused because of the settledness value itself')
     assert.equal(confirmed.isError, undefined, 'no call is ever refused because of the settledness value itself')
     assert.equal(unsettled.isError, undefined, 'no call is ever refused because of the settledness value itself')
+  })
+})
+
+test('amend_criteria.refuses-a-rewrite-carrying-settledness', async () => {
+  await withFixture(async (fx) => {
+    const { threadId, decisionId, criterionId } = await openAmendableFixture(fx, 'rewrite-with-settledness')
+    const reply = await callAmendCriteria(fx, {
+      thread_id: threadId,
+      operation: 'rewrite',
+      decision_id: decisionId,
+      criterion_id: criterionId,
+      text: 'the rewritten criterion text',
+      settledness: 'confirmed',
+      settled_by: 'they said so'
+    })
+
+    assert.equal(reply.isError, true, 'a rewrite writes text, so a settledness it would drop is refused rather than accepted')
+
+    const detail = await readThreadResourceText(fx.spawned, threadId)
+    assert.ok(detail.includes(STANDING_CRITERION_TEXT), 'the refused rewrite must leave the stored criterion text alone')
+    assert.ok(!detail.includes('the rewritten criterion text'), 'the refused rewrite must not have written its text')
+    assert.ok(detail.includes('[proposed]'), 'the refused rewrite must not have moved the stored settledness')
+  })
+})
+
+test('amend_criteria.refuses-a-rewrite-carrying-only-a-quote', async () => {
+  await withFixture(async (fx) => {
+    const { threadId, decisionId, criterionId } = await openAmendableFixture(fx, 'rewrite-with-quote')
+    const reply = await callAmendCriteria(fx, {
+      thread_id: threadId,
+      operation: 'rewrite',
+      decision_id: decisionId,
+      criterion_id: criterionId,
+      text: 'the rewritten criterion text',
+      settled_by: 'they said so'
+    })
+
+    assert.equal(reply.isError, true, 'a quote a rewrite would drop is refused rather than accepted')
+
+    const detail = await readThreadResourceText(fx.spawned, threadId)
+    assert.ok(detail.includes(STANDING_CRITERION_TEXT), 'the refused rewrite must leave the stored criterion text alone')
+    assert.ok(!detail.includes('they said so'), 'the refused rewrite must not have stored the quote it carried')
+  })
+})
+
+test('amend_criteria.refuses-a-strike-carrying-settledness', async () => {
+  await withFixture(async (fx) => {
+    const { threadId, decisionId, criterionId } = await openAmendableFixture(fx, 'strike-with-settledness')
+    const reply = await callAmendCriteria(fx, {
+      thread_id: threadId,
+      operation: 'strike',
+      decision_id: decisionId,
+      criterion_id: criterionId,
+      settledness: 'confirmed',
+      settled_by: 'they said so'
+    })
+
+    assert.equal(reply.isError, true, 'a strike writes no settledness, so one it would drop is refused rather than accepted')
+
+    const detail = await readThreadResourceText(fx.spawned, threadId)
+    assert.ok(detail.includes('[open]'), 'the refused strike must leave the criterion unstruck')
+    assert.ok(!detail.includes('[struck]'), 'the refused strike must not have struck the criterion')
+    assert.ok(detail.includes('[proposed]'), 'the refused strike must not have moved the stored settledness')
   })
 })
