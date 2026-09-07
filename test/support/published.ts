@@ -78,6 +78,7 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
   ],
   update_thread: [
     { phrase: 'mark criteria done', providers: ['update_thread.criteria_done'] },
+    { phrase: 'records who stands behind a criterion', providers: ['update_thread.criteria_settled'] },
     {
       phrase: 'refresh any of the six running-summary fields',
       providers: [
