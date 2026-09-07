@@ -112,6 +112,32 @@ const recordFire = (
   writeRecordingGateState(rt, layout.state, nextState)
 }
 
+const clearFire = (
+  rt: Runtime,
+  layout: StoreLayout,
+  previousState: RecordingGateState | null,
+  previousFireState: ThreadFireState | null,
+  event: StopEvent,
+  threadId: string,
+  head: string
+): void => {
+  if (previousFireState !== null && previousFireState.head_at_last_fire === head) return
+  const previousThreads =
+    previousState !== null && previousState.session_id === event.session_id ? previousState.threads : {}
+  const nextState: RecordingGateState = {
+    session_id: event.session_id,
+    threads: {
+      ...previousThreads,
+      [threadId]: {
+        head_at_last_fire: head,
+        fires: previousFireState?.fires ?? 0,
+        prompt_id_at_last_fire: previousFireState?.prompt_id_at_last_fire ?? null
+      }
+    }
+  }
+  writeRecordingGateState(rt, layout.state, nextState)
+}
+
 const ledgerPresenceVerdict = (rt: Runtime, event: StopEvent, layout: StoreLayout): StopVerdict => {
   if (event.stop_hook_active) return { kind: 'silent' }
 
@@ -132,12 +158,9 @@ const ledgerPresenceVerdict = (rt: Runtime, event: StopEvent, layout: StoreLayou
   const gateState = readRecordingGateState(rt, layout.state)
   const fireState = fireStateFor(gateState, event.session_id, threadId)
 
-  if (
-    fireState !== null &&
-    fireState.fires >= STAND_DOWN_MINIMUM_FIRES &&
-    fireState.prompt_id_at_last_fire !== event.prompt_id
-  ) {
-    return { kind: 'silent' }
+  if (fireState !== null && fireState.fires >= STAND_DOWN_MINIMUM_FIRES) {
+    const freshTurn = event.prompt_id === null || fireState.prompt_id_at_last_fire !== event.prompt_id
+    if (freshTurn) return { kind: 'silent' }
   }
 
   const reference = fireState !== null ? fireState.head_at_last_fire : baselineHead
@@ -162,7 +185,10 @@ const ledgerPresenceVerdict = (rt: Runtime, event: StopEvent, layout: StoreLayou
   const touchesHeldThread = diff.paths.some(
     (changedPath) => changedPath === `threads/${threadId}.json` || changedPath.startsWith(`sessions/${threadId}/`)
   )
-  if (touchesHeldThread) return { kind: 'silent' }
+  if (touchesHeldThread) {
+    clearFire(rt, layout, gateState, fireState, event, threadId, head)
+    return { kind: 'silent' }
+  }
 
   const observation = observeThread(rt, layout.projectRoot, threadId)
   return fire(mismatchAssertionsReason(threadId, observation))
