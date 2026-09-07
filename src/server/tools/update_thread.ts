@@ -143,7 +143,7 @@ const UpdateThreadInputSchema = z.strictObject({
 const UpdateThreadOutputSchema = z.object({
   thread_id: z.string().describe('the id of the thread that was updated'),
   criteria_marked_done: z.array(z.string()).describe('ids of criteria newly marked done by this call'),
-  criteria_settled: z.array(z.string()).describe('ids of criteria whose settledness or quote this call changed'),
+  criteria_newly_settled: z.array(z.string()).describe('ids of criteria whose settledness or quote this call changed'),
   spine_fields_updated: z
     .array(z.enum(['active_goal', 'next_step', 'last_session']))
     .describe('which scalar spine fields this call changed'),
@@ -265,6 +265,15 @@ const struckSettlementCriterionRefusal = (ids: string[]): Refusal => ({
   example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
   retryable: true,
   message: `criteria_settled names criteria that have already been struck and take no further settlement: ${ids.join(', ')}.`
+})
+
+const settlementQuoteCapRefusal = (index: number, observed: number): Refusal => ({
+  ok: false,
+  field: 'criteria_settled',
+  accepted: `at most ${caps.CRITERION_SETTLED_BY_MAX} characters after escaping, per settled_by`,
+  example: 'it has to block before the turn ends',
+  retryable: true,
+  message: `criteria_settled[${index}].settled_by exceeds its cap of ${caps.CRITERION_SETTLED_BY_MAX} characters after escaping; observed ${observed}; remedy: shorten the quote and retry.`
 })
 
 const settlementQuoteOwedRefusal = (index: number): Refusal => ({
@@ -420,6 +429,16 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
       settledness: entry.settledness,
       settled_by: entry.settled_by === undefined ? undefined : escapeStored(entry.settled_by)
     }))
+    const oversizedQuoteIndex = escapedSettlements.findIndex(
+      (entry) => entry.settled_by !== undefined && entry.settled_by.length > caps.CRITERION_SETTLED_BY_MAX
+    )
+    if (oversizedQuoteIndex !== -1) {
+      const oversized = escapedSettlements[oversizedQuoteIndex]
+      return {
+        ok: false,
+        refusal: settlementQuoteCapRefusal(oversizedQuoteIndex, oversized === undefined ? 0 : (oversized.settled_by?.length ?? 0))
+      }
+    }
     const quoteOwedIndex = escapedSettlements.findIndex(
       (entry) => entry.settledness === 'confirmed' && (entry.settled_by === undefined || entry.settled_by.length === 0)
     )
@@ -566,7 +585,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
         structured: {
           thread_id: thread.id,
           criteria_marked_done: [],
-          criteria_settled: [],
+          criteria_newly_settled: [],
           spine_fields_updated: [],
           risks_added: [],
           risks_retired: [],
@@ -605,7 +624,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
       structured: {
         thread_id: committed.value.id,
         criteria_marked_done: markedDone,
-        criteria_settled: settledIds,
+        criteria_newly_settled: settledIds,
         spine_fields_updated: spineFieldsUpdated,
         risks_added: newRisks.map((r) => r.id),
         risks_retired: retiredIds,

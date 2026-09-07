@@ -432,7 +432,7 @@ const SIMPLE_UPDATE_FIELDS: SimpleUpdateFieldSpec[] = [
       const criterionId = mustGet(ctx.criterionIds, 0, 'the first fixture criterion id')
       const criterion = readThreadRecord(rt, ctx.threadId)?.completion_criteria.find((c) => c.id === criterionId)
       return {
-        criteria_settled: structured.criteria_settled,
+        criteria_newly_settled: structured.criteria_newly_settled,
         settled_by: criterion?.settled_by ?? null
       }
     }
@@ -928,7 +928,7 @@ export const TEST_2_CASES: Test2Case[] = [
     minimalArgs: (ctx) => ({ thread_id: ctx.threadId }),
     attributable: (structured) => ({
       criteria_marked_done: structured.criteria_marked_done,
-      criteria_settled: structured.criteria_settled,
+      criteria_newly_settled: structured.criteria_newly_settled,
       spine_fields_updated: structured.spine_fields_updated,
       risks_added: structured.risks_added,
       risks_retired: structured.risks_retired,

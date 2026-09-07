@@ -40,18 +40,18 @@ const CloseThreadOutputSchema = z.object({
     .describe('how the met criteria on this thread divide by how their result was obtained'),
   settledness_split: z
     .object({
-      confirmed: z.number().int().describe('how many met criteria the human stated or agreed to'),
+      confirmed: z.number().int().describe('how many of the criteria this close carried the human stated or agreed to'),
       proposed: z
         .number()
         .int()
-        .describe('how many met criteria were derived rather than stated, which is where a criterion stored before settledness was recorded also counts'),
+        .describe('how many of the criteria this close carried were derived rather than stated, which is where a criterion stored before settledness was recorded also counts'),
       unsettled: z
         .number()
         .int()
-        .describe('how many met criteria still say that done was genuinely not known for that part')
+        .describe('how many of the criteria this close carried still say that done was genuinely not known for that part')
     })
     .describe(
-      'how the met criteria on this thread divide by who stood behind them, and no count in this split is ever a reason to refuse the close'
+      'how every un-struck criterion this close carried divides by who stood behind it, whether or not it was met, and no count in this split is ever a reason to refuse the close'
     )
 })
 
@@ -74,9 +74,9 @@ const renderResultStatusSplit = (split: ResultStatusSplit): string =>
 type SettlednessSplit = { confirmed: number; proposed: number; unsettled: number }
 
 const settlednessSplitOf = (thread: Thread): SettlednessSplit => {
-  const met = thread.completion_criteria.filter((criterion) => criterion.struck_by === null && criterion.done)
+  const closed = thread.completion_criteria.filter((criterion) => criterion.struck_by === null)
   const countOf = (settledness: Settledness): number =>
-    met.filter((criterion) => criterionSettledness(criterion) === settledness).length
+    closed.filter((criterion) => criterionSettledness(criterion) === settledness).length
   return { confirmed: countOf('confirmed'), proposed: countOf('proposed'), unsettled: countOf('unsettled') }
 }
 

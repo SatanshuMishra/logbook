@@ -9,6 +9,8 @@ import { rawGit } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
 import { openStore } from '../../src/store/records.ts'
+import { escapeStored } from '../../src/render/escape.ts'
+import * as caps from '../../src/schema/caps.ts'
 import type { Thread } from '../../src/schema/thread.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -191,8 +193,12 @@ test('update_thread.records-a-confirmation-with-the-human-words', async () => {
       undefined,
       `an answer the human gave about a criterion has somewhere to land, got: ${firstTextOf(settled)}`
     )
-    const structured = settled.structuredContent as { criteria_settled: string[] }
-    assert.deepEqual(structured.criteria_settled, [criterionId], 'the reply has to name the criterion this call settled')
+    const structured = settled.structuredContent as { criteria_newly_settled: string[] }
+    assert.deepEqual(
+      structured.criteria_newly_settled,
+      [criterionId],
+      'the reply has to name the criterion this call settled, under a name no caller reads back as the argument they sent'
+    )
 
     const criterion = storedCriterion(fx, opened.threadId, criterionId)
     assert.equal(criterion.settledness, 'confirmed', 'the answer has to land on the criterion it was about')
@@ -293,11 +299,9 @@ test('update_thread.refuses-a-confirmation-that-carries-no-quote', async () => {
     assert.equal(settled.isError, true, 'a confirmation without the words behind it records no answer at all')
     const text = firstTextOf(settled)
     assert.ok(text.includes('carries no settled_by'), `the refusal has to name the missing quote, got: ${text}`)
-    assert.equal(
-      storedCriterion(fx, opened.threadId, criterionId).settledness,
-      'proposed',
-      'a refused call must not have written the confirmation first'
-    )
+    const stored = storedCriterion(fx, opened.threadId, criterionId)
+    assert.equal(stored.settledness, 'proposed', 'a refused call must not have written the confirmation first')
+    assert.equal(stored.settled_by ?? null, null, 'a refused call must not have written a quote either')
   })
 })
 
@@ -318,6 +322,40 @@ test('update_thread.refuses-a-quote-on-a-criterion-that-is-not-confirmed', async
       storedCriterion(fx, opened.threadId, criterionId).settled_by ?? null,
       null,
       'a refused call must not have written the stray quote first'
+    )
+  })
+})
+
+test('update_thread.refuses-a-quote-that-passes-its-cap-only-before-escaping', async () => {
+  await withFixture(async (fx) => {
+    const opened = await openCriteriaThread(fx, 'settlement-quote-cap-thread', [PROPOSED_CRITERION])
+    const criterionId = criterionAt(opened, 0)
+    const quote = '<'.repeat(caps.CRITERION_SETTLED_BY_MAX)
+    const escapedLength = escapeStored(quote).length
+    assert.ok(
+      escapedLength > caps.CRITERION_SETTLED_BY_MAX,
+      'the cap fixture needs a quote that fits before escaping and overflows after it'
+    )
+
+    const settled = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      criteria_settled: [{ criterion_id: criterionId, settledness: 'confirmed', settled_by: quote }]
+    })
+
+    assert.equal(settled.isError, true, 'a quote that only overflows after escaping is still over its cap')
+    const text = firstTextOf(settled)
+    assert.ok(
+      text.includes('criteria_settled[0].settled_by'),
+      `the refusal has to name the argument the caller sent rather than a record path, got: ${text}`
+    )
+    assert.ok(
+      text.includes(`observed ${escapedLength}`),
+      `the refusal has to report the length it observed after escaping, got: ${text}`
+    )
+    assert.equal(
+      storedCriterion(fx, opened.threadId, criterionId).settledness,
+      'proposed',
+      'a refused call must not have written the confirmation'
     )
   })
 })
