@@ -161,15 +161,22 @@ test('hook.stop-gate-re-evaluates-rather-than-latching-on-one-fire', async () =>
     startSession(rt, repo, SESSION_ID)
     await resumeAs(rt, SESSION_ID, threadId)
 
-    assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind, 'block')
     assert.equal(
-      stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind,
+      stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false, 'latching-turn-one')).kind,
+      'block'
+    )
+    assert.equal(
+      stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false, 'latching-turn-two')).kind,
       'block',
       'a single fire does not latch the gate silent; it is re-evaluated at every turn end'
     )
 
     commitToThread(rt, repo, threadId, 'stop-gate-presence-recorded')
-    assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind, 'silent')
+    assert.equal(
+      stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false, 'latching-turn-two')).kind,
+      'silent',
+      'the same turn re-evaluates after the record and finds the ledger diff, not the stand-down'
+    )
   })
 })
 
