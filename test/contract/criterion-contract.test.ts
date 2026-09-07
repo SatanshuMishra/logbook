@@ -46,6 +46,8 @@ const openFixtureThread = async (
   const opened = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
     title: `criterion contract fixture ${slug}`,
     slug,
+    active_goal: 'ship the criterion contract fixture',
+    next_step: 'exercise the criterion under test',
     completion_criteria: criteria
   })
   if (!opened.ok) throw new Error(`criterion fixture: open_thread refused: ${opened.refusal.message}`)
@@ -80,6 +82,8 @@ test('criterion.open-thread-refuses-a-criterion-carrying-no-check', () => {
   const refusal = declared.parse({
     title: 'a thread whose criterion states no check',
     slug: 'no-check-thread',
+    active_goal: 'ship the criterion contract fixture',
+    next_step: 'exercise the criterion under test',
     completion_criteria: [{ text: 'the health check ships' }]
   })
   assert.equal(refusal.ok, false)
@@ -153,6 +157,8 @@ test('criterion.open-thread-refuses-a-check-that-overflows-its-cap-once-escaped'
     const refused = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
       title: 'a thread whose criterion check overflows its cap once escaped',
       slug: 'over-cap-check-thread',
+      active_goal: 'ship the criterion contract fixture',
+      next_step: 'exercise the criterion under test',
       completion_criteria: [
         { text: 'the health check ships', check: String.fromCharCode(1).repeat(84) }
       ]

@@ -35,11 +35,21 @@ const OpenThreadInputSchema = z.strictObject({
     .regex(ULID_PATTERN)
     .optional()
     .describe('the id of an existing thread this new thread succeeds, a 26-character ULID such as 01M0NDPM0ACCR9CD68PMHYWGGD; omit it when this thread succeeds no earlier thread'),
+  active_goal: z
+    .string()
+    .regex(/\S/)
+    .max(caps.SPINE_ACTIVE_GOAL_MAX)
+    .describe('what this thread is trying to achieve, in one or two sentences a fresh session can act on'),
+  next_step: z
+    .string()
+    .regex(/\S/)
+    .max(caps.SPINE_NEXT_STEP_MAX)
+    .describe('the next action someone would take, naming the file and the place in it where the action involves one'),
   completion_criteria: z
     .array(CriterionCreateSchema)
-    .min(1)
     .max(caps.CRITERIA_MAX_ELEMENTS)
-    .describe('what finishing looks like; at least one criterion is required or the thread can never be closed'),
+    .optional()
+    .describe('what finishing looks like where that is already known; omit it and the definition of done is owed later'),
   artifacts: z
     .array(ArtifactAddSchema)
     .max(caps.ARTIFACTS_PER_CALL_MAX_ELEMENTS)
@@ -106,7 +116,7 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
   name: 'open_thread',
   title: 'Open thread',
   description:
-    'Creates a new thread of work and returns its id. A thread needs a one-line title, a short slug that is unique in this project, and at least one completion criterion stating what finishing looks like; a thread with no criterion can never be closed, so the call is refused without one. Every criterion carries its own check, the re-runnable thing that decides whether it is true, and a criterion with no check is refused. Criteria are supplied as text-and-check pairs and the server assigns each one a stable id and its display ordinal, so [{"text": "the merge test passes in both push orders", "check": "npm test exits 0"}] is a complete value. The slug is lowercase letters, digits and hyphens, up to 64 characters, for example merge-and-sync.',
+    'Creates a new thread of work and returns its id. A thread needs a one-line title, a short slug that is unique in this project, what the work is, and what happens next. Completion criteria are optional at this moment; when supplied, every criterion carries its own check, the re-runnable thing that decides whether it is true, and a criterion with no check is refused. Criteria are supplied as text-and-check pairs and the server assigns each one a stable id and its display ordinal, so [{"text": "the merge test passes in both push orders", "check": "npm test exits 0"}] is a complete value. The slug is lowercase letters, digits and hyphens, up to 64 characters, for example merge-and-sync.',
   input: OpenThreadInputSchema,
   output: OpenThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -125,7 +135,8 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
       return { ok: false, refusal: titleCapRefusal(escapedTitle.length) }
     }
 
-    const escapedCriteria = input.completion_criteria.map((entry) => ({
+    const criteria = input.completion_criteria ?? []
+    const escapedCriteria = criteria.map((entry) => ({
       text: escapeStored(entry.text),
       check: escapeStored(entry.check)
     }))
@@ -177,8 +188,8 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
       completion_criteria: completionCriteria,
       ...(mintedArtifacts.length === 0 ? {} : { artifacts: mintedArtifacts }),
       spine: {
-        active_goal: '',
-        next_step: '',
+        active_goal: input.active_goal,
+        next_step: input.next_step,
         landed: '',
         last_session: '',
         open_risks: [],

@@ -78,6 +78,8 @@ test('resume_thread.a-settled-risk-shortens-no-further-than-its-share-of-the-rea
     const opened = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
       title: 'settled lane clip budget fixture',
       slug: 'settled-lane-clip-budget',
+      active_goal: 'guard the settled lane clip budget',
+      next_step: 'exercise the settled lane clip budget fixture',
       completion_criteria: [
         { text: filler(40), check: filler(40) },
         { text: filler(40), check: filler(40) }

@@ -57,7 +57,13 @@ type SeededThread = { threadId: string; slug: string }
 const openThread = async (spawned: SpawnedServer, slug: string, title: string): Promise<SeededThread> => {
   const result = (await spawned.client.callTool({
     name: 'open_thread',
-    arguments: { title, slug, completion_criteria: [{ text: 'a completions fixture criterion', check: 'the completions fixture check' }] }
+    arguments: {
+      title,
+      slug,
+      active_goal: 'exercise the completions fixture',
+      next_step: 'exercise the completions fixture',
+      completion_criteria: [{ text: 'a completions fixture criterion', check: 'the completions fixture check' }]
+    }
   })) as CallToolResult
   assertOkResult('open_thread (completions fixture arrange)', result)
   const structured = result.structuredContent as { thread_id: string }

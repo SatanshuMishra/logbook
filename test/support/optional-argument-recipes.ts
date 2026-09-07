@@ -195,6 +195,8 @@ const openFixtureThread = async (rt: Runtime, label: string, criteriaCount = 1):
   const opened = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
     title: `${label} fixture thread`,
     slug: `${label.replace(/[^a-z0-9]+/gi, '-')}-fixture-thread`,
+    active_goal: `exercise the ${label} fixture`,
+    next_step: `exercise the ${label} fixture`,
     completion_criteria: Array.from({ length: criteriaCount }, (_, index) => ({
       text: `${label} criterion ${index + 1}`,
       check: `${label} check ${index + 1}`
@@ -229,6 +231,8 @@ const recordFixtureDecision = async (rt: Runtime, threadId: string, label: strin
 const successorThreadArgs = (): Record<string, unknown> => ({
   title: 'successor fixture thread',
   slug: 'successor-fixture-thread',
+  active_goal: 'exercise the successor fixture',
+  next_step: 'exercise the successor fixture',
   completion_criteria: [{ text: 'a successor criterion', check: 'a successor check' }]
 })
 
@@ -257,6 +261,31 @@ const openThreadArtifactsRecipe = (): Promise<RecipeResult> =>
     (structured, rt) => ({
       artifacts:
         readThreadRecord(rt, mustBeString(structured.thread_id, 'the opened thread id'))?.artifacts ?? []
+    })
+  )
+
+const openThreadNoCriteriaArgs = (): Record<string, unknown> => ({
+  title: 'completion criteria optionality fixture thread',
+  slug: 'completion-criteria-optionality-fixture-thread',
+  active_goal: 'exercise the completion-criteria optionality fixture',
+  next_step: 'exercise the completion-criteria optionality fixture'
+})
+
+const openThreadCompletionCriteriaRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'open_thread.completion_criteria',
+    openThreadTool,
+    async () => undefined,
+    () => openThreadNoCriteriaArgs(),
+    () => ({
+      ...openThreadNoCriteriaArgs(),
+      completion_criteria: [
+        { text: 'a completion-criteria optionality fixture criterion', check: 'a completion-criteria optionality fixture check' }
+      ]
+    }),
+    (structured, rt) => ({
+      completion_criteria_count:
+        readThreadRecord(rt, mustBeString(structured.thread_id, 'the opened thread id'))?.completion_criteria.length ?? 0
     })
   )
 
@@ -709,6 +738,7 @@ const listThreadsLimitRecipe = (): Promise<RecipeResult> =>
 export const RECIPES: ReadonlyMap<string, () => Promise<RecipeResult>> = new Map([
   ['open_thread.predecessor_id', openThreadPredecessorIdRecipe],
   ['open_thread.artifacts', openThreadArtifactsRecipe],
+  ['open_thread.completion_criteria', openThreadCompletionCriteriaRecipe],
   ...simpleUpdateThreadRecipes,
   ['update_thread.risks_add[].refs', updateThreadRisksAddRefsRecipe],
   ['update_thread.risks_add[].criterion_id', updateThreadRisksAddCriterionIdRecipe],
@@ -740,7 +770,8 @@ export const TEST_2_CASES: Test2Case[] = [
     minimalArgs: () => ({
       title: 'test-2 open_thread fixture thread',
       slug: 'test-2-open-thread-fixture-thread',
-      completion_criteria: [{ text: 'a test-2 fixture criterion', check: 'a test-2 fixture check' }]
+      active_goal: 'exercise the test-2 open_thread fixture',
+      next_step: 'exercise the test-2 open_thread fixture'
     }),
     attributable: () => ({})
   },

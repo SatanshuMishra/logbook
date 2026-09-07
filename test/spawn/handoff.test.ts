@@ -54,6 +54,8 @@ const openFixtureThread = async (rt: Runtime, slug: string): Promise<string> => 
   const opened = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
     title: `${slug} fixture thread`,
     slug,
+    active_goal: 'exercise the hand-off fixture',
+    next_step: 'exercise the hand-off fixture',
     completion_criteria: [{ text: 'the hand-off fields round-trip', check: 'the test asserts it' }]
   })
   if (!opened.ok) {

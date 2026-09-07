@@ -281,6 +281,8 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     const firstOpen = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
       title: 'census tool fixture thread',
       slug: 'census-tool-fixture',
+      active_goal: 'ship the census tool fixture',
+      next_step: 'exercise the census tool fixture',
       completion_criteria: [{ text: 'a census criterion', check: 'the census check' }]
     })
     if (!firstOpen.ok) throw new Error('expected openThreadTool to open the census tool fixture thread')
@@ -318,6 +320,8 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     const duplicateOpen = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
       title: 'census tool fixture thread again',
       slug: 'census-tool-fixture',
+      active_goal: 'ship the census tool fixture',
+      next_step: 'exercise the census tool fixture',
       completion_criteria: [{ text: 'a census criterion', check: 'the census check' }]
     })
     if (duplicateOpen.ok) throw new Error('expected openThreadTool to refuse a duplicate slug')
@@ -661,6 +665,8 @@ const buildResolveConflictFixture = async (): Promise<ResolveConflictFixture> =>
   const openedThread = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
     title: threadTitle,
     slug: 'census-resolve-fixture',
+    active_goal: 'ship the resolve-conflict fixture',
+    next_step: 'exercise the resolve-conflict fixture',
     completion_criteria: [{ text: 'a census criterion', check: 'the census check' }]
   })
   if (!openedThread.ok) throw new Error('expected openThreadTool to open the resolve-conflict fixture thread')

@@ -189,7 +189,9 @@ const createFixtureThread = async (
   published: PublishedTool[]
 ): Promise<{ threadId: string; criterionId: string }> => {
   const schema = schemaFor(published, 'open_thread')
-  const { valid } = generateSchemaCases('open_thread', schema)
+  const { valid } = generateSchemaCases('open_thread', schema, {
+    completion_criteria: [{ text: 'a lifecycle fixture criterion', check: 'the lifecycle fixture check' }]
+  })
   const result = (await spawned.client.callTool({ name: 'open_thread', arguments: valid })) as CallToolResult
   assertOkResult('open_thread (fixture arrange)', result)
   const structured = result.structuredContent as { thread_id: string; completion_criteria: { id: string }[] }
@@ -264,7 +266,7 @@ test('open_thread.spawn.contract', async () => {
 
 test('open_thread.rejects-invalid', async () => {
   await withFixture(async (fx) => {
-    await runRejectsInvalid(fx, 'open_thread', [])
+    await runRejectsInvalid(fx, 'open_thread', ['minItems'])
   })
 })
 
@@ -497,7 +499,13 @@ test('amend_criteria.retention-cap-matches-stored-shape', async () => {
     }))
     const opened = (await fx.spawned.client.callTool({
       name: 'open_thread',
-      arguments: { title: 'retention cap thread', slug: 'retention-cap-thread', completion_criteria: criteria }
+      arguments: {
+        title: 'retention cap thread',
+        slug: 'retention-cap-thread',
+        active_goal: 'exercise the retention cap fixture',
+        next_step: 'exercise the retention cap fixture',
+        completion_criteria: criteria
+      }
     })) as CallToolResult
     assertOkResult('open_thread (retention cap fixture)', opened)
     const openedStructured = opened.structuredContent as { thread_id: string; completion_criteria: { id: string }[] }
@@ -644,6 +652,8 @@ test('open_thread.title-cap-is-checked-after-escaping', async () => {
       arguments: {
         title: oversizedTitle,
         slug: 'title-cap-thread',
+        active_goal: 'exercise the title-cap fixture',
+        next_step: 'exercise the title-cap fixture',
         completion_criteria: [{ text: 'a criterion', check: 'the title-cap fixture check' }]
       }
     })) as CallToolResult
@@ -720,6 +730,8 @@ test('update_thread.refuses-marking-a-struck-criterion-done', async () => {
       arguments: {
         title: 'struck-criteria thread',
         slug: 'struck-criteria-thread',
+        active_goal: 'exercise the struck-criteria fixture',
+        next_step: 'exercise the struck-criteria fixture',
         completion_criteria: [
           { text: 'first criterion', check: 'the first check' },
           { text: 'second criterion', check: 'the second check' }

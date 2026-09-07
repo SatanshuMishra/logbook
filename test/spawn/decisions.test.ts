@@ -217,6 +217,8 @@ const openThreadWithCriteria = async (
     arguments: {
       title: `${slug} fixture`,
       slug,
+      active_goal: 'exercise the decisions spawn fixture',
+      next_step: 'exercise the decisions spawn fixture',
       completion_criteria: criteria.map((text) => ({ text, check: 'the spawn fixture check' }))
     }
   })) as CallToolResult
@@ -714,6 +716,8 @@ test('decision.supersede-retains', async () => {
     const opened = await callTool(openThreadTool.handler, rt, {
       title: 'supersede fixture thread',
       slug: 'supersede-fixture-thread',
+      active_goal: 'exercise the supersede fixture',
+      next_step: 'exercise the supersede fixture',
       completion_criteria: [{ text: 'a criterion for the supersede fixture', check: 'the supersede fixture check' }]
     })
     assert.equal(opened.ok, true)
@@ -792,6 +796,8 @@ test('decision.records-project-head', async () => {
       const opened = await callTool(openThreadTool.handler, rt, {
         title: 'project head fixture thread',
         slug: 'project-head-fixture-thread',
+        active_goal: 'exercise the project-head fixture',
+        next_step: 'exercise the project-head fixture',
         completion_criteria: [
           { text: 'a criterion for the project head fixture', check: 'the project head fixture check' }
         ]
@@ -965,6 +971,8 @@ test('concurrent.distinct-ids', async () => {
     const opened = await callTool(openThreadTool.handler, parentRt, {
       title: 'concurrency fixture thread',
       slug: 'concurrency-fixture-thread',
+      active_goal: 'exercise the concurrency fixture',
+      next_step: 'exercise the concurrency fixture',
       completion_criteria: [
         { text: 'a criterion for the concurrency fixture', check: 'the concurrency fixture check' }
       ]
@@ -1158,6 +1166,8 @@ const mintThread = async (rt: Runtime, criteria: string[]): Promise<{ threadId: 
   const reply = await callTool(openThreadTool.handler, rt, {
     title: 'census fixture thread',
     slug: `census-fixture-thread-${randomUUID()}`,
+    active_goal: 'exercise the census fixture',
+    next_step: 'exercise the census fixture',
     completion_criteria: criteria.map((text) => ({ text, check: 'the census fixture check' }))
   })
   if (!reply.ok) {
@@ -1547,6 +1557,8 @@ test('decision.is-immutable', async () => {
     const seedThread = await callTool(openThreadTool.handler, anaToolRt, {
       title: 'census seed thread',
       slug: 'census-seed-thread',
+      active_goal: 'exercise the census seed fixture',
+      next_step: 'exercise the census seed fixture',
       completion_criteria: [
         { text: 'first seed criterion', check: 'the first seed check' },
         { text: 'second seed criterion', check: 'the second seed check' },

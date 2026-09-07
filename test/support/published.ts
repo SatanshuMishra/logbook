@@ -64,8 +64,12 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
   open_thread: [
     {
       phrase:
-        'A thread needs a one-line title, a short slug that is unique in this project, and at least one completion criterion',
-      providers: ['open_thread.title', 'open_thread.slug', 'open_thread.completion_criteria']
+        'A thread needs a one-line title, a short slug that is unique in this project, what the work is, and what happens next',
+      providers: ['open_thread.title', 'open_thread.slug', 'open_thread.active_goal', 'open_thread.next_step']
+    },
+    {
+      phrase: 'Completion criteria are optional at this moment',
+      providers: ['open_thread.completion_criteria']
     }
   ],
   update_thread: [

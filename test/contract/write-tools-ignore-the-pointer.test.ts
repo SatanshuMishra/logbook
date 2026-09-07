@@ -57,6 +57,8 @@ const assertOk = (name: string, result: CallToolResult): void => {
 const OPEN_THREAD_ARGS = {
   title: 's4 fixture thread',
   slug: 's4-fixture-thread',
+  active_goal: 'exercise the s4 fixture',
+  next_step: 'exercise the s4 fixture',
   completion_criteria: [{ text: 's4 fixture criterion', check: 's4 fixture check' }]
 }
 
@@ -220,6 +222,8 @@ const recipeResolveConflict: Recipe = async (scenario) => {
     const opened = await callTool(ana.spawned, 'open_thread', {
       title: 's4 resolve conflict fixture thread',
       slug: `s4-resolve-conflict-${scenario}`,
+      active_goal: 'exercise the s4 resolve-conflict fixture',
+      next_step: 'exercise the s4 resolve-conflict fixture',
       completion_criteria: [{ text: 's4 resolve fixture criterion', check: 's4 resolve fixture check' }]
     })
     assertOk('open_thread (resolve prep)', opened)
