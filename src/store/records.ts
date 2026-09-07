@@ -43,26 +43,11 @@ export type Store = {
   commit: (changes: RecordChange[], message: string) => CommitResult
 }
 
-type CriterionSettlednessProbe = { id: Ulid; settledness?: unknown }
-
-const missingSettlednessRefusal = (criterionId: string): Refusal => ({
-  ok: false,
-  field: 'completion_criteria',
-  accepted: 'a settledness of confirmed, proposed or unsettled on every criterion',
-  example: 'proposed',
-  retryable: true,
-  message: `criterion ${criterionId} carries no settledness; observed 0 entries; remedy: state who stands behind the criterion and retry.`
-})
-
 const validateChange = (change: RecordChange): Refusal | null => {
   switch (change.kind) {
     case 'raw':
       return null
     case 'thread': {
-      const unsettled = (change.record.completion_criteria as CriterionSettlednessProbe[]).find(
-        (criterion) => criterion.settledness === undefined
-      )
-      if (unsettled !== undefined) return missingSettlednessRefusal(unsettled.id)
       const validated = ThreadRecord.parse(change.record)
       return validated.ok ? null : validated
     }

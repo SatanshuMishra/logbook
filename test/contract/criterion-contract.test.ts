@@ -187,6 +187,29 @@ test('criterion.open-thread-refuses-a-check-that-overflows-its-cap-once-escaped'
   })
 })
 
+test('criterion.open-thread-refuses-an-active-goal-that-overflows-its-cap-once-escaped', async () => {
+  await withCriterionFixture(async (rt) => {
+    const refused = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
+      title: 'a thread whose active goal overflows its cap once escaped',
+      slug: 'over-cap-active-goal-thread',
+      active_goal: String.fromCharCode(1).repeat(84),
+      next_step: 'exercise the criterion under test'
+    })
+    assert.equal(refused.ok, false)
+    if (refused.ok) throw new Error('expected open_thread to refuse an active_goal that overflows its cap once escaped')
+    assert.equal(refused.refusal.field, 'active_goal')
+    assert.equal(refused.refusal.accepted, `at most ${caps.SPINE_ACTIVE_GOAL_MAX} characters after escaping`)
+    assert.equal(refused.refusal.retryable, true)
+    assert.equal(
+      refused.refusal.message,
+      `active_goal exceeds its cap of ${caps.SPINE_ACTIVE_GOAL_MAX} characters after escaping; observed 504; remedy: shorten the value and retry.`
+    )
+    const opened = openStore(rt, rt.cwd)
+    if (!opened.ok) throw new Error('criterion fixture: the store did not open')
+    assert.equal(opened.value.readThreads().length, 0)
+  })
+})
+
 test('criterion.criteria-done-refuses-the-bare-criterion-id-array', () => {
   const declared = declare<unknown>(updateThreadTool.name, updateThreadTool.input)
   const refusal = declared.parse({

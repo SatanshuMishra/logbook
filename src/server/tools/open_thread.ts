@@ -106,6 +106,24 @@ const titleCapRefusal = (observed: number): Refusal => ({
   message: `title exceeds its cap of ${caps.THREAD_TITLE_MAX} characters after escaping; observed ${observed}; remedy: shorten the title and retry.`
 })
 
+const activeGoalCapRefusal = (observed: number): Refusal => ({
+  ok: false,
+  field: 'active_goal',
+  accepted: `at most ${caps.SPINE_ACTIVE_GOAL_MAX} characters after escaping`,
+  example: 'ship the health check before closing this thread',
+  retryable: true,
+  message: `active_goal exceeds its cap of ${caps.SPINE_ACTIVE_GOAL_MAX} characters after escaping; observed ${observed}; remedy: shorten the value and retry.`
+})
+
+const nextStepCapRefusal = (observed: number): Refusal => ({
+  ok: false,
+  field: 'next_step',
+  accepted: `at most ${caps.SPINE_NEXT_STEP_MAX} characters after escaping`,
+  example: 'ship the health check before closing this thread',
+  retryable: true,
+  message: `next_step exceeds its cap of ${caps.SPINE_NEXT_STEP_MAX} characters after escaping; observed ${observed}; remedy: shorten the value and retry.`
+})
+
 const criterionTextCapRefusal = (index: number, observed: number): Refusal => ({
   ok: false,
   field: 'completion_criteria',
@@ -181,6 +199,16 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
     const escapedTitle = escapeStored(input.title)
     if (escapedTitle.length > caps.THREAD_TITLE_MAX) {
       return { ok: false, refusal: titleCapRefusal(escapedTitle.length) }
+    }
+
+    const escapedActiveGoal = escapeStored(input.active_goal)
+    if (escapedActiveGoal.length > caps.SPINE_ACTIVE_GOAL_MAX) {
+      return { ok: false, refusal: activeGoalCapRefusal(escapedActiveGoal.length) }
+    }
+
+    const escapedNextStep = escapeStored(input.next_step)
+    if (escapedNextStep.length > caps.SPINE_NEXT_STEP_MAX) {
+      return { ok: false, refusal: nextStepCapRefusal(escapedNextStep.length) }
     }
 
     const criteria = input.completion_criteria ?? []
@@ -270,8 +298,8 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
       completion_criteria: completionCriteria,
       ...(mintedArtifacts.length === 0 ? {} : { artifacts: mintedArtifacts }),
       spine: {
-        active_goal: input.active_goal,
-        next_step: input.next_step,
+        active_goal: escapedActiveGoal,
+        next_step: escapedNextStep,
         landed: '',
         last_session: '',
         open_risks: [],
