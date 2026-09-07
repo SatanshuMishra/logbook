@@ -384,21 +384,18 @@ test('hook.stop-gate-ledger-message-claims-presence-and-never-completeness', asy
   })
 })
 
-test('hook.stop-gate-blocks-when-a-ledger-write-lands-before-resume-and-nothing-after', async () => {
+test('hook.stop-gate-clears-when-a-ledger-write-lands-before-the-resume', async () => {
   await withFixture(async ({ rt, repo }) => {
-    const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
     startSession(rt, repo, SESSION_ID)
-
-    commitOneThread(rt, repo, 'stop-gate-presence-pre-resume')
-
+    const threadId = commitOneThread(rt, repo, 'stop-gate-write-before-resume')
     await resumeAs(rt, SESSION_ID, threadId)
 
     const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
+
     assert.equal(
       verdict.kind,
-      'block',
-      'the stop gate must block when nothing has reached the ledger since resume_thread ran, even though ' +
-        'a write landed between session start and the resume'
+      'silent',
+      'a record written before the resume is still a record written this session, and the gate must count it'
     )
   })
 })

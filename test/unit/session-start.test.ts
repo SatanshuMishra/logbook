@@ -9,6 +9,8 @@ import type { RecordChange } from '../../src/store/write-path.ts'
 import * as caps from '../../src/schema/caps.ts'
 import { CLIP_MARKER } from '../../src/render/clip.ts'
 import { BANNER_MAX_GRAPHEMES, renderThreadListing, runSessionStart } from '../../src/cli/session-start.ts'
+import { layoutFor } from '../../src/store/layout.ts'
+import { readResumeBaseline } from '../../src/hooklib/ledger-presence.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { withRepo } from '../support/git-fixture.ts'
 
@@ -211,6 +213,41 @@ test('session-start.a-closing-paren-inside-a-store-key-cannot-forge-a-legitimate
         forgedBanner.includes(legitimateReason),
         false,
         `a store key carrying a closing paren must not render a parenthesised reason byte-identical to ${legitimateReason}, or the parens stop telling the reader where the directory name read off disk ends and the rest of it reads as the banner's own words, but the banner read: ${forgedBanner}`
+      )
+    })
+  })
+})
+
+test('hook.session-start-does-not-reset-the-baseline-of-a-session-already-baselined', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const sessionId = 'session-start-idempotent-session'
+
+      runSessionStart(rt, { session_id: sessionId, source: 'startup', cwd: repo })
+
+      const layout = layoutFor(rt, repo)
+      assert.equal(layout.ok, true)
+      if (!layout.ok) return
+      const firstBaseline = readResumeBaseline(layout.value)
+      assert.notEqual(firstBaseline, null, 'the first SessionStart of a session must record a baseline')
+
+      const opened = openStore(rt, repo)
+      assert.equal(opened.ok, true)
+      if (!opened.ok) return
+      const committed = opened.value.commit(
+        [makeThread(rt, 'session-start-idempotent-thread')],
+        'seed a record after the first session start'
+      )
+      assert.equal(committed.ok, true)
+
+      runSessionStart(rt, { session_id: sessionId, source: 'resume', cwd: repo })
+
+      const secondBaseline = readResumeBaseline(layout.value)
+      assert.deepEqual(
+        secondBaseline,
+        firstBaseline,
+        'a second SessionStart for the same session must not move the recorded baseline off the head it captured at the first SessionStart of this session'
       )
     })
   })

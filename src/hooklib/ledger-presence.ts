@@ -69,7 +69,7 @@ export const readResumeBaseline = (layout: StoreLayout): ResumeBaseline | null =
   return { session_id: sessionId, ledger_head: ledgerHead }
 }
 
-export const recordResumeBaseline = (rt: Runtime, layout: StoreLayout, sessionId: string): ResumeBaseline => {
+export const recordSessionBaseline = (rt: Runtime, layout: StoreLayout, sessionId: string): ResumeBaseline => {
   const baseline: ResumeBaseline = { session_id: sessionId, ledger_head: readLedgerHead(rt, layout.projectRoot) }
   createStateDirectory(layout)
   durableWrite(baselinePathFor(layout.state), JSON.stringify(baseline), { log: rt.log })
