@@ -5,6 +5,7 @@ import type { Thread } from '../store/records.ts'
 import { readPointer } from '../domain/pointer.ts'
 import { escapeStored } from '../render/escape.ts'
 import { clipWithMarker } from '../render/clip.ts'
+import { readResumeBaseline, recordSessionBaseline } from '../hooklib/ledger-presence.ts'
 
 export type SessionStartEvent = { session_id: string; source: string; cwd: string }
 
@@ -51,9 +52,28 @@ const renderCrashReport = (rt: Runtime, projectRoot: string, sessionId: string):
   )
 }
 
+const BASELINE_UNWRITABLE_EVENT = 'session-start.baseline-unwritable'
+
+const recordSessionBaselineIfNew = (rt: Runtime, event: SessionStartEvent): void => {
+  try {
+    const layout = layoutFor(rt, event.cwd)
+    if (!layout.ok) return
+    const existing = readResumeBaseline(layout.value)
+    if (existing !== null && existing.session_id === event.session_id) return
+    recordSessionBaseline(rt, layout.value, event.session_id)
+  } catch (error) {
+    rt.log({
+      level: 'warn',
+      event: BASELINE_UNWRITABLE_EVENT,
+      detail: error instanceof Error ? error.message : String(error)
+    })
+  }
+}
+
 export type SessionStartReply = { additionalContext: string }
 
 export const runSessionStart = (rt: Runtime, event: SessionStartEvent): SessionStartReply => {
+  recordSessionBaselineIfNew(rt, event)
   const crashReport = renderCrashReport(rt, event.cwd, event.session_id)
   const listing = renderThreadListing(rt, event.cwd)
   const sections = crashReport === null ? [listing] : [crashReport, listing]
