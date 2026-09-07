@@ -141,6 +141,22 @@ test('hook.stop-gate-keeps-firing-on-two-fires-with-no-fresh-turn', async () => 
   })
 })
 
+test('hook.stop-gate-keeps-firing-after-one-fire-and-a-fresh-turn', async () => {
+  await withFixture(async ({ rt, repo }) => {
+    const threadId = commitOneThread(rt, repo, 'one-fire-fresh-turn')
+    startSession(rt, repo, SESSION_ID)
+    await resumeAs(rt, SESSION_ID, threadId)
+
+    assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false, 'prompt-one')).kind, 'block')
+
+    assert.equal(
+      stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false, 'prompt-two')).kind,
+      'block',
+      'one fire plus a fresh human turn is only half the stand-down condition'
+    )
+  })
+})
+
 test('hook.stop-gate-names-nothing-silent-when-the-record-holds-all-three', async () => {
   await withFixture(async ({ rt, repo }) => {
     const threadId = commitThreadWithFullRecord(rt, repo, 'fully-recorded')

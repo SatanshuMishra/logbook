@@ -155,7 +155,7 @@ test('hook.stop-gate-still-blocks-on-a-session-entry-for-another-thread', async 
   })
 })
 
-test('hook.stop-gate-re-evaluates-up-to-the-stand-down', async () => {
+test('hook.stop-gate-re-evaluates-rather-than-latching-on-one-fire', async () => {
   await withFixture(async ({ rt, repo }) => {
     const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
     startSession(rt, repo, SESSION_ID)
@@ -165,7 +165,7 @@ test('hook.stop-gate-re-evaluates-up-to-the-stand-down', async () => {
     assert.equal(
       stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind,
       'block',
-      'the verdict is re-evaluated at every turn end, not latched to fire once per session, up to the stand-down'
+      'a single fire does not latch the gate silent; it is re-evaluated at every turn end'
     )
 
     commitToThread(rt, repo, threadId, 'stop-gate-presence-recorded')

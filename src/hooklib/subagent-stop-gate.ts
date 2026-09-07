@@ -80,7 +80,7 @@ export const subagentStopGateVerdict = (rt: Runtime, event: SubagentStopEvent): 
   const head = readLedgerHead(rt, layout.value.projectRoot)
   if (head === null) return { kind: 'silent' }
 
-  const gateState = readRecordingGateState(layout.value.state)
+  const gateState = readRecordingGateState(rt, layout.value.state)
   const reference = headAtLastFireFor(gateState, event.session_id) ?? baseline.ledger_head
   if (reference === null) return { kind: 'silent' }
 

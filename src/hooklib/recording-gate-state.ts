@@ -18,7 +18,7 @@ const recordingGatePathFor = (stateDir: string): string => path.join(stateDir, R
 const isThreadFireState = (value: unknown): value is ThreadFireState => {
   if (typeof value !== 'object' || value === null) return false
   const candidate = value as Record<string, unknown>
-  if (typeof candidate.head_at_last_fire !== 'string' || candidate.head_at_last_fire.length === 0) return false
+  if (typeof candidate.head_at_last_fire !== 'string' || !SHA_PATTERN.test(candidate.head_at_last_fire)) return false
   if (typeof candidate.fires !== 'number' || !Number.isInteger(candidate.fires) || candidate.fires < 0) return false
   if (candidate.prompt_id_at_last_fire !== null && typeof candidate.prompt_id_at_last_fire !== 'string') return false
   return true
@@ -37,18 +37,28 @@ const parseHeadAtLastFire = (value: unknown): string | null => {
   return null
 }
 
-export const readRecordingGateState = (stateDir: string): RecordingGateState | null => {
+export const readRecordingGateState = (rt: Runtime, stateDir: string): RecordingGateState | null => {
   let raw: string
   try {
     raw = readFileSync(recordingGatePathFor(stateDir), 'utf8')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
+    rt.log({
+      level: 'warn',
+      event: 'stop-gate.recording-gate-state-unreadable',
+      detail: error instanceof Error ? error.message : String(error)
+    })
+    return null
   }
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
-  } catch {
+  } catch (error) {
+    rt.log({
+      level: 'warn',
+      event: 'stop-gate.recording-gate-state-unparseable',
+      detail: error instanceof Error ? error.message : String(error)
+    })
     return null
   }
   if (typeof parsed !== 'object' || parsed === null) return null
