@@ -72,3 +72,21 @@ export type StopEvent = {
   background_tasks: unknown[]
   session_crons: unknown[]
 }
+
+export type SubagentStopEvent = {
+  session_id: string
+  transcript_path: string
+  cwd: string
+  scratchpad_dir: string
+  prompt_id: string
+  permission_mode: string
+  agent_id: string
+  agent_type: string
+  effort: ToolEffort
+  hook_event_name: 'SubagentStop'
+  stop_hook_active: boolean
+  agent_transcript_path: string
+  last_assistant_message: string
+  background_tasks: unknown[]
+  session_crons: unknown[]
+}

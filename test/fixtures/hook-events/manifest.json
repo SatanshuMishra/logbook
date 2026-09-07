@@ -2,7 +2,7 @@
   "publishedTypesFound": false,
   "typesSource": "derived-from-live-captures",
   "typesFile": "../hook-types.d.ts",
-  "note": "No machine-readable schema and no shipped .d.ts for hook payloads were found on this machine: the claude binary at /opt/homebrew/Caskroom/claude-code@latest/2.1.241/claude is a compiled Mach-O executable with no bundled TypeScript declarations, no @anthropic-ai/claude-code or @anthropic-ai/claude-agent-sdk npm package was installed anywhere reachable, and the closest match (the VS Code extension anthropic.claude-code-2.1.241-darwin-arm64) ships only a minified extension.js, not published type declarations. Types in hook-types.d.ts are therefore derived from the captured payloads below and from SPEC section 8.2, not copied from a publisher-supplied source.",
+  "note": "No machine-readable schema and no shipped .d.ts for hook payloads were found on this machine: the claude binary at /opt/homebrew/Caskroom/claude-code@latest/2.1.241/claude is a compiled Mach-O executable with no bundled TypeScript declarations, no @anthropic-ai/claude-code or @anthropic-ai/claude-agent-sdk npm package was installed anywhere reachable, and the closest match (the VS Code extension anthropic.claude-code-2.1.241-darwin-arm64) ships only a minified extension.js, not published type declarations. Types in hook-types.d.ts are therefore derived from the captured payloads below and from SPEC section 8.2, not copied from a publisher-supplied source. Captures below were taken against two client versions, 2.1.241 and 2.1.260; each fixture entry names the version it was captured against.",
   "fixtures": [
     {
       "file": "session-start.startup.json",
@@ -128,6 +128,15 @@
       "status": "CAPTURED",
       "clientVersion": "2.1.241",
       "capturedFrom": "scratchpad/probe/run2/out/hooks-Stop.jsonl"
+    },
+    {
+      "file": "subagent-stop.json",
+      "event": "SubagentStop",
+      "type": "SubagentStopEvent",
+      "status": "CAPTURED",
+      "clientVersion": "2.1.260",
+      "capturedFrom": "/tmp/subagent-stop-capture.77163.json",
+      "note": "last_assistant_message was shortened from the original capture; capturedFrom is a machine-local temp path from an ad hoc capture, not a numbered probe run"
     }
   ]
 }
