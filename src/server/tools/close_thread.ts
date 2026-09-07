@@ -5,7 +5,7 @@ import type { SessionEntry } from '../../schema/session.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { transition } from '../../domain/lifecycle.ts'
-import { ThreadRecord, type Thread } from '../../schema/thread.ts'
+import { ThreadRecord, criterionSettledness, type Thread, type Settledness } from '../../schema/thread.ts'
 import { openProjectStore, loadThread } from '../tool-support.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import { withDetail } from '../../store/detail.ts'
@@ -37,7 +37,22 @@ const CloseThreadOutputSchema = z.object({
         .describe('how many met criteria recorded a check that could not be run, with the reason'),
       not_recorded: z.number().int().describe('how many met criteria carry no recorded result at all')
     })
-    .describe('how the met criteria on this thread divide by how their result was obtained')
+    .describe('how the met criteria on this thread divide by how their result was obtained'),
+  settledness_split: z
+    .object({
+      confirmed: z.number().int().describe('how many met criteria the human stated or agreed to'),
+      proposed: z
+        .number()
+        .int()
+        .describe('how many met criteria were derived rather than stated, which is where a criterion stored before settledness was recorded also counts'),
+      unsettled: z
+        .number()
+        .int()
+        .describe('how many met criteria still say that done was genuinely not known for that part')
+    })
+    .describe(
+      'how the met criteria on this thread divide by who stood behind them, and no count in this split is ever a reason to refuse the close'
+    )
 })
 
 type ResultStatusSplit = { verified: number; unverified_reasoned: number; not_recorded: number }
@@ -54,7 +69,19 @@ const resultStatusSplitOf = (thread: Thread): ResultStatusSplit => {
 }
 
 const renderResultStatusSplit = (split: ResultStatusSplit): string =>
-  `criteria met: ${split.verified} verified, ${split.unverified_reasoned} unverified-reasoned, ${split.not_recorded} not recorded.`
+  `criteria met: ${split.verified} verified, ${split.unverified_reasoned} unverified-reasoned, ${split.not_recorded} not recorded`
+
+type SettlednessSplit = { confirmed: number; proposed: number; unsettled: number }
+
+const settlednessSplitOf = (thread: Thread): SettlednessSplit => {
+  const met = thread.completion_criteria.filter((criterion) => criterion.struck_by === null && criterion.done)
+  const countOf = (settledness: Settledness): number =>
+    met.filter((criterion) => criterionSettledness(criterion) === settledness).length
+  return { confirmed: countOf('confirmed'), proposed: countOf('proposed'), unsettled: countOf('unsettled') }
+}
+
+const renderSettlednessSplit = (split: SettlednessSplit): string =>
+  `who stood behind them: ${split.confirmed} confirmed, ${split.proposed} proposed, ${split.unsettled} unsettled`
 
 type CloseThreadInput = z.infer<typeof CloseThreadInputSchema>
 type CloseThreadOutput = z.infer<typeof CloseThreadOutputSchema>
@@ -147,15 +174,17 @@ export const closeThreadTool: ToolSpec<CloseThreadInput, CloseThreadOutput> = {
     releasePointerIfOwned(rt, layout.value, thread.id)
 
     const split = resultStatusSplitOf(validated.value)
+    const settledness = settlednessSplitOf(validated.value)
 
     return {
       ok: true,
-      text: `closed thread ${thread.slug} as ${input.outcome}; ${renderResultStatusSplit(split)}`,
+      text: `closed thread ${thread.slug} as ${input.outcome}; ${renderResultStatusSplit(split)}; ${renderSettlednessSplit(settledness)}.`,
       structured: {
         thread_id: validated.value.id,
         status: input.outcome,
         session_entry_id: sessionEntry.id,
-        result_status_split: split
+        result_status_split: split,
+        settledness_split: settledness
       }
     }
   }

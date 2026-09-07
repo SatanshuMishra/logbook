@@ -144,6 +144,96 @@ const readPointerFile = (layout: StoreLayout): StoredPointer | null => {
   return JSON.parse(raw) as StoredPointer
 }
 
+type FixtureCriterion = { text: string; check: string; settledness: string; settled_by?: string }
+
+const openThreadWithCriteria = async (
+  spawned: SpawnedServer,
+  published: PublishedTool[],
+  slug: string,
+  criteria: FixtureCriterion[]
+): Promise<{ threadId: string; criterionIds: string[] }> => {
+  const schema = schemaFor(published, 'open_thread')
+  const { valid } = generateSchemaCases('open_thread', schema, { slug, completion_criteria: criteria })
+  const result = (await spawned.client.callTool({ name: 'open_thread', arguments: valid })) as CallToolResult
+  assertOkResult('open_thread (settledness fixture arrange)', result)
+  const structured = result.structuredContent as { thread_id: string; completion_criteria: { id: string }[] }
+  const criterionIds = structured.completion_criteria.map((criterion) => criterion.id)
+  assert.equal(
+    criterionIds.length,
+    criteria.length,
+    'the settledness fixture must mint one criterion for every entry it supplied'
+  )
+  return { threadId: structured.thread_id, criterionIds }
+}
+
+const markEveryCriterionDone = async (
+  spawned: SpawnedServer,
+  threadId: string,
+  criterionIds: string[]
+): Promise<void> => {
+  const marked = (await spawned.client.callTool({
+    name: 'update_thread',
+    arguments: {
+      thread_id: threadId,
+      criteria_done: criterionIds.map((criterionId) => ({
+        criterion_id: criterionId,
+        result: 'the fixture check was run and returned this',
+        result_status: 'verified'
+      }))
+    }
+  })) as CallToolResult
+  assertOkResult('update_thread (mark every criterion done so the close gate passes)', marked)
+}
+
+const settleCriterion = async (
+  spawned: SpawnedServer,
+  threadId: string,
+  criterionId: string,
+  settledness: string
+): Promise<void> => {
+  const settled = (await spawned.client.callTool({
+    name: 'update_thread',
+    arguments: { thread_id: threadId, criteria_settled: [{ criterion_id: criterionId, settledness }] }
+  })) as CallToolResult
+  assertOkResult(`update_thread (settle a criterion as ${settledness})`, settled)
+}
+
+const MIXED_SETTLEDNESS_CRITERIA: FixtureCriterion[] = [
+  {
+    text: 'the close reply names who stood behind each criterion',
+    check: 'the close reply carries the settledness split',
+    settledness: 'confirmed',
+    settled_by: 'I want to see who stood behind these when I close it'
+  },
+  {
+    text: 'the split counts a criterion this session derived on its own',
+    check: 'npm test exits 0',
+    settledness: 'proposed'
+  },
+  {
+    text: 'the split counts a criterion the human later moved back to unsettled',
+    check: 'npm test exits 0',
+    settledness: 'proposed'
+  }
+]
+
+const arrangeMixedSettlednessThread = async (fx: Fixture, slug: string): Promise<string> => {
+  const { threadId, criterionIds } = await openThreadWithCriteria(
+    fx.spawned,
+    fx.published,
+    slug,
+    MIXED_SETTLEDNESS_CRITERIA
+  )
+  await markEveryCriterionDone(fx.spawned, threadId, criterionIds)
+  const movedToUnsettled = criterionIds.at(-1)
+  assert.ok(
+    movedToUnsettled !== undefined,
+    'the mixed-settledness fixture must have minted a criterion to move back to unsettled'
+  )
+  await settleCriterion(fx.spawned, threadId, movedToUnsettled, 'unsettled')
+  return threadId
+}
+
 test('close.releases-the-pointer-it-owns-when-abandoned', async () => {
   await withFixture(async (fx) => {
     const { threadId } = await createFixtureThread(fx.spawned, fx.published, { slug: 'close-releases-abandoned' })
@@ -452,6 +542,84 @@ test('close.releases-a-pointer-held-by-a-foreign-session', async () => {
       readPointerFile(layout),
       null,
       'closing the thread a pointer names must release that pointer regardless of which session wrote it; a terminal thread can no longer be resumed, parked with an outcome, or updated, so a session-id mismatch would protect nothing'
+    )
+  })
+})
+
+test('close.reply-text-divides-the-met-criteria-by-settledness', async () => {
+  await withFixture(async (fx) => {
+    const SLUG = 'close-settledness-split-text'
+    const threadId = await arrangeMixedSettlednessThread(fx, SLUG)
+
+    const closed = await callClose(fx.spawned, fx.published, {
+      thread_id: threadId,
+      outcome: 'done',
+      detail: 'shipped the settledness split the close reply now reports'
+    })
+    assertOkResult('close_thread (mixed settledness)', closed)
+
+    assert.equal(
+      firstTextOf(closed),
+      `closed thread ${SLUG} as done; criteria met: 3 verified, 0 unverified-reasoned, 0 not recorded; who stood behind them: 1 confirmed, 1 proposed, 1 unsettled.`,
+      'the close reply must report the settledness of the criteria it closed beside the result-status split it already reports'
+    )
+  })
+})
+
+test('close.structured-reply-carries-the-settledness-split', async () => {
+  await withFixture(async (fx) => {
+    const threadId = await arrangeMixedSettlednessThread(fx, 'close-settledness-split-structured')
+
+    const closed = await callClose(fx.spawned, fx.published, {
+      thread_id: threadId,
+      outcome: 'done',
+      detail: 'shipped the settledness split as a structured field a caller reads without parsing prose'
+    })
+    assertOkResult('close_thread (mixed settledness, structured)', closed)
+
+    const structured = closed.structuredContent as {
+      settledness_split: { confirmed: number; proposed: number; unsettled: number }
+    }
+    assert.deepEqual(
+      structured.settledness_split,
+      { confirmed: 1, proposed: 1, unsettled: 1 },
+      'the structured reply must carry the same settledness split the reply text reports'
+    )
+  })
+})
+
+test('close.a-zero-settledness-count-is-reported-and-does-not-refuse', async () => {
+  await withFixture(async (fx) => {
+    const { threadId, criterionIds } = await openThreadWithCriteria(
+      fx.spawned,
+      fx.published,
+      'close-settledness-zero-counts',
+      [
+        { text: 'the first derived criterion holds', check: 'npm test exits 0', settledness: 'proposed' },
+        { text: 'the second derived criterion holds', check: 'npm run typecheck exits 0', settledness: 'proposed' }
+      ]
+    )
+    await markEveryCriterionDone(fx.spawned, threadId, criterionIds)
+
+    const closed = await callClose(fx.spawned, fx.published, {
+      thread_id: threadId,
+      outcome: 'done',
+      detail: 'closed a thread on which no criterion was ever confirmed by the human'
+    })
+    assertOkResult('close_thread (no confirmed and no unsettled criteria)', closed)
+
+    const structured = closed.structuredContent as {
+      settledness_split: { confirmed: number; proposed: number; unsettled: number }
+    }
+    assert.deepEqual(
+      structured.settledness_split,
+      { confirmed: 0, proposed: 2, unsettled: 0 },
+      'a bucket holding nothing must be reported as zero rather than omitted'
+    )
+    const text = firstTextOf(closed)
+    assert.ok(
+      text.includes('0 confirmed') && text.includes('0 unsettled'),
+      `an empty bucket must be reported in the reply text as a zero: ${text}`
     )
   })
 })

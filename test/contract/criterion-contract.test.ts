@@ -362,7 +362,7 @@ test('criterion.close-thread-prints-the-verified-and-unverified-reasoned-split',
     })
     assert.equal(
       closed.text,
-      'closed thread the-split as done; criteria met: 1 verified, 1 unverified-reasoned, 0 not recorded.'
+      'closed thread the-split as done; criteria met: 1 verified, 1 unverified-reasoned, 0 not recorded; who stood behind them: 0 confirmed, 2 proposed, 0 unsettled.'
     )
   })
 })
