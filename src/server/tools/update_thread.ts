@@ -3,6 +3,7 @@ import type { ToolSpec } from '../register.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import { ULID_PATTERN } from '../../schema/ids.ts'
 import type { Artifact, KeyDecision, Risk, Spine, Thread } from '../../schema/thread.ts'
+import { criterionSettledness } from '../../schema/thread.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
@@ -187,6 +188,15 @@ const struckCriterionRefusal = (ids: string[]): Refusal => ({
   message: `criteria_done names criteria that have already been struck and cannot be marked done: ${ids.join(', ')}.`
 })
 
+const unsettledCriterionRefusal = (ids: string[]): Refusal => ({
+  ok: false,
+  field: 'criteria_done',
+  accepted: 'only criteria that state a claim a check could decide, so proposed or confirmed ones',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: true,
+  message: `criteria_done reports a result for criteria that are still unsettled, and an unsettled criterion asserts nothing for a result to report: ${ids.join(', ')}; remedy: through amend_criteria, strike each one and insert a criterion that states an actual claim with a check, then mark that one done.`
+})
+
 export const conflictingBlockageRefusal = (): Refusal => ({
   ok: false,
   field: 'blocked_by',
@@ -255,6 +265,12 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     )
     if (struckCriteria.length > 0) {
       return { ok: false, refusal: struckCriterionRefusal(struckCriteria) }
+    }
+    const unsettledCriteria = criteriaDoneIds.filter((id) =>
+      thread.completion_criteria.some((c) => c.id === id && criterionSettledness(c) === 'unsettled')
+    )
+    if (unsettledCriteria.length > 0) {
+      return { ok: false, refusal: unsettledCriterionRefusal(unsettledCriteria) }
     }
     const emptyResults = criteriaDone.filter((entry) => entry.result.trim().length === 0)
     if (emptyResults.length > 0) {
