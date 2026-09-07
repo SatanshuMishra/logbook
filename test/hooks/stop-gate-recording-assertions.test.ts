@@ -4,7 +4,15 @@ import type { RecordChange } from '../../src/store/write-path.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import { openStore } from '../../src/store/records.ts'
 import { stopGateVerdict } from '../../src/hooklib/stop-gate.ts'
-import { commitOneThread, commitSessionEntry, resumeAs, startSession, stopEventFor, withFixture } from '../support/stop-gate-fixture.ts'
+import {
+  commitOneThread,
+  commitSessionEntry,
+  commitToThread,
+  resumeAs,
+  startSession,
+  stopEventFor,
+  withFixture
+} from '../support/stop-gate-fixture.ts'
 
 const SESSION_ID = 'stop-gate-recording-assertions-session'
 
@@ -153,6 +161,49 @@ test('hook.stop-gate-keeps-firing-after-one-fire-and-a-fresh-turn', async () => 
       stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false, 'prompt-two')).kind,
       'block',
       'one fire plus a fresh human turn is only half the stand-down condition'
+    )
+  })
+})
+
+test('hook.stop-gate-fires-again-on-a-turn-that-records-nothing-after-a-clear', async () => {
+  await withFixture(async ({ rt, repo }) => {
+    const threadId = commitOneThread(rt, repo, 'fires-again-after-clear')
+    startSession(rt, repo, SESSION_ID)
+    await resumeAs(rt, SESSION_ID, threadId)
+
+    const promptId = 'stable-prompt'
+
+    assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false, promptId)).kind, 'block')
+
+    commitToThread(rt, repo, threadId, 'fires-again-after-clear-recorded')
+
+    assert.equal(
+      stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false, promptId)).kind,
+      'silent',
+      'the head moved off the reference recorded at the fire, which clears the gate'
+    )
+
+    assert.equal(
+      stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false, promptId)).kind,
+      'block',
+      'a turn that records nothing after a clear must fire again, not stay silent for the rest of the session'
+    )
+  })
+})
+
+test('hook.stop-gate-stands-down-after-two-fires-when-the-client-sends-no-prompt-id', async () => {
+  await withFixture(async ({ rt, repo }) => {
+    const threadId = commitOneThread(rt, repo, 'stands-down-no-prompt-id')
+    startSession(rt, repo, SESSION_ID)
+    await resumeAs(rt, SESSION_ID, threadId)
+
+    assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind, 'block')
+    assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind, 'block')
+
+    assert.equal(
+      stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind,
+      'silent',
+      'an unobservable prompt id must resolve toward silence, never toward an endless block'
     )
   })
 })
