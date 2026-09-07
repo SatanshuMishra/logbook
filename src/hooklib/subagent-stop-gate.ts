@@ -1,15 +1,10 @@
 import { existsSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
-import { layoutFor, type StoreLayout } from '../store/layout.ts'
+import { layoutFor } from '../store/layout.ts'
 import { durableWrite } from '../store/durable-write.ts'
 import { readLedgerHead, readResumeBaseline } from './ledger-presence.ts'
-import {
-  headAtLastFireFor,
-  readRecordingGateState,
-  writeRecordingGateState,
-  type RecordingGateState
-} from './recording-gate-state.ts'
+import { headAtLastFireFor, readRecordingGateState } from './recording-gate-state.ts'
 import { recordingGateClosingText } from './recording-assertions.ts'
 import type { StopVerdict } from './stop-gate.ts'
 
@@ -32,18 +27,6 @@ const writeMarker = (rt: Runtime, stateDir: string, sessionId: string, agentId: 
   const target = markerPathFor(stateDir, sessionId, agentId)
   mkdirSync(path.dirname(target), { recursive: true })
   durableWrite(target, '', { log: rt.log })
-}
-
-const recordSessionHeadAtFire = (
-  rt: Runtime,
-  layout: StoreLayout,
-  previousState: RecordingGateState | null,
-  sessionId: string,
-  head: string
-): void => {
-  const previousThreads = previousState !== null && previousState.session_id === sessionId ? previousState.threads : {}
-  const nextState: RecordingGateState = { session_id: sessionId, threads: previousThreads, head_at_last_fire: head }
-  writeRecordingGateState(rt, layout.state, nextState)
 }
 
 const R1_TEXT = 'Every cause, measurement or approach this agent established is on the record.'
@@ -87,7 +70,6 @@ export const subagentStopGateVerdict = (rt: Runtime, event: SubagentStopEvent): 
   if (head !== reference) return { kind: 'silent' }
 
   writeMarker(rt, layout.value.state, event.session_id, event.agent_id)
-  recordSessionHeadAtFire(rt, layout.value, gateState, event.session_id, head)
 
   return { kind: 'block', reason: subagentBlockReason() }
 }

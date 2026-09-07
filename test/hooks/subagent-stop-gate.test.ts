@@ -74,6 +74,7 @@ test('hook.subagent-gate-asks-each-agent-separately', async () => {
 
 test('hook.subagent-gate-is-silent-with-no-agent-id', async () => {
   await withFixture(async ({ rt, repo }) => {
+    commitOneThread(rt, repo, 'subagent-gate-is-silent-with-no-agent-id')
     startSession(rt, repo, SESSION_ID)
 
     const verdict = subagentStopGateVerdict(rt, { ...subagentEventFor(repo, SESSION_ID, 'x'), agent_id: null })
@@ -115,6 +116,29 @@ test('hook.subagent-gate-is-silent-on-an-agent-id-that-cannot-be-a-path-segment'
       existsSync(join(layout.value.state, 'subagent-gate')),
       false,
       'a rejected agent_id must not create any marker directory'
+    )
+  })
+})
+
+test('hook.subagent-gate-is-silent-on-a-session-id-that-cannot-be-a-path-segment', async () => {
+  await withFixture(async ({ rt, repo }) => {
+    commitOneThread(rt, repo, 'subagent-gate-session-id-cannot-be-a-path-segment')
+    startSession(rt, repo, SESSION_ID)
+
+    const verdict = subagentStopGateVerdict(rt, {
+      ...subagentEventFor(repo, SESSION_ID, 'agent-one'),
+      session_id: '../escape'
+    })
+
+    assert.equal(verdict.kind, 'silent')
+
+    const layout = layoutFor(rt, repo)
+    assert.equal(layout.ok, true)
+    if (!layout.ok) return
+    assert.equal(
+      existsSync(join(layout.value.state, 'subagent-gate')),
+      false,
+      'a rejected session_id must not create any marker directory'
     )
   })
 })
