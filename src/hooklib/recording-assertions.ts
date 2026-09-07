@@ -41,6 +41,8 @@ const CLOSING_TEXT =
   'This verdict reports only that the record is silent, and it makes no claim about what the answer should be. ' +
   'It makes no claim that what is recorded is complete.'
 
+export const recordingGateClosingText = (): string => CLOSING_TEXT
+
 const assertionsBody = (threadId: string, observation: ThreadObservation | null): string =>
   `A fresh session picking up ${threadId} would need each of the following to hold.\n\n` +
   assertionLines(observation)

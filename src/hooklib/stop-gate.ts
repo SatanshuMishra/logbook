@@ -99,6 +99,7 @@ const recordFire = (
   const previousFires = previousThreads[threadId]?.fires ?? 0
   const nextState: RecordingGateState = {
     session_id: event.session_id,
+    head_at_last_fire: head,
     threads: {
       ...previousThreads,
       [threadId]: {
