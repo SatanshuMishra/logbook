@@ -51,8 +51,23 @@ const withFixture = async (fn: (fx: Fixture) => Promise<void>): Promise<void> =>
   }
 }
 
+const GREEN_SUITE_CRITERION = 'the merge suite is green in both push orders'
+const LATENCY_CRITERION = 'what counts as acceptable latency is not decided'
+
 const callOpenThread = async (fx: Fixture, args: Record<string, unknown>): Promise<CallToolResult> =>
   (await fx.spawned.client.callTool({ name: 'open_thread', arguments: args })) as CallToolResult
+
+const firstTextOf = (result: CallToolResult): string => {
+  const [first] = result.content
+  assert.ok(first !== undefined && first.type === 'text', 'expected the tool result to carry at least one text content block')
+  return (first as { type: 'text'; text: string }).text
+}
+
+const lineCarrying = (text: string, needle: string): string => {
+  const found = text.split('\n').find((line) => line.includes(needle))
+  assert.ok(found !== undefined, `expected the reply to carry a line for "${needle}", got: ${text}`)
+  return found
+}
 
 const readThreadRecord = (fx: Fixture, threadId: string): Thread => {
   const rt = testRuntime({ env: { HOME: fx.homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: fx.pluginData }, cwd: fx.repo })
@@ -211,5 +226,113 @@ test('open_thread.accepts-all-three-settledness-values', async () => {
     })
 
     assert.equal(reply.isError, undefined, 'no call is ever refused because of the settledness value itself')
+  })
+})
+
+test('open_thread.reply-carries-the-text-of-every-criterion-it-stored', async () => {
+  await withFixture(async (fx) => {
+    const reply = await callOpenThread(fx, {
+      title: 'a thread',
+      slug: 'reply-carries-text',
+      active_goal: 'ship the recording model',
+      next_step: 'read the spec',
+      completion_criteria: [
+        { text: GREEN_SUITE_CRITERION, check: 'npm test exits 0', settledness: 'proposed' },
+        { text: LATENCY_CRITERION, settledness: 'unsettled' }
+      ]
+    })
+
+    const text = firstTextOf(reply)
+
+    assert.ok(text.includes(GREEN_SUITE_CRITERION), `the reply must carry the first criterion as stored, got: ${text}`)
+    assert.ok(text.includes(LATENCY_CRITERION), `the reply must carry the second criterion as stored, got: ${text}`)
+  })
+})
+
+test('open_thread.reply-carries-the-settledness-each-criterion-was-stored-with', async () => {
+  await withFixture(async (fx) => {
+    const reply = await callOpenThread(fx, {
+      title: 'a thread',
+      slug: 'reply-carries-settledness',
+      active_goal: 'ship the recording model',
+      next_step: 'read the spec',
+      completion_criteria: [
+        { text: GREEN_SUITE_CRITERION, check: 'npm test exits 0', settledness: 'proposed' },
+        { text: LATENCY_CRITERION, settledness: 'unsettled' }
+      ]
+    })
+
+    const text = firstTextOf(reply)
+
+    assert.ok(
+      lineCarrying(text, GREEN_SUITE_CRITERION).includes('proposed'),
+      `the settledness of a criterion belongs on that criterion's own line, got: ${text}`
+    )
+    assert.ok(
+      lineCarrying(text, LATENCY_CRITERION).includes('unsettled'),
+      `the settledness of a criterion belongs on that criterion's own line, got: ${text}`
+    )
+  })
+})
+
+test('open_thread.reply-names-the-action-and-where-the-answer-is-recorded', async () => {
+  await withFixture(async (fx) => {
+    const reply = await callOpenThread(fx, {
+      title: 'a thread',
+      slug: 'reply-names-the-action',
+      active_goal: 'ship the recording model',
+      next_step: 'read the spec',
+      completion_criteria: [{ text: GREEN_SUITE_CRITERION, check: 'npm test exits 0', settledness: 'proposed' }]
+    })
+
+    const text = firstTextOf(reply)
+
+    assert.ok(text.includes('human'), `the reply must name putting the criteria to the human, got: ${text}`)
+    assert.ok(text.includes('criteria_settled'), `the reply must name where the answer is recorded, got: ${text}`)
+    assert.ok(text.includes('update_thread'), `the reply must name the tool that records the answer, got: ${text}`)
+  })
+})
+
+test('open_thread.reply-with-no-criteria-says-a-definition-of-done-is-still-owed', async () => {
+  await withFixture(async (fx) => {
+    const reply = await callOpenThread(fx, {
+      title: 'a thread',
+      slug: 'reply-with-no-criteria',
+      active_goal: 'ship the recording model',
+      next_step: 'read the spec'
+    })
+
+    const text = firstTextOf(reply)
+
+    assert.ok(
+      text.includes('no completion criteria were recorded'),
+      `a thread opened with no criteria must say so, got: ${text}`
+    )
+    assert.ok(
+      text.includes('definition of done is still owed'),
+      `a thread opened with no criteria still owes a definition of done, got: ${text}`
+    )
+  })
+})
+
+test('open_thread.reports-an-absent-check-as-null-rather-than-an-empty-string', async () => {
+  await withFixture(async (fx) => {
+    const reply = await callOpenThread(fx, {
+      title: 'a thread',
+      slug: 'absent-check-is-null',
+      active_goal: 'ship the recording model',
+      next_step: 'read the spec',
+      completion_criteria: [{ text: LATENCY_CRITERION, settledness: 'unsettled' }]
+    })
+
+    const structured = reply.structuredContent as { completion_criteria: { check: string | null }[] }
+    const first = structured.completion_criteria[0]
+
+    assert.ok(first !== undefined, 'open-thread fixture: the unsettled criterion was not minted')
+    assert.equal(
+      first.check,
+      null,
+      'an unsettled criterion records no check, and null says that where an empty string is indistinguishable from a check someone stored as empty'
+    )
   })
 })

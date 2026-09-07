@@ -2,7 +2,8 @@ import { z } from 'zod'
 import type { ToolSpec } from '../register.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import { ULID_PATTERN } from '../../schema/ids.ts'
-import type { Artifact, KeyDecision, Risk, Spine, Thread } from '../../schema/thread.ts'
+import type { Artifact, KeyDecision, Risk, Settledness, Spine, Thread } from '../../schema/thread.ts'
+import { criterionSettledness } from '../../schema/thread.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
@@ -47,6 +48,23 @@ const CriterionDoneSchema = z
   })
   .describe('one criterion to mark done, as an object carrying what was observed; the bare criterion id string this argument took before is refused, so send {"criterion_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV", "result": "436 tests, 0 fail, exit 0", "result_status": "verified"} in place of "01ARZ3NDEKTSV4RRFFQ69G5FAV"')
 
+const CriterionSettledSchema = z
+  .strictObject({
+    criterion_id: ulidField('the id of a completion criterion already present on this thread'),
+    settledness: z
+      .enum(['confirmed', 'proposed', 'unsettled'])
+      .describe(
+        'who stands behind this criterion now: confirmed when the human stated or agreed it, proposed when you derived it, unsettled when done is genuinely not known for this part yet'
+      ),
+    settled_by: z
+      .string()
+      .regex(/\S/)
+      .max(caps.CRITERION_SETTLED_BY_MAX)
+      .optional()
+      .describe('the human words behind a confirmed criterion, quoted verbatim; refused on any other settledness')
+  })
+  .describe('one criterion to settle, as an object carrying who stands behind it and, when confirmed, their own words')
+
 const UpdateThreadInputSchema = z.strictObject({
   thread_id: ulidField('the id of the thread to update'),
   criteria_done: z
@@ -54,6 +72,13 @@ const UpdateThreadInputSchema = z.strictObject({
     .max(caps.CRITERIA_MAX_ELEMENTS)
     .optional()
     .describe('criteria to mark done, each carrying what was observed; an id not present on the thread is refused'),
+  criteria_settled: z
+    .array(CriterionSettledSchema)
+    .max(caps.CRITERIA_MAX_ELEMENTS)
+    .optional()
+    .describe(
+      'criteria to settle, each recording who stands behind it now; a settlement may move a criterion between any two values, and leaving confirmed drops the quote that stood behind it'
+    ),
   active_goal: z
     .string()
     .max(caps.SPINE_ACTIVE_GOAL_MAX)
@@ -118,6 +143,7 @@ const UpdateThreadInputSchema = z.strictObject({
 const UpdateThreadOutputSchema = z.object({
   thread_id: z.string().describe('the id of the thread that was updated'),
   criteria_marked_done: z.array(z.string()).describe('ids of criteria newly marked done by this call'),
+  criteria_newly_settled: z.array(z.string()).describe('ids of criteria whose settledness or quote this call changed'),
   spine_fields_updated: z
     .array(z.enum(['active_goal', 'next_step', 'last_session']))
     .describe('which scalar spine fields this call changed'),
@@ -187,6 +213,87 @@ const struckCriterionRefusal = (ids: string[]): Refusal => ({
   message: `criteria_done names criteria that have already been struck and cannot be marked done: ${ids.join(', ')}.`
 })
 
+const unsettledCriterionRefusal = (ids: string[]): Refusal => ({
+  ok: false,
+  field: 'criteria_done',
+  accepted: 'only criteria that state a claim a check could decide, so proposed or confirmed ones',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: true,
+  message: `criteria_done reports a result for criteria that are still unsettled, and an unsettled criterion asserts nothing for a result to report: ${ids.join(', ')}; remedy: once the human has answered, settle each one through criteria_settled and then mark it done, or through amend_criteria strike each one and insert a criterion that states an actual claim with a check.`
+})
+
+const unsettlingADoneCriterionRefusal = (ids: string[]): Refusal => ({
+  ok: false,
+  field: 'criteria_settled',
+  accepted: 'a settlement to unsettled only on a criterion this call does not leave marked done',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: true,
+  message: `criteria_settled moves criteria to unsettled that this call would leave marked done, and an unsettled criterion asserts nothing for a result to report: ${ids.join(', ')}; remedy: settle each one as proposed or confirmed to keep the recorded result, or through amend_criteria strike each one and insert a criterion naming the open question instead.`
+})
+
+const settlementCheckOwedRefusal = (index: number, settledness: string): Refusal => ({
+  ok: false,
+  field: 'criteria_settled',
+  accepted: 'a settlement to confirmed or proposed only on a criterion that already carries a check',
+  example: 'npm test exits 0',
+  retryable: true,
+  message: `criteria_settled[${index}] settles a criterion to ${settledness} and that criterion carries no check; a criterion that asserts something needs something to decide it; remedy: give it a check through an amend_criteria rewrite first, then settle it.`
+})
+
+const duplicateSettlementRefusal = (ids: string[]): Refusal => ({
+  ok: false,
+  field: 'criteria_settled',
+  accepted: 'at most one entry per criterion id in a single call',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: true,
+  message: `criteria_settled names the same criterion more than once, so no single settledness could be stored for it: ${ids.join(', ')}.`
+})
+
+const unknownSettlementCriterionRefusal = (ids: string[]): Refusal => ({
+  ok: false,
+  field: 'criteria_settled',
+  accepted: 'only criterion ids already present on this thread',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: true,
+  message: `criteria_settled names ids not present on this thread: ${ids.join(', ')}.`
+})
+
+const struckSettlementCriterionRefusal = (ids: string[]): Refusal => ({
+  ok: false,
+  field: 'criteria_settled',
+  accepted: 'only un-struck criterion ids present on this thread',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: true,
+  message: `criteria_settled names criteria that have already been struck and take no further settlement: ${ids.join(', ')}.`
+})
+
+const settlementQuoteCapRefusal = (index: number, observed: number): Refusal => ({
+  ok: false,
+  field: 'criteria_settled',
+  accepted: `at most ${caps.CRITERION_SETTLED_BY_MAX} characters after escaping, per settled_by`,
+  example: 'it has to block before the turn ends',
+  retryable: true,
+  message: `criteria_settled[${index}].settled_by exceeds its cap of ${caps.CRITERION_SETTLED_BY_MAX} characters after escaping; observed ${observed}; remedy: shorten the quote and retry.`
+})
+
+const settlementQuoteOwedRefusal = (index: number): Refusal => ({
+  ok: false,
+  field: 'criteria_settled',
+  accepted: 'the human words behind a confirmed criterion, quoted verbatim',
+  example: 'it has to block before the turn ends',
+  retryable: true,
+  message: `criteria_settled[${index}] is confirmed and carries no settled_by; remedy: quote what the human said, or record it as proposed.`
+})
+
+const settlementQuoteNotOwedRefusal = (index: number, settledness: string): Refusal => ({
+  ok: false,
+  field: 'criteria_settled',
+  accepted: 'settled_by only on a confirmed criterion',
+  example: 'omit settled_by',
+  retryable: true,
+  message: `criteria_settled[${index}] is ${settledness} and carries a settled_by quote; remedy: drop the quote, or record the criterion as confirmed if the human really said it.`
+})
+
 export const conflictingBlockageRefusal = (): Refusal => ({
   ok: false,
   field: 'blocked_by',
@@ -227,7 +334,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
   name: 'update_thread',
   title: 'Update thread',
   description:
-    'Records mid-session progress on one thread: mark criteria done, refresh any of the six running-summary fields, set or clear what the thread is blocked on, and add or retire risks. Every argument is optional and only what is supplied is written, so a call carrying just criteria_done: [{"criterion_id": "<criterion ulid>", "result": "<what the check returned>", "result_status": "verified"}] changes nothing else. Marking a criterion done records what was observed and whether the check was actually run, and it is refused without both. Risks are retired by id rather than by resubmitting the whole list, so a thread with fourteen risks costs one id to change one of them. The reply reports what changed, not what the record now holds.',
+    'Records mid-session progress on one thread: mark criteria done, refresh any of the six running-summary fields, set or clear what the thread is blocked on, and add or retire risks. Every argument is optional and only what is supplied is written, so a call carrying just criteria_done: [{"criterion_id": "<criterion ulid>", "result": "<what the check returned>", "result_status": "verified"}] changes nothing else. Marking a criterion done records what was observed and whether the check was actually run, and it is refused without both. Risks are retired by id rather than by resubmitting the whole list, so a thread with fourteen risks costs one id to change one of them. The criteria_settled argument records who stands behind a criterion, so an answer the human gave lands on the criterion it was about, and a confirmed one carries their own words while any other settledness carries none. The reply reports what changed, not what the record now holds.',
   input: UpdateThreadInputSchema,
   output: UpdateThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -288,12 +395,105 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
       const existing = thread.completion_criteria.find((c) => c.id === id)
       return existing !== undefined && !existing.done
     })
+
+    const criteriaSettled = input.criteria_settled ?? []
+    const criteriaSettledIds = criteriaSettled.map((entry) => entry.criterion_id)
+    const duplicatedSettledIds = criteriaSettledIds.filter((id, index) => criteriaSettledIds.indexOf(id) !== index)
+    if (duplicatedSettledIds.length > 0) {
+      return { ok: false, refusal: duplicateSettlementRefusal([...new Set(duplicatedSettledIds)]) }
+    }
+    const unknownSettledCriteria = criteriaSettledIds.filter((id) => !thread.completion_criteria.some((c) => c.id === id))
+    if (unknownSettledCriteria.length > 0) {
+      return { ok: false, refusal: unknownSettlementCriterionRefusal(unknownSettledCriteria) }
+    }
+    const struckSettledCriteria = criteriaSettledIds.filter((id) =>
+      thread.completion_criteria.some((c) => c.id === id && c.struck_by !== null)
+    )
+    if (struckSettledCriteria.length > 0) {
+      return { ok: false, refusal: struckSettlementCriterionRefusal(struckSettledCriteria) }
+    }
+    const settlementCheckOwedIndex = criteriaSettled.findIndex((entry) => {
+      if (entry.settledness === 'unsettled') return false
+      const existing = thread.completion_criteria.find((c) => c.id === entry.criterion_id)
+      return existing !== undefined && (existing.check === undefined || existing.check === null)
+    })
+    if (settlementCheckOwedIndex !== -1) {
+      const entry = criteriaSettled[settlementCheckOwedIndex]
+      return {
+        ok: false,
+        refusal: settlementCheckOwedRefusal(settlementCheckOwedIndex, entry === undefined ? '' : entry.settledness)
+      }
+    }
+    const escapedSettlements = criteriaSettled.map((entry) => ({
+      criterion_id: entry.criterion_id,
+      settledness: entry.settledness,
+      settled_by: entry.settled_by === undefined ? undefined : escapeStored(entry.settled_by)
+    }))
+    const oversizedQuoteIndex = escapedSettlements.findIndex(
+      (entry) => entry.settled_by !== undefined && entry.settled_by.length > caps.CRITERION_SETTLED_BY_MAX
+    )
+    if (oversizedQuoteIndex !== -1) {
+      const oversized = escapedSettlements[oversizedQuoteIndex]
+      return {
+        ok: false,
+        refusal: settlementQuoteCapRefusal(oversizedQuoteIndex, oversized === undefined ? 0 : (oversized.settled_by?.length ?? 0))
+      }
+    }
+    const quoteOwedIndex = escapedSettlements.findIndex(
+      (entry) => entry.settledness === 'confirmed' && (entry.settled_by === undefined || entry.settled_by.length === 0)
+    )
+    if (quoteOwedIndex !== -1) {
+      return { ok: false, refusal: settlementQuoteOwedRefusal(quoteOwedIndex) }
+    }
+    const quoteNotOwedIndex = escapedSettlements.findIndex(
+      (entry) => entry.settledness !== 'confirmed' && entry.settled_by !== undefined
+    )
+    if (quoteNotOwedIndex !== -1) {
+      const entry = escapedSettlements[quoteNotOwedIndex]
+      return {
+        ok: false,
+        refusal: settlementQuoteNotOwedRefusal(quoteNotOwedIndex, entry === undefined ? '' : entry.settledness)
+      }
+    }
+    const settlements = new Map<string, { settledness: Settledness; settled_by: string | null }>(
+      escapedSettlements.map((entry) => [
+        entry.criterion_id,
+        {
+          settledness: entry.settledness,
+          settled_by: entry.settledness === 'confirmed' ? (entry.settled_by ?? null) : null
+        }
+      ])
+    )
+    const settledIds = criteriaSettledIds.filter((id) => {
+      const existing = thread.completion_criteria.find((c) => c.id === id)
+      const settlement = settlements.get(id)
+      if (existing === undefined || settlement === undefined) return false
+      return existing.settledness !== settlement.settledness || (existing.settled_by ?? null) !== settlement.settled_by
+    })
+
     const nextCriteria = thread.completion_criteria.map((c) => {
       const completion = completions.get(c.id)
-      return completion === undefined
-        ? c
-        : { ...c, done: true, result: completion.result, result_status: completion.result_status }
+      const completed =
+        completion === undefined
+          ? c
+          : { ...c, done: true, result: completion.result, result_status: completion.result_status }
+      const settlement = settlements.get(c.id)
+      return settlement === undefined
+        ? completed
+        : { ...completed, settledness: settlement.settledness, settled_by: settlement.settled_by }
     })
+
+    const touchedIds = new Set([...completions.keys(), ...settlements.keys()])
+    const doneAndUnsettled = nextCriteria.filter(
+      (c) => touchedIds.has(c.id) && c.struck_by === null && c.done && criterionSettledness(c) === 'unsettled'
+    )
+    const unsettledBySettlement = doneAndUnsettled.filter((c) => settlements.get(c.id)?.settledness === 'unsettled')
+    if (unsettledBySettlement.length > 0) {
+      return { ok: false, refusal: unsettlingADoneCriterionRefusal(unsettledBySettlement.map((c) => c.id)) }
+    }
+    if (doneAndUnsettled.length > 0) {
+      return { ok: false, refusal: unsettledCriterionRefusal(doneAndUnsettled.map((c) => c.id)) }
+    }
 
     const retireIds = input.risks_retire ?? []
     const retiredIds = retireIds.filter((id) => thread.spine.open_risks.some((r) => r.id === id && !r.retired))
@@ -368,6 +568,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
 
     const nothingChanged =
       markedDone.length === 0 &&
+      settledIds.length === 0 &&
       retiredIds.length === 0 &&
       newRisks.length === 0 &&
       newKeyDecisions.length === 0 &&
@@ -384,6 +585,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
         structured: {
           thread_id: thread.id,
           criteria_marked_done: [],
+          criteria_newly_settled: [],
           spine_fields_updated: [],
           risks_added: [],
           risks_retired: [],
@@ -418,10 +620,11 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
 
     return {
       ok: true,
-      text: `updated thread ${thread.slug}: ${markedDone.length} criteria marked done, ${newRisks.length} risks added, ${retiredIds.length} risks retired.`,
+      text: `updated thread ${thread.slug}: ${markedDone.length} criteria marked done, ${settledIds.length} criteria settled, ${newRisks.length} risks added, ${retiredIds.length} risks retired.`,
       structured: {
         thread_id: committed.value.id,
         criteria_marked_done: markedDone,
+        criteria_newly_settled: settledIds,
         spine_fields_updated: spineFieldsUpdated,
         risks_added: newRisks.map((r) => r.id),
         risks_retired: retiredIds,

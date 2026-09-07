@@ -418,6 +418,26 @@ const SIMPLE_UPDATE_FIELDS: SimpleUpdateFieldSpec[] = [
     }
   },
   {
+    field: 'criteria_settled',
+    sentinelExtra: (ctx) => ({
+      criteria_settled: [
+        {
+          criterion_id: mustGet(ctx.criterionIds, 0, 'the first fixture criterion id'),
+          settledness: 'confirmed',
+          settled_by: 'sentinel settled_by quote'
+        }
+      ]
+    }),
+    extract: (structured, rt, ctx) => {
+      const criterionId = mustGet(ctx.criterionIds, 0, 'the first fixture criterion id')
+      const criterion = readThreadRecord(rt, ctx.threadId)?.completion_criteria.find((c) => c.id === criterionId)
+      return {
+        criteria_newly_settled: structured.criteria_newly_settled,
+        settled_by: criterion?.settled_by ?? null
+      }
+    }
+  },
+  {
     field: 'active_goal',
     sentinelExtra: () => ({ active_goal: 'sentinel active goal text' }),
     extract: (structured, rt, ctx) => {
@@ -545,6 +565,34 @@ const updateThreadRisksAddCriterionIdRecipe = (): Promise<RecipeResult> =>
       ]
     }),
     (structured, rt, ctx: UpdateThreadFixtureCtx) => ({ criterion_id: findAddedRisk(rt, ctx.threadId, structured)?.criterion_id ?? null })
+  )
+
+const updateThreadCriteriaSettledSettledByRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'update_thread.criteria_settled[].settled_by',
+    updateThreadTool,
+    openUpdateThreadFixture,
+    (ctx: UpdateThreadFixtureCtx) => ({
+      thread_id: ctx.threadId,
+      criteria_settled: [
+        { criterion_id: mustGet(ctx.criterionIds, 0, 'the first fixture criterion id'), settledness: 'proposed' }
+      ]
+    }),
+    (ctx: UpdateThreadFixtureCtx) => ({
+      thread_id: ctx.threadId,
+      criteria_settled: [
+        {
+          criterion_id: mustGet(ctx.criterionIds, 0, 'the first fixture criterion id'),
+          settledness: 'confirmed',
+          settled_by: 'sentinel settled_by quote'
+        }
+      ]
+    }),
+    (_structured, rt, ctx: UpdateThreadFixtureCtx) => {
+      const criterionId = mustGet(ctx.criterionIds, 0, 'the first fixture criterion id')
+      const criterion = readThreadRecord(rt, ctx.threadId)?.completion_criteria.find((c) => c.id === criterionId)
+      return { settled_by: criterion?.settled_by ?? null }
+    }
   )
 
 type AmendCriteriaFixtureCtx = ThreadFixtureCtx & { decisionId: string }
@@ -837,6 +885,7 @@ export const RECIPES: ReadonlyMap<string, () => Promise<RecipeResult>> = new Map
   ...simpleUpdateThreadRecipes,
   ['update_thread.risks_add[].refs', updateThreadRisksAddRefsRecipe],
   ['update_thread.risks_add[].criterion_id', updateThreadRisksAddCriterionIdRecipe],
+  ['update_thread.criteria_settled[].settled_by', updateThreadCriteriaSettledSettledByRecipe],
   ['amend_criteria.criterion_id', amendCriteriaCriterionIdRecipe],
   ['amend_criteria.text', amendCriteriaTextRecipe],
   ['amend_criteria.kind', amendCriteriaKindRecipe],
@@ -879,6 +928,7 @@ export const TEST_2_CASES: Test2Case[] = [
     minimalArgs: (ctx) => ({ thread_id: ctx.threadId }),
     attributable: (structured) => ({
       criteria_marked_done: structured.criteria_marked_done,
+      criteria_newly_settled: structured.criteria_newly_settled,
       spine_fields_updated: structured.spine_fields_updated,
       risks_added: structured.risks_added,
       risks_retired: structured.risks_retired,

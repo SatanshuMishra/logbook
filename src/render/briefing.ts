@@ -89,9 +89,20 @@ const criterionStatus = (criterion: Criterion): string => {
 
 const settlednessLabel = (criterion: Criterion): string => {
   const settledness = criterionSettledness(criterion)
-  if (settledness === 'confirmed') return 'confirmed'
-  if (settledness === 'unsettled') return 'unsettled'
-  return 'proposed'
+  switch (settledness) {
+    case 'confirmed':
+      return 'confirmed'
+    case 'proposed':
+      return 'proposed'
+    case 'unsettled':
+      return 'unsettled'
+    default: {
+      const exhaustive: never = settledness
+      throw new Error(
+        `settlednessLabel received a criterion settledness it does not recognise: ${escapeStored(String(exhaustive))}.`
+      )
+    }
+  }
 }
 
 const renderCriterionLine = (criterion: Criterion, textClip: number): string => {
