@@ -168,6 +168,12 @@ const UNSETTLED_CRITERION = {
   settledness: 'unsettled'
 }
 
+const CHECKED_UNSETTLED_CRITERION = {
+  text: 'what counts as acceptable latency is not decided',
+  check: 'the latency budget the human names is met',
+  settledness: 'unsettled'
+}
+
 const HUMAN_WORDS = 'it has to block before the turn ends'
 
 test('update_thread.records-a-confirmation-with-the-human-words', async () => {
@@ -321,7 +327,7 @@ test('update_thread.accepts-all-three-settledness-values-in-one-call', async () 
     const opened = await openCriteriaThread(fx, 'settlement-every-value-thread', [
       PROPOSED_CRITERION,
       CONFIRMED_CRITERION,
-      UNSETTLED_CRITERION
+      CHECKED_UNSETTLED_CRITERION
     ])
     const toUnsettled = criterionAt(opened, 0)
     const toProposed = criterionAt(opened, 1)
@@ -346,5 +352,108 @@ test('update_thread.accepts-all-three-settledness-values-in-one-call', async () 
     assert.equal(storedCriterion(fx, opened.threadId, toProposed).settledness, 'proposed')
     assert.equal(storedCriterion(fx, opened.threadId, toConfirmed).settledness, 'confirmed')
     assert.equal(storedCriterion(fx, opened.threadId, toConfirmed).settled_by, latencyWords)
+  })
+})
+
+test('update_thread.refuses-leaving-a-criterion-done-and-unsettled-in-one-call', async () => {
+  await withFixture(async (fx) => {
+    const opened = await openCriteriaThread(fx, 'done-and-unsettled-one-call-thread', [PROPOSED_CRITERION])
+    const criterionId = criterionAt(opened, 0)
+
+    const bothAtOnce = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      criteria_done: [{ criterion_id: criterionId, result: 'the load test exited 0', result_status: 'verified' }],
+      criteria_settled: [{ criterion_id: criterionId, settledness: 'unsettled' }]
+    })
+
+    assert.equal(
+      bothAtOnce.isError,
+      true,
+      'one call cannot both report a result and say done is not known for the same criterion'
+    )
+    const text = firstTextOf(bothAtOnce)
+    assert.ok(
+      text.includes('asserts nothing'),
+      `the refusal has to say why an unsettled criterion takes no result, got: ${text}`
+    )
+    assert.ok(
+      text.includes('criteria_settled'),
+      `the refusal has to name the argument that made the criterion unsettled, got: ${text}`
+    )
+
+    const stored = storedCriterion(fx, opened.threadId, criterionId)
+    assert.equal(stored.done, false, 'a refused call must not have written the criterion done first')
+    assert.equal(stored.settledness, 'proposed', 'a refused call must not have written the settledness first')
+    assert.equal(stored.result ?? null, null, 'a refused call must not have written a result')
+  })
+})
+
+test('update_thread.refuses-unsettling-a-criterion-already-marked-done', async () => {
+  await withFixture(async (fx) => {
+    const opened = await openCriteriaThread(fx, 'done-then-unsettled-thread', [PROPOSED_CRITERION])
+    const criterionId = criterionAt(opened, 0)
+
+    const markedDone = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      criteria_done: [{ criterion_id: criterionId, result: 'the load test exited 0', result_status: 'verified' }]
+    })
+    assert.equal(
+      markedDone.isError,
+      undefined,
+      `the fixture needs the criterion marked done, got: ${firstTextOf(markedDone)}`
+    )
+
+    const unsettled = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      criteria_settled: [{ criterion_id: criterionId, settledness: 'unsettled' }]
+    })
+
+    assert.equal(unsettled.isError, true, 'a later call cannot unsettle a criterion that already carries a recorded result')
+    const text = firstTextOf(unsettled)
+    assert.ok(
+      text.includes('asserts nothing'),
+      `the refusal has to say why an unsettled criterion carries no result, got: ${text}`
+    )
+
+    const stored = storedCriterion(fx, opened.threadId, criterionId)
+    assert.equal(stored.settledness, 'proposed', 'a refused call must not have written the settledness')
+    assert.equal(stored.done, true, 'the criterion the earlier call marked done stays done')
+  })
+})
+
+test('update_thread.refuses-settling-a-checkless-criterion-to-one-that-asserts-something', async () => {
+  await withFixture(async (fx) => {
+    const opened = await openCriteriaThread(fx, 'settlement-check-owed-thread', [UNSETTLED_CRITERION])
+    const criterionId = criterionAt(opened, 0)
+
+    const confirmed = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      criteria_settled: [{ criterion_id: criterionId, settledness: 'confirmed', settled_by: HUMAN_WORDS }]
+    })
+
+    assert.equal(confirmed.isError, true, 'a criterion that asserts something needs something to decide it')
+    const text = firstTextOf(confirmed)
+    assert.ok(text.includes('carries no check'), `the refusal has to name the missing check, got: ${text}`)
+    assert.ok(text.includes('amend_criteria'), `the refusal has to say where a check is given, got: ${text}`)
+
+    const afterConfirm = storedCriterion(fx, opened.threadId, criterionId)
+    assert.equal(afterConfirm.settledness, 'unsettled', 'a refused call must not have written the confirmation')
+    assert.equal(afterConfirm.settled_by ?? null, null, 'a refused call must not have written the quote')
+
+    const proposed = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      criteria_settled: [{ criterion_id: criterionId, settledness: 'proposed' }]
+    })
+
+    assert.equal(proposed.isError, true, 'a proposed criterion asserts something too, so it owes a check as well')
+    assert.ok(
+      firstTextOf(proposed).includes('carries no check'),
+      `the refusal has to name the missing check for proposed too, got: ${firstTextOf(proposed)}`
+    )
+    assert.equal(
+      storedCriterion(fx, opened.threadId, criterionId).settledness,
+      'unsettled',
+      'a refused call must not have written the proposal'
+    )
   })
 })

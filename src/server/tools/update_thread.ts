@@ -222,6 +222,24 @@ const unsettledCriterionRefusal = (ids: string[]): Refusal => ({
   message: `criteria_done reports a result for criteria that are still unsettled, and an unsettled criterion asserts nothing for a result to report: ${ids.join(', ')}; remedy: once the human has answered, settle each one through criteria_settled and then mark it done, or through amend_criteria strike each one and insert a criterion that states an actual claim with a check.`
 })
 
+const unsettlingADoneCriterionRefusal = (ids: string[]): Refusal => ({
+  ok: false,
+  field: 'criteria_settled',
+  accepted: 'a settlement to unsettled only on a criterion this call does not leave marked done',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: true,
+  message: `criteria_settled moves criteria to unsettled that this call would leave marked done, and an unsettled criterion asserts nothing for a result to report: ${ids.join(', ')}; remedy: settle each one as proposed or confirmed to keep the recorded result, or through amend_criteria strike each one and insert a criterion naming the open question instead.`
+})
+
+const settlementCheckOwedRefusal = (index: number, settledness: string): Refusal => ({
+  ok: false,
+  field: 'criteria_settled',
+  accepted: 'a settlement to confirmed or proposed only on a criterion that already carries a check',
+  example: 'npm test exits 0',
+  retryable: true,
+  message: `criteria_settled[${index}] settles a criterion to ${settledness} and that criterion carries no check; a criterion that asserts something needs something to decide it; remedy: give it a check through an amend_criteria rewrite first, then settle it.`
+})
+
 const duplicateSettlementRefusal = (ids: string[]): Refusal => ({
   ok: false,
   field: 'criteria_settled',
@@ -336,12 +354,6 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     if (struckCriteria.length > 0) {
       return { ok: false, refusal: struckCriterionRefusal(struckCriteria) }
     }
-    const unsettledCriteria = criteriaDoneIds.filter((id) =>
-      thread.completion_criteria.some((c) => c.id === id && criterionSettledness(c) === 'unsettled')
-    )
-    if (unsettledCriteria.length > 0) {
-      return { ok: false, refusal: unsettledCriterionRefusal(unsettledCriteria) }
-    }
     const emptyResults = criteriaDone.filter((entry) => entry.result.trim().length === 0)
     if (emptyResults.length > 0) {
       return { ok: false, refusal: emptyResultRefusal(emptyResults.map((entry) => entry.criterion_id)) }
@@ -391,6 +403,18 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     if (struckSettledCriteria.length > 0) {
       return { ok: false, refusal: struckSettlementCriterionRefusal(struckSettledCriteria) }
     }
+    const settlementCheckOwedIndex = criteriaSettled.findIndex((entry) => {
+      if (entry.settledness === 'unsettled') return false
+      const existing = thread.completion_criteria.find((c) => c.id === entry.criterion_id)
+      return existing !== undefined && (existing.check === undefined || existing.check === null)
+    })
+    if (settlementCheckOwedIndex !== -1) {
+      const entry = criteriaSettled[settlementCheckOwedIndex]
+      return {
+        ok: false,
+        refusal: settlementCheckOwedRefusal(settlementCheckOwedIndex, entry === undefined ? '' : entry.settledness)
+      }
+    }
     const escapedSettlements = criteriaSettled.map((entry) => ({
       criterion_id: entry.criterion_id,
       settledness: entry.settledness,
@@ -439,6 +463,18 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
         ? completed
         : { ...completed, settledness: settlement.settledness, settled_by: settlement.settled_by }
     })
+
+    const touchedIds = new Set([...completions.keys(), ...settlements.keys()])
+    const doneAndUnsettled = nextCriteria.filter(
+      (c) => touchedIds.has(c.id) && c.struck_by === null && c.done && criterionSettledness(c) === 'unsettled'
+    )
+    const unsettledBySettlement = doneAndUnsettled.filter((c) => settlements.get(c.id)?.settledness === 'unsettled')
+    if (unsettledBySettlement.length > 0) {
+      return { ok: false, refusal: unsettlingADoneCriterionRefusal(unsettledBySettlement.map((c) => c.id)) }
+    }
+    if (doneAndUnsettled.length > 0) {
+      return { ok: false, refusal: unsettledCriterionRefusal(doneAndUnsettled.map((c) => c.id)) }
+    }
 
     const retireIds = input.risks_retire ?? []
     const retiredIds = retireIds.filter((id) => thread.spine.open_risks.some((r) => r.id === id && !r.retired))

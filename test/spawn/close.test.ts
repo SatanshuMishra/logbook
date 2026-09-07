@@ -185,19 +185,6 @@ const markEveryCriterionDone = async (
   assertOkResult('update_thread (mark every criterion done so the close gate passes)', marked)
 }
 
-const settleCriterion = async (
-  spawned: SpawnedServer,
-  threadId: string,
-  criterionId: string,
-  settledness: string
-): Promise<void> => {
-  const settled = (await spawned.client.callTool({
-    name: 'update_thread',
-    arguments: { thread_id: threadId, criteria_settled: [{ criterion_id: criterionId, settledness }] }
-  })) as CallToolResult
-  assertOkResult(`update_thread (settle a criterion as ${settledness})`, settled)
-}
-
 const MIXED_SETTLEDNESS_CRITERIA: FixtureCriterion[] = [
   {
     text: 'the close reply names who stood behind each criterion',
@@ -211,8 +198,8 @@ const MIXED_SETTLEDNESS_CRITERIA: FixtureCriterion[] = [
     settledness: 'proposed'
   },
   {
-    text: 'the split counts a criterion the human later moved back to unsettled',
-    check: 'npm test exits 0',
+    text: 'the split counts a second criterion this session derived on its own',
+    check: 'npm run typecheck exits 0',
     settledness: 'proposed'
   }
 ]
@@ -225,12 +212,6 @@ const arrangeMixedSettlednessThread = async (fx: Fixture, slug: string): Promise
     MIXED_SETTLEDNESS_CRITERIA
   )
   await markEveryCriterionDone(fx.spawned, threadId, criterionIds)
-  const movedToUnsettled = criterionIds.at(-1)
-  assert.ok(
-    movedToUnsettled !== undefined,
-    'the mixed-settledness fixture must have minted a criterion to move back to unsettled'
-  )
-  await settleCriterion(fx.spawned, threadId, movedToUnsettled, 'unsettled')
   return threadId
 }
 
@@ -560,7 +541,7 @@ test('close.reply-text-divides-the-met-criteria-by-settledness', async () => {
 
     assert.equal(
       firstTextOf(closed),
-      `closed thread ${SLUG} as done; criteria met: 3 verified, 0 unverified-reasoned, 0 not recorded; who stood behind them: 1 confirmed, 1 proposed, 1 unsettled.`,
+      `closed thread ${SLUG} as done; criteria met: 3 verified, 0 unverified-reasoned, 0 not recorded; who stood behind them: 1 confirmed, 2 proposed, 0 unsettled.`,
       'the close reply must report the settledness of the criteria it closed beside the result-status split it already reports'
     )
   })
@@ -582,7 +563,7 @@ test('close.structured-reply-carries-the-settledness-split', async () => {
     }
     assert.deepEqual(
       structured.settledness_split,
-      { confirmed: 1, proposed: 1, unsettled: 1 },
+      { confirmed: 1, proposed: 2, unsettled: 0 },
       'the structured reply must carry the same settledness split the reply text reports'
     )
   })
