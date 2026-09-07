@@ -74,7 +74,7 @@ What the repository does not state: neither `.claude-plugin/plugin.json:1-9` nor
 | Path | Holds |
 |---|---|
 | `bin/` | The two entry points: the MCP server (`bin/logbook-server.ts`) and a CLI (`bin/logbook-cli.ts`) |
-| `hooks/` | Six lifecycle hooks — `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SessionEnd`, `Stop` — wired in `hooks/hooks.json:1-28`, plus their shared helpers under `hooks/lib/`. There is deliberately no `PreCompact` hook; a dedicated test enforces its absence (`test/hooks/precompact-absent.test.ts:7-18`). |
+| `hooks/` | Seven lifecycle hooks — `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SessionEnd`, `Stop`, `SubagentStop` — wired in `hooks/hooks.json:1-31`, plus their shared helpers under `hooks/lib/`. There is deliberately no `PreCompact` hook; a dedicated test enforces its absence (`test/hooks/precompact-absent.test.ts:7-18`). |
 | `src/` | The TypeScript source, organized by feature: `schema/` (validated record shapes), `domain/` (thread-lifecycle rules), `store/` (the storage engine), `server/` (the MCP server and its tools), `hooklib/` (hook support code, including the write guard), `merge/` (multi-clone sync and conflict resolution), `render/` (text rendering for briefings and rosters), `runtime/` (process-level helpers, including the Node floor check), `cli/` (session-start/session-end helpers) |
 | `skills/` | Three Claude Code skills, `preflight`, `debrief` and `file`, each one `SKILL.md` (`skills/preflight/SKILL.md`, `skills/debrief/SKILL.md`, `skills/file/SKILL.md`) |
 | `test/` | The automated suite, split by concern: `unit/`, `store/`, `contract/`, `sync/`, `spawn/`, `hooks/` |
