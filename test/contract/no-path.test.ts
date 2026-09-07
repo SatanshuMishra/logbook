@@ -283,7 +283,7 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
       slug: 'census-tool-fixture',
       active_goal: 'ship the census tool fixture',
       next_step: 'exercise the census tool fixture',
-      completion_criteria: [{ text: 'a census criterion', check: 'the census check' }]
+      completion_criteria: [{ text: 'a census criterion', check: 'the census check', settledness: 'proposed' }]
     })
     if (!firstOpen.ok) throw new Error('expected openThreadTool to open the census tool fixture thread')
     const threadId = firstOpen.structured.thread_id
@@ -322,7 +322,7 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
       slug: 'census-tool-fixture',
       active_goal: 'ship the census tool fixture',
       next_step: 'exercise the census tool fixture',
-      completion_criteria: [{ text: 'a census criterion', check: 'the census check' }]
+      completion_criteria: [{ text: 'a census criterion', check: 'the census check', settledness: 'proposed' }]
     })
     if (duplicateOpen.ok) throw new Error('expected openThreadTool to refuse a duplicate slug')
     refusals.push({ producer: OPEN_THREAD_DUPLICATE_SLUG_PRODUCER, refusal: duplicateOpen.refusal })
@@ -667,7 +667,7 @@ const buildResolveConflictFixture = async (): Promise<ResolveConflictFixture> =>
     slug: 'census-resolve-fixture',
     active_goal: 'ship the resolve-conflict fixture',
     next_step: 'exercise the resolve-conflict fixture',
-    completion_criteria: [{ text: 'a census criterion', check: 'the census check' }]
+    completion_criteria: [{ text: 'a census criterion', check: 'the census check', settledness: 'proposed' }]
   })
   if (!openedThread.ok) throw new Error('expected openThreadTool to open the resolve-conflict fixture thread')
 
@@ -1250,7 +1250,7 @@ const collectRealRefusals = async (): Promise<TaggedRefusal[]> => {
   const insertResult = insertCriterion(
     domainRt,
     domainThread,
-    { text: 'a census criterion', check: 'the census check', kind: 'planned', decisionId: undefined },
+    { text: 'a census criterion', check: 'the census check', kind: 'planned', decisionId: undefined, settledness: 'proposed' },
     neverResolves
   )
   if (insertResult.ok) throw new Error('expected insertCriterion to refuse without a decision id')

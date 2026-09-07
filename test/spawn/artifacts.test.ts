@@ -55,7 +55,7 @@ const openFixtureThread = async (rt: Runtime, slug: string): Promise<string> => 
     slug,
     active_goal: 'exercise the artifact list fixture',
     next_step: 'exercise the artifact list fixture',
-    completion_criteria: [{ text: 'the artifact list is writable and tombstoned', check: 'the test asserts it' }]
+    completion_criteria: [{ text: 'the artifact list is writable and tombstoned', check: 'the test asserts it', settledness: 'proposed' }]
   })
   if (!opened.ok) {
     throw new Error(`expected open_thread to create the fixture thread, it refused: ${opened.refusal.message}`)

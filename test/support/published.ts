@@ -70,6 +70,10 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
     {
       phrase: 'Completion criteria are optional at this moment',
       providers: ['open_thread.completion_criteria']
+    },
+    {
+      phrase: 'every criterion records who stands behind it',
+      providers: ['open_thread.completion_criteria']
     }
   ],
   update_thread: [
@@ -104,7 +108,11 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
       providers: ['amend_criteria.operation', 'amend_criteria.text', 'amend_criteria.criterion_id']
     },
     { phrase: 'Every amendment carries a decision_id', providers: ['amend_criteria.decision_id'] },
-    { phrase: 'Insert also takes an optional zero-based position', providers: ['amend_criteria.position'] }
+    { phrase: 'Insert also takes an optional zero-based position', providers: ['amend_criteria.position'] },
+    {
+      phrase: 'who stands behind it',
+      providers: ['amend_criteria.settledness', 'amend_criteria.settled_by']
+    }
   ],
   bind_branch: [
     { phrase: 'Takes a thread id and a branch name', providers: ['bind_branch.thread_id', 'bind_branch.branch'] }

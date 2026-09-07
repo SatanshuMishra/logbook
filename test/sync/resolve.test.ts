@@ -261,7 +261,7 @@ const buildTwoFieldConflict = async (
     slug,
     active_goal: 'exercise the resolve-conflict fixture',
     next_step: 'exercise the resolve-conflict fixture',
-    completion_criteria: [{ text: 'a criterion for the resolve fixture', check: 'the resolve fixture check' }]
+    completion_criteria: [{ text: 'a criterion for the resolve fixture', check: 'the resolve fixture check', settledness: 'proposed' }]
   })
   assertOkResult('open_thread', opened)
   const threadId = (opened.structuredContent as { thread_id: string }).thread_id
@@ -322,7 +322,7 @@ const openAndConvergeThread = async (ana: SpawnedTeammate, ben: SpawnedTeammate,
     slug,
     active_goal: 'exercise the resolve-conflict fixture',
     next_step: 'exercise the resolve-conflict fixture',
-    completion_criteria: [{ text: 'a criterion for the resolve fixture', check: 'the resolve fixture check' }]
+    completion_criteria: [{ text: 'a criterion for the resolve fixture', check: 'the resolve fixture check', settledness: 'proposed' }]
   })
   assertOkResult('open_thread', opened)
   const threadId = (opened.structuredContent as { thread_id: string }).thread_id

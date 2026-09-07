@@ -123,3 +123,93 @@ test('open_thread.writes-the-goal-and-the-next-step-into-the-spine', async () =>
     assert.equal(thread.spine.next_step, 'read the spec', 'the next step a fresh session reads first is populated at open')
   })
 })
+
+test('open_thread.refuses-a-criterion-with-no-settledness', async () => {
+  await withFixture(async (fx) => {
+    const reply = await callOpenThread(fx, {
+      title: 'a thread',
+      slug: 'no-settledness',
+      active_goal: 'ship the recording model',
+      next_step: 'read the spec',
+      completion_criteria: [{ text: 'the suite is green', check: 'npm test exits 0' }]
+    })
+
+    assert.equal(reply.isError, true, 'settledness is declared at creation and never derived')
+  })
+})
+
+test('open_thread.refuses-a-proposed-criterion-with-no-check', async () => {
+  await withFixture(async (fx) => {
+    const reply = await callOpenThread(fx, {
+      title: 'a thread',
+      slug: 'proposed-no-check',
+      active_goal: 'ship the recording model',
+      next_step: 'read the spec',
+      completion_criteria: [{ text: 'the suite is green', settledness: 'proposed' }]
+    })
+
+    assert.equal(reply.isError, true, 'a proposed criterion asserts something, so something must decide it')
+  })
+})
+
+test('open_thread.accepts-an-unsettled-criterion-with-no-check', async () => {
+  await withFixture(async (fx) => {
+    const reply = await callOpenThread(fx, {
+      title: 'a thread',
+      slug: 'unsettled-no-check',
+      active_goal: 'ship the recording model',
+      next_step: 'read the spec',
+      completion_criteria: [{ text: 'what counts as acceptable latency is not decided', settledness: 'unsettled' }]
+    })
+
+    assert.equal(reply.isError, undefined, 'an unsettled criterion asserts nothing, so there is no claim for a check to decide')
+  })
+})
+
+test('open_thread.refuses-a-confirmed-criterion-with-no-quote', async () => {
+  await withFixture(async (fx) => {
+    const reply = await callOpenThread(fx, {
+      title: 'a thread',
+      slug: 'confirmed-no-quote',
+      active_goal: 'ship the recording model',
+      next_step: 'read the spec',
+      completion_criteria: [{ text: 'the suite is green', check: 'npm test exits 0', settledness: 'confirmed' }]
+    })
+
+    assert.equal(reply.isError, true, 'claiming the human confirmed a criterion costs typing their words')
+  })
+})
+
+test('open_thread.refuses-a-quote-on-a-criterion-nobody-confirmed', async () => {
+  await withFixture(async (fx) => {
+    const reply = await callOpenThread(fx, {
+      title: 'a thread',
+      slug: 'proposed-with-quote',
+      active_goal: 'ship the recording model',
+      next_step: 'read the spec',
+      completion_criteria: [
+        { text: 'the suite is green', check: 'npm test exits 0', settledness: 'proposed', settled_by: 'they said so' }
+      ]
+    })
+
+    assert.equal(reply.isError, true, 'a quote on a criterion nobody confirmed attributes words to nobody')
+  })
+})
+
+test('open_thread.accepts-all-three-settledness-values', async () => {
+  await withFixture(async (fx) => {
+    const reply = await callOpenThread(fx, {
+      title: 'a thread',
+      slug: 'all-three-values',
+      active_goal: 'ship the recording model',
+      next_step: 'read the spec',
+      completion_criteria: [
+        { text: 'the suite is green', check: 'npm test exits 0', settledness: 'proposed' },
+        { text: 'the gate fires', check: 'the stop-gate tests pass', settledness: 'confirmed', settled_by: 'it has to block' },
+        { text: 'what counts as acceptable latency is not decided', settledness: 'unsettled' }
+      ]
+    })
+
+    assert.equal(reply.isError, undefined, 'no call is ever refused because of the settledness value itself')
+  })
+})

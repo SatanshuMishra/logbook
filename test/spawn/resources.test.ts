@@ -35,8 +35,8 @@ const seedThreadWithRisksAndCriteria = async (spawned: SpawnedServer): Promise<T
       active_goal: 'exercise the thread-detail fixture',
       next_step: 'exercise the thread-detail fixture',
       completion_criteria: [
-        { text: 'the first thread detail criterion', check: 'the first thread detail check' },
-        { text: 'the second thread detail criterion', check: 'the second thread detail check' }
+        { text: 'the first thread detail criterion', check: 'the first thread detail check', settledness: 'proposed' },
+        { text: 'the second thread detail criterion', check: 'the second thread detail check', settledness: 'proposed' }
       ]
     }
   })) as CallToolResult
@@ -477,7 +477,7 @@ test('resource.list-carries-no-thread-title-prose', async () => {
         slug: 'title-prose-fixture-thread',
         active_goal: 'exercise the title-prose fixture',
         next_step: 'exercise the title-prose fixture',
-        completion_criteria: [{ text: 'a title prose fixture criterion', check: 'the title prose fixture check' }]
+        completion_criteria: [{ text: 'a title prose fixture criterion', check: 'the title prose fixture check', settledness: 'proposed' }]
       }
     })) as CallToolResult
     assertOkResult('open_thread (title prose fixture arrange)', opened)

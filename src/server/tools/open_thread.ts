@@ -18,9 +18,21 @@ const CriterionCreateSchema = z
       .string()
       .min(1)
       .max(caps.CRITERION_CHECK_MAX)
-      .describe('the re-runnable check that decides whether this criterion is true, for example npm test exits 0')
+      .optional()
+      .describe('the re-runnable check that decides whether this criterion is true, for example npm test exits 0; required unless settledness is unsettled'),
+    settledness: z
+      .enum(['confirmed', 'proposed', 'unsettled'])
+      .describe(
+        'who stands behind this criterion: confirmed when the human stated or agreed it, proposed when you derived it, unsettled when done is genuinely not known for this part yet'
+      ),
+    settled_by: z
+      .string()
+      .regex(/\S/)
+      .max(caps.CRITERION_SETTLED_BY_MAX)
+      .optional()
+      .describe('the human words behind a confirmed criterion, quoted verbatim; refused on any other settledness')
   })
-  .describe('one completion criterion together with the check that decides it')
+  .describe('one completion criterion together with the check that decides it and the settledness that says who stands behind it')
 
 const OpenThreadInputSchema = z.strictObject({
   title: z.string().min(1).max(caps.THREAD_TITLE_MAX).describe('the one-line thread title'),
@@ -112,11 +124,47 @@ const criterionCheckCapRefusal = (index: number, observed: number): Refusal => (
   message: `completion_criteria[${index}].check exceeds its cap of ${caps.CRITERION_CHECK_MAX} characters after escaping; observed ${observed}; remedy: shorten the check and retry.`
 })
 
+const criterionSettledByCapRefusal = (index: number, observed: number): Refusal => ({
+  ok: false,
+  field: 'completion_criteria',
+  accepted: `at most ${caps.CRITERION_SETTLED_BY_MAX} characters after escaping, per settled_by`,
+  example: 'it has to block before the turn ends',
+  retryable: true,
+  message: `completion_criteria[${index}].settled_by exceeds its cap of ${caps.CRITERION_SETTLED_BY_MAX} characters after escaping; observed ${observed}; remedy: shorten the quote and retry.`
+})
+
+const checkOwedRefusal = (index: number, settledness: string): Refusal => ({
+  ok: false,
+  field: 'completion_criteria',
+  accepted: 'a check on every confirmed or proposed criterion',
+  example: 'npm test exits 0',
+  retryable: true,
+  message: `completion_criteria[${index}] is ${settledness} and carries no check; a criterion that asserts something needs something to decide it; remedy: add a check, or record it as unsettled if done is not known for this part yet.`
+})
+
+const quoteOwedRefusal = (index: number): Refusal => ({
+  ok: false,
+  field: 'completion_criteria',
+  accepted: 'the human words behind a confirmed criterion, quoted verbatim',
+  example: 'it has to block before the turn ends',
+  retryable: true,
+  message: `completion_criteria[${index}] is confirmed and carries no settled_by; remedy: quote what the human said, or record it as proposed.`
+})
+
+const quoteNotOwedRefusal = (index: number, settledness: string): Refusal => ({
+  ok: false,
+  field: 'completion_criteria',
+  accepted: 'settled_by only on a confirmed criterion',
+  example: 'omit settled_by',
+  retryable: true,
+  message: `completion_criteria[${index}] is ${settledness} and carries a settled_by quote; remedy: drop the quote, or record the criterion as confirmed if the human really said it.`
+})
+
 export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
   name: 'open_thread',
   title: 'Open thread',
   description:
-    'Creates a new thread of work and returns its id. A thread needs a one-line title, a short slug that is unique in this project, what the work is, and what happens next. Completion criteria are optional at this moment; when supplied, every criterion carries its own check, the re-runnable thing that decides whether it is true, and a criterion with no check is refused. Criteria are supplied as text-and-check pairs and the server assigns each one a stable id and its display ordinal, so [{"text": "the merge test passes in both push orders", "check": "npm test exits 0"}] is a complete value. The slug is lowercase letters, digits and hyphens, up to 64 characters, for example merge-and-sync.',
+    'Creates a new thread of work and returns its id. A thread needs a one-line title, a short slug that is unique in this project, what the work is, and what happens next. Completion criteria are optional at this moment; when supplied, every criterion records who stands behind it: confirmed when the human said so, proposed when derived, or unsettled when done is not yet known. A confirmed or proposed criterion also carries its own check, the re-runnable thing that decides whether it is true, and a criterion missing what its settledness requires is refused. A confirmed criterion also carries settled_by, the human\'s own words quoted verbatim, and a settled_by given on any other settledness is refused. Criteria are supplied as objects and the server assigns each one a stable id and its display ordinal, so [{"text": "the merge test passes in both push orders", "check": "npm test exits 0", "settledness": "proposed"}] is a complete value. The slug is lowercase letters, digits and hyphens, up to 64 characters, for example merge-and-sync.',
   input: OpenThreadInputSchema,
   output: OpenThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -138,7 +186,9 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
     const criteria = input.completion_criteria ?? []
     const escapedCriteria = criteria.map((entry) => ({
       text: escapeStored(entry.text),
-      check: escapeStored(entry.check)
+      check: entry.check === undefined ? undefined : escapeStored(entry.check),
+      settledness: entry.settledness,
+      settled_by: entry.settled_by === undefined ? undefined : escapeStored(entry.settled_by)
     }))
     const oversizedTextIndex = escapedCriteria.findIndex((entry) => entry.text.length > caps.CRITERION_TEXT_MAX)
     if (oversizedTextIndex !== -1) {
@@ -148,13 +198,43 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
         refusal: criterionTextCapRefusal(oversizedTextIndex, oversized === undefined ? 0 : oversized.text.length)
       }
     }
-    const oversizedCheckIndex = escapedCriteria.findIndex((entry) => entry.check.length > caps.CRITERION_CHECK_MAX)
+    const oversizedCheckIndex = escapedCriteria.findIndex(
+      (entry) => entry.check !== undefined && entry.check.length > caps.CRITERION_CHECK_MAX
+    )
     if (oversizedCheckIndex !== -1) {
       const oversized = escapedCriteria[oversizedCheckIndex]
       return {
         ok: false,
-        refusal: criterionCheckCapRefusal(oversizedCheckIndex, oversized === undefined ? 0 : oversized.check.length)
+        refusal: criterionCheckCapRefusal(oversizedCheckIndex, oversized === undefined ? 0 : (oversized.check?.length ?? 0))
       }
+    }
+    const oversizedSettledByIndex = escapedCriteria.findIndex(
+      (entry) => entry.settled_by !== undefined && entry.settled_by.length > caps.CRITERION_SETTLED_BY_MAX
+    )
+    if (oversizedSettledByIndex !== -1) {
+      const oversized = escapedCriteria[oversizedSettledByIndex]
+      return {
+        ok: false,
+        refusal: criterionSettledByCapRefusal(oversizedSettledByIndex, oversized === undefined ? 0 : (oversized.settled_by?.length ?? 0))
+      }
+    }
+    const checkOwedIndex = escapedCriteria.findIndex((entry) => entry.settledness !== 'unsettled' && entry.check === undefined)
+    if (checkOwedIndex !== -1) {
+      const entry = escapedCriteria[checkOwedIndex]
+      return { ok: false, refusal: checkOwedRefusal(checkOwedIndex, entry === undefined ? '' : entry.settledness) }
+    }
+    const quoteOwedIndex = escapedCriteria.findIndex(
+      (entry) => entry.settledness === 'confirmed' && (entry.settled_by === undefined || entry.settled_by.length === 0)
+    )
+    if (quoteOwedIndex !== -1) {
+      return { ok: false, refusal: quoteOwedRefusal(quoteOwedIndex) }
+    }
+    const quoteNotOwedIndex = escapedCriteria.findIndex(
+      (entry) => entry.settledness !== 'confirmed' && entry.settled_by !== undefined
+    )
+    if (quoteNotOwedIndex !== -1) {
+      const entry = escapedCriteria[quoteNotOwedIndex]
+      return { ok: false, refusal: quoteNotOwedRefusal(quoteNotOwedIndex, entry === undefined ? '' : entry.settledness) }
     }
 
     const predecessorId = input.predecessor_id
@@ -170,10 +250,12 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
       text: entry.text,
       done: false,
       kind: 'planned',
-      check: entry.check,
+      check: entry.check ?? null,
       result: null,
       result_status: null,
-      struck_by: null
+      struck_by: null,
+      settledness: entry.settledness,
+      settled_by: entry.settled_by ?? null
     }))
 
     const mintedArtifacts: Artifact[] = mintArtifacts(rt, input.artifacts ?? [])

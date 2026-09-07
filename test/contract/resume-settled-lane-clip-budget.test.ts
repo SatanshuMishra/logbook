@@ -81,8 +81,8 @@ test('resume_thread.a-settled-risk-shortens-no-further-than-its-share-of-the-rea
       active_goal: 'guard the settled lane clip budget',
       next_step: 'exercise the settled lane clip budget fixture',
       completion_criteria: [
-        { text: filler(40), check: filler(40) },
-        { text: filler(40), check: filler(40) }
+        { text: filler(40), check: filler(40), settledness: 'proposed' },
+        { text: filler(40), check: filler(40), settledness: 'proposed' }
       ]
     })
     if (!opened.ok) {

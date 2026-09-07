@@ -87,7 +87,7 @@ const createFixtureThread = async (
 ): Promise<{ threadId: string; criterionId: string }> => {
   const schema = schemaFor(published, 'open_thread')
   const { valid } = generateSchemaCases('open_thread', schema, {
-    completion_criteria: [{ text: 'a close fixture criterion', check: 'the close fixture check' }],
+    completion_criteria: [{ text: 'a close fixture criterion', check: 'the close fixture check', settledness: 'proposed' }],
     ...overrides
   })
   const result = (await spawned.client.callTool({ name: 'open_thread', arguments: valid })) as CallToolResult

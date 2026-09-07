@@ -59,7 +59,7 @@ const OPEN_THREAD_ARGS = {
   slug: 's4-fixture-thread',
   active_goal: 'exercise the s4 fixture',
   next_step: 'exercise the s4 fixture',
-  completion_criteria: [{ text: 's4 fixture criterion', check: 's4 fixture check' }]
+  completion_criteria: [{ text: 's4 fixture criterion', check: 's4 fixture check', settledness: 'proposed' }]
 }
 
 type Recipe = (scenario: PointerScenario) => Promise<CallToolResult>
@@ -123,7 +123,8 @@ const recipeAmendCriteria: Recipe = (scenario) =>
       decision_id: decisionId,
       text: 's4 inserted criterion',
       kind: 'detour',
-      check: 's4 inserted check'
+      check: 's4 inserted check',
+      settledness: 'proposed'
     })
   })
 
@@ -224,7 +225,7 @@ const recipeResolveConflict: Recipe = async (scenario) => {
       slug: `s4-resolve-conflict-${scenario}`,
       active_goal: 'exercise the s4 resolve-conflict fixture',
       next_step: 'exercise the s4 resolve-conflict fixture',
-      completion_criteria: [{ text: 's4 resolve fixture criterion', check: 's4 resolve fixture check' }]
+      completion_criteria: [{ text: 's4 resolve fixture criterion', check: 's4 resolve fixture check', settledness: 'proposed' }]
     })
     assertOk('open_thread (resolve prep)', opened)
     const threadId = (opened.structuredContent as { thread_id: string }).thread_id
