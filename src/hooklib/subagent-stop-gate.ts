@@ -8,7 +8,7 @@ import { headAtLastFireFor, readRecordingGateState } from './recording-gate-stat
 import { recordingGateClosingText } from './recording-assertions.ts'
 import type { StopVerdict } from './stop-gate.ts'
 
-export type SubagentStopEvent = { session_id: string; cwd: string; agent_id: string | null }
+export type SubagentStopEvent = { session_id: string; cwd: string; agent_id: string | null; agent_type: string }
 
 const SUBAGENT_GATE_DIR_NAME = 'subagent-gate'
 
@@ -54,6 +54,7 @@ export const subagentStopGateVerdict = (rt: Runtime, event: SubagentStopEvent): 
 
   if (event.agent_id === null || !isSafePathSegment(event.agent_id)) return { kind: 'silent' }
   if (!isSafePathSegment(event.session_id)) return { kind: 'silent' }
+  if (event.agent_type.length === 0) return { kind: 'silent' }
 
   if (markerExists(layout.value.state, event.session_id, event.agent_id)) return { kind: 'silent' }
 

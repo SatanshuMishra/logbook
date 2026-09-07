@@ -1,0 +1,21 @@
+{
+  "session_id": "e74b8429-f588-4c92-8477-04eb196ffc7b",
+  "transcript_path": "/Users/satanshumishra/.claude/projects/-Users-satanshumishra-Documents-DevLabs-logbook/e74b8429-f588-4c92-8477-04eb196ffc7b.jsonl",
+  "cwd": "/Users/satanshumishra/Documents/DevLabs/logbook",
+  "scratchpad_dir": "/private/tmp/claude-501/-Users-satanshumishra-Documents-DevLabs-logbook/e74b8429-f588-4c92-8477-04eb196ffc7b/scratchpad",
+  "prompt_id": "a80c763a-adb5-4388-8537-b6107c10e658",
+  "permission_mode": "bypassPermissions",
+  "agent_id": "a3b6f2d43e06427bc",
+  "agent_type": "Explore",
+  "effort": { "level": "xhigh" },
+  "hook_event_name": "SubagentStop",
+  "stop_hook_active": false,
+  "agent_transcript_path": "/Users/satanshumishra/.claude/projects/-Users-satanshumishra-Documents-DevLabs-logbook/e74b8429-f588-4c92-8477-04eb196ffc7b/subagents/agent-a3b6f2d43e06427bc.jsonl",
+  "last_assistant_message": "Findings reported.",
+  "background_tasks": [
+    { "id": "ac4e9645fda35857a", "type": "subagent", "status": "running", "description": "Decide the SubagentStop gate design", "agent_type": "architect" },
+    { "id": "a2e8b950c245a545a", "type": "subagent", "status": "running", "description": "stop_hook_active semantics at SubagentStop", "agent_type": "researcher" },
+    { "id": "a3b6f2d43e06427bc", "type": "subagent", "status": "running", "description": "agent_type blast radius outside repo", "agent_type": "Explore" }
+  ],
+  "session_crons": []
+}
