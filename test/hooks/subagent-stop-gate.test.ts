@@ -84,9 +84,9 @@ test('hook.subagent-gate-is-silent-with-no-agent-id', async () => {
   })
 })
 
-test('hook.subagent-gate-is-silent-once-a-record-reaches-the-ledger', async () => {
+test('hook.subagent-gate-asks-a-later-agent-even-after-a-record-reached-the-ledger', async () => {
   await withFixture(async ({ rt, repo }) => {
-    const threadId = commitOneThread(rt, repo, 'subagent-gate-is-silent-once-a-record-reaches-the-ledger')
+    const threadId = commitOneThread(rt, repo, 'subagent-gate-asks-later-agent-after-record-reaches-ledger')
     startSession(rt, repo, SESSION_ID)
 
     assert.equal(subagentStopGateVerdict(rt, subagentEventFor(repo, SESSION_ID, 'agent-one')).kind, 'block')
@@ -95,8 +95,8 @@ test('hook.subagent-gate-is-silent-once-a-record-reaches-the-ledger', async () =
 
     assert.equal(
       subagentStopGateVerdict(rt, subagentEventFor(repo, SESSION_ID, 'agent-two')).kind,
-      'silent',
-      'the head moved off the reference once a write reached the ledger, so a fresh agent gets silence'
+      'block',
+      'agent-one recording says nothing about the material agent-two holds'
     )
   })
 })
