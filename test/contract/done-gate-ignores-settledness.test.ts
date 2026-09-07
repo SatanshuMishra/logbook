@@ -3,27 +3,64 @@ import assert from 'node:assert/strict'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { z } from 'zod'
 import { census, type Classified } from '../support/census.ts'
 import { flattenSchemaNodes, isPlainObject } from '../support/schema-nodes.ts'
 import { testRuntime } from '../support/runtime.ts'
+import { STUB_TOOL_CTX, withCriterionFixture } from '../support/criterion-fixture.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import { ThreadRecord, type Criterion, type Thread } from '../../src/schema/thread.ts'
 import { transition } from '../../src/domain/lifecycle.ts'
+import { closeThreadTool } from '../../src/server/tools/close_thread.ts'
+import { openStore } from '../../src/store/records.ts'
+
+const halt = (detail: string): never => {
+  throw new Error(`done-gate boundary: ${detail}`)
+}
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const SRC_ROOT = path.join(PROJECT_ROOT, 'src')
 const GATE_REL_PATH = 'src/domain/done-gate.ts'
 const REFUSING_REL_PATH = 'src/server/tools/close_thread.ts'
 const POSITIVE_CONTROL_REL_PATH = 'src/schema/thread.ts'
+const UNADMITTED_CONTROL_REL_PATH = 'src/domain/lifecycle.ts'
+const ADMITTED_SETTLEDNESS_READ = 'const settledness = settlednessSplitOf(validated.value)\n'
+const UNADMITTED_SETTLEDNESS_READ = 'if (criterion.settled_by === null) return refuseUnattributed()\n'
 
 const SETTLEDNESS_READERS_ADMITTED_BY_A16 = [
   'src/server/tools/open_thread.ts',
   'src/server/tools/amend_criteria.ts'
 ] as const
 
+const SETTLEDNESS_REPORTERS_ADMITTED_BY_O9: readonly string[] = [REFUSING_REL_PATH]
+
 const SETTLEDNESS_SCHEMA_PATH = `${ThreadRecord.name}.completion_criteria[].settledness`
 
+const CLOSE_OUTCOME_SCHEMA_PATH = `${closeThreadTool.name}.outcome`
+
 const SETTLEDNESS_IDENTIFIERS = ['settledness', 'settled_by', 'criterionSettledness', 'Settledness'] as const
+
+const SETTLEDNESS_IDENTIFIERS_ADMITTED_BY_O9: readonly string[] = [
+  'settledness',
+  'criterionSettledness',
+  'Settledness'
+].map((identifier) =>
+  SETTLEDNESS_IDENTIFIERS.some((declared) => declared === identifier)
+    ? identifier
+    : halt(
+        `the O9 admission names the identifier ${identifier}, which this census never matches on; it matches on ${SETTLEDNESS_IDENTIFIERS.join(', ')}, so the admission would excuse an identifier that has been renamed out from under it`
+      )
+)
+
+const STRUCK_SETTLEDNESS = 'unsettled'
+
+const CLOSE_DETAIL = 'closed the thread while a declared settledness value stood on every criterion it carried'
+
+const CLOSE_REFUSAL_TEST_NAME = 'contract.done-gate-ignores-settledness.no-settledness-value-makes-close-thread-refuse'
+
+const CENSUS_FORBIDDEN_PREFIX = 'census rejected a forbidden item:'
+
+const CENSUS_UNCLASSIFIABLE_PREFIX = 'census halted on an unclassifiable item:'
 
 const IMPORT_STATEMENT_PATTERN = /^[ \t]*(?:import|export)[ \t]+([A-Za-z0-9_$*,{}\s]+?)[ \t\r\n]*from[ \t]*['"]([^'"]+)['"]/gm
 
@@ -44,10 +81,6 @@ type ImportStatement = { specifier: string; typeOnly: boolean; line: number }
 type ImportEdge = { target: string; typeOnly: boolean }
 
 type GraphNode = { relPath: string; edges: ImportEdge[] }
-
-const halt = (detail: string): never => {
-  throw new Error(`done-gate boundary: ${detail}`)
-}
 
 const walkTsFiles = (root: string): string[] => {
   if (!existsSync(root)) return []
@@ -73,6 +106,11 @@ const readSourceFile = (full: string): SourceFile => {
 }
 
 const syntheticSource = (relPath: string, text: string): SourceFile => ({ relPath, text, readError: null })
+
+const raisedBy =
+  (prefix: string) =>
+  (error: unknown): boolean =>
+    error instanceof Error && error.message.startsWith(prefix)
 
 const summarise = (file: SourceFile): BoundaryFile => {
   const text = file.text
@@ -180,26 +218,39 @@ const sourceAt = (sources: readonly SourceFile[], relPath: string): SourceFile =
   sources.find((source) => source.relPath === relPath) ??
   halt(`${relPath} was derived into the boundary yet is absent from the scan of src/`)
 
-const settlednessEnumValues = (): string[] => {
-  const node = flattenSchemaNodes(ThreadRecord.jsonSchema, ThreadRecord.name).find(
-    (entry) => entry.path === SETTLEDNESS_SCHEMA_PATH
-  )
+const enumValuesAt = (jsonSchema: Record<string, unknown>, root: string, schemaPath: string): string[] => {
+  const node = flattenSchemaNodes(jsonSchema, root).find((entry) => entry.path === schemaPath)
   if (node === undefined) {
-    return halt(`${SETTLEDNESS_SCHEMA_PATH} is absent from the thread record schema, so the declared values cannot be read`)
+    return halt(`${schemaPath} is absent from the ${root} schema, so the declared values cannot be read`)
   }
-  if (!isPlainObject(node.value)) return halt(`${SETTLEDNESS_SCHEMA_PATH} is not a plain-object schema node`)
+  if (!isPlainObject(node.value)) return halt(`${schemaPath} is not a plain-object schema node`)
   const declared = node.value.enum
   if (!Array.isArray(declared)) {
-    return halt(`${SETTLEDNESS_SCHEMA_PATH} declares no enum, so this test has no population to run over`)
+    return halt(`${schemaPath} declares no enum, so this test has no population to run over`)
   }
   return declared.map((value) =>
-    typeof value === 'string' ? value : halt(`${SETTLEDNESS_SCHEMA_PATH} declares a non-string member ${String(value)}`)
+    typeof value === 'string' ? value : halt(`${schemaPath} declares a non-string member ${String(value)}`)
   )
 }
+
+const settlednessEnumValues = (): string[] =>
+  enumValuesAt(ThreadRecord.jsonSchema, ThreadRecord.name, SETTLEDNESS_SCHEMA_PATH)
+
+const closeOutcomeValues = (): string[] =>
+  enumValuesAt(
+    z.toJSONSchema(closeThreadTool.input, { target: 'draft-7', io: 'input' }) as Record<string, unknown>,
+    closeThreadTool.name,
+    CLOSE_OUTCOME_SCHEMA_PATH
+  )
 
 const classifyBoundaryFile = (file: BoundaryFile): Classified<BoundaryFile>['verdict'] | 'unclassifiable' => {
   if (!file.readable) return 'unclassifiable'
   if (file.empty) return 'unclassifiable'
+  if (SETTLEDNESS_REPORTERS_ADMITTED_BY_O9.includes(file.relPath)) {
+    return file.matches.every((identifier) => SETTLEDNESS_IDENTIFIERS_ADMITTED_BY_O9.includes(identifier))
+      ? 'allowed'
+      : 'forbidden'
+  }
   return file.matches.length > 0 ? 'forbidden' : 'allowed'
 }
 
@@ -266,6 +317,38 @@ const onlyCriterion = (thread: Thread): Criterion => {
   return criterion
 }
 
+type FixtureCriterion = { settledness: string; struck: boolean }
+
+type CloseFixture = { thread: Thread; requested: readonly FixtureCriterion[] }
+
+type CloseOutcome = Parameters<typeof closeThreadTool.handler>[2]['outcome']
+
+const closeFixture = (rt: Runtime, slug: string, requested: readonly FixtureCriterion[]): CloseFixture => {
+  const parsed = ThreadRecord.parse({
+    ...threadFields(rt),
+    slug,
+    completion_criteria: requested.map((entry, index) => ({
+      ...criterionFields(rt, !entry.struck),
+      ordinal: index + 1,
+      struck_by: entry.struck ? rt.ulid() : null,
+      settledness: entry.settledness
+    }))
+  })
+  if (!parsed.ok) {
+    return halt(`the thread record schema refused the close fixture ${slug}: ${parsed.message}`)
+  }
+  return { thread: parsed.value, requested }
+}
+
+const expectedSettlednessSplit = (population: readonly string[], thread: Thread): Record<string, number> =>
+  Object.fromEntries(
+    population.map((value) => [
+      value,
+      thread.completion_criteria.filter((criterion) => criterion.struck_by === null && criterion.settledness === value)
+        .length
+    ])
+  )
+
 test('contract.done-gate-ignores-settledness.no-file-deciding-or-refusing-on-the-gate-verdict-reads-settledness', () => {
   const sources = walkTsFiles(SRC_ROOT).map(readSourceFile)
   assert.ok(
@@ -301,6 +384,19 @@ test('contract.done-gate-ignores-settledness.no-file-deciding-or-refusing-on-the
     `done-gate census: ${REFUSING_REL_PATH} is the file that turns the gate verdict into a refusal, and the closure did not reach it, so this census would say nothing about the surface that refuses; derived ${boundary.join(', ')}`
   )
 
+  for (const reporter of SETTLEDNESS_REPORTERS_ADMITTED_BY_O9) {
+    assert.ok(
+      boundary.includes(reporter),
+      `done-gate census: ${reporter} is admitted to read settledness because O9 makes its success reply owe the split, and the closure did not reach it, so the admission is dead and would silently excuse a file this census no longer covers; remove it from the admission list or restore the import path; derived ${boundary.join(', ')}`
+    )
+
+    const admitted = summarise(sourceAt(sources, reporter))
+    assert.ok(
+      admitted.matches.length > 0,
+      `done-gate census: ${reporter} is admitted to read settledness under O9, and the matcher now finds none of ${SETTLEDNESS_IDENTIFIERS.join(', ')} in it, so the read the admission excuses has moved elsewhere and the admission now stands as a blanket permission over a file nothing re-examines; the admission is no longer needed and should be deleted`
+    )
+  }
+
   for (const reader of SETTLEDNESS_READERS_ADMITTED_BY_A16) {
     assert.equal(
       boundary.includes(reader),
@@ -333,7 +429,7 @@ test('contract.done-gate-ignores-settledness.no-file-deciding-or-refusing-on-the
 
   assert.doesNotThrow(
     () => census(summaries, classifyBoundaryFile),
-    `done-gate census: every file reachable from ${GATE_REL_PATH} through value imports decides or refuses on the gate verdict, and none of them may read settledness; boundary ${boundary.join(', ')}`
+    `done-gate census: every file reachable from ${GATE_REL_PATH} through value imports decides or refuses on the gate verdict, and none of them may read settledness, with one exception: ${REFUSING_REL_PATH} reads ${SETTLEDNESS_IDENTIFIERS_ADMITTED_BY_O9.join(', ')} only to count the split its success reply owes under O9, and never to decide or refuse, so it is admitted here and guarded instead by the behavioural test ${CLOSE_REFUSAL_TEST_NAME}, which drives the close_thread handler over every declared settledness value under every declared outcome and fails if any of them turns into a refusal; boundary ${boundary.join(', ')}`
   )
 })
 
@@ -435,6 +531,93 @@ test('contract.done-gate-ignores-settledness.every-declared-settledness-value-cl
   }
 })
 
+test(CLOSE_REFUSAL_TEST_NAME, async () => {
+  const population = settlednessEnumValues()
+  assert.ok(
+    population.length > 0,
+    `close_thread settledness loop: ${SETTLEDNESS_SCHEMA_PATH} yielded no value, so a loop over an empty population asserts nothing about any settledness value; population read: ${JSON.stringify(population)}`
+  )
+  assert.ok(
+    population.includes(STRUCK_SETTLEDNESS),
+    `close_thread settledness loop: the struck-criterion fixture carries ${STRUCK_SETTLEDNESS} and ${SETTLEDNESS_SCHEMA_PATH} no longer declares it, so that fixture would exercise a value the schema does not have; population read: ${JSON.stringify(population)}`
+  )
+
+  const outcomes = closeOutcomeValues()
+  assert.ok(
+    outcomes.length > 0,
+    `close_thread settledness loop: ${CLOSE_OUTCOME_SCHEMA_PATH} yielded no value, so a loop over an empty population would drive no close at all and would assert nothing under any outcome; outcomes read: ${JSON.stringify(outcomes)}`
+  )
+
+  await withCriterionFixture(async (rt) => {
+    const opened = openStore(rt, rt.cwd)
+    const openedRead = JSON.stringify(opened)
+    assert.equal(
+      opened.ok,
+      true,
+      `close_thread settledness loop: the fixture store did not open, so no fixture could be seeded; result read: ${openedRead}`
+    )
+    if (!opened.ok) {
+      throw new Error(`close_thread settledness loop: the fixture store did not open; result read: ${openedRead}`)
+    }
+    const store = opened.value
+
+    for (const outcome of outcomes) {
+      const fixtures = population.flatMap((settledness) => [
+        closeFixture(rt, `${outcome}-unstruck-${settledness}`, [{ settledness, struck: false }]),
+        closeFixture(rt, `${outcome}-struck-${STRUCK_SETTLEDNESS}-beside-${settledness}`, [
+          { settledness: STRUCK_SETTLEDNESS, struck: true },
+          { settledness, struck: false }
+        ])
+      ])
+
+      for (const { thread, requested } of fixtures) {
+        assert.equal(
+          thread.completion_criteria.length,
+          requested.length,
+          `close_thread settledness loop: the fixture ${thread.slug} asked for ${requested.length} criteria and came back carrying ${thread.completion_criteria.length}, so this iteration exercises a shape the fixture never described; criteria read: ${JSON.stringify(thread.completion_criteria)}`
+        )
+        requested.forEach((entry, index) => {
+          const stored = thread.completion_criteria[index]
+          assert.equal(
+            stored?.settledness,
+            entry.settledness,
+            `close_thread settledness loop: expected criterion ${index + 1} of ${thread.slug} to carry the requested settledness ${entry.settledness} after the thread record schema parsed it, otherwise this iteration exercises a value the fixture never held; criterion read: ${JSON.stringify(stored)}`
+          )
+        })
+
+        const seeded = store.commit([{ kind: 'thread', record: thread }], `seed the close fixture ${thread.slug}`)
+        assert.equal(
+          seeded.ok,
+          true,
+          `close_thread settledness loop: the fixture ${thread.slug} was not seeded into the store, so the close below would prove nothing; result read: ${JSON.stringify(seeded)}`
+        )
+
+        const closed = await closeThreadTool.handler(rt, STUB_TOOL_CTX, {
+          thread_id: thread.id,
+          outcome: outcome as CloseOutcome,
+          detail: CLOSE_DETAIL
+        })
+
+        const closedRead = JSON.stringify(closed)
+        assert.equal(
+          closed.ok,
+          true,
+          `expected close_thread to close ${thread.slug} as ${outcome}, whose every un-struck criterion is marked done, whatever settledness those criteria carry, because no settledness count is ever a reason to refuse; result read: ${closedRead}`
+        )
+        if (!closed.ok) {
+          throw new Error(`expected close_thread to close ${thread.slug} as ${outcome}; result read: ${closedRead}`)
+        }
+
+        assert.deepStrictEqual(
+          closed.structured.settledness_split,
+          expectedSettlednessSplit(population, thread),
+          `expected the close of ${thread.slug} as ${outcome} to report how its un-struck criteria divide by settledness; split read: ${JSON.stringify(closed.structured.settledness_split)}`
+        )
+      }
+    }
+  })
+})
+
 test('contract.done-gate-ignores-settledness.control.a-settledness-read-halts-the-census', () => {
   const reader = summarise(
     syntheticSource('src/domain/lifecycle.ts', "if (criterion.settledness === 'unsettled') return refuseUnsettled()\n")
@@ -459,6 +642,77 @@ test('contract.done-gate-ignores-settledness.control.a-settledness-read-halts-th
   assert.doesNotThrow(() => census([clean], classifyBoundaryFile))
   assert.throws(() => census([blank], classifyBoundaryFile))
   assert.throws(() => census([unreadable], classifyBoundaryFile))
+
+  const admittedReader = summarise(syntheticSource(REFUSING_REL_PATH, ADMITTED_SETTLEDNESS_READ))
+  const unadmittedReader = summarise(syntheticSource(UNADMITTED_CONTROL_REL_PATH, ADMITTED_SETTLEDNESS_READ))
+  const admittedForeignReader = summarise(syntheticSource(REFUSING_REL_PATH, UNADMITTED_SETTLEDNESS_READ))
+  const admittedBlank = summarise(syntheticSource(REFUSING_REL_PATH, ''))
+  const admittedUnreadable: BoundaryFile = summarise({
+    relPath: REFUSING_REL_PATH,
+    text: null,
+    readError: 'ENOENT: no such file or directory'
+  })
+
+  assert.deepStrictEqual(
+    admittedReader.matches,
+    ['settledness'],
+    `expected the matcher to still find the settledness read in the admitted file, otherwise the admission is passing a file the matcher never flagged; matches read: ${JSON.stringify(admittedReader.matches)}`
+  )
+  assert.equal(
+    classifyBoundaryFile(admittedReader),
+    'allowed',
+    `expected ${REFUSING_REL_PATH} to be admitted because O9 makes its success reply owe the settledness split; verdict read: ${classifyBoundaryFile(admittedReader)}`
+  )
+  assert.equal(
+    classifyBoundaryFile(unadmittedReader),
+    'forbidden',
+    `expected the same settledness read at ${UNADMITTED_CONTROL_REL_PATH} to stay forbidden, otherwise the admission is excusing the read rather than the one file that owes the split; verdict read: ${classifyBoundaryFile(unadmittedReader)}`
+  )
+  assert.deepStrictEqual(
+    admittedForeignReader.matches,
+    ['settled_by'],
+    `expected the matcher to find settled_by in the admitted file, otherwise the identifier-scoped admission below is decided on an empty match list; matches read: ${JSON.stringify(admittedForeignReader.matches)}`
+  )
+  assert.equal(
+    classifyBoundaryFile(admittedForeignReader),
+    'forbidden',
+    `expected ${REFUSING_REL_PATH} to stay forbidden when it reads settled_by, which the O9 split never reads, because the admission covers only ${SETTLEDNESS_IDENTIFIERS_ADMITTED_BY_O9.join(', ')}; verdict read: ${classifyBoundaryFile(admittedForeignReader)}`
+  )
+  assert.equal(
+    classifyBoundaryFile(admittedBlank),
+    'unclassifiable',
+    `expected an empty ${REFUSING_REL_PATH} to halt the census, because the admission is about identifier matching and never about whether the file was scanned; verdict read: ${classifyBoundaryFile(admittedBlank)}`
+  )
+  assert.equal(
+    classifyBoundaryFile(admittedUnreadable),
+    'unclassifiable',
+    `expected an unreadable ${REFUSING_REL_PATH} to halt the census, because the admission is about identifier matching and never about whether the file was scanned; verdict read: ${classifyBoundaryFile(admittedUnreadable)}`
+  )
+
+  assert.doesNotThrow(
+    () => census([admittedReader], classifyBoundaryFile),
+    `expected the census to pass ${REFUSING_REL_PATH} reading ${SETTLEDNESS_IDENTIFIERS_ADMITTED_BY_O9.join(', ')}, because O9 makes its success reply owe the settledness split`
+  )
+  assert.throws(
+    () => census([unadmittedReader], classifyBoundaryFile),
+    raisedBy(CENSUS_FORBIDDEN_PREFIX),
+    `expected the census itself to reject the same settledness read at ${UNADMITTED_CONTROL_REL_PATH} as forbidden, rather than any error at all counting as a rejection`
+  )
+  assert.throws(
+    () => census([admittedForeignReader], classifyBoundaryFile),
+    raisedBy(CENSUS_FORBIDDEN_PREFIX),
+    `expected the census itself to reject ${REFUSING_REL_PATH} reading settled_by as forbidden, because the O9 admission is scoped to ${SETTLEDNESS_IDENTIFIERS_ADMITTED_BY_O9.join(', ')} and covers no other identifier in that file`
+  )
+  assert.throws(
+    () => census([admittedBlank], classifyBoundaryFile),
+    raisedBy(CENSUS_UNCLASSIFIABLE_PREFIX),
+    `expected the census itself to halt on an empty ${REFUSING_REL_PATH} as unclassifiable, rather than any error at all counting as a halt`
+  )
+  assert.throws(
+    () => census([admittedUnreadable], classifyBoundaryFile),
+    raisedBy(CENSUS_UNCLASSIFIABLE_PREFIX),
+    `expected the census itself to halt on an unreadable ${REFUSING_REL_PATH} as unclassifiable, rather than any error at all counting as a halt`
+  )
 })
 
 test('contract.done-gate-ignores-settledness.control.only-a-value-edge-extends-the-boundary', () => {
