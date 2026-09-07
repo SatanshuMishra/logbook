@@ -7,7 +7,11 @@ import { SHA_PATTERN } from '../schema/ids.ts'
 const RECORDING_GATE_FILE_NAME = 'recording-gate.json'
 
 export type ThreadFireState = { head_at_last_fire: string; fires: number; prompt_id_at_last_fire: string | null }
-export type RecordingGateState = { session_id: string; threads: Record<string, ThreadFireState> }
+export type RecordingGateState = {
+  session_id: string
+  threads: Record<string, ThreadFireState>
+  head_at_last_fire: string | null
+}
 
 const recordingGatePathFor = (stateDir: string): string => path.join(stateDir, RECORDING_GATE_FILE_NAME)
 
@@ -25,6 +29,12 @@ const parseThreads = (value: unknown): Record<string, ThreadFireState> | null =>
   const entries = Object.entries(value as Record<string, unknown>)
   if (!entries.every(([, candidate]) => isThreadFireState(candidate))) return null
   return Object.fromEntries(entries as Array<[string, ThreadFireState]>)
+}
+
+const parseHeadAtLastFire = (value: unknown): string | null => {
+  if (value === null) return null
+  if (typeof value === 'string' && SHA_PATTERN.test(value)) return value
+  return null
 }
 
 export const readRecordingGateState = (rt: Runtime, stateDir: string): RecordingGateState | null => {
@@ -56,9 +66,18 @@ export const readRecordingGateState = (rt: Runtime, stateDir: string): Recording
   if (typeof candidate.session_id !== 'string' || candidate.session_id.length === 0) return null
   const threads = parseThreads(candidate.threads)
   if (threads === null) return null
-  return { session_id: candidate.session_id, threads }
+  return {
+    session_id: candidate.session_id,
+    threads,
+    head_at_last_fire: parseHeadAtLastFire(candidate.head_at_last_fire)
+  }
 }
 
 export const writeRecordingGateState = (rt: Runtime, stateDir: string, state: RecordingGateState): void => {
   durableWrite(recordingGatePathFor(stateDir), JSON.stringify(state), { log: rt.log })
+}
+
+export const headAtLastFireFor = (state: RecordingGateState | null, sessionId: string): string | null => {
+  if (state === null || state.session_id !== sessionId) return null
+  return state.head_at_last_fire
 }

@@ -99,6 +99,7 @@ const recordFire = (
   const previousFires = previousThreads[threadId]?.fires ?? 0
   const nextState: RecordingGateState = {
     session_id: event.session_id,
+    head_at_last_fire: head,
     threads: {
       ...previousThreads,
       [threadId]: {
@@ -120,11 +121,18 @@ const clearFire = (
   threadId: string,
   head: string
 ): void => {
-  if (previousFireState !== null && previousFireState.head_at_last_fire === head) return
+  const previousSessionHead =
+    previousState !== null && previousState.session_id === event.session_id ? previousState.head_at_last_fire : null
+  if (
+    previousFireState !== null &&
+    previousFireState.head_at_last_fire === head &&
+    previousSessionHead === head
+  ) return
   const previousThreads =
     previousState !== null && previousState.session_id === event.session_id ? previousState.threads : {}
   const nextState: RecordingGateState = {
     session_id: event.session_id,
+    head_at_last_fire: head,
     threads: {
       ...previousThreads,
       [threadId]: {

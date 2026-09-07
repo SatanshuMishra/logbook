@@ -136,3 +136,9 @@ export const stopEventFor = (
   stop_hook_active: stopHookActive,
   prompt_id: promptId
 })
+
+export const subagentEventFor = (repo: string, sessionId: string, agentId: string | null) => ({
+  session_id: sessionId,
+  cwd: repo,
+  agent_id: agentId
+})
