@@ -1,10 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { test } from 'node:test'
 import type { Runtime } from '../../src/runtime/runtime.ts'
-import type { ToolContext } from '../../src/server/register.ts'
 import { declare } from '../../src/schema/declare.ts'
 import { openThreadTool } from '../../src/server/tools/open_thread.ts'
 import { updateThreadTool } from '../../src/server/tools/update_thread.ts'
@@ -14,29 +10,7 @@ import { recordDecisionTool } from '../../src/server/tools/record_decision.ts'
 import type { Criterion } from '../../src/schema/thread.ts'
 import { openStore } from '../../src/store/records.ts'
 import * as caps from '../../src/schema/caps.ts'
-import { testRuntime } from '../support/runtime.ts'
-import { rawGit } from '../support/git-fixture.ts'
-
-const STUB_TOOL_CTX = {} as unknown as ToolContext
-
-const withCriterionFixture = async (fn: (rt: Runtime) => Promise<void>): Promise<void> => {
-  const repo = mkdtempSync(join(tmpdir(), 'logbook-criterion-repo-'))
-  const pluginDataHome = mkdtempSync(join(tmpdir(), 'logbook-criterion-plugin-data-'))
-  const pluginData = join(pluginDataHome, 'plugin-data')
-  mkdirSync(pluginData)
-  try {
-    rawGit(repo, ['init', '--initial-branch=main'])
-    rawGit(repo, ['config', 'user.name', 'Logbook Criterion Fixture'])
-    rawGit(repo, ['config', 'user.email', 'criterion@logbook.test'])
-    writeFileSync(join(repo, 'README.md'), 'logbook criterion fixture repository\n')
-    rawGit(repo, ['add', 'README.md'])
-    rawGit(repo, ['commit', '-m', 'fixture: initial commit'])
-    await fn(testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: pluginData }, cwd: repo }))
-  } finally {
-    rmSync(repo, { recursive: true, force: true })
-    rmSync(pluginDataHome, { recursive: true, force: true })
-  }
-}
+import { STUB_TOOL_CTX, withCriterionFixture } from '../support/criterion-fixture.ts'
 
 const openFixtureThread = async (
   rt: Runtime,
