@@ -27,6 +27,7 @@ const CAP_ROLES: Record<string, CapRole> = {
   CRITERION_TEXT_MAX: 'record-field',
   CRITERION_CHECK_MAX: 'record-field',
   CRITERION_RESULT_MAX: 'record-field',
+  CRITERION_SETTLED_BY_MAX: 'record-field',
   RISK_TEXT_MAX: 'record-field',
   RISK_SCOPE_MAX: 'record-field',
   RISK_REFS_MAX_ELEMENTS: 'record-field',

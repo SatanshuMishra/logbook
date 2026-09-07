@@ -40,7 +40,16 @@ const baseThread = (rt: Runtime): Thread => ({
   status: 'open',
   blocked_by: null,
   completion_criteria: [
-    { id: rt.ulid(), ordinal: 1, text: 'a criterion for the whole-record cap fixture', done: false, kind: 'planned', struck_by: null }
+    {
+      id: rt.ulid(),
+      ordinal: 1,
+      text: 'a criterion for the whole-record cap fixture',
+      done: false,
+      kind: 'planned',
+      struck_by: null,
+      settledness: 'proposed',
+      settled_by: null
+    }
   ],
   spine: {
     active_goal: 'prove the byte cap refusal names the field and the number',

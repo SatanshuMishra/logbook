@@ -192,7 +192,9 @@ const overCapProbeCriterion = (rt: Runtime, text: string): Criterion => ({
   text,
   done: false,
   kind: 'planned',
-  struck_by: null
+  struck_by: null,
+  settledness: 'proposed',
+  settled_by: null
 })
 
 const buildThreadAtWholeRecordCapEdge = (rt: Runtime): Thread => {

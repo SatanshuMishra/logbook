@@ -9,6 +9,8 @@ export type Iso8601 = string
 
 export type ResultStatus = 'verified' | 'unverified-reasoned'
 
+export type Settledness = 'confirmed' | 'proposed' | 'unsettled'
+
 export type Criterion = {
   id: Ulid
   ordinal: number
@@ -19,7 +21,11 @@ export type Criterion = {
   result?: string | null | undefined
   result_status?: ResultStatus | null | undefined
   struck_by: Ulid | null
+  settledness?: Settledness | undefined
+  settled_by?: string | null | undefined
 }
+
+export const criterionSettledness = (criterion: Criterion): Settledness => criterion.settledness ?? 'proposed'
 
 export type Risk = { id: Ulid; scope: string; text: string; refs: string[]; criterion_id?: Ulid | undefined; retired: boolean }
 export type KeyDecision = { id: Ulid; decision_id: Ulid; title: string; scope: string; criterion_id?: Ulid | undefined }
@@ -95,6 +101,22 @@ const CriterionSchema = structural(
         .regex(ULID_PATTERN)
         .nullable()
         .describe('the decision id that struck this criterion, or null when it has not been struck')
+    ),
+    settledness: structural(
+      z
+        .enum(['confirmed', 'proposed', 'unsettled'])
+        .optional()
+        .describe(
+          'who stands behind this criterion: confirmed when the human stated or agreed it, proposed when the model derived it, unsettled when done is genuinely not known for this part yet'
+        )
+    ),
+    settled_by: content(
+      z
+        .string()
+        .max(caps.CRITERION_SETTLED_BY_MAX)
+        .nullable()
+        .optional()
+        .describe('the human words behind a confirmed criterion, quoted verbatim, and null on any other settledness')
     )
   })
 )
