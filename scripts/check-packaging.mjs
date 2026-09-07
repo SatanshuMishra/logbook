@@ -13,6 +13,7 @@ export const REQUIRED_FILES = [
   'hooks/session-end.ts',
   'hooks/session-start.ts',
   'hooks/stop.ts',
+  'hooks/subagent-stop.ts',
   'hooks/user-prompt-submit.ts',
   'skills/debrief/SKILL.md',
   'skills/file/SKILL.md',
@@ -45,7 +46,15 @@ export const FORBIDDEN_SERVER_ENV_KEYS = [
   'LEDGER_NUDGE_BYTES'
 ]
 
-export const REQUIRED_HOOK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'SessionEnd', 'Stop']
+export const REQUIRED_HOOK_EVENTS = [
+  'SessionStart',
+  'UserPromptSubmit',
+  'PreToolUse',
+  'PostToolUse',
+  'SessionEnd',
+  'Stop',
+  'SubagentStop'
+]
 
 export const EVENT_HOOK_FILES = {
   SessionStart: 'session-start',
@@ -53,7 +62,8 @@ export const EVENT_HOOK_FILES = {
   PreToolUse: 'pre-tool-use',
   PostToolUse: 'post-tool-use',
   SessionEnd: 'session-end',
-  Stop: 'stop'
+  Stop: 'stop',
+  SubagentStop: 'subagent-stop'
 }
 
 export const USER_CONFIG_CONSUMER_ROOTS = ['src', 'hooks', 'bin']
