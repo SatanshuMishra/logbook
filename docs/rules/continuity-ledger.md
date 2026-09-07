@@ -6,8 +6,10 @@ own git repository. This file states what the shipped software actually does. Wh
 code disagree, the code wins and this file is wrong.
 
 The plugin exposes tools over the Model Context Protocol under the server key `ledger`. It also ships
-two skills: `logbook:preflight`, which picks up an existing thread of work, and `logbook:debrief`,
-which ends this session's work on one. Both skills do nothing but call the tools below.
+three skills: `logbook:file`, which opens a new thread and puts its criteria to the human to settle
+before resuming it and printing the briefing; `logbook:preflight`, which picks up an existing thread of
+work; and `logbook:debrief`, which ends this session's work on one. All three skills do nothing but
+call the tools below.
 
 ## The twelve tools
 
