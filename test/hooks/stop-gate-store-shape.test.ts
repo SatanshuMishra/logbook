@@ -28,7 +28,8 @@ test('hook.stop-gate-leaves-no-half-built-store', () => {
         session_id: 'stop-gate-shape-session',
         cwd: repo,
         transcript_path: join(pluginData, 'no-such-transcript.jsonl'),
-        stop_hook_active: false
+        stop_hook_active: false,
+        prompt_id: null
       })
       assert.equal(verdict.kind, 'silent')
 

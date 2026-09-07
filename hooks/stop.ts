@@ -15,7 +15,8 @@ await runHook('stop', (event) => {
     session_id: record.session_id,
     cwd: record.cwd,
     transcript_path: record.transcript_path,
-    stop_hook_active: record.stop_hook_active === true
+    stop_hook_active: record.stop_hook_active === true,
+    prompt_id: typeof record.prompt_id === 'string' ? record.prompt_id : null
   })
 
   if (verdict.kind === 'block') return { block: true, reason: verdict.reason }
