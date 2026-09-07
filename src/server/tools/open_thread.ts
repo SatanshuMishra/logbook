@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { ToolSpec } from '../register.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import type { Artifact, Criterion, Thread } from '../../schema/thread.ts'
+import { criterionSettledness } from '../../schema/thread.ts'
 import { SLUG_PATTERN, ULID_PATTERN } from '../../schema/ids.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
@@ -79,7 +80,13 @@ const OpenThreadOutputSchema = z.object({
         id: z.string().describe('the id minted for this criterion'),
         ordinal: z.number().int().describe('the display position of this criterion'),
         text: z.string().describe('the stored text of this criterion'),
-        check: z.string().describe('the stored check that decides this criterion')
+        check: z
+          .string()
+          .nullable()
+          .describe('the stored check that decides this criterion, or null when none was recorded because the criterion is unsettled'),
+        settledness: z
+          .enum(['confirmed', 'proposed', 'unsettled'])
+          .describe('who stands behind this criterion as stored: confirmed by the human, proposed by you, or unsettled because done is not known yet')
       })
     )
     .describe('the criteria minted for this thread, in display order')
@@ -87,6 +94,21 @@ const OpenThreadOutputSchema = z.object({
 
 type OpenThreadInput = z.infer<typeof OpenThreadInputSchema>
 type OpenThreadOutput = z.infer<typeof OpenThreadOutputSchema>
+
+const RELAY_INSTRUCTION =
+  'put each of these to the human as it stands, and record what they answer with criteria_settled on update_thread.'
+
+const DEFINITION_OF_DONE_OWED = 'no completion criteria were recorded, so a definition of done is still owed.'
+
+const criterionLine = (criterion: Criterion): string =>
+  `${criterion.ordinal}. ${criterion.text} [${criterionSettledness(criterion)}]`
+
+const openedThreadText = (thread: Thread): string => {
+  const opened = `opened thread ${thread.slug} (${thread.id}).`
+  if (thread.completion_criteria.length === 0) return `${opened}\n${DEFINITION_OF_DONE_OWED}`
+  const stored = thread.completion_criteria.map(criterionLine).join('\n')
+  return `${opened}\ncompletion criteria as stored:\n${stored}\n${RELAY_INSTRUCTION}`
+}
 
 export const duplicateSlugRefusal = (slug: string): Refusal => ({
   ok: false,
@@ -315,7 +337,7 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
 
     return {
       ok: true,
-      text: `opened thread ${committed.value.slug} (${committed.value.id}) with ${committed.value.completion_criteria.length} completion criteria.`,
+      text: openedThreadText(committed.value),
       structured: {
         thread_id: committed.value.id,
         slug: committed.value.slug,
@@ -324,7 +346,8 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
           id: c.id,
           ordinal: c.ordinal,
           text: c.text,
-          check: c.check ?? ''
+          check: c.check ?? null,
+          settledness: criterionSettledness(c)
         }))
       }
     }
