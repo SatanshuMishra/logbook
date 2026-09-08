@@ -93,6 +93,15 @@ const struckCriterionRefusal = (field: string, criterionId: string): Refusal => 
   message: `${field} names a struck criterion, which is retained as frozen history and cannot be rewritten; received ${criterionId}.`
 })
 
+const doneCriterionRefusal = (field: string, criterionId: string): Refusal => ({
+  ok: false,
+  field,
+  accepted: 'the id of a criterion that has not been marked done',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: true,
+  message: `${field} names a criterion already marked done, whose recorded result answers the check as it was written and is never rewritten; strike it and insert a replacement instead; received ${criterionId}.`
+})
+
 const positionRefusal = (field: string, length: number): Refusal => ({
   ok: false,
   field,
@@ -215,6 +224,9 @@ export const rewriteCriterion = (
   }
   if (target.struck_by !== null) {
     return struckCriterionRefusal('criterion_id', input.criterionId)
+  }
+  if (target.done) {
+    return doneCriterionRefusal('criterion_id', input.criterionId)
   }
 
   const escapedText = escapeStored(input.text)
