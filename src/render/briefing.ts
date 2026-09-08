@@ -77,6 +77,8 @@ const LEGACY_LAST_SESSION_MARKER =
 
 const CRITERIA_OWED_LINE = '- none recorded; a definition of done is still owed.'
 
+const CRITERIA_ALL_STRUCK_OWED_LINE = '- every criterion recorded here was struck; a definition of done is still owed.'
+
 const TEXT_CLIPPED_BULLET =
   '- some text on this briefing was shortened to fit the size budget for one reply; every shortened value ends with ...[shortened]'
 
@@ -335,7 +337,12 @@ const assembleBriefing = (
   const keyDecisionLines = keyDecisions.live.map((item) => renderKeyDecisionLine(item, renderClip.keyDecision))
   const outOfScopeLines = outOfScope.map((item) => renderOutOfScopeLine(item, renderClip.outOfScope))
   const criterionBlocks =
-    criteria.length === 0 ? [CRITERIA_OWED_LINE] : criteria.map((item) => renderCriterionBlock(item, renderClip))
+    criteria.length === 0
+      ? [CRITERIA_OWED_LINE]
+      : [
+          ...criteria.map((item) => renderCriterionBlock(item, renderClip)),
+          ...(criteria.every((item) => item.struck_by !== null) ? [CRITERIA_ALL_STRUCK_OWED_LINE] : [])
+        ]
   const settledLines = [
     ...risks.settled.map((item) => renderSettledRiskLine(item, renderClip.settledRisk)),
     ...keyDecisions.settled.map((item) => renderSettledKeyDecisionLine(item, renderClip.settledKeyDecision))
