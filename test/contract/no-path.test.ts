@@ -122,6 +122,8 @@ const RECORD_DECISION_INVALID_PRODUCER: ProducerId = 'server/tools/record_decisi
 const RECORD_DECISION_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/record_decision.ts#commitFailureRefusal'
 const RECORD_DECISION_SCOPE_CAP_PRODUCER: ProducerId = 'server/tools/record_decision.ts#scopeCapRefusal'
 const RECORD_DECISION_UNKNOWN_CRITERION_PRODUCER: ProducerId = 'server/tools/record_decision.ts#unknownCriterionRefusal'
+const RECORD_DECISION_UNRESOLVED_SUPERSEDES_PRODUCER: ProducerId =
+  'server/tools/record_decision.ts#unresolvedSupersedesRefusal'
 const RECORD_DECISION_HANDLER_PRODUCER: ProducerId = 'server/tools/record_decision.ts#recordDecisionTool.handler'
 
 const LOG_SESSION_EVENT_ACTOR_CAP_PRODUCER: ProducerId = 'server/tools/log_session_event.ts#actorCapRefusal'
@@ -468,6 +470,19 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
       throw new Error('expected recordDecisionTool to refuse a criterion_id that names no criterion on this thread')
     }
     refusals.push({ producer: RECORD_DECISION_UNKNOWN_CRITERION_PRODUCER, refusal: unknownDecisionCriterion.refusal })
+
+    const unresolvedSupersedes = await recordDecisionTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      title: 'a census title',
+      context: 'a census context',
+      options: ['a census option'],
+      outcome: 'a census outcome',
+      supersedes: [rt.ulid()]
+    })
+    if (unresolvedSupersedes.ok) {
+      throw new Error('expected recordDecisionTool to refuse a supersedes id that resolves to no stored decision record')
+    }
+    refusals.push({ producer: RECORD_DECISION_UNRESOLVED_SUPERSEDES_PRODUCER, refusal: unresolvedSupersedes.refusal })
 
     const actorOverflow = await logSessionEventTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,

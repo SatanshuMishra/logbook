@@ -9,7 +9,7 @@ import { ThreadRecord, type KeyDecision, type Thread } from '../../schema/thread
 import type { RecordChange } from '../../store/write-path.ts'
 import { readProjectHead } from '../../store/git.ts'
 import { withDetail } from '../../store/detail.ts'
-import { openProjectStore, loadThread } from '../tool-support.ts'
+import { openProjectStore, loadThread, decisionResolver } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 
@@ -138,6 +138,15 @@ export const unknownCriterionRefusal = (id: string): Refusal => ({
   message: `criterion_id names an id not present on this thread: ${id}.`
 })
 
+export const unresolvedSupersedesRefusal = (index: number, decisionId: string): Refusal => ({
+  ok: false,
+  field: 'supersedes',
+  accepted: 'a decision id that resolves to a stored decision record',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: true,
+  message: `supersedes[${index}] does not resolve to a stored decision record; received ${decisionId}.`
+})
+
 export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOutput> = {
   name: 'record_decision',
   title: 'Record decision',
@@ -157,6 +166,14 @@ export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOut
 
     if (input.criterion_id !== undefined && !thread.completion_criteria.some((c) => c.id === input.criterion_id)) {
       return { ok: false, refusal: unknownCriterionRefusal(input.criterion_id) }
+    }
+
+    const supersedes = input.supersedes ?? []
+    const resolveDecision = decisionResolver(store)
+    const unresolvedIndex = supersedes.findIndex((decisionId) => !resolveDecision(decisionId))
+    const unresolvedDecisionId = unresolvedIndex === -1 ? undefined : supersedes[unresolvedIndex]
+    if (unresolvedDecisionId !== undefined) {
+      return { ok: false, refusal: unresolvedSupersedesRefusal(unresolvedIndex, unresolvedDecisionId) }
     }
 
     const escapedTitle = escapeStored(input.title)
@@ -196,7 +213,7 @@ export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOut
       options: escapedOptions,
       outcome: escapedOutcome,
       commit,
-      supersedes: input.supersedes ?? [],
+      supersedes,
       created_at: rt.now()
     }
 
