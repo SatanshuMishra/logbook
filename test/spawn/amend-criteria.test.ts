@@ -277,6 +277,31 @@ test('amend_criteria.refuses-a-rewrite-carrying-only-a-quote', async () => {
   })
 })
 
+test('amend_criteria.rewrite-with-no-check-leaves-the-stored-check-alone', async () => {
+  await withFixture(async (fx) => {
+    const { threadId, decisionId, criterionId } = await openAmendableFixture(fx, 'rewrite-no-check')
+    const reply = await callAmendCriteria(fx, {
+      thread_id: threadId,
+      operation: 'rewrite',
+      decision_id: decisionId,
+      criterion_id: criterionId,
+      text: 'the rewritten criterion text with no check supplied'
+    })
+
+    assert.equal(reply.isError, undefined, 'a rewrite naming only new text is not refused')
+
+    const detail = await readThreadResourceText(fx.spawned, threadId)
+    assert.ok(
+      detail.includes('the rewritten criterion text with no check supplied'),
+      'the rewrite must have written its new text'
+    )
+    assert.ok(
+      detail.includes('check: npm test exits 0'),
+      'a rewrite that omits check must leave the stored check exactly as it was'
+    )
+  })
+})
+
 test('amend_criteria.refuses-a-strike-carrying-settledness', async () => {
   await withFixture(async (fx) => {
     const { threadId, decisionId, criterionId } = await openAmendableFixture(fx, 'strike-with-settledness')

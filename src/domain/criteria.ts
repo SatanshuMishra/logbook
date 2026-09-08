@@ -20,6 +20,7 @@ export type RewriteCriterionInput = {
   criterionId: string
   text: string
   decisionId: string | null | undefined
+  check?: string | null | undefined
 }
 
 export type StrikeCriterionInput = {
@@ -226,8 +227,20 @@ export const rewriteCriterion = (
     )
   }
 
+  const escapedCheck = input.check === null || input.check === undefined ? undefined : escapeStored(input.check)
+  if (escapedCheck !== undefined && escapedCheck.length > caps.CRITERION_CHECK_MAX) {
+    return textCapRefusal(
+      'criteria.rewrite.check',
+      escapedCheck.length,
+      caps.CRITERION_CHECK_MAX,
+      'shorten the check and retry'
+    )
+  }
+
   const next = thread.completion_criteria.map((criterion) =>
-    criterion.id === input.criterionId ? { ...criterion, text: escapedText } : criterion
+    criterion.id === input.criterionId
+      ? { ...criterion, text: escapedText, ...(escapedCheck !== undefined ? { check: escapedCheck } : {}) }
+      : criterion
   )
 
   return {

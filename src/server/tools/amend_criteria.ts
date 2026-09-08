@@ -32,7 +32,7 @@ const AmendCriteriaInputSchema = z.strictObject({
     .max(caps.CRITERION_CHECK_MAX)
     .optional()
     .describe(
-      'the re-runnable check that decides whether an inserted criterion is true; required for insert unless settledness is unsettled, ignored otherwise'
+      'the re-runnable check that decides whether a criterion is true; required for insert unless settledness is unsettled; on a rewrite it is optional and writes the criterion\'s check, and omitting it leaves the existing check unchanged; ignored on strike'
     ),
   settledness: z
     .enum(['confirmed', 'proposed', 'unsettled'])
@@ -198,7 +198,7 @@ export const amendCriteriaTool: ToolSpec<AmendCriteriaInput, AmendCriteriaOutput
       const result = rewriteCriterion(
         rt,
         thread,
-        { criterionId: input.criterion_id, text: input.text, decisionId: input.decision_id },
+        { criterionId: input.criterion_id, text: input.text, decisionId: input.decision_id, check: input.check },
         resolveDecision
       )
       if (!result.ok) return { ok: false, refusal: result }
