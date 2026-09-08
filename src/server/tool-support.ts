@@ -5,6 +5,7 @@ import { ThreadRecord, type Artifact, type Thread, type Ulid } from '../schema/t
 import * as caps from '../schema/caps.ts'
 import { openStore, type Store } from '../store/records.ts'
 import { withDetail } from '../store/detail.ts'
+import type { DecisionResolver } from '../domain/criteria.ts'
 
 export type Attempt<T> = { ok: true; value: T } | { ok: false; refusal: Refusal }
 
@@ -28,6 +29,13 @@ export const openProjectStore = (rt: Runtime): Attempt<Store> => {
   const opened = openStore(rt, rt.cwd)
   return opened.ok ? { ok: true, value: opened.value } : { ok: false, refusal: opened }
 }
+
+export const decisionResolver =
+  (store: Store): DecisionResolver =>
+  (decisionId) => {
+    const slot = store.readDecision(decisionId)
+    return slot !== null && !slot.quarantined
+  }
 
 const threadNotFoundRefusal = (field: string, id: string): Refusal => ({
   ok: false,

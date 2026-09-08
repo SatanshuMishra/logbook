@@ -3,8 +3,8 @@ import type { ToolSpec } from '../register.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import { ULID_PATTERN } from '../../schema/ids.ts'
 import * as caps from '../../schema/caps.ts'
-import { insertCriterion, rewriteCriterion, strikeCriterion, type DecisionResolver } from '../../domain/criteria.ts'
-import { commitThread, loadThread, openProjectStore } from '../tool-support.ts'
+import { insertCriterion, rewriteCriterion, strikeCriterion } from '../../domain/criteria.ts'
+import { commitThread, decisionResolver, loadThread, openProjectStore } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 
@@ -134,10 +134,7 @@ export const amendCriteriaTool: ToolSpec<AmendCriteriaInput, AmendCriteriaOutput
     if (!loaded.ok) return { ok: false, refusal: loaded.refusal }
     const thread = loaded.value
 
-    const resolveDecision: DecisionResolver = (decisionId) => {
-      const slot = store.readDecision(decisionId)
-      return slot !== null && !slot.quarantined
-    }
+    const resolveDecision = decisionResolver(store)
 
     if (input.operation === 'insert') {
       if (input.text === undefined) return { ok: false, refusal: missingFieldRefusal('text', 'insert') }
