@@ -194,6 +194,52 @@ test('merge.criteria-conflict-on-done-divergence', () => {
   assert.equal((found.theirs as Criterion).done, true)
 })
 
+test('merge.criteria-settledness-divergence-is-not-silently-dropped', () => {
+  const base = baseThread({ completion_criteria: [] })
+  const humanQuote = 'yes, that matches what I meant, mark it done'
+  const ours = baseThread({
+    completion_criteria: [{ ...criterion(ULID_C, 'shared text', 1), settledness: 'proposed', settled_by: null }]
+  })
+  const theirs = baseThread({
+    completion_criteria: [{ ...criterion(ULID_C, 'shared text', 1), settledness: 'confirmed', settled_by: humanQuote }]
+  })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(
+    result.ok,
+    false,
+    'a human attestation (settledness/settled_by) must never be discarded without asking the human'
+  )
+  if (result.ok) {
+    throw new Error('expected the merge to refuse rather than silently drop the settledness attestation')
+  }
+  assert.equal(result.conflicts.length, 1)
+  const found = result.conflicts[0]
+  assert.ok(found)
+  assert.equal(found.field, `completion_criteria[${ULID_C}]`)
+})
+
+test('merge.legacy-absent-settledness-matches-explicit-proposed-without-conflict', () => {
+  const base = baseThread({ completion_criteria: [] })
+  const legacy = criterion(ULID_C, 'shared text', 1)
+  const ours = baseThread({ completion_criteria: [legacy] })
+  const theirs = baseThread({
+    completion_criteria: [{ ...legacy, settledness: 'proposed', settled_by: null }]
+  })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(
+    result.ok,
+    true,
+    'a legacy criterion with settledness absent (criterionSettledness fixes absence to "proposed") is the same fact as an explicit "proposed" twin and must not conflict'
+  )
+  if (!result.ok) {
+    throw new Error('expected the merge to succeed: absence and explicit "proposed" are the same fact written two ways')
+  }
+})
+
 test('merge.spine-open-risks-conflict-on-divergence', () => {
   const base = baseThread({ spine: { ...baseSpine(), open_risks: [] } })
   const ours = baseThread({
