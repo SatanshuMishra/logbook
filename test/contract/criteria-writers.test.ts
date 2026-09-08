@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import { census, type Classified } from '../support/census.ts'
 import { listPublishedTools, type PublishedTool } from '../support/published.ts'
 import { spawnServer } from '../support/spawn-client.ts'
+import { MARK_DONE_INVARIANTS } from '../../src/server/tools/update_thread.ts'
 import * as caps from '../../src/schema/caps.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -203,7 +204,7 @@ test('criteria.no-other-tool-writes-criteria.control.a-recorded-observation-is-n
     node: {
       type: 'string',
       maxLength: caps.CRITERION_RESULT_MAX,
-      description: 'what the check returned, or when it could not be run, specifically why it could not'
+      description: MARK_DONE_INVARIANTS
     }
   }
   assert.equal(classifyCriteriaTextProperty(resultProperty, true), 'allowed')

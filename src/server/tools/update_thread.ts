@@ -35,13 +35,25 @@ const KeyDecisionAddSchema = z
   })
   .describe('one decision to link into the spine')
 
+export const MARK_DONE_INVARIANTS = [
+  'Marking a criterion done is a claim that it is met, and this field is where you record what convinced you.',
+  'Before you write it, satisfy yourself that each of the following holds. Logbook checks none of them and stores what you write verbatim.',
+  '- What was observed would look different if this work had not been done at all.',
+  '- What was observed is the thing this criterion names, not a proxy that usually moves with it.',
+  '- Where this criterion names something a person would look at or use, that surface was checked and not only the code behind it.',
+  '- What was observed covers everything this criterion claims, not the part that was easiest to reach.',
+  '- What was observed was seen against the work as it stands now, rather than recalled from earlier or carried over from a related change.',
+  '- Anything this criterion claims that you did not observe is written here as not observed.',
+  'Where you cannot yet satisfy one of these, gather what you need before marking it done rather than writing around it.'
+].join('\n')
+
 const CriterionDoneSchema = z
   .strictObject({
     criterion_id: ulidField('the id of a completion criterion already present on this thread'),
     result: z
       .string()
       .max(caps.CRITERION_RESULT_MAX)
-      .describe('what the check returned, or when it could not be run, specifically why it could not'),
+      .describe(MARK_DONE_INVARIANTS),
     result_status: z
       .enum(['verified', 'unverified-reasoned'])
       .describe('verified when the check was run and result is what it returned; unverified-reasoned when the check could not be run and result says why')
@@ -183,7 +195,7 @@ const emptyResultRefusal = (ids: string[]): Refusal => ({
   accepted: 'a non-empty result on every entry, stating what the check returned or why it could not be run',
   example: '436 tests, 0 fail, exit 0',
   retryable: true,
-  message: `criteria_done carries an empty result for these criteria, and a criterion is never marked done without one: ${ids.join(', ')}.`
+  message: `criteria_done carries an empty result for these criteria, and a criterion is never marked done without one: ${ids.join(', ')}; remedy: ${MARK_DONE_INVARIANTS}`
 })
 
 const resultCapRefusal = (index: number, observed: number): Refusal => ({
