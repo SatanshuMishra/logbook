@@ -48,22 +48,44 @@ type LeafDisposition = 'allowed' | 'sensitive'
 
 const FREE_TEXT_LEAF_DISPOSITIONS: Readonly<Record<string, LeafDisposition>> = {
   'open_thread::title': 'allowed',
+  'open_thread::slug': 'allowed',
+  'open_thread::predecessor_id': 'allowed',
+  'open_thread::active_goal': 'allowed',
+  'open_thread::next_step': 'allowed',
   'open_thread::completion_criteria[].text': 'sensitive',
   'open_thread::completion_criteria[].check': 'allowed',
+  'open_thread::completion_criteria[].settledness': 'allowed',
+  'open_thread::completion_criteria[].settled_by': 'allowed',
   'open_thread::artifacts[].label': 'allowed',
   'open_thread::artifacts[].pointer': 'allowed',
+  'close_thread::thread_id': 'allowed',
+  'close_thread::outcome': 'allowed',
   'close_thread::detail': 'allowed',
+  'bind_branch::thread_id': 'allowed',
+  'bind_branch::branch': 'allowed',
+  'resume_thread::thread_id': 'allowed',
+  'log_session_event::thread_id': 'allowed',
   'log_session_event::actor': 'allowed',
   'log_session_event::body': 'allowed',
+  'park_thread::thread_id': 'allowed',
   'park_thread::outcome': 'allowed',
   'park_thread::next_step': 'allowed',
   'park_thread::landed': 'allowed',
+  'record_decision::thread_id': 'allowed',
+  'record_decision::criterion_id': 'allowed',
+  'record_decision::supersedes[]': 'allowed',
   'record_decision::title': 'allowed',
   'record_decision::context': 'allowed',
   'record_decision::options[]': 'allowed',
   'record_decision::outcome': 'allowed',
   'record_decision::scope': 'allowed',
+  'update_thread::thread_id': 'allowed',
+  'update_thread::criteria_done[].criterion_id': 'allowed',
   'update_thread::criteria_done[].result': 'allowed',
+  'update_thread::criteria_done[].result_status': 'allowed',
+  'update_thread::criteria_settled[].criterion_id': 'allowed',
+  'update_thread::criteria_settled[].settledness': 'allowed',
+  'update_thread::criteria_settled[].settled_by': 'allowed',
   'update_thread::active_goal': 'allowed',
   'update_thread::next_step': 'allowed',
   'update_thread::last_session': 'allowed',
@@ -71,12 +93,18 @@ const FREE_TEXT_LEAF_DISPOSITIONS: Readonly<Record<string, LeafDisposition>> = {
   'update_thread::risks_add[].text': 'allowed',
   'update_thread::risks_add[].scope': 'allowed',
   'update_thread::risks_add[].refs[]': 'allowed',
+  'update_thread::risks_add[].criterion_id': 'allowed',
+  'update_thread::risks_retire[]': 'allowed',
   'update_thread::key_decisions_add[].title': 'allowed',
   'update_thread::key_decisions_add[].scope': 'allowed',
+  'update_thread::key_decisions_add[].decision_id': 'allowed',
   'update_thread::out_of_scope_add[]': 'allowed',
   'update_thread::artifacts_add[].label': 'allowed',
   'update_thread::artifacts_add[].pointer': 'allowed',
+  'update_thread::artifacts_retire[]': 'allowed',
+  'resolve_conflict::resolutions[].record': 'allowed',
   'resolve_conflict::resolutions[].field': 'allowed',
+  'resolve_conflict::resolutions[].winner': 'allowed',
   'list_threads::cursor': 'allowed'
 }
 
@@ -92,7 +120,6 @@ export const classifyCriteriaTextProperty = (
   const type = node.type
   if (type === undefined) return 'unclassifiable'
   if (type !== 'string') return 'allowed'
-  if ('pattern' in node || 'enum' in node || 'const' in node) return 'allowed'
 
   const disposition = dispositions[leafKey(entry.toolName, entry.path)]
   if (disposition === undefined) return 'unclassifiable'
@@ -159,8 +186,12 @@ test('criteria.no-other-tool-writes-criteria.control.creation-only-tool-is-allow
 test('criteria.no-other-tool-writes-criteria.control.id-reference-is-not-text', () => {
   const idReferenceProperty: SchemaProperty = {
     toolName: 'update_thread',
-    path: 'criteria_done[]',
-    node: { type: 'string', pattern: '^[0-9A-HJKMNP-TV-Z]{26}$', description: 'the id of a completion criterion' }
+    path: 'criteria_done[].criterion_id',
+    node: {
+      type: 'string',
+      pattern: '^[0-9A-HJKMNP-TV-Z]{26}$',
+      description: 'the id of a completion criterion already present on this thread'
+    }
   }
   assert.equal(classifyCriteriaTextProperty(idReferenceProperty, true), 'allowed')
 })
