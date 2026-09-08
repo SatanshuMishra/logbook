@@ -778,6 +778,106 @@ test('decision.supersede-retains', async () => {
 })
 
 
+test('decision.supersedes-must-resolve', async () => {
+  const repo = bootstrapCommittedRepo('logbook-supersedes-resolve-repo')
+  const pluginDataHome = mkdtempSync(path.join(tmpdir(), 'logbook-supersedes-resolve-plugin-data-'))
+  const pluginData = path.join(pluginDataHome, 'plugin-data')
+  mkdirSync(pluginData)
+  try {
+    const rt = withCwd(testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: pluginData } }), repo)
+
+    const opened = await callTool(openThreadTool.handler, rt, {
+      title: 'supersedes resolution fixture thread',
+      slug: 'supersedes-resolution-fixture-thread',
+      active_goal: 'exercise the supersedes resolution fixture',
+      next_step: 'exercise the supersedes resolution fixture',
+      completion_criteria: [
+        {
+          text: 'a criterion for the supersedes resolution fixture',
+          check: 'the supersedes resolution fixture check',
+          settledness: 'proposed'
+        }
+      ]
+    })
+    assert.equal(opened.ok, true)
+    if (!opened.ok) return
+    const threadId = (opened.structured as { thread_id: string }).thread_id
+
+    const withoutSupersedes = await callTool(recordDecisionTool.handler, rt, {
+      thread_id: threadId,
+      title: 'the prior decision this fixture supersedes',
+      context: 'the situation before deciding',
+      options: ['keep the original approach'],
+      outcome: 'the prior decision kept the original approach'
+    })
+    assert.equal(withoutSupersedes.ok, true, 'omitting supersedes must still record a decision')
+    if (!withoutSupersedes.ok) return
+    const priorDecisionId = (withoutSupersedes.structured as { decision_id: string }).decision_id
+
+    const layoutResult = layoutFor(rt, repo)
+    assert.equal(layoutResult.ok, true)
+    if (!layoutResult.ok) return
+    const decisionsDir = path.join(layoutResult.value.records, 'decisions')
+    const decisionFilesBefore = readdirSync(decisionsDir).sort()
+
+    const unresolvableDecisionId = rt.ulid()
+    const refused = await callTool(recordDecisionTool.handler, rt, {
+      thread_id: threadId,
+      title: 'a decision naming a supersedes id that resolves to nothing',
+      context: 'the situation after deciding to reverse a decision that was never recorded',
+      options: ['reverse a decision that does not exist'],
+      outcome: 'this decision must not be recorded at all',
+      supersedes: [priorDecisionId, unresolvableDecisionId]
+    })
+    assert.equal(
+      refused.ok,
+      false,
+      'record_decision must refuse a supersedes entry that resolves to no stored decision record'
+    )
+    if (refused.ok) return
+    assert.equal(refused.refusal.field, 'supersedes')
+    assert.equal(refused.refusal.retryable, true)
+    assert.match(refused.refusal.example, ULID_PATTERN)
+    assert.ok(
+      refused.refusal.message.includes('supersedes[1]'),
+      `the refusal must name which supersedes element failed to resolve; got: ${refused.refusal.message}`
+    )
+    assert.ok(
+      refused.refusal.message.includes(unresolvableDecisionId),
+      `the refusal must name the unresolvable decision id; got: ${refused.refusal.message}`
+    )
+
+    assert.deepEqual(
+      readdirSync(decisionsDir).sort(),
+      decisionFilesBefore,
+      'a refused record_decision call must write no decision record'
+    )
+
+    const accepted = await callTool(recordDecisionTool.handler, rt, {
+      thread_id: threadId,
+      title: 'a decision naming a supersedes id that resolves',
+      context: 'the situation after deciding to reverse the prior decision',
+      options: ['reverse the prior decision'],
+      outcome: 'this decision reversed the prior decision',
+      supersedes: [priorDecisionId]
+    })
+    assert.equal(accepted.ok, true, 'a supersedes entry that resolves to a stored decision must still be recorded')
+    if (!accepted.ok) return
+
+    const reopened = openStore(rt, repo)
+    assert.equal(reopened.ok, true)
+    if (!reopened.ok) return
+    const slot = reopened.value.readDecision((accepted.structured as { decision_id: string }).decision_id)
+    assert.ok(slot !== null && !slot.quarantined)
+    if (slot === null || slot.quarantined) return
+    assert.deepEqual(slot.record.supersedes, [priorDecisionId])
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+    rmSync(pluginDataHome, { recursive: true, force: true })
+  }
+})
+
+
 test('decision.records-project-head', async () => {
   const bootstrapUnbornRepo = (): string => {
     const repo = mkdtempSync(path.join(tmpdir(), 'logbook-project-head-unborn-'))
