@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util'
-import type { Thread, Spine, Criterion, Settledness } from '../schema/thread.ts'
+import type { Thread, Spine, Criterion, Settledness, ResultStatus } from '../schema/thread.ts'
 import { criterionSettledness } from '../schema/thread.ts'
 import type { Decision } from '../schema/decision.ts'
 import type { SessionEntry } from '../schema/session.ts'
@@ -148,6 +148,9 @@ const unionByIdWithConflict = <T extends IdOwner>(
 }
 
 type CriterionContent = Pick<Criterion, 'text' | 'done' | 'kind' | 'struck_by'> & {
+  check: string | null
+  result: string | null
+  result_status: ResultStatus | null
   settledness: Settledness
   settled_by: string | null
 }
@@ -157,6 +160,9 @@ const criterionContent = (item: Criterion): CriterionContent => ({
   done: item.done,
   kind: item.kind,
   struck_by: item.struck_by,
+  check: item.check ?? null,
+  result: item.result ?? null,
+  result_status: item.result_status ?? null,
   settledness: criterionSettledness(item),
   settled_by: item.settled_by ?? null
 })
