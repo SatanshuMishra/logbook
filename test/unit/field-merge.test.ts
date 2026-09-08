@@ -238,6 +238,36 @@ test('merge.legacy-absent-settledness-matches-explicit-proposed-without-conflict
   if (!result.ok) {
     throw new Error('expected the merge to succeed: absence and explicit "proposed" are the same fact written two ways')
   }
+  assert.deepEqual(result.merged.completion_criteria, [{ ...legacy, ordinal: 1 }])
+})
+
+test('merge.criteria-settled-by-quote-divergence-conflicts', () => {
+  const base = baseThread({ completion_criteria: [] })
+  const ours = baseThread({
+    completion_criteria: [
+      { ...criterion(ULID_C, 'shared text', 1), settledness: 'confirmed', settled_by: 'yes, that is exactly right, mark it done' }
+    ]
+  })
+  const theirs = baseThread({
+    completion_criteria: [
+      { ...criterion(ULID_C, 'shared text', 1), settledness: 'confirmed', settled_by: 'correct, go ahead and close this one out' }
+    ]
+  })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(
+    result.ok,
+    false,
+    'a divergent settled_by quote must not be silently dropped even when settledness itself agrees'
+  )
+  if (result.ok) {
+    throw new Error('expected the merge to refuse over a settled_by quote divergence')
+  }
+  assert.equal(result.conflicts.length, 1)
+  const found = result.conflicts[0]
+  assert.ok(found)
+  assert.equal(found.field, `completion_criteria[${ULID_C}]`)
 })
 
 test('merge.spine-open-risks-conflict-on-divergence', () => {
