@@ -4,7 +4,6 @@ import type { Runtime } from '../runtime/runtime.ts'
 import { layoutFor } from '../store/layout.ts'
 import { durableWrite } from '../store/durable-write.ts'
 import { readLedgerHead, readResumeBaseline } from './ledger-presence.ts'
-import { headAtLastFireFor, readRecordingGateState } from './recording-gate-state.ts'
 import { recordingGateClosingText } from './recording-assertions.ts'
 import type { StopVerdict } from './stop-gate.ts'
 
@@ -63,12 +62,6 @@ export const subagentStopGateVerdict = (rt: Runtime, event: SubagentStopEvent): 
 
   const head = readLedgerHead(rt, layout.value.projectRoot)
   if (head === null) return { kind: 'silent' }
-
-  const gateState = readRecordingGateState(rt, layout.value.state)
-  const reference = headAtLastFireFor(gateState, event.session_id) ?? baseline.ledger_head
-  if (reference === null) return { kind: 'silent' }
-
-  if (head !== reference) return { kind: 'silent' }
 
   writeMarker(rt, layout.value.state, event.session_id, event.agent_id)
 

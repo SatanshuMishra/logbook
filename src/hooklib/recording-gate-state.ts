@@ -76,8 +76,3 @@ export const readRecordingGateState = (rt: Runtime, stateDir: string): Recording
 export const writeRecordingGateState = (rt: Runtime, stateDir: string, state: RecordingGateState): void => {
   durableWrite(recordingGatePathFor(stateDir), JSON.stringify(state), { log: rt.log })
 }
-
-export const headAtLastFireFor = (state: RecordingGateState | null, sessionId: string): string | null => {
-  if (state === null || state.session_id !== sessionId) return null
-  return state.head_at_last_fire
-}
