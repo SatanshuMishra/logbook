@@ -8,6 +8,7 @@
 | **Relates to** | `docs/specs/2026-08-28-continuity-goal-model.md`. That document numbers **definitions** `D-1`–`D-4`, **invariants** `A1`–`A7` / `O1`–`O5` / `S1`–`S4`, and **behavioural rules** `B1`–`B43`. This document numbers its own definitions `C-1`–`C-13`, its own **assertions** `R-1`–`R-10`, and continues the invariant and behavioural-rule numbering: `A8`+, `O6`+, `S5`+, `B44`+. A citation of the older document is written `goal model D-2`. |
 | **Amends** | `goal model D-2` (see `C-4`) and the `minItems: 1` ruling shipped in `ce2ef720` (see `C-1`). |
 | **Supersedes** | `docs/specs/2026-09-06-criterion-settledness.md`, deleted. Its whole content is folded in as `C-2` through `C-7`. |
+| **Errata** | The body of this document is unchanged from approval. Corrections to its statements live in `docs/specs/2026-09-06-continuity-recording-model-errata.md`. |
 
 ---
 
