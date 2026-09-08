@@ -270,6 +270,104 @@ test('merge.criteria-settled-by-quote-divergence-conflicts', () => {
   assert.equal(found.field, `completion_criteria[${ULID_C}]`)
 })
 
+test('merge.criteria-result-status-divergence-is-not-silently-dropped', () => {
+  const base = baseThread({ completion_criteria: [] })
+  const done = { ...criterion(ULID_C, 'shared text', 1), done: true, check: 'npm test exits 0' }
+  const ours = baseThread({
+    completion_criteria: [{ ...done, result: '436 tests, 0 fail, exit 0', result_status: 'verified' }]
+  })
+  const theirs = baseThread({
+    completion_criteria: [
+      { ...done, result: '436 tests, 0 fail, exit 0', result_status: 'unverified-reasoned' }
+    ]
+  })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(
+    result.ok,
+    false,
+    'a verification record (result_status) must never be discarded without asking the human'
+  )
+  if (result.ok) {
+    throw new Error('expected the merge to refuse rather than silently drop the result_status')
+  }
+  assert.equal(result.conflicts.length, 1)
+  const found = result.conflicts[0]
+  assert.ok(found)
+  assert.equal(found.field, `completion_criteria[${ULID_C}]`)
+  assert.equal((found.ours as Criterion).result_status, 'verified')
+  assert.equal((found.theirs as Criterion).result_status, 'unverified-reasoned')
+})
+
+test('merge.criteria-check-divergence-conflicts', () => {
+  const base = baseThread({ completion_criteria: [] })
+  const ours = baseThread({
+    completion_criteria: [{ ...criterion(ULID_C, 'shared text', 1), check: 'npm test exits 0' }]
+  })
+  const theirs = baseThread({
+    completion_criteria: [{ ...criterion(ULID_C, 'shared text', 1), check: 'the reviewer reads the diff' }]
+  })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(
+    result.ok,
+    false,
+    'a divergent check must not be silently dropped: the two sides disagree on what would decide this criterion'
+  )
+  if (result.ok) {
+    throw new Error('expected the merge to refuse over a check divergence')
+  }
+  assert.equal(result.conflicts.length, 1)
+  const found = result.conflicts[0]
+  assert.ok(found)
+  assert.equal(found.field, `completion_criteria[${ULID_C}]`)
+})
+
+test('merge.criteria-result-divergence-conflicts', () => {
+  const base = baseThread({ completion_criteria: [] })
+  const done = { ...criterion(ULID_C, 'shared text', 1), done: true, check: 'npm test exits 0', result_status: 'verified' as const }
+  const ours = baseThread({ completion_criteria: [{ ...done, result: '436 tests, 0 fail, exit 0' }] })
+  const theirs = baseThread({ completion_criteria: [{ ...done, result: '412 tests, 0 fail, exit 0' }] })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(
+    result.ok,
+    false,
+    'a divergent result must not be silently dropped even when the check and its status agree'
+  )
+  if (result.ok) {
+    throw new Error('expected the merge to refuse over a result divergence')
+  }
+  assert.equal(result.conflicts.length, 1)
+  const found = result.conflicts[0]
+  assert.ok(found)
+  assert.equal(found.field, `completion_criteria[${ULID_C}]`)
+})
+
+test('merge.legacy-absent-check-result-and-status-match-explicit-nulls-without-conflict', () => {
+  const base = baseThread({ completion_criteria: [] })
+  const legacy = criterion(ULID_C, 'shared text', 1)
+  const ours = baseThread({ completion_criteria: [legacy] })
+  const theirs = baseThread({
+    completion_criteria: [{ ...legacy, check: null, result: null, result_status: null }]
+  })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(
+    result.ok,
+    true,
+    'a legacy criterion recording no check, result or result_status is the same fact as an explicit-null twin and must not conflict'
+  )
+  if (!result.ok) {
+    throw new Error('expected the merge to succeed: absence and explicit null are the same fact written two ways')
+  }
+  assert.deepEqual(result.merged.completion_criteria, [{ ...legacy, ordinal: 1 }])
+})
+
 test('merge.spine-open-risks-conflict-on-divergence', () => {
   const base = baseThread({ spine: { ...baseSpine(), open_risks: [] } })
   const ours = baseThread({
