@@ -495,3 +495,57 @@ test('update_thread.refuses-settling-a-checkless-criterion-to-one-that-asserts-s
     )
   })
 })
+
+test('update_thread.settles-a-criterion-after-amend_criteria-rewrite-gave-it-a-check', async () => {
+  await withFixture(async (fx) => {
+    const opened = await openCriteriaThread(fx, 'settlement-rewrite-then-settle-thread', [UNSETTLED_CRITERION])
+    const criterionId = criterionAt(opened, 0)
+
+    const decision = await callRecordDecision(fx, {
+      thread_id: opened.threadId,
+      title: 'the latency budget is now decided',
+      context: 'the human named a latency budget for this criterion',
+      options: ['leave it unsettled', 'give it a check and settle it'],
+      outcome: 'give it a check and settle it'
+    })
+    assert.equal(
+      decision.isError,
+      undefined,
+      `the rewrite-then-settle fixture needs a real decision, got: ${firstTextOf(decision)}`
+    )
+    const decisionId = (decision.structuredContent as { decision_id: string }).decision_id
+
+    const rewritten = await callAmendCriteria(fx, {
+      thread_id: opened.threadId,
+      operation: 'rewrite',
+      decision_id: decisionId,
+      criterion_id: criterionId,
+      text: UNSETTLED_CRITERION.text,
+      check: 'the latency budget the human named is met'
+    })
+    assert.equal(
+      rewritten.isError,
+      undefined,
+      `the remedy the check-owed refusal names has to actually work, got: ${firstTextOf(rewritten)}`
+    )
+
+    const settled = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      criteria_settled: [{ criterion_id: criterionId, settledness: 'confirmed', settled_by: HUMAN_WORDS }]
+    })
+
+    assert.equal(
+      settled.isError,
+      undefined,
+      `a check just given through an amend_criteria rewrite has to be enough to settle the criterion it was given to, got: ${firstTextOf(settled)}`
+    )
+
+    const stored = storedCriterion(fx, opened.threadId, criterionId)
+    assert.equal(stored.settledness, 'confirmed', 'the settlement has to land on the criterion the check was given to')
+    assert.equal(
+      stored.check,
+      'the latency budget the human named is met',
+      'the check the rewrite supplied has to be the check the criterion carries afterward'
+    )
+  })
+})
