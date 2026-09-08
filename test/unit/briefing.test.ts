@@ -417,6 +417,36 @@ test('briefing.a-thread-with-no-criteria-says-the-definition-of-done-is-owed', (
   )
 })
 
+test('briefing.a-thread-whose-criteria-are-all-struck-says-the-definition-of-done-is-owed', () => {
+  const struck = criterion({ ordinal: 1, text: 'retired by an amendment', struck_by: rt.ulid() })
+  const thread = baseThread({ completion_criteria: [struck] })
+
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
+
+  assert.ok(
+    rendered.includes('a definition of done is still owed'),
+    `nothing un-struck survives, so close_thread refuses this thread; the briefing must say a definition of done is owed rather than reading as finished, got: ${rendered}`
+  )
+  assert.ok(
+    rendered.includes(struck.id),
+    'the struck criterion still renders; the owed line is added beside the struck history, never substituted for it'
+  )
+})
+
+test('briefing.a-thread-keeping-one-un-struck-criterion-is-never-told-a-definition-of-done-is-owed', () => {
+  const struck = criterion({ ordinal: 1, text: 'retired by an amendment', struck_by: rt.ulid() })
+  const live = criterion({ ordinal: 2, text: 'still the definition of done' })
+  const thread = baseThread({ completion_criteria: [struck, live] })
+
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
+
+  assert.equal(
+    rendered.includes('a definition of done is still owed'),
+    false,
+    `one un-struck criterion is a definition of done, so close_thread can still pass on this thread and nothing is owed; a briefing that says otherwise sends the reader to amend criteria that are already there, got: ${rendered}`
+  )
+})
+
 test('briefing.live-risks-render-in-the-order-they-were-recorded', () => {
   const first = criterion({ ordinal: 1, text: 'the first criterion' })
   const other = criterion({ ordinal: 2, text: 'a later live criterion' })
