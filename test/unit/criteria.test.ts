@@ -113,6 +113,93 @@ test('criteria.strike-retains', () => {
   }
 })
 
+test('criteria.rewrite-refuses-a-done-criterion', () => {
+  const rt = testRuntime()
+  const decisionId = rt.ulid()
+  const resolve = resolverFor(decisionId)
+  const settled = {
+    ...makeCriterion(rt, 1, 'the suite passes'),
+    check: 'npm test exits 0',
+    done: true,
+    result: '436 tests, 0 fail, exit 0',
+    result_status: 'verified' as const
+  }
+  const thread = makeThread(rt, [settled])
+
+  const result = rewriteCriterion(
+    rt,
+    thread,
+    { criterionId: settled.id, text: 'the suite passes on both push orders', check: 'npm test exits 0 twice', decisionId },
+    resolve
+  )
+
+  assert.equal(result.ok, false)
+  if (result.ok) {
+    throw new Error('expected a refusal')
+  }
+  assert.equal(result.field, 'criterion_id')
+  assert.equal(result.retryable, true)
+  assert.ok(result.accepted.length > 0)
+  assert.ok(result.example.length > 0)
+  assert.match(result.message, /done/)
+  assert.match(result.message, /strike/)
+  assert.match(result.message, new RegExp(settled.id))
+
+  const untouched = thread.completion_criteria.find((criterion) => criterion.id === settled.id)
+  assert.equal(untouched?.text, 'the suite passes')
+  assert.equal(untouched?.check, 'npm test exits 0')
+  assert.equal(untouched?.result, '436 tests, 0 fail, exit 0')
+})
+
+test('criteria.rewrite-allows-an-open-criterion', () => {
+  const rt = testRuntime()
+  const decisionId = rt.ulid()
+  const resolve = resolverFor(decisionId)
+  const open = { ...makeCriterion(rt, 1, 'the suite passes'), check: 'npm test exits 0' }
+  const thread = makeThread(rt, [open])
+
+  const result = rewriteCriterion(
+    rt,
+    thread,
+    { criterionId: open.id, text: 'the suite passes on both push orders', check: 'npm test exits 0 twice', decisionId },
+    resolve
+  )
+
+  assert.equal(result.ok, true)
+  if (!result.ok) {
+    throw new Error('expected the rewrite of an open criterion to succeed')
+  }
+  const rewritten = result.value.completion_criteria.find((criterion) => criterion.id === open.id)
+  assert.equal(rewritten?.text, 'the suite passes on both push orders')
+  assert.equal(rewritten?.check, 'npm test exits 0 twice')
+  assert.equal(rewritten?.done, false)
+})
+
+test('criteria.strike-allows-a-done-criterion', () => {
+  const rt = testRuntime()
+  const decisionId = rt.ulid()
+  const resolve = resolverFor(decisionId)
+  const settled = {
+    ...makeCriterion(rt, 1, 'the suite passes'),
+    check: 'npm test exits 0',
+    done: true,
+    result: '436 tests, 0 fail, exit 0',
+    result_status: 'verified' as const
+  }
+  const thread = makeThread(rt, [settled])
+
+  const result = strikeCriterion(rt, thread, { criterionId: settled.id, decisionId }, resolve)
+
+  assert.equal(result.ok, true)
+  if (!result.ok) {
+    throw new Error('expected striking a done criterion to remain legal')
+  }
+  const struck = result.value.completion_criteria.find((criterion) => criterion.id === settled.id)
+  assert.equal(struck?.struck_by, decisionId)
+  assert.equal(struck?.done, true)
+  assert.equal(struck?.result, '436 tests, 0 fail, exit 0')
+})
+
 test('criteria.text-cap-refusal-is-complete', () => {
   const rt = testRuntime()
   const decisionId = rt.ulid()
