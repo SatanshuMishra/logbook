@@ -78,7 +78,7 @@ export const logSessionEventTool: ToolSpec<LogSessionEventInput, LogSessionEvent
   name: 'log_session_event',
   title: 'Log session event',
   description:
-    "Appends one entry to a thread's session log, which is the running narrative of what actually happened. Takes the thread id, who is speaking as a short string such as claude or a person's handle, and the entry body as Markdown text up to 8000 characters. Entries are append-only and are never merged with each other, so two people logging at the same time both keep their entries. They are read on demand at logbook://session/{thread_id}/{entry_id} and are never loaded into a briefing by default.",
+    "Appends one entry to a thread's session log, which is the running narrative of what actually happened. Takes the thread id, who is speaking as a short string such as claude or a person's handle, and the entry body as Markdown text up to 8000 characters. Entries are append-only and are never merged with each other, so two people logging at the same time both keep their entries. Every entry is readable on demand at logbook://session/{thread_id}/{entry_id}, and the entries from this thread's most recent session are also rendered into the next resume_thread briefing under Last session, newest first, each body clipped only when the briefing has to fit its size budget.",
   input: LogSessionEventInputSchema,
   output: LogSessionEventOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
