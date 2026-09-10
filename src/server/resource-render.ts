@@ -53,7 +53,7 @@ export const renderSessionEntryResource = (entry: SessionEntry): string =>
     `Actor: ${escapeStored(entry.actor)}`,
     `Recorded: ${escapeStored(entry.created_at)}`,
     '',
-    escapeStoredBlock(entry.body)
+    escapeStoredBlock(entry.body, Number.POSITIVE_INFINITY)
   ].join('\n')
 
 const renderDetailQuarantinedLine = (id: string): string => `quarantined: ${escapeStored(id)}`

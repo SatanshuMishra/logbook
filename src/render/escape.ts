@@ -1,3 +1,5 @@
+import { clipWithMarker } from './clip.ts'
+
 const FORMAT_CLASS = /\p{Cf}/u
 const SEPARATOR_CLASS = /\p{Zs}/u
 const CONTROL_CLASS = /\p{Cc}/u
@@ -119,10 +121,15 @@ export const escapeStored = (text: string, surface: EscapeSurface = 'prose'): st
 
 const STORED_LINE_BREAK = toEscaped('\n')
 
-export const escapeStoredBlock = (text: string): string =>
-  text
-    .split(STORED_LINE_BREAK)
-    .map((line) => escapeStored(line))
+export const escapeStoredBlock = (text: string, max: number = Number.POSITIVE_INFINITY): string =>
+  clipWithMarker(
+    text
+      .split(STORED_LINE_BREAK)
+      .map((line) => escapeStored(line))
+      .join('\n'),
+    max
+  )
+    .split('\n')
     .map((line) => (line.length === 0 ? '>' : `> ${line}`))
     .join('\n')
 
