@@ -19,6 +19,7 @@ export type LimitRow = {
 const LIMIT_BASES: readonly LimitBasis[] = ['measured', 'derived', 'external', 'chosen', 'unrecorded']
 const MIRROR_RELATIONS: readonly MirrorRelation[] = ['equal', 'at-most', 'at-least']
 const SITE_PATTERN = /^.+:\d+$/
+const ALLOWED_ROW_KEYS: readonly string[] = ['name', 'site', 'value', 'basis', 'reason', 'mirrors', 'mirror_relation']
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -30,6 +31,12 @@ const parseLimitRow = (sourceLabel: string, index: number, raw: unknown): LimitR
   const where = `${sourceLabel}[${index}]`
   if (!isPlainObject(raw)) {
     throw new Error(`limits-register: ${where} is not an object; every register row must be an object`)
+  }
+  const unknownKeys = Object.keys(raw).filter((key) => !ALLOWED_ROW_KEYS.includes(key))
+  if (unknownKeys.length > 0) {
+    throw new Error(
+      `limits-register: ${where} has unrecognised key(s) ${unknownKeys.join(', ')}; a register row accepts only ${ALLOWED_ROW_KEYS.join(', ')}`
+    )
   }
   const { name, site, value, basis, reason, mirrors, mirror_relation: mirrorRelation } = raw
 
@@ -60,6 +67,11 @@ const parseLimitRow = (sourceLabel: string, index: number, raw: unknown): LimitR
   } else if (typeof reason !== 'string' || reason.length === 0) {
     throw new Error(
       `limits-register: ${where} (${name}) has a "reason" that is neither null nor a non-empty string; found ${JSON.stringify(reason)}`
+    )
+  } else if (basis === 'unrecorded') {
+    throw new Error(
+      `limits-register: ${where} (${name}) has "basis": "unrecorded" but a non-null "reason" of ${JSON.stringify(reason)}; ` +
+        '"unrecorded" means no reason was recorded, so reason must be null'
     )
   }
   if (mirrors !== null && (typeof mirrors !== 'string' || mirrors.length === 0)) {

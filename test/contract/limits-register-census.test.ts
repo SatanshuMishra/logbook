@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import * as ts from 'typescript'
 import { census, type Classified } from '../support/census.ts'
@@ -62,7 +63,7 @@ const SUPPORTED_BINARY_OPERATORS: Readonly<Record<number, (left: number, right: 
   [ts.SyntaxKind.PercentToken]: (left, right) => left % right
 }
 
-type FoldResult = { ok: true; value: number } | { ok: false; kind: ts.SyntaxKind }
+type FoldResult = { ok: true; value: number } | { ok: false; kind: ts.SyntaxKind; cause?: unknown }
 
 const isMathMaxOrMin = (expr: ts.Expression): 'max' | 'min' | null => {
   if (!ts.isPropertyAccessExpression(expr)) return null
@@ -134,8 +135,8 @@ const foldExpression = async (expr: ts.Expression, checker: ts.TypeChecker): Pro
     try {
       const value = await resolveDeclarationValue(resolved, checker)
       return { ok: true, value }
-    } catch {
-      return { ok: false, kind: expr.kind }
+    } catch (cause) {
+      return { ok: false, kind: expr.kind, cause }
     }
   }
   return { ok: false, kind: expr.kind }
@@ -145,7 +146,15 @@ const dynamicImportValue = async (declaration: ts.VariableDeclaration, name: str
   if (!isExportedDeclaration(declaration)) return undefined
   const sourceFile = declaration.getSourceFile()
   const moduleUrl = pathToFileURL(sourceFile.fileName).href
-  const mod = (await import(moduleUrl)) as Record<string, unknown>
+  let mod: Record<string, unknown>
+  try {
+    mod = (await import(moduleUrl)) as Record<string, unknown>
+  } catch (cause) {
+    throw new Error(
+      `limits-register-census: ${relativeToRoot(sourceFile.fileName)} threw while being dynamically imported to resolve constant "${name}": ${String(cause)}`,
+      { cause }
+    )
+  }
   const value = mod[name]
   return typeof value === 'number' ? value : undefined
 }
@@ -170,25 +179,29 @@ const resolveDeclarationValue = async (declaration: ts.VariableDeclaration, chec
   if (imported !== undefined) return imported
   const sourceFile = declaration.getSourceFile()
   const kindName = failing !== null ? ts.SyntaxKind[failing.kind] : 'MissingInitializer'
+  const causeSuffix = failing !== null && failing.cause !== undefined ? `; caused by: ${String(failing.cause)}` : ''
   throw new Error(
-    `limits-register-census: ${relativeToRoot(sourceFile.fileName)}:${lineOf(sourceFile, nameNode)} constant "${nameNode.text}" defeated the value fold at syntax kind ${kindName}`
+    `limits-register-census: ${relativeToRoot(sourceFile.fileName)}:${lineOf(sourceFile, nameNode)} constant "${nameNode.text}" defeated the value fold at syntax kind ${kindName}${causeSuffix}`,
+    failing !== null && failing.cause !== undefined ? { cause: failing.cause } : undefined
   )
 }
 
 const pathPartOf = (site: string): string => site.slice(0, site.lastIndexOf(':'))
 const linePartOf = (site: string): number => Number(site.slice(site.lastIndexOf(':') + 1))
-const pathNameKey = (path: string, name: string): string => `${path}::${name}`
+const pathNameKey = (filePath: string, name: string): string => `${filePath}::${name}`
+const toPosixPath = (nativePath: string): string => nativePath.split(path.sep).join('/')
 
 const numericValueOf = (value: LimitRow['value']): number =>
   value === 'Infinity' ? Number.POSITIVE_INFINITY : value === '-Infinity' ? Number.NEGATIVE_INFINITY : value
 
-const formatValue = (value: number): string => (Number.isFinite(value) ? String(value) : value > 0 ? 'Infinity' : '-Infinity')
+const formatValue = (value: number): string =>
+  Number.isNaN(value) ? 'NaN' : Number.isFinite(value) ? String(value) : value > 0 ? 'Infinity' : '-Infinity'
 
 const classifySiteAgainstRegister = (
   site: ResolvedSite,
   registerByPathName: ReadonlyMap<string, LimitRow>
 ): Classified<ResolvedSite>['verdict'] | 'unclassifiable' => {
-  const row = registerByPathName.get(pathNameKey(site.file, site.name))
+  const row = registerByPathName.get(pathNameKey(toPosixPath(site.file), site.name))
   if (row === undefined) return 'unclassifiable'
   if (linePartOf(row.site) !== site.line) return 'forbidden'
   if (numericValueOf(row.value) !== site.value) return 'forbidden'
@@ -196,9 +209,9 @@ const classifySiteAgainstRegister = (
 }
 
 const describeSiteFailure = (registerByPathName: ReadonlyMap<string, LimitRow>) => (site: ResolvedSite): string => {
-  const row = registerByPathName.get(pathNameKey(site.file, site.name))
+  const row = registerByPathName.get(pathNameKey(toPosixPath(site.file), site.name))
   if (row === undefined) {
-    return `limits-register-census: ${site.file}:${site.line} declares const ${site.name} = ${formatValue(site.value)} with no row in docs/registers/size-limits.json; add one with basis "unrecorded" and reason null if nothing is known`
+    return `limits-register-census: ${site.file}:${site.line} declares const ${site.name} = ${formatValue(site.value)}, which ${SWEEP_PREDICATE} put in the population, but no row in docs/registers/size-limits.json names it; add one with basis "unrecorded" and reason null if nothing is known`
   }
   const registeredLine = linePartOf(row.site)
   if (registeredLine !== site.line) {
@@ -210,6 +223,15 @@ const describeSiteFailure = (registerByPathName: ReadonlyMap<string, LimitRow>) 
   }
   return `limits-register-census: ${row.site} (${site.name}) unexpectedly failed classification`
 }
+
+const classifyRegisterRowAgainstLiveSites = (
+  row: LimitRow,
+  liveKeys: ReadonlySet<string>
+): Classified<LimitRow>['verdict'] | 'unclassifiable' =>
+  liveKeys.has(pathNameKey(pathPartOf(row.site), row.name)) ? 'allowed' : 'forbidden'
+
+const describeOrphanRowFailure = (row: LimitRow): string =>
+  `limits-register-census: docs/registers/size-limits.json row ${row.site} (${row.name}) names no live top-level const among the swept sites (${SWEEP_PREDICATE}); the constant "${row.name}" this row describes no longer exists at "${pathPartOf(row.site)}", or it was renamed or moved; remove or update the row`
 
 const firstFailure = <T,>(
   items: readonly T[],
@@ -230,7 +252,7 @@ test('contract.limits-register-census.population-is-non-empty', () => {
 
 test('contract.limits-register-census.production-root-segments-are-exactly-bin-hooks-src', () => {
   const { productionFiles } = loadSourceProgram()
-  const segments = new Set(productionFiles.map((fileName) => relativeToRoot(fileName).split('/')[0]))
+  const segments = new Set(productionFiles.map((fileName) => relativeToRoot(fileName).split(path.sep)[0]))
   assert.deepEqual(
     [...segments].sort(),
     [...PRODUCTION_ROOT_SEGMENTS].sort(),
@@ -241,13 +263,17 @@ test('contract.limits-register-census.production-root-segments-are-exactly-bin-h
 test('contract.limits-register-census.every-caps-export-is-swept', () => {
   const { program, checker, productionFiles } = loadSourceProgram()
   const sites = sweepConstantSites(program, checker, productionFiles)
-  const sweptCapsNames = new Set(sites.filter((site) => site.file === 'src/schema/caps.ts').map((site) => site.name))
+  const sweptCapsNames = new Set(sites.filter((site) => toPosixPath(site.file) === 'src/schema/caps.ts').map((site) => site.name))
   for (const capName of Object.keys(caps)) {
     assert.ok(
       sweptCapsNames.has(capName),
       `limits-register-census: src/schema/caps.ts exports "${capName}" but the sweep predicate did not find it among top-level const sites`
     )
   }
+})
+
+test('contract.limits-register-census.control.format-value-of-nan-names-nan-not-infinity', () => {
+  assert.equal(formatValue(Number.NaN), 'NaN')
 })
 
 test('contract.limits-register-census.control.a-site-with-no-register-row-is-unclassifiable', () => {
@@ -327,7 +353,7 @@ test('contract.limits-register-census.every-swept-constant-matches-its-register-
     firstFailure(resolvedSites, (site) => classifySiteAgainstRegister(site, registerByPathName), describeSiteFailure(registerByPathName))
   )
 
-  const valueByPathName = new Map(resolvedSites.map((site) => [pathNameKey(site.file, site.name), site.value]))
+  const valueByPathName = new Map(resolvedSites.map((site) => [pathNameKey(toPosixPath(site.file), site.name), site.value]))
 
   for (const row of register) {
     if (row.mirrors === null || row.mirror_relation === null) continue
@@ -353,6 +379,45 @@ test('contract.limits-register-census.every-swept-constant-matches-its-register-
       `limits-register-census: ${row.site} (${row.name}) = ${formatValue(ownValue)} claims "${row.mirror_relation}" against ${row.mirrors} (${mirrorRow.name}) = ${formatValue(mirrorValue)}, but the live values disagree`
     )
   }
+})
+
+test('contract.limits-register-census.control.an-orphan-register-row-is-forbidden', () => {
+  const liveKeys = new Set(['src/example.ts::SOME_MAX'])
+  const orphan: LimitRow = {
+    name: 'GHOST_MAX',
+    site: 'src/example.ts:99',
+    value: 10,
+    basis: 'unrecorded',
+    reason: null,
+    mirrors: null,
+    mirror_relation: null
+  }
+  assert.equal(classifyRegisterRowAgainstLiveSites(orphan, liveKeys), 'forbidden')
+  assert.throws(() => census([orphan], (row) => classifyRegisterRowAgainstLiveSites(row, liveKeys)))
+})
+
+test('contract.limits-register-census.control.a-row-naming-a-live-site-is-allowed', () => {
+  const liveKeys = new Set(['src/example.ts::SOME_MAX'])
+  const row: LimitRow = {
+    name: 'SOME_MAX',
+    site: 'src/example.ts:1',
+    value: 10,
+    basis: 'unrecorded',
+    reason: null,
+    mirrors: null,
+    mirror_relation: null
+  }
+  assert.equal(classifyRegisterRowAgainstLiveSites(row, liveKeys), 'allowed')
+  assert.doesNotThrow(() => census([row], (r) => classifyRegisterRowAgainstLiveSites(r, liveKeys)))
+})
+
+test('contract.limits-register-census.every-register-row-resolves-to-a-live-site', () => {
+  const { program, checker, productionFiles } = loadSourceProgram()
+  const sites = sweepConstantSites(program, checker, productionFiles)
+  const liveKeys = new Set(sites.map((site) => pathNameKey(toPosixPath(site.file), site.name)))
+  const register = loadLimitsRegister()
+  const classify = (row: LimitRow) => classifyRegisterRowAgainstLiveSites(row, liveKeys)
+  assert.doesNotThrow(() => census(register, classify), firstFailure(register, classify, describeOrphanRowFailure))
 })
 
 test('contract.limits-register-census.the-loader-itself-halts-on-a-basis-reason-inconsistency', () => {

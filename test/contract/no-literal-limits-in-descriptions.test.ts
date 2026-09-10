@@ -5,17 +5,23 @@ import * as ts from 'typescript'
 import { census, type Classified } from '../support/census.ts'
 import { loadSourceProgram, relativeToRoot, lineOf, sourceFileFor, forEachDescendant } from '../support/source-census.ts'
 import { loadLimitsRegister } from '../support/limits-register.ts'
+import { ULID_PATTERN } from '../../src/schema/ids.ts'
 
 const RULE_TEXT =
-  'a literal run of two or more consecutive ASCII digits appearing inside a description string under src/server/tools/ ' +
-  'is forbidden when its numeric value equals the value of some constant recorded in docs/registers/size-limits.json. ' +
-  'A digit run matching no registered value passes. "A description string" means the string argument of a ' +
-  '.describe(...) call and the value of a description: property. A digit run inside an interpolation (${...}) is not ' +
-  'a literal and is not a violation.'
+  'a description string under src/server/tools/ is split into tokens on /[A-Za-z0-9]+/g; a token matching ' +
+  'ULID_PATTERN from src/schema/ids.ts is discarded because it names an example identifier and not a number; for ' +
+  'every surviving token, its leading run of ASCII digits is taken; a leading run of two or more digits is ' +
+  'forbidden when its numeric value equals the value of some constant recorded in docs/registers/size-limits.json, ' +
+  'and passes otherwise; a leading run of exactly one digit is exempt by construction, because the register holds ' +
+  'single-digit values that would otherwise fire on ordinary prose. "A description string" means the string ' +
+  'argument of a .describe(...) call and the value of a description: property. A digit run inside an ' +
+  'interpolation (${...}) is not a literal and is not a violation.'
 
 const TOOLS_DIR_PREFIX = `src${path.sep}server${path.sep}tools${path.sep}`
 
-const DIGIT_RUN_PATTERN = /(?<![A-Za-z])\d{2,}(?![A-Za-z])/g
+const TOKEN_PATTERN = /[A-Za-z0-9]+/g
+
+const leadingDigitsOf = (token: string): string => (token.match(/^\d+/) ?? [''])[0]
 
 type LiteralSegment = { file: string; line: number; text: string }
 
@@ -69,7 +75,12 @@ const collectDescriptionSegments = (program: ts.Program, files: readonly string[
 
 const digitRunSitesOf = (segments: readonly LiteralSegment[]): DigitRunSite[] =>
   segments.flatMap((segment) =>
-    [...segment.text.matchAll(DIGIT_RUN_PATTERN)].map((match) => ({ file: segment.file, line: segment.line, run: match[0] }))
+    [...segment.text.matchAll(TOKEN_PATTERN)]
+      .map((match) => match[0])
+      .filter((token) => !ULID_PATTERN.test(token))
+      .map((token) => leadingDigitsOf(token))
+      .filter((run) => run.length >= 2)
+      .map((run) => ({ file: segment.file, line: segment.line, run }))
   )
 
 const registeredValues = (): ReadonlySet<number> =>
@@ -104,6 +115,15 @@ test('contract.no-literal-limits-in-descriptions.population-is-non-empty', () =>
   assert.ok(
     segments.length > 0,
     `no-literal-limits-in-descriptions: ${RULE_TEXT}; swept 0 description strings under src/server/tools/; a census over an empty population proves nothing`
+  )
+})
+
+test('contract.no-literal-limits-in-descriptions.forbidden-set-is-non-empty', () => {
+  const forbidden = registeredValues()
+  assert.ok(
+    forbidden.size > 0,
+    'no-literal-limits-in-descriptions: docs/registers/size-limits.json produced 0 forbidden values; a census that ' +
+      'compares a real population against an empty forbidden set can never fail and proves nothing'
   )
 })
 
@@ -145,5 +165,33 @@ test('contract.no-literal-limits-in-descriptions.control.digits-inside-an-interp
     runs,
     ['436'],
     'expected the digit run inside ${...} to be excluded by construction and only the literal "436" to be swept'
+  )
+})
+
+test('contract.no-literal-limits-in-descriptions.control.the-matcher-catches-restated-limits-and-lets-others-through', () => {
+  const source =
+    'x.describe(`up to 8000chars is the limit, and up to 64KB fits, and up to 25 items or up to 26 rows are ' +
+    'allowed, timestamps use ISO-8601, and results read like 436 tests, 0 fail, exit 0`)'
+  const sourceFile = ts.createSourceFile('synthetic.ts', source, ts.ScriptTarget.Latest, true)
+  const segments: LiteralSegment[] = []
+  forEachDescendant(sourceFile, (node) => {
+    if (isDescribeCall(node)) {
+      const [argument] = node.arguments
+      if (argument !== undefined) segments.push(...literalSegmentsOf(sourceFile, 'synthetic.ts', argument))
+    }
+  })
+  const sites = digitRunSitesOf(segments)
+  const forbidden = new Set([8000, 64, 25, 26])
+  assert.deepEqual(
+    sites.map((site) => site.run),
+    ['8000', '64', '25', '26', '8601', '436'],
+    'expected the tokenizer to recover "8000" out of "8000chars", "64" out of the unit-suffixed "64KB", the bare ' +
+      'runs "25" and "26", "8601" out of "ISO-8601", and "436", while dropping the single-digit "0"s by construction'
+  )
+  assert.deepEqual(
+    sites.map((site) => classifyDigitRun(site, forbidden)),
+    ['forbidden', 'forbidden', 'forbidden', 'forbidden', 'allowed', 'allowed'],
+    'expected 8000, 64 (via the unit-suffixed 64KB), 25 and 26 to be caught as restatements of registered limits, ' +
+      'and 8601 (an ISO-8601 restatement) and 436 (an exit-code example) to pass because neither is registered'
   )
 })

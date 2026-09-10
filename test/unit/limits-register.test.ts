@@ -90,3 +90,17 @@ test('limits-register.accepts-a-consistent-mirror-pair', () => {
     parseLimitsRegisterRows([validRow({ mirrors: 'src/other.ts:2', mirror_relation: 'at-most' })], SYNTHETIC_LABEL)
   )
 })
+
+test('limits-register.refuses-a-row-with-an-unrecognised-key', () => {
+  assert.throws(
+    () => parseLimitsRegisterRows([validRow({ role: 'admin' })], SYNTHETIC_LABEL),
+    /unrecognised key\(s\) role/
+  )
+})
+
+test('limits-register.refuses-an-unrecorded-basis-with-a-non-null-reason', () => {
+  assert.throws(
+    () => parseLimitsRegisterRows([validRow({ basis: 'unrecorded', reason: 'measured once' })], SYNTHETIC_LABEL),
+    /"unrecorded" means no reason was recorded, so reason must be null/
+  )
+})
