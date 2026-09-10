@@ -185,15 +185,34 @@ quarantined record is released, reported as `quarantined-pointer-released`.
 The summary is what fills the roster's next step and the resumption briefing. Decisions themselves are
 never compressed into it; they live in their own records and are read on demand.
 
-## Caps refuse, they do not truncate
+## Stored caps refuse; render caps shorten
 
-Every size cap is enforced by refusing the whole call. Nothing is shortened and nothing is written.
-The refusal names the field, its limit, and a remedy. Shorten the value and send it again, or move the
-detail into a session log entry through `log_session_event` and keep a pointer to it.
+A cap on a value headed into a stored record ordinarily refuses the whole call: the write never lands,
+and the field itself is never shortened to fit — the sole exception is the one already described above
+under Decisions. `open_thread`, `update_thread` and `amend_criteria` check the record's serialised
+size first, and their refusal names the bytes observed, the cap, and the single heaviest field —
+which can be as specific as `spine.key_decisions` rather than the whole summary. Three tools plus
+one merge skip that pre-check: `park_thread`, `close_thread`, `resolve_conflict`, and the merge
+performed inside `sync_ledger`. An oversized record instead trips a fallback refusal built into
+the stored shape itself, which states the cap — 65536 bytes — in its remedy but never the observed
+size, and names the offending path as the literal `(root)` rather than a real field, though the
+three tools' own refusal also states that same cap in a separate top-level field, which the bare
+merge failure does not carry. A field IS named there, so an unnamed field is not the sign of this
+cap — look for `(root)` paired with "it accepts object" instead. Either path, the remedy is the
+same: shorten the value and send it again, or move the detail into a session log entry through
+`log_session_event` and keep a pointer to it.
 
-One exception, because it will confuse you otherwise: the cap on the whole serialised thread record is
-reported without naming which field overflowed and without naming the number. If a write is refused
-and the refusal names no field, that is the cap you have hit.
+Output the tool renders rather than stores is different: it gets shortened routinely, and how
+loudly depends on where. One shortening form appends the literal `...[shortened]`; the other
+cuts silently, with no marker at all. Three surfaces use the marked form and say so out loud:
+the briefing adds a note naming the marker, the sessions listing adds that note plus a second
+one counting the entry previews it dropped past the fiftieth — every entry still renders, just
+without its preview — and a refusal listing unrecognised keys or unparseable sync records caps
+itself at five names with a count of the rest. Two surfaces use the marked form but say nothing
+extra: the roster's Blocked By cell and the session-start banner. Three surfaces use the silent
+form and say nothing at all: two hook reply paths and the field name a `resolve_conflict` refusal
+echoes — so a hook payload cut at its budget leaves no trace in what you see. That silent case is
+the one to watch for.
 
 ## Resuming
 
