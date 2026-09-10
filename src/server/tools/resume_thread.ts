@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { ToolSpec } from '../register.ts'
 import { ULID_PATTERN } from '../../schema/ids.ts'
+import { ULID_LENGTH } from '../../schema/ulid-length.ts'
 import { layoutFor } from '../../store/layout.ts'
 import { readPointer, writePointer, type Pointer } from '../../domain/pointer.ts'
 import { renderBriefingWithPasses, resumePayloadBytes, type DecisionIntegrity } from '../../render/briefing.ts'
@@ -10,7 +11,7 @@ const ulidField = (description: string) => z.string().regex(ULID_PATTERN).descri
 
 const ResumeThreadInputSchema = z.strictObject({
   thread_id: ulidField(
-    'the id of the thread to resume, a 26-character ULID such as 01M0NDPM0ACCR9CD68PMHYWGGD, from list_threads or the roster resource'
+    `the id of the thread to resume, a ${ULID_LENGTH}-character ULID such as 01M0NDPM0ACCR9CD68PMHYWGGD, from list_threads or the roster resource`
   )
 })
 
@@ -34,7 +35,7 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
   name: 'resume_thread',
   title: 'Resume thread',
   description:
-    'Picks up one thread and returns its finished briefing in a single call: it marks the thread as the one being worked on this machine and renders what the previous session left. Takes one thread id, a 26-character ULID such as 01M0NDPM0ACCR9CD68PMHYWGGD, which comes from list_threads or the roster resource. Calling it twice on the same thread is not an error and leaves the same single record of what is being worked. The briefing it returns is finished text meant to be shown as it stands.',
+    `Picks up one thread and returns its finished briefing in a single call: it marks the thread as the one being worked on this machine and renders what the previous session left. Takes one thread id, a ${ULID_LENGTH}-character ULID such as 01M0NDPM0ACCR9CD68PMHYWGGD, which comes from list_threads or the roster resource. Calling it twice on the same thread is not an error and leaves the same single record of what is being worked. The briefing it returns is finished text meant to be shown as it stands.`,
   input: ResumeThreadInputSchema,
   output: ResumeThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },

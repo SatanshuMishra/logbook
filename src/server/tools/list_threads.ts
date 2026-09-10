@@ -3,8 +3,9 @@ import type { ToolSpec } from '../register.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import { selectRosterThreads, toRosterRow, paginateRoster, renderRoster, type RosterRow } from '../../render/roster.ts'
 import { openProjectStore } from '../tool-support.ts'
+import { ULID_LENGTH } from '../../schema/ulid-length.ts'
 
-const DEFAULT_PAGE_SIZE = 25
+export const DEFAULT_PAGE_SIZE = 25
 const MAX_PAGE_SIZE = 100
 
 const ListThreadsInputSchema = z.strictObject({
@@ -22,7 +23,7 @@ const ListThreadsInputSchema = z.strictObject({
 })
 
 const RosterRowSchema = z.object({
-  id: z.string().describe('the id of this thread, a 26-character ULID'),
+  id: z.string().describe(`the id of this thread, a ${ULID_LENGTH}-character ULID`),
   slug: z.string().describe('the short lowercase label for this thread'),
   title: z.string().describe('the thread title'),
   blocked_by: z.string().nullable().describe('the reason this thread is blocked, or null when it is not blocked'),
@@ -67,7 +68,7 @@ export const listThreadsTool: ToolSpec<ListThreadsInput, ListThreadsOutput> = {
   name: 'list_threads',
   title: 'List threads',
   description:
-    'Lists the threads that can be picked up, newest activity first, each row showing its progress toward completion. Takes no required arguments; pass `cursor` from a previous reply to read the next page, and `limit` to change the page size from its default of 25. A thread that is blocked shows what it is blocked on, because a blocked thread with no reason is worse than no thread at all. This is a plain directory read and costs nothing worth avoiding.',
+    `Lists the threads that can be picked up, newest activity first, each row showing its progress toward completion. Takes no required arguments; pass \`cursor\` from a previous reply to read the next page, and \`limit\` to change the page size from its default of ${DEFAULT_PAGE_SIZE}. A thread that is blocked shows what it is blocked on, because a blocked thread with no reason is worse than no thread at all. This is a plain directory read and costs nothing worth avoiding.`,
   input: ListThreadsInputSchema,
   output: ListThreadsOutputSchema,
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },

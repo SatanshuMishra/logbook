@@ -14,7 +14,7 @@ const ulidField = (description: string) => z.string().regex(ULID_PATTERN).descri
 const LogSessionEventInputSchema = z.strictObject({
   thread_id: ulidField('the id of the thread this session entry belongs to; the thread must currently be open'),
   actor: z.string().min(1).max(caps.SESSION_ACTOR_MAX).describe('who or what is speaking, for example claude or a person\'s handle'),
-  body: z.string().max(caps.SESSION_BODY_MAX).describe('the entry text as Markdown, up to 8000 characters after escaping')
+  body: z.string().max(caps.SESSION_BODY_MAX).describe(`the entry text as Markdown, up to ${caps.SESSION_BODY_MAX} characters after escaping`)
 })
 
 const LogSessionEventOutputSchema = z.object({
@@ -78,7 +78,7 @@ export const logSessionEventTool: ToolSpec<LogSessionEventInput, LogSessionEvent
   name: 'log_session_event',
   title: 'Log session event',
   description:
-    "Appends one entry to a thread's session log, which is the running narrative of what actually happened. Takes the thread id, who is speaking as a short string such as claude or a person's handle, and the entry body as Markdown text up to 8000 characters. Entries are append-only and are never merged with each other, so two people logging at the same time both keep their entries. Every entry is readable on demand at logbook://session/{thread_id}/{entry_id}, and the entries from this thread's most recent session are also rendered into the next resume_thread briefing under Last session, newest first, each body clipped only when the briefing has to fit its size budget.",
+    `Appends one entry to a thread's session log, which is the running narrative of what actually happened. Takes the thread id, who is speaking as a short string such as claude or a person's handle, and the entry body as Markdown text up to ${caps.SESSION_BODY_MAX} characters. Entries are append-only and are never merged with each other, so two people logging at the same time both keep their entries. Every entry is readable on demand at logbook://session/{thread_id}/{entry_id}, and the entries from this thread's most recent session are also rendered into the next resume_thread briefing under Last session, newest first, each body clipped only when the briefing has to fit its size budget.`,
   input: LogSessionEventInputSchema,
   output: LogSessionEventOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },

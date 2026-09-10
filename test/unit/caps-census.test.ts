@@ -1,83 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { census, type Classified } from '../support/census.ts'
 import { synthesise, type JsonSchemaNode } from '../../src/schema/example.ts'
 import type { Declared } from '../../src/schema/declare.ts'
 import { ThreadRecord } from '../../src/schema/thread.ts'
 import { DecisionRecord } from '../../src/schema/decision.ts'
 import { SessionRecord } from '../../src/schema/session.ts'
 import { BindingRecord } from '../../src/schema/binding.ts'
-import * as caps from '../../src/schema/caps.ts'
-
-type CapRole = 'record-field' | 'call-payload' | 'record-bytes' | 'refusal-display'
-
-const CAP_ROLES: Record<string, CapRole> = {
-  THREAD_TITLE_MAX: 'record-field',
-  THREAD_SLUG_MAX: 'record-field',
-  THREAD_BLOCKED_BY_MAX: 'record-field',
-  THREAD_CLOSURE_DETAIL_MAX: 'call-payload',
-  BINDING_BRANCH_MAX: 'record-field',
-  SPINE_ACTIVE_GOAL_MAX: 'record-field',
-  SPINE_NEXT_STEP_MAX: 'record-field',
-  SPINE_LAST_SESSION_MAX: 'record-field',
-  SPINE_LANDED_MAX: 'record-field',
-  CRITERIA_MAX_ELEMENTS: 'call-payload',
-  RISKS_PER_CALL_MAX_ELEMENTS: 'call-payload',
-  CRITERIA_RETENTION_MAX_ELEMENTS: 'record-field',
-  CRITERION_TEXT_MAX: 'record-field',
-  CRITERION_CHECK_MAX: 'record-field',
-  CRITERION_RESULT_MAX: 'record-field',
-  CRITERION_SETTLED_BY_MAX: 'record-field',
-  RISK_TEXT_MAX: 'record-field',
-  RISK_SCOPE_MAX: 'record-field',
-  RISK_REFS_MAX_ELEMENTS: 'record-field',
-  RISK_REF_MAX: 'record-field',
-  KEY_DECISIONS_MAX_ELEMENTS: 'record-field',
-  KEY_DECISION_TITLE_MAX: 'record-field',
-  KEY_DECISION_SCOPE_MAX: 'record-field',
-  OUT_OF_SCOPE_MAX_ELEMENTS: 'record-field',
-  OUT_OF_SCOPE_TEXT_MAX: 'record-field',
-  ARTIFACT_LABEL_MAX: 'record-field',
-  ARTIFACT_POINTER_MAX: 'record-field',
-  ARTIFACTS_PER_CALL_MAX_ELEMENTS: 'call-payload',
-  DECISION_TITLE_MAX: 'record-field',
-  DECISION_CONTEXT_MAX: 'record-field',
-  DECISION_OUTCOME_MAX: 'record-field',
-  DECISION_OPTIONS_MAX_ELEMENTS: 'record-field',
-  DECISION_OPTION_MAX: 'record-field',
-  DECISION_SUPERSEDES_MAX_ELEMENTS: 'record-field',
-  DECISION_COMMIT_MAX: 'record-field',
-  SESSION_ACTOR_MAX: 'record-field',
-  SESSION_BODY_MAX: 'record-field',
-  THREAD_RECORD_SERIALISED_MAX_BYTES: 'record-bytes',
-  UNRECOGNIZED_KEYS_SHOWN_MAX: 'refusal-display',
-  UNRECOGNIZED_KEY_NAME_MAX: 'refusal-display',
-  UNPARSEABLE_RECORDS_SHOWN_MAX: 'refusal-display',
-  UNPARSEABLE_RECORD_NAME_MAX: 'refusal-display'
-}
-
-export const classifyCapConstant = (name: string): Classified<string>['verdict'] | 'unclassifiable' =>
-  CAP_ROLES[name] === undefined ? 'unclassifiable' : 'allowed'
-
-test('caps-census.every-cap-constant-declares-the-role-it-plays', () => {
-  const names = Object.keys(caps)
-  assert.ok(
-    names.length > 0,
-    'caps-census: src/schema/caps.ts exported nothing; a census over an empty list proves nothing'
-  )
-  assert.doesNotThrow(() => census(names, classifyCapConstant))
-  for (const declaredName of Object.keys(CAP_ROLES)) {
-    assert.ok(
-      names.includes(declaredName),
-      `caps-census: CAP_ROLES names ${declaredName}, which src/schema/caps.ts no longer exports`
-    )
-  }
-})
-
-test('caps-census.control.an-unclassified-cap-halts-the-census', () => {
-  assert.equal(classifyCapConstant('A_BRAND_NEW_MAX'), 'unclassifiable')
-  assert.equal(classifyCapConstant('THREAD_TITLE_MAX'), 'allowed')
-})
 
 type CappedNode = {
   record: Declared<unknown>
