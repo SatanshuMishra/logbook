@@ -4,7 +4,7 @@ import { nodeFloorFailure } from '../../src/runtime/node-floor.ts'
 export type HookVerdict = { block: false; json: object } | { block: true; reason: string }
 
 const MAX_STDIN_BYTES = 32 * 1024 * 1024
-const MAX_FIELD_GRAPHEMES = 10000
+const MAX_FIELD_GRAPHEMES = 14000
 
 const readStdin = async (): Promise<string> => {
   const chunks: Buffer[] = []
