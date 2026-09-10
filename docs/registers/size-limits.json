@@ -82,35 +82,35 @@
   },
   {
     "name": "BRIEFING_MAX_CHARS",
-    "site": "src/render/briefing.ts:25",
+    "site": "src/render/briefing.ts:35",
     "value": 12000,
     "basis": "chosen",
-    "reason": "Measured build-up of the worst case reaches about 10,600 characters and 12,000 is the smallest round ceiling with headroom (docs/specs/2026-08-26-briefing-scoping-repair.md:237-246,290-292); human-ruled, against the architect measurement that the prior spec 3,000 ceiling is unreachable at today caps.",
+    "reason": "Measured build-up of the worst case reaches about 10,600 characters and 12,000 is the smallest round ceiling with headroom (docs/specs/2026-08-26-briefing-scoping-repair.md:237-246,290-292); human-ruled, against the architect measurement that the prior spec 3,000 ceiling is unreachable at today caps. This ceiling is the target the clip search aims at, not a bound the reply always respects: a briefing that cannot fit even with every field rendered at its guaranteed minimum length is returned over this ceiling, and the page says so.",
     "mirrors": null,
     "mirror_relation": null
   },
   {
     "name": "RESUME_PAYLOAD_MAX_BYTES",
-    "site": "src/render/briefing.ts:26",
-    "value": 24000,
+    "site": "src/render/briefing.ts:36",
+    "value": 12418,
     "basis": "derived",
-    "reason": "toolOk emits the briefing as both content text and structuredContent, measured at 2.01x, so the payload budget is about twice the character budget (docs/specs/2026-08-26-briefing-scoping-repair.md:248-251).",
+    "reason": "The reply carries the briefing once, so this is BRIEFING_MAX_CHARS plus RESUME_PAYLOAD_RESERVE_BYTES plus the measured envelope of 26 thread-id bytes, 114 scaffold bytes and 78 previous-session bytes. It is the smallest ceiling at which a briefing sitting exactly on the character target always serialises, so bytes never bind plain ASCII and bind only content whose byte length exceeds its character length. This ceiling is the target the clip search aims at, not a bound the reply always respects: a briefing that cannot fit even with every field rendered at its guaranteed minimum length is returned over this ceiling, and the page says so.",
     "mirrors": null,
     "mirror_relation": null
   },
   {
     "name": "RESUME_PAYLOAD_RESERVE_BYTES",
-    "site": "src/render/briefing.ts:28",
+    "site": "src/render/briefing.ts:38",
     "value": 200,
     "basis": "chosen",
-    "reason": "Target 23,800 rather than 24,000 because the convergent search lands the suite-maximal case at exactly 24,000 and a knife-edge equality is fragile against any later change (docs/plans/2026-08-26-briefing-markdown-styling-PLAN.md:308-309).",
+    "reason": "Target 12,218 bytes rather than 12,418 because the convergent search fills to whatever byte budget it is given, so budgeting at the raw cap would land content exactly on it, and a knife-edge equality is fragile against any later change; test/unit/briefing.test.ts:974 (briefing.the-clip-search-lands-just-under-the-byte-cap-on-the-worst-reachable-multi-byte-record) exercises the search converging against this target.",
     "mirrors": null,
     "mirror_relation": null
   },
   {
     "name": "RESUME_PAYLOAD_TARGET_BYTES",
-    "site": "src/render/briefing.ts:29",
-    "value": 23800,
+    "site": "src/render/briefing.ts:39",
+    "value": 12218,
     "basis": "unrecorded",
     "reason": null,
     "mirrors": null,
@@ -118,7 +118,7 @@
   },
   {
     "name": "BRIEFING_COPIES_IN_RESUME_PAYLOAD",
-    "site": "src/render/briefing.ts:31",
+    "site": "src/render/briefing.ts:41",
     "value": 1,
     "basis": "derived",
     "reason": "The reply carries the briefing exactly once, in structuredContent.briefing; the text slot the resume_thread tool returns carries no copy of it.",
@@ -127,7 +127,7 @@
   },
   {
     "name": "RESUME_PAYLOAD_SCAFFOLD_BYTES",
-    "site": "src/render/briefing.ts:32",
+    "site": "src/render/briefing.ts:42",
     "value": 114,
     "basis": "unrecorded",
     "reason": null,
@@ -136,7 +136,7 @@
   },
   {
     "name": "PREVIOUS_SESSION_NULL_BYTES",
-    "site": "src/render/briefing.ts:33",
+    "site": "src/render/briefing.ts:43",
     "value": 4,
     "basis": "unrecorded",
     "reason": null,
@@ -145,7 +145,7 @@
   },
   {
     "name": "PREVIOUS_SESSION_LARGEST_BYTES",
-    "site": "src/render/briefing.ts:34",
+    "site": "src/render/briefing.ts:44",
     "value": 82,
     "basis": "unrecorded",
     "reason": null,
@@ -154,7 +154,7 @@
   },
   {
     "name": "PREVIOUS_SESSION_PRESENT_EXTRA_BYTES",
-    "site": "src/render/briefing.ts:35",
+    "site": "src/render/briefing.ts:45",
     "value": 78,
     "basis": "unrecorded",
     "reason": null,
@@ -163,7 +163,7 @@
   },
   {
     "name": "PREVIOUS_SESSION_ABSENT_EXTRA_BYTES",
-    "site": "src/render/briefing.ts:36",
+    "site": "src/render/briefing.ts:46",
     "value": 0,
     "basis": "unrecorded",
     "reason": null,
@@ -172,7 +172,7 @@
   },
   {
     "name": "JSON_STRING_DELIMITER_BYTES",
-    "site": "src/render/briefing.ts:38",
+    "site": "src/render/briefing.ts:48",
     "value": 2,
     "basis": "unrecorded",
     "reason": null,
@@ -180,125 +180,125 @@
     "mirror_relation": null
   },
   {
-    "name": "RELATED_TITLE_NATURAL_MAX",
-    "site": "src/render/briefing.ts:57",
+    "name": "RELATED_TITLE_FLOOR",
+    "site": "src/render/briefing.ts:67",
     "value": 100,
     "basis": "unrecorded",
     "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
+    "mirrors": "src/schema/caps.ts:1",
+    "mirror_relation": "at-most"
   },
   {
-    "name": "RELATED_SLUG_NATURAL_MAX",
-    "site": "src/render/briefing.ts:58",
-    "value": 64,
-    "basis": "unrecorded",
-    "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
-  },
-  {
-    "name": "RISK_TEXT_NATURAL_MAX",
-    "site": "src/render/briefing.ts:59",
-    "value": 500,
-    "basis": "unrecorded",
-    "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
-  },
-  {
-    "name": "RISK_REF_NATURAL_MAX",
-    "site": "src/render/briefing.ts:60",
-    "value": 200,
-    "basis": "unrecorded",
-    "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
-  },
-  {
-    "name": "KEY_DECISION_TITLE_NATURAL_MAX",
-    "site": "src/render/briefing.ts:61",
-    "value": 200,
-    "basis": "unrecorded",
-    "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
-  },
-  {
-    "name": "OUT_OF_SCOPE_TEXT_NATURAL_MAX",
-    "site": "src/render/briefing.ts:62",
-    "value": 300,
-    "basis": "unrecorded",
-    "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
-  },
-  {
-    "name": "CRITERION_TEXT_NATURAL_MAX",
-    "site": "src/render/briefing.ts:63",
-    "value": 500,
-    "basis": "unrecorded",
-    "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
-  },
-  {
-    "name": "CRITERION_CHECK_NATURAL_MAX",
-    "site": "src/render/briefing.ts:64",
-    "value": 500,
-    "basis": "unrecorded",
-    "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
-  },
-  {
-    "name": "CRITERION_RESULT_NATURAL_MAX",
-    "site": "src/render/briefing.ts:65",
-    "value": 500,
-    "basis": "unrecorded",
-    "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
-  },
-  {
-    "name": "CRITERION_SETTLED_BY_NATURAL_MAX",
-    "site": "src/render/briefing.ts:66",
-    "value": 500,
-    "basis": "unrecorded",
-    "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
-  },
-  {
-    "name": "LAST_SESSION_TEXT_NATURAL_MAX",
-    "site": "src/render/briefing.ts:67",
-    "value": 500,
-    "basis": "chosen",
-    "reason": "500 while a stored body may be 8000, which bounds only the budget search and never the full render, and keeps MAX_ITEM_CLIP at 500 so the shipped pass-ceiling test is unchanged (docs/plans/2026-08-28-continuity-goal-model/U8-derived-last-session.md:924-929).",
-    "mirrors": null,
-    "mirror_relation": null
-  },
-  {
-    "name": "ARTIFACT_LABEL_NATURAL_MAX",
+    "name": "RELATED_SLUG_FLOOR",
     "site": "src/render/briefing.ts:68",
-    "value": 200,
-    "basis": "unrecorded",
-    "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
+    "value": 64,
+    "basis": "derived",
+    "reason": "Equals THREAD_SLUG_MAX, the write cap for this field, so a value stored at its maximum renders whole.",
+    "mirrors": "src/schema/caps.ts:2",
+    "mirror_relation": "equal"
   },
   {
-    "name": "ARTIFACT_POINTER_NATURAL_MAX",
+    "name": "RISK_TEXT_FLOOR",
     "site": "src/render/briefing.ts:69",
     "value": 500,
+    "basis": "derived",
+    "reason": "Equals RISK_TEXT_MAX, the write cap for this field, so a value stored at its maximum renders whole.",
+    "mirrors": "src/schema/caps.ts:21",
+    "mirror_relation": "equal"
+  },
+  {
+    "name": "RISK_REF_FLOOR",
+    "site": "src/render/briefing.ts:70",
+    "value": 200,
+    "basis": "derived",
+    "reason": "Equals RISK_REF_MAX, the write cap for this field, so a value stored at its maximum renders whole.",
+    "mirrors": "src/schema/caps.ts:24",
+    "mirror_relation": "equal"
+  },
+  {
+    "name": "KEY_DECISION_TITLE_FLOOR",
+    "site": "src/render/briefing.ts:71",
+    "value": 200,
+    "basis": "derived",
+    "reason": "Equals KEY_DECISION_TITLE_MAX, the write cap for this field, so a value stored at its maximum renders whole.",
+    "mirrors": "src/schema/caps.ts:27",
+    "mirror_relation": "equal"
+  },
+  {
+    "name": "OUT_OF_SCOPE_TEXT_FLOOR",
+    "site": "src/render/briefing.ts:72",
+    "value": 300,
+    "basis": "derived",
+    "reason": "Equals OUT_OF_SCOPE_TEXT_MAX, the write cap for this field, so a value stored at its maximum renders whole.",
+    "mirrors": "src/schema/caps.ts:31",
+    "mirror_relation": "equal"
+  },
+  {
+    "name": "CRITERION_TEXT_FLOOR",
+    "site": "src/render/briefing.ts:73",
+    "value": 500,
+    "basis": "derived",
+    "reason": "Equals CRITERION_TEXT_MAX, the write cap for this field, so a value stored at its maximum renders whole.",
+    "mirrors": "src/schema/caps.ts:15",
+    "mirror_relation": "equal"
+  },
+  {
+    "name": "CRITERION_CHECK_FLOOR",
+    "site": "src/render/briefing.ts:74",
+    "value": 500,
+    "basis": "derived",
+    "reason": "Equals CRITERION_CHECK_MAX, the write cap for this field, so a value stored at its maximum renders whole.",
+    "mirrors": "src/schema/caps.ts:16",
+    "mirror_relation": "equal"
+  },
+  {
+    "name": "CRITERION_RESULT_FLOOR",
+    "site": "src/render/briefing.ts:75",
+    "value": 500,
     "basis": "unrecorded",
     "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
+    "mirrors": "src/schema/caps.ts:17",
+    "mirror_relation": "at-most"
+  },
+  {
+    "name": "CRITERION_SETTLED_BY_FLOOR",
+    "site": "src/render/briefing.ts:76",
+    "value": 500,
+    "basis": "derived",
+    "reason": "Equals CRITERION_SETTLED_BY_MAX, the write cap for this field, so a value stored at its maximum renders whole.",
+    "mirrors": "src/schema/caps.ts:18",
+    "mirror_relation": "equal"
+  },
+  {
+    "name": "LAST_SESSION_TEXT_FLOOR",
+    "site": "src/render/briefing.ts:77",
+    "value": 500,
+    "basis": "chosen",
+    "reason": "A placeholder that MSP 9 supersedes when the session log moves to rendering the newest entry whole and older entries as headlines. It is not derived from SESSION_BODY_MAX, the write cap of the field it governs; it exists only so the clip search cannot shrink this field to the three-character shortening marker.",
+    "mirrors": "src/schema/caps.ts:46",
+    "mirror_relation": "at-most"
+  },
+  {
+    "name": "ARTIFACT_LABEL_FLOOR",
+    "site": "src/render/briefing.ts:78",
+    "value": 200,
+    "basis": "derived",
+    "reason": "Equals ARTIFACT_LABEL_MAX, the write cap for this field, so a value stored at its maximum renders whole.",
+    "mirrors": "src/schema/caps.ts:33",
+    "mirror_relation": "equal"
+  },
+  {
+    "name": "ARTIFACT_POINTER_FLOOR",
+    "site": "src/render/briefing.ts:79",
+    "value": 500,
+    "basis": "derived",
+    "reason": "Equals ARTIFACT_POINTER_MAX, the write cap for this field, so a value stored at its maximum renders whole.",
+    "mirrors": "src/schema/caps.ts:34",
+    "mirror_relation": "equal"
   },
   {
     "name": "HEADER_FIELD_ESCAPED_GRAPHEME_MAX",
-    "site": "src/render/briefing.ts:71",
+    "site": "src/render/briefing.ts:81",
     "value": 500,
     "basis": "derived",
     "reason": "The largest stored write cap among the six briefing header fields is 500: SPINE_ACTIVE_GOAL_MAX, SPINE_NEXT_STEP_MAX, SPINE_LAST_SESSION_MAX, SPINE_LANDED_MAX and THREAD_BLOCKED_BY_MAX in src/schema/caps.ts, while THREAD_TITLE_MAX is 200. This ceiling is measured after escaping, so what it guarantees is narrower than that write cap: a stored value whose escape is the identity renders whole even when it already sits at its write cap, and any value the escape expands past 500 is shortened here by design. The escape is not the identity on every plain-ASCII value, because escapeStored expands a markdown leading character at line start and always expands '<'; an all-ASCII 500-character value opening '- fix the parser' or containing 'a < b' measures 505 escaped and is shortened. No finite budget could avoid that, since 500 stored '<' characters escape to 3000 characters. The cap is therefore a different quantity from any one write cap rather than a copy of one, and it binds only once escaping expands a value past the largest of them.",
@@ -307,7 +307,7 @@
   },
   {
     "name": "MIN_TEXT_CLIP",
-    "site": "src/render/briefing.ts:80",
+    "site": "src/render/briefing.ts:90",
     "value": 14,
     "basis": "unrecorded",
     "reason": null,
@@ -316,7 +316,7 @@
   },
   {
     "name": "NO_CLIP",
-    "site": "src/render/briefing.ts:81",
+    "site": "src/render/briefing.ts:91",
     "value": "Infinity",
     "basis": "unrecorded",
     "reason": null,
@@ -324,13 +324,13 @@
     "mirror_relation": null
   },
   {
-    "name": "MAX_ITEM_CLIP",
-    "site": "src/render/briefing.ts:279",
-    "value": 500,
-    "basis": "unrecorded",
-    "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
+    "name": "CLIP_SEARCH_UPPER_BOUND",
+    "site": "src/render/briefing.ts:299",
+    "value": 8000,
+    "basis": "derived",
+    "reason": "The largest stored text any briefing field can hold, so the clip search's upper bound is never below a value the store admits. The thirteen per-field limits no longer bound it, because a floor is a minimum and cannot bound a search from above.",
+    "mirrors": "src/schema/caps.ts:46",
+    "mirror_relation": "equal"
   },
   {
     "name": "CLIP_MARKER_GRAPHEMES",

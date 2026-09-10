@@ -19,7 +19,7 @@ const CRITERION_RESULT_HELD_LENGTH = 60
 const RISK_REF_HELD_LENGTH = 40
 
 export const SWEEP_FIXTURE_HELD_FIXED = [
-  'open_risks and out_of_scope are held at the largest element count the record byte cap admits, each at its own text cap, and every risk carries exactly one reference at a fixed short length',
+  'open_risks and out_of_scope always carry the same element count as each other, each item at its own text cap, and every risk carries exactly one reference at a fixed short length',
   'every criterion carries a populated check at a fixed short length, ordinals ascend from one, and no criterion is struck',
   'the last criterion is marked done with a populated result and result_status at a fixed short length, so the rendered result line is exercised, except in the one cell where anchoring is on and there is exactly one criterion, where that sole criterion is also the anchor and is kept open instead so the anchored criterion never settles; every criterion before the last always stays open',
   'title, slug, blocked_by, active_goal, next_step and last_session are held at their schema caps',

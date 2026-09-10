@@ -107,7 +107,7 @@ test('briefing.deriving-last-session-deletes-nothing-from-the-record', () => {
 
 test('briefing.a-session-entry-that-does-not-fit-the-budget-carries-the-clip-marker', () => {
   const thread = threadWith('')
-  const entries = Array.from({ length: 40 }, (_, index) =>
+  const entries = Array.from({ length: 20 }, (_, index) =>
     index < ids.length
       ? entryAt(index, thread.id, 'claude', 'x'.repeat(8000))
       : { id: `${rt.ulid()}`, thread_id: thread.id, actor: 'claude', body: 'x'.repeat(8000), created_at: rt.now() }
@@ -118,7 +118,7 @@ test('briefing.a-session-entry-that-does-not-fit-the-budget-carries-the-clip-mar
   assert.equal(rendered.length <= 12000, true, 'the briefing must be searched down into its character budget')
   assert.equal(
     sectionOf(rendered, '**Last session:**').length,
-    40,
+    20,
     'every entry of the previous session must render, however tight the budget'
   )
   assert.equal(
