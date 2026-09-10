@@ -119,9 +119,9 @@
   {
     "name": "BRIEFING_COPIES_IN_RESUME_PAYLOAD",
     "site": "src/render/briefing.ts:31",
-    "value": 2,
-    "basis": "unrecorded",
-    "reason": null,
+    "value": 1,
+    "basis": "derived",
+    "reason": "The reply carries the briefing exactly once, in structuredContent.briefing; the text slot the resume_thread tool returns carries no copy of it.",
     "mirrors": null,
     "mirror_relation": null
   },

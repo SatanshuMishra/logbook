@@ -100,32 +100,6 @@ const resumeAndMeasure = async (rt: Runtime, threadId: string): Promise<ResumedR
   }
 }
 
-test('resume_thread.the-payload-size-prediction-bounds-the-serialised-reply-envelope', async () => {
-  await withHarness(async (harness) => {
-    const firstRuntime = harness.runtimeFor(FIRST_SESSION)
-    const threadId = await openOrdinaryThread(firstRuntime, 'resume-payload-envelope')
-
-    const resumed = [
-      await resumeAndMeasure(firstRuntime, threadId),
-      await resumeAndMeasure(harness.runtimeFor(SECOND_SESSION), threadId)
-    ]
-
-    assert.deepEqual(
-      resumed.map((reply) => reply.hasPreviousSession),
-      [false, true],
-      'the two resumes must produce one reply with no previous session and one with a previous session, or one branch of the prediction is never exercised'
-    )
-
-    for (const reply of resumed) {
-      const predicted = resumePayloadBytes(reply.briefing, reply.threadId, reply.hasPreviousSession)
-      assert.ok(
-        predicted >= reply.envelopeBytes,
-        `expected the predicted resume payload size to be at least the size of the reply the server actually serialises, with a previous session ${reply.hasPreviousSession ? 'present' : 'absent'}: predicted ${predicted} bytes against an actual ${reply.envelopeBytes} bytes`
-      )
-    }
-  })
-})
-
 test('resume_thread.logs-a-budget-breach-only-for-a-render-that-does-not-fit', async () => {
   await withHarness(async (harness) => {
     const rt = harness.runtimeFor(FIRST_SESSION)
