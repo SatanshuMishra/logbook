@@ -1,4 +1,5 @@
 import { ULID_PATTERN, SLUG_PATTERN, ISO_PATTERN, SHA_PATTERN } from './ids.ts'
+import { ULID_LENGTH } from './ulid-length.ts'
 
 export type JsonSchemaNode = Record<string, unknown>
 
@@ -36,7 +37,7 @@ export const resolveNode = (root: JsonSchemaNode, node: JsonSchemaNode): JsonSch
 const synthesiseString = (node: JsonSchemaNode): string => {
   const pattern = typeof node.pattern === 'string' ? node.pattern : undefined
   if (pattern === ULID_PATTERN.source) {
-    return '0'.repeat(26)
+    return '0'.repeat(ULID_LENGTH)
   }
   if (pattern === SLUG_PATTERN.source) {
     return 'a'

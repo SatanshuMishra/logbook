@@ -4,6 +4,7 @@ import type { Refusal } from '../../schema/declare.ts'
 import type { Artifact, Criterion, Thread } from '../../schema/thread.ts'
 import { criterionSettledness } from '../../schema/thread.ts'
 import { SLUG_PATTERN, ULID_PATTERN } from '../../schema/ids.ts'
+import { ULID_LENGTH } from '../../schema/ulid-length.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { ArtifactAddSchema, commitThread, loadThreadForReference, mintArtifacts, openProjectStore } from '../tool-support.ts'
@@ -47,7 +48,9 @@ const OpenThreadInputSchema = z.strictObject({
     .string()
     .regex(ULID_PATTERN)
     .optional()
-    .describe('the id of an existing thread this new thread succeeds, a 26-character ULID such as 01M0NDPM0ACCR9CD68PMHYWGGD; omit it when this thread succeeds no earlier thread'),
+    .describe(
+      `the id of an existing thread this new thread succeeds, a ${ULID_LENGTH}-character ULID such as 01M0NDPM0ACCR9CD68PMHYWGGD; omit it when this thread succeeds no earlier thread`
+    ),
   active_goal: z
     .string()
     .regex(/\S/)
@@ -204,7 +207,7 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
   name: 'open_thread',
   title: 'Open thread',
   description:
-    'Creates a new thread of work and returns its id. A thread needs a one-line title, a short slug that is unique in this project, what the work is, and what happens next. Completion criteria are optional at this moment; when supplied, every criterion records who stands behind it: confirmed when the human said so, proposed when derived, or unsettled when done is not yet known. A confirmed or proposed criterion also carries its own check, the re-runnable thing that decides whether it is true, and a criterion missing what its settledness requires is refused. A confirmed criterion also carries settled_by, the human\'s own words quoted verbatim, and a settled_by given on any other settledness is refused. Criteria are supplied as objects and the server assigns each one a stable id and its display ordinal, so [{"text": "the merge test passes in both push orders", "check": "npm test exits 0", "settledness": "proposed"}] is a complete value. The slug is lowercase letters, digits and hyphens, up to 64 characters, for example merge-and-sync.',
+    `Creates a new thread of work and returns its id. A thread needs a one-line title, a short slug that is unique in this project, what the work is, and what happens next. Completion criteria are optional at this moment; when supplied, every criterion records who stands behind it: confirmed when the human said so, proposed when derived, or unsettled when done is not yet known. A confirmed or proposed criterion also carries its own check, the re-runnable thing that decides whether it is true, and a criterion missing what its settledness requires is refused. A confirmed criterion also carries settled_by, the human's own words quoted verbatim, and a settled_by given on any other settledness is refused. Criteria are supplied as objects and the server assigns each one a stable id and its display ordinal, so [{"text": "the merge test passes in both push orders", "check": "npm test exits 0", "settledness": "proposed"}] is a complete value. The slug is lowercase letters, digits and hyphens, up to ${caps.THREAD_SLUG_MAX} characters, for example merge-and-sync.`,
   input: OpenThreadInputSchema,
   output: OpenThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
