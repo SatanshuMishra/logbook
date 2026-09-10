@@ -8,7 +8,15 @@ const graphemeCount = (text: string): number => Array.from(GRAPHEME_SEGMENTER.se
 
 export const CLIP_MARKER_GRAPHEMES = graphemeCount(CLIP_MARKER)
 
+const isClipBudget = (max: number): boolean =>
+  max === Number.POSITIVE_INFINITY || (Number.isFinite(max) && max >= 0)
+
 export const clipWithMarker = (text: string, max: number): string => {
+  if (!isClipBudget(max)) {
+    throw new Error(
+      `clipWithMarker received a max of ${String(max)}, which is not a clip budget; pass a non-negative finite grapheme count, or Number.POSITIVE_INFINITY to clip nothing.`
+    )
+  }
   if (!Number.isFinite(max)) return text
   if (graphemeCount(text) <= max) return text
   const budget = max - CLIP_MARKER_GRAPHEMES

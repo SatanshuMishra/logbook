@@ -5,7 +5,15 @@ import type { Pointer } from '../domain/pointer.ts'
 import { previousSessionEntries } from '../domain/session-log.ts'
 import { escapeStored, escapeStoredBlock } from './escape.ts'
 import { CLIP_MARKER_GRAPHEMES, clipWithMarker } from './clip.ts'
-import { THREAD_SLUG_MAX } from '../schema/caps.ts'
+import {
+  SPINE_ACTIVE_GOAL_MAX,
+  SPINE_LANDED_MAX,
+  SPINE_LAST_SESSION_MAX,
+  SPINE_NEXT_STEP_MAX,
+  THREAD_BLOCKED_BY_MAX,
+  THREAD_SLUG_MAX,
+  THREAD_TITLE_MAX
+} from '../schema/caps.ts'
 
 export type DecisionIntegrity = {
   resolved: number
@@ -60,6 +68,15 @@ const LAST_SESSION_TEXT_NATURAL_MAX = 500
 const ARTIFACT_LABEL_NATURAL_MAX = 200
 const ARTIFACT_POINTER_NATURAL_MAX = 500
 
+const HEADER_FIELD_ESCAPED_GRAPHEME_MAX = Math.max(
+  THREAD_TITLE_MAX,
+  THREAD_BLOCKED_BY_MAX,
+  SPINE_ACTIVE_GOAL_MAX,
+  SPINE_NEXT_STEP_MAX,
+  SPINE_LAST_SESSION_MAX,
+  SPINE_LANDED_MAX
+)
+
 const MIN_TEXT_CLIP = CLIP_MARKER_GRAPHEMES
 const NO_CLIP = Number.POSITIVE_INFINITY
 
@@ -83,6 +100,12 @@ const TEXT_CLIPPED_BULLET =
   '- some text on this briefing was shortened to fit the size budget for one reply; every shortened value ends with ...[shortened]'
 
 const clip = (text: string, max: number): string => clipWithMarker(escapeStored(text), max)
+
+const headerInlineWasShortened = (value: string): boolean =>
+  clip(value, HEADER_FIELD_ESCAPED_GRAPHEME_MAX) !== clip(value, NO_CLIP)
+
+const headerBlockWasShortened = (value: string): boolean =>
+  escapeStoredBlock(value, HEADER_FIELD_ESCAPED_GRAPHEME_MAX) !== escapeStoredBlock(value, NO_CLIP)
 
 const criterionStatus = (criterion: Criterion): string => {
   if (criterion.struck_by !== null) return 'struck'
@@ -174,7 +197,7 @@ const renderRelatedLine = (predecessor: Thread, renderClip: RenderClip): string 
   `- succeeds: ${clip(predecessor.title, renderClip.relatedTitle)} (${clip(predecessor.slug, renderClip.relatedSlug)})`
 
 const renderBlockage = (blockedBy: string | null): string =>
-  blockedBy === null ? '**Blockage:** none' : `**Blocked:** ${escapeStored(blockedBy)}`
+  blockedBy === null ? '**Blockage:** none' : `**Blocked:** ${clip(blockedBy, HEADER_FIELD_ESCAPED_GRAPHEME_MAX)}`
 
 const renderPointerStatus = (pointer: Pointer | null, threadId: string): string =>
   pointer !== null && pointer.thread_id === threadId ? '**Currently being worked:** yes' : '**Currently being worked:** no'
@@ -330,6 +353,11 @@ const assembleBriefing = (
   const landedLines = thread.spine.landed.length === 0 ? [] : [thread.spine.landed]
   const nextStepLines = thread.spine.next_step.length === 0 ? [] : [thread.spine.next_step]
 
+  const headerInlineValues = [thread.title, ...(thread.blocked_by === null ? [] : [thread.blocked_by])]
+  const headerBlockValues = [...activeGoalLines, ...legacyLastSessionText, ...landedLines, ...nextStepLines]
+  const headerWasShortened =
+    headerInlineValues.some(headerInlineWasShortened) || headerBlockValues.some(headerBlockWasShortened)
+
   const relatedThreads = predecessor === null ? [] : [predecessor]
   const relatedLines = relatedThreads.map((item) => renderRelatedLine(item, renderClip))
   const artifactLines = artifacts.map((item) => renderArtifactLine(item, renderClip))
@@ -352,13 +380,13 @@ const assembleBriefing = (
     ...[unreadableDecisionCount]
       .filter((count) => count > 0)
       .map((count) => `- ${count} linked decision records could not be read; their ids are listed under Decisions above`),
-    ...[textWasClipped].filter(Boolean).map(() => TEXT_CLIPPED_BULLET)
+    ...[textWasClipped || headerWasShortened].filter(Boolean).map(() => TEXT_CLIPPED_BULLET)
   ]
 
   return [
     BRIEFING_HEADING,
     '',
-    `**Thread:** ${escapeStored(thread.title)}`,
+    `**Thread:** ${clip(thread.title, HEADER_FIELD_ESCAPED_GRAPHEME_MAX)}`,
     `**Status:** ${escapeStored(thread.status)}`,
     renderBlockage(thread.blocked_by),
     renderPointerStatus(pointer, thread.id),
@@ -370,22 +398,22 @@ const assembleBriefing = (
     ...activeGoalLines.slice(0, 1).map(() => ''),
     ...activeGoalLines.slice(0, 1).map(() => '**Active goal:**'),
     ...activeGoalLines.slice(0, 1).map(() => ''),
-    ...activeGoalLines.map((value) => escapeStoredBlock(value)),
+    ...activeGoalLines.map((value) => escapeStoredBlock(value, HEADER_FIELD_ESCAPED_GRAPHEME_MAX)),
     ...lastSessionHeading.slice(0, 1).map(() => ''),
     ...lastSessionHeading.slice(0, 1).map(() => LAST_SESSION_HEADING),
     ...lastSessionHeading.slice(0, 1).map(() => ''),
     ...previousEntries.map((entry) => renderSessionEntryLine(entry, renderClip.lastSession)),
     ...legacyLastSessionText.slice(0, 1).map(() => LEGACY_LAST_SESSION_MARKER),
-    ...legacyLastSessionText.map((value) => escapeStoredBlock(value)),
+    ...legacyLastSessionText.map((value) => escapeStoredBlock(value, HEADER_FIELD_ESCAPED_GRAPHEME_MAX)),
     ...unreadableSessionEntryLines,
     ...landedLines.slice(0, 1).map(() => ''),
     ...landedLines.slice(0, 1).map(() => '**Landed:**'),
     ...landedLines.slice(0, 1).map(() => ''),
-    ...landedLines.map((value) => escapeStoredBlock(value)),
+    ...landedLines.map((value) => escapeStoredBlock(value, HEADER_FIELD_ESCAPED_GRAPHEME_MAX)),
     ...nextStepLines.slice(0, 1).map(() => ''),
     ...nextStepLines.slice(0, 1).map(() => '**Next step:**'),
     ...nextStepLines.slice(0, 1).map(() => ''),
-    ...nextStepLines.map((value) => escapeStoredBlock(value)),
+    ...nextStepLines.map((value) => escapeStoredBlock(value, HEADER_FIELD_ESCAPED_GRAPHEME_MAX)),
     ...relatedThreads.slice(0, 1).map(() => ''),
     ...relatedThreads.slice(0, 1).map(() => '**Related:**'),
     ...relatedLines,

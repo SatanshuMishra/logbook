@@ -73,6 +73,31 @@ test('clip.the-marker-is-one-grapheme-per-code-unit', () => {
   assert.equal(CLIP_MARKER_GRAPHEMES, CLIP_MARKER.length)
 })
 
+const STRUCTURAL_MARKER_AT_LINE_START = /^[ \t]*(#{1,6}|_{3,}|[-*+>]|`{3}|~{3}|\d+[.)])(?=\s|$)/
+
+const graphemesOf = (text: string): string[] =>
+  Array.from(GRAPHEME_SEGMENTER.segment(text), (entry) => entry.segment)
+
+const markerFormsThatCanFillAWholeRenderedLine = (marker: string): string[] => {
+  const graphemes = graphemesOf(marker)
+  return graphemes.map((_grapheme, index) => graphemes.slice(0, index + 1).join(''))
+}
+
+const forgedLineStartFailure = (form: string): string =>
+  `the clip marker renders as the whole line ${JSON.stringify(`> ${form}`)}, which opens with a markdown block marker. escapeStoredBlock clips the escaped text before it prefixes every line with the blockquote marker, so a clip point landing on a line boundary leaves the marker, or the leading part of it that fits the budget, as the entire content of a rendered briefing line. The server writes that line itself, so escapeStored never sees it and nothing neutralises it: a marker reading as a heading, a bullet, a blockquote, a fence, a thematic break or an ordered list item forges from the renderer exactly the structure the escaper exists to stop a stored value forging. Choose a CLIP_MARKER in src/render/clip.ts whose every leading run of graphemes begins no markdown block.`
+
+test('clip.no-rendered-form-of-the-marker-opens-a-line-with-a-markdown-block-marker', () => {
+  const forms = markerFormsThatCanFillAWholeRenderedLine(CLIP_MARKER)
+  assert.equal(
+    forms.length,
+    CLIP_MARKER_GRAPHEMES,
+    'the marker yielded fewer forms than it has graphemes, so this check measures fewer whole-line renders than clipWithMarker can emit'
+  )
+  for (const form of forms) {
+    assert.equal(STRUCTURAL_MARKER_AT_LINE_START.test(form), false, forgedLineStartFailure(form))
+  }
+})
+
 const LEADING_ESCAPE_TOKEN_TEXT = escapeStored(`\n${'z'.repeat(60)}`)
 
 test('clip.a-value-opening-with-an-escape-token-keeps-its-own-content-in-the-zero-content-band', () => {
