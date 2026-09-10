@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import * as ts from 'typescript'
-import { renderBriefing, renderBriefingWithPasses, type DecisionIntegrity } from '../../src/render/briefing.ts'
+import { renderBriefing, renderBriefingWithPasses, RISK_TEXT_NATURAL_MAX, type DecisionIntegrity } from '../../src/render/briefing.ts'
 import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
 import { escapeStored } from '../../src/render/escape.ts'
 import { ThreadRecord, type Thread, type Criterion } from '../../src/schema/thread.ts'
@@ -273,7 +273,7 @@ test('briefing.a-render-that-fits-its-budget-is-clipped-nowhere', () => {
         {
           id: rt.ulid(),
           scope: 's',
-          text: ESCAPE_EXPANDING_CHAR.repeat(500),
+          text: ESCAPE_EXPANDING_CHAR.repeat(RISK_TEXT_NATURAL_MAX),
           refs: [],
           retired: false
         }

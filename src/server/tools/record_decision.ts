@@ -84,7 +84,7 @@ export const invalidDecisionRefusal = (issue: string): Refusal => ({
   ok: false,
   field: 'decision',
   accepted: 'a decision record that stays within its stored-shape caps',
-  example: 'shorten the title, context, outcome or options and retry',
+  example: 'shorten the title or an option and retry',
   retryable: true,
   message: `the decision record failed its stored-shape validation: ${issue}`
 })
@@ -217,14 +217,14 @@ export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOut
       created_at: rt.now()
     }
 
+    const decisionBytes = byteSizeOf(decision)
+    if (decisionBytes > caps.DECISION_RECORD_SERIALISED_MAX_BYTES) {
+      return { ok: false, refusal: overDecisionByteCapRefusal(decision, decisionBytes) }
+    }
+
     const validated = DecisionRecord.parse(decision)
     if (!validated.ok) {
       return { ok: false, refusal: invalidDecisionRefusal(validated.message) }
-    }
-
-    const decisionBytes = byteSizeOf(validated.value)
-    if (decisionBytes > caps.DECISION_RECORD_SERIALISED_MAX_BYTES) {
-      return { ok: false, refusal: overDecisionByteCapRefusal(validated.value, decisionBytes) }
     }
 
     const keyDecision: KeyDecision = {

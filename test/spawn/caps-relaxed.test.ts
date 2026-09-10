@@ -540,10 +540,14 @@ test('caps-relaxed.new-decision-record-byte-cap-refuses-growth-driven-by-context
       'a decision whose context and outcome combine past the whole-record byte cap must be refused'
     )
     const text = firstTextOf(recorded)
-    assert.match(text, /^field: /m, `the refusal must name a field: ${text}`)
+    assert.equal(text.split('\n')[0], 'field: decision', `the refusal must name field decision: ${text}`)
     assert.ok(
-      text.includes(String(caps.THREAD_RECORD_SERIALISED_MAX_BYTES)),
-      `the refusal must report the new decision-record byte cap of ${caps.THREAD_RECORD_SERIALISED_MAX_BYTES}: ${text}`
+      text.includes(String(caps.DECISION_RECORD_SERIALISED_MAX_BYTES)),
+      `the refusal must report the new decision-record byte cap of ${caps.DECISION_RECORD_SERIALISED_MAX_BYTES}: ${text}`
+    )
+    assert.ok(
+      text.includes('context') || text.includes('outcome'),
+      `the refusal must name context or outcome as the heaviest field: ${text}`
     )
 
     const afterDecisionFiles = listDecisionFiles(fx)

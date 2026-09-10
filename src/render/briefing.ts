@@ -48,7 +48,7 @@ const fitsBudget = (briefing: string, threadId: string, hasPreviousSession: bool
 
 const RELATED_TITLE_NATURAL_MAX = 100
 const RELATED_SLUG_NATURAL_MAX = 64
-const RISK_TEXT_NATURAL_MAX = 500
+export const RISK_TEXT_NATURAL_MAX = 500
 const RISK_REF_NATURAL_MAX = 200
 const KEY_DECISION_TITLE_NATURAL_MAX = 200
 const OUT_OF_SCOPE_TEXT_NATURAL_MAX = 300
