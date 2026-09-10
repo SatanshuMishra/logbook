@@ -53,19 +53,31 @@ const verbatimReason = (owedText: string): string =>
   `separator and ordering. Print the text below exactly as it stands, with nothing added, removed, reordered or ` +
   `reworded.\n\n${owedText}`
 
+const BLOCKQUOTE_MARKER_PATTERN = /^ {0,3}> ?/
+
+const stripLeadingBlockquoteMarker = (line: string): string => {
+  const match = BLOCKQUOTE_MARKER_PATTERN.exec(line)
+  return match === null ? line : line.slice(match[0].length)
+}
+
+const normaliseBlockquoteMarkers = (text: string): string =>
+  text.split('\n').map(stripLeadingBlockquoteMarker).join('\n')
+
 const verbatimEchoVerdict = (rt: Runtime, event: StopEvent, layout: StoreLayout): StopVerdict => {
   const gate = readGate(layout.state)
   if (gate !== null && gate.session_id === event.session_id) return { kind: 'silent' }
 
   const pledge = findLastResumeBriefing(event.transcript_path)
-  createStateDirectory(layout)
-  writeGate(rt, layout.state, event.session_id)
-
   if (pledge === null) return { kind: 'silent' }
   if (event.stop_hook_active) return { kind: 'silent' }
 
   const texts = collectAssistantTexts(event.transcript_path)
-  const echoed = texts.some((text) => text.includes(pledge))
+  const normalisedPledge = normaliseBlockquoteMarkers(pledge)
+  const echoed = texts.some((text) => normaliseBlockquoteMarkers(text).includes(normalisedPledge))
+
+  createStateDirectory(layout)
+  writeGate(rt, layout.state, event.session_id)
+
   if (echoed) return { kind: 'silent' }
 
   return { kind: 'block', reason: verbatimReason(pledge) }

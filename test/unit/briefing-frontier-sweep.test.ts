@@ -50,7 +50,7 @@ const serialisedRecordBytes = (shape: SweepShape): number =>
 const resumePayloadBytes = (threadId: string, briefing: string): number =>
   Buffer.byteLength(
     JSON.stringify({
-      content: [{ type: 'text', text: briefing }],
+      content: [{ type: 'text', text: '' }],
       structuredContent: { thread_id: threadId, briefing, previous_session: null }
     }),
     'utf8'

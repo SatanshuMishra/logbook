@@ -9,6 +9,7 @@ import {
   BRIEFING_HEADING,
   BRIEFING_MAX_CHARS,
   RESUME_PAYLOAD_MAX_BYTES,
+  RESUME_PAYLOAD_TARGET_BYTES,
   type DecisionIntegrity
 } from '../../src/render/briefing.ts'
 import { CLIP_MARKER } from '../../src/render/clip.ts'
@@ -187,20 +188,20 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     '',
     '**Active goal:**',
     '',
-    'ship the renderer',
+    '> ship the renderer',
     '',
     '**Last session:**',
     '',
     '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead',
-    'wrote the first draft',
+    '> wrote the first draft',
     '',
     '**Landed:**',
     '',
-    'the renderer landed with its golden pinned',
+    '> the renderer landed with its golden pinned',
     '',
     '**Next step:**',
     '',
-    'add tests',
+    '> add tests',
     '',
     '**Open risks:**',
     `- ${riskId} escaping might be incomplete`,
@@ -245,16 +246,16 @@ test('briefing.omits-empty-list-sections-entirely', () => {
     '',
     '**Active goal:**',
     '',
-    'ship the thing',
+    '> ship the thing',
     '',
     '**Last session:**',
     '',
     '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead',
-    'wrote the renderer',
+    '> wrote the renderer',
     '',
     '**Next step:**',
     '',
-    'write the tests',
+    '> write the tests',
     '',
     '**Completion criteria:**',
     '- none recorded; a definition of done is still owed.',
@@ -874,8 +875,6 @@ const worstReachableAsciiShape: SweepShape = {
   bulkCount: RISKS_PER_CALL_MAX_ELEMENTS
 }
 
-const RESUME_PAYLOAD_RESERVE_BYTES = 200
-
 const maxActivelyClippedItems = (shape: SweepShape): number =>
   shape.criteriaCount +
   shape.criteriaCount +
@@ -886,16 +885,7 @@ const maxActivelyClippedItems = (shape: SweepShape): number =>
   shape.keyDecisionCount +
   1
 
-const briefingCopiesInResumePayload = (): number => {
-  const threadId = 'x'.repeat(THREAD_SLUG_MAX)
-  const shorter = resumePayloadBytes('x'.repeat(100), threadId, true)
-  const longer = resumePayloadBytes('x'.repeat(200), threadId, true)
-  return (longer - shorter) / 100
-}
-
-const clipSearchStepBytes = (shape: SweepShape): number => briefingCopiesInResumePayload() * maxActivelyClippedItems(shape)
-
-const CLIP_SEARCH_UTILISATION_SLACK_BYTES = RESUME_PAYLOAD_RESERVE_BYTES + clipSearchStepBytes(worstReachableAsciiShape) - 1
+const CLIP_SEARCH_UTILISATION_SLACK_CHARS = maxActivelyClippedItems(worstReachableAsciiShape) - 1
 
 const textAfterPrefix = (rendered: string, prefix: string): number => {
   const line = rendered.split('\n').find((candidate) => candidate.startsWith(prefix))
@@ -905,7 +895,7 @@ const textAfterPrefix = (rendered: string, prefix: string): number => {
   return line.length - prefix.length
 }
 
-test('briefing.the-clip-search-lands-just-under-the-resume-payload-cap-on-the-worst-reachable-ascii-record', () => {
+test('briefing.the-clip-search-lands-just-under-the-character-cap-on-the-worst-reachable-ascii-record', () => {
   const { thread, predecessor } = buildSweepFixture(rt, worstReachableAsciiShape)
   assert.equal(
     ThreadRecord.parse(thread).ok,
@@ -937,9 +927,83 @@ test('briefing.the-clip-search-lands-just-under-the-resume-payload-cap-on-the-wo
   )
 
   const used = resumePayloadBytes(render.briefing, thread.id, true)
+  const charUtilisation = render.briefing.length / BRIEFING_MAX_CHARS
+  const byteUtilisation = used / RESUME_PAYLOAD_TARGET_BYTES
   assert.ok(
-    used >= RESUME_PAYLOAD_MAX_BYTES - CLIP_SEARCH_UTILISATION_SLACK_BYTES,
-    `the clip search must land within ${CLIP_SEARCH_UTILISATION_SLACK_BYTES} bytes of the ${RESUME_PAYLOAD_MAX_BYTES} byte cap, or it overshot and threw text away; got ${used} bytes`
+    charUtilisation > byteUtilisation,
+    `the character cap must be the binding constraint on this fixture, or the char-slack assertion below is measuring a cap that does not bind; got ${(charUtilisation * 100).toFixed(1)}% of the ${BRIEFING_MAX_CHARS} char cap versus ${(byteUtilisation * 100).toFixed(1)}% of the ${RESUME_PAYLOAD_TARGET_BYTES} byte cap`
+  )
+  assert.ok(
+    render.briefing.length >= BRIEFING_MAX_CHARS - CLIP_SEARCH_UTILISATION_SLACK_CHARS,
+    `the clip search must land within ${CLIP_SEARCH_UTILISATION_SLACK_CHARS} chars of the ${BRIEFING_MAX_CHARS} char cap, or it overshot and threw text away; got ${render.briefing.length} chars`
+  )
+  assert.ok(
+    used <= RESUME_PAYLOAD_MAX_BYTES,
+    `the render must not breach the ${RESUME_PAYLOAD_MAX_BYTES} byte cap even though the byte cap does not bind on this fixture; got ${used} bytes`
+  )
+})
+
+const MULTI_BYTE_UTILISATION_FILL = '漢'
+
+const worstReachableMultiByteShape: SweepShape = {
+  fill: MULTI_BYTE_UTILISATION_FILL,
+  anchored: true,
+  criteriaCount: 10,
+  keyDecisionCount: 5,
+  criterionTextLength: 0,
+  bulkCount: 5
+}
+
+const MULTI_BYTE_UTILISATION_FILL_BYTES_PER_CHARACTER = Buffer.byteLength(MULTI_BYTE_UTILISATION_FILL, 'utf8')
+
+const CLIP_SEARCH_UTILISATION_SLACK_BYTES =
+  maxActivelyClippedItems(worstReachableMultiByteShape) * MULTI_BYTE_UTILISATION_FILL_BYTES_PER_CHARACTER
+
+test('briefing.the-clip-search-lands-just-under-the-byte-cap-on-the-worst-reachable-multi-byte-record', () => {
+  const { thread, predecessor } = buildSweepFixture(rt, worstReachableMultiByteShape)
+  assert.equal(
+    ThreadRecord.parse(thread).ok,
+    true,
+    'the worst-reachable multi-byte fixture must itself be schema-admissible, or it says nothing about records the store can hold'
+  )
+  const shownRisk = thread.spine.open_risks[0]
+  if (shownRisk === undefined) {
+    throw new Error('the worst-reachable multi-byte fixture must carry at least one risk, or there is no retained text to measure')
+  }
+
+  const render = renderBriefingWithPasses(thread, EMPTY_INTEGRITY, null, predecessor)
+
+  assert.ok(
+    render.passes > 1,
+    `this record must actually enter the clip search, or the utilisation floor below is measuring an unclipped render; got ${render.passes} renders`
+  )
+  assert.equal(
+    render.withinBudget,
+    true,
+    'the clip search must land this record inside both caps, or the utilisation floor below is bought by breaching the budget'
+  )
+
+  const retained = textAfterPrefix(render.briefing, `- ${shownRisk.id} `)
+  assert.ok(retained > CLIP_MARKER.length, `the clipped risk text must keep some of its own text beside the marker, got ${retained}`)
+  assert.ok(
+    render.briefing.endsWith('for the complete record.'),
+    'a clipped render must carry the address that resolves to the complete record'
+  )
+
+  const used = resumePayloadBytes(render.briefing, thread.id, true)
+  const charUtilisation = render.briefing.length / BRIEFING_MAX_CHARS
+  const byteUtilisation = used / RESUME_PAYLOAD_TARGET_BYTES
+  assert.ok(
+    byteUtilisation > charUtilisation,
+    `the byte cap must be the binding constraint on this multi-byte fixture, or the byte-slack assertion below is measuring a cap that does not bind; got ${(byteUtilisation * 100).toFixed(1)}% of the ${RESUME_PAYLOAD_TARGET_BYTES} byte cap versus ${(charUtilisation * 100).toFixed(1)}% of the ${BRIEFING_MAX_CHARS} char cap`
+  )
+  assert.ok(
+    used >= RESUME_PAYLOAD_TARGET_BYTES - CLIP_SEARCH_UTILISATION_SLACK_BYTES,
+    `the clip search must land within ${CLIP_SEARCH_UTILISATION_SLACK_BYTES} bytes of the ${RESUME_PAYLOAD_TARGET_BYTES} byte cap, or it overshot and threw text away; got ${used} bytes`
+  )
+  assert.ok(
+    used <= RESUME_PAYLOAD_TARGET_BYTES,
+    `the render must not breach the ${RESUME_PAYLOAD_TARGET_BYTES} byte cap, got ${used} bytes`
   )
 })
 
@@ -986,7 +1050,7 @@ test('briefing.renders-landed-before-the-next-step', () => {
 
   const lines = renderBriefing(thread, EMPTY_INTEGRITY, null, null).split('\n')
   const landedHeadingAt = lines.indexOf('**Landed:**')
-  const landedTextAt = lines.indexOf(LANDED_TEXT)
+  const landedTextAt = lines.indexOf(`> ${LANDED_TEXT}`)
   const nextStepAt = lines.indexOf('**Next step:**')
 
   assert.ok(

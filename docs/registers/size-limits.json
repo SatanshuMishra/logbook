@@ -38,9 +38,9 @@
   {
     "name": "MAX_FIELD_GRAPHEMES",
     "site": "hooks/lib/io.ts:7",
-    "value": 10000,
-    "basis": "unrecorded",
-    "reason": null,
+    "value": 14000,
+    "basis": "chosen",
+    "reason": "14,000 is a chosen display ceiling, not a bound. The block reason is a 227-char prefix at src/hooklib/stop-gate.ts:51-54, and the briefing itself has no finite upper bound since session entries render one line each with no count cap (src/domain/session-log.ts:12-18). 14,000 clears the 12,000-char render target at src/render/briefing.ts:17 plus that prefix, which is what an ordinary thread produces. A briefing over 14,000 is still silently truncated at hooks/lib/io.ts:49. This ceiling is also the only bound on the thread listing hooks/user-prompt-submit.ts:20 emits straight through from renderThreadListing (src/cli/session-start.ts:31-40), which has no count cap or clip of its own.",
     "mirrors": null,
     "mirror_relation": null
   },
@@ -49,9 +49,9 @@
     "site": "src/cli/session-start.ts:12",
     "value": 10000,
     "basis": "derived",
-    "reason": "Declared at the same number the hook transport uses at hooks/lib/io.ts:7 rather than imported, because src/ must not depend on hooks/; the equality makes the banner clip itself first so the transport truncation is a no-op and never removes the marker (docs/plans/2026-08-28-continuity-goal-model/U7-capture.md:633).",
+    "reason": "Declared at src/cli/session-start.ts:12 rather than imported because src/ must not depend on hooks/; the equality with the hook transport was deliberately broken when the transport rose to 14000 to fit an ordinary briefing's block message, and the invariant that actually matters is preserved and strengthened, namely that the banner clips itself first through clipWithMarker so the transport truncation is a no-op and never removes the marker (docs/plans/2026-08-28-continuity-goal-model/U7-capture.md:633).",
     "mirrors": "hooks/lib/io.ts:7",
-    "mirror_relation": "equal"
+    "mirror_relation": "at-most"
   },
   {
     "name": "REF_ABSENT_EXIT_CODE",
@@ -64,7 +64,7 @@
   },
   {
     "name": "STAND_DOWN_MINIMUM_FIRES",
-    "site": "src/hooklib/stop-gate.ts:74",
+    "site": "src/hooklib/stop-gate.ts:86",
     "value": 2,
     "basis": "unrecorded",
     "reason": null,
@@ -119,9 +119,9 @@
   {
     "name": "BRIEFING_COPIES_IN_RESUME_PAYLOAD",
     "site": "src/render/briefing.ts:23",
-    "value": 2,
-    "basis": "unrecorded",
-    "reason": null,
+    "value": 1,
+    "basis": "derived",
+    "reason": "The reply carries the briefing exactly once, in structuredContent.briefing; the text slot the resume_thread tool returns carries no copy of it.",
     "mirrors": null,
     "mirror_relation": null
   },
@@ -343,7 +343,7 @@
   },
   {
     "name": "MAX_CODE_POINT",
-    "site": "src/render/escape.ts:128",
+    "site": "src/render/escape.ts:132",
     "value": 1114111,
     "basis": "unrecorded",
     "reason": null,
@@ -352,7 +352,7 @@
   },
   {
     "name": "SURROGATE_LOW",
-    "site": "src/render/escape.ts:129",
+    "site": "src/render/escape.ts:133",
     "value": 55296,
     "basis": "unrecorded",
     "reason": null,
@@ -361,7 +361,7 @@
   },
   {
     "name": "SURROGATE_HIGH",
-    "site": "src/render/escape.ts:130",
+    "site": "src/render/escape.ts:134",
     "value": 57343,
     "basis": "unrecorded",
     "reason": null,

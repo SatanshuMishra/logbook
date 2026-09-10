@@ -734,9 +734,9 @@ test('resume.last-session-falls-back-to-the-stored-text-marked-as-legacy', async
       lines.slice(headingAt + 2, headingAt + 4),
       [
         '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead',
-        storedSummary
+        `> ${storedSummary}`
       ],
-      'with no session log entries the stored text must render, marked as legacy'
+      'with no session log entries the stored text must render, marked as legacy and carrying the server\'s blockquote marker'
     )
   })
 })
