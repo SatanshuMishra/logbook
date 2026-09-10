@@ -557,3 +557,47 @@ test('caps-relaxed.new-decision-record-byte-cap-refuses-growth-driven-by-context
     )
   })
 })
+
+test('caps-relaxed.session-body-at-former-cap-plus-one-is-accepted-verbatim', async () => {
+  await withFixture(async (fx) => {
+    const BODY_PAYLOAD = buildVerbatimPayload(FORMER_SESSION_BODY_MAX + 1, 'This is the session body payload.')
+
+    const { threadId } = await openMinimalThread(fx, 'session-body-relaxed-thread')
+
+    const logged = await callLogSessionEvent(fx, {
+      thread_id: threadId,
+      actor: 'caps-relaxed-test',
+      body: BODY_PAYLOAD
+    })
+
+    assert.equal(
+      logged.isError,
+      undefined,
+      `a session body one character past the former ${FORMER_SESSION_BODY_MAX}-character cap must be accepted, got: ${logged.isError === true ? firstTextOf(logged) : 'no error'}`
+    )
+    const entryId = (logged.structuredContent as { session_entry_id: string }).session_entry_id
+
+    const storedBody = readSessionEntryBody(fx, threadId, entryId)
+    assert.equal(storedBody, BODY_PAYLOAD, 'the stored session body must equal the sent payload exactly, character for character')
+    assert.ok(storedBody.endsWith(VERBATIM_MARKER), 'the stored session body must retain the trailing marker, proving no truncation occurred')
+  })
+})
+
+test('caps-relaxed.session-body-past-32000-characters-is-refused-reporting-the-new-bound', async () => {
+  await withFixture(async (fx) => {
+    const OVERSIZED_BODY = buildLongPlainAsciiText(32001)
+
+    const { threadId } = await openMinimalThread(fx, 'session-body-oversized-thread')
+
+    const logged = await callLogSessionEvent(fx, {
+      thread_id: threadId,
+      actor: 'caps-relaxed-test',
+      body: OVERSIZED_BODY
+    })
+
+    assert.equal(logged.isError, true, 'a session body past the new 32000-character bound must be refused')
+    const text = firstTextOf(logged)
+    assert.equal(text.split('\n')[0], 'field: body', `the refusal must name field body: ${text}`)
+    assert.ok(text.includes('32000'), `the refusal must report the new bound of 32000: ${text}`)
+  })
+})

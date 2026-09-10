@@ -677,9 +677,9 @@
   {
     "name": "SESSION_BODY_MAX",
     "site": "src/schema/caps.ts:41",
-    "value": 8000,
-    "basis": "unrecorded",
-    "reason": null,
+    "value": 32000,
+    "basis": "chosen",
+    "reason": "Ruled by the human operator on 2026-09-09 (decision 01M24GFGJZEQE7JT4VJCRDBQS3). Across twenty-five entries, bodies ran a median of 2669 characters, largest 7814, against a cap of 8000; the largest is 98 percent of the ceiling, a sample censored by its own cap, so the observed maximum is a lower bound on demand rather than a measure of it. 32000 is four times the largest entry anyone has written.",
     "mirrors": null,
     "mirror_relation": null
   },

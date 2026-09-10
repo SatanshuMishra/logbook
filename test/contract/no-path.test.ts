@@ -480,7 +480,7 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     const bodyOverflow = await logSessionEventTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,
       actor: 'claude',
-      body: CONTROL_CHAR_OVERFLOW(1400)
+      body: CONTROL_CHAR_OVERFLOW(5400)
     })
     if (bodyOverflow.ok) throw new Error('expected logSessionEventTool to refuse a body that overflows its cap once escaped')
     refusals.push({ producer: LOG_SESSION_EVENT_BODY_CAP_PRODUCER, refusal: bodyOverflow.refusal })
