@@ -102,7 +102,7 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
 
     return {
       ok: true,
-      text: briefing,
+      text: '',
       structured: {
         thread_id: thread.id,
         briefing,

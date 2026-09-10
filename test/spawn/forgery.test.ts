@@ -244,6 +244,24 @@ const firstTextOf = (result: CallToolResult, context: string): string => {
   return (first as { type: 'text'; text: string }).text
 }
 
+const structuredBriefingOf = (result: CallToolResult, context: string): string => {
+  const structured = result.structuredContent
+  assert.ok(isRecord(structured), `${context}: the call result carried no structuredContent object`)
+  const briefing = structured.briefing
+  assert.ok(typeof briefing === 'string', `${context}: structuredContent.briefing is not a string`)
+  assert.ok(briefing.length > 0, `${context}: structuredContent.briefing is empty`)
+  assert.ok(
+    briefing.includes(BRIEFING_HEADING),
+    `${context}: structuredContent.briefing does not carry the briefing heading "${BRIEFING_HEADING}"`
+  )
+  assert.equal(
+    firstTextOf(result, context),
+    '',
+    `${context}: content[0].text carries the briefing a second time; the single-copy fix keeps it empty`
+  )
+  return briefing
+}
+
 const resourceTextOf = (result: unknown, uri: string): string => {
   assert.ok(
     isRecord(result) && Array.isArray(result.contents),
@@ -304,7 +322,7 @@ const renderSurfaces = async (fixture: Fixture, threadId: string): Promise<Surfa
     )
     const threadUri = `logbook://thread/${threadId}`
     const briefingResource = resourceTextOf(await spawned.client.readResource({ uri: threadUri }), threadUri)
-    const briefingTool = firstTextOf(
+    const briefingTool = structuredBriefingOf(
       (await spawned.client.callTool({ name: 'resume_thread', arguments: { thread_id: threadId } })) as CallToolResult,
       'resume_thread'
     )
@@ -334,7 +352,7 @@ const renderBriefingsFor = async (
     const tools: string[] = []
     for (const threadId of threadIds) {
       tools.push(
-        firstTextOf(
+        structuredBriefingOf(
           (await spawned.client.callTool({
             name: 'resume_thread',
             arguments: { thread_id: threadId }
