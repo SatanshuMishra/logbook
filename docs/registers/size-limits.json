@@ -1,0 +1,866 @@
+[
+  {
+    "name": "STDOUT_FD",
+    "site": "bin/logbook-cli.ts:7",
+    "value": 1,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "STDERR_FD",
+    "site": "bin/logbook-cli.ts:8",
+    "value": 2,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "STDERR_FD",
+    "site": "bin/logbook-server.ts:7",
+    "value": 2,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "MAX_STDIN_BYTES",
+    "site": "hooks/lib/io.ts:6",
+    "value": 33554432,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "MAX_FIELD_GRAPHEMES",
+    "site": "hooks/lib/io.ts:7",
+    "value": 10000,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "BANNER_MAX_GRAPHEMES",
+    "site": "src/cli/session-start.ts:12",
+    "value": 10000,
+    "basis": "derived",
+    "reason": "Declared at the same number the hook transport uses at hooks/lib/io.ts:7 rather than imported, because src/ must not depend on hooks/; the equality makes the banner clip itself first so the transport truncation is a no-op and never removes the marker (docs/plans/2026-08-28-continuity-goal-model/U7-capture.md:633).",
+    "mirrors": "hooks/lib/io.ts:7",
+    "mirror_relation": "equal"
+  },
+  {
+    "name": "REF_ABSENT_EXIT_CODE",
+    "site": "src/hooklib/ledger-presence.ts:16",
+    "value": 1,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "STAND_DOWN_MINIMUM_FIRES",
+    "site": "src/hooklib/stop-gate.ts:74",
+    "value": 2,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "MAX_SYNC_ATTEMPTS",
+    "site": "src/merge/sync.ts:43",
+    "value": 5,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "BRIEFING_MAX_CHARS",
+    "site": "src/render/briefing.ts:17",
+    "value": 12000,
+    "basis": "chosen",
+    "reason": "Measured build-up of the worst case reaches about 10,600 characters and 12,000 is the smallest round ceiling with headroom (docs/specs/2026-08-26-briefing-scoping-repair.md:237-246,290-292); human-ruled, against the architect measurement that the prior spec 3,000 ceiling is unreachable at today caps.",
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "RESUME_PAYLOAD_MAX_BYTES",
+    "site": "src/render/briefing.ts:18",
+    "value": 24000,
+    "basis": "derived",
+    "reason": "toolOk emits the briefing as both content text and structuredContent, measured at 2.01x, so the payload budget is about twice the character budget (docs/specs/2026-08-26-briefing-scoping-repair.md:248-251).",
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "RESUME_PAYLOAD_RESERVE_BYTES",
+    "site": "src/render/briefing.ts:20",
+    "value": 200,
+    "basis": "chosen",
+    "reason": "Target 23,800 rather than 24,000 because the convergent search lands the suite-maximal case at exactly 24,000 and a knife-edge equality is fragile against any later change (docs/plans/2026-08-26-briefing-markdown-styling-PLAN.md:308-309).",
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "RESUME_PAYLOAD_TARGET_BYTES",
+    "site": "src/render/briefing.ts:21",
+    "value": 23800,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "BRIEFING_COPIES_IN_RESUME_PAYLOAD",
+    "site": "src/render/briefing.ts:23",
+    "value": 2,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "RESUME_PAYLOAD_SCAFFOLD_BYTES",
+    "site": "src/render/briefing.ts:24",
+    "value": 114,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "PREVIOUS_SESSION_NULL_BYTES",
+    "site": "src/render/briefing.ts:25",
+    "value": 4,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "PREVIOUS_SESSION_LARGEST_BYTES",
+    "site": "src/render/briefing.ts:26",
+    "value": 82,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "PREVIOUS_SESSION_PRESENT_EXTRA_BYTES",
+    "site": "src/render/briefing.ts:27",
+    "value": 78,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "PREVIOUS_SESSION_ABSENT_EXTRA_BYTES",
+    "site": "src/render/briefing.ts:28",
+    "value": 0,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "JSON_STRING_DELIMITER_BYTES",
+    "site": "src/render/briefing.ts:30",
+    "value": 2,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "RELATED_TITLE_NATURAL_MAX",
+    "site": "src/render/briefing.ts:49",
+    "value": 100,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "RELATED_SLUG_NATURAL_MAX",
+    "site": "src/render/briefing.ts:50",
+    "value": 64,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "RISK_TEXT_NATURAL_MAX",
+    "site": "src/render/briefing.ts:51",
+    "value": 500,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "RISK_REF_NATURAL_MAX",
+    "site": "src/render/briefing.ts:52",
+    "value": 200,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "KEY_DECISION_TITLE_NATURAL_MAX",
+    "site": "src/render/briefing.ts:53",
+    "value": 200,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "OUT_OF_SCOPE_TEXT_NATURAL_MAX",
+    "site": "src/render/briefing.ts:54",
+    "value": 300,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "CRITERION_TEXT_NATURAL_MAX",
+    "site": "src/render/briefing.ts:55",
+    "value": 500,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "CRITERION_CHECK_NATURAL_MAX",
+    "site": "src/render/briefing.ts:56",
+    "value": 500,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "CRITERION_RESULT_NATURAL_MAX",
+    "site": "src/render/briefing.ts:57",
+    "value": 500,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "CRITERION_SETTLED_BY_NATURAL_MAX",
+    "site": "src/render/briefing.ts:58",
+    "value": 500,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "LAST_SESSION_TEXT_NATURAL_MAX",
+    "site": "src/render/briefing.ts:59",
+    "value": 500,
+    "basis": "chosen",
+    "reason": "500 while a stored body may be 8000, which bounds only the budget search and never the full render, and keeps MAX_ITEM_CLIP at 500 so the shipped pass-ceiling test is unchanged (docs/plans/2026-08-28-continuity-goal-model/U8-derived-last-session.md:924-929).",
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "ARTIFACT_LABEL_NATURAL_MAX",
+    "site": "src/render/briefing.ts:60",
+    "value": 200,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "ARTIFACT_POINTER_NATURAL_MAX",
+    "site": "src/render/briefing.ts:61",
+    "value": 500,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "MIN_TEXT_CLIP",
+    "site": "src/render/briefing.ts:63",
+    "value": 14,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "NO_CLIP",
+    "site": "src/render/briefing.ts:64",
+    "value": "Infinity",
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "MAX_ITEM_CLIP",
+    "site": "src/render/briefing.ts:256",
+    "value": 500,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "CLIP_MARKER_GRAPHEMES",
+    "site": "src/render/clip.ts:9",
+    "value": 14,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "MARKDOWN_INDENT_THRESHOLD",
+    "site": "src/render/escape.ts:10",
+    "value": 4,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "MAX_CODE_POINT",
+    "site": "src/render/escape.ts:123",
+    "value": 1114111,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "SURROGATE_LOW",
+    "site": "src/render/escape.ts:124",
+    "value": 55296,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "SURROGATE_HIGH",
+    "site": "src/render/escape.ts:125",
+    "value": 57343,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "ROSTER_BLOCKED_BY_CLIP_GRAPHEMES",
+    "site": "src/render/roster.ts:23",
+    "value": 60,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "NODE_FLOOR_MAJOR",
+    "site": "src/runtime/node-floor.ts:1",
+    "value": 22,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "NODE_FLOOR_MINOR",
+    "site": "src/runtime/node-floor.ts:2",
+    "value": 19,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "THREAD_TITLE_MAX",
+    "site": "src/schema/caps.ts:1",
+    "value": 200,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "THREAD_SLUG_MAX",
+    "site": "src/schema/caps.ts:2",
+    "value": 64,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "THREAD_BLOCKED_BY_MAX",
+    "site": "src/schema/caps.ts:3",
+    "value": 500,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "THREAD_CLOSURE_DETAIL_MAX",
+    "site": "src/schema/caps.ts:4",
+    "value": 2000,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "BINDING_BRANCH_MAX",
+    "site": "src/schema/caps.ts:6",
+    "value": 255,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "SPINE_ACTIVE_GOAL_MAX",
+    "site": "src/schema/caps.ts:8",
+    "value": 500,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "SPINE_NEXT_STEP_MAX",
+    "site": "src/schema/caps.ts:9",
+    "value": 500,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "SPINE_LAST_SESSION_MAX",
+    "site": "src/schema/caps.ts:10",
+    "value": 500,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "SPINE_LANDED_MAX",
+    "site": "src/schema/caps.ts:11",
+    "value": 500,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "CRITERIA_MAX_ELEMENTS",
+    "site": "src/schema/caps.ts:13",
+    "value": 40,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "CRITERIA_RETENTION_MAX_ELEMENTS",
+    "site": "src/schema/caps.ts:14",
+    "value": 200,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "CRITERION_TEXT_MAX",
+    "site": "src/schema/caps.ts:15",
+    "value": 500,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "CRITERION_CHECK_MAX",
+    "site": "src/schema/caps.ts:16",
+    "value": 500,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "CRITERION_RESULT_MAX",
+    "site": "src/schema/caps.ts:17",
+    "value": 1000,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "CRITERION_SETTLED_BY_MAX",
+    "site": "src/schema/caps.ts:18",
+    "value": 500,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "RISKS_PER_CALL_MAX_ELEMENTS",
+    "site": "src/schema/caps.ts:20",
+    "value": 40,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "RISK_TEXT_MAX",
+    "site": "src/schema/caps.ts:21",
+    "value": 500,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "RISK_SCOPE_MAX",
+    "site": "src/schema/caps.ts:22",
+    "value": 200,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "RISK_REFS_MAX_ELEMENTS",
+    "site": "src/schema/caps.ts:23",
+    "value": 10,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "RISK_REF_MAX",
+    "site": "src/schema/caps.ts:24",
+    "value": 200,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "KEY_DECISIONS_MAX_ELEMENTS",
+    "site": "src/schema/caps.ts:26",
+    "value": 200,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "KEY_DECISION_TITLE_MAX",
+    "site": "src/schema/caps.ts:27",
+    "value": 200,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "KEY_DECISION_SCOPE_MAX",
+    "site": "src/schema/caps.ts:28",
+    "value": 200,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "OUT_OF_SCOPE_MAX_ELEMENTS",
+    "site": "src/schema/caps.ts:30",
+    "value": 40,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "OUT_OF_SCOPE_TEXT_MAX",
+    "site": "src/schema/caps.ts:31",
+    "value": 300,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "ARTIFACT_LABEL_MAX",
+    "site": "src/schema/caps.ts:33",
+    "value": 200,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "ARTIFACT_POINTER_MAX",
+    "site": "src/schema/caps.ts:34",
+    "value": 500,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "ARTIFACTS_PER_CALL_MAX_ELEMENTS",
+    "site": "src/schema/caps.ts:35",
+    "value": 40,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "DECISION_TITLE_MAX",
+    "site": "src/schema/caps.ts:37",
+    "value": 200,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "DECISION_CONTEXT_MAX",
+    "site": "src/schema/caps.ts:38",
+    "value": 4000,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "DECISION_OUTCOME_MAX",
+    "site": "src/schema/caps.ts:39",
+    "value": 4000,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "DECISION_OPTIONS_MAX_ELEMENTS",
+    "site": "src/schema/caps.ts:40",
+    "value": 20,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "DECISION_OPTION_MAX",
+    "site": "src/schema/caps.ts:41",
+    "value": 500,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "DECISION_SUPERSEDES_MAX_ELEMENTS",
+    "site": "src/schema/caps.ts:42",
+    "value": 20,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "DECISION_COMMIT_MAX",
+    "site": "src/schema/caps.ts:43",
+    "value": 64,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "SESSION_ACTOR_MAX",
+    "site": "src/schema/caps.ts:45",
+    "value": 100,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "SESSION_BODY_MAX",
+    "site": "src/schema/caps.ts:46",
+    "value": 8000,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "THREAD_RECORD_SERIALISED_MAX_BYTES",
+    "site": "src/schema/caps.ts:48",
+    "value": 65536,
+    "basis": "measured",
+    "reason": "Largest live serialised thread record measured at 39,079 bytes (docs/plans/2026-08-28-continuity-goal-model/U1-schema-foundations.md:410-434), so the bound is 1.68x the largest record that exists; raising it was rejected as weakening a bound with no measured need, and anything below about 49,000 would be breached once U4 populated the new fields.",
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "UNRECOGNIZED_KEYS_SHOWN_MAX",
+    "site": "src/schema/caps.ts:50",
+    "value": 5,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "UNRECOGNIZED_KEY_NAME_MAX",
+    "site": "src/schema/caps.ts:51",
+    "value": 100,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "UNPARSEABLE_RECORDS_SHOWN_MAX",
+    "site": "src/schema/caps.ts:53",
+    "value": 5,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "UNPARSEABLE_RECORD_NAME_MAX",
+    "site": "src/schema/caps.ts:54",
+    "value": 100,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "PACKAGE_JSON_SEARCH_DEPTH",
+    "site": "src/server/main.ts:13",
+    "value": 10,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "SESSION_FIRST_LINE_MAX",
+    "site": "src/server/resource-render.ts:22",
+    "value": 200,
+    "basis": "derived",
+    "reason": "50 entries times this 200-grapheme limit is 10,000 graphemes of first-line text, under BRIEFING_MAX_CHARS of 12,000 (commit d83408ccd7af7836cc13abb57098df71c7f332f0).",
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "SESSION_FIRST_LINE_ENTRIES_MAX",
+    "site": "src/server/resource-render.ts:23",
+    "value": 50,
+    "basis": "derived",
+    "reason": "50 entries times the 200-grapheme SESSION_FIRST_LINE_MAX is 10,000 graphemes of first-line text, under BRIEFING_MAX_CHARS of 12,000 (commit d83408ccd7af7836cc13abb57098df71c7f332f0).",
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "DEFAULT_PAGE_SIZE",
+    "site": "src/server/tools/list_threads.ts:7",
+    "value": 25,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "MAX_PAGE_SIZE",
+    "site": "src/server/tools/list_threads.ts:8",
+    "value": 100,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "RESOLUTIONS_MAX_ELEMENTS",
+    "site": "src/server/tools/resolve_conflict.ts:32",
+    "value": 200,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "FIELD_MAX",
+    "site": "src/server/tools/resolve_conflict.ts:33",
+    "value": 300,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "GIT_BUFFER_MAX_BYTES",
+    "site": "src/store/git.ts:22",
+    "value": 268435456,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "NEWLINE_BYTE",
+    "site": "src/store/materialise-tree.ts:12",
+    "value": 10,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "MAX_ATTEMPTS",
+    "site": "src/store/write-path.ts:31",
+    "value": 5,
+    "basis": "unrecorded",
+    "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  }
+]
