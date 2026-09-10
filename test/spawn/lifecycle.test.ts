@@ -25,6 +25,7 @@ import type { Thread } from '../../src/schema/thread.ts'
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const ENTRY = join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
 const JSON_RPC_FRAMING_PATTERN = /"jsonrpc"\s*:\s*"2\.0"/
+const FORMER_SESSION_BODY_MAX = 8000
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -549,34 +550,47 @@ test('amend_criteria.retention-cap-matches-stored-shape', async () => {
   })
 })
 
-test('close_thread.session-body-cap-is-checked-after-escaping', async () => {
+test('close_thread.a-maximal-closure-detail-is-accepted-and-stored-verbatim', async () => {
   await withFixture(async (fx) => {
     const { threadId } = await createFixtureThread(fx.spawned, fx.published)
 
-    const zeroWidthCount = 1400
-    const oversizedDetail = 'x' + '​'.repeat(zeroWidthCount)
-    assert.ok(oversizedDetail.trim().length > 0, 'the detail must stay non-empty so the abandon-reason gate is not what refuses it')
-    assert.ok(oversizedDetail.length <= caps.THREAD_CLOSURE_DETAIL_MAX, 'the raw detail must stay within its own cap')
+    const zeroWidthCount = caps.THREAD_CLOSURE_DETAIL_MAX - 1
+    const maximalDetail = 'x' + '​'.repeat(zeroWidthCount)
+    assert.ok(maximalDetail.trim().length > 0, 'the detail must stay non-empty so the abandon-reason gate is not what refuses it')
+    assert.equal(maximalDetail.length, caps.THREAD_CLOSURE_DETAIL_MAX, 'the fixture must exercise the closure detail at its own cap, not below it')
     assert.ok(
-      escapeStored(oversizedDetail).length > caps.SESSION_BODY_MAX,
-      'escaping the zero-width characters must be what pushes the session body over its cap'
+      escapeStored(maximalDetail).length > FORMER_SESSION_BODY_MAX,
+      'escaping the zero-width characters must still push the raw detail past the former session-body cap, which is what makes acceptance under the raised cap meaningful'
     )
 
     const result = (await fx.spawned.client.callTool({
       name: 'close_thread',
-      arguments: { thread_id: threadId, outcome: 'abandoned', detail: oversizedDetail }
+      arguments: { thread_id: threadId, outcome: 'abandoned', detail: maximalDetail }
     })) as CallToolResult
 
     assert.equal(
       result.isError,
-      true,
-      'closing with a session body that overflows its cap once escaped must be refused, not written and quarantined'
+      undefined,
+      `a maximal closure detail must now be accepted under the raised session-body cap, got: ${result.isError === true ? firstTextOf(result) : 'no error'}`
     )
-    const text = firstTextOf(result)
-    assert.equal(text.split('\n')[0], 'field: detail')
+    const structured = result.structuredContent as { session_entry_id: string }
 
     const stored = readStoredThread(fx.repo, fx.pluginData, fx.homeDir, threadId)
-    assert.equal(stored.status, 'open', 'a refused close must leave the thread open')
+    assert.equal(stored.status, 'abandoned', 'the accepted close must have taken effect')
+
+    const rt = testRuntime({ env: { HOME: fx.homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: fx.pluginData }, cwd: fx.repo })
+    const opened = openStore(rt, fx.repo)
+    if (!opened.ok) throw new Error(`lifecycle fixture: could not open the store to re-read the closure session entry: ${opened.message}`)
+    const entrySlot = opened.value.readSessionEntry(threadId, structured.session_entry_id)
+    assert.ok(
+      entrySlot !== null && !entrySlot.quarantined,
+      'lifecycle fixture: the closure session entry could not be re-read from the store'
+    )
+    assert.equal(
+      entrySlot?.record.body,
+      escapeStored(maximalDetail),
+      'the stored closure session entry body must equal the escaped detail exactly, nothing dropped and nothing shortened'
+    )
   })
 })
 

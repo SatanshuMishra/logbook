@@ -25,13 +25,13 @@ const DecisionShape = z.object({
   id: ulidField('the decision identity, a ULID'),
   thread_id: ulidField('the thread this decision belongs to'),
   title: content(z.string().min(1).max(caps.DECISION_TITLE_MAX).describe('the decision title')),
-  context: content(z.string().max(caps.DECISION_CONTEXT_MAX).describe('the context the decision was made in')),
+  context: content(z.string().describe('the context the decision was made in')),
   options: z
     .array(content(z.string().max(caps.DECISION_OPTION_MAX).describe('one option that was considered')))
     .max(caps.DECISION_OPTIONS_MAX_ELEMENTS)
     .describe('the options considered')
     .meta({ class: 'content' }),
-  outcome: content(z.string().max(caps.DECISION_OUTCOME_MAX).describe('the chosen outcome and its rationale')),
+  outcome: content(z.string().describe('the chosen outcome and its rationale')),
   commit: z
     .string()
     .max(caps.DECISION_COMMIT_MAX)
@@ -47,4 +47,19 @@ const DecisionShape = z.object({
   created_at: structural(z.string().regex(ISO_PATTERN).describe('when this decision was recorded'))
 })
 
-export const DecisionRecord = declare<Decision>('decision', DecisionShape)
+const DecisionShapeWithByteCap = DecisionShape.superRefine((value, ctx) => {
+  const bytes = Buffer.byteLength(JSON.stringify(value), 'utf8')
+  if (bytes > caps.DECISION_RECORD_SERIALISED_MAX_BYTES) {
+    ctx.addIssue({
+      code: 'too_big',
+      origin: 'string',
+      maximum: caps.DECISION_RECORD_SERIALISED_MAX_BYTES,
+      inclusive: true,
+      path: [],
+      message: `serialised decision record exceeds ${caps.DECISION_RECORD_SERIALISED_MAX_BYTES} bytes`,
+      input: value
+    })
+  }
+})
+
+export const DecisionRecord = declare<Decision>('decision', DecisionShapeWithByteCap)

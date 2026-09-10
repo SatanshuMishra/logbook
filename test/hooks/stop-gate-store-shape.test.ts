@@ -39,8 +39,8 @@ test('hook.stop-gate-leaves-no-half-built-store', () => {
 
       assert.equal(
         existsSync(join(layout.value.state, 'stop-gate.json')),
-        true,
-        'the stop gate must still write its own state file'
+        false,
+        'a silent verdict reached with no briefing to check must not write gate state claiming a check was performed'
       )
       assert.equal(
         existsSync(layout.value.records),

@@ -82,15 +82,6 @@ const checkCollectionCount = (field: CollectionField, storedCount: number, contr
 
 const checkRiskElements = (contributed: Risk[]): Refusal | null => {
   for (const [index, risk] of contributed.entries()) {
-    const textRefusal = checkTextCap(
-      `risks_add[${index}].text`,
-      risk.text,
-      caps.RISK_TEXT_MAX,
-      'shorten the risk text and retry'
-    )
-    if (textRefusal !== null) {
-      return textRefusal
-    }
     const scopeRefusal = checkTextCap(
       `risks_add[${index}].scope`,
       risk.scope,

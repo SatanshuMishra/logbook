@@ -176,14 +176,6 @@ export const insertCriterion = (
 
   const escapedSettledBy =
     input.settledBy === null || input.settledBy === undefined ? undefined : escapeStored(input.settledBy)
-  if (escapedSettledBy !== undefined && escapedSettledBy.length > caps.CRITERION_SETTLED_BY_MAX) {
-    return textCapRefusal(
-      'criteria.insert.settled_by',
-      escapedSettledBy.length,
-      caps.CRITERION_SETTLED_BY_MAX,
-      'shorten the quote and retry'
-    )
-  }
 
   const inserted: Criterion = {
     id: rt.ulid(),

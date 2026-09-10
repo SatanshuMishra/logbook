@@ -203,7 +203,6 @@ test('criteria.no-other-tool-writes-criteria.control.a-recorded-observation-is-n
     path: 'criteria_done[].result',
     node: {
       type: 'string',
-      maxLength: caps.CRITERION_RESULT_MAX,
       description: MARK_DONE_INVARIANTS
     }
   }

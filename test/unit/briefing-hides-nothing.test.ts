@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import * as ts from 'typescript'
-import { renderBriefing, renderBriefingWithPasses, type DecisionIntegrity } from '../../src/render/briefing.ts'
+import { renderBriefing, renderBriefingWithPasses, RISK_TEXT_FLOOR, type DecisionIntegrity } from '../../src/render/briefing.ts'
 import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
 import { escapeStored } from '../../src/render/escape.ts'
 import { ThreadRecord, type Thread, type Criterion } from '../../src/schema/thread.ts'
@@ -274,7 +274,7 @@ test('briefing.a-render-that-fits-its-budget-is-clipped-nowhere', () => {
         {
           id: rt.ulid(),
           scope: 's',
-          text: ESCAPE_EXPANDING_CHAR.repeat(caps.RISK_TEXT_MAX),
+          text: ESCAPE_EXPANDING_CHAR.repeat(RISK_TEXT_FLOOR),
           refs: [],
           retired: false
         }
@@ -318,9 +318,11 @@ test('briefing.a-render-that-fits-its-budget-is-clipped-nowhere', () => {
   assert.equal(render.passes, 1, 'a briefing that fits its budget must never enter the clip search')
 })
 
+const FORMER_CRITERION_RESULT_MAX = 1000
+
 const SHORTENING_FIXTURE_SESSION_ENTRY_COUNT = 10
 const SHORTENING_FIXTURE_SESSION_BODY_LENGTH = caps.SESSION_BODY_MAX
-const SHORTENING_FIXTURE_CRITERION_RESULT_LENGTH = caps.CRITERION_RESULT_MAX
+const SHORTENING_FIXTURE_CRITERION_RESULT_LENGTH = FORMER_CRITERION_RESULT_MAX
 
 const CRITERION_TEXT_PATTERN =
   /^- c\d+ \[(?:open|done|struck)\] \[(?:confirmed|proposed|unsettled)\]: (.*) \(id [0-9A-HJKMNP-TV-Z]{26}\)$/

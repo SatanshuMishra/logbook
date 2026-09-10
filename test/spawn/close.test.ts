@@ -12,8 +12,6 @@ import { generateSchemaCases, type JsonSchemaNode } from '../support/schema-arbi
 import { testRuntime } from '../support/runtime.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { writePointer } from '../../src/domain/pointer.ts'
-import { escapeStored } from '../../src/render/escape.ts'
-import * as caps from '../../src/schema/caps.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const ENTRY = join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
@@ -352,33 +350,22 @@ test('close.a-refused-closure-leaves-the-pointer-so-park-can-still-record', asyn
       'the fixture must start with a pointer naming the thread this session just resumed'
     )
 
-    const RAW_DETAIL = '<'.repeat(caps.THREAD_CLOSURE_DETAIL_MAX)
-    const escapedLength = escapeStored(RAW_DETAIL).length
-    assert.ok(
-      escapedLength > caps.SESSION_BODY_MAX,
-      'the fixture value must exceed the session-body cap only after escaping'
-    )
-
     const refused = await callClose(fx.spawned, fx.published, {
       thread_id: threadId,
-      outcome: 'abandoned',
-      detail: RAW_DETAIL
+      outcome: 'done',
+      detail: 'a valid closure statement'
     })
-    assert.equal(refused.isError, true, 'a closure detail whose escaped form exceeds the session-body cap must be refused')
+    assert.equal(refused.isError, true, 'closing as done while an un-struck criterion is still not done must be refused')
     const text = firstTextOf(refused)
     assert.equal(
       text.split('\n')[0],
-      'field: detail',
-      `the refusal must name field detail: ${text}`
+      'field: outcome',
+      `the refusal must name field outcome: ${text}`
     )
     assert.match(
       text,
-      /exceeds its cap of \d+ characters after escaping/,
-      `the refusal message must be the post-escape session-body cap check, distinguishing it from the abandon-reason and closure-statement refusals that also carry field detail: ${text}`
-    )
-    assert.ok(
-      text.includes(String(escapedLength)),
-      `the refusal must name the observed escaped length ${escapedLength}: ${text}`
+      /requires every un-struck completion criterion to be marked done/,
+      `the refusal must be the done-gate check for an outstanding criterion, distinguishing it from the no-criteria and no-closure refusals that also carry field outcome: ${text}`
     )
 
     const pointerAfterRefusal = readPointerFile(layout)
