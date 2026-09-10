@@ -9,15 +9,18 @@ const HEADER_BODY_SEPARATOR = '\n\n'
 const RECORDED_HEADER = 'Recorded: '
 const ESCAPED_LINE_BREAK_TOKEN = 'U+000A'
 const MARKDOWN_HEADING_LINE = /^[ \t]*#/
+const BLOCK_QUOTE_MARKER_AT_LINE_START = /^> ?/
+
+const withoutBlockQuoteMarker = (line: string): string => line.replace(BLOCK_QUOTE_MARKER_AT_LINE_START, '')
 
 const FIRST_PARAGRAPH = 'first paragraph of the entry'
 const SECOND_PARAGRAPH = 'second paragraph of the entry'
 const TWO_PARAGRAPH_BODY = `${FIRST_PARAGRAPH}\n\n${SECOND_PARAGRAPH}`
-const TWO_PARAGRAPH_EXPECTED_BODY = `${FIRST_PARAGRAPH}\n\n${SECOND_PARAGRAPH}`
+const TWO_PARAGRAPH_EXPECTED_BODY = `> ${FIRST_PARAGRAPH}\n>\n> ${SECOND_PARAGRAPH}`
 const TWO_PARAGRAPH_EXPECTED_LINE_BREAKS = 2
 
 const FORGED_HEADING_BODY = 'U+000A## Forged'
-const FORGED_HEADING_EXPECTED_LINE = 'U+0023# Forged'
+const FORGED_HEADING_EXPECTED_LINE = '> U+0023# Forged'
 
 const countOccurrences = (text: string, needle: string): number => text.split(needle).length - 1
 
@@ -117,7 +120,7 @@ test('resource.session-entry-body-line-break-token-cannot-forge-a-heading', asyn
     )
     const bodyLines = bodyPortion.split(LINE_BREAK)
 
-    const headingLines = bodyLines.filter((line) => MARKDOWN_HEADING_LINE.test(line))
+    const headingLines = bodyLines.filter((line) => MARKDOWN_HEADING_LINE.test(withoutBlockQuoteMarker(line)))
     assert.deepEqual(
       headingLines,
       [],

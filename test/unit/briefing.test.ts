@@ -188,20 +188,20 @@ test('briefing.renders-exact-output-for-a-full-thread', () => {
     '',
     '**Active goal:**',
     '',
-    'ship the renderer',
+    '> ship the renderer',
     '',
     '**Last session:**',
     '',
     '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead',
-    'wrote the first draft',
+    '> wrote the first draft',
     '',
     '**Landed:**',
     '',
-    'the renderer landed with its golden pinned',
+    '> the renderer landed with its golden pinned',
     '',
     '**Next step:**',
     '',
-    'add tests',
+    '> add tests',
     '',
     '**Open risks:**',
     `- ${riskId} escaping might be incomplete`,
@@ -246,16 +246,16 @@ test('briefing.omits-empty-list-sections-entirely', () => {
     '',
     '**Active goal:**',
     '',
-    'ship the thing',
+    '> ship the thing',
     '',
     '**Last session:**',
     '',
     '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead',
-    'wrote the renderer',
+    '> wrote the renderer',
     '',
     '**Next step:**',
     '',
-    'write the tests',
+    '> write the tests',
     '',
     '**Completion criteria:**',
     '- none recorded; a definition of done is still owed.',
@@ -1050,7 +1050,7 @@ test('briefing.renders-landed-before-the-next-step', () => {
 
   const lines = renderBriefing(thread, EMPTY_INTEGRITY, null, null).split('\n')
   const landedHeadingAt = lines.indexOf('**Landed:**')
-  const landedTextAt = lines.indexOf(LANDED_TEXT)
+  const landedTextAt = lines.indexOf(`> ${LANDED_TEXT}`)
   const nextStepAt = lines.indexOf('**Next step:**')
 
   assert.ok(
