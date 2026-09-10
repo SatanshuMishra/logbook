@@ -20,7 +20,7 @@ import { census } from '../support/census.ts'
 import type { Classified } from '../support/census.ts'
 import { REBUILD_ROOT, forEachDescendant, lineOf, loadSourceProgram, sourceFileFor } from '../support/source-census.ts'
 import { buildSweepFixture, type SweepShape } from '../support/briefing-sweep-fixture.ts'
-import { overBudgetThread } from '../support/briefing-over-budget-fixture.ts'
+import { itemCountOverBudgetThread } from '../support/briefing-item-count-over-budget-fixture.ts'
 
 const rt = testRuntime()
 
@@ -955,7 +955,7 @@ test('briefing.within-budget-is-true-on-an-ordinary-thread-and-false-when-the-re
     `the ordinary render must sit inside the character cap for that report to be true, got ${ordinary.briefing.length}`
   )
 
-  const degenerate = overBudgetThread(rt)
+  const degenerate = itemCountOverBudgetThread(rt)
   assert.equal(
     ThreadRecord.parse(degenerate).ok,
     true,

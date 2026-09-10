@@ -12,7 +12,7 @@ import { commitThread, openProjectStore } from '../../src/server/tool-support.ts
 import { resumePayloadBytes, BRIEFING_MAX_CHARS, RESUME_PAYLOAD_MAX_BYTES } from '../../src/render/briefing.ts'
 import { rawGit } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
-import { overBudgetThread } from '../support/briefing-over-budget-fixture.ts'
+import { itemCountOverBudgetThread } from '../support/briefing-item-count-over-budget-fixture.ts'
 
 const STUB_TOOL_CTX = {} as unknown as ToolContext
 
@@ -150,7 +150,7 @@ test('resume_thread.logs-a-budget-breach-only-for-a-render-that-does-not-fit', a
     if (!opened.ok) {
       throw new Error(`expected the project store to open for the over-budget fixture: ${opened.refusal.message}`)
     }
-    const planted = commitThread(opened.value, overBudgetThread(rt), 'fixture: an over-budget thread record')
+    const planted = commitThread(opened.value, itemCountOverBudgetThread(rt), 'fixture: an over-budget thread record')
     if (!planted.ok) {
       throw new Error(`expected the over-budget fixture to be admissible and committable: ${planted.refusal.message}`)
     }
