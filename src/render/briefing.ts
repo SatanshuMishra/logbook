@@ -3,7 +3,7 @@ import { criterionSettledness } from '../schema/thread.ts'
 import type { SessionEntry } from '../schema/session.ts'
 import type { Pointer } from '../domain/pointer.ts'
 import { previousSessionEntries } from '../domain/session-log.ts'
-import { escapeStored } from './escape.ts'
+import { escapeStored, escapeStoredBlock } from './escape.ts'
 import { CLIP_MARKER_GRAPHEMES, clipWithMarker } from './clip.ts'
 import { THREAD_SLUG_MAX } from '../schema/caps.ts'
 
@@ -370,22 +370,22 @@ const assembleBriefing = (
     ...activeGoalLines.slice(0, 1).map(() => ''),
     ...activeGoalLines.slice(0, 1).map(() => '**Active goal:**'),
     ...activeGoalLines.slice(0, 1).map(() => ''),
-    ...activeGoalLines.map((value) => escapeStored(value)),
+    ...activeGoalLines.map((value) => escapeStoredBlock(value)),
     ...lastSessionHeading.slice(0, 1).map(() => ''),
     ...lastSessionHeading.slice(0, 1).map(() => LAST_SESSION_HEADING),
     ...lastSessionHeading.slice(0, 1).map(() => ''),
     ...previousEntries.map((entry) => renderSessionEntryLine(entry, renderClip.lastSession)),
     ...legacyLastSessionText.slice(0, 1).map(() => LEGACY_LAST_SESSION_MARKER),
-    ...legacyLastSessionText.map((value) => escapeStored(value)),
+    ...legacyLastSessionText.map((value) => escapeStoredBlock(value)),
     ...unreadableSessionEntryLines,
     ...landedLines.slice(0, 1).map(() => ''),
     ...landedLines.slice(0, 1).map(() => '**Landed:**'),
     ...landedLines.slice(0, 1).map(() => ''),
-    ...landedLines.map((value) => escapeStored(value)),
+    ...landedLines.map((value) => escapeStoredBlock(value)),
     ...nextStepLines.slice(0, 1).map(() => ''),
     ...nextStepLines.slice(0, 1).map(() => '**Next step:**'),
     ...nextStepLines.slice(0, 1).map(() => ''),
-    ...nextStepLines.map((value) => escapeStored(value)),
+    ...nextStepLines.map((value) => escapeStoredBlock(value)),
     ...relatedThreads.slice(0, 1).map(() => ''),
     ...relatedThreads.slice(0, 1).map(() => '**Related:**'),
     ...relatedLines,

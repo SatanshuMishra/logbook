@@ -32,6 +32,8 @@ const ESCAPE_MODULE_SPECIFIERS = [
   '../../render/clip.ts'
 ]
 const ESCAPE_FUNCTION = 'escapeStored'
+const BLOCK_ESCAPE_FUNCTION = 'escapeStoredBlock'
+const ESCAPE_FUNCTIONS = new Set([ESCAPE_FUNCTION, BLOCK_ESCAPE_FUNCTION])
 const CLIP_FUNCTION = 'clipGraphemes'
 const MARKER_CLIP_FUNCTION = 'clipWithMarker'
 const WRAPPING_CLIP_FUNCTIONS = new Set([CLIP_FUNCTION, MARKER_CLIP_FUNCTION])
@@ -51,6 +53,7 @@ const contextFor = (checker: ts.TypeChecker, sourceFile: ts.SourceFile): Ctx => 
   sourceFile,
   escapeSymbols: findNamedImportSymbols(checker, sourceFile, ESCAPE_MODULE_SPECIFIERS, [
     ESCAPE_FUNCTION,
+    BLOCK_ESCAPE_FUNCTION,
     CLIP_FUNCTION,
     MARKER_CLIP_FUNCTION
   ])
@@ -302,7 +305,7 @@ const resolveTerminals = (ctx: Ctx, node: ts.Node, depth: number): ts.Expression
 
 const isEscapedCall = (ctx: Ctx, node: ts.Node, depth: number): boolean => {
   const called = escapeCallName(ctx, node)
-  if (called === ESCAPE_FUNCTION) return true
+  if (called !== null && ESCAPE_FUNCTIONS.has(called)) return true
   if (called === null || !WRAPPING_CLIP_FUNCTIONS.has(called) || !ts.isCallExpression(node)) return false
   const wrapped = node.arguments[0]
   return wrapped !== undefined && classifyExpression(ctx, wrapped, depth + 1) === 'escaped'
