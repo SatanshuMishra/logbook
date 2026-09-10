@@ -62,7 +62,7 @@ export const buildSweepFixture = (rt: Runtime, shape: SweepShape): SweepFixture 
   const risks: Risk[] = Array.from({ length: shape.bulkCount }, () => ({
     id: rt.ulid(),
     scope: 'sweep',
-    text: fillOf(caps.RISK_TEXT_MAX),
+    text: fillOf(500),
     refs: [fillOf(RISK_REF_HELD_LENGTH)],
     retired: false,
     ...anchor

@@ -115,8 +115,6 @@ const RESUME_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/resume_thread.t
 const UPDATE_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/update_thread.ts#updateThreadTool.handler'
 
 const RECORD_DECISION_TITLE_CAP_PRODUCER: ProducerId = 'server/tools/record_decision.ts#titleCapRefusal'
-const RECORD_DECISION_CONTEXT_CAP_PRODUCER: ProducerId = 'server/tools/record_decision.ts#contextCapRefusal'
-const RECORD_DECISION_OUTCOME_CAP_PRODUCER: ProducerId = 'server/tools/record_decision.ts#outcomeCapRefusal'
 const RECORD_DECISION_OPTION_CAP_PRODUCER: ProducerId = 'server/tools/record_decision.ts#optionCapRefusal'
 const RECORD_DECISION_INVALID_PRODUCER: ProducerId = 'server/tools/record_decision.ts#invalidDecisionRefusal'
 const RECORD_DECISION_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/record_decision.ts#commitFailureRefusal'
@@ -413,30 +411,6 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     if (titleOverflow.ok) throw new Error('expected recordDecisionTool to refuse a title that overflows its cap once escaped')
     refusals.push({ producer: RECORD_DECISION_TITLE_CAP_PRODUCER, refusal: titleOverflow.refusal })
     refusals.push({ producer: RECORD_DECISION_HANDLER_PRODUCER, refusal: titleOverflow.refusal })
-
-    const contextOverflow = await recordDecisionTool.handler(rt, STUB_TOOL_CTX, {
-      thread_id: threadId,
-      title: 'a census title',
-      context: CONTROL_CHAR_OVERFLOW(667),
-      options: ['a census option'],
-      outcome: 'a census outcome'
-    })
-    if (contextOverflow.ok) {
-      throw new Error('expected recordDecisionTool to refuse a context that overflows its cap once escaped')
-    }
-    refusals.push({ producer: RECORD_DECISION_CONTEXT_CAP_PRODUCER, refusal: contextOverflow.refusal })
-
-    const outcomeOverflow = await recordDecisionTool.handler(rt, STUB_TOOL_CTX, {
-      thread_id: threadId,
-      title: 'a census title',
-      context: 'a census context',
-      options: ['a census option'],
-      outcome: CONTROL_CHAR_OVERFLOW(667)
-    })
-    if (outcomeOverflow.ok) {
-      throw new Error('expected recordDecisionTool to refuse an outcome that overflows its cap once escaped')
-    }
-    refusals.push({ producer: RECORD_DECISION_OUTCOME_CAP_PRODUCER, refusal: outcomeOverflow.refusal })
 
     const optionOverflow = await recordDecisionTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,

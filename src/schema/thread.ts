@@ -83,7 +83,6 @@ const CriterionSchema = structural(
     result: content(
       z
         .string()
-        .max(caps.CRITERION_RESULT_MAX)
         .nullable()
         .optional()
         .describe('what the check returned when this criterion was marked done, absent when none is recorded')
@@ -113,7 +112,6 @@ const CriterionSchema = structural(
     settled_by: content(
       z
         .string()
-        .max(caps.CRITERION_SETTLED_BY_MAX)
         .nullable()
         .optional()
         .describe('the human words behind a confirmed criterion, quoted verbatim, and null on any other settledness')
@@ -127,7 +125,7 @@ const RiskSchema = structural(
     scope: content(
       z.string().max(caps.RISK_SCOPE_MAX).describe('the criterion or area of the thread this risk concerns')
     ),
-    text: content(z.string().max(caps.RISK_TEXT_MAX).describe('the risk text')),
+    text: content(z.string().describe('the risk text')),
     refs: z
       .array(pointer(caps.RISK_REF_MAX, 'one external pointer backing this risk'))
       .max(caps.RISK_REFS_MAX_ELEMENTS)

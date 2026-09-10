@@ -273,7 +273,7 @@ test('briefing.a-render-that-fits-its-budget-is-clipped-nowhere', () => {
         {
           id: rt.ulid(),
           scope: 's',
-          text: ESCAPE_EXPANDING_CHAR.repeat(caps.RISK_TEXT_MAX),
+          text: ESCAPE_EXPANDING_CHAR.repeat(500),
           refs: [],
           retired: false
         }

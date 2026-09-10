@@ -43,7 +43,6 @@ const AmendCriteriaInputSchema = z.strictObject({
   settled_by: z
     .string()
     .regex(/\S/)
-    .max(caps.CRITERION_SETTLED_BY_MAX)
     .optional()
     .describe(
       'the human words behind a confirmed inserted criterion, quoted verbatim; required when settledness is confirmed, refused on any other settledness, and refused on rewrite and strike because neither writes it'
