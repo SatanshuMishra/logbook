@@ -3,6 +3,8 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ALL_TOOLS } from '../../src/server/register.ts'
 import { LEDGER_TOOL_NAMES } from '../../src/server/tool-names.ts'
+import { SESSION_BODY_MAX } from '../../src/schema/caps.ts'
+import { DEFAULT_PAGE_SIZE } from '../../src/server/tools/list_threads.ts'
 import type { Classified } from './census.ts'
 import type { SpawnedServer } from './spawn-client.ts'
 
@@ -157,7 +159,7 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
       phrase: 'Takes the thread id, who is speaking as a short string',
       providers: ['log_session_event.thread_id', 'log_session_event.actor']
     },
-    { phrase: 'the entry body as Markdown text up to 8000 characters', providers: ['log_session_event.body'] }
+    { phrase: `the entry body as Markdown text up to ${SESSION_BODY_MAX} characters`, providers: ['log_session_event.body'] }
   ],
   sync_ledger: [{ phrase: 'Takes no arguments', providers: [] }],
   resolve_conflict: [
@@ -165,7 +167,7 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
   ],
   list_threads: [
     { phrase: 'pass `cursor` from a previous reply to read the next page', providers: ['list_threads.cursor'] },
-    { phrase: '`limit` to change the page size from its default of 25', providers: ['list_threads.limit'] },
+    { phrase: `\`limit\` to change the page size from its default of ${DEFAULT_PAGE_SIZE}`, providers: ['list_threads.limit'] },
     { phrase: 'A thread that is blocked shows what it is blocked on', providers: ['update_thread.blocked_by'] }
   ]
 }

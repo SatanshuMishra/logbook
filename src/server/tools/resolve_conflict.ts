@@ -27,13 +27,15 @@ import { LEDGER_REF } from '../../store/ref.ts'
 import { withDetail } from '../../store/detail.ts'
 import { clipGraphemes, escapeStored } from '../../render/escape.ts'
 import { openProjectStore } from '../tool-support.ts'
+import { ULID_PATTERN } from '../../schema/ids.ts'
 
 const EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 const RESOLUTIONS_MAX_ELEMENTS = 200
 const FIELD_MAX = 300
-const RECORD_PATTERN = /^(thread|decision):[0-9A-HJKMNP-TV-Z]{26}$/
-const THREAD_RECORD_PATTERN = /^thread:([0-9A-HJKMNP-TV-Z]{26})$/
-const DECISION_RECORD_PATTERN = /^decision:([0-9A-HJKMNP-TV-Z]{26})$/
+const ULID_FRAGMENT = ULID_PATTERN.source.slice(1, -1)
+const RECORD_PATTERN = new RegExp(`^(thread|decision):${ULID_FRAGMENT}$`)
+const THREAD_RECORD_PATTERN = new RegExp(`^thread:(${ULID_FRAGMENT})$`)
+const DECISION_RECORD_PATTERN = new RegExp(`^decision:(${ULID_FRAGMENT})$`)
 
 const ResolutionSchema = z
   .strictObject({
@@ -455,7 +457,7 @@ const INDEXED_FIELD_PATHS: readonly string[] = (Object.keys(FIELD_HANDLING_TABLE
 )
 
 export const INDEXED_FIELD_PATTERN = new RegExp(
-  `^(${INDEXED_FIELD_PATHS.map(escapeRegexLiteral).join('|')})\\[([0-9A-HJKMNP-TV-Z]{26})\\]$`
+  `^(${INDEXED_FIELD_PATHS.map(escapeRegexLiteral).join('|')})\\[(${ULID_FRAGMENT})\\]$`
 )
 
 const FIELD_HANDLING_KEYS = new Set<string>(Object.keys(FIELD_HANDLING_TABLE))

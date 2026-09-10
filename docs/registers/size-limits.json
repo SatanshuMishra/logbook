@@ -802,7 +802,7 @@
   },
   {
     "name": "DEFAULT_PAGE_SIZE",
-    "site": "src/server/tools/list_threads.ts:7",
+    "site": "src/server/tools/list_threads.ts:8",
     "value": 25,
     "basis": "unrecorded",
     "reason": null,
@@ -811,7 +811,7 @@
   },
   {
     "name": "MAX_PAGE_SIZE",
-    "site": "src/server/tools/list_threads.ts:8",
+    "site": "src/server/tools/list_threads.ts:9",
     "value": 100,
     "basis": "unrecorded",
     "reason": null,
@@ -820,7 +820,7 @@
   },
   {
     "name": "RESOLUTIONS_MAX_ELEMENTS",
-    "site": "src/server/tools/resolve_conflict.ts:32",
+    "site": "src/server/tools/resolve_conflict.ts:33",
     "value": 200,
     "basis": "unrecorded",
     "reason": null,
@@ -829,10 +829,19 @@
   },
   {
     "name": "FIELD_MAX",
-    "site": "src/server/tools/resolve_conflict.ts:33",
+    "site": "src/server/tools/resolve_conflict.ts:34",
     "value": 300,
     "basis": "unrecorded",
     "reason": null,
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "ULID_LENGTH",
+    "site": "src/schema/ulid-length.ts:14",
+    "value": 26,
+    "basis": "derived",
+    "reason": "Read out of ULID_PATTERN's {n} quantifier at src/schema/ids.ts:3 via regex rather than restated, so every prose description that names the ULID's character length (list_threads.ts, open_thread.ts, resume_thread.ts) and the synthesised ULID placeholder in schema/example.ts stay derived from the one pattern instead of typing 26 again at each site.",
     "mirrors": null,
     "mirror_relation": null
   },
