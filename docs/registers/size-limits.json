@@ -838,10 +838,10 @@
   },
   {
     "name": "ULID_LENGTH",
-    "site": "src/schema/ulid-length.ts:14",
+    "site": "src/schema/ulid-length.ts:1",
     "value": 26,
-    "basis": "derived",
-    "reason": "Read out of ULID_PATTERN's {n} quantifier at src/schema/ids.ts:3 via regex rather than restated, so every prose description that names the ULID's character length (list_threads.ts, open_thread.ts, resume_thread.ts) and the synthesised ULID placeholder in schema/example.ts stay derived from the one pattern instead of typing 26 again at each site.",
+    "basis": "unrecorded",
+    "reason": null,
     "mirrors": null,
     "mirror_relation": null
   },

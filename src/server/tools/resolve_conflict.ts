@@ -32,8 +32,14 @@ import { ULID_PATTERN } from '../../schema/ids.ts'
 const EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 const RESOLUTIONS_MAX_ELEMENTS = 200
 const FIELD_MAX = 300
-const ULID_FRAGMENT = ULID_PATTERN.source.slice(1, -1)
-const RECORD_PATTERN = new RegExp(`^(thread|decision):${ULID_FRAGMENT}$`)
+const anchoredUlid = /^\^(.*)\$$/.exec(ULID_PATTERN.source)
+const ULID_FRAGMENT = anchoredUlid?.[1]
+if (ULID_FRAGMENT === undefined) {
+  throw new Error(
+    `src/server/tools/resolve_conflict.ts: expected schema/ids.ts ULID_PATTERN to be anchored with a leading ^ and a trailing $ so its fragment could be extracted, but ULID_PATTERN.source was ${JSON.stringify(ULID_PATTERN.source)}`
+  )
+}
+const RECORD_PATTERN = new RegExp(`^(thread|decision):(?:${ULID_FRAGMENT})$`)
 const THREAD_RECORD_PATTERN = new RegExp(`^thread:(${ULID_FRAGMENT})$`)
 const DECISION_RECORD_PATTERN = new RegExp(`^decision:(${ULID_FRAGMENT})$`)
 
