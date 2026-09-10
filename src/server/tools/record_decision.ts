@@ -16,12 +16,12 @@ const ulidField = (description: string) => z.string().regex(ULID_PATTERN).descri
 const RecordDecisionInputSchema = z.strictObject({
   thread_id: ulidField('the id of the thread this decision belongs to; the thread must currently be open'),
   title: z.string().min(1).max(caps.DECISION_TITLE_MAX).describe('a one-line title for the decision'),
-  context: z.string().max(caps.DECISION_CONTEXT_MAX).describe('the situation that forced this choice'),
+  context: z.string().describe('the situation that forced this choice'),
   options: z
     .array(z.string().max(caps.DECISION_OPTION_MAX).describe('one option that was on the table'))
     .max(caps.DECISION_OPTIONS_MAX_ELEMENTS)
     .describe('the options that were on the table, for example ["ship the fast path", "keep the safe default"]'),
-  outcome: z.string().max(caps.DECISION_OUTCOME_MAX).describe('the outcome that was chosen and why'),
+  outcome: z.string().describe('the outcome that was chosen and why'),
   scope: z
     .string()
     .min(1)
@@ -71,24 +71,6 @@ export const titleCapRefusal = (observed: number): Refusal => ({
   message: `title exceeds its cap of ${caps.DECISION_TITLE_MAX} characters after escaping; observed ${observed}; remedy: shorten the title and retry.`
 })
 
-export const contextCapRefusal = (observed: number): Refusal => ({
-  ok: false,
-  field: 'context',
-  accepted: `at most ${caps.DECISION_CONTEXT_MAX} characters after escaping`,
-  example: 'the merge queue was blocking every other thread',
-  retryable: true,
-  message: `context exceeds its cap of ${caps.DECISION_CONTEXT_MAX} characters after escaping; observed ${observed}; remedy: shorten the context and retry.`
-})
-
-export const outcomeCapRefusal = (observed: number): Refusal => ({
-  ok: false,
-  field: 'outcome',
-  accepted: `at most ${caps.DECISION_OUTCOME_MAX} characters after escaping`,
-  example: 'shipped the fast path; the safe default stayed available behind a flag',
-  retryable: true,
-  message: `outcome exceeds its cap of ${caps.DECISION_OUTCOME_MAX} characters after escaping; observed ${observed}; remedy: shorten the outcome and retry.`
-})
-
 export const optionCapRefusal = (index: number, observed: number): Refusal => ({
   ok: false,
   field: 'options',
@@ -102,10 +84,35 @@ export const invalidDecisionRefusal = (issue: string): Refusal => ({
   ok: false,
   field: 'decision',
   accepted: 'a decision record that stays within its stored-shape caps',
-  example: 'shorten the title, context, outcome or options and retry',
+  example: 'shorten the title or an option and retry',
   retryable: true,
   message: `the decision record failed its stored-shape validation: ${issue}`
 })
+
+const byteSizeOf = (value: unknown): number => Buffer.byteLength(JSON.stringify(value), 'utf8')
+
+const heaviestDecisionFieldOf = (decision: Decision): { field: string; bytes: number } => {
+  const measured = Object.entries(decision as unknown as Record<string, unknown>).map(([key, value]) => ({
+    field: key,
+    bytes: byteSizeOf(value)
+  }))
+  return measured.reduce(
+    (worst, candidate) => (candidate.bytes > worst.bytes ? candidate : worst),
+    { field: 'decision', bytes: 0 }
+  )
+}
+
+const overDecisionByteCapRefusal = (decision: Decision, observed: number): Refusal => {
+  const heaviest = heaviestDecisionFieldOf(decision)
+  return {
+    ok: false,
+    field: 'decision',
+    accepted: `a serialised decision record of at most ${caps.DECISION_RECORD_SERIALISED_MAX_BYTES} bytes`,
+    example: 'remove an entry from the largest field and retry',
+    retryable: true,
+    message: `the decision record after this change is ${observed} bytes, over its cap of ${caps.DECISION_RECORD_SERIALISED_MAX_BYTES} bytes; its largest field is ${heaviest.field} at ${heaviest.bytes} bytes; remedy: remove or shorten an entry in ${heaviest.field} and retry.`
+  }
+}
 
 export const commitFailureRefusal = (detail: string): Refusal =>
   withDetail(
@@ -182,14 +189,7 @@ export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOut
     }
 
     const escapedContext = escapeStored(input.context)
-    if (escapedContext.length > caps.DECISION_CONTEXT_MAX) {
-      return { ok: false, refusal: contextCapRefusal(escapedContext.length) }
-    }
-
     const escapedOutcome = escapeStored(input.outcome)
-    if (escapedOutcome.length > caps.DECISION_OUTCOME_MAX) {
-      return { ok: false, refusal: outcomeCapRefusal(escapedOutcome.length) }
-    }
 
     const escapedOptions = input.options.map((option) => escapeStored(option))
     const oversizedIndex = escapedOptions.findIndex((option) => option.length > caps.DECISION_OPTION_MAX)
@@ -215,6 +215,11 @@ export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOut
       commit,
       supersedes,
       created_at: rt.now()
+    }
+
+    const decisionBytes = byteSizeOf(decision)
+    if (decisionBytes > caps.DECISION_RECORD_SERIALISED_MAX_BYTES) {
+      return { ok: false, refusal: overDecisionByteCapRefusal(decision, decisionBytes) }
     }
 
     const validated = DecisionRecord.parse(decision)

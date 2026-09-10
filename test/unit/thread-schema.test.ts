@@ -114,18 +114,18 @@ test('thread-schema.criterion-settledness-refuses-an-unknown-value', () => {
   assert.equal(parsed.ok, false, 'settledness is a closed set of three values and a fourth is refused')
 })
 
-test('thread-schema.settled-by-refuses-past-its-cap', () => {
+test('thread-schema.criterion-text-refuses-past-its-cap', () => {
   const stored = threadFixture()
   const raw = JSON.parse(JSON.stringify(stored)) as Record<string, unknown>
   const criteria = raw.completion_criteria as Record<string, unknown>[]
-  criteria[0] = { ...criteria[0], settled_by: 'x'.repeat(caps.CRITERION_SETTLED_BY_MAX + 1) }
+  criteria[0] = { ...criteria[0], text: 'x'.repeat(caps.CRITERION_TEXT_MAX + 1) }
 
   const parsed = ThreadRecord.parse(raw)
 
   assert.equal(parsed.ok, false, 'a capped field refuses rather than truncating')
   if (!parsed.ok) {
     assert.ok(
-      parsed.message.includes(String(caps.CRITERION_SETTLED_BY_MAX)),
+      parsed.message.includes(String(caps.CRITERION_TEXT_MAX)),
       `the refusal must name the numeric limit, got: ${parsed.message}`
     )
   }

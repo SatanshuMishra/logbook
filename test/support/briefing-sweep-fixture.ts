@@ -1,5 +1,5 @@
 import type { Thread, Criterion, Risk, KeyDecision, OutOfScope } from '../../src/schema/thread.ts'
-import type { DecisionIntegrity } from '../../src/render/briefing.ts'
+import { RISK_TEXT_NATURAL_MAX, type DecisionIntegrity } from '../../src/render/briefing.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import * as caps from '../../src/schema/caps.ts'
 
@@ -62,7 +62,7 @@ export const buildSweepFixture = (rt: Runtime, shape: SweepShape): SweepFixture 
   const risks: Risk[] = Array.from({ length: shape.bulkCount }, () => ({
     id: rt.ulid(),
     scope: 'sweep',
-    text: fillOf(caps.RISK_TEXT_MAX),
+    text: fillOf(RISK_TEXT_NATURAL_MAX),
     refs: [fillOf(RISK_REF_HELD_LENGTH)],
     retired: false,
     ...anchor

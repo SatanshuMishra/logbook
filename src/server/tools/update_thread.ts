@@ -14,7 +14,7 @@ const optionalUlidField = (description: string) => z.string().regex(ULID_PATTERN
 
 const RiskAddSchema = z
   .strictObject({
-    text: z.string().min(1).max(caps.RISK_TEXT_MAX).describe('the risk text to record on the spine'),
+    text: z.string().min(1).describe('the risk text to record on the spine'),
     scope: z.string().min(1).max(caps.RISK_SCOPE_MAX).describe('the criterion or area of the thread this risk concerns'),
     refs: z
       .array(z.string().regex(/\S/).max(caps.RISK_REF_MAX).describe('one external pointer backing this risk'))
@@ -52,7 +52,6 @@ const CriterionDoneSchema = z
     criterion_id: ulidField('the id of a completion criterion already present on this thread'),
     result: z
       .string()
-      .max(caps.CRITERION_RESULT_MAX)
       .describe(MARK_DONE_INVARIANTS),
     result_status: z
       .enum(['verified', 'unverified-reasoned'])
@@ -71,7 +70,6 @@ const CriterionSettledSchema = z
     settled_by: z
       .string()
       .regex(/\S/)
-      .max(caps.CRITERION_SETTLED_BY_MAX)
       .optional()
       .describe('the human words behind a confirmed criterion, quoted verbatim; refused on any other settledness')
   })
@@ -198,15 +196,6 @@ const emptyResultRefusal = (ids: string[]): Refusal => ({
   message: `criteria_done carries an empty result for these criteria, and a criterion is never marked done without one: ${ids.join(', ')}; remedy: ${MARK_DONE_INVARIANTS}`
 })
 
-const resultCapRefusal = (index: number, observed: number): Refusal => ({
-  ok: false,
-  field: 'criteria_done',
-  accepted: `at most ${caps.CRITERION_RESULT_MAX} characters after escaping, per result`,
-  example: '436 tests, 0 fail, exit 0',
-  retryable: true,
-  message: `criteria_done[${index}].result exceeds its cap of ${caps.CRITERION_RESULT_MAX} characters after escaping; observed ${observed}; remedy: shorten the result, record the detail through log_session_event, and retry.`
-})
-
 const contradictoryResultRefusal = (ids: string[]): Refusal => ({
   ok: false,
   field: 'criteria_done',
@@ -277,15 +266,6 @@ const struckSettlementCriterionRefusal = (ids: string[]): Refusal => ({
   example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
   retryable: true,
   message: `criteria_settled names criteria that have already been struck and take no further settlement: ${ids.join(', ')}.`
-})
-
-const settlementQuoteCapRefusal = (index: number, observed: number): Refusal => ({
-  ok: false,
-  field: 'criteria_settled',
-  accepted: `at most ${caps.CRITERION_SETTLED_BY_MAX} characters after escaping, per settled_by`,
-  example: 'it has to block before the turn ends',
-  retryable: true,
-  message: `criteria_settled[${index}].settled_by exceeds its cap of ${caps.CRITERION_SETTLED_BY_MAX} characters after escaping; observed ${observed}; remedy: shorten the quote and retry.`
 })
 
 const settlementQuoteOwedRefusal = (index: number): Refusal => ({
@@ -380,14 +360,6 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
       return { ok: false, refusal: emptyResultRefusal(emptyResults.map((entry) => entry.criterion_id)) }
     }
     const escapedResults = criteriaDone.map((entry) => escapeStored(entry.result))
-    const oversizedResultIndex = escapedResults.findIndex((result) => result.length > caps.CRITERION_RESULT_MAX)
-    if (oversizedResultIndex !== -1) {
-      const oversized = escapedResults[oversizedResultIndex]
-      return {
-        ok: false,
-        refusal: resultCapRefusal(oversizedResultIndex, oversized === undefined ? 0 : oversized.length)
-      }
-    }
     const completions = new Map(
       criteriaDone.map((entry, index) => [
         entry.criterion_id,
@@ -441,16 +413,6 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
       settledness: entry.settledness,
       settled_by: entry.settled_by === undefined ? undefined : escapeStored(entry.settled_by)
     }))
-    const oversizedQuoteIndex = escapedSettlements.findIndex(
-      (entry) => entry.settled_by !== undefined && entry.settled_by.length > caps.CRITERION_SETTLED_BY_MAX
-    )
-    if (oversizedQuoteIndex !== -1) {
-      const oversized = escapedSettlements[oversizedQuoteIndex]
-      return {
-        ok: false,
-        refusal: settlementQuoteCapRefusal(oversizedQuoteIndex, oversized === undefined ? 0 : (oversized.settled_by?.length ?? 0))
-      }
-    }
     const quoteOwedIndex = escapedSettlements.findIndex(
       (entry) => entry.settledness === 'confirmed' && (entry.settled_by === undefined || entry.settled_by.length === 0)
     )

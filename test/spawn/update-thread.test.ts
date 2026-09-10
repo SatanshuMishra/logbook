@@ -326,36 +326,35 @@ test('update_thread.refuses-a-quote-on-a-criterion-that-is-not-confirmed', async
   })
 })
 
-test('update_thread.refuses-a-quote-that-passes-its-cap-only-before-escaping', async () => {
+test('update_thread.refuses-a-blocked-by-that-passes-its-cap-only-before-escaping', async () => {
   await withFixture(async (fx) => {
-    const opened = await openCriteriaThread(fx, 'settlement-quote-cap-thread', [PROPOSED_CRITERION])
-    const criterionId = criterionAt(opened, 0)
-    const quote = '<'.repeat(caps.CRITERION_SETTLED_BY_MAX)
-    const escapedLength = escapeStored(quote).length
+    const opened = await openCriteriaThread(fx, 'blocked-by-cap-thread', [PROPOSED_CRITERION])
+    const blockedBy = '<'.repeat(caps.THREAD_BLOCKED_BY_MAX)
+    const escapedLength = escapeStored(blockedBy).length
     assert.ok(
-      escapedLength > caps.CRITERION_SETTLED_BY_MAX,
-      'the cap fixture needs a quote that fits before escaping and overflows after it'
+      escapedLength > caps.THREAD_BLOCKED_BY_MAX,
+      'the cap fixture needs a value that fits before escaping and overflows after it'
     )
 
-    const settled = await callUpdateThread(fx, {
+    const result = await callUpdateThread(fx, {
       thread_id: opened.threadId,
-      criteria_settled: [{ criterion_id: criterionId, settledness: 'confirmed', settled_by: quote }]
+      blocked_by: blockedBy
     })
 
-    assert.equal(settled.isError, true, 'a quote that only overflows after escaping is still over its cap')
-    const text = firstTextOf(settled)
+    assert.equal(result.isError, true, 'a value that only overflows after escaping is still over its cap')
+    const text = firstTextOf(result)
     assert.ok(
-      text.includes('criteria_settled[0].settled_by'),
-      `the refusal has to name the argument the caller sent rather than a record path, got: ${text}`
+      text.includes('blocked_by exceeds its cap'),
+      `the refusal has to name the field that overflowed, got: ${text}`
     )
     assert.ok(
       text.includes(`observed ${escapedLength}`),
       `the refusal has to report the length it observed after escaping, got: ${text}`
     )
     assert.equal(
-      storedCriterion(fx, opened.threadId, criterionId).settledness,
-      'proposed',
-      'a refused call must not have written the confirmation'
+      readThreadRecord(fx, opened.threadId).blocked_by,
+      null,
+      'a refused call must not have written the blocked_by value'
     )
   })
 })

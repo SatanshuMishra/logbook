@@ -30,7 +30,6 @@ const CriterionCreateSchema = z
     settled_by: z
       .string()
       .regex(/\S/)
-      .max(caps.CRITERION_SETTLED_BY_MAX)
       .optional()
       .describe('the human words behind a confirmed criterion, quoted verbatim; refused on any other settledness')
   })
@@ -167,15 +166,6 @@ const criterionCheckCapRefusal = (index: number, observed: number): Refusal => (
   message: `completion_criteria[${index}].check exceeds its cap of ${caps.CRITERION_CHECK_MAX} characters after escaping; observed ${observed}; remedy: shorten the check and retry.`
 })
 
-const criterionSettledByCapRefusal = (index: number, observed: number): Refusal => ({
-  ok: false,
-  field: 'completion_criteria',
-  accepted: `at most ${caps.CRITERION_SETTLED_BY_MAX} characters after escaping, per settled_by`,
-  example: 'it has to block before the turn ends',
-  retryable: true,
-  message: `completion_criteria[${index}].settled_by exceeds its cap of ${caps.CRITERION_SETTLED_BY_MAX} characters after escaping; observed ${observed}; remedy: shorten the quote and retry.`
-})
-
 const checkOwedRefusal = (index: number, settledness: string): Refusal => ({
   ok: false,
   field: 'completion_criteria',
@@ -259,16 +249,6 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
       return {
         ok: false,
         refusal: criterionCheckCapRefusal(oversizedCheckIndex, oversized === undefined ? 0 : (oversized.check?.length ?? 0))
-      }
-    }
-    const oversizedSettledByIndex = escapedCriteria.findIndex(
-      (entry) => entry.settled_by !== undefined && entry.settled_by.length > caps.CRITERION_SETTLED_BY_MAX
-    )
-    if (oversizedSettledByIndex !== -1) {
-      const oversized = escapedCriteria[oversizedSettledByIndex]
-      return {
-        ok: false,
-        refusal: criterionSettledByCapRefusal(oversizedSettledByIndex, oversized === undefined ? 0 : (oversized.settled_by?.length ?? 0))
       }
     }
     const checkOwedIndex = escapedCriteria.findIndex((entry) => entry.settledness !== 'unsettled' && entry.check === undefined)
