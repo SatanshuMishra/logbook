@@ -88,7 +88,7 @@ const HEADER_FIELD_ESCAPED_GRAPHEME_MAX = Math.max(
   SPINE_LANDED_MAX
 )
 
-const MIN_TEXT_CLIP = CLIP_MARKER_GRAPHEMES
+export const MIN_TEXT_CLIP = CLIP_MARKER_GRAPHEMES
 const NO_CLIP = Number.POSITIVE_INFINITY
 
 export const NOT_RECORDED = 'not recorded'
@@ -297,7 +297,7 @@ const UNCLIPPED: RenderClip = {
   artifactPointer: NO_CLIP
 }
 
-const CLIP_SEARCH_UPPER_BOUND = SESSION_BODY_MAX
+export const CLIP_SEARCH_UPPER_BOUND = SESSION_BODY_MAX
 
 type ClipSearch = { briefing: string; passes: number }
 

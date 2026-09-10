@@ -10,6 +10,8 @@ import {
   BRIEFING_MAX_CHARS,
   RESUME_PAYLOAD_MAX_BYTES,
   RESUME_PAYLOAD_TARGET_BYTES,
+  MIN_TEXT_CLIP,
+  CLIP_SEARCH_UPPER_BOUND,
   type DecisionIntegrity
 } from '../../src/render/briefing.ts'
 import { CLIP_MARKER } from '../../src/render/clip.ts'
@@ -841,7 +843,8 @@ test('briefing.an-ordinary-small-thread-renders-in-a-single-pass', () => {
   )
 })
 
-const CLIP_SEARCH_PASS_CEILING = 14
+const CLIP_SEARCH_RANGE_SIZE = CLIP_SEARCH_UPPER_BOUND - MIN_TEXT_CLIP + 1
+const CLIP_SEARCH_PASS_CEILING = 1 + Math.ceil(Math.log2(CLIP_SEARCH_RANGE_SIZE))
 
 test('briefing.the-clip-search-converges-within-the-pass-ceiling', () => {
   const thread = decisionRecordSizedThread()
