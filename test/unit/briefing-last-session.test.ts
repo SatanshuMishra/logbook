@@ -81,7 +81,7 @@ test('briefing.last-session-falls-back-to-the-stored-text-marked-as-legacy', () 
 
   assert.deepEqual(sectionOf(rendered, '**Last session:**'), [
     LEGACY_MARKER,
-    'the hand-written summary nobody refreshed'
+    '> the hand-written summary nobody refreshed'
   ])
 })
 

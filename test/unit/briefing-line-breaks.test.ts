@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { renderBriefing, BRIEFING_HEADING, type DecisionIntegrity } from '../../src/render/briefing.ts'
-import { toEscaped } from '../../src/render/escape.ts'
+import { escapeStoredBlock, toEscaped } from '../../src/render/escape.ts'
 import type { Thread } from '../../src/schema/thread.ts'
 import type { SessionEntry } from '../../src/schema/session.ts'
 import { testRuntime } from '../support/runtime.ts'
@@ -131,8 +131,12 @@ const sectionOf = (rendered: string, field: SpineBlockField): string[] => {
   return end === -1 ? body : body.slice(0, end)
 }
 
+const BLOCK_QUOTE_MARKER_AT_LINE_START = /^> ?/
+
+const withoutBlockQuoteMarker = (line: string): string => line.replace(BLOCK_QUOTE_MARKER_AT_LINE_START, '')
+
 const headingLinesOf = (rendered: string): string[] =>
-  rendered.split('\n').filter((line) => MARKDOWN_HEADING_LINE.test(line))
+  rendered.split('\n').filter((line) => MARKDOWN_HEADING_LINE.test(withoutBlockQuoteMarker(line)))
 
 const countOccurrences = (text: string, needle: string): number => text.split(needle).length - 1
 
@@ -146,8 +150,8 @@ for (const field of SPINE_BLOCK_FIELDS) {
 
     assert.deepEqual(
       section,
-      [...field.serverAuthoredLines, opening, closing],
-      `expected the stored ${field.name} '${stored}' to render under '${field.label}' as the two separate lines '${opening}' and '${closing}', got ${JSON.stringify(section)}`
+      [...field.serverAuthoredLines, `> ${opening}`, `> ${closing}`],
+      `expected the stored ${field.name} '${stored}' to render under '${field.label}' as the two separate lines '> ${opening}' and '> ${closing}', each carrying the server's own blockquote marker, got ${JSON.stringify(section)}`
     )
     assert.equal(
       countOccurrences(rendered, STORED_LINE_BREAK),
@@ -166,8 +170,8 @@ for (const field of SPINE_BLOCK_FIELDS) {
 
     assert.deepEqual(
       section,
-      [...field.serverAuthoredLines, opening, renderedForgedHeadingFor(field)],
-      `expected the stored ${field.name} '${stored}' to render under '${field.label}' as '${opening}' followed by '${renderedForgedHeadingFor(field)}', the line break decoded and the heading marker behind it re-escaped, got ${JSON.stringify(section)}`
+      [...field.serverAuthoredLines, `> ${opening}`, `> ${renderedForgedHeadingFor(field)}`],
+      `expected the stored ${field.name} '${stored}' to render under '${field.label}' as '> ${opening}' followed by '> ${renderedForgedHeadingFor(field)}', the line break decoded, the heading marker behind it re-escaped, and each line carrying the server's own blockquote marker, got ${JSON.stringify(section)}`
     )
     assert.deepEqual(
       headingLines,
@@ -176,3 +180,11 @@ for (const field of SPINE_BLOCK_FIELDS) {
     )
   })
 }
+
+test('escape.escapeStoredBlock-cannot-be-forged-into-authoring-its-own-blockquote-marker', () => {
+  assert.equal(
+    escapeStoredBlock('> forged quote'),
+    '> U+003E forged quote',
+    "a stored value spelling its own leading '>' must render as the server's blockquote marker followed by the value's own '>' escaped, not as two indistinguishable blockquote markers"
+  )
+})
