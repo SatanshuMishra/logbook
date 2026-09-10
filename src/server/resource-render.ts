@@ -1,4 +1,4 @@
-import { escapeStored } from '../render/escape.ts'
+import { escapeStored, escapeStoredBlock } from '../render/escape.ts'
 import { clipWithMarker } from '../render/clip.ts'
 import type { Binding } from '../schema/binding.ts'
 import type { Decision } from '../schema/decision.ts'
@@ -53,7 +53,7 @@ export const renderSessionEntryResource = (entry: SessionEntry): string =>
     `Actor: ${escapeStored(entry.actor)}`,
     `Recorded: ${escapeStored(entry.created_at)}`,
     '',
-    escapeStored(entry.body)
+    escapeStoredBlock(entry.body)
   ].join('\n')
 
 const renderDetailQuarantinedLine = (id: string): string => `quarantined: ${escapeStored(id)}`

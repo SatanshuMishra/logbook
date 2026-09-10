@@ -14,11 +14,12 @@ import { ALL_TOOLS } from '../../src/server/register.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { openStore, type RecordChange } from '../../src/store/records.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
-import { escapeStored } from '../../src/render/escape.ts'
+import { escapeStored, toEscaped } from '../../src/render/escape.ts'
 import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
 import { BRIEFING_HEADING } from '../../src/render/briefing.ts'
 import { renderThreadListing } from '../../src/cli/session-start.ts'
 import { UNRECOGNIZED_KEY_NAME_MAX } from '../../src/schema/caps.ts'
+import type { SessionEntry } from '../../src/schema/session.ts'
 import type { Spine, Thread } from '../../src/schema/thread.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -814,6 +815,172 @@ test('render.spine-fields-cannot-forge-a-pseudo-tag', async () => {
         assertPayloadIsInert(label, hostile[surface], control[surface])
         assertPseudoTagIsNeutralised(surface, label, hostile[surface], control[surface], probe)
       }
+    }
+  } finally {
+    disposeFixture(hostileFixture)
+    disposeFixture(controlFixture)
+  }
+})
+
+const SESSION_ENTRY_STORED_LINE_BREAK = toEscaped('\n')
+const SESSION_ENTRY_ACTOR = 'claude'
+const SESSION_ENTRY_SURFACE = 'sessionEntryResource'
+const BENIGN_SESSION_ENTRY_LEAD_LINE = 'a plainly benign session entry lead line'
+
+const SESSION_ENTRY_THREAD_SPEC: SeedSpec = {
+  title: CONTROL_TITLE,
+  blockedBy: null,
+  nextStep: BENIGN_SPINE_NEXT_STEP,
+  activeGoal: BENIGN_SPINE_ACTIVE_GOAL,
+  lastSession: BENIGN_SPINE_LAST_SESSION,
+  landed: BENIGN_SPINE_LANDED,
+  count: 1
+}
+
+const sessionEntryBodyFor = (value: string): string =>
+  `${BENIGN_SESSION_ENTRY_LEAD_LINE}${SESSION_ENTRY_STORED_LINE_BREAK}${value}`
+
+const storedLineBreakCount = (body: string): number => body.split(SESSION_ENTRY_STORED_LINE_BREAK).length - 1
+
+const structuralMarkerLinesOf = (text: string): string[] =>
+  linesOf(text).filter((line) => STRUCTURAL_MARKER_AT_LINE_START.test(line))
+
+type SeededSessionEntries = { threadId: string; entryIds: string[] }
+
+const seedSessionEntries = (fixture: Fixture, bodies: readonly string[]): SeededSessionEntries => {
+  const rt = fixtureRuntime(fixture)
+  const store = openStoreForSeeding(fixture, rt)
+  const thread = threadFromSpec(rt, SESSION_ENTRY_THREAD_SPEC, 0)
+  const entries: SessionEntry[] = bodies.map((body) => ({
+    id: rt.ulid(),
+    thread_id: thread.id,
+    actor: SESSION_ENTRY_ACTOR,
+    body,
+    created_at: rt.now()
+  }))
+  const changes: RecordChange[] = [
+    { kind: 'thread', record: thread },
+    ...entries.map((record): RecordChange => ({ kind: 'session', record }))
+  ]
+  const committed = store.commit(changes, `seed ${entries.length} forgery session entries`)
+  if (!committed.ok) {
+    throw new Error(
+      `forgery fixture: seeding ${entries.length} session entries failed: ${committed.reason} ${committed.detail}`
+    )
+  }
+  return { threadId: thread.id, entryIds: entries.map((entry) => entry.id) }
+}
+
+const renderSessionEntriesFor = async (
+  fixture: Fixture,
+  threadId: string,
+  entryIds: readonly string[]
+): Promise<string[]> => {
+  const spawned = await spawnServer({
+    projectRoot: fixture.repo,
+    entry: ENTRY,
+    env: { CLAUDE_PLUGIN_DATA: fixture.pluginData }
+  })
+  try {
+    const rendered: string[] = []
+    for (const entryId of entryIds) {
+      const uri = `logbook://session/${threadId}/${entryId}`
+      rendered.push(resourceTextOf(await spawned.client.readResource({ uri }), uri))
+    }
+    return rendered
+  } finally {
+    await spawned.close()
+  }
+}
+
+type SessionEntryProbe = {
+  index: number
+  payload: SpinePayload
+  control: string
+  hostileBody: string
+  controlBody: string
+}
+
+const SESSION_ENTRY_PROBES: readonly SessionEntryProbe[] = SPINE_FORGERY_PAYLOADS.map((payload, index) => ({
+  index,
+  payload,
+  control: controlSpineValue(index),
+  hostileBody: sessionEntryBodyFor(payload.stored),
+  controlBody: sessionEntryBodyFor(controlSpineValue(index))
+}))
+
+test('render.session-entry-body-cannot-forge-structure', async () => {
+  assert.equal(
+    escapeStored(BENIGN_SESSION_ENTRY_LEAD_LINE),
+    BENIGN_SESSION_ENTRY_LEAD_LINE,
+    `${SESSION_ENTRY_SURFACE}: the benign lead line does not survive the escape unchanged, so finding it as a rendered line would measure the escape rather than the line the payload was seeded onto`
+  )
+  for (const probe of SESSION_ENTRY_PROBES) {
+    assert.ok(
+      storedLineBreakCount(probe.hostileBody) > 0,
+      `${SESSION_ENTRY_SURFACE}/payload ${probe.index}: the hostile body carries no ${SESSION_ENTRY_STORED_LINE_BREAK} token, so it never reaches the one surface that turns a stored token into a real rendered line`
+    )
+    assert.equal(
+      storedLineBreakCount(probe.hostileBody),
+      storedLineBreakCount(probe.controlBody),
+      `${SESSION_ENTRY_SURFACE}/payload ${probe.index}: the hostile and control bodies carry different counts of the ${SESSION_ENTRY_STORED_LINE_BREAK} token, so a rendered line count difference between them would measure the seeding rather than the payload`
+    )
+  }
+
+  const hostileFixture = makeFixture('a9h')
+  const controlFixture = makeFixture('a9c')
+  try {
+    const hostileSeed = seedSessionEntries(
+      hostileFixture,
+      SESSION_ENTRY_PROBES.map((probe) => probe.hostileBody)
+    )
+    const controlSeed = seedSessionEntries(
+      controlFixture,
+      SESSION_ENTRY_PROBES.map((probe) => probe.controlBody)
+    )
+    assert.equal(
+      hostileSeed.entryIds.length,
+      SESSION_ENTRY_PROBES.length,
+      'the hostile fixture seeded one session entry per probe'
+    )
+    assert.equal(
+      controlSeed.entryIds.length,
+      SESSION_ENTRY_PROBES.length,
+      'the control fixture seeded one session entry per probe'
+    )
+
+    const hostileRenders = await renderSessionEntriesFor(hostileFixture, hostileSeed.threadId, hostileSeed.entryIds)
+    const controlRenders = await renderSessionEntriesFor(controlFixture, controlSeed.threadId, controlSeed.entryIds)
+
+    for (const [position, probe] of SESSION_ENTRY_PROBES.entries()) {
+      const hostile = hostileRenders[position]
+      const control = controlRenders[position]
+      assert.ok(
+        hostile !== undefined && control !== undefined,
+        `${SESSION_ENTRY_SURFACE}/payload ${probe.index}: the probe rendered no hostile and control pair`
+      )
+      const label = `${SESSION_ENTRY_SURFACE}/payload ${probe.index}`
+      assert.deepEqual(
+        structuralMarkerLinesOf(control),
+        [],
+        `${label}: the control render already opens a line with a structural marker of its own, so the marker sequence comparison beneath it would prove nothing`
+      )
+      assertPayloadIsInert(label, hostile, control)
+      assert.equal(
+        linesEqualTo(hostile, probe.payload.neutralised),
+        1,
+        `${label}: expected exactly one rendered line to be exactly ${JSON.stringify(probe.payload.neutralised)}. This surface decodes the stored line break token into a real line, so a decode that did not re-escape each decoded line would place ${JSON.stringify(probe.payload.stored)} at a line start instead`
+      )
+      assert.equal(
+        linesEqualTo(hostile, BENIGN_SESSION_ENTRY_LEAD_LINE),
+        1,
+        `${label}: the hostile render carries no line that is exactly ${JSON.stringify(BENIGN_SESSION_ENTRY_LEAD_LINE)}, so the body was dropped or reshaped and the inertness assertions above measured an absence rather than a neutralised payload`
+      )
+      assert.equal(
+        hostile.includes(probe.payload.stored),
+        false,
+        `${label}: the stored payload ${JSON.stringify(probe.payload.stored)} reached the client verbatim`
+      )
     }
   } finally {
     disposeFixture(hostileFixture)

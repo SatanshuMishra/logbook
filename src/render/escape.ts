@@ -117,6 +117,11 @@ export const escapeStored = (text: string, surface: EscapeSurface = 'prose'): st
   return out.join('')
 }
 
+const STORED_LINE_BREAK = toEscaped('\n')
+
+export const escapeStoredBlock = (text: string): string =>
+  text.split(STORED_LINE_BREAK).map((line) => escapeStored(line)).join('\n')
+
 const ESCAPE_PREFIX = 'U+'
 const ESCAPE_DIGITS = /^[0-9A-F]+$/
 const ESCAPE_WIDTHS = [4, 5, 6] as const
