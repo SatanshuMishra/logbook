@@ -19,7 +19,7 @@ import { openProjectStore } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 
-const NO_OUTCOME_SESSION_ENTRY_BODY = 'the session was parked without an outcome being given.'
+export const NO_OUTCOME_SESSION_ENTRY_BODY = 'the session was parked without an outcome being given.'
 
 const ParkThreadInputSchema = z.strictObject({
   outcome: z
