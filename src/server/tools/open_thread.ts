@@ -13,10 +13,8 @@ import {
   loadThreadForReference,
   mintArtifacts,
   openProjectStore,
-  overByteCapRefusal
+  refuseOverThreadByteCap
 } from '../tool-support.ts'
-
-const byteSizeOf = (value: unknown): number => Buffer.byteLength(JSON.stringify(value), 'utf8')
 
 const CriterionCreateSchema = z
   .strictObject({
@@ -269,9 +267,9 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
       created_at: '',
       updated_at: ''
     }
-    const rawProspectiveBytes = byteSizeOf(rawProspectiveThread)
-    if (rawProspectiveBytes > caps.THREAD_RECORD_SERIALISED_MAX_BYTES) {
-      return { ok: false, refusal: overByteCapRefusal(rawProspectiveThread, rawProspectiveBytes) }
+    const rawOverCap = refuseOverThreadByteCap(rawProspectiveThread)
+    if (rawOverCap !== null) {
+      return { ok: false, refusal: rawOverCap }
     }
 
     const escapedCriteria = criteria.map((entry) => ({

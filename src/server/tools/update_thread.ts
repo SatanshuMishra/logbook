@@ -13,10 +13,8 @@ import {
   loadThread,
   mintArtifacts,
   openProjectStore,
-  overByteCapRefusal
+  refuseOverThreadByteCap
 } from '../tool-support.ts'
-
-const byteSizeOf = (value: unknown): number => Buffer.byteLength(JSON.stringify(value), 'utf8')
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 const optionalUlidField = (description: string) => z.string().regex(ULID_PATTERN).optional().describe(description)
@@ -373,9 +371,9 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
       return doneEntry === undefined ? c : { ...c, result: doneEntry.result }
     })
     const rawResultProspective: Thread = { ...thread, completion_criteria: rawResultCriteria }
-    const rawResultBytes = byteSizeOf(rawResultProspective)
-    if (rawResultBytes > caps.THREAD_RECORD_SERIALISED_MAX_BYTES) {
-      return { ok: false, refusal: overByteCapRefusal(rawResultProspective, rawResultBytes) }
+    const rawResultOverCap = refuseOverThreadByteCap(rawResultProspective)
+    if (rawResultOverCap !== null) {
+      return { ok: false, refusal: rawResultOverCap }
     }
     const escapedResults = criteriaDone.map((entry) => escapeStored(entry.result))
     const completions = new Map(
@@ -433,9 +431,9 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
         : { ...c, settled_by: settledEntry.settledness === 'confirmed' ? (settledEntry.settled_by ?? null) : null }
     })
     const rawSettledProspective: Thread = { ...thread, completion_criteria: rawSettledCriteria }
-    const rawSettledBytes = byteSizeOf(rawSettledProspective)
-    if (rawSettledBytes > caps.THREAD_RECORD_SERIALISED_MAX_BYTES) {
-      return { ok: false, refusal: overByteCapRefusal(rawSettledProspective, rawSettledBytes) }
+    const rawSettledOverCap = refuseOverThreadByteCap(rawSettledProspective)
+    if (rawSettledOverCap !== null) {
+      return { ok: false, refusal: rawSettledOverCap }
     }
     const escapedSettlements = criteriaSettled.map((entry) => ({
       criterion_id: entry.criterion_id,
@@ -605,9 +603,9 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
       ...thread,
       spine: { ...thread.spine, open_risks: [...survivingRisks, ...newRisks] }
     }
-    const rawRiskBytes = byteSizeOf(rawRiskProspective)
-    if (rawRiskBytes > caps.THREAD_RECORD_SERIALISED_MAX_BYTES) {
-      return { ok: false, refusal: overByteCapRefusal(rawRiskProspective, rawRiskBytes) }
+    const rawRiskOverCap = refuseOverThreadByteCap(rawRiskProspective)
+    if (rawRiskOverCap !== null) {
+      return { ok: false, refusal: rawRiskOverCap }
     }
 
     const spineForContribution: Spine = { ...thread.spine, open_risks: survivingRisks }

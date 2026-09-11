@@ -5,9 +5,7 @@ import type { Criterion, Thread } from '../../schema/thread.ts'
 import { ULID_PATTERN } from '../../schema/ids.ts'
 import * as caps from '../../schema/caps.ts'
 import { insertCriterion, rewriteCriterion, strikeCriterion } from '../../domain/criteria.ts'
-import { commitThread, decisionResolver, loadThread, openProjectStore, overByteCapRefusal } from '../tool-support.ts'
-
-const byteSizeOf = (value: unknown): number => Buffer.byteLength(JSON.stringify(value), 'utf8')
+import { commitThread, decisionResolver, loadThread, openProjectStore, refuseOverThreadByteCap } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 
@@ -169,9 +167,9 @@ export const amendCriteriaTool: ToolSpec<AmendCriteriaInput, AmendCriteriaOutput
         ...thread,
         completion_criteria: [...thread.completion_criteria, rawInserted]
       }
-      const rawProspectiveBytes = byteSizeOf(rawProspectiveThread)
-      if (rawProspectiveBytes > caps.THREAD_RECORD_SERIALISED_MAX_BYTES) {
-        return { ok: false, refusal: overByteCapRefusal(rawProspectiveThread, rawProspectiveBytes) }
+      const rawOverCap = refuseOverThreadByteCap(rawProspectiveThread)
+      if (rawOverCap !== null) {
+        return { ok: false, refusal: rawOverCap }
       }
 
       const result = insertCriterion(

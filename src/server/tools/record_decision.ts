@@ -9,7 +9,7 @@ import { ThreadRecord, type KeyDecision, type Thread } from '../../schema/thread
 import type { RecordChange } from '../../store/write-path.ts'
 import { readProjectHead } from '../../store/git.ts'
 import { withDetail } from '../../store/detail.ts'
-import { openProjectStore, loadThread, decisionResolver } from '../tool-support.ts'
+import { byteSizeOf, openProjectStore, loadThread, decisionResolver } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 
@@ -89,8 +89,6 @@ export const invalidDecisionRefusal = (issue: string): Refusal => ({
   message: `the decision record failed its stored-shape validation: ${issue}`
 })
 
-const byteSizeOf = (value: unknown): number => Buffer.byteLength(JSON.stringify(value), 'utf8')
-
 const heaviestDecisionFieldOf = (decision: Decision): { field: string; bytes: number } => {
   const measured = Object.entries(decision as unknown as Record<string, unknown>).map(([key, value]) => ({
     field: key,
@@ -112,6 +110,11 @@ const overDecisionByteCapRefusal = (decision: Decision, observed: number): Refus
     retryable: true,
     message: `the decision record after this change is ${observed} bytes, over its cap of ${caps.DECISION_RECORD_SERIALISED_MAX_BYTES} bytes; its largest field is ${heaviest.field} at ${heaviest.bytes} bytes; remedy: remove or shorten an entry in ${heaviest.field} and retry.`
   }
+}
+
+const refuseOverDecisionByteCap = (decision: Decision): Refusal | null => {
+  const bytes = byteSizeOf(decision)
+  return bytes > caps.DECISION_RECORD_SERIALISED_MAX_BYTES ? overDecisionByteCapRefusal(decision, bytes) : null
 }
 
 export const commitFailureRefusal = (detail: string): Refusal =>
@@ -216,9 +219,9 @@ export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOut
       created_at: createdAt
     }
 
-    const rawProspectiveBytes = byteSizeOf(rawProspectiveDecision)
-    if (rawProspectiveBytes > caps.DECISION_RECORD_SERIALISED_MAX_BYTES) {
-      return { ok: false, refusal: overDecisionByteCapRefusal(rawProspectiveDecision, rawProspectiveBytes) }
+    const rawOverCap = refuseOverDecisionByteCap(rawProspectiveDecision)
+    if (rawOverCap !== null) {
+      return { ok: false, refusal: rawOverCap }
     }
 
     const escapedContext = escapeStored(input.context)
@@ -236,9 +239,9 @@ export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOut
       created_at: createdAt
     }
 
-    const decisionBytes = byteSizeOf(decision)
-    if (decisionBytes > caps.DECISION_RECORD_SERIALISED_MAX_BYTES) {
-      return { ok: false, refusal: overDecisionByteCapRefusal(decision, decisionBytes) }
+    const overCap = refuseOverDecisionByteCap(decision)
+    if (overCap !== null) {
+      return { ok: false, refusal: overCap }
     }
 
     const validated = DecisionRecord.parse(decision)

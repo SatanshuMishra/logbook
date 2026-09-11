@@ -94,7 +94,7 @@ export const loadThread = (store: Store, field: string, id: Ulid): Attempt<Threa
   return { ok: true, value: slot.record }
 }
 
-const byteSizeOf = (value: unknown): number => Buffer.byteLength(JSON.stringify(value), 'utf8')
+export const byteSizeOf = (value: unknown): number => Buffer.byteLength(JSON.stringify(value), 'utf8')
 
 const heaviestFieldOf = (thread: Thread): { field: string; bytes: number } => {
   const measured = Object.entries(thread as unknown as Record<string, unknown>).flatMap(([key, value]) => {
@@ -112,7 +112,7 @@ const heaviestFieldOf = (thread: Thread): { field: string; bytes: number } => {
   )
 }
 
-export const overByteCapRefusal = (thread: Thread, observed: number): Refusal => {
+const overByteCapRefusal = (thread: Thread, observed: number): Refusal => {
   const heaviest = heaviestFieldOf(thread)
   return {
     ok: false,
@@ -122,6 +122,11 @@ export const overByteCapRefusal = (thread: Thread, observed: number): Refusal =>
     retryable: true,
     message: `the thread record after this change is ${observed} bytes, over its cap of ${caps.THREAD_RECORD_SERIALISED_MAX_BYTES} bytes; its largest field is ${heaviest.field} at ${heaviest.bytes} bytes; remedy: remove or shorten an entry in ${heaviest.field} and retry.`
   }
+}
+
+export const refuseOverThreadByteCap = (thread: Thread): Refusal | null => {
+  const bytes = byteSizeOf(thread)
+  return bytes > caps.THREAD_RECORD_SERIALISED_MAX_BYTES ? overByteCapRefusal(thread, bytes) : null
 }
 
 const invalidThreadRecordRefusal = (field: string, issue: string): Refusal => ({
@@ -147,9 +152,9 @@ const commitFailureRefusal = (detail: string): Refusal =>
   )
 
 export const commitThread = (store: Store, thread: Thread, message: string): Attempt<Thread> => {
-  const bytes = byteSizeOf(thread)
-  if (bytes > caps.THREAD_RECORD_SERIALISED_MAX_BYTES) {
-    return { ok: false, refusal: overByteCapRefusal(thread, bytes) }
+  const overCap = refuseOverThreadByteCap(thread)
+  if (overCap !== null) {
+    return { ok: false, refusal: overCap }
   }
   const validated = ThreadRecord.parse(thread)
   if (!validated.ok) {
