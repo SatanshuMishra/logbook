@@ -1,10 +1,11 @@
 import { z } from 'zod'
 import type { ToolSpec } from '../register.ts'
 import type { Refusal } from '../../schema/declare.ts'
+import type { Criterion, Thread } from '../../schema/thread.ts'
 import { ULID_PATTERN } from '../../schema/ids.ts'
 import * as caps from '../../schema/caps.ts'
 import { insertCriterion, rewriteCriterion, strikeCriterion } from '../../domain/criteria.ts'
-import { commitThread, decisionResolver, loadThread, openProjectStore } from '../tool-support.ts'
+import { commitThread, decisionResolver, loadThread, openProjectStore, refuseOverThreadByteCap } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 
@@ -147,6 +148,28 @@ export const amendCriteriaTool: ToolSpec<AmendCriteriaInput, AmendCriteriaOutput
       }
       if (input.settledness !== 'confirmed' && input.settled_by !== undefined) {
         return { ok: false, refusal: quoteNotOwedRefusal(input.settledness) }
+      }
+
+      const rawInserted: Criterion = {
+        id: '',
+        ordinal: 0,
+        text: input.text,
+        done: false,
+        kind: input.kind,
+        check: input.check ?? null,
+        result: null,
+        result_status: null,
+        struck_by: null,
+        settledness: input.settledness,
+        settled_by: input.settled_by ?? null
+      }
+      const rawProspectiveThread: Thread = {
+        ...thread,
+        completion_criteria: [...thread.completion_criteria, rawInserted]
+      }
+      const rawOverCap = refuseOverThreadByteCap(rawProspectiveThread)
+      if (rawOverCap !== null) {
+        return { ok: false, refusal: rawOverCap }
       }
 
       const result = insertCriterion(
