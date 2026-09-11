@@ -358,6 +358,16 @@ test('resource.sessions-caps-first-line-text-but-keeps-every-id', async () => {
       listing.includes(`cap fixture entry number ${total - 1}`),
       'expected the newest entry to still show its first-line text'
     )
+    const seededEntryLine = listing.split('\n').find((line) => line.includes(ids.sessionEntryId))
+    assert.ok(
+      seededEntryLine !== undefined,
+      `expected the sessions listing to include a line for the seedStore entry ${ids.sessionEntryId}`
+    )
+    assert.ok(
+      (seededEntryLine as string).includes('a resources fixture session entry'),
+      `expected the seedStore entry ${ids.sessionEntryId} to sort among the shown first-line entries and keep its first-line text, got line '${seededEntryLine}'`
+    )
+
     const seededSessionEntryCount = 1
     const droppedCount = total + seededSessionEntryCount - SESSION_FIRST_LINE_ENTRIES_MAX
     assert.ok(

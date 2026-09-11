@@ -487,12 +487,22 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     if (bodyOverflow.ok) throw new Error('expected logSessionEventTool to refuse a body that overflows its cap once escaped')
     refusals.push({ producer: LOG_SESSION_EVENT_BODY_CAP_PRODUCER, refusal: bodyOverflow.refusal })
 
+    const boundProbeThread = censusFixtureThread(rt)
+    const boundProbeThreadWithSlug: Thread = { ...boundProbeThread, slug: 'census-session-entry-bound-thread' }
+    const boundProbeThreadSeed = store.commit(
+      [{ kind: 'thread', record: boundProbeThreadWithSlug }],
+      'seed census session-entry-bound thread fixture'
+    )
+    if (!boundProbeThreadSeed.ok) {
+      throw new Error('expected the census session-entry-bound thread fixture to seed successfully')
+    }
+
     const unparkedBoundSeed = store.commit(
       Array.from({ length: caps.SESSION_UNPARKED_ENTRIES_MAX }, (_unused, index) => ({
         kind: 'session' as const,
         record: {
           id: rt.ulid(),
-          thread_id: threadId,
+          thread_id: boundProbeThreadWithSlug.id,
           actor: 'claude',
           body: `census session-entry-bound seed entry ${index}`,
           created_at: rt.now()
@@ -505,12 +515,17 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     }
 
     const unparkedBoundOverflow = await logSessionEventTool.handler(rt, STUB_TOOL_CTX, {
-      thread_id: threadId,
+      thread_id: boundProbeThreadWithSlug.id,
       actor: 'claude',
       body: 'a census body over the un-parked entries bound'
     })
     if (unparkedBoundOverflow.ok) {
       throw new Error('expected logSessionEventTool to refuse once the thread carries the un-parked entries bound')
+    }
+    if (!unparkedBoundOverflow.refusal.message.includes('park_thread')) {
+      throw new Error(
+        `expected the bound refusal to name park_thread as the remedy, got '${unparkedBoundOverflow.refusal.message}'`
+      )
     }
     refusals.push({ producer: LOG_SESSION_EVENT_UNPARKED_BOUND_PRODUCER, refusal: unparkedBoundOverflow.refusal })
 
@@ -559,6 +574,11 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     })
     if (logSessionEventCommitFailure.ok) {
       throw new Error('expected logSessionEventTool to refuse when the ledger commit cannot complete')
+    }
+    if (!logSessionEventCommitFailure.refusal.message.includes('this session entry did not complete')) {
+      throw new Error(
+        `expected the commit-failure refusal to name the session entry commit as the cause, got '${logSessionEventCommitFailure.refusal.message}'`
+      )
     }
     refusals.push({ producer: LOG_SESSION_EVENT_COMMIT_FAILURE_PRODUCER, refusal: logSessionEventCommitFailure.refusal })
 

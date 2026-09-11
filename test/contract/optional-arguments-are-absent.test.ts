@@ -3,7 +3,6 @@ import { test } from 'node:test'
 import { z } from 'zod'
 import { ALL_TOOLS } from '../../src/server/register.ts'
 import { declare } from '../../src/schema/declare.ts'
-import { NO_OUTCOME_SESSION_ENTRY_BODY } from '../../src/server/tools/park_thread.ts'
 import { census } from '../support/census.ts'
 import { flattenSchemaNodes, isPlainObject } from '../support/schema-nodes.ts'
 import { RECIPES, TEST_2_CASES, isEmptyish, withSingleFixture } from '../support/optional-argument-recipes.ts'
@@ -55,16 +54,10 @@ const derivePopulation = (): string[] =>
     collectOptionalArguments(spec.name, declare(spec.name, spec.input as unknown as z.ZodType).jsonSchema)
   )
 
-const isDeclaredParkWithoutOutcomeBoundaryEntry = (entry: LandingSiteEntry): boolean =>
-  entry.path === 'park_thread.outcome' &&
-  entry.site === 'session_entry_body' &&
-  entry.omitted === NO_OUTCOME_SESSION_ENTRY_BODY
-
 const classifyLandingSite = (entry: LandingSiteEntry): Verdict => {
   if (entry.noDifference) return 'unclassifiable'
   if (entry.refused) return entry.refusal !== null && entry.refusal.field === keyOf(entry.path) ? 'allowed' : 'unclassifiable'
   if (isEmptyish(entry.omitted)) return 'allowed'
-  if (isDeclaredParkWithoutOutcomeBoundaryEntry(entry)) return 'allowed'
   const value = entry.omitted
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || Array.isArray(value)) {
     return 'forbidden'
