@@ -36,7 +36,8 @@ const BLOCK_ESCAPE_FUNCTION = 'escapeStoredBlock'
 const ESCAPE_FUNCTIONS = new Set([ESCAPE_FUNCTION, BLOCK_ESCAPE_FUNCTION])
 const CLIP_FUNCTION = 'clipGraphemes'
 const MARKER_CLIP_FUNCTION = 'clipWithMarker'
-const WRAPPING_CLIP_FUNCTIONS = new Set([CLIP_FUNCTION, MARKER_CLIP_FUNCTION])
+const MARKER_CLIP_FLOOR_FUNCTION = 'clipWithMarkerFloor'
+const WRAPPING_CLIP_FUNCTIONS = new Set([CLIP_FUNCTION, MARKER_CLIP_FUNCTION, MARKER_CLIP_FLOOR_FUNCTION])
 const ITERATION_CALLBACK_NAMES = new Set(['map', 'flatMap', 'filter', 'forEach', 'find'])
 const ARRAY_PRODUCING_NAMES = new Set(['map', 'flatMap'])
 const JOIN_METHOD = 'join'
@@ -55,7 +56,8 @@ const contextFor = (checker: ts.TypeChecker, sourceFile: ts.SourceFile): Ctx => 
     ESCAPE_FUNCTION,
     BLOCK_ESCAPE_FUNCTION,
     CLIP_FUNCTION,
-    MARKER_CLIP_FUNCTION
+    MARKER_CLIP_FUNCTION,
+    MARKER_CLIP_FLOOR_FUNCTION
   ])
 })
 
@@ -444,11 +446,12 @@ const SYNTHETIC_ESCAPE_SOURCE = [
   'export const escapeStored = (text: string): string => text',
   'export const clipGraphemes = (text: string, max: number): string => text.slice(0, max)',
   'export const clipWithMarker = (text: string, max: number): string => text.slice(0, max)',
+  'export const clipWithMarkerFloor = (text: string, min: number): string => text.slice(0, min)',
   ''
 ].join('\n')
 
 const SYNTHETIC_MODULE_SOURCE = [
-  "import { escapeStored, clipGraphemes, clipWithMarker } from './escape.ts'",
+  "import { escapeStored, clipGraphemes, clipWithMarker, clipWithMarkerFloor } from './escape.ts'",
   '',
   "const BANNER = 'Synthetic'",
   '',
@@ -460,7 +463,9 @@ const SYNTHETIC_MODULE_SOURCE = [
   '    `Count: ${payload.count}`,',
   '    `Title: ${payload.rawTitle}`,',
   '    `Shortened: ${clipWithMarker(escapeStored(payload.safeTitle), 40)}`,',
-  '    `ShortenedRaw: ${clipWithMarker(payload.rawTitle, 40)}`',
+  '    `ShortenedRaw: ${clipWithMarker(payload.rawTitle, 40)}`,',
+  '    `FloorShortened: ${clipWithMarkerFloor(escapeStored(payload.safeTitle), 40)}`,',
+  '    `FloorShortenedRaw: ${clipWithMarkerFloor(payload.rawTitle, 40)}`',
   "  ].join('\\n')",
   ''
 ].join('\n')
@@ -608,9 +613,11 @@ test('render.no-unescaped-site.names-the-module-and-the-expression-it-halted-on'
       ['payload.count', 'server-authored'],
       [SYNTHETIC_OFFENDING_EXPRESSION, 'unclassifiable'],
       ['clipWithMarker(escapeStored(payload.safeTitle), 40)', 'escaped'],
-      ['clipWithMarker(payload.rawTitle, 40)', 'unclassifiable']
+      ['clipWithMarker(payload.rawTitle, 40)', 'unclassifiable'],
+      ['clipWithMarkerFloor(escapeStored(payload.safeTitle), 40)', 'escaped'],
+      ['clipWithMarkerFloor(payload.rawTitle, 40)', 'unclassifiable']
     ],
-    'the synthetic module must expose two unescaped interpolations alongside four classified ones'
+    'the synthetic module must expose three unescaped interpolations alongside five classified ones'
   )
 
   assert.throws(

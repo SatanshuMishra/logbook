@@ -195,3 +195,25 @@ export const clipGraphemes = (text: string, max: number): string => {
   const graphemes = Array.from(GRAPHEME_SEGMENTER.segment(text), (entry) => entry.segment)
   return graphemes.slice(0, escapeTokenSafeBoundary(graphemes, max)).join('')
 }
+
+const escapeTokenSafeFloorBoundary = (graphemes: readonly string[], min: number): number => {
+  if (min >= graphemes.length) return graphemes.length
+  let index = 0
+  while (index < min) {
+    const decoded =
+      graphemes[index] === 'U' && graphemes[index + 1] === '+' ? decodedEscapeAt(graphemes, index) : null
+    if (decoded === null) {
+      index += 1
+      continue
+    }
+    const end = index + ESCAPE_PREFIX.length + decoded.width
+    if (end > min) return end
+    index = end
+  }
+  return min
+}
+
+export const clipGraphemesFloor = (text: string, min: number): string => {
+  const graphemes = Array.from(GRAPHEME_SEGMENTER.segment(text), (entry) => entry.segment)
+  return graphemes.slice(0, escapeTokenSafeFloorBoundary(graphemes, min)).join('')
+}

@@ -4,8 +4,16 @@ import type { SessionEntry } from '../schema/session.ts'
 import type { Pointer } from '../domain/pointer.ts'
 import { previousSessionEntries } from '../domain/session-log.ts'
 import { escapeStored, escapeStoredBlock } from './escape.ts'
-import { CLIP_MARKER_GRAPHEMES, clipWithMarker } from './clip.ts'
+import { CLIP_MARKER_GRAPHEMES, clipWithMarker, clipWithMarkerFloor } from './clip.ts'
 import {
+  ARTIFACT_LABEL_MAX,
+  ARTIFACT_POINTER_MAX,
+  CRITERION_CHECK_MAX,
+  CRITERION_TEXT_MAX,
+  KEY_DECISION_TITLE_MAX,
+  OUT_OF_SCOPE_TEXT_MAX,
+  RISK_REF_MAX,
+  SESSION_BODY_MAX,
   SPINE_ACTIVE_GOAL_MAX,
   SPINE_LANDED_MAX,
   SPINE_LAST_SESSION_MAX,
@@ -15,6 +23,9 @@ import {
   THREAD_TITLE_MAX
 } from '../schema/caps.ts'
 
+const FORMER_RISK_TEXT_MAX = 500
+const FORMER_CRITERION_SETTLED_BY_MAX = 500
+
 export type DecisionIntegrity = {
   resolved: number
   dangling: string[]
@@ -23,7 +34,7 @@ export type DecisionIntegrity = {
 
 export const BRIEFING_HEADING = '# Your Preflight Briefing'
 export const BRIEFING_MAX_CHARS = 12000
-export const RESUME_PAYLOAD_MAX_BYTES = 24000
+export const RESUME_PAYLOAD_MAX_BYTES = 12418
 
 const RESUME_PAYLOAD_RESERVE_BYTES = 200
 export const RESUME_PAYLOAD_TARGET_BYTES = RESUME_PAYLOAD_MAX_BYTES - RESUME_PAYLOAD_RESERVE_BYTES
@@ -54,19 +65,19 @@ const fitsBudget = (briefing: string, threadId: string, hasPreviousSession: bool
   briefing.length <= BRIEFING_MAX_CHARS &&
   resumePayloadBytes(briefing, threadId, hasPreviousSession) <= RESUME_PAYLOAD_TARGET_BYTES
 
-const RELATED_TITLE_NATURAL_MAX = 100
-const RELATED_SLUG_NATURAL_MAX = 64
-export const RISK_TEXT_NATURAL_MAX = 500
-const RISK_REF_NATURAL_MAX = 200
-const KEY_DECISION_TITLE_NATURAL_MAX = 200
-const OUT_OF_SCOPE_TEXT_NATURAL_MAX = 300
-const CRITERION_TEXT_NATURAL_MAX = 500
-const CRITERION_CHECK_NATURAL_MAX = 500
-const CRITERION_RESULT_NATURAL_MAX = 500
-const CRITERION_SETTLED_BY_NATURAL_MAX = 500
-const LAST_SESSION_TEXT_NATURAL_MAX = 500
-const ARTIFACT_LABEL_NATURAL_MAX = 200
-const ARTIFACT_POINTER_NATURAL_MAX = 500
+export const RELATED_TITLE_FLOOR = 100
+export const RELATED_SLUG_FLOOR = THREAD_SLUG_MAX
+export const RISK_TEXT_FLOOR = FORMER_RISK_TEXT_MAX
+export const RISK_REF_FLOOR = RISK_REF_MAX
+export const KEY_DECISION_TITLE_FLOOR = KEY_DECISION_TITLE_MAX
+export const OUT_OF_SCOPE_TEXT_FLOOR = OUT_OF_SCOPE_TEXT_MAX
+export const CRITERION_TEXT_FLOOR = CRITERION_TEXT_MAX
+export const CRITERION_CHECK_FLOOR = CRITERION_CHECK_MAX
+export const CRITERION_RESULT_FLOOR = 500
+export const CRITERION_SETTLED_BY_FLOOR = FORMER_CRITERION_SETTLED_BY_MAX
+export const LAST_SESSION_TEXT_FLOOR = 500
+export const ARTIFACT_LABEL_FLOOR = ARTIFACT_LABEL_MAX
+export const ARTIFACT_POINTER_FLOOR = ARTIFACT_POINTER_MAX
 
 const HEADER_FIELD_ESCAPED_GRAPHEME_MAX = Math.max(
   THREAD_TITLE_MAX,
@@ -77,7 +88,7 @@ const HEADER_FIELD_ESCAPED_GRAPHEME_MAX = Math.max(
   SPINE_LANDED_MAX
 )
 
-const MIN_TEXT_CLIP = CLIP_MARKER_GRAPHEMES
+export const MIN_TEXT_CLIP = CLIP_MARKER_GRAPHEMES
 const NO_CLIP = Number.POSITIVE_INFINITY
 
 export const NOT_RECORDED = 'not recorded'
@@ -99,7 +110,17 @@ const CRITERIA_ALL_STRUCK_OWED_LINE = '- every criterion recorded here was struc
 const TEXT_CLIPPED_BULLET =
   '- some text on this briefing was shortened to fit the size budget for one reply; every shortened value ends with ...[shortened]'
 
+export const BUDGET_EXCEEDED_BULLET =
+  '- this briefing does not fit the size budget for one reply even with every field rendered at its guaranteed minimum length, so it is over that budget'
+
 const clip = (text: string, max: number): string => clipWithMarker(escapeStored(text), max)
+
+const clipFloor = (text: string, min: number): string => clipWithMarkerFloor(escapeStored(text), min)
+
+const wasClipped = (text: string, min: number): boolean => {
+  const escaped = escapeStored(text)
+  return clipWithMarkerFloor(escaped, min) !== escaped
+}
 
 const headerInlineWasShortened = (value: string): boolean =>
   clip(value, HEADER_FIELD_ESCAPED_GRAPHEME_MAX) !== clip(value, NO_CLIP)
@@ -131,7 +152,7 @@ const settlednessLabel = (criterion: Criterion): string => {
 }
 
 const renderCriterionLine = (criterion: Criterion, textClip: number): string => {
-  const text = clip(criterion.text, textClip)
+  const text = clipFloor(criterion.text, textClip)
   const label = `- c${criterion.ordinal} [${criterionStatus(criterion)}] [${settlednessLabel(criterion)}]:`
   const withText = text.length === 0 ? label : `${label} ${text}`
   return `${withText} (id ${escapeStored(criterion.id)})`
@@ -139,19 +160,19 @@ const renderCriterionLine = (criterion: Criterion, textClip: number): string => 
 
 const renderCheckLine = (criterion: Criterion, textClip: number): string =>
   typeof criterion.check === 'string'
-    ? `  - check: ${clip(criterion.check, textClip)}`
+    ? `  - check: ${clipFloor(criterion.check, textClip)}`
     : `  - check: ${NOT_RECORDED}`
 
 const renderSettledByLine = (criterion: Criterion, textClip: number): string =>
   typeof criterion.settled_by === 'string'
-    ? `  - settled by: ${clip(criterion.settled_by, textClip)}`
+    ? `  - settled by: ${clipFloor(criterion.settled_by, textClip)}`
     : `  - settled by: ${NOT_RECORDED}`
 
 const renderResultStatus = (criterion: Criterion): string => escapeStored(criterion.result_status ?? NOT_RECORDED)
 
 const renderResultLine = (criterion: Criterion, textClip: number): string =>
   typeof criterion.result === 'string'
-    ? `  - result: ${clip(criterion.result, textClip)} (${renderResultStatus(criterion)})`
+    ? `  - result: ${clipFloor(criterion.result, textClip)} (${renderResultStatus(criterion)})`
     : `  - result: ${NOT_RECORDED} (${renderResultStatus(criterion)})`
 
 const renderCriterionBlock = (criterion: Criterion, renderClip: RenderClip): string =>
@@ -166,35 +187,35 @@ const renderCriterionBlock = (criterion: Criterion, renderClip: RenderClip): str
 
 const renderRiskBlock = (risk: Risk, renderClip: RenderClip): string =>
   [
-    `- ${escapeStored(risk.id)} ${clip(risk.text, renderClip.risk)}`,
-    ...risk.refs.map((ref) => `  - ref: ${clip(ref, renderClip.riskRef)}`)
+    `- ${escapeStored(risk.id)} ${clipFloor(risk.text, renderClip.risk)}`,
+    ...risk.refs.map((ref) => `  - ref: ${clipFloor(ref, renderClip.riskRef)}`)
   ].join('\n')
 
 const renderKeyDecisionLine = (keyDecision: KeyDecision, textClip: number): string =>
-  `- ${clip(keyDecision.title, textClip)} (decision ${escapeStored(keyDecision.decision_id)})`
+  `- ${clipFloor(keyDecision.title, textClip)} (decision ${escapeStored(keyDecision.decision_id)})`
 
-const renderOutOfScopeLine = (outOfScope: OutOfScope, textClip: number): string => `- ${clip(outOfScope.text, textClip)}`
+const renderOutOfScopeLine = (outOfScope: OutOfScope, textClip: number): string => `- ${clipFloor(outOfScope.text, textClip)}`
 
 const renderArtifactLine = (artifact: Artifact, renderClip: RenderClip): string =>
-  `- ${clip(artifact.label, renderClip.artifactLabel)}: ${clip(artifact.pointer, renderClip.artifactPointer)}`
+  `- ${clipFloor(artifact.label, renderClip.artifactLabel)}: ${clipFloor(artifact.pointer, renderClip.artifactPointer)}`
 
 const renderSessionEntryLine = (entry: SessionEntry, textClip: number): string =>
-  `- ${escapeStored(entry.id)} ${clip(entry.body, textClip)}`
+  `- ${escapeStored(entry.id)} ${clipFloor(entry.body, textClip)}`
 
 const renderUnreadableSessionEntriesLine = (count: number, threadId: string): string =>
   `- ${count} session log entr${count === 1 ? 'y' : 'ies'} on this thread could not be read; see logbook://sessions/${escapeStored(threadId)} for the complete record`
 
 const renderSettledRiskLine = (risk: Risk, textClip: number): string =>
-  `- risk ${escapeStored(risk.id)} ${clip(risk.text, textClip)}`
+  `- risk ${escapeStored(risk.id)} ${clipFloor(risk.text, textClip)}`
 
 const renderSettledKeyDecisionLine = (keyDecision: KeyDecision, textClip: number): string =>
-  `- decision ${escapeStored(keyDecision.decision_id)} ${clip(keyDecision.title, textClip)}`
+  `- decision ${escapeStored(keyDecision.decision_id)} ${clipFloor(keyDecision.title, textClip)}`
 
 const renderDanglingLine = (decisionId: string): string => `- dangling: ${escapeStored(decisionId)}`
 const renderQuarantinedLine = (decisionId: string): string => `- quarantined: ${escapeStored(decisionId)}`
 
 const renderRelatedLine = (predecessor: Thread, renderClip: RenderClip): string =>
-  `- succeeds: ${clip(predecessor.title, renderClip.relatedTitle)} (${clip(predecessor.slug, renderClip.relatedSlug)})`
+  `- succeeds: ${clipFloor(predecessor.title, renderClip.relatedTitle)} (${clipFloor(predecessor.slug, renderClip.relatedSlug)})`
 
 const renderBlockage = (blockedBy: string | null): string =>
   blockedBy === null ? '**Blockage:** none' : `**Blocked:** ${clip(blockedBy, HEADER_FIELD_ESCAPED_GRAPHEME_MAX)}`
@@ -241,21 +262,21 @@ type RenderClip = {
 }
 
 const clipAt = (perItemClip: number): RenderClip => ({
-  relatedTitle: Math.min(perItemClip, RELATED_TITLE_NATURAL_MAX),
-  relatedSlug: THREAD_SLUG_MAX,
-  risk: Math.min(perItemClip, RISK_TEXT_NATURAL_MAX),
-  riskRef: Math.min(perItemClip, RISK_REF_NATURAL_MAX),
-  keyDecision: Math.min(perItemClip, KEY_DECISION_TITLE_NATURAL_MAX),
-  outOfScope: Math.min(perItemClip, OUT_OF_SCOPE_TEXT_NATURAL_MAX),
-  criterion: Math.min(perItemClip, CRITERION_TEXT_NATURAL_MAX),
-  criterionCheck: Math.min(perItemClip, CRITERION_CHECK_NATURAL_MAX),
-  criterionResult: Math.min(perItemClip, CRITERION_RESULT_NATURAL_MAX),
-  criterionSettledBy: Math.min(perItemClip, CRITERION_SETTLED_BY_NATURAL_MAX),
-  lastSession: Math.min(perItemClip, LAST_SESSION_TEXT_NATURAL_MAX),
-  settledRisk: Math.min(perItemClip, RISK_TEXT_NATURAL_MAX),
-  settledKeyDecision: Math.min(perItemClip, KEY_DECISION_TITLE_NATURAL_MAX),
-  artifactLabel: Math.min(perItemClip, ARTIFACT_LABEL_NATURAL_MAX),
-  artifactPointer: Math.min(perItemClip, ARTIFACT_POINTER_NATURAL_MAX)
+  relatedTitle: Math.max(perItemClip, RELATED_TITLE_FLOOR),
+  relatedSlug: Math.max(perItemClip, RELATED_SLUG_FLOOR),
+  risk: Math.max(perItemClip, RISK_TEXT_FLOOR),
+  riskRef: Math.max(perItemClip, RISK_REF_FLOOR),
+  keyDecision: Math.max(perItemClip, KEY_DECISION_TITLE_FLOOR),
+  outOfScope: Math.max(perItemClip, OUT_OF_SCOPE_TEXT_FLOOR),
+  criterion: Math.max(perItemClip, CRITERION_TEXT_FLOOR),
+  criterionCheck: Math.max(perItemClip, CRITERION_CHECK_FLOOR),
+  criterionResult: Math.max(perItemClip, CRITERION_RESULT_FLOOR),
+  criterionSettledBy: Math.max(perItemClip, CRITERION_SETTLED_BY_FLOOR),
+  lastSession: Math.max(perItemClip, LAST_SESSION_TEXT_FLOOR),
+  settledRisk: Math.max(perItemClip, RISK_TEXT_FLOOR),
+  settledKeyDecision: Math.max(perItemClip, KEY_DECISION_TITLE_FLOOR),
+  artifactLabel: Math.max(perItemClip, ARTIFACT_LABEL_FLOOR),
+  artifactPointer: Math.max(perItemClip, ARTIFACT_POINTER_FLOOR)
 })
 
 const UNCLIPPED: RenderClip = {
@@ -276,31 +297,17 @@ const UNCLIPPED: RenderClip = {
   artifactPointer: NO_CLIP
 }
 
-const MAX_ITEM_CLIP = Math.max(
-  RELATED_TITLE_NATURAL_MAX,
-  RELATED_SLUG_NATURAL_MAX,
-  RISK_TEXT_NATURAL_MAX,
-  RISK_REF_NATURAL_MAX,
-  KEY_DECISION_TITLE_NATURAL_MAX,
-  OUT_OF_SCOPE_TEXT_NATURAL_MAX,
-  CRITERION_TEXT_NATURAL_MAX,
-  CRITERION_CHECK_NATURAL_MAX,
-  CRITERION_RESULT_NATURAL_MAX,
-  CRITERION_SETTLED_BY_NATURAL_MAX,
-  LAST_SESSION_TEXT_NATURAL_MAX,
-  ARTIFACT_LABEL_NATURAL_MAX,
-  ARTIFACT_POINTER_NATURAL_MAX
-)
+export const CLIP_SEARCH_UPPER_BOUND = SESSION_BODY_MAX
 
 type ClipSearch = { briefing: string; passes: number }
 
 const largestFittingClipRender = (
   renderAtClip: (perItemClip: number) => string,
   fits: (briefing: string) => boolean,
-  unclipped: string
+  renderBudgetExceeded: () => string
 ): ClipSearch => {
   let accepted = MIN_TEXT_CLIP - 1
-  let ceiling = MAX_ITEM_CLIP
+  let ceiling = CLIP_SEARCH_UPPER_BOUND
   let bestFitting: string | null = null
   let passes = 0
 
@@ -317,10 +324,42 @@ const largestFittingClipRender = (
   }
 
   if (bestFitting !== null) return { briefing: bestFitting, passes }
-  const floorRender = renderAtClip(MIN_TEXT_CLIP)
-  const smallest = floorRender.length < unclipped.length ? floorRender : unclipped
-  return { briefing: smallest, passes: passes + 1 }
+  return { briefing: renderBudgetExceeded(), passes: passes + 1 }
 }
+
+const criterionTextWasShortened = (criterion: Criterion, renderClip: RenderClip): boolean =>
+  wasClipped(criterion.text, renderClip.criterion) ||
+  (typeof criterion.check === 'string' && wasClipped(criterion.check, renderClip.criterionCheck)) ||
+  (criterion.done && typeof criterion.result === 'string' && wasClipped(criterion.result, renderClip.criterionResult)) ||
+  (criterionSettledness(criterion) === 'confirmed' &&
+    typeof criterion.settled_by === 'string' &&
+    wasClipped(criterion.settled_by, renderClip.criterionSettledBy))
+
+const riskTextWasShortened = (risk: Risk, textClip: number, refClip: number): boolean =>
+  wasClipped(risk.text, textClip) || risk.refs.some((ref) => wasClipped(ref, refClip))
+
+const itemTextWasShortened = (
+  predecessor: Thread | null,
+  artifacts: readonly Artifact[],
+  risks: Laned<Risk>,
+  keyDecisions: Laned<KeyDecision>,
+  outOfScope: readonly OutOfScope[],
+  criteria: readonly Criterion[],
+  previousEntries: readonly SessionEntry[],
+  renderClip: RenderClip
+): boolean =>
+  (predecessor !== null &&
+    (wasClipped(predecessor.title, renderClip.relatedTitle) || wasClipped(predecessor.slug, renderClip.relatedSlug))) ||
+  artifacts.some(
+    (artifact) => wasClipped(artifact.label, renderClip.artifactLabel) || wasClipped(artifact.pointer, renderClip.artifactPointer)
+  ) ||
+  risks.live.some((risk) => riskTextWasShortened(risk, renderClip.risk, renderClip.riskRef)) ||
+  keyDecisions.live.some((keyDecision) => wasClipped(keyDecision.title, renderClip.keyDecision)) ||
+  outOfScope.some((item) => wasClipped(item.text, renderClip.outOfScope)) ||
+  criteria.some((criterion) => criterionTextWasShortened(criterion, renderClip)) ||
+  previousEntries.some((entry) => wasClipped(entry.body, renderClip.lastSession)) ||
+  risks.settled.some((risk) => wasClipped(risk.text, renderClip.settledRisk)) ||
+  keyDecisions.settled.some((keyDecision) => wasClipped(keyDecision.title, renderClip.settledKeyDecision))
 
 const assembleBriefing = (
   thread: Thread,
@@ -334,8 +373,8 @@ const assembleBriefing = (
   criteria: readonly Criterion[],
   previousEntries: readonly SessionEntry[],
   renderClip: RenderClip,
-  textWasClipped: boolean,
-  unreadableSessionEntryCount: number
+  unreadableSessionEntryCount: number,
+  budgetExceeded: boolean
 ): string => {
   const notShownAddress = `logbook://thread/${escapeStored(thread.id)}`
   const unreadableDecisionCount = decisionIntegrity.dangling.length + decisionIntegrity.quarantined.length
@@ -357,6 +396,16 @@ const assembleBriefing = (
   const headerBlockValues = [...activeGoalLines, ...legacyLastSessionText, ...landedLines, ...nextStepLines]
   const headerWasShortened =
     headerInlineValues.some(headerInlineWasShortened) || headerBlockValues.some(headerBlockWasShortened)
+  const itemTextWasClipped = itemTextWasShortened(
+    predecessor,
+    artifacts,
+    risks,
+    keyDecisions,
+    outOfScope,
+    criteria,
+    previousEntries,
+    renderClip
+  )
 
   const relatedThreads = predecessor === null ? [] : [predecessor]
   const relatedLines = relatedThreads.map((item) => renderRelatedLine(item, renderClip))
@@ -380,7 +429,8 @@ const assembleBriefing = (
     ...[unreadableDecisionCount]
       .filter((count) => count > 0)
       .map((count) => `- ${count} linked decision records could not be read; their ids are listed under Decisions above`),
-    ...[textWasClipped || headerWasShortened].filter(Boolean).map(() => TEXT_CLIPPED_BULLET)
+    ...[itemTextWasClipped || headerWasShortened].filter(Boolean).map(() => TEXT_CLIPPED_BULLET),
+    ...[budgetExceeded].filter(Boolean).map(() => BUDGET_EXCEEDED_BULLET)
   ]
 
   return [
@@ -466,7 +516,7 @@ export const renderBriefingWithPasses = (
   const keyDecisions = laneSplit(thread.spine.key_decisions, criteriaById)
   const previousEntries = previousSessionEntries(sessionEntries)
 
-  const renderWith = (renderClip: RenderClip, textWasClipped: boolean): string =>
+  const renderWith = (renderClip: RenderClip, budgetExceeded: boolean): string =>
     assembleBriefing(
       thread,
       decisionIntegrity,
@@ -479,8 +529,8 @@ export const renderBriefingWithPasses = (
       thread.completion_criteria,
       previousEntries,
       renderClip,
-      textWasClipped,
-      unreadableSessionEntryCount
+      unreadableSessionEntryCount,
+      budgetExceeded
     )
 
   const finish = (briefing: string, passes: number): BriefingRender => ({
@@ -493,9 +543,9 @@ export const renderBriefingWithPasses = (
   if (fitsBudget(unclipped, thread.id, hasPreviousSession)) return finish(unclipped, 1)
 
   const search = largestFittingClipRender(
-    (perItemClip) => renderWith(clipAt(perItemClip), true),
+    (perItemClip) => renderWith(clipAt(perItemClip), false),
     (briefing) => fitsBudget(briefing, thread.id, hasPreviousSession),
-    unclipped
+    () => renderWith(clipAt(MIN_TEXT_CLIP), true)
   )
   return finish(search.briefing, search.passes + 1)
 }

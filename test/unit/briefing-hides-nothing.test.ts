@@ -3,10 +3,11 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import * as ts from 'typescript'
-import { renderBriefing, renderBriefingWithPasses, RISK_TEXT_NATURAL_MAX, type DecisionIntegrity } from '../../src/render/briefing.ts'
+import { renderBriefing, renderBriefingWithPasses, RISK_TEXT_FLOOR, type DecisionIntegrity } from '../../src/render/briefing.ts'
 import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
 import { escapeStored } from '../../src/render/escape.ts'
 import { ThreadRecord, type Thread, type Criterion } from '../../src/schema/thread.ts'
+import type { SessionEntry } from '../../src/schema/session.ts'
 import * as caps from '../../src/schema/caps.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { census, type Classified } from '../support/census.ts'
@@ -273,7 +274,7 @@ test('briefing.a-render-that-fits-its-budget-is-clipped-nowhere', () => {
         {
           id: rt.ulid(),
           scope: 's',
-          text: ESCAPE_EXPANDING_CHAR.repeat(RISK_TEXT_NATURAL_MAX),
+          text: ESCAPE_EXPANDING_CHAR.repeat(RISK_TEXT_FLOOR),
           refs: [],
           retired: false
         }
@@ -317,9 +318,11 @@ test('briefing.a-render-that-fits-its-budget-is-clipped-nowhere', () => {
   assert.equal(render.passes, 1, 'a briefing that fits its budget must never enter the clip search')
 })
 
-const SHORTENING_FIXTURE_CRITERION_COUNT = 100
-const SHORTENING_FIXTURE_CRITERION_TEXT_LENGTH = 300
-const SHORTENING_FIXTURE_KEY_DECISION_TITLE_LENGTH = caps.KEY_DECISION_TITLE_MAX
+const FORMER_CRITERION_RESULT_MAX = 1000
+
+const SHORTENING_FIXTURE_SESSION_ENTRY_COUNT = 10
+const SHORTENING_FIXTURE_SESSION_BODY_LENGTH = caps.SESSION_BODY_MAX
+const SHORTENING_FIXTURE_CRITERION_RESULT_LENGTH = FORMER_CRITERION_RESULT_MAX
 
 const CRITERION_TEXT_PATTERN =
   /^- c\d+ \[(?:open|done|struck)\] \[(?:confirmed|proposed|unsettled)\]: (.*) \(id [0-9A-HJKMNP-TV-Z]{26}\)$/
@@ -328,6 +331,7 @@ const SETTLED_RISK_TEXT_PATTERN = /^- risk [0-9A-HJKMNP-TV-Z]{26} (.*)$/
 const SETTLED_DECISION_TEXT_PATTERN = /^- decision [0-9A-HJKMNP-TV-Z]{26} (.*)$/
 const SUCCEEDS_TITLE_PATTERN = /^- succeeds: (.*) \([^)]*\)$/
 const CHECK_TEXT_PATTERN = /^ {2}- check: (.*)$/
+const RESULT_TEXT_PATTERN = /^ {2}- result: (.*) \([^)]*\)$/
 
 const SHORTENABLE_VALUE_PATTERNS = [
   CRITERION_TEXT_PATTERN,
@@ -335,7 +339,8 @@ const SHORTENABLE_VALUE_PATTERNS = [
   SETTLED_RISK_TEXT_PATTERN,
   SETTLED_DECISION_TEXT_PATTERN,
   SUCCEEDS_TITLE_PATTERN,
-  CHECK_TEXT_PATTERN
+  CHECK_TEXT_PATTERN,
+  RESULT_TEXT_PATTERN
 ]
 
 const storedValueOf = (line: string): string | null => {
@@ -347,56 +352,26 @@ const storedValueOf = (line: string): string | null => {
 }
 
 test('briefing.every-shortened-value-carries-the-marker-inside-its-own-limit', () => {
-  const criteria: Criterion[] = Array.from({ length: SHORTENING_FIXTURE_CRITERION_COUNT }, (_, index) =>
-    criterionOf({
-      ordinal: index + 1,
-      text: 'x'.repeat(SHORTENING_FIXTURE_CRITERION_TEXT_LENGTH),
-      ...(index === 0 ? { done: true } : {})
-    })
-  )
-  const metCriterion = criteria[0]
-  if (metCriterion === undefined) {
-    throw new Error('the shortening fixture must carry at least one criterion to anchor a settled risk on')
-  }
-  const predecessor = threadOf({
-    slug: 'a'.repeat(caps.THREAD_SLUG_MAX),
-    title: 'p'.repeat(caps.THREAD_TITLE_MAX),
-    status: 'done'
+  const metCriterion = criterionOf({
+    ordinal: 1,
+    text: 'the store defect is closed',
+    done: true,
+    result: 'r'.repeat(SHORTENING_FIXTURE_CRITERION_RESULT_LENGTH),
+    result_status: 'verified'
   })
-  const thread = threadOf({
-    predecessor_id: predecessor.id,
-    completion_criteria: criteria,
-    spine: {
-      active_goal: 'ship the renderer',
-      next_step: 'write the tests',
-      landed: '',
-      last_session: 'wrote the renderer',
-      open_risks: [
-        {
-          id: rt.ulid(),
-          scope: 's',
-          text: 'y'.repeat(SHORTENING_FIXTURE_CRITERION_TEXT_LENGTH),
-          refs: [],
-          criterion_id: metCriterion.id,
-          retired: false
-        }
-      ],
-      key_decisions: [
-        {
-          id: rt.ulid(),
-          decision_id: rt.ulid(),
-          title: 'z'.repeat(SHORTENING_FIXTURE_KEY_DECISION_TITLE_LENGTH),
-          scope: 's',
-          criterion_id: metCriterion.id
-        }
-      ],
-      out_of_scope: []
-    }
-  })
+  const thread = threadOf({ completion_criteria: [metCriterion] })
   assert.equal(ThreadRecord.parse(thread).ok, true, 'the shortening fixture must itself be schema-admissible')
-  assert.equal(ThreadRecord.parse(predecessor).ok, true, 'the predecessor fixture must itself be schema-admissible')
 
-  const render = renderBriefingWithPasses(thread, EMPTY_INTEGRITY, null, predecessor)
+  const entryIds = Array.from({ length: SHORTENING_FIXTURE_SESSION_ENTRY_COUNT }, () => rt.ulid()).sort()
+  const sessionEntries: SessionEntry[] = entryIds.map((id) => ({
+    id,
+    thread_id: thread.id,
+    actor: 'claude',
+    body: 'x'.repeat(SHORTENING_FIXTURE_SESSION_BODY_LENGTH),
+    created_at: rt.now()
+  }))
+
+  const render = renderBriefingWithPasses(thread, EMPTY_INTEGRITY, null, null, true, sessionEntries)
   assert.ok(render.passes > 1, 'this fixture must enter the clip search, or nothing was shortened')
   assert.equal(render.withinBudget, true, 'the clip search must land this fixture inside its budget')
 

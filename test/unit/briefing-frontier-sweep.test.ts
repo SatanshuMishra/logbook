@@ -5,6 +5,15 @@ import {
   BRIEFING_MAX_CHARS,
   RESUME_PAYLOAD_MAX_BYTES,
   NOT_RECORDED,
+  RELATED_TITLE_FLOOR,
+  RELATED_SLUG_FLOOR,
+  RISK_TEXT_FLOOR,
+  RISK_REF_FLOOR,
+  KEY_DECISION_TITLE_FLOOR,
+  OUT_OF_SCOPE_TEXT_FLOOR,
+  CRITERION_TEXT_FLOOR,
+  CRITERION_CHECK_FLOOR,
+  CRITERION_RESULT_FLOOR,
   type DecisionIntegrity
 } from '../../src/render/briefing.ts'
 import { escapeStored } from '../../src/render/escape.ts'
@@ -38,8 +47,12 @@ const ANCHORINGS = [
 
 const CRITERIA_COUNTS = [0, 1, 5, 10, 20, caps.CRITERIA_MAX_ELEMENTS, 120, caps.CRITERIA_RETENTION_MAX_ELEMENTS]
 const KEY_DECISION_COUNTS = [0, 5, 10, caps.KEY_DECISIONS_MAX_ELEMENTS]
+const BULK_COUNT_DIMENSION_CANDIDATES = [0, 1, 5]
 
 const GRAPHEME_DENSITY_PROBE_LENGTH = 4
+
+const FLOOR_FIELD_GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+const graphemeCount = (text: string): number => Array.from(FLOOR_FIELD_GRAPHEME_SEGMENTER.segment(text)).length
 
 const PAYLOAD_NOTE =
   'previous_session in the resume payload is null, which is the smallest shape that field takes'
@@ -67,6 +80,11 @@ type Measured = {
   populatedCheckRows: number
   populatedResultRows: number
   riskRefRows: number
+  floorHonoured: boolean
+  floorViolatingField: string | null
+  floorViolatingLength: number | null
+  floorViolatingFloor: number | null
+  floorViolatingExpectedMinimum: number | null
 }
 
 const SECTION_HEADINGS = [
@@ -109,6 +127,109 @@ const RISK_ROW_PATTERN = /^- [0-9A-HJKMNP-TV-Z]{26} /
 const NOT_RECORDED_CHECK_ROW = `  - check: ${NOT_RECORDED}`
 const NOT_RECORDED_RESULT_PREFIX = `  - result: ${NOT_RECORDED} (`
 
+const RISK_TEXT_CAPTURE = /^- [0-9A-HJKMNP-TV-Z]{26} (.*)$/
+const RISK_REF_CAPTURE = /^ {2}- ref: (.*)$/
+const OUT_OF_SCOPE_CAPTURE = /^- (.*)$/
+const KEY_DECISION_CAPTURE = /^- (.*) \(decision [0-9A-HJKMNP-TV-Z]{26}\)$/
+const CRITERION_TEXT_CAPTURE =
+  /^- c\d+ \[(?:open|done|struck)\] \[(?:confirmed|proposed|unsettled)\]: (.*) \(id [0-9A-HJKMNP-TV-Z]{26}\)$/
+const CRITERION_CHECK_CAPTURE = /^ {2}- check: (.*)$/
+const CRITERION_RESULT_CAPTURE = /^ {2}- result: (.*) \((?:verified|unverified-reasoned|not recorded)\)$/
+const RELATED_CAPTURE = /^- succeeds: (.*) \((.*)\)$/
+
+type FloorField = { field: string; floor: number; expectedMinimum: number; length: number }
+
+const sectionLines = (lines: readonly string[], heading: string): string[] => {
+  const headingIndex = lines.indexOf(heading)
+  if (headingIndex === -1) return []
+  const collected: string[] = []
+  for (let cursor = headingIndex + 1; cursor < lines.length; cursor += 1) {
+    const line = lines[cursor]
+    if (line === undefined || line.length === 0) break
+    collected.push(line)
+  }
+  return collected
+}
+
+const capturedLengths = (lines: readonly string[], pattern: RegExp, group: number = 1): number[] =>
+  lines
+    .map((line) => pattern.exec(line))
+    .filter((match): match is RegExpExecArray => match !== null)
+    .map((match) => (match[group] ?? '').length)
+
+const floorFieldsOf = (lines: readonly string[], thread: Thread, predecessor: Thread | null): FloorField[] => {
+  const outOfScopeLines = sectionLines(lines, SECTION_HEADINGS[2])
+  const checkLines = lines.filter((line) => CRITERION_CHECK_CAPTURE.test(line) && line !== NOT_RECORDED_CHECK_ROW)
+  const resultLines = lines.filter(
+    (line) => CRITERION_RESULT_CAPTURE.test(line) && !line.startsWith(NOT_RECORDED_RESULT_PREFIX)
+  )
+  const relatedMatches = lines
+    .map((line) => RELATED_CAPTURE.exec(line))
+    .filter((match): match is RegExpExecArray => match !== null)
+
+  const liveRisks = thread.spine.open_risks.filter((entry) => !entry.retired)
+  const doneCriterion = thread.completion_criteria.find(
+    (entry) => entry.done && typeof entry.result === 'string'
+  )
+
+  const withExpected = (field: string, floor: number, actualRawText: string | null | undefined, lengths: number[]): FloorField[] => {
+    if (actualRawText === undefined || actualRawText === null || actualRawText.length === 0) return []
+    assert.ok(
+      lengths.length > 0,
+      `the ${field} floor sweep expected at least one rendered line for a populated source field but captured none; the render grammar for this field has drifted out from under its capture pattern, or this census is passing silently over what it can no longer classify`
+    )
+    const expectedMinimum = Math.min(graphemeCount(escapeStored(actualRawText)), floor)
+    return lengths.map((length) => ({ field, floor, expectedMinimum, length }))
+  }
+
+  return [
+    ...withExpected('risk text', RISK_TEXT_FLOOR, liveRisks[0]?.text, capturedLengths(lines, RISK_TEXT_CAPTURE)),
+    ...withExpected('risk ref', RISK_REF_FLOOR, liveRisks[0]?.refs[0], capturedLengths(lines, RISK_REF_CAPTURE)),
+    ...withExpected(
+      'out of scope text',
+      OUT_OF_SCOPE_TEXT_FLOOR,
+      thread.spine.out_of_scope[0]?.text,
+      capturedLengths(outOfScopeLines, OUT_OF_SCOPE_CAPTURE)
+    ),
+    ...withExpected(
+      'key decision title',
+      KEY_DECISION_TITLE_FLOOR,
+      thread.spine.key_decisions[0]?.title,
+      capturedLengths(lines, KEY_DECISION_CAPTURE)
+    ),
+    ...withExpected(
+      'criterion text',
+      CRITERION_TEXT_FLOOR,
+      thread.completion_criteria[0]?.text,
+      capturedLengths(lines, CRITERION_TEXT_CAPTURE)
+    ),
+    ...withExpected(
+      'criterion check',
+      CRITERION_CHECK_FLOOR,
+      thread.completion_criteria[0]?.check,
+      capturedLengths(checkLines, CRITERION_CHECK_CAPTURE)
+    ),
+    ...withExpected(
+      'criterion result',
+      CRITERION_RESULT_FLOOR,
+      doneCriterion?.result,
+      capturedLengths(resultLines, CRITERION_RESULT_CAPTURE)
+    ),
+    ...withExpected(
+      'related title',
+      RELATED_TITLE_FLOOR,
+      predecessor?.title,
+      relatedMatches.map((match) => (match[1] ?? '').length)
+    ),
+    ...withExpected(
+      'related slug',
+      RELATED_SLUG_FLOOR,
+      predecessor?.slug,
+      relatedMatches.map((match) => (match[2] ?? '').length)
+    )
+  ]
+}
+
 const measureThread = (thread: Thread, integrity: DecisionIntegrity, predecessor: Thread | null): Measured => {
   const render = renderBriefingWithPasses(thread, integrity, null, predecessor)
   const lines = render.briefing.split('\n')
@@ -125,6 +246,8 @@ const measureThread = (thread: Thread, integrity: DecisionIntegrity, predecessor
   const riskRows = sectionMatchingLineCount(lines, SECTION_HEADINGS[0], RISK_ROW_PATTERN)
   const danglingRows = lines.filter((line) => line.startsWith('- dangling: ')).length
   const quarantinedRows = lines.filter((line) => line.startsWith('- quarantined: ')).length
+
+  const violatingFloor = floorFieldsOf(lines, thread, predecessor).find((entry) => entry.length < entry.expectedMinimum) ?? null
 
   const itemsRendered =
     criterionRows +
@@ -153,7 +276,12 @@ const measureThread = (thread: Thread, integrity: DecisionIntegrity, predecessor
     checkRows,
     populatedCheckRows,
     populatedResultRows,
-    riskRefRows
+    riskRefRows,
+    floorHonoured: violatingFloor === null,
+    floorViolatingField: violatingFloor === null ? null : violatingFloor.field,
+    floorViolatingLength: violatingFloor === null ? null : violatingFloor.length,
+    floorViolatingFloor: violatingFloor === null ? null : violatingFloor.floor,
+    floorViolatingExpectedMinimum: violatingFloor === null ? null : violatingFloor.expectedMinimum
   }
 }
 
@@ -201,6 +329,11 @@ type SweptRecord = {
   populatedCheckRows: number | null
   populatedResultRows: number | null
   riskRefRows: number | null
+  floorHonoured: boolean | null
+  floorViolatingField: string | null
+  floorViolatingLength: number | null
+  floorViolatingFloor: number | null
+  floorViolatingExpectedMinimum: number | null
 }
 
 const classifiedOutcomes: ReadonlySet<string> = new Set(OUTCOME_CLASSES)
@@ -298,57 +431,68 @@ const sweep = (): SweptRecord[] => {
             checkRows: measured === null ? null : measured.checkRows,
             populatedCheckRows: measured === null ? null : measured.populatedCheckRows,
             populatedResultRows: measured === null ? null : measured.populatedResultRows,
-            riskRefRows: measured === null ? null : measured.riskRefRows
+            riskRefRows: measured === null ? null : measured.riskRefRows,
+            floorHonoured: measured === null ? null : measured.floorHonoured,
+            floorViolatingField: measured === null ? null : measured.floorViolatingField,
+            floorViolatingLength: measured === null ? null : measured.floorViolatingLength,
+            floorViolatingFloor: measured === null ? null : measured.floorViolatingFloor,
+            floorViolatingExpectedMinimum: measured === null ? null : measured.floorViolatingExpectedMinimum
           })
 
           const withinRecordCap = (shape: SweepShape): boolean =>
             serialisedRecordBytes(shape) <= caps.THREAD_RECORD_SERIALISED_MAX_BYTES
 
-          const bulkCount = largestSatisfying(caps.RISKS_PER_CALL_MAX_ELEMENTS, (candidate) =>
+          const saturatingBulkCount = largestSatisfying(caps.RISKS_PER_CALL_MAX_ELEMENTS, (candidate) =>
             withinRecordCap(shapeAt(0, candidate))
           )
 
-          if (bulkCount < 0) {
+          if (saturatingBulkCount < 0) {
             swept.push(record(0, 0, 'schema-inadmissible', null))
             continue
           }
 
-          const recordCeiling = largestSatisfying(caps.CRITERION_TEXT_MAX, (candidate) =>
-            withinRecordCap(shapeAt(candidate, bulkCount))
-          )
+          const bulkCounts = [...new Set([...BULK_COUNT_DIMENSION_CANDIDATES, saturatingBulkCount])]
+            .filter((candidate) => candidate <= saturatingBulkCount)
+            .sort((left, right) => left - right)
 
-          const { lengths, frontierLocated } = criterionTextLengthsFor(
-            {
-              fill: fill.char,
-              anchored: anchoring.anchored,
-              criteriaCount,
-              keyDecisionCount,
-              bulkCount
-            },
-            recordCeiling
-          )
+          for (const bulkCount of bulkCounts) {
+            const recordCeiling = largestSatisfying(caps.CRITERION_TEXT_MAX, (candidate) =>
+              withinRecordCap(shapeAt(candidate, bulkCount))
+            )
 
-          if (!frontierLocated) {
-            swept.push(record(-1, bulkCount, 'frontier-not-located', null))
-            continue
-          }
+            const { lengths, frontierLocated } = criterionTextLengthsFor(
+              {
+                fill: fill.char,
+                anchored: anchoring.anchored,
+                criteriaCount,
+                keyDecisionCount,
+                bulkCount
+              },
+              recordCeiling
+            )
 
-          for (const criterionTextLength of lengths) {
-            const shape = shapeAt(criterionTextLength, bulkCount)
-            if (!isAdmissible(shape)) {
-              swept.push(record(criterionTextLength, bulkCount, 'schema-inadmissible', null))
+            if (!frontierLocated) {
+              swept.push(record(-1, bulkCount, 'frontier-not-located', null))
               continue
             }
-            const measured = measure(shape)
-            const withinBoth = measured.chars <= BRIEFING_MAX_CHARS && measured.bytes <= RESUME_PAYLOAD_MAX_BYTES
-            swept.push(
-              record(
-                criterionTextLength,
-                bulkCount,
-                withinBoth ? 'admissible-within-both-caps' : 'admissible-breaching-a-cap',
-                measured
+
+            for (const criterionTextLength of lengths) {
+              const shape = shapeAt(criterionTextLength, bulkCount)
+              if (!isAdmissible(shape)) {
+                swept.push(record(criterionTextLength, bulkCount, 'schema-inadmissible', null))
+                continue
+              }
+              const measured = measure(shape)
+              const withinBoth = measured.chars <= BRIEFING_MAX_CHARS && measured.bytes <= RESUME_PAYLOAD_MAX_BYTES
+              swept.push(
+                record(
+                  criterionTextLength,
+                  bulkCount,
+                  withinBoth ? 'admissible-within-both-caps' : 'admissible-breaching-a-cap',
+                  measured
+                )
               )
-            )
+            }
           }
         }
       }
@@ -441,9 +585,18 @@ test('briefing.frontier-sweep-finds-no-record-that-loses-an-item-or-hides-a-budg
 
   census(swept, verdictOf)
 
+  for (const outcomeClass of OUTCOME_CLASSES) {
+    const populated = swept.some((record) => record.outcome === outcomeClass)
+    assert.ok(
+      populated,
+      `the outcome class ${outcomeClass} holds no swept record; the grid never produced a record of that kind`
+    )
+  }
+
   const admissible = swept.filter((record) => record.outcome !== 'schema-inadmissible')
   const breaching = swept.filter((record) => record.outcome === 'admissible-breaching-a-cap')
   const sweptTextLengths = swept.map((record) => record.criterionTextLength)
+  const sweptBulkCounts = swept.map((record) => record.bulkCount)
 
   t.diagnostic(`frontier sweep classified ${swept.length} records in ${elapsedMs.toFixed(0)}ms`)
   t.diagnostic(`dimension fill: ${FILLS.map((entry) => entry.name).join(', ')}`)
@@ -456,6 +609,9 @@ test('briefing.frontier-sweep-finds-no-record-that-loses-an-item-or-hides-a-budg
   )
   t.diagnostic(
     `dimension criterion text length: per configuration zero, one, the unclipped-render frontier and both its neighbours, the midpoint beyond it, and the longest text the record byte cap admits; observed span ${Math.min(...sweptTextLengths)} to ${Math.max(...sweptTextLengths)} within bounds 0 and ${caps.CRITERION_TEXT_MAX}`
+  )
+  t.diagnostic(
+    `dimension bulk count (open risks and out-of-scope elements, held equal): ${BULK_COUNT_DIMENSION_CANDIDATES.join(', ')}, and the largest count the record byte cap admits at that configuration, skipping any listed candidate above that largest count; observed span ${Math.min(...sweptBulkCounts)} to ${Math.max(...sweptBulkCounts)} within bounds 0 and ${caps.RISKS_PER_CALL_MAX_ELEMENTS}`
   )
   for (const outcome of OUTCOME_CLASSES) {
     t.diagnostic(`class ${outcome}: ${swept.filter((record) => record.outcome === outcome).length}`)
@@ -498,6 +654,21 @@ test('briefing.frontier-sweep-finds-no-record-that-loses-an-item-or-hides-a-budg
     [
       `${missingACheckLine.length} of ${admissible.length} swept records rendered a criterion without its check line`,
       ...missingACheckLine.slice(0, 5).map((record) => `missing: ${record.checkRows} checks for ${record.criterionRows} criteria — ${describe(record)}`)
+    ].join('\n')
+  )
+
+  const violatingAFloor = admissible.filter((record) => record.floorHonoured === false)
+  assert.equal(
+    violatingAFloor.length,
+    0,
+    [
+      `${violatingAFloor.length} of ${admissible.length} swept records rendered a field shorter than its guaranteed floor`,
+      ...violatingAFloor
+        .slice(0, 5)
+        .map(
+          (record) =>
+            `floor violated: ${record.floorViolatingField} rendered ${record.floorViolatingLength} chars, floor ${record.floorViolatingFloor}, expected minimum for this record ${record.floorViolatingExpectedMinimum} — ${describe(record)}`
+        )
     ].join('\n')
   )
 
