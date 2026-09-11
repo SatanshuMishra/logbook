@@ -5,7 +5,7 @@ import { ULID_PATTERN } from '../../schema/ids.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { RESERVED_ACTOR_PREFIX } from '../../domain/session-log.ts'
-import { countUnparkedSessionEntries } from '../../domain/session-entry-bound.ts'
+import { unparkedSessionEntriesSaturateBound } from '../../domain/session-entry-bound.ts'
 import { SessionRecord, type SessionEntry } from '../../schema/session.ts'
 import { withDetail } from '../../store/detail.ts'
 import { layoutFor } from '../../store/layout.ts'
@@ -45,13 +45,13 @@ export const reservedActorPrefixRefusal = (): Refusal => ({
   message: `actor begins with the reserved prefix "${RESERVED_ACTOR_PREFIX}", which marks entries Logbook writes for itself; remedy: choose an actor name that does not begin with "${RESERVED_ACTOR_PREFIX}" and retry.`
 })
 
-export const unparkedEntriesBoundRefusal = (observed: number): Refusal => ({
+export const unparkedEntriesBoundRefusal = (): Refusal => ({
   ok: false,
   field: 'thread_id',
   accepted: `a thread carrying fewer than ${caps.SESSION_UNPARKED_ENTRIES_MAX} un-parked session entries`,
-  example: 'call park_thread on this thread, then retry log_session_event',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
   retryable: true,
-  message: `this thread already carries ${observed} session entries since it was last parked, at or above the runaway-session bound of ${caps.SESSION_UNPARKED_ENTRIES_MAX}; this bound stops a session log from growing without limit, it does not keep any briefing inside a size; remedy: call park_thread on this thread, then retry log_session_event.`
+  message: `this thread already carries at least ${caps.SESSION_UNPARKED_ENTRIES_MAX} session entries since it was last parked, the runaway-session bound; this bound stops a session log from growing without limit, it does not keep any briefing inside a size; remedy: call park_thread on this thread, then retry log_session_event.`
 })
 
 export const bodyCapRefusal = (observed: number): Refusal => ({
@@ -102,14 +102,6 @@ export const logSessionEventTool: ToolSpec<LogSessionEventInput, LogSessionEvent
     if (!loaded.ok) return { ok: false, refusal: loaded.refusal }
     const thread = loaded.value
 
-    const layout = layoutFor(rt, rt.cwd)
-    if (!layout.ok) return { ok: false, refusal: layout }
-
-    const unparkedEntries = countUnparkedSessionEntries(layout.value.records, thread.id)
-    if (unparkedEntries >= caps.SESSION_UNPARKED_ENTRIES_MAX) {
-      return { ok: false, refusal: unparkedEntriesBoundRefusal(unparkedEntries) }
-    }
-
     const escapedActor = escapeStored(input.actor)
     if (escapedActor.length > caps.SESSION_ACTOR_MAX) {
       return { ok: false, refusal: actorCapRefusal(escapedActor.length) }
@@ -121,6 +113,13 @@ export const logSessionEventTool: ToolSpec<LogSessionEventInput, LogSessionEvent
     const escapedBody = escapeStored(input.body)
     if (escapedBody.length > caps.SESSION_BODY_MAX) {
       return { ok: false, refusal: bodyCapRefusal(escapedBody.length) }
+    }
+
+    const layout = layoutFor(rt, rt.cwd)
+    if (!layout.ok) return { ok: false, refusal: layout }
+
+    if (unparkedSessionEntriesSaturateBound(layout.value.records, thread.id)) {
+      return { ok: false, refusal: unparkedEntriesBoundRefusal() }
     }
 
     const sessionEntry: SessionEntry = {
