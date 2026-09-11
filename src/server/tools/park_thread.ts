@@ -19,8 +19,6 @@ import { openProjectStore } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 
-export const NO_OUTCOME_SESSION_ENTRY_BODY = 'the session was parked without an outcome being given.'
-
 const ParkThreadInputSchema = z.strictObject({
   outcome: z
     .string()
@@ -283,7 +281,7 @@ const parkResolvedThread = (
     id: rt.ulid(),
     thread_id: thread.id,
     actor: PARK_THREAD_ACTOR,
-    body: escapedOutcome === null ? NO_OUTCOME_SESSION_ENTRY_BODY : escapedOutcome,
+    body: escapedOutcome === null ? '' : escapedOutcome,
     created_at: rt.now()
   }
 
