@@ -20,7 +20,7 @@ import {
   type DecisionIntegrity
 } from '../../src/render/briefing.ts'
 import { escapeStored } from '../../src/render/escape.ts'
-import { CLIP_MARKER } from '../../src/render/clip.ts'
+import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
 import { ThreadRecord, type Thread, type Criterion, type Risk, type KeyDecision, type OutOfScope, type Artifact } from '../../src/schema/thread.ts'
 import { SessionRecord, type SessionEntry } from '../../src/schema/session.ts'
 import { itemCountOverBudgetThread } from '../support/briefing-item-count-over-budget-fixture.ts'
@@ -532,6 +532,76 @@ test('briefing.floors-hold-and-the-budget-is-reported-exceeded-when-item-count-o
       `an over-subscribed artifact pointer must render at exactly its floor of ${ARTIFACT_POINTER_FLOOR} graphemes, got ${rendered}`
     )
   }
+})
+
+const NEWEST_SESSION_BLOCK_PREFIX = '> '
+const NEWEST_SESSION_ENTRY_ACTOR = 'claude'
+const NEWEST_SESSION_ENTRY_BODY = 'x'.repeat(SESSION_BODY_MAX)
+
+test('briefing.the-newest-session-entry-keeps-exactly-its-floor-when-the-budget-is-breached', () => {
+  const thread = buildOverSubscribedFixture(OVER_SUBSCRIBED_CRITERIA_COUNT)
+  const newestEntry: SessionEntry = {
+    id: rt.ulid(),
+    thread_id: thread.id,
+    actor: NEWEST_SESSION_ENTRY_ACTOR,
+    body: NEWEST_SESSION_ENTRY_BODY,
+    created_at: rt.now()
+  }
+  assert.equal(
+    ThreadRecord.parse(thread).ok,
+    true,
+    'the over-subscribed-floors fixture must itself be schema-admissible, or the renderer would never be handed it'
+  )
+  assert.equal(
+    SessionRecord.parse(newestEntry).ok,
+    true,
+    'the newest session entry must itself be schema-admissible, or the renderer would never be handed it'
+  )
+
+  const escapedBody = escapeStored(newestEntry.body)
+  assert.ok(
+    graphemeCount(escapedBody) > SESSION_ENTRY_TEXT_FLOOR,
+    `the newest entry's body must escape to more graphemes than its floor of ${SESSION_ENTRY_TEXT_FLOOR}, or the floor below is satisfied by a body that was never long enough to be shortened; it escaped to ${graphemeCount(escapedBody)} graphemes`
+  )
+
+  const render = renderBriefingWithPasses(thread, EMPTY_INTEGRITY, null, null, true, [newestEntry])
+
+  assert.equal(
+    render.withinBudget,
+    false,
+    `this fixture must breach the budget on item count alone, or the clip search never bottoms out at its lower bound and nothing below is measuring the guaranteed minimum; got a render of ${render.briefing.length} characters reported as within budget`
+  )
+
+  const lastSessionLines = sectionLines(render.briefing, LAST_SESSION_HEADING)
+  const blockLines = lastSessionLines.filter((line) => line.startsWith(NEWEST_SESSION_BLOCK_PREFIX))
+  assert.equal(
+    blockLines.length,
+    1,
+    `the newest entry's body holds no stored line break, so its block must be exactly one blockquote line under ${LAST_SESSION_HEADING}; the section reads:\n${lastSessionLines.join('\n')}`
+  )
+
+  const blockText = (blockLines[0] as string).slice(NEWEST_SESSION_BLOCK_PREFIX.length)
+  assert.equal(
+    graphemeCount(blockText),
+    SESSION_ENTRY_TEXT_FLOOR,
+    `the newest session entry's block must carry exactly its floor of ${SESSION_ENTRY_TEXT_FLOOR} graphemes once the budget is breached, and the ${CLIP_MARKER_GRAPHEMES} graphemes of the ${CLIP_MARKER} marker are counted INSIDE that total rather than added on top of it; got ${graphemeCount(blockText)} graphemes`
+  )
+
+  assert.ok(
+    blockText.endsWith(CLIP_MARKER),
+    `a newest entry shortened to its floor must end with the ${CLIP_MARKER} marker, or the reader cannot tell the block was shortened and the split between the entry's own text and the marker measured below is not where this test claims it is; the block ends ${JSON.stringify(blockText.slice(-CLIP_MARKER.length))}`
+  )
+
+  const ownText = blockText.slice(0, blockText.length - CLIP_MARKER.length)
+  assert.equal(
+    graphemeCount(ownText),
+    SESSION_ENTRY_TEXT_FLOOR - CLIP_MARKER_GRAPHEMES,
+    `because the marker is counted inside the floor, the entry's own text within the block is exactly the floor of ${SESSION_ENTRY_TEXT_FLOOR} less the ${CLIP_MARKER_GRAPHEMES} graphemes of the marker; got ${graphemeCount(ownText)} graphemes`
+  )
+  assert.ok(
+    escapedBody.startsWith(ownText),
+    `the graphemes the block keeps must be the opening of the entry's own stored text rather than any other filling; the block opens ${JSON.stringify(ownText.slice(0, CLIP_MARKER.length))}`
+  )
 })
 
 test('briefing.an-over-budget-render-with-nothing-shortened-carries-no-shortened-text-bullet', () => {
