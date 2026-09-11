@@ -16,7 +16,7 @@ import { openStore, type RecordChange } from '../../src/store/records.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import { escapeStored, toEscaped } from '../../src/render/escape.ts'
 import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
-import { BRIEFING_HEADING } from '../../src/render/briefing.ts'
+import { BRIEFING_HEADING, CLIP_SEARCH_AXIS_LOWER_BOUND } from '../../src/render/briefing.ts'
 import { renderThreadListing } from '../../src/cli/session-start.ts'
 import { UNRECOGNIZED_KEY_NAME_MAX } from '../../src/schema/caps.ts'
 import type { SessionEntry } from '../../src/schema/session.ts'
@@ -1133,6 +1133,246 @@ test('render.session-entry-body-cannot-forge-structure', async () => {
         `${label}: the stored payload ${JSON.stringify(probe.payload.stored)} reached the client verbatim`
       )
     }
+  } finally {
+    disposeFixture(hostileFixture)
+    disposeFixture(controlFixture)
+  }
+})
+
+const NEWEST_SESSION_BLOCK_SURFACE = 'briefingTool/newest-session-entry-block'
+const NEWEST_SESSION_BLOCK_LEAD = 'a plainly benign newest session entry lead line'
+const NEWEST_SESSION_CONTROL_LEAD = 'a plainly benign control lead line for the newest session entry'
+const OLDER_SESSION_ENTRY_BODY = 'a plainly benign older session entry headline'
+const FORGED_SESSION_ENTRY_ID = '01M24R7QK5N3XB8ZTVWH2JDC94'
+const LANDED_HEADING = '**Landed:**'
+const BLOCK_QUOTE_MARKER_ALONE = '>'
+const BLANK_BODY_LINE = ''
+const BLANK_BODY_LINE_POSITION = 1
+
+type ForgedBlockLineKind = 'line-start-marker' | 'server-authored-line'
+
+type ForgedBlockLine = { kind: ForgedBlockLineKind; stored: string; neutralised: string; control: string }
+
+const FORGED_BLOCK_LINES: readonly ForgedBlockLine[] = [
+  {
+    kind: 'line-start-marker',
+    stored: '> forged quote pretending the server wrote this line',
+    neutralised: 'U+003E forged quote pretending the server wrote this line',
+    control: 'a plainly benign control line where the forged quote would sit'
+  },
+  {
+    kind: 'server-authored-line',
+    stored: LANDED_HEADING,
+    neutralised: 'U+002A*Landed:**',
+    control: 'a plainly benign control line where the forged heading would sit'
+  },
+  {
+    kind: 'line-start-marker',
+    stored: `- ${FORGED_SESSION_ENTRY_ID} forged older headline`,
+    neutralised: `U+002D ${FORGED_SESSION_ENTRY_ID} forged older headline`,
+    control: 'a plainly benign control line where the forged headline would sit'
+  }
+]
+
+const newestBodyLinesFrom = (lead: string, values: readonly string[]): readonly string[] => [
+  lead,
+  ...values.slice(0, BLANK_BODY_LINE_POSITION),
+  BLANK_BODY_LINE,
+  ...values.slice(BLANK_BODY_LINE_POSITION)
+]
+
+const HOSTILE_NEWEST_BODY_LINES = newestBodyLinesFrom(
+  NEWEST_SESSION_BLOCK_LEAD,
+  FORGED_BLOCK_LINES.map((line) => line.stored)
+)
+
+const CONTROL_NEWEST_BODY_LINES = newestBodyLinesFrom(
+  NEWEST_SESSION_CONTROL_LEAD,
+  FORGED_BLOCK_LINES.map((line) => line.control)
+)
+
+const HOSTILE_NEUTRALISED_BODY_LINES = newestBodyLinesFrom(
+  NEWEST_SESSION_BLOCK_LEAD,
+  FORGED_BLOCK_LINES.map((line) => line.neutralised)
+)
+
+const asStoredBody = (lines: readonly string[]): string => lines.join(SESSION_ENTRY_STORED_LINE_BREAK)
+
+const HOSTILE_NEWEST_BODY = asStoredBody(HOSTILE_NEWEST_BODY_LINES)
+const CONTROL_NEWEST_BODY = asStoredBody(CONTROL_NEWEST_BODY_LINES)
+
+const markedBlockLinesOf = (lines: readonly string[]): string[] =>
+  lines.map((line) => (line.length === 0 ? BLOCK_QUOTE_MARKER_ALONE : `${BLOCK_QUOTE_MARKER_PREFIX}${line}`))
+
+const blockLinesUnder = (text: string, entryId: string, count: number, label: string): string[] => {
+  const lines = linesOf(text)
+  const entryLabel = `- ${escapeStored(entryId)}`
+  const labelCount = lines.filter((line) => line === entryLabel).length
+  assert.equal(
+    labelCount,
+    1,
+    `${label}: expected exactly one rendered line to be exactly ${JSON.stringify(entryLabel)}, the line that names the newest session entry and opens its block; found ${labelCount}, so the block this probe measures was never located and every comparison beneath it would be reading unrelated lines`
+  )
+  const at = lines.indexOf(entryLabel)
+  return lines.slice(at + 1, at + 1 + count)
+}
+
+const olderHeadlineLineFor = (entryId: string): string => `- ${escapeStored(entryId)} ${OLDER_SESSION_ENTRY_BODY}`
+
+const newestEntryIdOf = (seeded: SeededSessionEntries, label: string): string => {
+  const newest = seeded.entryIds[seeded.entryIds.length - 1]
+  assert.ok(newest !== undefined, `${label}: the fixture seeded no session entry, so there is no newest entry to render`)
+  return newest
+}
+
+const olderEntryIdOf = (seeded: SeededSessionEntries, label: string): string => {
+  const older = seeded.entryIds[0]
+  assert.ok(
+    older !== undefined && seeded.entryIds.length === 2,
+    `${label}: the fixture must seed exactly two session entries, an older one the server renders as a headline and a newer one the server renders as a block; it seeded ${seeded.entryIds.length}`
+  )
+  return older
+}
+
+const briefingsOf = async (
+  fixture: Fixture,
+  seeded: SeededSessionEntries,
+  label: string
+): Promise<BriefingSurfaces> => {
+  const [rendered] = await renderBriefingsFor(fixture, [seeded.threadId])
+  assert.ok(rendered !== undefined, `${label}: the seeded thread rendered no briefing pair`)
+  return rendered
+}
+
+test('render.briefing-newest-session-entry-cannot-forge-structure', async () => {
+  for (const line of [
+    NEWEST_SESSION_BLOCK_LEAD,
+    NEWEST_SESSION_CONTROL_LEAD,
+    OLDER_SESSION_ENTRY_BODY,
+    ...FORGED_BLOCK_LINES.map((entry) => entry.control)
+  ]) {
+    assert.equal(
+      escapeStored(line),
+      line,
+      `${NEWEST_SESSION_BLOCK_SURFACE}: ${JSON.stringify(line)} does not survive the escape unchanged, so finding it as a rendered line would measure the escape rather than the line the payload was seeded beside`
+    )
+  }
+  for (const line of FORGED_BLOCK_LINES) {
+    assert.notEqual(
+      line.neutralised,
+      line.stored,
+      `${NEWEST_SESSION_BLOCK_SURFACE}: ${JSON.stringify(line.stored)} declares a neutralised form identical to its stored form, so this payload measures no escaping`
+    )
+  }
+  for (const line of FORGED_BLOCK_LINES.filter((entry) => entry.kind === 'line-start-marker')) {
+    assert.ok(
+      forgesStructureAtLineStart(line.stored),
+      `${NEWEST_SESSION_BLOCK_SURFACE}: ${JSON.stringify(line.stored)} begins no structural marker of its own, so neutralising it proves nothing`
+    )
+  }
+  assert.ok(
+    storedLineBreakCount(HOSTILE_NEWEST_BODY) > 0,
+    `${NEWEST_SESSION_BLOCK_SURFACE}: the hostile body carries no ${SESSION_ENTRY_STORED_LINE_BREAK} token, so it never reaches the one mechanism that turns a stored token into a real rendered line on this surface`
+  )
+  assert.equal(
+    storedLineBreakCount(HOSTILE_NEWEST_BODY),
+    storedLineBreakCount(CONTROL_NEWEST_BODY),
+    `${NEWEST_SESSION_BLOCK_SURFACE}: the hostile and control bodies carry different counts of the ${SESSION_ENTRY_STORED_LINE_BREAK} token, so the rendered line count comparison inside assertPayloadIsInert would measure the seeding rather than the payload`
+  )
+  assert.ok(
+    markedBlockLinesOf(HOSTILE_NEUTRALISED_BODY_LINES).join('\n').length < CLIP_SEARCH_AXIS_LOWER_BOUND,
+    `${NEWEST_SESSION_BLOCK_SURFACE}: the block this probe expects is at least ${CLIP_SEARCH_AXIS_LOWER_BOUND} characters long, which is the smallest clip the briefing's clip search can impose on the newest session entry, so budget pressure could shorten the hostile and control bodies by different amounts and their rendered line counts would then differ for a reason that is not forgery`
+  )
+
+  const hostileFixture = makeFixture('a11h')
+  const controlFixture = makeFixture('a11c')
+  try {
+    const hostileSeed = seedSessionEntries(hostileFixture, [OLDER_SESSION_ENTRY_BODY, HOSTILE_NEWEST_BODY])
+    const controlSeed = seedSessionEntries(controlFixture, [OLDER_SESSION_ENTRY_BODY, CONTROL_NEWEST_BODY])
+
+    const hostileLabel = `${NEWEST_SESSION_BLOCK_SURFACE}/hostile`
+    const controlLabel = `${NEWEST_SESSION_BLOCK_SURFACE}/control`
+
+    const hostileNewestId = newestEntryIdOf(hostileSeed, hostileLabel)
+    const controlNewestId = newestEntryIdOf(controlSeed, controlLabel)
+    const hostileOlderId = olderEntryIdOf(hostileSeed, hostileLabel)
+    const controlOlderId = olderEntryIdOf(controlSeed, controlLabel)
+
+    const hostile = await briefingsOf(hostileFixture, hostileSeed, hostileLabel)
+    const control = await briefingsOf(controlFixture, controlSeed, controlLabel)
+
+    for (const [label, briefing] of [
+      [controlLabel, control.briefingTool],
+      [hostileLabel, hostile.briefingTool]
+    ] as const) {
+      assert.equal(
+        briefing.includes(CLIP_MARKER),
+        false,
+        `${label}: the render carries ${JSON.stringify(CLIP_MARKER)}, so something on this page was shortened; a shortened newest session entry is clipped at whatever axis point the budget search settled on, and the hostile and control pages can settle on different ones, which would make their rendered line counts differ for a reason that is not forgery`
+      )
+    }
+
+    assert.equal(
+      linesEqualTo(control.briefingTool, olderHeadlineLineFor(controlOlderId)),
+      1,
+      `${controlLabel}: the control render carries no line that is exactly ${JSON.stringify(olderHeadlineLineFor(controlOlderId))}, so the server authors no line of the shape "- <entry id> <headline>" on this page and the forged headline payload imitates nothing`
+    )
+    assert.equal(
+      linesEqualTo(hostile.briefingTool, olderHeadlineLineFor(hostileOlderId)),
+      1,
+      `${hostileLabel}: the hostile render carries no line that is exactly ${JSON.stringify(olderHeadlineLineFor(hostileOlderId))}, so the older entry whose shape the forged headline imitates was dropped from the page`
+    )
+    assert.deepEqual(
+      blockLinesUnder(control.briefingTool, controlNewestId, CONTROL_NEWEST_BODY_LINES.length, controlLabel),
+      markedBlockLinesOf(CONTROL_NEWEST_BODY_LINES),
+      `${controlLabel}: the control render does not put every stored line of its newest session entry on its own rendered line carrying the server's blockquote marker, so the hostile comparison beneath would be measuring a marker convention this surface does not hold to even for plainly benign text`
+    )
+
+    assertPayloadIsInert(NEWEST_SESSION_BLOCK_SURFACE, hostile.briefingTool, control.briefingTool)
+
+    assert.deepEqual(
+      blockLinesUnder(hostile.briefingTool, hostileNewestId, HOSTILE_NEUTRALISED_BODY_LINES.length, hostileLabel),
+      markedBlockLinesOf(HOSTILE_NEUTRALISED_BODY_LINES),
+      `${hostileLabel}: THIS ASSERTION HOLDS DECISION 01M24PQH0NTNXPCGM47K2KYY67 ON THE BRIEFING. The newest session entry is the one agent-written value this page renders as many lines rather than one, so every one of those lines must carry the server's blockquote marker and must carry the payload's structural characters neutralised. A line rendered without the marker reads as prose the server itself authored, which is the attribution the marker exists to keep`
+    )
+
+    for (const line of FORGED_BLOCK_LINES) {
+      const label = `${NEWEST_SESSION_BLOCK_SURFACE}/${JSON.stringify(line.stored)}`
+      assert.equal(
+        linesEqualTo(hostile.briefingTool, `${BLOCK_QUOTE_MARKER_PREFIX}${line.neutralised}`),
+        1,
+        `${label}: expected exactly one rendered line to be exactly ${JSON.stringify(`${BLOCK_QUOTE_MARKER_PREFIX}${line.neutralised}`)}, the payload neutralised and carrying the server's own blockquote marker`
+      )
+      assert.equal(
+        linesEqualTo(hostile.briefingTool, line.stored),
+        linesEqualTo(control.briefingTool, line.stored),
+        `${label}: the hostile render carries a different number of lines equal to ${JSON.stringify(line.stored)} than the control does, so the stored body added a rendered line the server did not author`
+      )
+      if (line.kind === 'server-authored-line') {
+        assert.equal(
+          linesEqualTo(control.briefingTool, line.stored),
+          1,
+          `${label}: the control render does not carry exactly one line equal to ${JSON.stringify(line.stored)}, so the server authors no such line on this page and the equality above compares two zeroes rather than proving the payload forged no second copy of a line the reader trusts`
+        )
+      }
+      if (line.kind === 'line-start-marker') {
+        assert.equal(
+          hostile.briefingTool.includes(line.stored),
+          false,
+          `${label}: the stored payload reached the client verbatim`
+        )
+      }
+      assert.equal(
+        hostile.briefingResource.includes(line.stored),
+        false,
+        `${label}: the stored session entry payload reached logbook://thread/${hostileSeed.threadId}, a surface that renders no session entry body at all`
+      )
+    }
+
+    assert.ok(
+      hostile.briefingResource.includes(hostileSeed.threadId),
+      `${hostileLabel}: logbook://thread/${hostileSeed.threadId} does not name its own thread, so the absence checks above measured an empty render rather than a surface that carries no session entry body`
+    )
   } finally {
     disposeFixture(hostileFixture)
     disposeFixture(controlFixture)
