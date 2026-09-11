@@ -3,7 +3,7 @@ import { criterionSettledness } from '../schema/thread.ts'
 import type { SessionEntry } from '../schema/session.ts'
 import type { Pointer } from '../domain/pointer.ts'
 import { previousSessionEntries } from '../domain/session-log.ts'
-import { escapeStored, escapeStoredBlock, firstStoredLine } from './escape.ts'
+import { escapeStored, escapeStoredBlock, firstNonEmptyStoredLine } from './escape.ts'
 import { CLIP_MARKER_GRAPHEMES, clipWithMarker, clipWithMarkerFloor } from './clip.ts'
 import {
   ARTIFACT_LABEL_MAX,
@@ -202,11 +202,20 @@ const renderOutOfScopeLine = (outOfScope: OutOfScope, textClip: number): string 
 const renderArtifactLine = (artifact: Artifact, renderClip: RenderClip): string =>
   `- ${clipFloor(artifact.label, renderClip.artifactLabel)}: ${clipFloor(artifact.pointer, renderClip.artifactPointer)}`
 
-const renderSessionHeadlineLine = (entry: SessionEntry, textClip: number): string =>
-  `- ${escapeStored(entry.id)} ${clipFloor(firstStoredLine(entry.body), textClip)}`
+const renderSessionHeadlineLine = (entry: SessionEntry, textClip: number): string => {
+  const headline = clipFloor(firstNonEmptyStoredLine(entry.body), textClip)
+  const label = `- ${escapeStored(entry.id)}`
+  return headline.length === 0 ? label : `${label} ${headline}`
+}
 
 const renderNewestSessionEntryBlock = (entry: SessionEntry, textClip: number): string =>
   [`- ${escapeStored(entry.id)}`, escapeStoredBlock(entry.body, textClip)].join('\n')
+
+const OLDER_SESSION_ENTRIES_SINGULAR = 'older session log entry on this thread is shown as its first line only'
+const OLDER_SESSION_ENTRIES_PLURAL = 'older session log entries on this thread are shown as their first line only'
+
+const renderOlderSessionEntriesLine = (count: number, threadId: string): string =>
+  `- ${count} ${count === 1 ? OLDER_SESSION_ENTRIES_SINGULAR : OLDER_SESSION_ENTRIES_PLURAL}; see logbook://sessions/${escapeStored(threadId)} for the complete record`
 
 const renderUnreadableSessionEntriesLine = (count: number, threadId: string): string =>
   `- ${count} session log entr${count === 1 ? 'y' : 'ies'} on this thread could not be read; see logbook://sessions/${escapeStored(threadId)} for the complete record`
@@ -383,7 +392,7 @@ const itemTextWasShortened = (
   keyDecisions.live.some((keyDecision) => wasClipped(keyDecision.title, renderClip.keyDecision)) ||
   outOfScope.some((item) => wasClipped(item.text, renderClip.outOfScope)) ||
   criteria.some((criterion) => criterionTextWasShortened(criterion, renderClip)) ||
-  sessions.older.some((entry) => wasClipped(firstStoredLine(entry.body), renderClip.sessionHeadline)) ||
+  sessions.older.some((entry) => wasClipped(firstNonEmptyStoredLine(entry.body), renderClip.sessionHeadline)) ||
   sessions.newest.some((entry) => blockWasShortened(entry.body, renderClip.newestSession)) ||
   risks.settled.some((risk) => wasClipped(risk.text, renderClip.settledRisk)) ||
   keyDecisions.settled.some((keyDecision) => wasClipped(keyDecision.title, renderClip.settledKeyDecision))
@@ -410,6 +419,9 @@ const assembleBriefing = (
   const activeGoalLines = thread.spine.active_goal.length === 0 ? [] : [thread.spine.active_goal]
   const legacyLastSessionText =
     previousEntryCount > 0 || thread.spine.last_session.length === 0 ? [] : [thread.spine.last_session]
+  const olderSessionEntryLines = [sessions.older.length]
+    .filter((count) => count > 0)
+    .map((count) => renderOlderSessionEntriesLine(count, thread.id))
   const unreadableSessionEntryLines = [unreadableSessionEntryCount]
     .filter((count) => count > 0)
     .map((count) => renderUnreadableSessionEntriesLine(count, thread.id))
@@ -482,6 +494,7 @@ const assembleBriefing = (
     ...lastSessionHeading.slice(0, 1).map(() => ''),
     ...sessions.newest.map((entry) => renderNewestSessionEntryBlock(entry, renderClip.newestSession)),
     ...sessions.older.map((entry) => renderSessionHeadlineLine(entry, renderClip.sessionHeadline)),
+    ...olderSessionEntryLines,
     ...legacyLastSessionText.slice(0, 1).map(() => LEGACY_LAST_SESSION_MARKER),
     ...legacyLastSessionText.map((value) => escapeStoredBlock(value, HEADER_FIELD_ESCAPED_GRAPHEME_MAX)),
     ...unreadableSessionEntryLines,
