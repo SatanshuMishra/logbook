@@ -97,6 +97,7 @@ const OPEN_PROJECT_STORE_PRODUCER: ProducerId = 'server/tool-support.ts#openProj
 const LOAD_THREAD_PRODUCER: ProducerId = 'server/tool-support.ts#loadThread'
 const LOAD_THREAD_FOR_REFERENCE_PRODUCER: ProducerId = 'server/tool-support.ts#loadThreadForReference'
 const COMMIT_THREAD_PRODUCER: ProducerId = 'server/tool-support.ts#commitThread'
+const OVER_BYTE_CAP_REFUSAL_PRODUCER: ProducerId = 'server/tool-support.ts#refuseOverThreadByteCap'
 const BINDING_RECORD_PARSE_PRODUCER: ProducerId = 'schema/binding.ts#BindingRecord.parse'
 const BINDING_RECORD_REFUSE_PRODUCER: ProducerId = 'schema/binding.ts#BindingRecord.refuse'
 const DECISION_RECORD_PARSE_PRODUCER: ProducerId = 'schema/decision.ts#DecisionRecord.parse'
@@ -369,6 +370,21 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
       producer: UPDATE_THREAD_BLOCKED_BY_CAP_PRODUCER,
       refusal: overflowingBlockedBy.refusal
     })
+
+    const fixtureCriterionId = firstOpen.structured.completion_criteria[0]?.id
+    if (fixtureCriterionId === undefined) {
+      throw new Error('expected the census tool fixture thread to carry a completion criterion for the byte-cap probe')
+    }
+    const rawOverByteCap = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      criteria_done: [
+        { criterion_id: fixtureCriterionId, result: CONTROL_CHAR_OVERFLOW(70000), result_status: 'verified' }
+      ]
+    })
+    if (rawOverByteCap.ok) {
+      throw new Error('expected updateThreadTool to refuse a raw result already over the whole-thread byte cap')
+    }
+    refusals.push({ producer: OVER_BYTE_CAP_REFUSAL_PRODUCER, refusal: rawOverByteCap.refusal })
 
     const missingKind = await amendCriteriaTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,
