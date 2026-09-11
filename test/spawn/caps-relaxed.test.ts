@@ -809,3 +809,101 @@ test('caps-relaxed.session-body-past-32000-characters-is-refused-reporting-the-n
     assert.ok(text.includes('32000'), `the refusal must report the new bound of 32000: ${text}`)
   })
 })
+
+test('caps-relaxed.clearing-blocked-by-while-growing-a-criterion-result-is-measured-against-the-record-that-gets-written', async () => {
+  await withFixture(async (fx) => {
+    const CAP = caps.THREAD_RECORD_SERIALISED_MAX_BYTES
+    const OVER_CAP_MARGIN = 249
+    const bytesOf = (thread: Thread): number => Buffer.byteLength(JSON.stringify(thread), 'utf8')
+
+    const { threadId, criterionIds } = await openMinimalThread(fx, 'shrink-while-growing-thread', [
+      { text: 'the criterion this call marks done', check: 'the fixture check', settledness: 'proposed' }
+    ])
+    const criterionId = criterionIds[0]
+    assert.ok(criterionId !== undefined, 'caps-relaxed fixture: open_thread minted no criterion')
+
+    const BLOCKED_BY = buildLongPlainAsciiText(caps.THREAD_BLOCKED_BY_MAX)
+    const blocked = await callUpdateThread(fx, { thread_id: threadId, blocked_by: BLOCKED_BY })
+    assert.equal(blocked.isError, undefined, `caps-relaxed fixture: could not seed blocked_by: ${firstTextOf(blocked)}`)
+
+    const before = readThreadRecord(fx, threadId)
+    assert.equal(before.blocked_by, BLOCKED_BY, 'caps-relaxed fixture: the seeded blocked_by must be stored verbatim')
+
+    const withResult = (result: string): Thread => ({
+      ...before,
+      completion_criteria: before.completion_criteria.map((c) =>
+        c.id === criterionId ? { ...c, done: true, result, result_status: 'verified' as const } : c
+      )
+    })
+    const RESULT = 'r'.repeat(CAP + OVER_CAP_MARGIN - bytesOf(withResult('')))
+    const keptShape = withResult(RESULT)
+    const clearedShape: Thread = { ...keptShape, blocked_by: null }
+    assert.equal(
+      bytesOf(keptShape),
+      CAP + OVER_CAP_MARGIN,
+      'caps-relaxed fixture: a record that kept the cleared blocked_by must sit just past the cap'
+    )
+    assert.ok(
+      bytesOf(clearedShape) <= CAP,
+      `caps-relaxed fixture: the record this call would actually write must fit under the cap, got ${bytesOf(clearedShape)}`
+    )
+
+    const updated = await callUpdateThread(fx, {
+      thread_id: threadId,
+      criteria_done: [{ criterion_id: criterionId, result: RESULT, result_status: 'verified' }],
+      blocked_by_clear: true
+    })
+
+    assert.equal(
+      updated.isError,
+      undefined,
+      `a call that clears blocked_by while growing a result must be measured against the record it writes, not against one that keeps the cleared value: ${updated.isError === true ? firstTextOf(updated) : 'no error'}`
+    )
+
+    const stored = readThreadRecord(fx, threadId)
+    assert.equal(stored.blocked_by, null, 'the accepted call must have cleared blocked_by')
+    const criterion = stored.completion_criteria.find((c) => c.id === criterionId)
+    assert.ok(criterion !== undefined, 'caps-relaxed fixture: the criterion vanished from the stored thread')
+    assert.equal(criterion.done, true, 'the accepted call must have marked the criterion done')
+    assert.equal(criterion.result, RESULT, 'the stored result must equal the sent payload exactly, character for character')
+    assert.ok(bytesOf(stored) <= CAP, `the written record must itself fit under the byte cap, got ${bytesOf(stored)}`)
+  })
+})
+
+test('caps-relaxed.growth-from-two-groups-in-one-call-is-refused-before-escaping-expands-either', async () => {
+  await withFixture(async (fx) => {
+    const RAW_LENGTH = 40000
+    const RAW_PAYLOAD = '<'.repeat(RAW_LENGTH)
+    const ESCAPED_LENGTH = RAW_LENGTH * 6
+
+    assert.ok(
+      RAW_LENGTH < caps.THREAD_RECORD_SERIALISED_MAX_BYTES,
+      'caps-relaxed fixture: neither group may cross the whole-record cap on its own'
+    )
+    assert.ok(
+      RAW_LENGTH * 2 > caps.THREAD_RECORD_SERIALISED_MAX_BYTES,
+      'caps-relaxed fixture: the two groups together must cross the whole-record cap'
+    )
+
+    const { threadId, criterionIds } = await openMinimalThread(fx, 'cumulative-growth-thread', [
+      { text: 'the criterion this call marks done', check: 'the fixture check', settledness: 'proposed' }
+    ])
+    const criterionId = criterionIds[0]
+    assert.ok(criterionId !== undefined, 'caps-relaxed fixture: open_thread minted no criterion')
+
+    const attempted = await callUpdateThread(fx, {
+      thread_id: threadId,
+      criteria_done: [{ criterion_id: criterionId, result: RAW_PAYLOAD, result_status: 'verified' }],
+      risks_add: [{ text: RAW_PAYLOAD, scope: 'the area this risk concerns' }]
+    })
+
+    assertPreEscapeThreadRefusal(attempted, RAW_LENGTH * 2, ESCAPED_LENGTH * 2)
+
+    const stored = readThreadRecord(fx, threadId)
+    assert.equal(stored.spine.open_risks.length, 0, 'a refused call must not have written a risk to the stored spine')
+    const criterion = stored.completion_criteria.find((c) => c.id === criterionId)
+    assert.ok(criterion !== undefined, 'caps-relaxed fixture: the criterion vanished from the stored thread')
+    assert.equal(criterion.done, false, 'a refused call must not have marked the criterion done')
+    assert.equal(criterion.result ?? null, null, 'a refused call must not have written a result on the criterion')
+  })
+})
