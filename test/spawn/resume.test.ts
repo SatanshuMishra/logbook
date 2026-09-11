@@ -705,8 +705,8 @@ test('resume.last-session-renders-the-previous-sessions-entries-newest-first', a
     assert.notEqual(headingAt, -1, 'the briefing must carry a Last session heading')
 
     assert.deepEqual(
-      lines.slice(headingAt + 2, headingAt + 5),
-      [`- ${parkEntryId} ${outcome}`, `- ${entryIds[1]} ${secondBody}`, `- ${entryIds[0]} ${firstBody}`],
+      lines.slice(headingAt + 2, headingAt + 6),
+      [`- ${parkEntryId}`, `> ${outcome}`, `- ${entryIds[1]} ${secondBody}`, `- ${entryIds[0]} ${firstBody}`],
       'the Last session section must render the previous session entries newest first, each with its entry id'
     )
   })

@@ -332,6 +332,7 @@ const SETTLED_DECISION_TEXT_PATTERN = /^- decision [0-9A-HJKMNP-TV-Z]{26} (.*)$/
 const SUCCEEDS_TITLE_PATTERN = /^- succeeds: (.*) \([^)]*\)$/
 const CHECK_TEXT_PATTERN = /^ {2}- check: (.*)$/
 const RESULT_TEXT_PATTERN = /^ {2}- result: (.*) \([^)]*\)$/
+const BLOCKQUOTE_LINE_PATTERN = /^> (.*)$/
 
 const SHORTENABLE_VALUE_PATTERNS = [
   CRITERION_TEXT_PATTERN,
@@ -340,7 +341,8 @@ const SHORTENABLE_VALUE_PATTERNS = [
   SETTLED_DECISION_TEXT_PATTERN,
   SUCCEEDS_TITLE_PATTERN,
   CHECK_TEXT_PATTERN,
-  RESULT_TEXT_PATTERN
+  RESULT_TEXT_PATTERN,
+  BLOCKQUOTE_LINE_PATTERN
 ]
 
 const storedValueOf = (line: string): string | null => {
@@ -384,7 +386,7 @@ test('briefing.every-shortened-value-carries-the-marker-inside-its-own-limit', (
   for (const line of marked) {
     assert.equal(line.split(CLIP_MARKER).length - 1, 1, `the marker must appear once on a shortened line, got: ${line}`)
     const value = storedValueOf(line)
-    assert.notEqual(value, null, `a line carrying the marker must be a value line this test can read, got: ${line}`)
+    assert.notEqual(value, null, `a line carrying the marker must be a value line this test can read: a criterion, risk, settled item, predecessor title, check, result, or any blockquote line, which is every shape a stored value reaches the page in. Got: ${line}`)
     assert.ok((value as string).endsWith(CLIP_MARKER), `a shortened value must end with the marker, got: ${value as string}`)
     assert.ok(
       (value as string).length > CLIP_MARKER_GRAPHEMES,

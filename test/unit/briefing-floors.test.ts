@@ -14,13 +14,13 @@ import {
   CRITERION_CHECK_FLOOR,
   CRITERION_RESULT_FLOOR,
   CRITERION_SETTLED_BY_FLOOR,
-  LAST_SESSION_TEXT_FLOOR,
+  SESSION_ENTRY_TEXT_FLOOR,
   ARTIFACT_LABEL_FLOOR,
   ARTIFACT_POINTER_FLOOR,
   type DecisionIntegrity
 } from '../../src/render/briefing.ts'
 import { escapeStored } from '../../src/render/escape.ts'
-import { CLIP_MARKER } from '../../src/render/clip.ts'
+import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
 import { ThreadRecord, type Thread, type Criterion, type Risk, type KeyDecision, type OutOfScope, type Artifact } from '../../src/schema/thread.ts'
 import { SessionRecord, type SessionEntry } from '../../src/schema/session.ts'
 import { itemCountOverBudgetThread } from '../support/briefing-item-count-over-budget-fixture.ts'
@@ -135,7 +135,7 @@ type FloorRawText = (floor: number, cap: number) => string
 const SLUG_SAFE_FILL_CHAR = 'a'
 const slugSafeFillFor = (floor: number, cap: number): string => SLUG_SAFE_FILL_CHAR.repeat(Math.min(floor, cap))
 
-const buildFloorFixture = (rawTextFor: FloorRawText, sessionRawText?: string, sessionEntryCount: number = 1): Fixture => {
+const buildFloorFixture = (rawTextFor: FloorRawText, sessionBodies: readonly string[]): Fixture => {
   const relatedTitleText = rawTextFor(RELATED_TITLE_FLOOR, THREAD_TITLE_MAX)
   const relatedSlugText = slugSafeFillFor(RELATED_SLUG_FLOOR, THREAD_SLUG_MAX)
   const riskText = rawTextFor(RISK_TEXT_FLOOR, FORMER_RISK_TEXT_MAX)
@@ -150,7 +150,12 @@ const buildFloorFixture = (rawTextFor: FloorRawText, sessionRawText?: string, se
   const criterionSettledByText = rawTextFor(CRITERION_SETTLED_BY_FLOOR, FORMER_CRITERION_SETTLED_BY_MAX)
   const artifactLabelText = rawTextFor(ARTIFACT_LABEL_FLOOR, ARTIFACT_LABEL_MAX)
   const artifactPointerText = rawTextFor(ARTIFACT_POINTER_FLOOR, ARTIFACT_POINTER_MAX)
-  const sessionBodyText = sessionRawText ?? rawTextFor(LAST_SESSION_TEXT_FLOOR, SESSION_BODY_MAX)
+  const oldestSessionBody = sessionBodies[0]
+  if (oldestSessionBody === undefined) {
+    throw new Error(
+      'the floors fixture needs at least one session body, or the session headline spec would have no rendered line to measure'
+    )
+  }
 
   const anchorCriterion: Criterion = {
     id: rt.ulid(),
@@ -228,9 +233,14 @@ const buildFloorFixture = (rawTextFor: FloorRawText, sessionRawText?: string, se
     updated_at: rt.now()
   }
 
-  const entries: SessionEntry[] = Array.from({ length: sessionEntryCount }, () => rt.ulid())
-    .sort()
-    .map((id) => ({ id, thread_id: thread.id, actor: 'claude', body: sessionBodyText, created_at: rt.now() }))
+  const sessionEntryIds = sessionBodies.map(() => rt.ulid()).sort()
+  const entries: SessionEntry[] = sessionBodies.map((body, index) => {
+    const id = sessionEntryIds[index]
+    if (id === undefined) {
+      throw new Error('the floors fixture minted fewer session entry ids than it has session bodies')
+    }
+    return { id, thread_id: thread.id, actor: 'claude', body, created_at: rt.now() }
+  })
 
   const specs: FieldSpec[] = [
     { name: 'related title', floor: RELATED_TITLE_FLOOR, heading: RELATED_HEADING, pattern: RELATED_LINE, group: 1, rawText: relatedTitleText },
@@ -261,7 +271,7 @@ const buildFloorFixture = (rawTextFor: FloorRawText, sessionRawText?: string, se
     },
     { name: 'artifact label', floor: ARTIFACT_LABEL_FLOOR, heading: ARTIFACTS_HEADING, pattern: ARTIFACT_LINE, group: 1, rawText: artifactLabelText },
     { name: 'artifact pointer', floor: ARTIFACT_POINTER_FLOOR, heading: ARTIFACTS_HEADING, pattern: ARTIFACT_LINE, group: 2, rawText: artifactPointerText },
-    { name: 'last session text', floor: LAST_SESSION_TEXT_FLOOR, heading: LAST_SESSION_HEADING, pattern: SESSION_ENTRY_LINE, group: 1, rawText: sessionBodyText }
+    { name: 'session headline text', floor: SESSION_ENTRY_TEXT_FLOOR, heading: LAST_SESSION_HEADING, pattern: SESSION_ENTRY_LINE, group: 1, rawText: oldestSessionBody }
   ]
 
   return { thread, predecessor, entries, specs }
@@ -269,6 +279,7 @@ const buildFloorFixture = (rawTextFor: FloorRawText, sessionRawText?: string, se
 
 const FLOOR_MARGIN_GRAPHEMES = 250
 const STEALER_GRAPHEMES = SESSION_BODY_MAX
+const SHORT_NEWEST_SESSION_BODY = 'the newest entry is short, so the space contest is between the older headline and every other field'
 const ESCAPE_EXPLODING_SESSION_ENTRY_COUNT = 12
 const ESCAPE_TOKEN_MAX_GRAPHEMES = 8
 
@@ -287,7 +298,7 @@ const assertRecordAdmissible = (fixture: Fixture): void => {
 }
 
 test('briefing.floors-are-honoured-and-not-everything-sits-on-its-floor-under-budget-pressure', () => {
-  const fixture = buildFloorFixture(marginedWithinCap, 'x'.repeat(STEALER_GRAPHEMES))
+  const fixture = buildFloorFixture(marginedWithinCap, ['x'.repeat(STEALER_GRAPHEMES), SHORT_NEWEST_SESSION_BODY])
   assertRecordAdmissible(fixture)
 
   const render = renderBriefingWithPasses(fixture.thread, EMPTY_INTEGRITY, null, fixture.predecessor, true, fixture.entries)
@@ -307,7 +318,10 @@ test('briefing.floors-are-honoured-and-not-everything-sits-on-its-floor-under-bu
 })
 
 test('briefing.floors-are-honoured-in-escaped-graphemes-when-stored-text-explodes-under-escaping', () => {
-  const fixture = buildFloorFixture((floor) => '<'.repeat(floor), '<'.repeat(SESSION_BODY_MAX), ESCAPE_EXPLODING_SESSION_ENTRY_COUNT)
+  const fixture = buildFloorFixture(
+    (floor) => '<'.repeat(floor),
+    Array.from({ length: ESCAPE_EXPLODING_SESSION_ENTRY_COUNT }, () => '<'.repeat(SESSION_BODY_MAX))
+  )
   assertRecordAdmissible(fixture)
   const render = renderBriefingWithPasses(fixture.thread, EMPTY_INTEGRITY, null, fixture.predecessor, true, fixture.entries)
 
@@ -363,10 +377,10 @@ test('briefing.floors-are-honoured-in-graphemes-rather-than-utf16-code-units', (
   const multiUnitRawTextFor: FloorRawText = (floor, cap) =>
     multiUnitGrapheme.repeat(Math.min(floor + FLOOR_MARGIN_GRAPHEMES, graphemesAdmissibleUnderCap(cap)))
 
-  const fixture = buildFloorFixture(
-    multiUnitRawTextFor,
+  const fixture = buildFloorFixture(multiUnitRawTextFor, [
+    multiUnitGrapheme.repeat(graphemesAdmissibleUnderCap(SESSION_BODY_MAX)),
     multiUnitGrapheme.repeat(graphemesAdmissibleUnderCap(SESSION_BODY_MAX))
-  )
+  ])
   assertRecordAdmissible(fixture)
   const render = renderBriefingWithPasses(fixture.thread, EMPTY_INTEGRITY, null, fixture.predecessor, true, fixture.entries)
 
@@ -520,6 +534,76 @@ test('briefing.floors-hold-and-the-budget-is-reported-exceeded-when-item-count-o
   }
 })
 
+const NEWEST_SESSION_BLOCK_PREFIX = '> '
+const NEWEST_SESSION_ENTRY_ACTOR = 'claude'
+const NEWEST_SESSION_ENTRY_BODY = 'x'.repeat(SESSION_BODY_MAX)
+
+test('briefing.the-newest-session-entry-keeps-exactly-its-floor-when-the-budget-is-breached', () => {
+  const thread = buildOverSubscribedFixture(OVER_SUBSCRIBED_CRITERIA_COUNT)
+  const newestEntry: SessionEntry = {
+    id: rt.ulid(),
+    thread_id: thread.id,
+    actor: NEWEST_SESSION_ENTRY_ACTOR,
+    body: NEWEST_SESSION_ENTRY_BODY,
+    created_at: rt.now()
+  }
+  assert.equal(
+    ThreadRecord.parse(thread).ok,
+    true,
+    'the over-subscribed-floors fixture must itself be schema-admissible, or the renderer would never be handed it'
+  )
+  assert.equal(
+    SessionRecord.parse(newestEntry).ok,
+    true,
+    'the newest session entry must itself be schema-admissible, or the renderer would never be handed it'
+  )
+
+  const escapedBody = escapeStored(newestEntry.body)
+  assert.ok(
+    graphemeCount(escapedBody) > SESSION_ENTRY_TEXT_FLOOR,
+    `the newest entry's body must escape to more graphemes than its floor of ${SESSION_ENTRY_TEXT_FLOOR}, or the floor below is satisfied by a body that was never long enough to be shortened; it escaped to ${graphemeCount(escapedBody)} graphemes`
+  )
+
+  const render = renderBriefingWithPasses(thread, EMPTY_INTEGRITY, null, null, true, [newestEntry])
+
+  assert.equal(
+    render.withinBudget,
+    false,
+    `this fixture must breach the budget on item count alone, or the clip search never bottoms out at its lower bound and nothing below is measuring the guaranteed minimum; got a render of ${render.briefing.length} characters reported as within budget`
+  )
+
+  const lastSessionLines = sectionLines(render.briefing, LAST_SESSION_HEADING)
+  const blockLines = lastSessionLines.filter((line) => line.startsWith(NEWEST_SESSION_BLOCK_PREFIX))
+  assert.equal(
+    blockLines.length,
+    1,
+    `the newest entry's body holds no stored line break, so its block must be exactly one blockquote line under ${LAST_SESSION_HEADING}; the section reads:\n${lastSessionLines.join('\n')}`
+  )
+
+  const blockText = (blockLines[0] as string).slice(NEWEST_SESSION_BLOCK_PREFIX.length)
+  assert.equal(
+    graphemeCount(blockText),
+    SESSION_ENTRY_TEXT_FLOOR,
+    `the newest session entry's block must carry exactly its floor of ${SESSION_ENTRY_TEXT_FLOOR} graphemes once the budget is breached, and the ${CLIP_MARKER_GRAPHEMES} graphemes of the ${CLIP_MARKER} marker are counted INSIDE that total rather than added on top of it; got ${graphemeCount(blockText)} graphemes`
+  )
+
+  assert.ok(
+    blockText.endsWith(CLIP_MARKER),
+    `a newest entry shortened to its floor must end with the ${CLIP_MARKER} marker, or the reader cannot tell the block was shortened and the split between the entry's own text and the marker measured below is not where this test claims it is; the block ends ${JSON.stringify(blockText.slice(-CLIP_MARKER.length))}`
+  )
+
+  const ownText = blockText.slice(0, blockText.length - CLIP_MARKER.length)
+  assert.equal(
+    graphemeCount(ownText),
+    SESSION_ENTRY_TEXT_FLOOR - CLIP_MARKER_GRAPHEMES,
+    `because the marker is counted inside the floor, the entry's own text within the block is exactly the floor of ${SESSION_ENTRY_TEXT_FLOOR} less the ${CLIP_MARKER_GRAPHEMES} graphemes of the marker; got ${graphemeCount(ownText)} graphemes`
+  )
+  assert.ok(
+    escapedBody.startsWith(ownText),
+    `the graphemes the block keeps must be the opening of the entry's own stored text rather than any other filling; the block opens ${JSON.stringify(ownText.slice(0, CLIP_MARKER.length))}`
+  )
+})
+
 test('briefing.an-over-budget-render-with-nothing-shortened-carries-no-shortened-text-bullet', () => {
   const thread = itemCountOverBudgetThread(rt)
   assert.equal(ThreadRecord.parse(thread).ok, true, 'the item-count-over-budget fixture must itself be schema-admissible')
@@ -610,7 +694,7 @@ test('briefing.every-floor-is-at-most-the-write-cap-it-governs', () => {
     { name: 'criterion check floor vs criterion check cap', floor: CRITERION_CHECK_FLOOR, cap: CRITERION_CHECK_MAX },
     { name: 'criterion result floor vs criterion result cap', floor: CRITERION_RESULT_FLOOR, cap: FORMER_CRITERION_RESULT_MAX },
     { name: 'criterion settled by floor vs criterion settled by cap', floor: CRITERION_SETTLED_BY_FLOOR, cap: FORMER_CRITERION_SETTLED_BY_MAX },
-    { name: 'last session text floor vs session body cap', floor: LAST_SESSION_TEXT_FLOOR, cap: SESSION_BODY_MAX },
+    { name: 'session entry text floor vs session body cap', floor: SESSION_ENTRY_TEXT_FLOOR, cap: SESSION_BODY_MAX },
     { name: 'artifact label floor vs artifact label cap', floor: ARTIFACT_LABEL_FLOOR, cap: ARTIFACT_LABEL_MAX },
     { name: 'artifact pointer floor vs artifact pointer cap', floor: ARTIFACT_POINTER_FLOOR, cap: ARTIFACT_POINTER_MAX }
   ]

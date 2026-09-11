@@ -121,6 +121,11 @@ export const escapeStored = (text: string, surface: EscapeSurface = 'prose'): st
 
 const STORED_LINE_BREAK = toEscaped('\n')
 
+export const firstStoredLine = (text: string): string => text.split(STORED_LINE_BREAK)[0] ?? ''
+
+export const firstNonEmptyStoredLine = (text: string): string =>
+  text.split(STORED_LINE_BREAK).find((line) => line.length > 0) ?? ''
+
 export const escapeStoredBlock = (text: string, max: number = Number.POSITIVE_INFINITY): string =>
   clipWithMarker(
     text
