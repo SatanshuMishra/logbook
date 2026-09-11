@@ -188,9 +188,6 @@ export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOut
       return { ok: false, refusal: titleCapRefusal(escapedTitle.length) }
     }
 
-    const escapedContext = escapeStored(input.context)
-    const escapedOutcome = escapeStored(input.outcome)
-
     const escapedOptions = input.options.map((option) => escapeStored(option))
     const oversizedIndex = escapedOptions.findIndex((option) => option.length > caps.DECISION_OPTION_MAX)
     if (oversizedIndex !== -1) {
@@ -204,9 +201,31 @@ export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOut
     }
 
     const commit = readProjectHead(rt, rt.cwd)
+    const decisionId = rt.ulid()
+    const createdAt = rt.now()
+
+    const rawProspectiveDecision: Decision = {
+      id: decisionId,
+      thread_id: thread.id,
+      title: escapedTitle,
+      context: input.context,
+      options: escapedOptions,
+      outcome: input.outcome,
+      commit,
+      supersedes,
+      created_at: createdAt
+    }
+
+    const rawProspectiveBytes = byteSizeOf(rawProspectiveDecision)
+    if (rawProspectiveBytes > caps.DECISION_RECORD_SERIALISED_MAX_BYTES) {
+      return { ok: false, refusal: overDecisionByteCapRefusal(rawProspectiveDecision, rawProspectiveBytes) }
+    }
+
+    const escapedContext = escapeStored(input.context)
+    const escapedOutcome = escapeStored(input.outcome)
 
     const decision: Decision = {
-      id: rt.ulid(),
+      id: decisionId,
       thread_id: thread.id,
       title: escapedTitle,
       context: escapedContext,
@@ -214,7 +233,7 @@ export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOut
       outcome: escapedOutcome,
       commit,
       supersedes,
-      created_at: rt.now()
+      created_at: createdAt
     }
 
     const decisionBytes = byteSizeOf(decision)

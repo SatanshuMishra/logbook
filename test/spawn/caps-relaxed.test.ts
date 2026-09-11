@@ -562,6 +562,49 @@ test('caps-relaxed.new-decision-record-byte-cap-refuses-growth-driven-by-context
   })
 })
 
+test('caps-relaxed.oversized-raw-decision-context-is-refused-before-escaping-expands-it', async () => {
+  await withFixture(async (fx) => {
+    const RAW_CONTEXT_LENGTH = 70000
+    const RAW_CONTEXT = '<'.repeat(RAW_CONTEXT_LENGTH)
+    const ESCAPED_CONTEXT_LENGTH = RAW_CONTEXT_LENGTH * 6
+
+    const { threadId } = await openMinimalThread(fx, 'pre-escape-guard-decision-thread')
+
+    const recorded = await callRecordDecision(fx, {
+      thread_id: threadId,
+      title: 'a decision whose context is built entirely of always-escaped characters',
+      context: RAW_CONTEXT,
+      options: ['keep the current approach'],
+      outcome: 'keep the current approach'
+    })
+
+    assert.equal(
+      recorded.isError,
+      true,
+      'a raw decision context already over the whole-record byte cap must be refused'
+    )
+    const text = firstTextOf(recorded)
+    assert.equal(text.split('\n')[0], 'field: decision', `the refusal must name field decision: ${text}`)
+    assert.ok(
+      text.includes(String(caps.DECISION_RECORD_SERIALISED_MAX_BYTES)),
+      `the refusal must report the decision-record byte cap of ${caps.DECISION_RECORD_SERIALISED_MAX_BYTES}: ${text}`
+    )
+
+    const observedMatch = text.match(/is (\d+) bytes, over its cap/)
+    assert.ok(observedMatch !== null, `the refusal must report an observed byte count: ${text}`)
+    const observedBytes = Number((observedMatch as RegExpMatchArray)[1])
+
+    assert.ok(
+      observedBytes < ESCAPED_CONTEXT_LENGTH / 2,
+      `the refusal must be based on the raw ${RAW_CONTEXT_LENGTH}-byte context, not the escaped ${ESCAPED_CONTEXT_LENGTH}-byte form; observed ${observedBytes} bytes shows escapeStored ran before the refusal fired`
+    )
+    assert.ok(
+      observedBytes >= RAW_CONTEXT_LENGTH,
+      `the reported byte count must at least cover the raw context length of ${RAW_CONTEXT_LENGTH}; observed ${observedBytes}`
+    )
+  })
+})
+
 test('caps-relaxed.session-body-at-former-cap-plus-one-is-accepted-verbatim', async () => {
   await withFixture(async (fx) => {
     const BODY_PAYLOAD = buildVerbatimPayload(FORMER_SESSION_BODY_MAX + 1, 'This is the session body payload.')
