@@ -332,6 +332,7 @@ const SETTLED_DECISION_TEXT_PATTERN = /^- decision [0-9A-HJKMNP-TV-Z]{26} (.*)$/
 const SUCCEEDS_TITLE_PATTERN = /^- succeeds: (.*) \([^)]*\)$/
 const CHECK_TEXT_PATTERN = /^ {2}- check: (.*)$/
 const RESULT_TEXT_PATTERN = /^ {2}- result: (.*) \([^)]*\)$/
+const NEWEST_SESSION_BLOCK_PATTERN = /^> (.*)$/
 
 const SHORTENABLE_VALUE_PATTERNS = [
   CRITERION_TEXT_PATTERN,
@@ -340,7 +341,8 @@ const SHORTENABLE_VALUE_PATTERNS = [
   SETTLED_DECISION_TEXT_PATTERN,
   SUCCEEDS_TITLE_PATTERN,
   CHECK_TEXT_PATTERN,
-  RESULT_TEXT_PATTERN
+  RESULT_TEXT_PATTERN,
+  NEWEST_SESSION_BLOCK_PATTERN
 ]
 
 const storedValueOf = (line: string): string | null => {

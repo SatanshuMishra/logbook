@@ -14,7 +14,7 @@ import {
   CRITERION_CHECK_FLOOR,
   CRITERION_RESULT_FLOOR,
   CRITERION_SETTLED_BY_FLOOR,
-  LAST_SESSION_TEXT_FLOOR,
+  SESSION_ENTRY_TEXT_FLOOR,
   ARTIFACT_LABEL_FLOOR,
   ARTIFACT_POINTER_FLOOR,
   type DecisionIntegrity
@@ -135,7 +135,7 @@ type FloorRawText = (floor: number, cap: number) => string
 const SLUG_SAFE_FILL_CHAR = 'a'
 const slugSafeFillFor = (floor: number, cap: number): string => SLUG_SAFE_FILL_CHAR.repeat(Math.min(floor, cap))
 
-const buildFloorFixture = (rawTextFor: FloorRawText, sessionRawText?: string, sessionEntryCount: number = 1): Fixture => {
+const buildFloorFixture = (rawTextFor: FloorRawText, sessionBodies: readonly string[]): Fixture => {
   const relatedTitleText = rawTextFor(RELATED_TITLE_FLOOR, THREAD_TITLE_MAX)
   const relatedSlugText = slugSafeFillFor(RELATED_SLUG_FLOOR, THREAD_SLUG_MAX)
   const riskText = rawTextFor(RISK_TEXT_FLOOR, FORMER_RISK_TEXT_MAX)
@@ -150,7 +150,12 @@ const buildFloorFixture = (rawTextFor: FloorRawText, sessionRawText?: string, se
   const criterionSettledByText = rawTextFor(CRITERION_SETTLED_BY_FLOOR, FORMER_CRITERION_SETTLED_BY_MAX)
   const artifactLabelText = rawTextFor(ARTIFACT_LABEL_FLOOR, ARTIFACT_LABEL_MAX)
   const artifactPointerText = rawTextFor(ARTIFACT_POINTER_FLOOR, ARTIFACT_POINTER_MAX)
-  const sessionBodyText = sessionRawText ?? rawTextFor(LAST_SESSION_TEXT_FLOOR, SESSION_BODY_MAX)
+  const oldestSessionBody = sessionBodies[0]
+  if (oldestSessionBody === undefined) {
+    throw new Error(
+      'the floors fixture needs at least one session body, or the session headline spec would have no rendered line to measure'
+    )
+  }
 
   const anchorCriterion: Criterion = {
     id: rt.ulid(),
@@ -228,9 +233,14 @@ const buildFloorFixture = (rawTextFor: FloorRawText, sessionRawText?: string, se
     updated_at: rt.now()
   }
 
-  const entries: SessionEntry[] = Array.from({ length: sessionEntryCount }, () => rt.ulid())
-    .sort()
-    .map((id) => ({ id, thread_id: thread.id, actor: 'claude', body: sessionBodyText, created_at: rt.now() }))
+  const sessionEntryIds = sessionBodies.map(() => rt.ulid()).sort()
+  const entries: SessionEntry[] = sessionBodies.map((body, index) => {
+    const id = sessionEntryIds[index]
+    if (id === undefined) {
+      throw new Error('the floors fixture minted fewer session entry ids than it has session bodies')
+    }
+    return { id, thread_id: thread.id, actor: 'claude', body, created_at: rt.now() }
+  })
 
   const specs: FieldSpec[] = [
     { name: 'related title', floor: RELATED_TITLE_FLOOR, heading: RELATED_HEADING, pattern: RELATED_LINE, group: 1, rawText: relatedTitleText },
@@ -261,7 +271,7 @@ const buildFloorFixture = (rawTextFor: FloorRawText, sessionRawText?: string, se
     },
     { name: 'artifact label', floor: ARTIFACT_LABEL_FLOOR, heading: ARTIFACTS_HEADING, pattern: ARTIFACT_LINE, group: 1, rawText: artifactLabelText },
     { name: 'artifact pointer', floor: ARTIFACT_POINTER_FLOOR, heading: ARTIFACTS_HEADING, pattern: ARTIFACT_LINE, group: 2, rawText: artifactPointerText },
-    { name: 'last session text', floor: LAST_SESSION_TEXT_FLOOR, heading: LAST_SESSION_HEADING, pattern: SESSION_ENTRY_LINE, group: 1, rawText: sessionBodyText }
+    { name: 'session headline text', floor: SESSION_ENTRY_TEXT_FLOOR, heading: LAST_SESSION_HEADING, pattern: SESSION_ENTRY_LINE, group: 1, rawText: oldestSessionBody }
   ]
 
   return { thread, predecessor, entries, specs }
@@ -269,6 +279,7 @@ const buildFloorFixture = (rawTextFor: FloorRawText, sessionRawText?: string, se
 
 const FLOOR_MARGIN_GRAPHEMES = 250
 const STEALER_GRAPHEMES = SESSION_BODY_MAX
+const SHORT_NEWEST_SESSION_BODY = 'the newest entry is short, so the space contest is between the older headline and every other field'
 const ESCAPE_EXPLODING_SESSION_ENTRY_COUNT = 12
 const ESCAPE_TOKEN_MAX_GRAPHEMES = 8
 
@@ -287,7 +298,7 @@ const assertRecordAdmissible = (fixture: Fixture): void => {
 }
 
 test('briefing.floors-are-honoured-and-not-everything-sits-on-its-floor-under-budget-pressure', () => {
-  const fixture = buildFloorFixture(marginedWithinCap, 'x'.repeat(STEALER_GRAPHEMES))
+  const fixture = buildFloorFixture(marginedWithinCap, ['x'.repeat(STEALER_GRAPHEMES), SHORT_NEWEST_SESSION_BODY])
   assertRecordAdmissible(fixture)
 
   const render = renderBriefingWithPasses(fixture.thread, EMPTY_INTEGRITY, null, fixture.predecessor, true, fixture.entries)
@@ -307,7 +318,10 @@ test('briefing.floors-are-honoured-and-not-everything-sits-on-its-floor-under-bu
 })
 
 test('briefing.floors-are-honoured-in-escaped-graphemes-when-stored-text-explodes-under-escaping', () => {
-  const fixture = buildFloorFixture((floor) => '<'.repeat(floor), '<'.repeat(SESSION_BODY_MAX), ESCAPE_EXPLODING_SESSION_ENTRY_COUNT)
+  const fixture = buildFloorFixture(
+    (floor) => '<'.repeat(floor),
+    Array.from({ length: ESCAPE_EXPLODING_SESSION_ENTRY_COUNT }, () => '<'.repeat(SESSION_BODY_MAX))
+  )
   assertRecordAdmissible(fixture)
   const render = renderBriefingWithPasses(fixture.thread, EMPTY_INTEGRITY, null, fixture.predecessor, true, fixture.entries)
 
@@ -363,10 +377,10 @@ test('briefing.floors-are-honoured-in-graphemes-rather-than-utf16-code-units', (
   const multiUnitRawTextFor: FloorRawText = (floor, cap) =>
     multiUnitGrapheme.repeat(Math.min(floor + FLOOR_MARGIN_GRAPHEMES, graphemesAdmissibleUnderCap(cap)))
 
-  const fixture = buildFloorFixture(
-    multiUnitRawTextFor,
+  const fixture = buildFloorFixture(multiUnitRawTextFor, [
+    multiUnitGrapheme.repeat(graphemesAdmissibleUnderCap(SESSION_BODY_MAX)),
     multiUnitGrapheme.repeat(graphemesAdmissibleUnderCap(SESSION_BODY_MAX))
-  )
+  ])
   assertRecordAdmissible(fixture)
   const render = renderBriefingWithPasses(fixture.thread, EMPTY_INTEGRITY, null, fixture.predecessor, true, fixture.entries)
 
@@ -610,7 +624,7 @@ test('briefing.every-floor-is-at-most-the-write-cap-it-governs', () => {
     { name: 'criterion check floor vs criterion check cap', floor: CRITERION_CHECK_FLOOR, cap: CRITERION_CHECK_MAX },
     { name: 'criterion result floor vs criterion result cap', floor: CRITERION_RESULT_FLOOR, cap: FORMER_CRITERION_RESULT_MAX },
     { name: 'criterion settled by floor vs criterion settled by cap', floor: CRITERION_SETTLED_BY_FLOOR, cap: FORMER_CRITERION_SETTLED_BY_MAX },
-    { name: 'last session text floor vs session body cap', floor: LAST_SESSION_TEXT_FLOOR, cap: SESSION_BODY_MAX },
+    { name: 'session entry text floor vs session body cap', floor: SESSION_ENTRY_TEXT_FLOOR, cap: SESSION_BODY_MAX },
     { name: 'artifact label floor vs artifact label cap', floor: ARTIFACT_LABEL_FLOOR, cap: ARTIFACT_LABEL_MAX },
     { name: 'artifact pointer floor vs artifact pointer cap', floor: ARTIFACT_POINTER_FLOOR, cap: ARTIFACT_POINTER_MAX }
   ]

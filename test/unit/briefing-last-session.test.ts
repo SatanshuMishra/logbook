@@ -63,7 +63,8 @@ test('briefing.last-session-renders-the-previous-sessions-entries-newest-first-w
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null, false, entries)
 
   assert.deepEqual(sectionOf(rendered, '**Last session:**'), [
-    `- ${ids[3]} previous session, parked`,
+    `- ${ids[3]}`,
+    '> previous session, parked',
     `- ${ids[2]} previous session, first entry`
   ])
   assert.equal(
@@ -114,15 +115,29 @@ test('briefing.a-session-entry-that-does-not-fit-the-budget-carries-the-clip-mar
   )
 
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null, false, entries)
+  const newestId = [...entries]
+    .map((entry) => entry.id)
+    .sort()
+    .at(-1)
+  assert.ok(newestId !== undefined, 'the fixture must carry at least one entry, or there is no newest entry to name')
+  const section = sectionOf(rendered, '**Last session:**')
 
   assert.equal(rendered.length <= 12000, true, 'the briefing must be searched down into its character budget')
   assert.equal(
-    sectionOf(rendered, '**Last session:**').length,
-    20,
-    'every entry of the previous session must render, however tight the budget'
+    section.length,
+    21,
+    'every entry of the previous session must render, however tight the budget: the newest as its id line plus its one-line block, and the other nineteen as one headline each'
   )
+  assert.equal(section[0], `- ${newestId}`, 'the newest entry opens the section with its id on a line of its own')
+  for (const entry of entries) {
+    assert.equal(
+      rendered.includes(entry.id),
+      true,
+      `every entry of the previous session must render, however tight the budget; the id of entry ${entry.id} appears nowhere`
+    )
+  }
   assert.equal(
-    sectionOf(rendered, '**Last session:**').every((line) => line.endsWith(CLIP_MARKER)),
+    section.slice(1).every((line) => line.endsWith(CLIP_MARKER)),
     true,
     'every shortened entry line must end with the shared clip marker'
   )
@@ -134,7 +149,7 @@ test('briefing.a-session-entry-that-fits-renders-whole-with-no-marker', () => {
 
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null, false, entries)
 
-  assert.deepEqual(sectionOf(rendered, '**Last session:**'), [`- ${ids[0]} ${'y'.repeat(1200)}`])
+  assert.deepEqual(sectionOf(rendered, '**Last session:**'), [`- ${ids[0]}`, `> ${'y'.repeat(1200)}`])
   assert.equal(rendered.includes(CLIP_MARKER), false, 'a briefing that fits its budget must carry no clip marker')
 })
 
@@ -145,7 +160,8 @@ test('briefing.unreadable-session-entries-are-counted-and-addressed-in-last-sess
   const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null, false, entries, 2)
 
   assert.deepEqual(sectionOf(rendered, '**Last session:**'), [
-    `- ${ids[0]} a readable entry`,
+    `- ${ids[0]}`,
+    '> a readable entry',
     `- 2 session log entries on this thread could not be read; see logbook://sessions/${thread.id} for the complete record`
   ])
 })

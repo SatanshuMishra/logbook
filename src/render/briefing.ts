@@ -3,7 +3,7 @@ import { criterionSettledness } from '../schema/thread.ts'
 import type { SessionEntry } from '../schema/session.ts'
 import type { Pointer } from '../domain/pointer.ts'
 import { previousSessionEntries } from '../domain/session-log.ts'
-import { escapeStored, escapeStoredBlock } from './escape.ts'
+import { escapeStored, escapeStoredBlock, firstStoredLine } from './escape.ts'
 import { CLIP_MARKER_GRAPHEMES, clipWithMarker, clipWithMarkerFloor } from './clip.ts'
 import {
   ARTIFACT_LABEL_MAX,
@@ -75,7 +75,7 @@ export const CRITERION_TEXT_FLOOR = CRITERION_TEXT_MAX
 export const CRITERION_CHECK_FLOOR = CRITERION_CHECK_MAX
 export const CRITERION_RESULT_FLOOR = 500
 export const CRITERION_SETTLED_BY_FLOOR = FORMER_CRITERION_SETTLED_BY_MAX
-export const LAST_SESSION_TEXT_FLOOR = 500
+export const SESSION_ENTRY_TEXT_FLOOR = 200
 export const ARTIFACT_LABEL_FLOOR = ARTIFACT_LABEL_MAX
 export const ARTIFACT_POINTER_FLOOR = ARTIFACT_POINTER_MAX
 
@@ -127,6 +127,9 @@ const headerInlineWasShortened = (value: string): boolean =>
 
 const headerBlockWasShortened = (value: string): boolean =>
   escapeStoredBlock(value, HEADER_FIELD_ESCAPED_GRAPHEME_MAX) !== escapeStoredBlock(value, NO_CLIP)
+
+const blockWasShortened = (text: string, max: number): boolean =>
+  escapeStoredBlock(text, max) !== escapeStoredBlock(text, NO_CLIP)
 
 const criterionStatus = (criterion: Criterion): string => {
   if (criterion.struck_by !== null) return 'struck'
@@ -199,8 +202,11 @@ const renderOutOfScopeLine = (outOfScope: OutOfScope, textClip: number): string 
 const renderArtifactLine = (artifact: Artifact, renderClip: RenderClip): string =>
   `- ${clipFloor(artifact.label, renderClip.artifactLabel)}: ${clipFloor(artifact.pointer, renderClip.artifactPointer)}`
 
-const renderSessionEntryLine = (entry: SessionEntry, textClip: number): string =>
-  `- ${escapeStored(entry.id)} ${clipFloor(entry.body, textClip)}`
+const renderSessionHeadlineLine = (entry: SessionEntry, textClip: number): string =>
+  `- ${escapeStored(entry.id)} ${clipFloor(firstStoredLine(entry.body), textClip)}`
+
+const renderNewestSessionEntryBlock = (entry: SessionEntry, textClip: number): string =>
+  [`- ${escapeStored(entry.id)}`, escapeStoredBlock(entry.body, textClip)].join('\n')
 
 const renderUnreadableSessionEntriesLine = (count: number, threadId: string): string =>
   `- ${count} session log entr${count === 1 ? 'y' : 'ies'} on this thread could not be read; see logbook://sessions/${escapeStored(threadId)} for the complete record`
@@ -243,6 +249,13 @@ const laneSplit = <T extends { criterion_id?: string | undefined }>(
   settled: items.filter((item) => laneFor(item.criterion_id, criteriaById) === 'settled')
 })
 
+type PreviousSession = { newest: SessionEntry[]; older: SessionEntry[] }
+
+const splitNewestFromOlder = (entries: readonly SessionEntry[]): PreviousSession => ({
+  newest: entries.filter((_entry, index) => index === 0),
+  older: entries.filter((_entry, index) => index > 0)
+})
+
 type RenderClip = {
   relatedTitle: number
   relatedSlug: number
@@ -254,30 +267,35 @@ type RenderClip = {
   criterionCheck: number
   criterionResult: number
   criterionSettledBy: number
-  lastSession: number
+  sessionHeadline: number
+  newestSession: number
   settledRisk: number
   settledKeyDecision: number
   artifactLabel: number
   artifactPointer: number
 }
 
-const clipAt = (perItemClip: number): RenderClip => ({
-  relatedTitle: Math.max(perItemClip, RELATED_TITLE_FLOOR),
-  relatedSlug: Math.max(perItemClip, RELATED_SLUG_FLOOR),
-  risk: Math.max(perItemClip, RISK_TEXT_FLOOR),
-  riskRef: Math.max(perItemClip, RISK_REF_FLOOR),
-  keyDecision: Math.max(perItemClip, KEY_DECISION_TITLE_FLOOR),
-  outOfScope: Math.max(perItemClip, OUT_OF_SCOPE_TEXT_FLOOR),
-  criterion: Math.max(perItemClip, CRITERION_TEXT_FLOOR),
-  criterionCheck: Math.max(perItemClip, CRITERION_CHECK_FLOOR),
-  criterionResult: Math.max(perItemClip, CRITERION_RESULT_FLOOR),
-  criterionSettledBy: Math.max(perItemClip, CRITERION_SETTLED_BY_FLOOR),
-  lastSession: Math.max(perItemClip, LAST_SESSION_TEXT_FLOOR),
-  settledRisk: Math.max(perItemClip, RISK_TEXT_FLOOR),
-  settledKeyDecision: Math.max(perItemClip, KEY_DECISION_TITLE_FLOOR),
-  artifactLabel: Math.max(perItemClip, ARTIFACT_LABEL_FLOOR),
-  artifactPointer: Math.max(perItemClip, ARTIFACT_POINTER_FLOOR)
-})
+const clipAt = (axisPoint: number): RenderClip => {
+  const perItemClip = perItemClipAt(axisPoint)
+  return {
+    relatedTitle: Math.max(perItemClip, RELATED_TITLE_FLOOR),
+    relatedSlug: Math.max(perItemClip, RELATED_SLUG_FLOOR),
+    risk: Math.max(perItemClip, RISK_TEXT_FLOOR),
+    riskRef: Math.max(perItemClip, RISK_REF_FLOOR),
+    keyDecision: Math.max(perItemClip, KEY_DECISION_TITLE_FLOOR),
+    outOfScope: Math.max(perItemClip, OUT_OF_SCOPE_TEXT_FLOOR),
+    criterion: Math.max(perItemClip, CRITERION_TEXT_FLOOR),
+    criterionCheck: Math.max(perItemClip, CRITERION_CHECK_FLOOR),
+    criterionResult: Math.max(perItemClip, CRITERION_RESULT_FLOOR),
+    criterionSettledBy: Math.max(perItemClip, CRITERION_SETTLED_BY_FLOOR),
+    sessionHeadline: Math.max(perItemClip, SESSION_ENTRY_TEXT_FLOOR),
+    newestSession: newestSessionClipAt(axisPoint),
+    settledRisk: Math.max(perItemClip, RISK_TEXT_FLOOR),
+    settledKeyDecision: Math.max(perItemClip, KEY_DECISION_TITLE_FLOOR),
+    artifactLabel: Math.max(perItemClip, ARTIFACT_LABEL_FLOOR),
+    artifactPointer: Math.max(perItemClip, ARTIFACT_POINTER_FLOOR)
+  }
+}
 
 const UNCLIPPED: RenderClip = {
   relatedTitle: NO_CLIP,
@@ -290,7 +308,8 @@ const UNCLIPPED: RenderClip = {
   criterionCheck: NO_CLIP,
   criterionResult: NO_CLIP,
   criterionSettledBy: NO_CLIP,
-  lastSession: NO_CLIP,
+  sessionHeadline: NO_CLIP,
+  newestSession: NO_CLIP,
   settledRisk: NO_CLIP,
   settledKeyDecision: NO_CLIP,
   artifactLabel: NO_CLIP,
@@ -298,16 +317,23 @@ const UNCLIPPED: RenderClip = {
 }
 
 export const CLIP_SEARCH_UPPER_BOUND = SESSION_BODY_MAX
+export const CLIP_SEARCH_AXIS_LOWER_BOUND = SESSION_ENTRY_TEXT_FLOOR
+export const CLIP_SEARCH_AXIS_UPPER_BOUND = CLIP_SEARCH_UPPER_BOUND + (CLIP_SEARCH_UPPER_BOUND - MIN_TEXT_CLIP)
+
+const perItemClipAt = (axisPoint: number): number =>
+  axisPoint <= CLIP_SEARCH_UPPER_BOUND ? MIN_TEXT_CLIP : MIN_TEXT_CLIP + (axisPoint - CLIP_SEARCH_UPPER_BOUND)
+
+const newestSessionClipAt = (axisPoint: number): number => (axisPoint <= CLIP_SEARCH_UPPER_BOUND ? axisPoint : NO_CLIP)
 
 type ClipSearch = { briefing: string; passes: number }
 
 const largestFittingClipRender = (
-  renderAtClip: (perItemClip: number) => string,
+  renderAtClip: (axisPoint: number) => string,
   fits: (briefing: string) => boolean,
   renderBudgetExceeded: () => string
 ): ClipSearch => {
-  let accepted = MIN_TEXT_CLIP - 1
-  let ceiling = CLIP_SEARCH_UPPER_BOUND
+  let accepted = CLIP_SEARCH_AXIS_LOWER_BOUND - 1
+  let ceiling = CLIP_SEARCH_AXIS_UPPER_BOUND
   let bestFitting: string | null = null
   let passes = 0
 
@@ -345,7 +371,7 @@ const itemTextWasShortened = (
   keyDecisions: Laned<KeyDecision>,
   outOfScope: readonly OutOfScope[],
   criteria: readonly Criterion[],
-  previousEntries: readonly SessionEntry[],
+  sessions: PreviousSession,
   renderClip: RenderClip
 ): boolean =>
   (predecessor !== null &&
@@ -357,7 +383,8 @@ const itemTextWasShortened = (
   keyDecisions.live.some((keyDecision) => wasClipped(keyDecision.title, renderClip.keyDecision)) ||
   outOfScope.some((item) => wasClipped(item.text, renderClip.outOfScope)) ||
   criteria.some((criterion) => criterionTextWasShortened(criterion, renderClip)) ||
-  previousEntries.some((entry) => wasClipped(entry.body, renderClip.lastSession)) ||
+  sessions.older.some((entry) => wasClipped(firstStoredLine(entry.body), renderClip.sessionHeadline)) ||
+  sessions.newest.some((entry) => blockWasShortened(entry.body, renderClip.newestSession)) ||
   risks.settled.some((risk) => wasClipped(risk.text, renderClip.settledRisk)) ||
   keyDecisions.settled.some((keyDecision) => wasClipped(keyDecision.title, renderClip.settledKeyDecision))
 
@@ -371,22 +398,23 @@ const assembleBriefing = (
   keyDecisions: Laned<KeyDecision>,
   outOfScope: readonly OutOfScope[],
   criteria: readonly Criterion[],
-  previousEntries: readonly SessionEntry[],
+  sessions: PreviousSession,
   renderClip: RenderClip,
   unreadableSessionEntryCount: number,
   budgetExceeded: boolean
 ): string => {
   const notShownAddress = `logbook://thread/${escapeStored(thread.id)}`
   const unreadableDecisionCount = decisionIntegrity.dangling.length + decisionIntegrity.quarantined.length
+  const previousEntryCount = sessions.newest.length + sessions.older.length
 
   const activeGoalLines = thread.spine.active_goal.length === 0 ? [] : [thread.spine.active_goal]
   const legacyLastSessionText =
-    previousEntries.length > 0 || thread.spine.last_session.length === 0 ? [] : [thread.spine.last_session]
+    previousEntryCount > 0 || thread.spine.last_session.length === 0 ? [] : [thread.spine.last_session]
   const unreadableSessionEntryLines = [unreadableSessionEntryCount]
     .filter((count) => count > 0)
     .map((count) => renderUnreadableSessionEntriesLine(count, thread.id))
   const lastSessionHeading =
-    previousEntries.length + legacyLastSessionText.length + unreadableSessionEntryLines.length === 0
+    previousEntryCount + legacyLastSessionText.length + unreadableSessionEntryLines.length === 0
       ? []
       : [LAST_SESSION_HEADING]
   const landedLines = thread.spine.landed.length === 0 ? [] : [thread.spine.landed]
@@ -403,7 +431,7 @@ const assembleBriefing = (
     keyDecisions,
     outOfScope,
     criteria,
-    previousEntries,
+    sessions,
     renderClip
   )
 
@@ -452,7 +480,8 @@ const assembleBriefing = (
     ...lastSessionHeading.slice(0, 1).map(() => ''),
     ...lastSessionHeading.slice(0, 1).map(() => LAST_SESSION_HEADING),
     ...lastSessionHeading.slice(0, 1).map(() => ''),
-    ...previousEntries.map((entry) => renderSessionEntryLine(entry, renderClip.lastSession)),
+    ...sessions.newest.map((entry) => renderNewestSessionEntryBlock(entry, renderClip.newestSession)),
+    ...sessions.older.map((entry) => renderSessionHeadlineLine(entry, renderClip.sessionHeadline)),
     ...legacyLastSessionText.slice(0, 1).map(() => LEGACY_LAST_SESSION_MARKER),
     ...legacyLastSessionText.map((value) => escapeStoredBlock(value, HEADER_FIELD_ESCAPED_GRAPHEME_MAX)),
     ...unreadableSessionEntryLines,
@@ -514,7 +543,7 @@ export const renderBriefingWithPasses = (
 
   const risks = laneSplit(liveRisks, criteriaById)
   const keyDecisions = laneSplit(thread.spine.key_decisions, criteriaById)
-  const previousEntries = previousSessionEntries(sessionEntries)
+  const sessions = splitNewestFromOlder(previousSessionEntries(sessionEntries))
 
   const renderWith = (renderClip: RenderClip, budgetExceeded: boolean): string =>
     assembleBriefing(
@@ -527,7 +556,7 @@ export const renderBriefingWithPasses = (
       keyDecisions,
       thread.spine.out_of_scope,
       thread.completion_criteria,
-      previousEntries,
+      sessions,
       renderClip,
       unreadableSessionEntryCount,
       budgetExceeded
@@ -543,9 +572,9 @@ export const renderBriefingWithPasses = (
   if (fitsBudget(unclipped, thread.id, hasPreviousSession)) return finish(unclipped, 1)
 
   const search = largestFittingClipRender(
-    (perItemClip) => renderWith(clipAt(perItemClip), false),
+    (axisPoint) => renderWith(clipAt(axisPoint), false),
     (briefing) => fitsBudget(briefing, thread.id, hasPreviousSession),
-    () => renderWith(clipAt(MIN_TEXT_CLIP), true)
+    () => renderWith(clipAt(CLIP_SEARCH_AXIS_LOWER_BOUND), true)
   )
   return finish(search.briefing, search.passes + 1)
 }

@@ -10,8 +10,8 @@ import {
   BRIEFING_MAX_CHARS,
   RESUME_PAYLOAD_MAX_BYTES,
   RESUME_PAYLOAD_TARGET_BYTES,
-  MIN_TEXT_CLIP,
-  CLIP_SEARCH_UPPER_BOUND,
+  CLIP_SEARCH_AXIS_LOWER_BOUND,
+  CLIP_SEARCH_AXIS_UPPER_BOUND,
   type DecisionIntegrity
 } from '../../src/render/briefing.ts'
 import { CLIP_MARKER } from '../../src/render/clip.ts'
@@ -843,7 +843,7 @@ test('briefing.an-ordinary-small-thread-renders-in-a-single-pass', () => {
   )
 })
 
-const CLIP_SEARCH_RANGE_SIZE = CLIP_SEARCH_UPPER_BOUND - MIN_TEXT_CLIP + 1
+const CLIP_SEARCH_RANGE_SIZE = CLIP_SEARCH_AXIS_UPPER_BOUND - CLIP_SEARCH_AXIS_LOWER_BOUND + 1
 const CLIP_SEARCH_PASS_CEILING = 1 + Math.ceil(Math.log2(CLIP_SEARCH_RANGE_SIZE))
 
 test('briefing.the-clip-search-converges-within-the-pass-ceiling', () => {
@@ -894,6 +894,24 @@ const textAfterPrefix = (rendered: string, prefix: string): number => {
     throw new Error(`expected the rendered briefing to carry a line beginning "${prefix}", found none`)
   }
   return line.length - prefix.length
+}
+
+const LAST_SESSION_HEADING = '**Last session:**'
+const NEWEST_SESSION_BLOCK_PREFIX = '> '
+
+const newestSessionBlockText = (rendered: string): number => {
+  const lines = rendered.split('\n')
+  const headingAt = lines.indexOf(LAST_SESSION_HEADING)
+  if (headingAt === -1) {
+    throw new Error(`expected the rendered briefing to carry the ${LAST_SESSION_HEADING} heading, found none`)
+  }
+  const line = lines.slice(headingAt + 1).find((candidate) => candidate.startsWith(NEWEST_SESSION_BLOCK_PREFIX))
+  if (line === undefined) {
+    throw new Error(
+      `expected the newest session entry to render as a block under ${LAST_SESSION_HEADING}, found no line beginning "${NEWEST_SESSION_BLOCK_PREFIX}"`
+    )
+  }
+  return line.length - NEWEST_SESSION_BLOCK_PREFIX.length
 }
 
 test('briefing.the-clip-search-lands-just-under-the-character-cap-on-the-worst-reachable-ascii-record', () => {
@@ -951,7 +969,7 @@ test('briefing.the-clip-search-lands-just-under-the-character-cap-on-the-worst-r
   )
   assert.ok(
     render.briefing.length >= BRIEFING_MAX_CHARS - ASCII_SESSION_ENTRY_COUNT + 1,
-    `the clip search must land within ${ASCII_SESSION_ENTRY_COUNT - 1} chars of the ${BRIEFING_MAX_CHARS} char cap (one grapheme per swept session entry, the search's exact step size at the floor it can still move, so the next step up must exceed the cap), or it overshot and threw text away; got ${render.briefing.length} chars`
+    `the clip search must land within ${ASCII_SESSION_ENTRY_COUNT - 1} chars of the ${BRIEFING_MAX_CHARS} char cap (one grapheme on the newest session entry, the only value the search still moves at the floor, so the next step up must exceed the cap), or it overshot and threw text away; got ${render.briefing.length} chars`
   )
   assert.ok(
     used <= RESUME_PAYLOAD_MAX_BYTES,
@@ -1010,7 +1028,7 @@ test('briefing.the-clip-search-lands-just-under-the-byte-cap-on-the-worst-reacha
   if (shownEntry === undefined) {
     throw new Error('the worst-reachable multi-byte fixture must carry at least one session entry, or there is no retained text to measure')
   }
-  const retained = textAfterPrefix(render.briefing, `- ${shownEntry.id} `)
+  const retained = newestSessionBlockText(render.briefing)
   assert.ok(
     retained > CLIP_MARKER.length,
     `the clipped session-entry text must keep some of its own text beside the marker, got ${retained}`
