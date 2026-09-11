@@ -95,12 +95,6 @@ test('park-thread.bare-park-clears-the-unparked-entries-guard', async () => {
     const parked = await parkThreadTool.handler(rt, STUB_TOOL_CTX, {})
     assert.equal(parked.ok, true, 'expected a bare park_thread call (outcome omitted) to succeed')
     if (!parked.ok) throw new Error('expected the bare park to succeed')
-    assert.equal(parked.structured.status, 'parked', 'expected the bare park to report status parked')
-    assert.equal(
-      parked.structured.session_entry_ids.length,
-      1,
-      'expected the bare park to report exactly one written session entry'
-    )
 
     const afterPark = await logEntry(rt, threadId, 'entry after the bare park')
     assert.equal(
@@ -109,6 +103,13 @@ test('park-thread.bare-park-clears-the-unparked-entries-guard', async () => {
       `expected log_session_event to succeed after the bare park cleared the bound, got refused: ${
         afterPark.ok ? '' : afterPark.refusal.message
       }`
+    )
+
+    assert.equal(parked.structured.status, 'parked', 'expected the bare park to report status parked')
+    assert.equal(
+      parked.structured.session_entry_ids.length,
+      1,
+      'expected the bare park to report exactly one written session entry'
     )
 
     const stored = readThreadRecord(rt, threadId)
