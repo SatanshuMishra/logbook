@@ -128,6 +128,8 @@ const LOG_SESSION_EVENT_ACTOR_CAP_PRODUCER: ProducerId = 'server/tools/log_sessi
 const LOG_SESSION_EVENT_RESERVED_ACTOR_PREFIX_PRODUCER: ProducerId =
   'server/tools/log_session_event.ts#reservedActorPrefixRefusal'
 const LOG_SESSION_EVENT_BODY_CAP_PRODUCER: ProducerId = 'server/tools/log_session_event.ts#bodyCapRefusal'
+const LOG_SESSION_EVENT_UNPARKED_BOUND_PRODUCER: ProducerId =
+  'server/tools/log_session_event.ts#unparkedEntriesBoundRefusal'
 const LOG_SESSION_EVENT_INVALID_PRODUCER: ProducerId = 'server/tools/log_session_event.ts#invalidSessionEntryRefusal'
 const LOG_SESSION_EVENT_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/log_session_event.ts#commitFailureRefusal'
 const LOG_SESSION_EVENT_HANDLER_PRODUCER: ProducerId = 'server/tools/log_session_event.ts#logSessionEventTool.handler'
@@ -484,6 +486,33 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     })
     if (bodyOverflow.ok) throw new Error('expected logSessionEventTool to refuse a body that overflows its cap once escaped')
     refusals.push({ producer: LOG_SESSION_EVENT_BODY_CAP_PRODUCER, refusal: bodyOverflow.refusal })
+
+    const unparkedBoundSeed = store.commit(
+      Array.from({ length: caps.SESSION_UNPARKED_ENTRIES_MAX }, (_unused, index) => ({
+        kind: 'session' as const,
+        record: {
+          id: rt.ulid(),
+          thread_id: threadId,
+          actor: 'claude',
+          body: `census session-entry-bound seed entry ${index}`,
+          created_at: rt.now()
+        }
+      })),
+      'seed census session-entry-bound fixture'
+    )
+    if (!unparkedBoundSeed.ok) {
+      throw new Error('expected store.commit to seed the census session-entry-bound fixture')
+    }
+
+    const unparkedBoundOverflow = await logSessionEventTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      actor: 'claude',
+      body: 'a census body over the un-parked entries bound'
+    })
+    if (unparkedBoundOverflow.ok) {
+      throw new Error('expected logSessionEventTool to refuse once the thread carries the un-parked entries bound')
+    }
+    refusals.push({ producer: LOG_SESSION_EVENT_UNPARKED_BOUND_PRODUCER, refusal: unparkedBoundOverflow.refusal })
 
     rawGit(repo, ['config', '--unset', 'user.name'])
     rawGit(repo, ['config', '--unset', 'user.email'])
