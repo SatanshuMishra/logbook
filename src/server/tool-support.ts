@@ -112,7 +112,7 @@ const heaviestFieldOf = (thread: Thread): { field: string; bytes: number } => {
   )
 }
 
-const overByteCapRefusal = (thread: Thread, observed: number): Refusal => {
+export const overByteCapRefusal = (thread: Thread, observed: number): Refusal => {
   const heaviest = heaviestFieldOf(thread)
   return {
     ok: false,

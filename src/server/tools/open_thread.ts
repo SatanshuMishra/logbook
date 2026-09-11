@@ -7,7 +7,16 @@ import { SLUG_PATTERN, ULID_PATTERN } from '../../schema/ids.ts'
 import { ULID_LENGTH } from '../../schema/ulid-length.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
-import { ArtifactAddSchema, commitThread, loadThreadForReference, mintArtifacts, openProjectStore } from '../tool-support.ts'
+import {
+  ArtifactAddSchema,
+  commitThread,
+  loadThreadForReference,
+  mintArtifacts,
+  openProjectStore,
+  overByteCapRefusal
+} from '../tool-support.ts'
+
+const byteSizeOf = (value: unknown): number => Buffer.byteLength(JSON.stringify(value), 'utf8')
 
 const CriterionCreateSchema = z
   .strictObject({
@@ -227,6 +236,44 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
     }
 
     const criteria = input.completion_criteria ?? []
+
+    const rawCompletionCriteria: Criterion[] = criteria.map((entry, index) => ({
+      id: '',
+      ordinal: index + 1,
+      text: entry.text,
+      done: false,
+      kind: 'planned',
+      check: entry.check ?? null,
+      result: null,
+      result_status: null,
+      struck_by: null,
+      settledness: entry.settledness,
+      settled_by: entry.settled_by ?? null
+    }))
+    const rawProspectiveThread: Thread = {
+      id: '',
+      slug: input.slug,
+      title: escapedTitle,
+      status: 'open',
+      blocked_by: null,
+      completion_criteria: rawCompletionCriteria,
+      spine: {
+        active_goal: escapedActiveGoal,
+        next_step: escapedNextStep,
+        landed: '',
+        last_session: '',
+        open_risks: [],
+        key_decisions: [],
+        out_of_scope: []
+      },
+      created_at: '',
+      updated_at: ''
+    }
+    const rawProspectiveBytes = byteSizeOf(rawProspectiveThread)
+    if (rawProspectiveBytes > caps.THREAD_RECORD_SERIALISED_MAX_BYTES) {
+      return { ok: false, refusal: overByteCapRefusal(rawProspectiveThread, rawProspectiveBytes) }
+    }
+
     const escapedCriteria = criteria.map((entry) => ({
       text: escapeStored(entry.text),
       check: entry.check === undefined ? undefined : escapeStored(entry.check),

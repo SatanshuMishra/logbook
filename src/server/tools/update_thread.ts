@@ -7,7 +7,16 @@ import { criterionSettledness } from '../../schema/thread.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
-import { ArtifactAddSchema, commitThread, loadThread, mintArtifacts, openProjectStore } from '../tool-support.ts'
+import {
+  ArtifactAddSchema,
+  commitThread,
+  loadThread,
+  mintArtifacts,
+  openProjectStore,
+  overByteCapRefusal
+} from '../tool-support.ts'
+
+const byteSizeOf = (value: unknown): number => Buffer.byteLength(JSON.stringify(value), 'utf8')
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 const optionalUlidField = (description: string) => z.string().regex(ULID_PATTERN).optional().describe(description)
@@ -359,6 +368,15 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     if (emptyResults.length > 0) {
       return { ok: false, refusal: emptyResultRefusal(emptyResults.map((entry) => entry.criterion_id)) }
     }
+    const rawResultCriteria = thread.completion_criteria.map((c) => {
+      const doneEntry = criteriaDone.find((entry) => entry.criterion_id === c.id)
+      return doneEntry === undefined ? c : { ...c, result: doneEntry.result }
+    })
+    const rawResultProspective: Thread = { ...thread, completion_criteria: rawResultCriteria }
+    const rawResultBytes = byteSizeOf(rawResultProspective)
+    if (rawResultBytes > caps.THREAD_RECORD_SERIALISED_MAX_BYTES) {
+      return { ok: false, refusal: overByteCapRefusal(rawResultProspective, rawResultBytes) }
+    }
     const escapedResults = criteriaDone.map((entry) => escapeStored(entry.result))
     const completions = new Map(
       criteriaDone.map((entry, index) => [
@@ -407,6 +425,17 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
         ok: false,
         refusal: settlementCheckOwedRefusal(settlementCheckOwedIndex, entry === undefined ? '' : entry.settledness)
       }
+    }
+    const rawSettledCriteria = thread.completion_criteria.map((c) => {
+      const settledEntry = criteriaSettled.find((entry) => entry.criterion_id === c.id)
+      return settledEntry === undefined
+        ? c
+        : { ...c, settled_by: settledEntry.settledness === 'confirmed' ? (settledEntry.settled_by ?? null) : null }
+    })
+    const rawSettledProspective: Thread = { ...thread, completion_criteria: rawSettledCriteria }
+    const rawSettledBytes = byteSizeOf(rawSettledProspective)
+    if (rawSettledBytes > caps.THREAD_RECORD_SERIALISED_MAX_BYTES) {
+      return { ok: false, refusal: overByteCapRefusal(rawSettledProspective, rawSettledBytes) }
     }
     const escapedSettlements = criteriaSettled.map((entry) => ({
       criterion_id: entry.criterion_id,
@@ -570,6 +599,15 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
           blocked_by_set: false
         }
       }
+    }
+
+    const rawRiskProspective: Thread = {
+      ...thread,
+      spine: { ...thread.spine, open_risks: [...survivingRisks, ...newRisks] }
+    }
+    const rawRiskBytes = byteSizeOf(rawRiskProspective)
+    if (rawRiskBytes > caps.THREAD_RECORD_SERIALISED_MAX_BYTES) {
+      return { ok: false, refusal: overByteCapRefusal(rawRiskProspective, rawRiskBytes) }
     }
 
     const spineForContribution: Spine = { ...thread.spine, open_risks: survivingRisks }

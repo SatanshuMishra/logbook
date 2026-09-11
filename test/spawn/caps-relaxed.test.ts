@@ -605,6 +605,167 @@ test('caps-relaxed.oversized-raw-decision-context-is-refused-before-escaping-exp
   })
 })
 
+const assertPreEscapeThreadRefusal = (result: CallToolResult, rawLength: number, escapedLength: number): void => {
+  assert.equal(result.isError, true, 'a raw value already over the whole-thread-record byte cap must be refused')
+  const text = firstTextOf(result)
+  assert.equal(text.split('\n')[0], 'field: thread', `the refusal must name field thread: ${text}`)
+  assert.ok(
+    text.includes(String(caps.THREAD_RECORD_SERIALISED_MAX_BYTES)),
+    `the refusal must report the thread-record byte cap of ${caps.THREAD_RECORD_SERIALISED_MAX_BYTES}: ${text}`
+  )
+  const observedMatch = text.match(/is (\d+) bytes, over its cap/)
+  assert.ok(observedMatch !== null, `the refusal must report an observed byte count: ${text}`)
+  const observedBytes = Number((observedMatch as RegExpMatchArray)[1])
+  assert.ok(
+    observedBytes < escapedLength / 2,
+    `the refusal must be based on the raw ${rawLength}-byte value, not its ${escapedLength}-byte escaped form; observed ${observedBytes} bytes shows escapeStored ran before the refusal fired`
+  )
+  assert.ok(
+    observedBytes >= rawLength,
+    `the reported byte count must at least cover the raw value length of ${rawLength}; observed ${observedBytes}`
+  )
+}
+
+test('caps-relaxed.oversized-raw-criterion-result-is-refused-before-escaping-expands-it', async () => {
+  await withFixture(async (fx) => {
+    const RAW_LENGTH = 70000
+    const RAW_RESULT = '<'.repeat(RAW_LENGTH)
+    const ESCAPED_LENGTH = RAW_LENGTH * 6
+
+    const { threadId, criterionIds } = await openMinimalThread(fx, 'pre-escape-guard-result-thread', [
+      { text: 'the target criterion this fixture marks done', check: 'the fixture check', settledness: 'proposed' }
+    ])
+    const criterionId = criterionIds[0]
+    assert.ok(criterionId !== undefined, 'caps-relaxed fixture: open_thread minted no criterion')
+
+    const marked = await callUpdateThread(fx, {
+      thread_id: threadId,
+      criteria_done: [{ criterion_id: criterionId, result: RAW_RESULT, result_status: 'verified' }]
+    })
+
+    assertPreEscapeThreadRefusal(marked, RAW_LENGTH, ESCAPED_LENGTH)
+
+    const stored = readThreadRecord(fx, threadId)
+    const criterion = stored.completion_criteria.find((c) => c.id === criterionId)
+    assert.ok(criterion !== undefined, 'caps-relaxed fixture: the criterion vanished from the stored thread')
+    assert.equal(criterion.done, false, 'a refused call must not have marked the criterion done')
+    assert.equal(criterion.result ?? null, null, 'a refused call must not have written a result on the criterion')
+  })
+})
+
+test('caps-relaxed.oversized-raw-settled-by-is-refused-before-escaping-expands-it-on-open-thread', async () => {
+  await withFixture(async (fx) => {
+    const RAW_LENGTH = 70000
+    const RAW_SETTLED_BY = '<'.repeat(RAW_LENGTH)
+    const ESCAPED_LENGTH = RAW_LENGTH * 6
+
+    const opened = await callOpenThread(fx, {
+      title: 'open-thread settled_by pre-escape guard thread',
+      slug: 'open-thread-settled-by-pre-escape-guard-thread',
+      active_goal: 'exercise the open_thread settled_by pre-escape guard',
+      next_step: 'exercise the open_thread settled_by pre-escape guard',
+      completion_criteria: [
+        {
+          text: 'the gate blocks before the turn ends',
+          check: 'the stop-gate tests pass',
+          settledness: 'confirmed',
+          settled_by: RAW_SETTLED_BY
+        }
+      ]
+    })
+
+    assertPreEscapeThreadRefusal(opened, RAW_LENGTH, ESCAPED_LENGTH)
+  })
+})
+
+test('caps-relaxed.oversized-raw-settled-by-is-refused-before-escaping-expands-it-on-update-thread', async () => {
+  await withFixture(async (fx) => {
+    const RAW_LENGTH = 70000
+    const RAW_SETTLED_BY = '<'.repeat(RAW_LENGTH)
+    const ESCAPED_LENGTH = RAW_LENGTH * 6
+
+    const { threadId, criterionIds } = await openMinimalThread(fx, 'update-thread-settled-by-pre-escape-guard-thread', [
+      { text: 'the queue drains under load', check: 'the load test exits 0', settledness: 'proposed' }
+    ])
+    const criterionId = criterionIds[0]
+    assert.ok(criterionId !== undefined, 'caps-relaxed fixture: open_thread minted no criterion')
+
+    const settled = await callUpdateThread(fx, {
+      thread_id: threadId,
+      criteria_settled: [{ criterion_id: criterionId, settledness: 'confirmed', settled_by: RAW_SETTLED_BY }]
+    })
+
+    assertPreEscapeThreadRefusal(settled, RAW_LENGTH, ESCAPED_LENGTH)
+
+    const stored = readThreadRecord(fx, threadId)
+    const criterion = stored.completion_criteria.find((c) => c.id === criterionId)
+    assert.ok(criterion !== undefined, 'caps-relaxed fixture: the criterion vanished from the stored thread')
+    assert.equal(criterion.settled_by ?? null, null, 'a refused call must not have written a settled_by on the criterion')
+  })
+})
+
+test('caps-relaxed.oversized-raw-settled-by-is-refused-before-escaping-expands-it-on-amend-criteria-insert', async () => {
+  await withFixture(async (fx) => {
+    const RAW_LENGTH = 70000
+    const RAW_SETTLED_BY = '<'.repeat(RAW_LENGTH)
+    const ESCAPED_LENGTH = RAW_LENGTH * 6
+
+    const { threadId } = await openMinimalThread(fx, 'amend-criteria-settled-by-pre-escape-guard-thread')
+
+    const decision = await callRecordDecision(fx, {
+      thread_id: threadId,
+      title: 'a criterion is added mid-thread',
+      context: 'the team discovered a requirement that was not part of the original plan',
+      options: ['add a criterion for it', 'leave it out of the definition of done'],
+      outcome: 'add a criterion for it'
+    })
+    assert.equal(decision.isError, undefined, `caps-relaxed fixture: record_decision refused the amend_criteria fixture: ${firstTextOf(decision)}`)
+    const decisionId = (decision.structuredContent as { decision_id: string }).decision_id
+
+    const beforeThread = readThreadRecord(fx, threadId)
+
+    const inserted = await callAmendCriteria(fx, {
+      thread_id: threadId,
+      operation: 'insert',
+      decision_id: decisionId,
+      text: 'the newly discovered requirement is satisfied',
+      kind: 'detour',
+      check: 'the new acceptance test passes',
+      settledness: 'confirmed',
+      settled_by: RAW_SETTLED_BY
+    })
+
+    assertPreEscapeThreadRefusal(inserted, RAW_LENGTH, ESCAPED_LENGTH)
+
+    const afterThread = readThreadRecord(fx, threadId)
+    assert.equal(
+      afterThread.completion_criteria.length,
+      beforeThread.completion_criteria.length,
+      'a refused insert must not have written a new criterion'
+    )
+  })
+})
+
+test('caps-relaxed.oversized-raw-risk-text-is-refused-before-escaping-expands-it', async () => {
+  await withFixture(async (fx) => {
+    const RAW_LENGTH = 70000
+    const RAW_RISK_TEXT = '<'.repeat(RAW_LENGTH)
+    const ESCAPED_LENGTH = RAW_LENGTH * 6
+
+    const { threadId } = await openMinimalThread(fx, 'risk-text-pre-escape-guard-thread')
+
+    const updated = await callUpdateThread(fx, {
+      thread_id: threadId,
+      risks_add: [{ text: RAW_RISK_TEXT, scope: 'the area this risk concerns' }]
+    })
+
+    assertPreEscapeThreadRefusal(updated, RAW_LENGTH, ESCAPED_LENGTH)
+
+    const stored = readThreadRecord(fx, threadId)
+    assert.equal(stored.spine.open_risks.length, 0, 'a refused call must not have written a risk to the stored spine')
+  })
+})
+
 test('caps-relaxed.session-body-at-former-cap-plus-one-is-accepted-verbatim', async () => {
   await withFixture(async (fx) => {
     const BODY_PAYLOAD = buildVerbatimPayload(FORMER_SESSION_BODY_MAX + 1, 'This is the session body payload.')
