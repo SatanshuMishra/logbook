@@ -68,31 +68,33 @@ const openFixtureThread = async (rt: Runtime, slug: string): Promise<string> => 
 const logEntry = (rt: Runtime, threadId: string, body: string) =>
   logSessionEventTool.handler(rt, STUB_TOOL_CTX, { thread_id: threadId, actor: 'claude', body })
 
+const RULED_SESSION_UNPARKED_ENTRIES_MAX = 25
+
 test('log-session-event.refuses-the-26th-unparked-entry-and-names-park-thread', async () => {
   await withHarness('session-entry-bound-session', async ({ rt }) => {
     const threadId = await openFixtureThread(rt, 'session-entry-bound-refuses-26th')
 
-    for (let i = 1; i <= caps.SESSION_UNPARKED_ENTRIES_MAX - 1; i += 1) {
+    for (let i = 1; i <= RULED_SESSION_UNPARKED_ENTRIES_MAX - 1; i += 1) {
       const result = await logEntry(rt, threadId, `entry number ${i}`)
-      assert.equal(result.ok, true, `expected entry ${i} of ${caps.SESSION_UNPARKED_ENTRIES_MAX - 1} to be accepted`)
+      assert.equal(result.ok, true, `expected entry ${i} of ${RULED_SESSION_UNPARKED_ENTRIES_MAX - 1} to be accepted`)
     }
 
-    const boundaryResult = await logEntry(rt, threadId, `entry number ${caps.SESSION_UNPARKED_ENTRIES_MAX}`)
+    const boundaryResult = await logEntry(rt, threadId, `entry number ${RULED_SESSION_UNPARKED_ENTRIES_MAX}`)
     assert.equal(
       boundaryResult.ok,
       true,
-      `expected the ${caps.SESSION_UNPARKED_ENTRIES_MAX}th entry, appended while ${caps.SESSION_UNPARKED_ENTRIES_MAX - 1} un-parked entries already exist, to be accepted`
+      `expected the ${RULED_SESSION_UNPARKED_ENTRIES_MAX}th entry, appended while ${RULED_SESSION_UNPARKED_ENTRIES_MAX - 1} un-parked entries already exist, to be accepted`
     )
 
     const overflowResult = await logEntry(
       rt,
       threadId,
-      `entry number ${caps.SESSION_UNPARKED_ENTRIES_MAX + 1}`
+      `entry number ${RULED_SESSION_UNPARKED_ENTRIES_MAX + 1}`
     )
     assert.equal(
       overflowResult.ok,
       false,
-      `expected the ${caps.SESSION_UNPARKED_ENTRIES_MAX + 1}th entry, appended while ${caps.SESSION_UNPARKED_ENTRIES_MAX} un-parked entries already exist, to be refused`
+      `expected the ${RULED_SESSION_UNPARKED_ENTRIES_MAX + 1}th entry, appended while ${RULED_SESSION_UNPARKED_ENTRIES_MAX} un-parked entries already exist, to be refused`
     )
     if (overflowResult.ok) throw new Error('expected the overflow call to be refused')
     assert.ok(
@@ -100,5 +102,11 @@ test('log-session-event.refuses-the-26th-unparked-entry-and-names-park-thread', 
       `expected the refusal to name park_thread as the remedy, got '${overflowResult.refusal.message}'`
     )
     assert.equal(overflowResult.refusal.retryable, true, 'expected the refusal to be retryable after a park')
+
+    assert.equal(
+      caps.SESSION_UNPARKED_ENTRIES_MAX,
+      RULED_SESSION_UNPARKED_ENTRIES_MAX,
+      `expected the shipped bound caps.SESSION_UNPARKED_ENTRIES_MAX to equal the ruled value of ${RULED_SESSION_UNPARKED_ENTRIES_MAX} from decision 01M27EQRZQF4R46NWA44Y10ZY0, got ${caps.SESSION_UNPARKED_ENTRIES_MAX}`
+    )
   })
 })
