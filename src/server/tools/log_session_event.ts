@@ -5,8 +5,10 @@ import { ULID_PATTERN } from '../../schema/ids.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { RESERVED_ACTOR_PREFIX } from '../../domain/session-log.ts'
+import { countUnparkedSessionEntries } from '../../domain/session-entry-bound.ts'
 import { SessionRecord, type SessionEntry } from '../../schema/session.ts'
 import { withDetail } from '../../store/detail.ts'
+import { layoutFor } from '../../store/layout.ts'
 import { openProjectStore, loadThread } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
@@ -41,6 +43,15 @@ export const reservedActorPrefixRefusal = (): Refusal => ({
   example: 'claude',
   retryable: true,
   message: `actor begins with the reserved prefix "${RESERVED_ACTOR_PREFIX}", which marks entries Logbook writes for itself; remedy: choose an actor name that does not begin with "${RESERVED_ACTOR_PREFIX}" and retry.`
+})
+
+export const unparkedEntriesBoundRefusal = (observed: number): Refusal => ({
+  ok: false,
+  field: 'thread_id',
+  accepted: `a thread carrying fewer than ${caps.SESSION_UNPARKED_ENTRIES_MAX} un-parked session entries`,
+  example: 'call park_thread on this thread, then retry log_session_event',
+  retryable: true,
+  message: `this thread already carries ${observed} session entries since it was last parked, at or above the runaway-session bound of ${caps.SESSION_UNPARKED_ENTRIES_MAX}; this bound stops a session log from growing without limit, it does not keep any briefing inside a size; remedy: call park_thread on this thread, then retry log_session_event.`
 })
 
 export const bodyCapRefusal = (observed: number): Refusal => ({
@@ -90,6 +101,14 @@ export const logSessionEventTool: ToolSpec<LogSessionEventInput, LogSessionEvent
     const loaded = loadThread(store, 'thread_id', input.thread_id)
     if (!loaded.ok) return { ok: false, refusal: loaded.refusal }
     const thread = loaded.value
+
+    const layout = layoutFor(rt, rt.cwd)
+    if (!layout.ok) return { ok: false, refusal: layout }
+
+    const unparkedEntries = countUnparkedSessionEntries(layout.value.records, thread.id)
+    if (unparkedEntries >= caps.SESSION_UNPARKED_ENTRIES_MAX) {
+      return { ok: false, refusal: unparkedEntriesBoundRefusal(unparkedEntries) }
+    }
 
     const escapedActor = escapeStored(input.actor)
     if (escapedActor.length > caps.SESSION_ACTOR_MAX) {
