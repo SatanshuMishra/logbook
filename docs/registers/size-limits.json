@@ -343,7 +343,7 @@
   },
   {
     "name": "CLIP_SEARCH_UPPER_BOUND",
-    "site": "src/render/briefing.ts:328",
+    "site": "src/render/briefing.ts:284",
     "value": 32000,
     "basis": "derived",
     "reason": "The largest stored text any briefing field can hold, so no clip the search sets is ever capped below a value the store admits. It is no longer the top of the search itself: the search runs to CLIP_SEARCH_AXIS_UPPER_BOUND, which composes this ceiling with the per-item clip span. The thirteen per-field limits do not bound it, because a floor is a minimum and cannot bound a search from above.",
@@ -352,20 +352,20 @@
   },
   {
     "name": "CLIP_SEARCH_AXIS_LOWER_BOUND",
-    "site": "src/render/briefing.ts:329",
+    "site": "src/render/briefing.ts:285",
     "value": 200,
     "basis": "derived",
-    "reason": "Equals SESSION_ENTRY_TEXT_FLOOR. The bottom of the clip search is every field at its floor, and the newest session entry is never shortened below what an older entry's headline is guaranteed, so the axis bottoms out at that floor rather than at MIN_TEXT_CLIP. Below it clipWithMarker returns the shortening marker alone (src/render/clip.ts:22-24), which would render the newest entry as a marker carrying none of its own text.",
+    "reason": "Equals SESSION_ENTRY_TEXT_FLOOR. The bottom of the clip search is every field at its floor, and the newest session entry is never shortened below what an older entry's headline is guaranteed, so the axis bottoms out at that floor rather than at MIN_TEXT_CLIP. The threshold below which clipWithMarker returns the shortening marker alone is CLIP_MARKER_GRAPHEMES, which is 14 and not this floor (src/render/clip.ts:22-23); from 15 upward it returns real text with the marker appended. What the floor of 200 buys above that threshold is a headline that keeps 186 graphemes of its own text, the same amount of a first line the sessions resource already shows (src/server/resource-render.ts:22), rather than the handful of graphemes a bottom near the marker threshold would leave.",
     "mirrors": "src/render/briefing.ts:78",
     "mirror_relation": "equal"
   },
   {
     "name": "CLIP_SEARCH_AXIS_UPPER_BOUND",
-    "site": "src/render/briefing.ts:330",
+    "site": "src/render/briefing.ts:286",
     "value": 63986,
     "basis": "derived",
-    "reason": "The search runs one axis that composes two ranges so a single binary search expresses the render priority. At or below CLIP_SEARCH_UPPER_BOUND the axis point is the newest session entry's clip while every other field sits at its floor; above it the newest renders whole and the axis point drives every other field's clip from MIN_TEXT_CLIP up to CLIP_SEARCH_UPPER_BOUND. The top is therefore CLIP_SEARCH_UPPER_BOUND plus the per-item clip span, 32000 + (32000 - 14). Page size is non-decreasing along the axis, so the pass ceiling keeps its expression 1 + ceil(log2(range)) at test/unit/briefing.test.ts:846-847 and evaluates to 17 on this range, one render more than the 16 it evaluated to before.",
-    "mirrors": "src/render/briefing.ts:328",
+    "reason": "The search runs one axis that composes two ranges so a single binary search expresses the render priority. At or below CLIP_SEARCH_UPPER_BOUND the axis point is the newest session entry's clip while every other field sits at its floor; above it the newest renders whole and the axis point drives every other field's clip from MIN_TEXT_CLIP up to CLIP_SEARCH_UPPER_BOUND. The top is therefore CLIP_SEARCH_UPPER_BOUND plus the per-item clip span, 32000 + (32000 - 14). Page size does decrease at one point on the axis: where the last shortened value stops being shortened, TEXT_CLIPPED_BULLET goes with the Not shown heading and the See logbook://thread/ line, about 210 characters against a step of about 1. That dip skips no fitting page. An axis point at which nothing is clipped renders byte-identically to the unclipped render, which renderBriefingWithPasses tries and rejects before it ever enters the search (src/render/briefing.ts:582-583), so the dip lands on a page already known not to fit. The pass ceiling is a consequence of halving a fixed range rather than of any monotonicity: bisection over a range of this size cannot run longer whatever shape fits() has, so the ceiling keeps its expression 1 + ceil(log2(range)) at test/unit/briefing.test.ts:846-847 and evaluates to 17 on this range, one render more than the 16 it evaluated to before.",
+    "mirrors": "src/render/briefing.ts:284",
     "mirror_relation": "at-least"
   },
   {

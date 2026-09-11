@@ -125,9 +125,6 @@ const wasClipped = (text: string, min: number): boolean => {
 const headerInlineWasShortened = (value: string): boolean =>
   clip(value, HEADER_FIELD_ESCAPED_GRAPHEME_MAX) !== clip(value, NO_CLIP)
 
-const headerBlockWasShortened = (value: string): boolean =>
-  escapeStoredBlock(value, HEADER_FIELD_ESCAPED_GRAPHEME_MAX) !== escapeStoredBlock(value, NO_CLIP)
-
 const blockWasShortened = (text: string, max: number): boolean =>
   escapeStoredBlock(text, max) !== escapeStoredBlock(text, NO_CLIP)
 
@@ -284,6 +281,15 @@ type RenderClip = {
   artifactPointer: number
 }
 
+export const CLIP_SEARCH_UPPER_BOUND = SESSION_BODY_MAX
+export const CLIP_SEARCH_AXIS_LOWER_BOUND = SESSION_ENTRY_TEXT_FLOOR
+export const CLIP_SEARCH_AXIS_UPPER_BOUND = CLIP_SEARCH_UPPER_BOUND + (CLIP_SEARCH_UPPER_BOUND - MIN_TEXT_CLIP)
+
+const perItemClipAt = (axisPoint: number): number =>
+  axisPoint <= CLIP_SEARCH_UPPER_BOUND ? MIN_TEXT_CLIP : MIN_TEXT_CLIP + (axisPoint - CLIP_SEARCH_UPPER_BOUND)
+
+const newestSessionClipAt = (axisPoint: number): number => (axisPoint <= CLIP_SEARCH_UPPER_BOUND ? axisPoint : NO_CLIP)
+
 const clipAt = (axisPoint: number): RenderClip => {
   const perItemClip = perItemClipAt(axisPoint)
   return {
@@ -324,15 +330,6 @@ const UNCLIPPED: RenderClip = {
   artifactLabel: NO_CLIP,
   artifactPointer: NO_CLIP
 }
-
-export const CLIP_SEARCH_UPPER_BOUND = SESSION_BODY_MAX
-export const CLIP_SEARCH_AXIS_LOWER_BOUND = SESSION_ENTRY_TEXT_FLOOR
-export const CLIP_SEARCH_AXIS_UPPER_BOUND = CLIP_SEARCH_UPPER_BOUND + (CLIP_SEARCH_UPPER_BOUND - MIN_TEXT_CLIP)
-
-const perItemClipAt = (axisPoint: number): number =>
-  axisPoint <= CLIP_SEARCH_UPPER_BOUND ? MIN_TEXT_CLIP : MIN_TEXT_CLIP + (axisPoint - CLIP_SEARCH_UPPER_BOUND)
-
-const newestSessionClipAt = (axisPoint: number): number => (axisPoint <= CLIP_SEARCH_UPPER_BOUND ? axisPoint : NO_CLIP)
 
 type ClipSearch = { briefing: string; passes: number }
 
@@ -435,7 +432,8 @@ const assembleBriefing = (
   const headerInlineValues = [thread.title, ...(thread.blocked_by === null ? [] : [thread.blocked_by])]
   const headerBlockValues = [...activeGoalLines, ...legacyLastSessionText, ...landedLines, ...nextStepLines]
   const headerWasShortened =
-    headerInlineValues.some(headerInlineWasShortened) || headerBlockValues.some(headerBlockWasShortened)
+    headerInlineValues.some(headerInlineWasShortened) ||
+    headerBlockValues.some((value) => blockWasShortened(value, HEADER_FIELD_ESCAPED_GRAPHEME_MAX))
   const itemTextWasClipped = itemTextWasShortened(
     predecessor,
     artifacts,
