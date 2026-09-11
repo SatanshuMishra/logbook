@@ -5,8 +5,10 @@ import { ULID_PATTERN } from '../../schema/ids.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { RESERVED_ACTOR_PREFIX } from '../../domain/session-log.ts'
+import { unparkedSessionEntriesSaturateBound } from '../../domain/session-entry-bound.ts'
 import { SessionRecord, type SessionEntry } from '../../schema/session.ts'
 import { withDetail } from '../../store/detail.ts'
+import { layoutFor } from '../../store/layout.ts'
 import { openProjectStore, loadThread } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
@@ -41,6 +43,15 @@ export const reservedActorPrefixRefusal = (): Refusal => ({
   example: 'claude',
   retryable: true,
   message: `actor begins with the reserved prefix "${RESERVED_ACTOR_PREFIX}", which marks entries Logbook writes for itself; remedy: choose an actor name that does not begin with "${RESERVED_ACTOR_PREFIX}" and retry.`
+})
+
+export const unparkedEntriesBoundRefusal = (): Refusal => ({
+  ok: false,
+  field: 'thread_id',
+  accepted: `a thread carrying fewer than ${caps.SESSION_UNPARKED_ENTRIES_MAX} un-parked session entries`,
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: true,
+  message: `this thread already carries at least ${caps.SESSION_UNPARKED_ENTRIES_MAX} session entries since it was last parked, the runaway-session bound; this bound stops a session log from growing without limit, it does not keep any briefing inside a size; remedy: call park_thread on this thread, then retry log_session_event.`
 })
 
 export const bodyCapRefusal = (observed: number): Refusal => ({
@@ -102,6 +113,13 @@ export const logSessionEventTool: ToolSpec<LogSessionEventInput, LogSessionEvent
     const escapedBody = escapeStored(input.body)
     if (escapedBody.length > caps.SESSION_BODY_MAX) {
       return { ok: false, refusal: bodyCapRefusal(escapedBody.length) }
+    }
+
+    const layout = layoutFor(rt, rt.cwd)
+    if (!layout.ok) return { ok: false, refusal: layout }
+
+    if (unparkedSessionEntriesSaturateBound(layout.value.records, thread.id)) {
+      return { ok: false, refusal: unparkedEntriesBoundRefusal() }
     }
 
     const sessionEntry: SessionEntry = {

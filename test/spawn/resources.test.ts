@@ -19,6 +19,7 @@ import {
 import { census } from '../support/census.ts'
 import type { Classified } from '../support/census.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
+import { openStore } from '../../src/store/records.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
 import { SESSION_FIRST_LINE_ENTRIES_MAX } from '../../src/server/resource-render.ts'
 
@@ -321,10 +322,28 @@ test('resource.sessions-caps-first-line-text-but-keeps-every-id', async () => {
   await withFixture(async (fx) => {
     const ids = await seedStore(fx.spawned)
     const total = SESSION_FIRST_LINE_ENTRIES_MAX + 3
-    const entryIds: string[] = []
-    for (let i = 0; i < total; i += 1) {
-      entryIds.push(await logEntry(fx.spawned, ids.threadId, `cap fixture entry number ${i}`))
-    }
+    const rt = testRuntime({
+      env: { HOME: fx.homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: fx.pluginData },
+      cwd: fx.repo
+    })
+    const opened = openStore(rt, fx.repo)
+    assert.equal(opened.ok, true, 'expected openStore to open the sessions-cap fixture store')
+    if (!opened.ok) return
+    const entryIds = Array.from({ length: total }, () => rt.ulid())
+    const seeded = opened.value.commit(
+      entryIds.map((id, i) => ({
+        kind: 'session' as const,
+        record: {
+          id,
+          thread_id: ids.threadId,
+          actor: 'claude',
+          body: `cap fixture entry number ${i}`,
+          created_at: rt.now()
+        }
+      })),
+      'seed sessions-caps-first-line-text fixture entries'
+    )
+    assert.equal(seeded.ok, true, 'expected store.commit to seed the sessions-cap fixture entries')
 
     const listing = await readResourceText(fx.spawned, `logbook://sessions/${ids.threadId}`)
 
@@ -339,6 +358,16 @@ test('resource.sessions-caps-first-line-text-but-keeps-every-id', async () => {
       listing.includes(`cap fixture entry number ${total - 1}`),
       'expected the newest entry to still show its first-line text'
     )
+    const seededEntryLine = listing.split('\n').find((line) => line.includes(ids.sessionEntryId))
+    assert.ok(
+      seededEntryLine !== undefined,
+      `expected the sessions listing to include a line for the seedStore entry ${ids.sessionEntryId}`
+    )
+    assert.ok(
+      (seededEntryLine as string).includes('a resources fixture session entry'),
+      `expected the seedStore entry ${ids.sessionEntryId} to sort among the shown first-line entries and keep its first-line text, got line '${seededEntryLine}'`
+    )
+
     const seededSessionEntryCount = 1
     const droppedCount = total + seededSessionEntryCount - SESSION_FIRST_LINE_ENTRIES_MAX
     assert.ok(

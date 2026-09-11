@@ -26,7 +26,7 @@ const ParkThreadInputSchema = z.strictObject({
     .max(caps.SESSION_BODY_MAX)
     .optional()
     .describe(
-      'what happened in this session, written to the session log as-is; omit it to release the record of what is being worked without writing any session log entry'
+      'what happened in this session, written to the session log as-is; omit it and the thread is still parked and the closing session log entry is still written, just carrying no outcome text'
     ),
   thread_id: ulidField(
     'the id of the thread being worked; omit it and the machine resolves it from what is currently marked as being worked'
@@ -277,24 +277,18 @@ const parkResolvedThread = (
     return { ok: false, refusal: wholeRecordCapRefusal(validated.message) }
   }
 
-  const sessionEntry: SessionEntry | null =
-    escapedOutcome === null
-      ? null
-      : {
-          id: rt.ulid(),
-          thread_id: thread.id,
-          actor: PARK_THREAD_ACTOR,
-          body: escapedOutcome,
-          created_at: rt.now()
-        }
+  const sessionEntry: SessionEntry = {
+    id: rt.ulid(),
+    thread_id: thread.id,
+    actor: PARK_THREAD_ACTOR,
+    body: escapedOutcome === null ? '' : escapedOutcome,
+    created_at: rt.now()
+  }
 
-  const changes: RecordChange[] =
-    sessionEntry === null
-      ? [{ kind: 'thread', record: validated.value }]
-      : [
-          { kind: 'thread', record: validated.value },
-          { kind: 'session', record: sessionEntry }
-        ]
+  const changes: RecordChange[] = [
+    { kind: 'thread', record: validated.value },
+    { kind: 'session', record: sessionEntry }
+  ]
 
   const committed = store.commit(changes, `park thread ${thread.slug}`)
   if (!committed.ok) {
@@ -306,13 +300,13 @@ const parkResolvedThread = (
   return {
     ok: true,
     text:
-      sessionEntry === null
-        ? `parked thread ${thread.slug} without a session log entry.`
+      escapedOutcome === null
+        ? `parked thread ${thread.slug} without an outcome; the session log entry that closes this session was still written.`
         : `parked thread ${thread.slug}.`,
     structured: {
       status: 'parked',
       parked_thread_ids: [thread.id],
-      session_entry_ids: sessionEntry === null ? [] : [sessionEntry.id],
+      session_entry_ids: [sessionEntry.id],
       spine_fields_updated: spineFieldsUpdated,
       pointer_released: released === 'released'
     }
@@ -323,7 +317,7 @@ export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
   name: 'park_thread',
   title: 'Park thread',
   description:
-    'Ends work on the thread being worked right now, in a single call: it writes the session log entry, refreshes the next_step and landed fields, and releases the record of what is being worked. The last_session field is no longer accepted here; it is derived from the session log. Send the outcome as text plus the next step; the thread id is optional because the machine already knows which thread is being worked. Omit the outcome to release the record of what is being worked without writing a session log entry. The thread stays open, parking is not closing, and a parked thread appears in the next roster.',
+    'Ends work on the thread being worked right now, in a single call: it writes the session log entry, refreshes the next_step and landed fields, and releases the record of what is being worked. The last_session field is no longer accepted here; it is derived from the session log. Send the outcome as text plus the next step; the thread id is optional because the machine already knows which thread is being worked. Omit the outcome and the thread is still parked and the session log entry that closes this session is still written, just carrying no outcome text. The thread stays open, parking is not closing, and a parked thread appears in the next roster.',
   input: ParkThreadInputSchema,
   output: ParkThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },

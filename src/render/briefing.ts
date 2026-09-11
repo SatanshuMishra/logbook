@@ -205,8 +205,11 @@ const renderSessionHeadlineLine = (entry: SessionEntry, textClip: number): strin
   return headline.length === 0 ? label : `${label} ${headline}`
 }
 
-const renderNewestSessionEntryBlock = (entry: SessionEntry, textClip: number): string =>
-  [`- ${escapeStored(entry.id)}`, escapeStoredBlock(entry.body, textClip)].join('\n')
+const renderNewestSessionEntryBlock = (entry: SessionEntry, textClip: number): string => {
+  const label = `- ${escapeStored(entry.id)}`
+  if (firstNonEmptyStoredLine(entry.body).length === 0) return label
+  return [label, escapeStoredBlock(entry.body, textClip)].join('\n')
+}
 
 const OLDER_SESSION_ENTRIES_SINGULAR = 'older session log entry on this thread is shown as its first line only'
 const OLDER_SESSION_ENTRIES_PLURAL = 'older session log entries on this thread are shown as their first line only'
