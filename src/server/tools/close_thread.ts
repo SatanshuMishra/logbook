@@ -86,11 +86,11 @@ const renderSettlednessSplit = (split: SettlednessSplit): string =>
 type CloseThreadInput = z.infer<typeof CloseThreadInputSchema>
 type CloseThreadOutput = z.infer<typeof CloseThreadOutputSchema>
 
-export const wholeRecordCapRefusal = (issue: string): Refusal => ({
+export const invalidThreadRecordRefusal = (issue: string): Refusal => ({
   ok: false,
   field: 'thread',
-  accepted: 'a serialised thread record that stays within the whole-record byte cap',
-  example: 'strike an existing entry before retrying',
+  accepted: 'a thread record that matches its stored shape',
+  example: 'correct the value named in the message and retry',
   retryable: true,
   message: `the thread record after this change failed its stored-shape validation: ${issue}`
 })
@@ -144,7 +144,7 @@ export const closeThreadTool: ToolSpec<CloseThreadInput, CloseThreadOutput> = {
 
     const validated = ThreadRecord.parse(transitioned.value)
     if (!validated.ok) {
-      return { ok: false, refusal: wholeRecordCapRefusal(validated.message) }
+      return { ok: false, refusal: invalidThreadRecordRefusal(validated.message) }
     }
 
     const escapedDetail = escapeStored(input.detail)

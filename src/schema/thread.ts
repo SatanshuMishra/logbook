@@ -222,19 +222,4 @@ const ThreadShape = z.object({
   updated_at: isoField('when this thread was last updated')
 })
 
-const ThreadShapeWithByteCap = ThreadShape.superRefine((value, ctx) => {
-  const bytes = Buffer.byteLength(JSON.stringify(value), 'utf8')
-  if (bytes > caps.THREAD_RECORD_SERIALISED_MAX_BYTES) {
-    ctx.addIssue({
-      code: 'too_big',
-      origin: 'string',
-      maximum: caps.THREAD_RECORD_SERIALISED_MAX_BYTES,
-      inclusive: true,
-      path: [],
-      message: `serialised thread record exceeds ${caps.THREAD_RECORD_SERIALISED_MAX_BYTES} bytes`,
-      input: value
-    })
-  }
-})
-
-export const ThreadRecord = declare<Thread>('thread', ThreadShapeWithByteCap)
+export const ThreadRecord = declare<Thread>('thread', ThreadShape)

@@ -94,41 +94,6 @@ export const loadThread = (store: Store, field: string, id: Ulid): Attempt<Threa
   return { ok: true, value: slot.record }
 }
 
-export const byteSizeOf = (value: unknown): number => Buffer.byteLength(JSON.stringify(value), 'utf8')
-
-const heaviestFieldOf = (thread: Thread): { field: string; bytes: number } => {
-  const measured = Object.entries(thread as unknown as Record<string, unknown>).flatMap(([key, value]) => {
-    if (key !== 'spine' || typeof value !== 'object' || value === null) {
-      return [{ field: key, bytes: byteSizeOf(value) }]
-    }
-    return Object.entries(value as Record<string, unknown>).map(([spineKey, spineValue]) => ({
-      field: `spine.${spineKey}`,
-      bytes: byteSizeOf(spineValue)
-    }))
-  })
-  return measured.reduce(
-    (worst, candidate) => (candidate.bytes > worst.bytes ? candidate : worst),
-    { field: 'spine', bytes: 0 }
-  )
-}
-
-const overByteCapRefusal = (thread: Thread, observed: number): Refusal => {
-  const heaviest = heaviestFieldOf(thread)
-  return {
-    ok: false,
-    field: 'thread',
-    accepted: `a serialised thread record of at most ${caps.THREAD_RECORD_SERIALISED_MAX_BYTES} bytes`,
-    example: 'remove an entry from the largest field and retry',
-    retryable: true,
-    message: `the thread record after this change is ${observed} bytes, over its cap of ${caps.THREAD_RECORD_SERIALISED_MAX_BYTES} bytes; its largest field is ${heaviest.field} at ${heaviest.bytes} bytes; remedy: remove or shorten an entry in ${heaviest.field} and retry.`
-  }
-}
-
-export const refuseOverThreadByteCap = (thread: Thread): Refusal | null => {
-  const bytes = byteSizeOf(thread)
-  return bytes > caps.THREAD_RECORD_SERIALISED_MAX_BYTES ? overByteCapRefusal(thread, bytes) : null
-}
-
 const invalidThreadRecordRefusal = (field: string, issue: string): Refusal => ({
   ok: false,
   field,
@@ -152,10 +117,6 @@ const commitFailureRefusal = (detail: string): Refusal =>
   )
 
 export const commitThread = (store: Store, thread: Thread, message: string): Attempt<Thread> => {
-  const overCap = refuseOverThreadByteCap(thread)
-  if (overCap !== null) {
-    return { ok: false, refusal: overCap }
-  }
   const validated = ThreadRecord.parse(thread)
   if (!validated.ok) {
     return { ok: false, refusal: invalidThreadRecordRefusal(validated.field, validated.message) }

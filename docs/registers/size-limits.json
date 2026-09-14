@@ -729,26 +729,8 @@
     "mirror_relation": null
   },
   {
-    "name": "THREAD_RECORD_SERIALISED_MAX_BYTES",
-    "site": "src/schema/caps.ts:43",
-    "value": 65536,
-    "basis": "measured",
-    "reason": "Largest live serialised thread record measured at 39,079 bytes (docs/plans/2026-08-28-continuity-goal-model/U1-schema-foundations.md:410-434), so the bound is 1.68x the largest record that exists; raising it was rejected as weakening a bound with no measured need, and anything below about 49,000 would be breached once U4 populated the new fields.",
-    "mirrors": null,
-    "mirror_relation": null
-  },
-  {
-    "name": "DECISION_RECORD_SERIALISED_MAX_BYTES",
-    "site": "src/schema/caps.ts:44",
-    "value": 65536,
-    "basis": "derived",
-    "reason": "A decision record and a thread record are both separately-stored records committed through the same store and therefore carry the same bound.",
-    "mirrors": "src/schema/caps.ts:43",
-    "mirror_relation": "equal"
-  },
-  {
     "name": "UNRECOGNIZED_KEYS_SHOWN_MAX",
-    "site": "src/schema/caps.ts:46",
+    "site": "src/schema/caps.ts:43",
     "value": 5,
     "basis": "unrecorded",
     "reason": null,
@@ -757,7 +739,7 @@
   },
   {
     "name": "UNRECOGNIZED_KEY_NAME_MAX",
-    "site": "src/schema/caps.ts:47",
+    "site": "src/schema/caps.ts:44",
     "value": 100,
     "basis": "unrecorded",
     "reason": null,
@@ -766,7 +748,7 @@
   },
   {
     "name": "UNPARSEABLE_RECORDS_SHOWN_MAX",
-    "site": "src/schema/caps.ts:49",
+    "site": "src/schema/caps.ts:46",
     "value": 5,
     "basis": "unrecorded",
     "reason": null,
@@ -775,7 +757,7 @@
   },
   {
     "name": "UNPARSEABLE_RECORD_NAME_MAX",
-    "site": "src/schema/caps.ts:50",
+    "site": "src/schema/caps.ts:47",
     "value": 100,
     "basis": "unrecorded",
     "reason": null,
@@ -883,7 +865,7 @@
   },
   {
     "name": "SESSION_UNPARKED_ENTRIES_MAX",
-    "site": "src/schema/caps.ts:52",
+    "site": "src/schema/caps.ts:49",
     "value": 25,
     "basis": "chosen",
     "reason": "Ruled by the human operator on 2026-09-11 (decision 01M27EQRZQF4R46NWA44Y10ZY0); across the twenty-four historical un-parked runs this store has carried, the largest legitimate run is 24 and the pathological one is 154; 25 refuses exactly that one run, at its 26th append, and leaves the other twenty-three alone; the margin is therefore zero, which is the known cost of the ruling; the bound is a pathology bound, not a page bound, and makes no claim to keep a briefing inside any size.",

@@ -7,14 +7,7 @@ import { criterionSettledness } from '../../schema/thread.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
-import {
-  ArtifactAddSchema,
-  commitThread,
-  loadThread,
-  mintArtifacts,
-  openProjectStore,
-  refuseOverThreadByteCap
-} from '../tool-support.ts'
+import { ArtifactAddSchema, commitThread, loadThread, mintArtifacts, openProjectStore } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 const optionalUlidField = (description: string) => z.string().regex(ULID_PATTERN).optional().describe(description)
@@ -369,70 +362,6 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     const criteriaSettled = input.criteria_settled ?? []
     const blockedByCleared = input.blocked_by_clear === true
 
-    const retireIds = input.risks_retire ?? []
-    const retiredIds = retireIds.filter((id) => thread.spine.open_risks.some((r) => r.id === id && !r.retired))
-    const survivingRisks = thread.spine.open_risks.map((r) => (retireIds.includes(r.id) ? { ...r, retired: true } : r))
-
-    const retireArtifactIds = input.artifacts_retire ?? []
-    const retiredArtifactIds = retireArtifactIds.filter((id) => (thread.artifacts ?? []).some((a) => a.id === id && !a.retired))
-    const survivingArtifacts = (thread.artifacts ?? []).map((a) =>
-      retireArtifactIds.includes(a.id) ? { ...a, retired: true } : a
-    )
-    const newArtifacts: Artifact[] = mintArtifacts(rt, input.artifacts_add ?? [])
-    const combinedArtifacts = [...survivingArtifacts, ...newArtifacts]
-
-    const newRisks: Risk[] = (input.risks_add ?? []).map((r) => ({
-      id: rt.ulid(),
-      scope: r.scope,
-      text: r.text,
-      refs: r.refs ?? [],
-      criterion_id: r.criterion_id,
-      retired: false
-    }))
-
-    const newKeyDecisions: KeyDecision[] = (input.key_decisions_add ?? []).map((kd) => ({
-      id: rt.ulid(),
-      decision_id: kd.decision_id,
-      title: kd.title,
-      scope: kd.scope
-    }))
-
-    const newOutOfScope = (input.out_of_scope_add ?? []).map((text) => ({ id: rt.ulid(), text }))
-
-    const rawCriteria = thread.completion_criteria.map((c) => {
-      const doneEntry = criteriaDone.find((entry) => entry.criterion_id === c.id)
-      const settledEntry = criteriaSettled.find((entry) => entry.criterion_id === c.id)
-      const marked =
-        doneEntry === undefined
-          ? c
-          : { ...c, done: true, result: doneEntry.result, result_status: doneEntry.result_status }
-      return settledEntry === undefined
-        ? marked
-        : {
-            ...marked,
-            settledness: settledEntry.settledness,
-            settled_by: settledEntry.settledness === 'confirmed' ? (settledEntry.settled_by ?? null) : null
-          }
-    })
-    const rawProspectiveThread: Thread = {
-      ...thread,
-      blocked_by: blockedByCleared ? null : (input.blocked_by ?? thread.blocked_by),
-      completion_criteria: rawCriteria,
-      ...(combinedArtifacts.length === 0 && thread.artifacts === undefined ? {} : { artifacts: combinedArtifacts }),
-      spine: {
-        ...thread.spine,
-        active_goal: input.active_goal ?? thread.spine.active_goal,
-        next_step: input.next_step ?? thread.spine.next_step,
-        last_session: input.last_session ?? thread.spine.last_session,
-        open_risks: [...survivingRisks, ...newRisks],
-        key_decisions: [...thread.spine.key_decisions, ...newKeyDecisions],
-        out_of_scope: [...thread.spine.out_of_scope, ...newOutOfScope]
-      }
-    }
-    const rawOverCap = refuseOverThreadByteCap(rawProspectiveThread)
-    if (rawOverCap !== null) {
-      return { ok: false, refusal: rawOverCap }
-    }
     const escapedResults = criteriaDone.map((entry) => escapeStored(entry.result))
     const completions = new Map(
       criteriaDone.map((entry, index) => [
@@ -541,6 +470,36 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     if (doneAndUnsettled.length > 0) {
       return { ok: false, refusal: unsettledCriterionRefusal(doneAndUnsettled.map((c) => c.id)) }
     }
+
+    const retireIds = input.risks_retire ?? []
+    const retiredIds = retireIds.filter((id) => thread.spine.open_risks.some((r) => r.id === id && !r.retired))
+    const survivingRisks = thread.spine.open_risks.map((r) => (retireIds.includes(r.id) ? { ...r, retired: true } : r))
+
+    const retireArtifactIds = input.artifacts_retire ?? []
+    const retiredArtifactIds = retireArtifactIds.filter((id) => (thread.artifacts ?? []).some((a) => a.id === id && !a.retired))
+    const survivingArtifacts = (thread.artifacts ?? []).map((a) =>
+      retireArtifactIds.includes(a.id) ? { ...a, retired: true } : a
+    )
+    const newArtifacts: Artifact[] = mintArtifacts(rt, input.artifacts_add ?? [])
+    const combinedArtifacts = [...survivingArtifacts, ...newArtifacts]
+
+    const newRisks: Risk[] = (input.risks_add ?? []).map((r) => ({
+      id: rt.ulid(),
+      scope: r.scope,
+      text: r.text,
+      refs: r.refs ?? [],
+      criterion_id: r.criterion_id,
+      retired: false
+    }))
+
+    const newKeyDecisions: KeyDecision[] = (input.key_decisions_add ?? []).map((kd) => ({
+      id: rt.ulid(),
+      decision_id: kd.decision_id,
+      title: kd.title,
+      scope: kd.scope
+    }))
+
+    const newOutOfScope = (input.out_of_scope_add ?? []).map((text) => ({ id: rt.ulid(), text }))
 
     const danglingRiskCriteria = newRisks.filter(
       (r) => r.criterion_id !== undefined && !thread.completion_criteria.some((c) => c.id === r.criterion_id)

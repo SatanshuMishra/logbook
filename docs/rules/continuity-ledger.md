@@ -130,9 +130,9 @@ Call `record_decision` when a decision is locked, not at wrap-up.
   There is no second call.
 - `record_decision.scope` is optional. Supplied, it is used verbatim. Omitted, it is stored as an
   empty string and reported back as `null`, with no derivation from any criterion.
-- If the thread record would exceed its byte cap the decision is still written and only the link is
-  skipped. The result reports `record_decision.linked` and `record_decision.link_skipped_reason`, and
-  the call still succeeds.
+- If the thread record carrying the link fails its stored-shape validation, the decision is still
+  written and only the link is skipped. The result reports `record_decision.linked` and
+  `record_decision.link_skipped_reason`, and the call still succeeds.
 - Reversing a decision means recording a new one that names the old in `record_decision.supersedes`.
   The old record stays readable.
 
@@ -189,18 +189,8 @@ never compressed into it; they live in their own records and are read on demand.
 
 A cap on a value headed into a stored record ordinarily refuses the whole call: the write never lands,
 and the field itself is never shortened to fit — the sole exception is the one already described above
-under Decisions. `open_thread`, `update_thread` and `amend_criteria` check the record's serialised
-size first, and their refusal names the bytes observed, the cap, and the single heaviest field —
-which can be as specific as `spine.key_decisions` rather than the whole summary. Three tools plus
-one merge skip that pre-check: `park_thread`, `close_thread`, `resolve_conflict`, and the merge
-performed inside `sync_ledger`. An oversized record instead trips a fallback refusal built into
-the stored shape itself, which states the cap — 65536 bytes — in its remedy but never the observed
-size, and names the offending path as the literal `(root)` rather than a real field, though the
-three tools' own refusal also states that same cap in a separate top-level field, which the bare
-merge failure does not carry. A field IS named there, so an unnamed field is not the sign of this
-cap — look for `(root)` paired with "it accepts object" instead. Either path, the remedy is the
-same: shorten the value and send it again, or move the detail into a session log entry through
-`log_session_event` and keep a pointer to it.
+under Decisions. Thread records and decision records carry no size cap of their own: a record is stored
+at whatever size its fields reach, and the briefing, not the store, decides how much of it is shown.
 
 Output the tool renders rather than stores is different: it gets shortened routinely, and how
 loudly depends on where. One shortening form appends the literal `...[shortened]`; the other

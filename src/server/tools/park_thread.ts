@@ -73,11 +73,11 @@ const ParkThreadOutputSchema = z.object({
 type ParkThreadInput = z.infer<typeof ParkThreadInputSchema>
 type ParkThreadOutput = z.infer<typeof ParkThreadOutputSchema>
 
-const wholeRecordCapRefusal = (issue: string): Refusal => ({
+const invalidThreadRecordRefusal = (issue: string): Refusal => ({
   ok: false,
   field: 'thread',
-  accepted: 'a serialised thread record that stays within the whole-record byte cap',
-  example: 'strike an existing entry before retrying',
+  accepted: 'a thread record that matches its stored shape',
+  example: 'correct the value named in the message and retry',
   retryable: true,
   message: `the thread record after this change failed its stored-shape validation: ${issue}`
 })
@@ -274,7 +274,7 @@ const parkResolvedThread = (
 
   const validated = ThreadRecord.parse(nextThread)
   if (!validated.ok) {
-    return { ok: false, refusal: wholeRecordCapRefusal(validated.message) }
+    return { ok: false, refusal: invalidThreadRecordRefusal(validated.message) }
   }
 
   const sessionEntry: SessionEntry = {

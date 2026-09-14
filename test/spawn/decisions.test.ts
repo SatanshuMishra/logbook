@@ -25,7 +25,6 @@ import { writeRecords, type RecordChange } from '../../src/store/write-path.ts'
 import { sync } from '../../src/merge/sync.ts'
 
 import { census, type Classified } from '../support/census.ts'
-import * as caps from '../../src/schema/caps.ts'
 import { rawGit } from '../support/git-fixture.ts'
 import type { Teammate } from '../support/clone-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
@@ -600,7 +599,7 @@ test('update_thread.refuses-an-empty-risk-reference', async () => {
   })
 })
 
-test('decision.records-the-decision-and-reports-the-skipped-link-at-the-byte-cap', async () => {
+test('decision.links-into-a-thread-record-past-the-former-byte-cap', async () => {
   await withSpawnFixture(async (fx) => {
     const threadId = await createFixtureThread(fx.spawned, fx.published)
 
@@ -609,77 +608,51 @@ test('decision.records-the-decision-and-reports-the-skipped-link-at-the-byte-cap
       cwd: fx.repo
     })
     const opened = openStore(rt, fx.repo)
-    assert.equal(opened.ok, true, 'the byte-cap fixture must be able to open the store')
+    assert.equal(opened.ok, true, 'the large-thread fixture must be able to open the store')
     if (!opened.ok) return
-    const store = opened.value
 
-    const maxLengthEntry = (): KeyDecision => ({
+    const FORMER_THREAD_RECORD_SERIALISED_MAX_BYTES = 65536
+    const base = readStoredThread(fx, threadId)
+    const entries: KeyDecision[] = Array.from({ length: 199 - base.spine.key_decisions.length }, () => ({
       id: rt.ulid(),
       decision_id: rt.ulid(),
-      title: 't'.repeat(caps.KEY_DECISION_TITLE_MAX),
-      scope: 'c'.repeat(caps.KEY_DECISION_SCOPE_MAX)
-    })
-    const planned = maxLengthEntry()
-    const withEntry = (thread: Thread, entry: KeyDecision): Thread => ({
-      ...thread,
-      spine: { ...thread.spine, key_decisions: [...thread.spine.key_decisions, entry] }
-    })
-    const bytesOf = (thread: Thread): number => Buffer.byteLength(JSON.stringify(thread), 'utf8')
-    const grow = (thread: Thread): Thread => {
-      if (bytesOf(withEntry(thread, planned)) > caps.THREAD_RECORD_SERIALISED_MAX_BYTES) return thread
-      if (thread.spine.key_decisions.length >= caps.KEY_DECISIONS_MAX_ELEMENTS - 1) return thread
-      return grow(withEntry(thread, maxLengthEntry()))
+      title: 't'.repeat(200),
+      scope: 'c'.repeat(200)
+    }))
+    const large: Thread = {
+      ...base,
+      spine: { ...base.spine, key_decisions: [...base.spine.key_decisions, ...entries] }
     }
-
-    const saturated = grow(readStoredThread(fx, threadId))
     assert.ok(
-      bytesOf(saturated) <= caps.THREAD_RECORD_SERIALISED_MAX_BYTES,
-      'the saturated fixture must itself still fit inside the byte cap'
+      Buffer.byteLength(JSON.stringify(large), 'utf8') > FORMER_THREAD_RECORD_SERIALISED_MAX_BYTES,
+      'the fixture thread must be larger than the former whole-record byte cap'
     )
-    assert.ok(
-      bytesOf(withEntry(saturated, planned)) > caps.THREAD_RECORD_SERIALISED_MAX_BYTES,
-      'the saturated fixture must leave no room for one more maximum-length link'
-    )
-    const seeded = store.commit([{ kind: 'thread', record: saturated }], 'saturate the thread to the byte cap')
-    assert.equal(seeded.ok, true, 'the saturated fixture must commit before the tool is called')
+    const seeded = opened.value.commit([{ kind: 'thread', record: large }], 'seed a thread past the former byte cap')
+    assert.equal(seeded.ok, true, 'a thread record past the former byte cap must commit')
 
     const recorded = (await fx.spawned.client.callTool({
       name: 'record_decision',
       arguments: {
         thread_id: threadId,
-        title: 't'.repeat(caps.KEY_DECISION_TITLE_MAX),
-        context: 'the thread record has no room left for another link',
-        options: ['refuse the whole call', 'record the decision and skip the link'],
-        outcome: 'record the decision and skip the link',
-        scope: 'c'.repeat(caps.KEY_DECISION_SCOPE_MAX)
+        title: 'link a decision into a large thread',
+        context: 'the thread record is past the former whole-record byte cap',
+        options: ['refuse the link', 'write the link'],
+        outcome: 'write the link'
       }
     })) as CallToolResult
 
-    assertOkResult('record_decision (at the byte cap)', recorded)
+    assertOkResult('record_decision (past the former byte cap)', recorded)
     const structured = recorded.structuredContent as {
       decision_id: string
       linked: boolean
       link_skipped_reason: string | null
     }
-    assert.equal(structured.linked, false, 'the link must be reported as not written')
-    assert.notEqual(structured.link_skipped_reason, null, 'a skipped link must carry a populated reason')
-    assert.match(String(structured.link_skipped_reason), /over its cap of/)
-
-    const afterStore = openStore(rt, fx.repo)
-    assert.equal(afterStore.ok, true, 'the store must reopen after the tool call')
-    if (!afterStore.ok) return
-    const decisionSlot = afterStore.value.readDecision(structured.decision_id)
-    assert.ok(
-      decisionSlot !== null && !decisionSlot.quarantined,
-      'the decision itself must be on disk even though the link was skipped'
-    )
+    assert.equal(structured.linked, true, 'the link must be written')
+    assert.equal(structured.link_skipped_reason, null, 'a written link carries no skip reason')
 
     const afterThread = readStoredThread(fx, threadId)
-    assert.equal(
-      afterThread.spine.key_decisions.length,
-      saturated.spine.key_decisions.length,
-      'the running summary must be unchanged when the link is skipped'
-    )
+    assert.equal(afterThread.spine.key_decisions.length, large.spine.key_decisions.length + 1)
+    assert.equal(afterThread.spine.key_decisions.at(-1)?.decision_id, structured.decision_id)
   })
 })
 
