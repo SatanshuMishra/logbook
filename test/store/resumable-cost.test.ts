@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -249,6 +249,42 @@ test('resumable.cache-matches-a-full-rebuild-through-a-long-sequence-of-commits'
 
       closeOne(threadIds[2] as string, 'seq-c', 'done')
       assertCacheMatchesRebuild('closing seq-c as done')
+    })
+  })
+})
+
+test('resumable.a-terminal-thread-unreadable-while-the-cache-was-rebuilt-does-not-return-as-resumable', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const opened = openStore(rt, repo)
+      assert.equal(opened.ok, true)
+      if (!opened.ok) return
+      const store = opened.value
+
+      const closed = makeThread(rt, 'closed-while-unreadable', 'abandoned')
+      const open = makeThread(rt, 'still-open', 'open')
+      assert.equal(store.commit([closed, open], 'seed one closed and one open thread').ok, true)
+
+      const layout = layoutFor(rt, repo)
+      assert.equal(layout.ok, true)
+      if (!layout.ok) return
+      unlinkSync(join(layout.value.state, RESUMABLE_CACHE_FILE_NAME))
+
+      const closedPath = join(layout.value.records, 'threads', `${closed.record.id}.json`)
+      const closedBytes = readFileSync(closedPath, 'utf8')
+      unlinkSync(closedPath)
+      mkdirSync(closedPath)
+      const duringOutage = store.readResumable()
+      rmSync(closedPath, { recursive: true })
+      writeFileSync(closedPath, closedBytes, 'utf8')
+
+      assert.deepEqual(duringOutage.quarantined.map((slot) => slot.path), [closedPath])
+
+      const after = store.readResumable()
+      assert.deepEqual(after.resumable.map((thread) => thread.id), [open.record.id])
+      assert.equal(after.terminal, 1)
+      assert.deepEqual(after.quarantined, [])
     })
   })
 })
