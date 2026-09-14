@@ -15,6 +15,7 @@ import {
   discardScratchDir,
   readAllRecordFiles,
   syncWorkingCopy,
+  type Quarantined,
   type SyncWorkingCopyOutcome
 } from '../store/read-path.ts'
 import { LEDGER_REF, casUpdateRef } from '../store/ref.ts'
@@ -28,6 +29,7 @@ export type SyncAction = 'noop' | 'pushed' | 'pushed-unverified' | 'fast-forward
 export type RejectedOutcome =
   | { ok: false; reason: 'rejected'; cause: 'remote-rejected' | 'contention' | 'local'; detail: string }
   | { ok: false; reason: 'rejected'; cause: 'invalid-merged-record'; detail: string; field: string }
+  | { ok: false; reason: 'rejected'; cause: 'unreadable-local-record'; detail: string; records: UnreadableLocalRecord[] }
 
 export type SyncOutcome =
   | { ok: true; action: SyncAction; ref: string; local_sha: string | null; remote_sha: string | null }
@@ -50,6 +52,10 @@ type PassthroughFile = { relPath: string }
 type CarriedFile = { relPath: string; content: string }
 
 type ScratchRecordSet = RecordSet & { passthrough: PassthroughFile[]; carried: CarriedFile[] }
+
+type OursRecordSet = RecordSet & { unreadable: Quarantined[] }
+
+export type UnreadableLocalRecord = { relPath: string; reason: string }
 
 type AttemptOutcome =
   | { kind: 'return'; outcome: SyncOutcome }
@@ -103,11 +109,13 @@ const logLocalQuarantine = (rt: Runtime, kind: 'thread' | 'decision' | 'session'
   rt.log({ level: 'warn', event: 'sync.local-record-quarantined', kind, reason })
 }
 
-const readOursRecordSet = (rt: Runtime, store: Store, layout: StoreLayout): RecordSet => {
+const readOursRecordSet = (rt: Runtime, store: Store, layout: StoreLayout): OursRecordSet => {
+  const unreadable: Quarantined[] = []
   const threads = new Map<string, Thread>()
   for (const slot of store.readThreads()) {
     if (slot.quarantined) {
       logLocalQuarantine(rt, 'thread', slot.reason)
+      unreadable.push(slot)
     } else {
       threads.set(slot.record.id, slot.record)
     }
@@ -116,6 +124,7 @@ const readOursRecordSet = (rt: Runtime, store: Store, layout: StoreLayout): Reco
   for (const slot of readAllRecordFiles<Decision>(path.join(layout.records, 'decisions'), DecisionRecord)) {
     if (slot.quarantined) {
       logLocalQuarantine(rt, 'decision', slot.reason)
+      unreadable.push(slot)
     } else {
       decisions.set(slot.record.id, slot.record)
     }
@@ -126,13 +135,14 @@ const readOursRecordSet = (rt: Runtime, store: Store, layout: StoreLayout): Reco
     for (const slot of store.readSessionEntries(threadId)) {
       if (slot.quarantined) {
         logLocalQuarantine(rt, 'session', slot.reason)
+        unreadable.push(slot)
       } else {
         entries.push(slot.record)
       }
     }
     sessionsByThread.set(threadId, entries)
   }
-  return { threads, decisions, sessionsByThread }
+  return { threads, decisions, sessionsByThread, unreadable }
 }
 
 const RECORD_TOP_LEVEL_DIRS = new Set(['threads', 'decisions', 'sessions'])
@@ -440,6 +450,31 @@ const performMerge = (
             ok: false,
             reason: 'unparseable',
             records: theirs.passthrough.map((file) => file.relPath)
+          }
+        }
+      }
+
+      const contested = ours.unreadable.flatMap((slot): UnreadableLocalRecord[] => {
+        const relPath = path.relative(layout.records, slot.path)
+        const carriedElsewhere =
+          existsSync(path.join(theirsScratch, relPath)) ||
+          (baseScratch !== null && existsSync(path.join(baseScratch, relPath)))
+        if (!carriedElsewhere) return []
+        const treePath = relPath.split(path.sep).join('/')
+        const oursBlob = readRef(rt, layout.projectRoot, `${localVal}:${treePath}`)
+        const baseBlob = baseVal === null ? null : readRef(rt, layout.projectRoot, `${baseVal}:${treePath}`)
+        const unchangedSinceBase = oursBlob !== null && oursBlob === baseBlob
+        return unchangedSinceBase ? [] : [{ relPath, reason: slot.reason }]
+      })
+      if (contested.length > 0) {
+        return {
+          kind: 'return',
+          outcome: {
+            ok: false,
+            reason: 'rejected',
+            cause: 'unreadable-local-record',
+            detail: contested.map((record) => `${record.relPath} could not be read: ${record.reason}`).join('; '),
+            records: contested
           }
         }
       }
