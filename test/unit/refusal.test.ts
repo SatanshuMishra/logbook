@@ -90,9 +90,12 @@ test('refusal.unrecognized-key-name-is-clipped-by-grapheme-not-code-unit', () =>
 })
 
 test('refusal.unrecognized-keys-field-shows-the-first-five-escaped-and-counts-the-rest', () => {
-  const keys = ['#first', ...Array.from({ length: 24 }, (_, i) => `extra${i + 1}`)]
+  const keys = ['#first', '#second', '\n'.repeat(20), 'plain', ...Array.from({ length: 21 }, (_, i) => `extra${i + 1}`)]
   const issues = rejectExtraKeys(Object.fromEntries(keys.map((key) => [key, 'x'])))
 
   const refusal = refuse(jsonSchema, issues)
-  assert.equal(refusal.field, 'U+0023first,extra1,extra2,extra3,extra4 (+20 more)')
+  assert.equal(
+    refusal.field,
+    `U+0023first,U+0023second,${'U+000A'.repeat(14)}${CLIP_MARKER},plain,extra1 (+20 more)`
+  )
 })
