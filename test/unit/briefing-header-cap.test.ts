@@ -228,3 +228,22 @@ test('briefing.header-fields-whose-escape-is-the-identity-render-whole-at-their-
     `a header field whose stored value already sits at its write cap and escapes one character to one character must render whole; a short length or a false here names a field the renderer shortened for no reason, and a shortened value ends with ${CLIP_MARKER} while the briefing now under-reports what the record holds`
   )
 })
+
+test('briefing.a-next-step-past-the-header-clip-is-not-reported-as-shortened', () => {
+  const thread = headerFieldsAtFormerWriteCaps()
+  const longNextStep = HEADER_FIELD_FILLS.next_step.repeat(HEADER_FIELD_RENDERED_GRAPHEME_MAX + 100)
+  const withLongNextStep: Thread = { ...thread, spine: { ...thread.spine, next_step: longNextStep } }
+  const render = renderBriefingWithPasses(withLongNextStep, EMPTY_INTEGRITY, null, null)
+
+  assert.deepEqual(
+    {
+      withinBudget: render.withinBudget,
+      nextStepWhole: readHeaderField(render.briefing.split('\n'), 'next_step') === longNextStep,
+      clipMarker: render.briefing.includes(CLIP_MARKER),
+      notShownHeading: render.briefing.includes(NOT_SHOWN_HEADING),
+      shortenedBullet: render.briefing.includes(TEXT_CLIPPED_BULLET)
+    },
+    { withinBudget: true, nextStepWhole: true, clipMarker: false, notShownHeading: false, shortenedBullet: false },
+    'a next step longer than the header clip renders whole, so a briefing that shortened nothing must not tell the reader that text was shortened'
+  )
+})
