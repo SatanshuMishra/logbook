@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { testRuntime } from '../support/runtime.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import type { Thread, Criterion } from '../../src/schema/thread.ts'
-import { CRITERIA_MAX_ELEMENTS, CRITERION_TEXT_MAX } from '../../src/schema/caps.ts'
+import { CRITERIA_MAX_ELEMENTS } from '../../src/schema/caps.ts'
 import { evaluateDoneGate } from '../../src/domain/done-gate.ts'
 import { insertCriterion, rewriteCriterion, strikeCriterion } from '../../src/domain/criteria.ts'
 import type { DecisionResolver } from '../../src/domain/criteria.ts'
@@ -198,29 +198,6 @@ test('criteria.strike-allows-a-done-criterion', () => {
   assert.equal(struck?.struck_by, decisionId)
   assert.equal(struck?.done, true)
   assert.equal(struck?.result, '436 tests, 0 fail, exit 0')
-})
-
-test('criteria.text-cap-refusal-is-complete', () => {
-  const rt = testRuntime()
-  const decisionId = rt.ulid()
-  const resolve = resolverFor(decisionId)
-  const existing = makeCriterion(rt, 1, 'the existing criterion')
-  const thread = makeThread(rt, [existing])
-
-  const oversizedText = 'x'.repeat(CRITERION_TEXT_MAX + 1)
-  const result = insertCriterion(rt, thread, { text: oversizedText, check: 'npm test exits 0', kind: 'planned', decisionId, settledness: 'proposed' }, resolve)
-
-  assert.equal(result.ok, false)
-  if (result.ok) {
-    throw new Error('expected a refusal')
-  }
-  assert.equal(result.field, 'criteria.insert.text')
-  assert.equal(result.retryable, true)
-  assert.ok(result.accepted.length > 0)
-  assert.ok(result.example.length > 0)
-  assert.match(result.message, new RegExp(`cap of ${CRITERION_TEXT_MAX}`))
-  assert.match(result.message, /observed \d+/)
-  assert.match(result.message, /remedy:/)
 })
 
 test('criteria.capacity-refusal-is-complete', () => {

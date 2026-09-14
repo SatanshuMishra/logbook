@@ -29,8 +29,6 @@ import {
   RISK_REF_MAX,
   KEY_DECISION_TITLE_MAX,
   OUT_OF_SCOPE_TEXT_MAX,
-  CRITERION_TEXT_MAX,
-  CRITERION_CHECK_MAX,
   SESSION_BODY_MAX,
   ARTIFACT_LABEL_MAX,
   ARTIFACT_POINTER_MAX
@@ -39,6 +37,8 @@ import { testRuntime } from '../support/runtime.ts'
 
 const FORMER_THREAD_TITLE_MAX = 200
 const FORMER_RISK_TEXT_MAX = 500
+const FORMER_CRITERION_TEXT_MAX = 500
+const FORMER_CRITERION_CHECK_MAX = 500
 const FORMER_CRITERION_RESULT_MAX = 1000
 const FORMER_CRITERION_SETTLED_BY_MAX = 500
 
@@ -144,8 +144,8 @@ const buildFloorFixture = (rawTextFor: FloorRawText, sessionBodies: readonly str
   const keyDecisionText = rawTextFor(KEY_DECISION_TITLE_FLOOR, KEY_DECISION_TITLE_MAX)
   const settledKeyDecisionText = rawTextFor(KEY_DECISION_TITLE_FLOOR, KEY_DECISION_TITLE_MAX)
   const outOfScopeText = rawTextFor(OUT_OF_SCOPE_TEXT_FLOOR, OUT_OF_SCOPE_TEXT_MAX)
-  const criterionText = rawTextFor(CRITERION_TEXT_FLOOR, CRITERION_TEXT_MAX)
-  const criterionCheckText = rawTextFor(CRITERION_CHECK_FLOOR, CRITERION_CHECK_MAX)
+  const criterionText = rawTextFor(CRITERION_TEXT_FLOOR, FORMER_CRITERION_TEXT_MAX)
+  const criterionCheckText = rawTextFor(CRITERION_CHECK_FLOOR, FORMER_CRITERION_CHECK_MAX)
   const criterionResultText = rawTextFor(CRITERION_RESULT_FLOOR, FORMER_CRITERION_RESULT_MAX)
   const criterionSettledByText = rawTextFor(CRITERION_SETTLED_BY_FLOOR, FORMER_CRITERION_SETTLED_BY_MAX)
   const artifactLabelText = rawTextFor(ARTIFACT_LABEL_FLOOR, ARTIFACT_LABEL_MAX)
@@ -690,8 +690,8 @@ test('briefing.every-floor-is-at-most-the-write-cap-it-governs', () => {
     { name: 'risk reference floor vs risk reference cap', floor: RISK_REF_FLOOR, cap: RISK_REF_MAX },
     { name: 'key decision title floor vs key decision title cap', floor: KEY_DECISION_TITLE_FLOOR, cap: KEY_DECISION_TITLE_MAX },
     { name: 'out of scope text floor vs out of scope text cap', floor: OUT_OF_SCOPE_TEXT_FLOOR, cap: OUT_OF_SCOPE_TEXT_MAX },
-    { name: 'criterion text floor vs criterion text cap', floor: CRITERION_TEXT_FLOOR, cap: CRITERION_TEXT_MAX },
-    { name: 'criterion check floor vs criterion check cap', floor: CRITERION_CHECK_FLOOR, cap: CRITERION_CHECK_MAX },
+    { name: 'criterion text floor vs former criterion text cap', floor: CRITERION_TEXT_FLOOR, cap: FORMER_CRITERION_TEXT_MAX },
+    { name: 'criterion check floor vs former criterion check cap', floor: CRITERION_CHECK_FLOOR, cap: FORMER_CRITERION_CHECK_MAX },
     { name: 'criterion result floor vs criterion result cap', floor: CRITERION_RESULT_FLOOR, cap: FORMER_CRITERION_RESULT_MAX },
     { name: 'criterion settled by floor vs criterion settled by cap', floor: CRITERION_SETTLED_BY_FLOOR, cap: FORMER_CRITERION_SETTLED_BY_MAX },
     { name: 'session entry text floor vs session body cap', floor: SESSION_ENTRY_TEXT_FLOOR, cap: SESSION_BODY_MAX },

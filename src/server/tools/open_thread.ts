@@ -14,12 +14,10 @@ const CriterionCreateSchema = z
     text: z
       .string()
       .min(1)
-      .max(caps.CRITERION_TEXT_MAX)
       .describe('one completion criterion as plain text; the server mints its id and display ordinal'),
     check: z
       .string()
       .min(1)
-      .max(caps.CRITERION_CHECK_MAX)
       .optional()
       .describe('the re-runnable check that decides whether this criterion is true, for example npm test exits 0; required unless settledness is unsettled'),
     settledness: z
@@ -121,24 +119,6 @@ export const duplicateSlugRefusal = (slug: string): Refusal => ({
   message: `slug "${slug}" is already used by another thread in this project.`
 })
 
-const criterionTextCapRefusal = (index: number, observed: number): Refusal => ({
-  ok: false,
-  field: 'completion_criteria',
-  accepted: `at most ${caps.CRITERION_TEXT_MAX} characters after escaping, per criterion`,
-  example: 'ship the health check before closing this thread',
-  retryable: true,
-  message: `completion_criteria[${index}] exceeds its cap of ${caps.CRITERION_TEXT_MAX} characters after escaping; observed ${observed}; remedy: shorten the criterion text and retry.`
-})
-
-const criterionCheckCapRefusal = (index: number, observed: number): Refusal => ({
-  ok: false,
-  field: 'completion_criteria',
-  accepted: `at most ${caps.CRITERION_CHECK_MAX} characters after escaping, per check`,
-  example: 'npm test exits 0',
-  retryable: true,
-  message: `completion_criteria[${index}].check exceeds its cap of ${caps.CRITERION_CHECK_MAX} characters after escaping; observed ${observed}; remedy: shorten the check and retry.`
-})
-
 const checkOwedRefusal = (index: number, settledness: string): Refusal => ({
   ok: false,
   field: 'completion_criteria',
@@ -196,24 +176,6 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
       settledness: entry.settledness,
       settled_by: entry.settled_by === undefined ? undefined : escapeStored(entry.settled_by)
     }))
-    const oversizedTextIndex = escapedCriteria.findIndex((entry) => entry.text.length > caps.CRITERION_TEXT_MAX)
-    if (oversizedTextIndex !== -1) {
-      const oversized = escapedCriteria[oversizedTextIndex]
-      return {
-        ok: false,
-        refusal: criterionTextCapRefusal(oversizedTextIndex, oversized === undefined ? 0 : oversized.text.length)
-      }
-    }
-    const oversizedCheckIndex = escapedCriteria.findIndex(
-      (entry) => entry.check !== undefined && entry.check.length > caps.CRITERION_CHECK_MAX
-    )
-    if (oversizedCheckIndex !== -1) {
-      const oversized = escapedCriteria[oversizedCheckIndex]
-      return {
-        ok: false,
-        refusal: criterionCheckCapRefusal(oversizedCheckIndex, oversized === undefined ? 0 : (oversized.check?.length ?? 0))
-      }
-    }
     const checkOwedIndex = escapedCriteria.findIndex((entry) => entry.settledness !== 'unsettled' && entry.check === undefined)
     if (checkOwedIndex !== -1) {
       const entry = escapedCriteria[checkOwedIndex]

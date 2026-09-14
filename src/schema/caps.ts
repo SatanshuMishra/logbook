@@ -5,8 +5,6 @@ export const BINDING_BRANCH_MAX = 255
 
 export const CRITERIA_MAX_ELEMENTS = 40
 export const CRITERIA_RETENTION_MAX_ELEMENTS = 200
-export const CRITERION_TEXT_MAX = 500
-export const CRITERION_CHECK_MAX = 500
 
 export const RISKS_PER_CALL_MAX_ELEMENTS = 40
 export const RISK_SCOPE_MAX = 200

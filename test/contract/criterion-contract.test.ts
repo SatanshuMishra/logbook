@@ -9,7 +9,6 @@ import { closeThreadTool } from '../../src/server/tools/close_thread.ts'
 import { recordDecisionTool } from '../../src/server/tools/record_decision.ts'
 import type { Criterion } from '../../src/schema/thread.ts'
 import { openStore } from '../../src/store/records.ts'
-import * as caps from '../../src/schema/caps.ts'
 import { STUB_TOOL_CTX, withCriterionFixture } from '../support/criterion-fixture.ts'
 
 const openFixtureThread = async (
@@ -128,36 +127,6 @@ test('criterion.amend-criteria-stores-the-check-on-an-inserted-criterion', async
     const stored = readStoredCriteria(rt, threadId)
     const found = stored.find((criterion) => criterion.id === inserted.structured.criterion_id)
     assert.equal(found?.check, 'node --test test/sync/two-clones.test.ts exits 0')
-  })
-})
-
-test('criterion.open-thread-refuses-a-check-that-overflows-its-cap-once-escaped', async () => {
-  await withCriterionFixture(async (rt) => {
-    const refused = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
-      title: 'a thread whose criterion check overflows its cap once escaped',
-      slug: 'over-cap-check-thread',
-      active_goal: 'ship the criterion contract fixture',
-      next_step: 'exercise the criterion under test',
-      completion_criteria: [
-        { text: 'the health check ships', check: String.fromCharCode(1).repeat(84), settledness: 'proposed' }
-      ]
-    })
-    assert.equal(refused.ok, false)
-    if (refused.ok) throw new Error('expected open_thread to refuse a check that overflows its cap once escaped')
-    assert.equal(refused.refusal.field, 'completion_criteria')
-    assert.equal(
-      refused.refusal.accepted,
-      `at most ${caps.CRITERION_CHECK_MAX} characters after escaping, per check`
-    )
-    assert.equal(refused.refusal.example, 'npm test exits 0')
-    assert.equal(refused.refusal.retryable, true)
-    assert.equal(
-      refused.refusal.message,
-      `completion_criteria[0].check exceeds its cap of ${caps.CRITERION_CHECK_MAX} characters after escaping; observed 504; remedy: shorten the check and retry.`
-    )
-    const opened = openStore(rt, rt.cwd)
-    if (!opened.ok) throw new Error('criterion fixture: the store did not open')
-    assert.equal(opened.value.readThreads().length, 0)
   })
 })
 

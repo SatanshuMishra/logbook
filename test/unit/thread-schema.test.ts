@@ -2,7 +2,6 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ThreadRecord, criterionSettledness } from '../../src/schema/thread.ts'
 import type { Thread } from '../../src/schema/thread.ts'
-import * as caps from '../../src/schema/caps.ts'
 
 const CRITERION_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
 const ULID_A = '01ARZ3NDEKTSV4RRFFQ69G5FBA'
@@ -112,21 +111,4 @@ test('thread-schema.criterion-settledness-refuses-an-unknown-value', () => {
   const parsed = ThreadRecord.parse(raw)
 
   assert.equal(parsed.ok, false, 'settledness is a closed set of three values and a fourth is refused')
-})
-
-test('thread-schema.criterion-text-refuses-past-its-cap', () => {
-  const stored = threadFixture()
-  const raw = JSON.parse(JSON.stringify(stored)) as Record<string, unknown>
-  const criteria = raw.completion_criteria as Record<string, unknown>[]
-  criteria[0] = { ...criteria[0], text: 'x'.repeat(caps.CRITERION_TEXT_MAX + 1) }
-
-  const parsed = ThreadRecord.parse(raw)
-
-  assert.equal(parsed.ok, false, 'a capped field refuses rather than truncating')
-  if (!parsed.ok) {
-    assert.ok(
-      parsed.message.includes(String(caps.CRITERION_TEXT_MAX)),
-      `the refusal must name the numeric limit, got: ${parsed.message}`
-    )
-  }
 })
