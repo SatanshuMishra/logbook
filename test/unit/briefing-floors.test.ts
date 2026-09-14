@@ -25,7 +25,6 @@ import { ThreadRecord, type Thread, type Criterion, type Risk, type KeyDecision,
 import { SessionRecord, type SessionEntry } from '../../src/schema/session.ts'
 import { itemCountOverBudgetThread } from '../support/briefing-item-count-over-budget-fixture.ts'
 import {
-  THREAD_TITLE_MAX,
   THREAD_SLUG_MAX,
   RISK_REF_MAX,
   KEY_DECISION_TITLE_MAX,
@@ -38,6 +37,7 @@ import {
 } from '../../src/schema/caps.ts'
 import { testRuntime } from '../support/runtime.ts'
 
+const FORMER_THREAD_TITLE_MAX = 200
 const FORMER_RISK_TEXT_MAX = 500
 const FORMER_CRITERION_RESULT_MAX = 1000
 const FORMER_CRITERION_SETTLED_BY_MAX = 500
@@ -136,7 +136,7 @@ const SLUG_SAFE_FILL_CHAR = 'a'
 const slugSafeFillFor = (floor: number, cap: number): string => SLUG_SAFE_FILL_CHAR.repeat(Math.min(floor, cap))
 
 const buildFloorFixture = (rawTextFor: FloorRawText, sessionBodies: readonly string[]): Fixture => {
-  const relatedTitleText = rawTextFor(RELATED_TITLE_FLOOR, THREAD_TITLE_MAX)
+  const relatedTitleText = rawTextFor(RELATED_TITLE_FLOOR, FORMER_THREAD_TITLE_MAX)
   const relatedSlugText = slugSafeFillFor(RELATED_SLUG_FLOOR, THREAD_SLUG_MAX)
   const riskText = rawTextFor(RISK_TEXT_FLOOR, FORMER_RISK_TEXT_MAX)
   const settledRiskText = rawTextFor(RISK_TEXT_FLOOR, FORMER_RISK_TEXT_MAX)
@@ -684,7 +684,7 @@ test('briefing.a-clip-floor-clamped-field-does-not-trip-the-shortened-text-bulle
 
 test('briefing.every-floor-is-at-most-the-write-cap-it-governs', () => {
   const pairs: Array<{ name: string; floor: number; cap: number }> = [
-    { name: 'related title floor vs thread title cap', floor: RELATED_TITLE_FLOOR, cap: THREAD_TITLE_MAX },
+    { name: 'related title floor vs former thread title cap', floor: RELATED_TITLE_FLOOR, cap: FORMER_THREAD_TITLE_MAX },
     { name: 'related slug floor vs thread slug cap', floor: RELATED_SLUG_FLOOR, cap: THREAD_SLUG_MAX },
     { name: 'risk text floor vs risk text cap', floor: RISK_TEXT_FLOOR, cap: FORMER_RISK_TEXT_MAX },
     { name: 'risk reference floor vs risk reference cap', floor: RISK_REF_FLOOR, cap: RISK_REF_MAX },

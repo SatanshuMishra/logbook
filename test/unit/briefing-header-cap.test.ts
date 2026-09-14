@@ -4,14 +4,6 @@ import { renderBriefingWithPasses, type DecisionIntegrity } from '../../src/rend
 import { CLIP_MARKER } from '../../src/render/clip.ts'
 import { escapeStored } from '../../src/render/escape.ts'
 import { ThreadRecord, type Thread } from '../../src/schema/thread.ts'
-import {
-  SPINE_ACTIVE_GOAL_MAX,
-  SPINE_LANDED_MAX,
-  SPINE_LAST_SESSION_MAX,
-  SPINE_NEXT_STEP_MAX,
-  THREAD_BLOCKED_BY_MAX,
-  THREAD_TITLE_MAX
-} from '../../src/schema/caps.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { overBudgetThread } from '../support/briefing-over-budget-fixture.ts'
 
@@ -36,6 +28,9 @@ const completeRecordLine = (threadId: string): string =>
 
 const HEADER_FIELD_RENDERED_GRAPHEME_MAX = 500
 
+const FORMER_THREAD_TITLE_MAX = 200
+const FORMER_HEADER_TEXT_MAX = 500
+
 const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
 const graphemeCount = (text: string): number => Array.from(GRAPHEME_SEGMENTER.segment(text)).length
@@ -53,40 +48,40 @@ const HEADER_FIELD_FILLS: Readonly<Record<HeaderField, string>> = {
   next_step: 'x'
 }
 
-const HEADER_FIELD_WRITE_CAPS: Readonly<Record<HeaderField, number>> = {
-  title: THREAD_TITLE_MAX,
-  blocked_by: THREAD_BLOCKED_BY_MAX,
-  active_goal: SPINE_ACTIVE_GOAL_MAX,
-  last_session: SPINE_LAST_SESSION_MAX,
-  landed: SPINE_LANDED_MAX,
-  next_step: SPINE_NEXT_STEP_MAX
+const HEADER_FIELD_FORMER_WRITE_CAPS: Readonly<Record<HeaderField, number>> = {
+  title: FORMER_THREAD_TITLE_MAX,
+  blocked_by: FORMER_HEADER_TEXT_MAX,
+  active_goal: FORMER_HEADER_TEXT_MAX,
+  last_session: FORMER_HEADER_TEXT_MAX,
+  landed: FORMER_HEADER_TEXT_MAX,
+  next_step: FORMER_HEADER_TEXT_MAX
 }
 
-const storedAtWriteCap = (field: HeaderField): string =>
-  HEADER_FIELD_FILLS[field].repeat(HEADER_FIELD_WRITE_CAPS[field])
+const storedAtFormerWriteCap = (field: HeaderField): string =>
+  HEADER_FIELD_FILLS[field].repeat(HEADER_FIELD_FORMER_WRITE_CAPS[field])
 
 const assertFillEscapesOneToOne = (field: HeaderField): void => {
-  const stored = storedAtWriteCap(field)
+  const stored = storedAtFormerWriteCap(field)
   const escaped = escapeStored(stored)
   if (escaped !== stored) {
     throw new Error(
-      `the ${field} filler must survive the stored-text escape unchanged for this test to compare a rendered value against a stored one; ${HEADER_FIELD_FILLS[field]} escapes to ${escapeStored(HEADER_FIELD_FILLS[field])} and ${HEADER_FIELD_WRITE_CAPS[field]} stored characters became ${escaped.length} rendered ones`
+      `the ${field} filler must survive the stored-text escape unchanged for this test to compare a rendered value against a stored one; ${HEADER_FIELD_FILLS[field]} escapes to ${escapeStored(HEADER_FIELD_FILLS[field])} and ${HEADER_FIELD_FORMER_WRITE_CAPS[field]} stored characters became ${escaped.length} rendered ones`
     )
   }
 }
 
-const headerFieldsAtWriteCaps = (): Thread => ({
+const headerFieldsAtFormerWriteCaps = (): Thread => ({
   id: rt.ulid(),
-  slug: 'header-fields-at-their-write-caps',
-  title: storedAtWriteCap('title'),
+  slug: 'header-fields-at-their-former-write-caps',
+  title: storedAtFormerWriteCap('title'),
   status: 'open',
-  blocked_by: storedAtWriteCap('blocked_by'),
+  blocked_by: storedAtFormerWriteCap('blocked_by'),
   completion_criteria: [],
   spine: {
-    active_goal: storedAtWriteCap('active_goal'),
-    next_step: storedAtWriteCap('next_step'),
-    landed: storedAtWriteCap('landed'),
-    last_session: storedAtWriteCap('last_session'),
+    active_goal: storedAtFormerWriteCap('active_goal'),
+    next_step: storedAtFormerWriteCap('next_step'),
+    landed: storedAtFormerWriteCap('landed'),
+    last_session: storedAtFormerWriteCap('last_session'),
     open_risks: [],
     key_decisions: [],
     out_of_scope: []
@@ -156,18 +151,32 @@ test('briefing.header-fields-of-escape-expanding-text-render-inside-the-budget',
   )
 })
 
-test('briefing.every-header-field-of-escape-expanding-text-is-shortened-to-the-header-cap', () => {
+test('briefing.every-header-field-but-the-next-step-of-escape-expanding-text-is-shortened-to-the-header-cap', () => {
   const render = renderBriefingWithPasses(overBudgetThread(rt), EMPTY_INTEGRITY, null, null)
   const lines = render.briefing.split('\n')
+  const clippedFields = HEADER_FIELD_NAMES.filter((field) => field !== 'next_step')
 
   assert.deepEqual(
-    HEADER_FIELD_NAMES.map((field) => {
+    clippedFields.map((field) => {
       const rendered = readHeaderField(lines, field)
       return [field, graphemeCount(rendered), rendered.endsWith(CLIP_MARKER)]
     }),
-    HEADER_FIELD_NAMES.map((field) => [field, HEADER_FIELD_RENDERED_GRAPHEME_MAX, true]),
-    `every one of the six header fields must be shortened to ${HEADER_FIELD_RENDERED_GRAPHEME_MAX} graphemes measured after the stored-text escape, and must end with ${CLIP_MARKER} so the reader can see where the value was cut; a row here whose count is larger names a field whose cap no longer fires, and one field left uncapped is enough to push a record of ordinary size past the reply budget while the other five hide it`
+    clippedFields.map((field) => [field, HEADER_FIELD_RENDERED_GRAPHEME_MAX, true]),
+    `every header field except the next step must be shortened to ${HEADER_FIELD_RENDERED_GRAPHEME_MAX} graphemes measured after the stored-text escape, and must end with ${CLIP_MARKER} so the reader can see where the value was cut`
   )
+})
+
+test('briefing.the-next-step-renders-whole-however-long-it-is', () => {
+  const thread = overBudgetThread(rt)
+  const render = renderBriefingWithPasses(thread, EMPTY_INTEGRITY, null, null)
+  const rendered = readHeaderField(render.briefing.split('\n'), 'next_step')
+
+  assert.equal(
+    rendered,
+    escapeStored(thread.spine.next_step),
+    `the next step must render whole, because it is the one field a resuming session has to read in full; got ${graphemeCount(rendered)} graphemes against an escaped length of ${escapeStored(thread.spine.next_step).length}`
+  )
+  assert.equal(rendered.endsWith(CLIP_MARKER), false, `a whole next step must not end with ${CLIP_MARKER}`)
 })
 
 test('briefing.a-header-field-the-renderer-shortened-is-disclosed-even-when-the-render-then-fits', () => {
@@ -196,10 +205,10 @@ test('briefing.a-header-field-the-renderer-shortened-is-disclosed-even-when-the-
   )
 })
 
-test('briefing.header-fields-whose-escape-is-the-identity-render-whole-at-their-write-caps', () => {
+test('briefing.header-fields-whose-escape-is-the-identity-render-whole-at-their-former-write-caps', () => {
   for (const field of HEADER_FIELD_NAMES) assertFillEscapesOneToOne(field)
 
-  const thread = headerFieldsAtWriteCaps()
+  const thread = headerFieldsAtFormerWriteCaps()
   const admitted = ThreadRecord.parse(thread)
   if (!admitted.ok) {
     throw new Error(
@@ -213,9 +222,9 @@ test('briefing.header-fields-whose-escape-is-the-identity-render-whole-at-their-
   assert.deepEqual(
     HEADER_FIELD_NAMES.map((field) => {
       const rendered = readHeaderField(lines, field)
-      return [field, rendered.length, rendered === storedAtWriteCap(field)]
+      return [field, rendered.length, rendered === storedAtFormerWriteCap(field)]
     }),
-    HEADER_FIELD_NAMES.map((field) => [field, HEADER_FIELD_WRITE_CAPS[field], true]),
+    HEADER_FIELD_NAMES.map((field) => [field, HEADER_FIELD_FORMER_WRITE_CAPS[field], true]),
     `a header field whose stored value already sits at its write cap and escapes one character to one character must render whole; a short length or a false here names a field the renderer shortened for no reason, and a shortened value ends with ${CLIP_MARKER} while the briefing now under-reports what the record holds`
   )
 })

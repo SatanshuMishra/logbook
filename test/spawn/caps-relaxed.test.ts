@@ -25,6 +25,8 @@ const FORMER_DECISION_OUTCOME_MAX = 4000
 const FORMER_SESSION_BODY_MAX = 8000
 const FORMER_THREAD_RECORD_SERIALISED_MAX_BYTES = 65536
 const FORMER_DECISION_RECORD_SERIALISED_MAX_BYTES = 65536
+const FORMER_THREAD_TITLE_MAX = 200
+const FORMER_HEADER_TEXT_MAX = 500
 
 type Fixture = { spawned: SpawnedServer; repo: string; pluginData: string; homeDir: string }
 
@@ -430,6 +432,94 @@ test('caps-relaxed.a-decision-record-past-the-former-decision-record-byte-cap-is
     )
     assert.equal(decision.context, CONTEXT_PAYLOAD, 'the stored context must equal the sent payload exactly')
     assert.equal(decision.outcome, OUTCOME_PAYLOAD, 'the stored outcome must equal the sent payload exactly')
+  })
+})
+
+test('caps-relaxed.open-thread-header-fields-past-their-former-caps-are-accepted-verbatim', async () => {
+  await withFixture(async (fx) => {
+    const TITLE_PAYLOAD = buildVerbatimPayload(FORMER_THREAD_TITLE_MAX + 50, 'This is the long thread title payload.')
+    const ACTIVE_GOAL_PAYLOAD = buildVerbatimPayload(FORMER_HEADER_TEXT_MAX + 100, 'This is the long active goal payload.')
+    const NEXT_STEP_PAYLOAD = buildVerbatimPayload(FORMER_HEADER_TEXT_MAX + 100, 'This is the long next step payload.')
+
+    const opened = await callOpenThread(fx, {
+      title: TITLE_PAYLOAD,
+      slug: 'header-fields-past-former-caps',
+      active_goal: ACTIVE_GOAL_PAYLOAD,
+      next_step: NEXT_STEP_PAYLOAD
+    })
+    assert.equal(
+      opened.isError,
+      undefined,
+      `open_thread must accept header fields past their former caps, got: ${opened.isError === true ? firstTextOf(opened) : 'no error'}`
+    )
+    const threadId = (opened.structuredContent as { thread_id: string }).thread_id
+
+    const stored = readThreadRecord(fx, threadId)
+    assert.equal(stored.title, TITLE_PAYLOAD, 'the stored title must equal the sent payload exactly')
+    assert.equal(stored.spine.active_goal, ACTIVE_GOAL_PAYLOAD, 'the stored active goal must equal the sent payload exactly')
+    assert.equal(stored.spine.next_step, NEXT_STEP_PAYLOAD, 'the stored next step must equal the sent payload exactly')
+  })
+})
+
+test('caps-relaxed.update-thread-header-fields-past-their-former-caps-are-accepted-verbatim', async () => {
+  await withFixture(async (fx) => {
+    const ACTIVE_GOAL_PAYLOAD = buildVerbatimPayload(FORMER_HEADER_TEXT_MAX + 100, 'This is the long active goal payload.')
+    const NEXT_STEP_PAYLOAD = buildVerbatimPayload(FORMER_HEADER_TEXT_MAX + 100, 'This is the long next step payload.')
+    const LAST_SESSION_PAYLOAD = buildVerbatimPayload(FORMER_HEADER_TEXT_MAX + 100, 'This is the long last session payload.')
+    const BLOCKED_BY_PAYLOAD = buildVerbatimPayload(FORMER_HEADER_TEXT_MAX + 100, 'This is the long blocked by payload.')
+
+    const { threadId } = await openMinimalThread(fx, 'update-header-fields-past-former-caps')
+
+    const updated = await callUpdateThread(fx, {
+      thread_id: threadId,
+      active_goal: ACTIVE_GOAL_PAYLOAD,
+      next_step: NEXT_STEP_PAYLOAD,
+      last_session: LAST_SESSION_PAYLOAD,
+      blocked_by: BLOCKED_BY_PAYLOAD
+    })
+    assert.equal(
+      updated.isError,
+      undefined,
+      `update_thread must accept header fields past their former caps, got: ${updated.isError === true ? firstTextOf(updated) : 'no error'}`
+    )
+
+    const stored = readThreadRecord(fx, threadId)
+    assert.equal(stored.spine.active_goal, ACTIVE_GOAL_PAYLOAD, 'the stored active goal must equal the sent payload exactly')
+    assert.equal(stored.spine.next_step, NEXT_STEP_PAYLOAD, 'the stored next step must equal the sent payload exactly')
+    assert.equal(stored.spine.last_session, LAST_SESSION_PAYLOAD, 'the stored last session must equal the sent payload exactly')
+    assert.equal(stored.blocked_by, BLOCKED_BY_PAYLOAD, 'the stored blocked_by must equal the sent payload exactly')
+  })
+})
+
+test('caps-relaxed.park-thread-next-step-and-landed-past-their-former-caps-are-accepted-verbatim', async () => {
+  await withFixture(async (fx) => {
+    const NEXT_STEP_PAYLOAD = buildVerbatimPayload(FORMER_HEADER_TEXT_MAX + 100, 'This is the long parked next step payload.')
+    const LANDED_PAYLOAD = buildVerbatimPayload(FORMER_HEADER_TEXT_MAX + 100, 'This is the long landed payload.')
+
+    const { threadId } = await openMinimalThread(fx, 'park-header-fields-past-former-caps')
+    const resumed = (await fx.spawned.client.callTool({
+      name: 'resume_thread',
+      arguments: { thread_id: threadId }
+    })) as CallToolResult
+    assert.equal(
+      resumed.isError,
+      undefined,
+      `caps-relaxed fixture: resume_thread refused: ${resumed.isError === true ? firstTextOf(resumed) : 'no error'}`
+    )
+
+    const parked = (await fx.spawned.client.callTool({
+      name: 'park_thread',
+      arguments: { thread_id: threadId, next_step: NEXT_STEP_PAYLOAD, landed: LANDED_PAYLOAD }
+    })) as CallToolResult
+    assert.equal(
+      parked.isError,
+      undefined,
+      `park_thread must accept next_step and landed past their former caps, got: ${parked.isError === true ? firstTextOf(parked) : 'no error'}`
+    )
+
+    const stored = readThreadRecord(fx, threadId)
+    assert.equal(stored.spine.next_step, NEXT_STEP_PAYLOAD, 'the stored next step must equal the sent payload exactly')
+    assert.equal(stored.spine.landed, LANDED_PAYLOAD, 'the stored landed value must equal the sent payload exactly')
   })
 })
 

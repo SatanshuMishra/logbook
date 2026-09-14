@@ -14,17 +14,12 @@ import {
   OUT_OF_SCOPE_TEXT_MAX,
   RISK_REF_MAX,
   SESSION_BODY_MAX,
-  SPINE_ACTIVE_GOAL_MAX,
-  SPINE_LANDED_MAX,
-  SPINE_LAST_SESSION_MAX,
-  SPINE_NEXT_STEP_MAX,
-  THREAD_BLOCKED_BY_MAX,
-  THREAD_SLUG_MAX,
-  THREAD_TITLE_MAX
+  THREAD_SLUG_MAX
 } from '../schema/caps.ts'
 
 const FORMER_RISK_TEXT_MAX = 500
 const FORMER_CRITERION_SETTLED_BY_MAX = 500
+const FORMER_HEADER_FIELD_WRITE_MAX = 500
 
 export type DecisionIntegrity = {
   resolved: number
@@ -79,14 +74,7 @@ export const SESSION_ENTRY_TEXT_FLOOR = 200
 export const ARTIFACT_LABEL_FLOOR = ARTIFACT_LABEL_MAX
 export const ARTIFACT_POINTER_FLOOR = ARTIFACT_POINTER_MAX
 
-const HEADER_FIELD_ESCAPED_GRAPHEME_MAX = Math.max(
-  THREAD_TITLE_MAX,
-  THREAD_BLOCKED_BY_MAX,
-  SPINE_ACTIVE_GOAL_MAX,
-  SPINE_NEXT_STEP_MAX,
-  SPINE_LAST_SESSION_MAX,
-  SPINE_LANDED_MAX
-)
+const HEADER_FIELD_ESCAPED_GRAPHEME_MAX = FORMER_HEADER_FIELD_WRITE_MAX
 
 export const MIN_TEXT_CLIP = CLIP_MARKER_GRAPHEMES
 const NO_CLIP = Number.POSITIVE_INFINITY
@@ -433,7 +421,7 @@ const assembleBriefing = (
   const nextStepLines = thread.spine.next_step.length === 0 ? [] : [thread.spine.next_step]
 
   const headerInlineValues = [thread.title, ...(thread.blocked_by === null ? [] : [thread.blocked_by])]
-  const headerBlockValues = [...activeGoalLines, ...legacyLastSessionText, ...landedLines, ...nextStepLines]
+  const headerBlockValues = [...activeGoalLines, ...legacyLastSessionText, ...landedLines]
   const headerWasShortened =
     headerInlineValues.some(headerInlineWasShortened) ||
     headerBlockValues.some((value) => blockWasShortened(value, HEADER_FIELD_ESCAPED_GRAPHEME_MAX))
@@ -506,7 +494,7 @@ const assembleBriefing = (
     ...nextStepLines.slice(0, 1).map(() => ''),
     ...nextStepLines.slice(0, 1).map(() => '**Next step:**'),
     ...nextStepLines.slice(0, 1).map(() => ''),
-    ...nextStepLines.map((value) => escapeStoredBlock(value, HEADER_FIELD_ESCAPED_GRAPHEME_MAX)),
+    ...nextStepLines.map((value) => escapeStoredBlock(value)),
     ...relatedThreads.slice(0, 1).map(() => ''),
     ...relatedThreads.slice(0, 1).map(() => '**Related:**'),
     ...relatedLines,

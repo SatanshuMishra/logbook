@@ -85,7 +85,6 @@ const UPDATE_THREAD_UNKNOWN_CRITERION_PRODUCER: ProducerId = 'server/tools/updat
 const UPDATE_THREAD_UNKNOWN_DECISION_PRODUCER: ProducerId = 'server/tools/update_thread.ts#unknownDecisionRefusal'
 const UPDATE_THREAD_CONFLICTING_BLOCKAGE_PRODUCER: ProducerId =
   'server/tools/update_thread.ts#conflictingBlockageRefusal'
-const UPDATE_THREAD_BLOCKED_BY_CAP_PRODUCER: ProducerId = 'server/tools/update_thread.ts#blockedByCapRefusal'
 const CLOSE_THREAD_INVALID_THREAD_RECORD_PRODUCER: ProducerId = 'server/tools/close_thread.ts#invalidThreadRecordRefusal'
 const CLOSE_THREAD_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/close_thread.ts#commitFailureRefusal'
 const BIND_BRANCH_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/bind_branch.ts#commitFailureRefusal'
@@ -282,18 +281,6 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     refusals.push({
       producer: UPDATE_THREAD_CONFLICTING_BLOCKAGE_PRODUCER,
       refusal: conflictingBlockage.refusal
-    })
-
-    const overflowingBlockedBy = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
-      thread_id: threadId,
-      blocked_by: CONTROL_CHAR_OVERFLOW(84)
-    })
-    if (overflowingBlockedBy.ok) {
-      throw new Error('expected updateThreadTool to refuse a blocked_by whose escaped form overflows its cap')
-    }
-    refusals.push({
-      producer: UPDATE_THREAD_BLOCKED_BY_CAP_PRODUCER,
-      refusal: overflowingBlockedBy.refusal
     })
 
     const missingKind = await amendCriteriaTool.handler(rt, STUB_TOOL_CTX, {
@@ -1226,9 +1213,14 @@ const collectRealRefusals = async (): Promise<TaggedRefusal[]> => {
   refusals.push({ producer: STRIKE_CRITERION_PRODUCER, refusal: strikeResult })
 
   const spineResult = contributeToSpine(domainThread.spine, {
-    active_goal: 'a'.repeat(caps.SPINE_ACTIVE_GOAL_MAX + 1)
+    key_decisions: Array.from({ length: caps.KEY_DECISIONS_MAX_ELEMENTS + 1 }, (_, index) => ({
+      id: domainRt.ulid(),
+      decision_id: domainRt.ulid(),
+      title: `census decision ${index}`,
+      scope: 'census scope'
+    }))
   })
-  if (spineResult.ok) throw new Error('expected contributeToSpine to refuse on an oversized active_goal')
+  if (spineResult.ok) throw new Error('expected contributeToSpine to refuse key decisions past their element cap')
   refusals.push({ producer: CONTRIBUTE_TO_SPINE_PRODUCER, refusal: spineResult })
 
   const transitionResult = transition(domainRt, domainThread, 'abandoned', '')

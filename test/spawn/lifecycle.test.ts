@@ -447,7 +447,7 @@ test('amend_criteria.refuses-unresolvable-decision', async () => {
   })
 })
 
-test('update_thread.cap-refusal-is-whole-call', async () => {
+test('update_thread.a-refused-call-writes-none-of-its-fields', async () => {
   await withFixture(async (fx) => {
     const { threadId } = await createFixtureThread(fx.spawned, fx.published)
 
@@ -458,28 +458,20 @@ test('update_thread.cap-refusal-is-whole-call', async () => {
     })) as CallToolResult
     assertOkResult('update_thread (seed active_goal)', seeded)
 
-    const zeroWidthCount = 5
-    const regularCount = caps.SPINE_NEXT_STEP_MAX - 20
-    const oversizedNextStep = 'n'.repeat(regularCount) + '​'.repeat(zeroWidthCount)
-    assert.ok(oversizedNextStep.length <= caps.SPINE_NEXT_STEP_MAX, 'the raw next_step must stay within the wire-level cap on its own')
-    assert.ok(
-      escapeStored(oversizedNextStep).length > caps.SPINE_NEXT_STEP_MAX,
-      'escaping the zero-width characters must be what pushes next_step over its cap'
-    )
-
     const secondGoal = 'a second active goal that would also succeed entirely on its own'
     const combined = (await fx.spawned.client.callTool({
       name: 'update_thread',
-      arguments: { thread_id: threadId, active_goal: secondGoal, next_step: oversizedNextStep }
+      arguments: {
+        thread_id: threadId,
+        active_goal: secondGoal,
+        blocked_by: 'waiting on the infra approval',
+        blocked_by_clear: true
+      }
     })) as CallToolResult
-    assert.equal(
-      combined.isError,
-      true,
-      'a call mixing a valid field with a field over its post-escape cap must be refused as one unit'
-    )
+    assert.equal(combined.isError, true, 'a call mixing a valid field with a refused one must be refused as one unit')
     const text = firstTextOf(combined)
     const lines = text.split('\n')
-    assert.equal(lines[0], 'field: next_step')
+    assert.equal(lines[0], 'field: blocked_by')
     assert.match(text, /^accepted: /m)
     assert.match(text, /^example: /m)
     assert.match(text, /^retryable: true/m)
@@ -650,34 +642,6 @@ test('close_thread.done-thread-is-terminal', async () => {
       arguments: { thread_id: threadId, branch: 'post-close-branch' }
     })) as CallToolResult
     assert.equal(bindAttempt.isError, true, 'a done thread must refuse a branch binding too')
-  })
-})
-
-test('open_thread.title-cap-is-checked-after-escaping', async () => {
-  await withFixture(async (fx) => {
-    const zeroWidthCount = 5
-    const regularCount = 195
-    const oversizedTitle = 'n'.repeat(regularCount) + '​'.repeat(zeroWidthCount)
-    assert.ok(oversizedTitle.length <= caps.THREAD_TITLE_MAX, 'the raw title must stay within its own cap')
-    assert.ok(
-      escapeStored(oversizedTitle).length > caps.THREAD_TITLE_MAX,
-      'escaping the zero-width characters must be what pushes the title over its cap'
-    )
-
-    const result = (await fx.spawned.client.callTool({
-      name: 'open_thread',
-      arguments: {
-        title: oversizedTitle,
-        slug: 'title-cap-thread',
-        active_goal: 'exercise the title-cap fixture',
-        next_step: 'exercise the title-cap fixture',
-        completion_criteria: [{ text: 'a criterion', check: 'the title-cap fixture check', settledness: 'proposed' }]
-      }
-    })) as CallToolResult
-
-    assert.equal(result.isError, true, 'a title within the raw cap but over the escaped cap must be refused')
-    const text = firstTextOf(result)
-    assert.equal(text.split('\n')[0], 'field: title')
   })
 })
 

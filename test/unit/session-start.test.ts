@@ -96,8 +96,10 @@ test('session-start.roster-line-still-carries-slug-title-next-step-and-id', () =
 })
 
 const LONG_THREAD_COUNT = 16
-const LONG_TITLE = 'a'.repeat(caps.THREAD_TITLE_MAX)
-const LONG_NEXT_STEP = 'b'.repeat(caps.SPINE_NEXT_STEP_MAX)
+const FORMER_THREAD_TITLE_MAX = 200
+const FORMER_SPINE_NEXT_STEP_MAX = 500
+const LONG_TITLE = 'a'.repeat(FORMER_THREAD_TITLE_MAX)
+const LONG_NEXT_STEP = 'b'.repeat(FORMER_SPINE_NEXT_STEP_MAX)
 
 const makeLongThread = (rt: Runtime, index: number): Extract<RecordChange, { kind: 'thread' }> => ({
   kind: 'thread',

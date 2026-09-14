@@ -91,23 +91,23 @@ const UpdateThreadInputSchema = z.strictObject({
     ),
   active_goal: z
     .string()
-    .max(caps.SPINE_ACTIVE_GOAL_MAX)
     .optional()
-    .describe('replaces the spine active_goal field when supplied; omit to leave it unchanged'),
+    .describe(
+      'replaces the spine active_goal field when supplied, stated as what the thread is trying to achieve in one or two sentences; omit to leave it unchanged'
+    ),
   next_step: z
     .string()
-    .max(caps.SPINE_NEXT_STEP_MAX)
     .optional()
-    .describe('replaces the spine next_step field when supplied; omit to leave it unchanged'),
+    .describe('replaces the spine next_step field when supplied, stated as one decision about what to do next; omit to leave it unchanged'),
   last_session: z
     .string()
-    .max(caps.SPINE_LAST_SESSION_MAX)
     .optional()
-    .describe('replaces the spine last_session field when supplied; omit to leave it unchanged'),
+    .describe(
+      'replaces the spine last_session field when supplied, stated as a short summary of the most recent session; omit to leave it unchanged'
+    ),
   blocked_by: z
     .string()
     .min(1)
-    .max(caps.THREAD_BLOCKED_BY_MAX)
     .optional()
     .describe('what this thread is blocked on; omit to leave it unchanged, and send blocked_by_clear to clear it'),
   blocked_by_clear: z
@@ -293,15 +293,6 @@ export const conflictingBlockageRefusal = (): Refusal => ({
   example: 'waiting on the infra approval',
   retryable: true,
   message: 'blocked_by and blocked_by_clear were both supplied; send one or the other, not both.'
-})
-
-export const blockedByCapRefusal = (observed: number): Refusal => ({
-  ok: false,
-  field: 'blocked_by',
-  accepted: `at most ${caps.THREAD_BLOCKED_BY_MAX} characters after escaping`,
-  example: 'waiting on the infra approval',
-  retryable: true,
-  message: `blocked_by exceeds its cap of ${caps.THREAD_BLOCKED_BY_MAX} characters after escaping; observed ${observed}; remedy: shorten the blocked_by text and retry.`
 })
 
 export const unknownDecisionRefusal = (ids: string[]): Refusal => ({
@@ -539,9 +530,6 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
       return { ok: false, refusal: conflictingBlockageRefusal() }
     }
     const escapedBlockedBy = input.blocked_by === undefined ? undefined : escapeStored(input.blocked_by)
-    if (escapedBlockedBy !== undefined && escapedBlockedBy.length > caps.THREAD_BLOCKED_BY_MAX) {
-      return { ok: false, refusal: blockedByCapRefusal(escapedBlockedBy.length) }
-    }
     const blockageChanged = blockedBySupplied || blockedByCleared
 
     const nothingChanged =

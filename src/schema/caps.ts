@@ -1,14 +1,7 @@
-export const THREAD_TITLE_MAX = 200
 export const THREAD_SLUG_MAX = 64
-export const THREAD_BLOCKED_BY_MAX = 500
 export const THREAD_CLOSURE_DETAIL_MAX = 2000
 
 export const BINDING_BRANCH_MAX = 255
-
-export const SPINE_ACTIVE_GOAL_MAX = 500
-export const SPINE_NEXT_STEP_MAX = 500
-export const SPINE_LAST_SESSION_MAX = 500
-export const SPINE_LANDED_MAX = 500
 
 export const CRITERIA_MAX_ELEMENTS = 40
 export const CRITERIA_RETENTION_MAX_ELEMENTS = 200
