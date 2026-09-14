@@ -82,25 +82,7 @@ const listThreadIds = (layout: StoreLayout): string[] => {
 const cacheIsValid = (cache: ResumableCache, currentRef: string | null, idsOnDisk: ReadonlySet<string>): boolean =>
   currentRef !== null && cache.ref === currentRef && cache.terminal_ids.every((id) => idsOnDisk.has(id))
 
-const readNonTerminal = (
-  layout: StoreLayout,
-  ids: readonly string[]
-): { resumable: Thread[]; quarantined: Quarantined[] } => {
-  const resumable: Thread[] = []
-  const quarantined: Quarantined[] = []
-  for (const id of ids) {
-    const slot = readRecordFile<Thread>(threadPathFor(layout, id), ThreadRecord)
-    if (slot === null) continue
-    if (slot.quarantined) {
-      quarantined.push(slot)
-      continue
-    }
-    resumable.push(slot.record)
-  }
-  return { resumable, quarantined }
-}
-
-const rebuildFromDisk = (
+const classifyFromDisk = (
   layout: StoreLayout,
   ids: readonly string[]
 ): { resumable: Thread[]; quarantined: Quarantined[]; terminalIds: Ulid[] } => {
@@ -131,11 +113,15 @@ export const readResumable = (rt: Runtime, layout: StoreLayout, currentRef: stri
   if (cacheRead.kind === 'cache' && cacheIsValid(cacheRead.value, currentRef, idsOnDisk)) {
     const skip = new Set(cacheRead.value.terminal_ids)
     const idsToRead = ids.filter((id) => !skip.has(id))
-    const read = readNonTerminal(layout, idsToRead)
-    return { resumable: read.resumable, terminal: cacheRead.value.terminal_ids.length, quarantined: read.quarantined }
+    const read = classifyFromDisk(layout, idsToRead)
+    const terminalIds = [...cacheRead.value.terminal_ids, ...read.terminalIds]
+    if (read.terminalIds.length > 0) {
+      writeResumableCache(rt, layout, { ref: cacheRead.value.ref, terminal_ids: terminalIds })
+    }
+    return { resumable: read.resumable, terminal: terminalIds.length, quarantined: read.quarantined }
   }
 
-  const rebuilt = rebuildFromDisk(layout, ids)
+  const rebuilt = classifyFromDisk(layout, ids)
   if (currentRef !== null) {
     writeResumableCache(rt, layout, { ref: currentRef, terminal_ids: rebuilt.terminalIds })
   }
