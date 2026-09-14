@@ -35,9 +35,10 @@ const renderField = (path: (string | number | symbol)[]): string =>
 const renderUnrecognizedKeysField = (issue: z.core.$ZodIssue): string | null => {
   if (issue.code !== 'unrecognized_keys') return null
   const prefix = issue.path.map((segment) => String(segment)).join('.')
-  const escapedKeys = issue.keys.map((key) => clipWithMarker(escapeStored(key), caps.UNRECOGNIZED_KEY_NAME_MAX))
-  const shown = escapedKeys.slice(0, caps.UNRECOGNIZED_KEYS_SHOWN_MAX)
-  const remainder = escapedKeys.length - shown.length
+  const shown = issue.keys
+    .slice(0, caps.UNRECOGNIZED_KEYS_SHOWN_MAX)
+    .map((key) => clipWithMarker(escapeStored(key), caps.UNRECOGNIZED_KEY_NAME_MAX))
+  const remainder = issue.keys.length - shown.length
   const keys = remainder > 0 ? `${shown.join(',')} (+${remainder} more)` : shown.join(',')
   return prefix.length === 0 ? keys : `${prefix}.${keys}`
 }

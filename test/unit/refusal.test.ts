@@ -88,3 +88,11 @@ test('refusal.unrecognized-key-name-is-clipped-by-grapheme-not-code-unit', () =>
   const refusal = refuse(jsonSchema, issues)
   assert.equal(isWellFormedUtf16(refusal.field), true, 'clipping a surrogate pair in half must never reach the caller')
 })
+
+test('refusal.unrecognized-keys-field-shows-the-first-five-escaped-and-counts-the-rest', () => {
+  const keys = ['#first', ...Array.from({ length: 24 }, (_, i) => `extra${i + 1}`)]
+  const issues = rejectExtraKeys(Object.fromEntries(keys.map((key) => [key, 'x'])))
+
+  const refusal = refuse(jsonSchema, issues)
+  assert.equal(refusal.field, 'U+0023first,extra1,extra2,extra3,extra4 (+20 more)')
+})
