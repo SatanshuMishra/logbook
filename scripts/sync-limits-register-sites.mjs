@@ -27,22 +27,36 @@ const liveSiteOf = (row) => {
   return index === -1 ? null : `${file}:${index + 1}`
 }
 
-const moves = new Map(rows.map((row) => [row.site, liveSiteOf(row)]))
-const missing = rows.filter((row) => moves.get(row.site) === null)
-
-if (missing.length > 0) {
-  process.stderr.write(
-    `sync-limits-register-sites: no declaration found for ${missing.length} row(s):\n${missing.map((row) => `${row.site} ${row.name}`).join('\n')}\n`
-  )
+const refuse = (problem, lines) => {
+  process.stderr.write(`sync-limits-register-sites: ${problem}:\n${lines.join('\n')}\n`)
   process.exit(1)
 }
 
-const synced = rows.map((row) => ({
+const recordedSites = rows.map((row) => row.site)
+const sharedSites = rows.filter((row, index) => recordedSites.indexOf(row.site) !== index)
+if (sharedSites.length > 0) {
+  refuse(`${sharedSites.length} row(s) share a recorded site, so a mirror naming that site is ambiguous`, sharedSites.map((row) => `${row.site} ${row.name}`))
+}
+
+const danglingMirrors = rows.filter((row) => row.mirrors !== null && !recordedSites.includes(row.mirrors))
+if (danglingMirrors.length > 0) {
+  refuse(`${danglingMirrors.length} row(s) mirror a site no row records`, danglingMirrors.map((row) => `${row.name} mirrors ${row.mirrors}`))
+}
+
+const liveSites = rows.map(liveSiteOf)
+const missing = rows.filter((_, index) => liveSites[index] === null)
+if (missing.length > 0) {
+  refuse(`no declaration found for ${missing.length} row(s)`, missing.map((row) => `${row.site} ${row.name}`))
+}
+
+const moves = new Map(rows.map((row, index) => [row.site, liveSites[index]]))
+
+const synced = rows.map((row, index) => ({
   ...row,
-  site: moves.get(row.site),
-  mirrors: row.mirrors === null ? null : (moves.get(row.mirrors) ?? row.mirrors)
+  site: liveSites[index],
+  mirrors: row.mirrors === null ? null : moves.get(row.mirrors)
 }))
 
 writeFileSync(REGISTER_PATH, `${JSON.stringify(synced, null, 2)}\n`)
-const movedCount = rows.filter((row) => moves.get(row.site) !== row.site).length
+const movedCount = rows.filter((row, index) => liveSites[index] !== row.site).length
 process.stdout.write(`sync-limits-register-sites: ${movedCount} site(s) moved\n`)
