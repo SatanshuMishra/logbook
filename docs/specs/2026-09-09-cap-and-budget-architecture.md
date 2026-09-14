@@ -99,6 +99,8 @@ different repository.
 
 ### A write-time cap is a hard refusal only if it passes one of four tests
 
+> Superseded for cap design on 2026-09-12 by the principle in `docs/specs/2026-09-11-deferred-cap-items.md`: logbook imposes no one-size-fits-all numeric cap on stored content. Test 4 below is retired.
+
 1. **The number is not ours.** It records an external fact: a git branch-name length, a hash length,
    a transport ceiling. These never need tuning because they were never chosen.
 2. **Breaching breaks rather than costs.** A record too large to write or parse is a broken record.
