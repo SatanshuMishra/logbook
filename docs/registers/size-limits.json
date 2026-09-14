@@ -73,7 +73,7 @@
   },
   {
     "name": "MAX_SYNC_ATTEMPTS",
-    "site": "src/merge/sync.ts:43",
+    "site": "src/merge/sync.ts:45",
     "value": 5,
     "basis": "unrecorded",
     "reason": null,
