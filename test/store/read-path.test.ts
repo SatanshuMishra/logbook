@@ -206,3 +206,38 @@ test('read.verdict-agrees-with-read-record-file', () => {
     )
   })
 })
+
+test('read.quarantines-an-unreadable-record-instead-of-failing-every-read', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const t1 = makeThread(rt, 'thread-one')
+      const t2 = makeThread(rt, 'thread-two')
+
+      const opened = openStore(rt, repo)
+      assert.equal(opened.ok, true)
+      if (!opened.ok) return
+      assert.equal(opened.value.commit([t1, t2], 'seed two threads').ok, true)
+
+      const layout = layoutFor(rt, repo)
+      assert.equal(layout.ok, true)
+      if (!layout.ok) return
+      const unreadablePath = join(layout.value.records, 'threads', `${rt.ulid()}.json`)
+      mkdirSync(unreadablePath)
+
+      const expectedIds = [t1.record.id, t2.record.id].sort()
+
+      const slots = opened.value.readThreads()
+      assert.equal(slots.length, 3)
+      assert.deepEqual(
+        slots.flatMap((slot) => (slot.quarantined ? [slot] : [])),
+        [{ quarantined: true, path: unreadablePath, reason: 'could not be read: EISDIR' }]
+      )
+      assert.deepEqual(slots.flatMap((slot) => (slot.quarantined ? [] : [slot.record.id])).sort(), expectedIds)
+
+      const resumable = opened.value.readResumable()
+      assert.deepEqual(resumable.resumable.map((thread) => thread.id).sort(), expectedIds)
+      assert.deepEqual(resumable.quarantined.map((slot) => slot.path), [unreadablePath])
+    })
+  })
+})

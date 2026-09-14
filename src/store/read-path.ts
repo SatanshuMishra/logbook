@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type { Declared } from '../schema/declare.ts'
 import type { Runtime } from '../runtime/runtime.ts'
-import { describeError } from './detail.ts'
+import { describeError, errnoCode } from './detail.ts'
 import { durableWrite } from './durable-write.ts'
 import { git, gitBuffer } from './git.ts'
 import type { StoreLayout } from './layout.ts'
@@ -211,8 +211,8 @@ export const readRecordFile = <T>(filePath: string, declared: Declared<T>): Slot
   try {
     raw = readFileSync(filePath, 'utf8')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
+    if (errnoCode(error) === 'ENOENT') return null
+    return { quarantined: true, path: filePath, reason: `could not be read: ${errnoCode(error)}` }
   }
 
   let parsedJson: unknown
