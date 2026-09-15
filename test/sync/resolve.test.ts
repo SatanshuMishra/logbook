@@ -8,6 +8,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { openStore } from '../../src/store/records.ts'
 import { layoutFor } from '../../src/store/layout.ts'
 import { writeRecords } from '../../src/store/write-path.ts'
+import { LEDGER_REF } from '../../src/store/ref.ts'
 import type { Thread } from '../../src/schema/thread.ts'
 import { rawGit } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
@@ -296,24 +297,36 @@ const buildTwoFieldConflict = async (
   return { threadId, anaConflictSync }
 }
 
-const writeThreadOf = (teammate: SpawnedTeammate, threadId: string, mutate: (thread: Thread) => Thread): void => {
+const plantThreadRecord = (teammate: SpawnedTeammate, thread: Thread): void => {
   const rt = testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: teammate.pluginData } })
-  const opened = openStore(rt, teammate.repo)
-  if (!opened.ok) throw new Error(`resolve: could not open ${teammate.name}'s store to plant a divergent thread field`)
-  const slot = opened.value.readThread(threadId)
-  if (slot === null || slot.quarantined) {
-    throw new Error(`resolve: thread "${threadId}" could not be re-read from ${teammate.name}'s store before planting a divergent field`)
-  }
   const layout = layoutFor(rt, teammate.repo)
-  if (!layout.ok) throw new Error(`resolve: layoutFor refused for ${teammate.name} while planting a divergent thread field`)
-  const mutated: Thread = { ...mutate(slot.record), updated_at: rt.now() }
+  if (!layout.ok) throw new Error(`resolve: layoutFor refused for ${teammate.name} while planting a thread record`)
   const write = writeRecords(
     rt,
     layout.value,
-    [{ kind: 'thread', record: mutated }],
-    `${teammate.name}: plant a divergent thread field for a resolve_conflict fixture`
+    [{ kind: 'thread', record: { ...thread, updated_at: rt.now() } }],
+    `${teammate.name}: plant a thread record for a resolve_conflict fixture`
   )
-  if (!write.ok) throw new Error(`resolve: writeRecords failed for ${teammate.name} while planting a divergent thread field: ${write.detail}`)
+  if (!write.ok) throw new Error(`resolve: writeRecords failed for ${teammate.name} while planting a thread record: ${write.detail}`)
+}
+
+const writeThreadOf = (teammate: SpawnedTeammate, threadId: string, mutate: (thread: Thread) => Thread): void =>
+  plantThreadRecord(teammate, mutate(readThreadOf(teammate, threadId)))
+
+const readDecisionOf = (teammate: SpawnedTeammate, decisionId: string) => {
+  const rt = testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: teammate.pluginData } })
+  const opened = openStore(rt, teammate.repo)
+  if (!opened.ok) throw new Error(`resolve: could not open ${teammate.name}'s store to read a decision`)
+  const slot = opened.value.readDecision(decisionId)
+  return slot === null || slot.quarantined ? null : slot.record
+}
+
+const readSessionEntryOf = (teammate: SpawnedTeammate, threadId: string, entryId: string) => {
+  const rt = testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: teammate.pluginData } })
+  const opened = openStore(rt, teammate.repo)
+  if (!opened.ok) throw new Error(`resolve: could not open ${teammate.name}'s store to read a session entry`)
+  const slot = opened.value.readSessionEntry(threadId, entryId)
+  return slot === null || slot.quarantined ? null : slot.record
 }
 
 const openAndConvergeThread = async (ana: SpawnedTeammate, ben: SpawnedTeammate, slug: string): Promise<string> => {
@@ -699,3 +712,196 @@ test('resolve.a-criterion-changed-locally-under-an-unchanged-next-step-is-refuse
     })
   }
 })
+
+const threadPathOf = (threadId: string): string => `threads/${threadId}.json`
+
+const ledgerCommitOf = (teammate: SpawnedTeammate): string => rawGit(teammate.repo, ['rev-parse', LEDGER_REF]).stdout.trim()
+
+const syncAndExpectConflictOn = async (teammate: SpawnedTeammate, threadId: string, label: string): Promise<void> => {
+  const synced = await callTool(teammate, 'sync_ledger', {})
+  assert.equal(synced.isError, true, `expected ${label} to be refused over the thread both clones changed`)
+  assert.match(firstTextOf(synced), new RegExp(`threads/${threadId}\\.json`), firstTextOf(synced))
+}
+
+test('resolve.stores-the-composed-record-and-both-clones-hold-it', async () => {
+  await withTwoSpawnedTeammates(async (ana, ben) => {
+    const threadId = await openAndConvergeThread(ana, ben, 'resolve-composed-record-thread')
+    const criterionId = readThreadOf(ana, threadId).completion_criteria[0]?.id
+    assert.ok(criterionId !== undefined, 'resolve: the fixture thread minted no criterion')
+
+    assertOkResult(
+      'update_thread (ben changes the goal, next step and last session)',
+      await callTool(ben, 'update_thread', {
+        thread_id: threadId,
+        active_goal: 'ben goal',
+        next_step: 'ben step',
+        next_step_criterion_id: criterionId,
+        last_session: 'ben session'
+      })
+    )
+    assertOkResult('sync_ledger (ben pushes)', await callTool(ben, 'sync_ledger', {}))
+    assertOkResult('update_thread (ana changes only the goal)', await callTool(ana, 'update_thread', { thread_id: threadId, active_goal: 'ana goal' }))
+    await syncAndExpectConflictOn(ana, threadId, "ana's sync")
+
+    const bensThread = readThreadOf(ben, threadId)
+    const composed: Thread = { ...bensThread, spine: { ...bensThread.spine, active_goal: 'ana goal' } }
+    assertOkResult('resolve_conflict', await callTool(ana, 'resolve_conflict', { resolutions: [{ path: threadPathOf(threadId), record: composed }] }))
+    assertOkResult('sync_ledger (ana pushes the resolution)', await callTool(ana, 'sync_ledger', {}))
+    assertOkResult('sync_ledger (ben picks up the resolution)', await callTool(ben, 'sync_ledger', {}))
+
+    for (const teammate of [ana, ben]) {
+      assert.deepEqual(readThreadOf(teammate, threadId), composed, `${teammate.name}'s clone must hold exactly the record ana composed from both versions`)
+    }
+  })
+})
+
+const REMOTE_ONLY_RECORDS = [
+  {
+    name: 'a-new-decision',
+    create: async (ben: SpawnedTeammate, threadId: string) => {
+      const recorded = await callTool(ben, 'record_decision', {
+        thread_id: threadId,
+        title: 'ben picks the fast path',
+        context: 'a choice ben made while ana was offline',
+        options: ['the fast path', 'the safe path'],
+        outcome: 'the fast path'
+      })
+      assertOkResult('record_decision (ben)', recorded)
+      const decisionId = (recorded.structuredContent as { decision_id: string }).decision_id
+      return (teammate: SpawnedTeammate): boolean => readDecisionOf(teammate, decisionId) !== null
+    }
+  },
+  {
+    name: 'a-new-session-entry',
+    create: async (ben: SpawnedTeammate, threadId: string) => {
+      const logged = await callTool(ben, 'log_session_event', { thread_id: threadId, actor: 'ben', body: 'ben worked the thread while ana was offline' })
+      assertOkResult('log_session_event (ben)', logged)
+      const entryId = (logged.structuredContent as { session_entry_id: string }).session_entry_id
+      return (teammate: SpawnedTeammate): boolean => readSessionEntryOf(teammate, threadId, entryId) !== null
+    }
+  }
+] as const
+
+for (const scenario of REMOTE_ONLY_RECORDS) {
+  test(`resolve.settles-a-conflict-while-the-remote-carries-${scenario.name}`, async () => {
+    await withTwoSpawnedTeammates(async (ana, ben) => {
+      const threadId = await openAndConvergeThread(ana, ben, `resolve-remote-carries-${scenario.name}`)
+
+      const holdsBensRecord = await scenario.create(ben, threadId)
+      assertOkResult(`update_thread (ben changes the goal, ${scenario.name})`, await callTool(ben, 'update_thread', { thread_id: threadId, active_goal: 'ben goal' }))
+      assertOkResult(`sync_ledger (ben pushes, ${scenario.name})`, await callTool(ben, 'sync_ledger', {}))
+      assertOkResult(`update_thread (ana changes the goal, ${scenario.name})`, await callTool(ana, 'update_thread', { thread_id: threadId, active_goal: 'ana goal' }))
+      await syncAndExpectConflictOn(ana, threadId, `ana's sync (${scenario.name})`)
+
+      const bensThread = readThreadOf(ben, threadId)
+      const composed: Thread = { ...bensThread, spine: { ...bensThread.spine, active_goal: 'ana goal' } }
+      assertOkResult(
+        `resolve_conflict (${scenario.name})`,
+        await callTool(ana, 'resolve_conflict', { resolutions: [{ path: threadPathOf(threadId), record: composed }] })
+      )
+
+      const anaPush = await callTool(ana, 'sync_ledger', {})
+      assertOkResult(`sync_ledger (ana pushes the resolution, ${scenario.name})`, anaPush)
+      assert.equal((anaPush.structuredContent as { action: string }).action, 'pushed')
+      assertOkResult(`sync_ledger (ben picks up the resolution, ${scenario.name})`, await callTool(ben, 'sync_ledger', {}))
+
+      for (const teammate of [ana, ben]) {
+        assert.equal(readThreadOf(teammate, threadId).spine.active_goal, 'ana goal', `${teammate.name}'s clone must hold the composed goal (${scenario.name})`)
+        assert.equal(holdsBensRecord(teammate), true, `${teammate.name}'s clone must still hold ${scenario.name} ben pushed (${scenario.name})`)
+      }
+    })
+  })
+}
+
+test('resolve.settles-a-conflict-between-ledgers-that-share-no-history', async () => {
+  await withTwoSpawnedTeammates(async (ana, ben) => {
+    const opened = await callTool(ana, 'open_thread', {
+      title: 'resolve conflict fixture thread',
+      slug: 'resolve-unrelated-histories',
+      active_goal: 'ana goal',
+      next_step: 'exercise the resolve-conflict fixture',
+      completion_criteria: [{ text: 'a criterion for the resolve fixture', check: 'the resolve fixture check', settledness: 'proposed' }]
+    })
+    assertOkResult('open_thread (ana)', opened)
+    const threadId = (opened.structuredContent as { thread_id: string }).thread_id
+    assertOkResult('sync_ledger (ana pushes)', await callTool(ana, 'sync_ledger', {}))
+
+    const anasThread = readThreadOf(ana, threadId)
+    plantThreadRecord(ben, { ...anasThread, spine: { ...anasThread.spine, active_goal: 'ben goal' } })
+    await syncAndExpectConflictOn(ben, threadId, "ben's first sync")
+
+    const composed: Thread = { ...anasThread, spine: { ...anasThread.spine, active_goal: 'ben goal, then ana goal' } }
+    assertOkResult('resolve_conflict', await callTool(ben, 'resolve_conflict', { resolutions: [{ path: threadPathOf(threadId), record: composed }] }))
+    assert.deepEqual(readThreadOf(ben, threadId), composed)
+    assertOkResult('sync_ledger (ben pushes the resolution)', await callTool(ben, 'sync_ledger', {}))
+  })
+})
+
+const setUpGoalConflict = async (ana: SpawnedTeammate, ben: SpawnedTeammate, slug: string): Promise<{ threadId: string; bensThread: Thread }> => {
+  const threadId = await openAndConvergeThread(ana, ben, slug)
+  assertOkResult('update_thread (ben changes the goal)', await callTool(ben, 'update_thread', { thread_id: threadId, active_goal: 'ben goal' }))
+  assertOkResult('sync_ledger (ben pushes)', await callTool(ben, 'sync_ledger', {}))
+  assertOkResult('update_thread (ana changes the goal)', await callTool(ana, 'update_thread', { thread_id: threadId, active_goal: 'ana goal' }))
+  await syncAndExpectConflictOn(ana, threadId, "ana's sync")
+  return { threadId, bensThread: readThreadOf(ben, threadId) }
+}
+
+const SHAPE_FAILURES = [
+  {
+    name: 'a-field-of-the-wrong-type',
+    field: 'resolutions.0.record.spine.active_goal',
+    break: (thread: Thread): unknown => ({ ...thread, spine: { ...thread.spine, active_goal: 42 } })
+  },
+  {
+    name: 'an-id-that-differs-from-its-path',
+    field: 'resolutions.0.record.id',
+    break: (thread: Thread): unknown => ({ ...thread, id: '01ARZ3NDEKTSV4RRFFQ69G5FAV' })
+  }
+] as const
+
+for (const failure of SHAPE_FAILURES) {
+  test(`resolve.refuses-a-composed-record-with-${failure.name}-and-writes-nothing`, async () => {
+    await withTwoSpawnedTeammates(async (ana, ben) => {
+      const { threadId, bensThread } = await setUpGoalConflict(ana, ben, `resolve-shape-${failure.name}`)
+      const before = ledgerCommitOf(ana)
+
+      const refused = await callTool(ana, 'resolve_conflict', {
+        resolutions: [{ path: threadPathOf(threadId), record: failure.break(bensThread) }]
+      })
+      assert.equal(refused.isError, true, `a record that does not fit its stored shape must be refused (${failure.name})`)
+      assert.equal(firstTextOf(refused).split('\n')[0], `field: ${failure.field}`, firstTextOf(refused))
+      assert.equal(ledgerCommitOf(ana), before, `a refused resolution must leave the ledger where it was (${failure.name})`)
+
+      const composed: Thread = { ...bensThread, spine: { ...bensThread.spine, active_goal: 'ana goal' } }
+      assertOkResult(
+        `resolve_conflict (a valid record after the refusal, ${failure.name})`,
+        await callTool(ana, 'resolve_conflict', { resolutions: [{ path: threadPathOf(threadId), record: composed }] })
+      )
+    })
+  })
+}
+
+test('resolve.stores-a-next-step-paired-with-the-other-sides-criterion-as-given', async () => {
+  await withTwoSpawnedTeammates(async (ana, ben) => {
+    const threadId = await openAndConvergeThread(ana, ben, 'resolve-no-content-rules-thread')
+    const criterionId = readThreadOf(ana, threadId).completion_criteria[0]?.id
+    assert.ok(criterionId !== undefined, 'resolve: the fixture thread minted no criterion')
+
+    assertOkResult(
+      'update_thread (ben names the criterion his next step advances)',
+      await callTool(ben, 'update_thread', { thread_id: threadId, next_step: 'ben next step', next_step_criterion_id: criterionId })
+    )
+    assertOkResult('sync_ledger (ben pushes)', await callTool(ben, 'sync_ledger', {}))
+    assertOkResult('update_thread (ana replaces the next step)', await callTool(ana, 'update_thread', { thread_id: threadId, next_step: 'ana next step' }))
+    await syncAndExpectConflictOn(ana, threadId, "ana's sync")
+
+    const anasThread = readThreadOf(ana, threadId)
+    const composed: Thread = { ...anasThread, spine: { ...anasThread.spine, next_step: 'ana next step', next_step_criterion_id: criterionId } }
+    assertOkResult(
+      'resolve_conflict (ana pairs her next step with the criterion ben named)',
+      await callTool(ana, 'resolve_conflict', { resolutions: [{ path: threadPathOf(threadId), record: composed }] })
+    )
+    assert.deepEqual(readThreadOf(ana, threadId), composed, 'Logbook stores the composed record without judging which criterion a next step advances')
+  })
+})
+
