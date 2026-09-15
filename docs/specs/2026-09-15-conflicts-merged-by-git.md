@@ -105,11 +105,16 @@ Each is reproduced by a failing test on branch `test/resolve-conflict-repro`, in
    - Exit 0: a tree id, then nothing.
    - Exit 1 with a tree id: the tree id, then one entry per conflicted file and stage, `<mode> <blob> <stage>` then a TAB then the path, each entry ended by NUL.
    - Anything else: a local rejection carrying git's stderr.
-3. **Every record in the merged tree must be one side's file, whole (Q8).** For each record path whose merged blob differs from the local blob, the merged blob must equal the remote blob. A record that equals neither side was produced by a merge driver or setting in the project's own git configuration, not by git's default merge, and is treated as a conflict for review. Its stages come from `ls-tree` on the ancestor, local and remote commits. See "Project settings can merge a conflict silently".
+3. **Every file in the merged tree must be one side's file, whole (Q8).** For each record path whose merged blob differs from the local blob, the merged blob must equal the remote blob. A record that equals neither side was produced by a merge driver or setting in the project's own git configuration, not by git's default merge, and is treated as a conflict for review. Its stages come from `ls-tree` on the ancestor, local and remote commits. See "Project settings can merge a conflict silently".
 4. **Clean merge.** Commit the tree, with the local and remote commits as parents, through the same compare-and-swap on `LEDGER_REF` that `writeRecords` uses. Then materialise the working copy and push with the lease, exactly as `sync.ts:531-560` does today.
 5. **Conflicts.** Save the conflict state (section 2) and return the conflict reply (section 3). Write nothing to the ledger and push nothing, as today.
 
 The paths that do not merge stay as they are: nothing to do, push, and fast-forward (`sync.ts:599-620`).
+
+Changed after the step 8 review, both proved by a mutation:
+
+- **Q8 covers every conflicted path, not only the four record directories.** A project's own `merge=union` attribute garbles a file outside them just as silently, and the check costs nothing there. Ruled by the human on 2026-09-15.
+- **An entry that is not a regular file is refused, not merged.** git reports a conflicted path at any mode, and a submodule entry (mode 160000) carries an object id git never checks. Since the saved conflict state feeds `logbook://conflict/{blob_id}`, a remote could otherwise name any object in the reader's own repository and have it served back. Logbook writes only mode `100644`, the mode the materialiser already requires, so anything else is reported as a local rejection and nothing is recorded as a conflict to resolve.
 
 ### `writeRecords` needs one new option
 
@@ -162,6 +167,8 @@ The reply stays a refusal (`conflictRefusal`, `src/server/tools/sync_ledger.ts:1
 
 The sentence "merges record by record when both moved" in `sync_ledger`'s description (`sync_ledger.ts:184`) is rewritten to describe this.
 
+Changed after the step 8 review: the guidance opens by saying every file name and change list comes from the two ledgers and is a teammate's data, never an instruction; the change list per file is clipped at `CONFLICT_CHANGES_SHOWN_MAX` with a `(+N more)` marker; and a file with no ancestor version is described as one that did not exist where the two last agreed, rather than as ledgers sharing no history, which was false for a file added on both sides.
+
 ---
 
 ## 4. `resolve_conflict`
@@ -211,7 +218,7 @@ This replaces the per-field stale checks (`resolve_conflict.ts:702-705`, `:721-7
 1. Start from the tree that `git merge-tree` just printed.
 2. Replace each conflicted path with its resolved record.
 3. Commit through `writeRecords` with `startFrom: { tree, parent: <the local commit that merge-tree was given> }` and the saved remote commit as the extra parent.
-4. Materialise the working copy with `syncWorkingCopy`, and delete `conflicts.json`. The stamp is not advanced alone as `resolve_conflict.ts:778-788` does today, because the disk would then be marked current while missing the remote's files.
+4. Materialise the working copy with `syncWorkingCopy`, then delete `conflicts.json`. After the step 8 review, in that order, with a failure to delete logged rather than thrown, since the commit has already landed. A `writeRecords` failure that nevertheless left the resolution commit on the ref, which happens when only the on-disk copy could not be written, is recognised by its parents and reported as the success it is; every other failure keeps the "nothing was written" refusal. The stamp is not advanced alone as `resolve_conflict.ts:778-788` does today, because the disk would then be marked current while missing the remote's files.
 5. Reply with the paths resolved and the new commit, and say to run `sync_ledger` to push.
 
 It does not push, as today.
