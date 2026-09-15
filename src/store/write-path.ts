@@ -55,6 +55,9 @@ export const relativePathFor = (change: RecordChange): string => {
 
 const contentFor = (change: RecordChange): string => (change.kind === 'raw' ? change.content : JSON.stringify(change.record))
 
+const commitMessageInput = (message: string): string =>
+  message.length === 0 || message.endsWith('\n') ? message : `${message}\n`
+
 const freshIndexPath = (scratchDir: string): string => path.join(scratchDir, `logbook-write-index-${randomUUID()}`)
 
 const removeSharedIndex = (indexFile: string): void => {
@@ -188,11 +191,11 @@ export const writeRecords = (
     const tree = treeResult.tree
 
     const parentRefs: string[] = [...(oldRef !== null ? [oldRef] : []), ...(ops.extraParents ?? [])]
-    const commitArgs: string[] =
-      parentRefs.length === 0
-        ? ['commit-tree', tree, '-m', message]
-        : ['commit-tree', tree, ...parentRefs.flatMap((parent) => ['-p', parent]), '-m', message]
-    const commitResult: GitResult = runGit(rt, layout.projectRoot, commitArgs, { identity: identity.value })
+    const commitArgs: string[] = ['commit-tree', tree, ...parentRefs.flatMap((parent) => ['-p', parent])]
+    const commitResult: GitResult = runGit(rt, layout.projectRoot, commitArgs, {
+      identity: identity.value,
+      stdin: commitMessageInput(message)
+    })
     if (!commitResult.ok) {
       return { ok: false, reason: 'io', detail: `commit-tree: ${commitResult.stderr}` }
     }
