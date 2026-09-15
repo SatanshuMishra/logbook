@@ -427,3 +427,51 @@ test('resource-render.thread.renders-an-empty-landed-line-when-nothing-has-lande
     `expected the Landed line to render unguarded, with its trailing space, when nothing has landed, got ${JSON.stringify(rendered)}`
   )
 })
+
+const ANCHOR_CRITERION_ID = '01ARZ3NDEKTSV4RRFFQ69G5FC1'
+
+test('resource-render.thread.each-open-risk-names-the-criterion-or-the-whole-thread-it-bears-on', () => {
+  const anchored: Risk = { ...RISK_BASE, id: '01ARZ3NDEKTSV4RRFFQ69G5FE1', text: 'the anchored risk', criterion_id: ANCHOR_CRITERION_ID }
+  const wholeThread: Risk = { ...RISK_BASE, id: '01ARZ3NDEKTSV4RRFFQ69G5FE2', text: 'the whole-thread risk', criterion_id: null }
+  const recordedBeforeAnchors: Risk = { ...RISK_BASE, id: '01ARZ3NDEKTSV4RRFFQ69G5FE3', text: 'the risk recorded before anchors' }
+  const rendered = renderedDetail({
+    ...THREAD_WITHOUT_BINDINGS,
+    spine: { ...THREAD_WITHOUT_BINDINGS.spine, open_risks: [anchored, wholeThread, recordedBeforeAnchors] }
+  })
+
+  assert.deepEqual(linesBetween(rendered, 'Open risks:', 'Retired risks:'), [
+    `- ${anchored.id} on criterion ${ANCHOR_CRITERION_ID} [${RISK_BASE.scope}] the anchored risk`,
+    `- ${wholeThread.id} on the whole thread [${RISK_BASE.scope}] the whole-thread risk`,
+    `- ${recordedBeforeAnchors.id} on the whole thread [${RISK_BASE.scope}] the risk recorded before anchors`
+  ])
+})
+
+test('resource-render.thread.a-retired-risk-is-listed-apart-from-the-open-risks', () => {
+  const live: Risk = { ...RISK_BASE, id: '01ARZ3NDEKTSV4RRFFQ69G5FE4', text: 'the live risk', criterion_id: null }
+  const retired: Risk = { ...RISK_BASE, id: '01ARZ3NDEKTSV4RRFFQ69G5FE5', text: 'the retired risk', criterion_id: null, retired: true }
+  const rendered = renderedDetail({
+    ...THREAD_WITHOUT_BINDINGS,
+    spine: { ...THREAD_WITHOUT_BINDINGS.spine, open_risks: [retired, live] }
+  })
+
+  assert.deepEqual(linesBetween(rendered, 'Open risks:', 'Retired risks:'), [`- ${live.id} on the whole thread [${RISK_BASE.scope}] the live risk`])
+  assert.deepEqual(linesBetween(rendered, 'Retired risks:', 'Key decisions:'), [
+    `- ${retired.id} on the whole thread [${RISK_BASE.scope}] the retired risk`
+  ])
+})
+
+test('resource-render.thread.shows-the-criterion-the-next-step-advances', () => {
+  const nextStepLineOf = (rendered: string): string | undefined =>
+    rendered.split('\n').find((line) => line.startsWith('Next step criterion:'))
+
+  assert.equal(
+    nextStepLineOf(
+      renderedDetail({
+        ...THREAD_WITHOUT_BINDINGS,
+        spine: { ...THREAD_WITHOUT_BINDINGS.spine, next_step_criterion_id: ANCHOR_CRITERION_ID }
+      })
+    ),
+    `Next step criterion: ${ANCHOR_CRITERION_ID}`
+  )
+  assert.equal(nextStepLineOf(renderedDetail(THREAD_WITHOUT_BINDINGS)), 'Next step criterion: none')
+})
