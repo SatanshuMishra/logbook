@@ -20,7 +20,7 @@ import {
 } from '../store/read-path.ts'
 import { LEDGER_REF, casUpdateRef } from '../store/ref.ts'
 import { checkChangeShape, type Store } from '../store/records.ts'
-import { writeRecords, type RecordChange } from '../store/write-path.ts'
+import { relativePathFor, writeRecords, type RecordChange } from '../store/write-path.ts'
 import { mergeDecision, mergeSession, mergeThread } from './field-merge.ts'
 import type { Conflict } from './conflict.ts'
 
@@ -454,12 +454,16 @@ const performMerge = (
         }
       }
 
+      const { changes: mergedChanges, conflicts } = computeMerge(ours, theirs, base)
+      const pathsTheMergeWrites = new Set(mergedChanges.map(relativePathFor))
+
       const contested = ours.unreadable.flatMap((slot): UnreadableLocalRecord[] => {
         const relPath = path.relative(layout.records, slot.path)
-        const carriedElsewhere =
+        const touched =
+          pathsTheMergeWrites.has(relPath) ||
           existsSync(path.join(theirsScratch, relPath)) ||
           (baseScratch !== null && existsSync(path.join(baseScratch, relPath)))
-        if (!carriedElsewhere) return []
+        if (!touched) return []
         const treePath = relPath.split(path.sep).join('/')
         const oursBlob = readRef(rt, layout.projectRoot, `${localVal}:${treePath}`)
         const baseBlob = baseVal === null ? null : readRef(rt, layout.projectRoot, `${baseVal}:${treePath}`)
@@ -473,13 +477,12 @@ const performMerge = (
             ok: false,
             reason: 'rejected',
             cause: 'unreadable-local-record',
-            detail: contested.map((record) => `${record.relPath} could not be read: ${record.reason}`).join('; '),
+            detail: contested.map((record) => `${record.relPath}: ${record.reason}`).join('; '),
             records: contested
           }
         }
       }
 
-      const { changes: mergedChanges, conflicts } = computeMerge(ours, theirs, base)
       if (conflicts.length > 0) {
         const written = writeConflicts(layout, conflicts)
         if (!written.ok) {

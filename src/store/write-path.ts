@@ -32,7 +32,7 @@ const MAX_ATTEMPTS = 5
 
 export const writeIndexScratchDir = (layout: StoreLayout): string => path.join(layout.root, 'write-index')
 
-const relativePathFor = (change: RecordChange): string => {
+export const relativePathFor = (change: RecordChange): string => {
   switch (change.kind) {
     case 'thread':
       return path.join('threads', `${change.record.id}.json`)
