@@ -74,6 +74,9 @@ const buildGitEnv = (rt: Runtime, indexFile: string, opts: GitOpts): Record<stri
 
 const isBufferOverflow = (error: NodeJS.ErrnoException): boolean => error.code === 'ENOBUFS'
 
+const exitedBeforeReadingStdin = (result: { error?: Error; status: number | null }): boolean =>
+  (result.error as NodeJS.ErrnoException | undefined)?.code === 'EPIPE' && result.status !== null
+
 const bufferOverflowMessage = (args: string[]): string =>
   `git ${args.join(' ')} produced more than GIT_BUFFER_MAX_BYTES (${GIT_BUFFER_MAX_BYTES}) bytes of output; refusing rather than risk mistaking a truncated read for a short ledger`
 
@@ -87,7 +90,7 @@ export const git = (rt: Runtime, repo: string, args: string[], opts: GitOpts = {
       maxBuffer: GIT_BUFFER_MAX_BYTES,
       ...(opts.stdin !== undefined ? { input: opts.stdin } : {})
     })
-    if (result.error) {
+    if (result.error && !exitedBeforeReadingStdin(result)) {
       if (isBufferOverflow(result.error as NodeJS.ErrnoException)) {
         return { ok: false, code: -1, stderr: bufferOverflowMessage(args) }
       }
@@ -112,7 +115,7 @@ export const gitBuffer = (rt: Runtime, repo: string, args: string[], opts: GitBu
       maxBuffer: GIT_BUFFER_MAX_BYTES,
       ...(opts.stdin !== undefined ? { input: opts.stdin } : {})
     })
-    if (result.error) {
+    if (result.error && !exitedBeforeReadingStdin(result)) {
       if (isBufferOverflow(result.error as NodeJS.ErrnoException)) {
         return {
           ok: false,
