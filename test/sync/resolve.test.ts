@@ -410,7 +410,8 @@ test('conflict.resolve-names-the-winner', async () => {
     const resolved = await callTool(ana, 'resolve_conflict', {
       resolutions: [
         { record: `thread:${threadId}`, field: 'spine.active_goal', winner: 'local' },
-        { record: `thread:${threadId}`, field: 'spine.next_step', winner: 'remote' }
+        { record: `thread:${threadId}`, field: 'spine.next_step', winner: 'remote' },
+        { record: `thread:${threadId}`, field: 'spine.next_step_criterion_id', winner: 'remote' }
       ]
     })
     assertOkResult('resolve_conflict', resolved)
@@ -419,7 +420,8 @@ test('conflict.resolve-names-the-winner', async () => {
     }
     assert.deepEqual(structured.resolved, [
       { record: `thread:${threadId}`, field: 'spine.active_goal', winner: 'local' },
-      { record: `thread:${threadId}`, field: 'spine.next_step', winner: 'remote' }
+      { record: `thread:${threadId}`, field: 'spine.next_step', winner: 'remote' },
+      { record: `thread:${threadId}`, field: 'spine.next_step_criterion_id', winner: 'remote' }
     ])
 
     const mergedThread = readThreadOf(ana, threadId)
@@ -513,7 +515,8 @@ test('resolve_conflict.spawn.contract', async () => {
     const result = await callTool(ana, 'resolve_conflict', {
       resolutions: [
         { record: `thread:${threadId}`, field: 'spine.active_goal', winner: 'local' },
-        { record: `thread:${threadId}`, field: 'spine.next_step', winner: 'remote' }
+        { record: `thread:${threadId}`, field: 'spine.next_step', winner: 'remote' },
+        { record: `thread:${threadId}`, field: 'spine.next_step_criterion_id', winner: 'remote' }
       ]
     })
     assertOkResult('resolve_conflict', result)
@@ -642,4 +645,50 @@ test('resolve.a-pair-member-changed-locally-after-the-refused-sync-is-refused-as
     assert.equal(stored.spine.next_step, 'ana later next step')
     assert.equal(Object.hasOwn(stored.spine, 'next_step_criterion_id'), false, 'a refused resolution must not have applied the criterion')
   })
+})
+
+const CRITERION_CHANGED_UNDER_THE_SAME_NEXT_STEP = [
+  { name: 'named-after-the-sync', bothNameIt: false, anaLaterNamesIt: true },
+  { name: 'cleared-after-the-sync', bothNameIt: true, anaLaterNamesIt: false }
+] as const
+
+test('resolve.a-criterion-changed-locally-under-an-unchanged-next-step-is-refused-as-stale', async () => {
+  for (const scenario of CRITERION_CHANGED_UNDER_THE_SAME_NEXT_STEP) {
+    await withTwoSpawnedTeammates(async (ana, ben) => {
+      const threadId = await openAndConvergeThread(ana, ben, `resolve-pair-stale-${scenario.name}`)
+      const record = `thread:${threadId}`
+      const criterionId = readThreadOf(ana, threadId).completion_criteria[0]?.id
+      assert.ok(criterionId !== undefined, 'resolve: the fixture thread minted no criterion')
+      const named = (nextStep: string, namesIt: boolean): Record<string, unknown> => ({
+        thread_id: threadId,
+        next_step: nextStep,
+        ...(namesIt ? { next_step_criterion_id: criterionId } : {})
+      })
+
+      assertOkResult(`update_thread (ben, ${scenario.name})`, await callTool(ben, 'update_thread', named('ben next step', scenario.bothNameIt)))
+      assertOkResult(`sync_ledger (ben pushes, ${scenario.name})`, await callTool(ben, 'sync_ledger', {}))
+      assertOkResult(`update_thread (ana, ${scenario.name})`, await callTool(ana, 'update_thread', named('ana next step', scenario.bothNameIt)))
+      const anaConflictSync = await callTool(ana, 'sync_ledger', {})
+      assert.equal(anaConflictSync.isError, true, `expected the sync to be refused over the next step (${scenario.name})`)
+
+      assertOkResult(
+        `update_thread (ana rewrites the same next step, ${scenario.name})`,
+        await callTool(ana, 'update_thread', named('ana next step', scenario.anaLaterNamesIt))
+      )
+
+      const reportedFields = [
+        ...firstTextOf(anaConflictSync).matchAll(new RegExp(`${record} (spine\\.next_step(?:_criterion_id)?)(?![_a-z])`, 'g'))
+      ].map((match) => match[1] as string)
+      const resolved = await callTool(ana, 'resolve_conflict', {
+        resolutions: [...new Set(reportedFields)].map((field) => ({ record, field, winner: 'remote' }))
+      })
+      const stored = readThreadOf(ana, threadId)
+      assert.equal(
+        resolved.isError,
+        true,
+        `ana changed the criterion under her next step after the sync, so taking ben's next step must be refused as stale (${scenario.name}), but it stored ${JSON.stringify([stored.spine.next_step, stored.spine.next_step_criterion_id ?? null])}`
+      )
+      assert.equal(stored.spine.next_step, 'ana next step')
+    })
+  }
 })

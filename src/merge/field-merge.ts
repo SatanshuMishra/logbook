@@ -149,12 +149,7 @@ const resolveNextStepPair = (
   const [theirsNextStep, theirsAnchor] = nextStepPairOf(theirs)
   return new Map([
     [NEXT_STEP_PATH, pairMemberConflict(recordName, NEXT_STEP_PATH, oursNextStep, theirsNextStep)],
-    [
-      NEXT_STEP_ANCHOR_PATH,
-      oursAnchor === theirsAnchor
-        ? { path: NEXT_STEP_ANCHOR_PATH, value: oursAnchor, conflict: null, dispatchedRule: null }
-        : pairMemberConflict(recordName, NEXT_STEP_ANCHOR_PATH, oursAnchor, theirsAnchor)
-    ]
+    [NEXT_STEP_ANCHOR_PATH, pairMemberConflict(recordName, NEXT_STEP_ANCHOR_PATH, oursAnchor, theirsAnchor)]
   ])
 }
 
