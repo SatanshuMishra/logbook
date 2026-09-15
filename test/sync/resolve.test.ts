@@ -9,6 +9,7 @@ import { openStore } from '../../src/store/records.ts'
 import { layoutFor } from '../../src/store/layout.ts'
 import { writeRecords } from '../../src/store/write-path.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
+import { SESSION_BODY_MAX } from '../../src/schema/caps.ts'
 import type { Thread } from '../../src/schema/thread.ts'
 import { rawGit } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
@@ -706,5 +707,50 @@ test('resolve.escapes-a-composed-record-as-the-writing-tools-would', async () =>
     assert.equal(stored.spine.active_goal, 'U+0023 ana U+003Cgoal>', 'the composed goal must be stored escaped, as update_thread stores it')
     assert.equal(stored.id, threadId)
     assert.equal(stored.slug, bensThread.slug)
+  })
+})
+
+const plantSessionEntry = (teammate: SpawnedTeammate, threadId: string, entryId: string, body: string): void => {
+  const rt = testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: teammate.pluginData } })
+  const layout = layoutFor(rt, teammate.repo)
+  if (!layout.ok) throw new Error(`resolve: layoutFor refused for ${teammate.name} while planting a session entry`)
+  const write = writeRecords(
+    rt,
+    layout.value,
+    [{ kind: 'session', record: { id: entryId, thread_id: threadId, actor: teammate.name, body, created_at: rt.now() } }],
+    `${teammate.name}: plant a session entry for a resolve_conflict fixture`
+  )
+  if (!write.ok) throw new Error(`resolve: writeRecords failed for ${teammate.name} while planting a session entry: ${write.detail}`)
+}
+
+test('resolve.refuses-a-composed-record-that-only-breaks-its-cap-once-escaped', async () => {
+  await withTwoSpawnedTeammates(async (ana, ben) => {
+    const threadId = await openAndConvergeThread(ana, ben, 'resolve-escaped-cap-thread')
+    const entryId = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
+    const entryPath = `sessions/${threadId}/${entryId}.json`
+    plantSessionEntry(ben, threadId, entryId, 'ben wrote this entry')
+    assertOkResult('sync_ledger (ben pushes his entry)', await callTool(ben, 'sync_ledger', {}))
+    plantSessionEntry(ana, threadId, entryId, 'ana wrote this entry')
+    const refusedSync = await callTool(ana, 'sync_ledger', {})
+    assert.equal(refusedSync.isError, true, 'expected the entry both clones wrote to conflict')
+    assert.match(firstTextOf(refusedSync), new RegExp(`sessions/${threadId}/${entryId}\\.json`), firstTextOf(refusedSync))
+
+    const composed = {
+      id: entryId,
+      thread_id: threadId,
+      actor: 'ana',
+      body: String.fromCodePoint(0x3c).repeat(SESSION_BODY_MAX),
+      created_at: '2026-09-15T00:00:00.000Z'
+    }
+    const before = ledgerCommitOf(ana)
+    const refused = await callTool(ana, 'resolve_conflict', { resolutions: [{ path: entryPath, record: composed }] })
+    assert.equal(refused.isError, true, 'a body that fits its cap as sent but not once escaped must be refused')
+    assert.equal(firstTextOf(refused).split('\n')[0], 'field: resolutions.0.record.body', firstTextOf(refused))
+    assert.equal(ledgerCommitOf(ana), before, 'a refused resolution must leave the ledger where it was')
+
+    assertOkResult(
+      'resolve_conflict (a body that still fits once escaped)',
+      await callTool(ana, 'resolve_conflict', { resolutions: [{ path: entryPath, record: { ...composed, body: 'ana and ben wrote this entry' } }] })
+    )
   })
 })
