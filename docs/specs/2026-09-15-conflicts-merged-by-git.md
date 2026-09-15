@@ -115,8 +115,9 @@ The paths that do not merge stay as they are: nothing to do, push, and fast-forw
 
 `buildTree` starts from the tree of the current ledger commit (`src/store/write-path.ts:94-99`). Both the clean merge and `resolve_conflict` need to start from git's merged tree instead. Add a starting-tree option to `writeRecords`, keeping the compare-and-swap against the current ledger commit. The clean merge passes zero changes.
 
-Two consequences follow from how `writeRecords` behaves today:
+The option is `startFrom: { tree, parent }`: the starting tree together with the ledger commit it was computed from. Three consequences follow from how `writeRecords` behaves:
 
+- **A ref that has left the parent is refused before writing.** Sync reads the local commit, then asks git to merge it; `writeRecords` reads the ledger ref again. A write landing between those reads would otherwise become the merge commit's parent while the tree lacks it.
 - **A moved ref is refused, not retried.** Without the option, a moved ref is retried by rebuilding onto the new commit. A starting tree was computed against the old commit, so rebuilding would drop whatever the new commit added. With the option, a moved ref returns `ref-moved` and the caller recomputes: sync already retries its attempt on `ref-moved` (`sync.ts:527`), and `resolve_conflict` refuses as retryable.
 - **The disk copy must be materialised afterwards.** After the commit, `writeRecords` writes only the given records to disk, but the tree also carries the other side's files. Every caller therefore runs `syncWorkingCopy`, which rewrites the working copy whenever its stamp does not match the ledger ref. None may advance the stamp alone.
 
@@ -199,7 +200,7 @@ This replaces the per-field stale checks (`resolve_conflict.ts:702-705`, `:721-7
 
 1. Start from the tree that `git merge-tree` just printed.
 2. Replace each conflicted path with its resolved record.
-3. Commit with the current local commit and the saved remote commit as parents, through the compare-and-swap on `LEDGER_REF`.
+3. Commit through `writeRecords` with `startFrom: { tree, parent: <the local commit that merge-tree was given> }` and the saved remote commit as the extra parent.
 4. Materialise the working copy with `syncWorkingCopy`, and delete `conflicts.json`. The stamp is not advanced alone as `resolve_conflict.ts:778-788` does today, because the disk would then be marked current while missing the remote's files.
 5. Reply with the paths resolved and the new commit, and say to run `sync_ledger` to push.
 
