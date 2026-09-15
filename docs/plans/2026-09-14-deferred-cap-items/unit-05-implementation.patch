@@ -1,0 +1,747 @@
+diff --git a/docs/registers/size-limits.json b/docs/registers/size-limits.json
+index 11533dbc..75a0a1ff 100644
+--- a/docs/registers/size-limits.json
++++ b/docs/registers/size-limits.json
+@@ -181,7 +181,7 @@
+   },
+   {
+     "name": "FORMER_RISK_TEXT_MAX",
+-    "site": "src/render/briefing.ts:20",
++    "site": "src/render/briefing.ts:18",
+     "value": 500,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -190,7 +190,7 @@
+   },
+   {
+     "name": "FORMER_CRITERION_SETTLED_BY_MAX",
+-    "site": "src/render/briefing.ts:21",
++    "site": "src/render/briefing.ts:19",
+     "value": 500,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -199,6 +199,24 @@
+   },
+   {
+     "name": "FORMER_HEADER_FIELD_WRITE_MAX",
++    "site": "src/render/briefing.ts:20",
++    "value": 500,
++    "basis": "unrecorded",
++    "reason": null,
++    "mirrors": null,
++    "mirror_relation": null
++  },
++  {
++    "name": "FORMER_CRITERION_TEXT_MAX",
++    "site": "src/render/briefing.ts:21",
++    "value": 500,
++    "basis": "unrecorded",
++    "reason": null,
++    "mirrors": null,
++    "mirror_relation": null
++  },
++  {
++    "name": "FORMER_CRITERION_CHECK_MAX",
+     "site": "src/render/briefing.ts:22",
+     "value": 500,
+     "basis": "unrecorded",
+@@ -230,7 +248,7 @@
+     "value": 500,
+     "basis": "derived",
+     "reason": "Equals FORMER_RISK_TEXT_MAX, the last value of RISK_TEXT_MAX before it was removed as a write cap that did no work, so a value stored at that length still renders whole.",
+-    "mirrors": "src/render/briefing.ts:20",
++    "mirrors": "src/render/briefing.ts:18",
+     "mirror_relation": "equal"
+   },
+   {
+@@ -239,7 +257,7 @@
+     "value": 200,
+     "basis": "derived",
+     "reason": "Equals RISK_REF_MAX, the write cap for this field, so a value stored at its maximum renders whole.",
+-    "mirrors": "src/schema/caps.ts:14",
++    "mirrors": "src/schema/caps.ts:12",
+     "mirror_relation": "equal"
+   },
+   {
+@@ -248,7 +266,7 @@
+     "value": 200,
+     "basis": "derived",
+     "reason": "Equals KEY_DECISION_TITLE_MAX, the write cap for this field, so a value stored at its maximum renders whole.",
+-    "mirrors": "src/schema/caps.ts:17",
++    "mirrors": "src/schema/caps.ts:15",
+     "mirror_relation": "equal"
+   },
+   {
+@@ -257,7 +275,7 @@
+     "value": 300,
+     "basis": "derived",
+     "reason": "Equals OUT_OF_SCOPE_TEXT_MAX, the write cap for this field, so a value stored at its maximum renders whole.",
+-    "mirrors": "src/schema/caps.ts:21",
++    "mirrors": "src/schema/caps.ts:19",
+     "mirror_relation": "equal"
+   },
+   {
+@@ -265,8 +283,8 @@
+     "site": "src/render/briefing.ts:69",
+     "value": 500,
+     "basis": "derived",
+-    "reason": "Equals CRITERION_TEXT_MAX, the write cap for this field, so a value stored at its maximum renders whole.",
+-    "mirrors": "src/schema/caps.ts:8",
++    "reason": "Equals FORMER_CRITERION_TEXT_MAX, the last value of CRITERION_TEXT_MAX before it was removed as a write cap on 2026-09-14, so a value stored at that length still renders whole.",
++    "mirrors": "src/render/briefing.ts:21",
+     "mirror_relation": "equal"
+   },
+   {
+@@ -274,8 +292,8 @@
+     "site": "src/render/briefing.ts:70",
+     "value": 500,
+     "basis": "derived",
+-    "reason": "Equals CRITERION_CHECK_MAX, the write cap for this field, so a value stored at its maximum renders whole.",
+-    "mirrors": "src/schema/caps.ts:9",
++    "reason": "Equals FORMER_CRITERION_CHECK_MAX, the last value of CRITERION_CHECK_MAX before it was removed as a write cap on 2026-09-14, so a value stored at that length still renders whole.",
++    "mirrors": "src/render/briefing.ts:22",
+     "mirror_relation": "equal"
+   },
+   {
+@@ -293,7 +311,7 @@
+     "value": 500,
+     "basis": "derived",
+     "reason": "Equals FORMER_CRITERION_SETTLED_BY_MAX, the last value of CRITERION_SETTLED_BY_MAX before it was removed as a write cap that did no work, so a value stored at that length still renders whole.",
+-    "mirrors": "src/render/briefing.ts:21",
++    "mirrors": "src/render/briefing.ts:19",
+     "mirror_relation": "equal"
+   },
+   {
+@@ -302,7 +320,7 @@
+     "value": 200,
+     "basis": "chosen",
+     "reason": "The guaranteed minimum for both shapes the session log renders: an older entry's first stored line, and the newest entry's block once it alone is too large to render whole. Chosen, not derived. It equals SESSION_FIRST_LINE_MAX at src/server/resource-render.ts:22, the limit the sessions resource already applies to the same quantity, so the two surfaces guarantee the same amount of a first line; that constant's own reason, 50 entries times 200 graphemes under the 12,000 briefing budget, does NOT carry over, because the briefing has no item cap and 145 entries are reachable. Measured on 2026-09-10 over the 145 entries of thread 01M24FHCMWGH0SHARH12CARCZ1: the escaped first line runs a median of 141 graphemes and 63.4 percent sit at or below 200. 500, the placeholder this replaces, leaves a projected 47,167-character page where 200 leaves 36,650; 80 sits below the median and cuts four headlines in five mid-clause. No value makes that thread fit, so none was chosen to try: the residue there is entry count, which decision B16 forbids addressing with a display-time item cap.",
+-    "mirrors": "src/schema/caps.ts:34",
++    "mirrors": "src/schema/caps.ts:32",
+     "mirror_relation": "at-most"
+   },
+   {
+@@ -311,7 +329,7 @@
+     "value": 200,
+     "basis": "derived",
+     "reason": "Equals ARTIFACT_LABEL_MAX, the write cap for this field, so a value stored at its maximum renders whole.",
+-    "mirrors": "src/schema/caps.ts:23",
++    "mirrors": "src/schema/caps.ts:21",
+     "mirror_relation": "equal"
+   },
+   {
+@@ -320,7 +338,7 @@
+     "value": 500,
+     "basis": "derived",
+     "reason": "Equals ARTIFACT_POINTER_MAX, the write cap for this field, so a value stored at its maximum renders whole.",
+-    "mirrors": "src/schema/caps.ts:24",
++    "mirrors": "src/schema/caps.ts:22",
+     "mirror_relation": "equal"
+   },
+   {
+@@ -329,7 +347,7 @@
+     "value": 500,
+     "basis": "derived",
+     "reason": "Equals FORMER_HEADER_FIELD_WRITE_MAX, 500, the largest write cap the six briefing header fields carried before those caps were removed on 2026-09-14 (decision 01M2EDZAYDQZM9H42WEWKPMC9T). The clip is kept at that value because the briefing render budget is out of scope until the second pass (decision 01M2GKAHSZ2FFS9VE0R9ZV96D3). It is measured after escaping and applies to the title, blocked_by, active_goal, landed and a legacy last_session; the next step renders whole.",
+-    "mirrors": "src/render/briefing.ts:22",
++    "mirrors": "src/render/briefing.ts:20",
+     "mirror_relation": "equal"
+   },
+   {
+@@ -356,7 +374,7 @@
+     "value": 32000,
+     "basis": "derived",
+     "reason": "The largest stored text any briefing field can hold, so no clip the search sets is ever capped below a value the store admits. It is no longer the top of the search itself: the search runs to CLIP_SEARCH_AXIS_UPPER_BOUND, which composes this ceiling with the per-item clip span. The thirteen per-field limits do not bound it, because a floor is a minimum and cannot bound a search from above.",
+-    "mirrors": "src/schema/caps.ts:34",
++    "mirrors": "src/schema/caps.ts:32",
+     "mirror_relation": "equal"
+   },
+   {
+@@ -494,27 +512,9 @@
+     "mirrors": null,
+     "mirror_relation": null
+   },
+-  {
+-    "name": "CRITERION_TEXT_MAX",
+-    "site": "src/schema/caps.ts:8",
+-    "value": 500,
+-    "basis": "unrecorded",
+-    "reason": null,
+-    "mirrors": null,
+-    "mirror_relation": null
+-  },
+-  {
+-    "name": "CRITERION_CHECK_MAX",
+-    "site": "src/schema/caps.ts:9",
+-    "value": 500,
+-    "basis": "unrecorded",
+-    "reason": null,
+-    "mirrors": null,
+-    "mirror_relation": null
+-  },
+   {
+     "name": "RISKS_PER_CALL_MAX_ELEMENTS",
+-    "site": "src/schema/caps.ts:11",
++    "site": "src/schema/caps.ts:9",
+     "value": 40,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -523,7 +523,7 @@
+   },
+   {
+     "name": "RISK_SCOPE_MAX",
+-    "site": "src/schema/caps.ts:12",
++    "site": "src/schema/caps.ts:10",
+     "value": 200,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -532,7 +532,7 @@
+   },
+   {
+     "name": "RISK_REFS_MAX_ELEMENTS",
+-    "site": "src/schema/caps.ts:13",
++    "site": "src/schema/caps.ts:11",
+     "value": 10,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -541,7 +541,7 @@
+   },
+   {
+     "name": "RISK_REF_MAX",
+-    "site": "src/schema/caps.ts:14",
++    "site": "src/schema/caps.ts:12",
+     "value": 200,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -550,7 +550,7 @@
+   },
+   {
+     "name": "KEY_DECISIONS_MAX_ELEMENTS",
+-    "site": "src/schema/caps.ts:16",
++    "site": "src/schema/caps.ts:14",
+     "value": 200,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -559,7 +559,7 @@
+   },
+   {
+     "name": "KEY_DECISION_TITLE_MAX",
+-    "site": "src/schema/caps.ts:17",
++    "site": "src/schema/caps.ts:15",
+     "value": 200,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -568,7 +568,7 @@
+   },
+   {
+     "name": "KEY_DECISION_SCOPE_MAX",
+-    "site": "src/schema/caps.ts:18",
++    "site": "src/schema/caps.ts:16",
+     "value": 200,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -577,7 +577,7 @@
+   },
+   {
+     "name": "OUT_OF_SCOPE_MAX_ELEMENTS",
+-    "site": "src/schema/caps.ts:20",
++    "site": "src/schema/caps.ts:18",
+     "value": 40,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -586,7 +586,7 @@
+   },
+   {
+     "name": "OUT_OF_SCOPE_TEXT_MAX",
+-    "site": "src/schema/caps.ts:21",
++    "site": "src/schema/caps.ts:19",
+     "value": 300,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -595,7 +595,7 @@
+   },
+   {
+     "name": "ARTIFACT_LABEL_MAX",
+-    "site": "src/schema/caps.ts:23",
++    "site": "src/schema/caps.ts:21",
+     "value": 200,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -604,7 +604,7 @@
+   },
+   {
+     "name": "ARTIFACT_POINTER_MAX",
+-    "site": "src/schema/caps.ts:24",
++    "site": "src/schema/caps.ts:22",
+     "value": 500,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -613,7 +613,7 @@
+   },
+   {
+     "name": "ARTIFACTS_PER_CALL_MAX_ELEMENTS",
+-    "site": "src/schema/caps.ts:25",
++    "site": "src/schema/caps.ts:23",
+     "value": 40,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -622,7 +622,7 @@
+   },
+   {
+     "name": "DECISION_TITLE_MAX",
+-    "site": "src/schema/caps.ts:27",
++    "site": "src/schema/caps.ts:25",
+     "value": 200,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -631,7 +631,7 @@
+   },
+   {
+     "name": "DECISION_OPTIONS_MAX_ELEMENTS",
+-    "site": "src/schema/caps.ts:28",
++    "site": "src/schema/caps.ts:26",
+     "value": 20,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -640,7 +640,7 @@
+   },
+   {
+     "name": "DECISION_OPTION_MAX",
+-    "site": "src/schema/caps.ts:29",
++    "site": "src/schema/caps.ts:27",
+     "value": 500,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -649,7 +649,7 @@
+   },
+   {
+     "name": "DECISION_SUPERSEDES_MAX_ELEMENTS",
+-    "site": "src/schema/caps.ts:30",
++    "site": "src/schema/caps.ts:28",
+     "value": 20,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -658,7 +658,7 @@
+   },
+   {
+     "name": "DECISION_COMMIT_MAX",
+-    "site": "src/schema/caps.ts:31",
++    "site": "src/schema/caps.ts:29",
+     "value": 64,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -667,7 +667,7 @@
+   },
+   {
+     "name": "SESSION_ACTOR_MAX",
+-    "site": "src/schema/caps.ts:33",
++    "site": "src/schema/caps.ts:31",
+     "value": 100,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -676,7 +676,7 @@
+   },
+   {
+     "name": "SESSION_BODY_MAX",
+-    "site": "src/schema/caps.ts:34",
++    "site": "src/schema/caps.ts:32",
+     "value": 32000,
+     "basis": "chosen",
+     "reason": "Ruled by the human operator on 2026-09-09 (decision 01M24GFGJZEQE7JT4VJCRDBQS3). Across twenty-five entries, bodies ran a median of 2669 characters, largest 7814, against a cap of 8000; the largest is 98 percent of the ceiling, a sample censored by its own cap, so the observed maximum is a lower bound on demand rather than a measure of it. 32000 is four times the largest entry anyone has written.",
+@@ -685,7 +685,7 @@
+   },
+   {
+     "name": "UNRECOGNIZED_KEYS_SHOWN_MAX",
+-    "site": "src/schema/caps.ts:36",
++    "site": "src/schema/caps.ts:34",
+     "value": 5,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -694,7 +694,7 @@
+   },
+   {
+     "name": "UNRECOGNIZED_KEY_NAME_MAX",
+-    "site": "src/schema/caps.ts:37",
++    "site": "src/schema/caps.ts:35",
+     "value": 100,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -703,7 +703,7 @@
+   },
+   {
+     "name": "UNPARSEABLE_RECORDS_SHOWN_MAX",
+-    "site": "src/schema/caps.ts:39",
++    "site": "src/schema/caps.ts:37",
+     "value": 5,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -712,7 +712,7 @@
+   },
+   {
+     "name": "UNPARSEABLE_RECORD_NAME_MAX",
+-    "site": "src/schema/caps.ts:40",
++    "site": "src/schema/caps.ts:38",
+     "value": 100,
+     "basis": "unrecorded",
+     "reason": null,
+@@ -820,7 +820,7 @@
+   },
+   {
+     "name": "SESSION_UNPARKED_ENTRIES_MAX",
+-    "site": "src/schema/caps.ts:42",
++    "site": "src/schema/caps.ts:40",
+     "value": 25,
+     "basis": "chosen",
+     "reason": "Ruled by the human operator on 2026-09-11 (decision 01M27EQRZQF4R46NWA44Y10ZY0); across the twenty-four historical un-parked runs this store has carried, the largest legitimate run is 24 and the pathological one is 154; 25 refuses exactly that one run, at its 26th append, and leaves the other twenty-three alone; the margin is therefore zero, which is the known cost of the ruling; the bound is a pathology bound, not a page bound, and makes no claim to keep a briefing inside any size.",
+diff --git a/src/domain/criteria.ts b/src/domain/criteria.ts
+index c546d7dd..ff972fa8 100644
+--- a/src/domain/criteria.ts
++++ b/src/domain/criteria.ts
+@@ -57,15 +57,6 @@ const criterionNotFoundRefusal = (field: string, criterionId: string): Refusal =
+   message: `${field} does not match any criterion on this thread; received ${criterionId}.`
+ })
+ 
+-const textCapRefusal = (field: string, observed: number, limit: number, remedy: string): Refusal => ({
+-  ok: false,
+-  field,
+-  accepted: `at most ${limit} characters after escaping`,
+-  example: 'ship the health check before closing this thread',
+-  retryable: true,
+-  message: `${field} exceeds its cap of ${limit} characters after escaping; observed ${observed}; remedy: ${remedy}.`
+-})
+-
+ const capacityRefusal = (field: string, limit: number, observed: number, remedy: string): Refusal => ({
+   ok: false,
+   field,
+@@ -155,24 +146,7 @@ export const insertCriterion = (
+   }
+ 
+   const escapedText = escapeStored(input.text)
+-  if (escapedText.length > caps.CRITERION_TEXT_MAX) {
+-    return textCapRefusal(
+-      'criteria.insert.text',
+-      escapedText.length,
+-      caps.CRITERION_TEXT_MAX,
+-      'shorten the criterion text and retry'
+-    )
+-  }
+-
+   const escapedCheck = input.check === null || input.check === undefined ? undefined : escapeStored(input.check)
+-  if (escapedCheck !== undefined && escapedCheck.length > caps.CRITERION_CHECK_MAX) {
+-    return textCapRefusal(
+-      'criteria.insert.check',
+-      escapedCheck.length,
+-      caps.CRITERION_CHECK_MAX,
+-      'shorten the check and retry'
+-    )
+-  }
+ 
+   const escapedSettledBy =
+     input.settledBy === null || input.settledBy === undefined ? undefined : escapeStored(input.settledBy)
+@@ -222,24 +196,7 @@ export const rewriteCriterion = (
+   }
+ 
+   const escapedText = escapeStored(input.text)
+-  if (escapedText.length > caps.CRITERION_TEXT_MAX) {
+-    return textCapRefusal(
+-      'criteria.rewrite.text',
+-      escapedText.length,
+-      caps.CRITERION_TEXT_MAX,
+-      'shorten the criterion text and retry'
+-    )
+-  }
+-
+   const escapedCheck = input.check === null || input.check === undefined ? undefined : escapeStored(input.check)
+-  if (escapedCheck !== undefined && escapedCheck.length > caps.CRITERION_CHECK_MAX) {
+-    return textCapRefusal(
+-      'criteria.rewrite.check',
+-      escapedCheck.length,
+-      caps.CRITERION_CHECK_MAX,
+-      'shorten the check and retry'
+-    )
+-  }
+ 
+   const next = thread.completion_criteria.map((criterion) =>
+     criterion.id === input.criterionId
+diff --git a/src/render/briefing.ts b/src/render/briefing.ts
+index a6e1639c..fa42d80e 100644
+--- a/src/render/briefing.ts
++++ b/src/render/briefing.ts
+@@ -8,8 +8,6 @@ import { CLIP_MARKER_GRAPHEMES, clipWithMarker, clipWithMarkerFloor } from './cl
+ import {
+   ARTIFACT_LABEL_MAX,
+   ARTIFACT_POINTER_MAX,
+-  CRITERION_CHECK_MAX,
+-  CRITERION_TEXT_MAX,
+   KEY_DECISION_TITLE_MAX,
+   OUT_OF_SCOPE_TEXT_MAX,
+   RISK_REF_MAX,
+@@ -20,6 +18,8 @@ import {
+ const FORMER_RISK_TEXT_MAX = 500
+ const FORMER_CRITERION_SETTLED_BY_MAX = 500
+ const FORMER_HEADER_FIELD_WRITE_MAX = 500
++const FORMER_CRITERION_TEXT_MAX = 500
++const FORMER_CRITERION_CHECK_MAX = 500
+ 
+ export type DecisionIntegrity = {
+   resolved: number
+@@ -66,8 +66,8 @@ export const RISK_TEXT_FLOOR = FORMER_RISK_TEXT_MAX
+ export const RISK_REF_FLOOR = RISK_REF_MAX
+ export const KEY_DECISION_TITLE_FLOOR = KEY_DECISION_TITLE_MAX
+ export const OUT_OF_SCOPE_TEXT_FLOOR = OUT_OF_SCOPE_TEXT_MAX
+-export const CRITERION_TEXT_FLOOR = CRITERION_TEXT_MAX
+-export const CRITERION_CHECK_FLOOR = CRITERION_CHECK_MAX
++export const CRITERION_TEXT_FLOOR = FORMER_CRITERION_TEXT_MAX
++export const CRITERION_CHECK_FLOOR = FORMER_CRITERION_CHECK_MAX
+ export const CRITERION_RESULT_FLOOR = 500
+ export const CRITERION_SETTLED_BY_FLOOR = FORMER_CRITERION_SETTLED_BY_MAX
+ export const SESSION_ENTRY_TEXT_FLOOR = 200
+diff --git a/src/schema/caps.ts b/src/schema/caps.ts
+index dc41f787..4cff48da 100644
+--- a/src/schema/caps.ts
++++ b/src/schema/caps.ts
+@@ -5,8 +5,6 @@ export const BINDING_BRANCH_MAX = 255
+ 
+ export const CRITERIA_MAX_ELEMENTS = 40
+ export const CRITERIA_RETENTION_MAX_ELEMENTS = 200
+-export const CRITERION_TEXT_MAX = 500
+-export const CRITERION_CHECK_MAX = 500
+ 
+ export const RISKS_PER_CALL_MAX_ELEMENTS = 40
+ export const RISK_SCOPE_MAX = 200
+diff --git a/src/schema/thread.ts b/src/schema/thread.ts
+index 6065a8e1..5a3686d9 100644
+--- a/src/schema/thread.ts
++++ b/src/schema/thread.ts
+@@ -67,7 +67,7 @@ const CriterionSchema = structural(
+     ordinal: structural(
+       z.number().int().min(1).describe('the rendered position of this criterion, recomputed on render, never merged')
+     ),
+-    text: content(z.string().max(caps.CRITERION_TEXT_MAX).describe('the criterion text')),
++    text: content(z.string().describe('the criterion text')),
+     done: structural(z.boolean().describe('whether this criterion has been satisfied')),
+     kind: structural(
+       z.enum(['planned', 'detour']).describe('whether this criterion was planned up front or added mid-thread')
+@@ -75,7 +75,6 @@ const CriterionSchema = structural(
+     check: content(
+       z
+         .string()
+-        .max(caps.CRITERION_CHECK_MAX)
+         .nullable()
+         .optional()
+         .describe('the re-runnable check that decides whether this criterion is true, absent when none is recorded')
+diff --git a/src/server/tools/amend_criteria.ts b/src/server/tools/amend_criteria.ts
+index dcdaa938..59afad48 100644
+--- a/src/server/tools/amend_criteria.ts
++++ b/src/server/tools/amend_criteria.ts
+@@ -2,7 +2,6 @@ import { z } from 'zod'
+ import type { ToolSpec } from '../register.ts'
+ import type { Refusal } from '../../schema/declare.ts'
+ import { ULID_PATTERN } from '../../schema/ids.ts'
+-import * as caps from '../../schema/caps.ts'
+ import { insertCriterion, rewriteCriterion, strikeCriterion } from '../../domain/criteria.ts'
+ import { commitThread, decisionResolver, loadThread, openProjectStore } from '../tool-support.ts'
+ 
+@@ -19,7 +18,6 @@ const AmendCriteriaInputSchema = z.strictObject({
+   text: z
+     .string()
+     .min(1)
+-    .max(caps.CRITERION_TEXT_MAX)
+     .optional()
+     .describe('the criterion text for insert or rewrite; required for those two, ignored for strike'),
+   kind: z
+@@ -29,7 +27,6 @@ const AmendCriteriaInputSchema = z.strictObject({
+   check: z
+     .string()
+     .min(1)
+-    .max(caps.CRITERION_CHECK_MAX)
+     .optional()
+     .describe(
+       'the re-runnable check that decides whether a criterion is true; required for insert unless settledness is unsettled; on a rewrite it is optional and writes the criterion\'s check, and omitting it leaves the existing check unchanged; ignored on strike'
+diff --git a/src/server/tools/open_thread.ts b/src/server/tools/open_thread.ts
+index 13af9e21..fefc51c6 100644
+--- a/src/server/tools/open_thread.ts
++++ b/src/server/tools/open_thread.ts
+@@ -14,12 +14,10 @@ const CriterionCreateSchema = z
+     text: z
+       .string()
+       .min(1)
+-      .max(caps.CRITERION_TEXT_MAX)
+       .describe('one completion criterion as plain text; the server mints its id and display ordinal'),
+     check: z
+       .string()
+       .min(1)
+-      .max(caps.CRITERION_CHECK_MAX)
+       .optional()
+       .describe('the re-runnable check that decides whether this criterion is true, for example npm test exits 0; required unless settledness is unsettled'),
+     settledness: z
+@@ -121,24 +119,6 @@ export const duplicateSlugRefusal = (slug: string): Refusal => ({
+   message: `slug "${slug}" is already used by another thread in this project.`
+ })
+ 
+-const criterionTextCapRefusal = (index: number, observed: number): Refusal => ({
+-  ok: false,
+-  field: 'completion_criteria',
+-  accepted: `at most ${caps.CRITERION_TEXT_MAX} characters after escaping, per criterion`,
+-  example: 'ship the health check before closing this thread',
+-  retryable: true,
+-  message: `completion_criteria[${index}] exceeds its cap of ${caps.CRITERION_TEXT_MAX} characters after escaping; observed ${observed}; remedy: shorten the criterion text and retry.`
+-})
+-
+-const criterionCheckCapRefusal = (index: number, observed: number): Refusal => ({
+-  ok: false,
+-  field: 'completion_criteria',
+-  accepted: `at most ${caps.CRITERION_CHECK_MAX} characters after escaping, per check`,
+-  example: 'npm test exits 0',
+-  retryable: true,
+-  message: `completion_criteria[${index}].check exceeds its cap of ${caps.CRITERION_CHECK_MAX} characters after escaping; observed ${observed}; remedy: shorten the check and retry.`
+-})
+-
+ const checkOwedRefusal = (index: number, settledness: string): Refusal => ({
+   ok: false,
+   field: 'completion_criteria',
+@@ -196,24 +176,6 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
+       settledness: entry.settledness,
+       settled_by: entry.settled_by === undefined ? undefined : escapeStored(entry.settled_by)
+     }))
+-    const oversizedTextIndex = escapedCriteria.findIndex((entry) => entry.text.length > caps.CRITERION_TEXT_MAX)
+-    if (oversizedTextIndex !== -1) {
+-      const oversized = escapedCriteria[oversizedTextIndex]
+-      return {
+-        ok: false,
+-        refusal: criterionTextCapRefusal(oversizedTextIndex, oversized === undefined ? 0 : oversized.text.length)
+-      }
+-    }
+-    const oversizedCheckIndex = escapedCriteria.findIndex(
+-      (entry) => entry.check !== undefined && entry.check.length > caps.CRITERION_CHECK_MAX
+-    )
+-    if (oversizedCheckIndex !== -1) {
+-      const oversized = escapedCriteria[oversizedCheckIndex]
+-      return {
+-        ok: false,
+-        refusal: criterionCheckCapRefusal(oversizedCheckIndex, oversized === undefined ? 0 : (oversized.check?.length ?? 0))
+-      }
+-    }
+     const checkOwedIndex = escapedCriteria.findIndex((entry) => entry.settledness !== 'unsettled' && entry.check === undefined)
+     if (checkOwedIndex !== -1) {
+       const entry = escapedCriteria[checkOwedIndex]
+diff --git a/test/spawn/lifecycle.test.ts b/test/spawn/lifecycle.test.ts
+index 82699555..076399c2 100644
+--- a/test/spawn/lifecycle.test.ts
++++ b/test/spawn/lifecycle.test.ts
+@@ -375,7 +375,7 @@ test('amend_criteria.spawn.contract', async () => {
+ 
+ test('amend_criteria.rejects-invalid', async () => {
+   await withFixture(async (fx) => {
+-    await runRejectsInvalid(fx, 'amend_criteria', ['minItems'])
++    await runRejectsInvalid(fx, 'amend_criteria', ['maxLength', 'minItems'])
+   })
+ })
+ 
+diff --git a/test/unit/briefing-floors.test.ts b/test/unit/briefing-floors.test.ts
+index fca11a5e..3d0e7188 100644
+--- a/test/unit/briefing-floors.test.ts
++++ b/test/unit/briefing-floors.test.ts
+@@ -29,8 +29,6 @@ import {
+   RISK_REF_MAX,
+   KEY_DECISION_TITLE_MAX,
+   OUT_OF_SCOPE_TEXT_MAX,
+-  CRITERION_TEXT_MAX,
+-  CRITERION_CHECK_MAX,
+   SESSION_BODY_MAX,
+   ARTIFACT_LABEL_MAX,
+   ARTIFACT_POINTER_MAX
+@@ -39,6 +37,8 @@ import { testRuntime } from '../support/runtime.ts'
+ 
+ const FORMER_THREAD_TITLE_MAX = 200
+ const FORMER_RISK_TEXT_MAX = 500
++const FORMER_CRITERION_TEXT_MAX = 500
++const FORMER_CRITERION_CHECK_MAX = 500
+ const FORMER_CRITERION_RESULT_MAX = 1000
+ const FORMER_CRITERION_SETTLED_BY_MAX = 500
+ 
+@@ -144,8 +144,8 @@ const buildFloorFixture = (rawTextFor: FloorRawText, sessionBodies: readonly str
+   const keyDecisionText = rawTextFor(KEY_DECISION_TITLE_FLOOR, KEY_DECISION_TITLE_MAX)
+   const settledKeyDecisionText = rawTextFor(KEY_DECISION_TITLE_FLOOR, KEY_DECISION_TITLE_MAX)
+   const outOfScopeText = rawTextFor(OUT_OF_SCOPE_TEXT_FLOOR, OUT_OF_SCOPE_TEXT_MAX)
+-  const criterionText = rawTextFor(CRITERION_TEXT_FLOOR, CRITERION_TEXT_MAX)
+-  const criterionCheckText = rawTextFor(CRITERION_CHECK_FLOOR, CRITERION_CHECK_MAX)
++  const criterionText = rawTextFor(CRITERION_TEXT_FLOOR, FORMER_CRITERION_TEXT_MAX)
++  const criterionCheckText = rawTextFor(CRITERION_CHECK_FLOOR, FORMER_CRITERION_CHECK_MAX)
+   const criterionResultText = rawTextFor(CRITERION_RESULT_FLOOR, FORMER_CRITERION_RESULT_MAX)
+   const criterionSettledByText = rawTextFor(CRITERION_SETTLED_BY_FLOOR, FORMER_CRITERION_SETTLED_BY_MAX)
+   const artifactLabelText = rawTextFor(ARTIFACT_LABEL_FLOOR, ARTIFACT_LABEL_MAX)
+@@ -690,8 +690,8 @@ test('briefing.every-floor-is-at-most-the-write-cap-it-governs', () => {
+     { name: 'risk reference floor vs risk reference cap', floor: RISK_REF_FLOOR, cap: RISK_REF_MAX },
+     { name: 'key decision title floor vs key decision title cap', floor: KEY_DECISION_TITLE_FLOOR, cap: KEY_DECISION_TITLE_MAX },
+     { name: 'out of scope text floor vs out of scope text cap', floor: OUT_OF_SCOPE_TEXT_FLOOR, cap: OUT_OF_SCOPE_TEXT_MAX },
+-    { name: 'criterion text floor vs criterion text cap', floor: CRITERION_TEXT_FLOOR, cap: CRITERION_TEXT_MAX },
+-    { name: 'criterion check floor vs criterion check cap', floor: CRITERION_CHECK_FLOOR, cap: CRITERION_CHECK_MAX },
++    { name: 'criterion text floor vs former criterion text cap', floor: CRITERION_TEXT_FLOOR, cap: FORMER_CRITERION_TEXT_MAX },
++    { name: 'criterion check floor vs former criterion check cap', floor: CRITERION_CHECK_FLOOR, cap: FORMER_CRITERION_CHECK_MAX },
+     { name: 'criterion result floor vs criterion result cap', floor: CRITERION_RESULT_FLOOR, cap: FORMER_CRITERION_RESULT_MAX },
+     { name: 'criterion settled by floor vs criterion settled by cap', floor: CRITERION_SETTLED_BY_FLOOR, cap: FORMER_CRITERION_SETTLED_BY_MAX },
+     { name: 'session entry text floor vs session body cap', floor: SESSION_ENTRY_TEXT_FLOOR, cap: SESSION_BODY_MAX },
+diff --git a/test/unit/briefing-frontier-sweep.test.ts b/test/unit/briefing-frontier-sweep.test.ts
+index bc5ef871..8a749930 100644
+--- a/test/unit/briefing-frontier-sweep.test.ts
++++ b/test/unit/briefing-frontier-sweep.test.ts
+@@ -49,6 +49,7 @@ const CRITERIA_COUNTS = [0, 1, 5, 10, 20, caps.CRITERIA_MAX_ELEMENTS, 120, caps.
+ const KEY_DECISION_COUNTS = [0, 5, 10, caps.KEY_DECISIONS_MAX_ELEMENTS]
+ const BULK_COUNT_DIMENSION_CANDIDATES = [0, 1, 5]
+ const SWEEP_RECORD_BYTES_CEILING = 65536
++const SWEEP_CRITERION_TEXT_MAX = 500
+ 
+ const GRAPHEME_DENSITY_PROBE_LENGTH = 4
+ 
+@@ -457,7 +458,7 @@ const sweep = (): SweptRecord[] => {
+             .sort((left, right) => left - right)
+ 
+           for (const bulkCount of bulkCounts) {
+-            const recordCeiling = largestSatisfying(caps.CRITERION_TEXT_MAX, (candidate) =>
++            const recordCeiling = largestSatisfying(SWEEP_CRITERION_TEXT_MAX, (candidate) =>
+               withinRecordCap(shapeAt(candidate, bulkCount))
+             )
+ 
+@@ -609,7 +610,7 @@ test('briefing.frontier-sweep-finds-no-record-that-loses-an-item-or-hides-a-budg
+     `dimension key-decision count: ${KEY_DECISION_COUNTS.join(', ')} within bounds 0 and ${caps.KEY_DECISIONS_MAX_ELEMENTS}`
+   )
+   t.diagnostic(
+-    `dimension criterion text length: per configuration zero, one, the unclipped-render frontier and both its neighbours, the midpoint beyond it, and the longest text the record byte cap admits; observed span ${Math.min(...sweptTextLengths)} to ${Math.max(...sweptTextLengths)} within bounds 0 and ${caps.CRITERION_TEXT_MAX}`
++    `dimension criterion text length: per configuration zero, one, the unclipped-render frontier and both its neighbours, the midpoint beyond it, and the longest text the record byte cap admits; observed span ${Math.min(...sweptTextLengths)} to ${Math.max(...sweptTextLengths)} within bounds 0 and ${SWEEP_CRITERION_TEXT_MAX}`
+   )
+   t.diagnostic(
+     `dimension bulk count (open risks and out-of-scope elements, held equal): ${BULK_COUNT_DIMENSION_CANDIDATES.join(', ')}, and the largest count the record byte cap admits at that configuration, skipping any listed candidate above that largest count; observed span ${Math.min(...sweptBulkCounts)} to ${Math.max(...sweptBulkCounts)} within bounds 0 and ${caps.RISKS_PER_CALL_MAX_ELEMENTS}`
+@@ -622,7 +623,7 @@ test('briefing.frontier-sweep-finds-no-record-that-loses-an-item-or-hides-a-budg
+ 
+   assert.equal(
+     Math.max(...sweptTextLengths),
+-    caps.CRITERION_TEXT_MAX,
++    SWEEP_CRITERION_TEXT_MAX,
+     'the criterion text dimension must reach the schema text cap somewhere in the grid, or the sweep never tested the longest admissible criterion text'
+   )
+   for (const fill of FILLS) {
+diff --git a/test/unit/briefing-hides-nothing.test.ts b/test/unit/briefing-hides-nothing.test.ts
+index 9b301ba8..03cfe77b 100644
+--- a/test/unit/briefing-hides-nothing.test.ts
++++ b/test/unit/briefing-hides-nothing.test.ts
+@@ -16,6 +16,8 @@ import { REBUILD_ROOT, forEachDescendant, lineOf, loadSourceProgram, relativeToR
+ const rt = testRuntime()
+ 
+ const FORMER_THREAD_TITLE_MAX = 200
++const FORMER_CRITERION_TEXT_MAX = 500
++const FORMER_CRITERION_CHECK_MAX = 500
+ 
+ const EMPTY_INTEGRITY: DecisionIntegrity = { resolved: 0, dangling: [], quarantined: [] }
+ 
+@@ -263,8 +265,8 @@ test('briefing.a-render-that-fits-its-budget-is-clipped-nowhere', () => {
+     completion_criteria: [
+       criterionOf({
+         ordinal: 1,
+-        text: ESCAPE_EXPANDING_CHAR.repeat(caps.CRITERION_TEXT_MAX),
+-        check: ESCAPE_EXPANDING_CHAR.repeat(caps.CRITERION_CHECK_MAX)
++        text: ESCAPE_EXPANDING_CHAR.repeat(FORMER_CRITERION_TEXT_MAX),
++        check: ESCAPE_EXPANDING_CHAR.repeat(FORMER_CRITERION_CHECK_MAX)
+       })
+     ],
+     spine: {

@@ -1,0 +1,39 @@
+diff --git a/test/spawn/update-thread.test.ts b/test/spawn/update-thread.test.ts
+index 671519a8..ff5f34e7 100644
+--- a/test/spawn/update-thread.test.ts
++++ b/test/spawn/update-thread.test.ts
+@@ -9,6 +9,7 @@ import { rawGit } from '../support/git-fixture.ts'
+ import { testRuntime } from '../support/runtime.ts'
+ import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
+ import { openStore } from '../../src/store/records.ts'
++import { escapeStored } from '../../src/render/escape.ts'
+ import type { Thread } from '../../src/schema/thread.ts'
+ 
+ const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
+@@ -513,3 +514,26 @@ test('update_thread.settles-a-criterion-after-amend_criteria-rewrite-gave-it-a-c
+     )
+   })
+ })
++
++test('update_thread.stores-an-artifact-label-and-pointer-escaped', async () => {
++  await withFixture(async (fx) => {
++    const opened = await openCriteriaThread(fx, 'artifact-escape-thread', [PROPOSED_CRITERION])
++    const label = '# Forged heading <b>'
++    const pointer = '- docs/specs/forged.md'
++
++    const result = await callUpdateThread(fx, {
++      thread_id: opened.threadId,
++      artifacts_add: [{ label, pointer }]
++    })
++    assert.equal(
++      result.isError,
++      undefined,
++      `update_thread must accept the artifact, got: ${result.isError === true ? firstTextOf(result) : 'no error'}`
++    )
++
++    const artifact = (readThreadRecord(fx, opened.threadId).artifacts ?? [])[0]
++    assert.notEqual(escapeStored(label), label, 'the fixture label must change when escaped, or this test proves nothing')
++    assert.equal(artifact?.label, escapeStored(label), 'the stored artifact label must be escaped like every other stored string')
++    assert.equal(artifact?.pointer, escapeStored(pointer), 'the stored artifact pointer must be escaped like every other stored string')
++  })
++})

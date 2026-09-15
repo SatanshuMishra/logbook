@@ -1,0 +1,631 @@
+diff --git a/test/contract/criterion-contract.test.ts b/test/contract/criterion-contract.test.ts
+index 868e6e6a..8fe851e7 100644
+--- a/test/contract/criterion-contract.test.ts
++++ b/test/contract/criterion-contract.test.ts
+@@ -161,29 +161,6 @@ test('criterion.open-thread-refuses-a-check-that-overflows-its-cap-once-escaped'
+   })
+ })
+ 
+-test('criterion.open-thread-refuses-an-active-goal-that-overflows-its-cap-once-escaped', async () => {
+-  await withCriterionFixture(async (rt) => {
+-    const refused = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
+-      title: 'a thread whose active goal overflows its cap once escaped',
+-      slug: 'over-cap-active-goal-thread',
+-      active_goal: String.fromCharCode(1).repeat(84),
+-      next_step: 'exercise the criterion under test'
+-    })
+-    assert.equal(refused.ok, false)
+-    if (refused.ok) throw new Error('expected open_thread to refuse an active_goal that overflows its cap once escaped')
+-    assert.equal(refused.refusal.field, 'active_goal')
+-    assert.equal(refused.refusal.accepted, `at most ${caps.SPINE_ACTIVE_GOAL_MAX} characters after escaping`)
+-    assert.equal(refused.refusal.retryable, true)
+-    assert.equal(
+-      refused.refusal.message,
+-      `active_goal exceeds its cap of ${caps.SPINE_ACTIVE_GOAL_MAX} characters after escaping; observed 504; remedy: shorten the value and retry.`
+-    )
+-    const opened = openStore(rt, rt.cwd)
+-    if (!opened.ok) throw new Error('criterion fixture: the store did not open')
+-    assert.equal(opened.value.readThreads().length, 0)
+-  })
+-})
+-
+ test('criterion.criteria-done-refuses-the-bare-criterion-id-array', () => {
+   const declared = declare<unknown>(updateThreadTool.name, updateThreadTool.input)
+   const refusal = declared.parse({
+diff --git a/test/spawn/blocked-by-writer.test.ts b/test/spawn/blocked-by-writer.test.ts
+index 6ced46c6..a53bfe57 100644
+--- a/test/spawn/blocked-by-writer.test.ts
++++ b/test/spawn/blocked-by-writer.test.ts
+@@ -8,7 +8,6 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+ import { rawGit } from '../support/git-fixture.ts'
+ import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
+ import { escapeStored } from '../../src/render/escape.ts'
+-import * as caps from '../../src/schema/caps.ts'
+ 
+ const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
+ const ENTRY = join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
+@@ -101,18 +100,6 @@ const rosterRowFor = async (fx: Fixture, threadId: string): Promise<Record<strin
+   return row
+ }
+ 
+-const refusalTextOf = (result: CallToolResult): string =>
+-  (result.content ?? [])
+-    .map((block) => (isRecord(block) && block.type === 'text' && typeof block.text === 'string' ? block.text : ''))
+-    .join('\n')
+-
+-const fieldNameOf = (text: string): string | null => {
+-  const match = /^field: (.+)$/m.exec(text)
+-  if (match === null) return null
+-  const captured = match[1]
+-  return captured === undefined ? null : captured
+-}
+-
+ test('blocked-by.update-thread-sets-what-a-thread-is-blocked-on', async () => {
+   await withFixture(async (fx) => {
+     const threadId = await openThread(fx, 'blocked-by-set')
+@@ -211,28 +198,3 @@ test('blocked-by.list-threads-structured-content-carries-the-escaped-form-not-ra
+     )
+   })
+ })
+-
+-test('blocked-by.a-value-that-only-exceeds-the-cap-after-escaping-is-refused', async () => {
+-  await withFixture(async (fx) => {
+-    const threadId = await openThread(fx, 'blocked-by-post-escape-cap')
+-    const RAW_BLOCKED_BY = '\n'.repeat(100)
+-    assert.ok(RAW_BLOCKED_BY.length <= caps.THREAD_BLOCKED_BY_MAX, 'the fixture value must pass the raw cap unmodified')
+-    const escapedLength = escapeStored(RAW_BLOCKED_BY).length
+-    assert.ok(escapedLength > caps.THREAD_BLOCKED_BY_MAX, 'the fixture value must exceed the cap only after escaping')
+-
+-    const result = (await fx.spawned.client.callTool({
+-      name: 'update_thread',
+-      arguments: { thread_id: threadId, blocked_by: RAW_BLOCKED_BY }
+-    })) as CallToolResult
+-
+-    assert.equal(result.isError, true, 'a blocked_by whose escaped form exceeds the cap must be refused')
+-    const text = refusalTextOf(result)
+-    const field = fieldNameOf(text)
+-    assert.equal(field, 'blocked_by', `the refusal must name field blocked_by, not thread or anything else: ${text}`)
+-    assert.ok(text.includes(String(caps.THREAD_BLOCKED_BY_MAX)), `the refusal must name the cap ${caps.THREAD_BLOCKED_BY_MAX}: ${text}`)
+-    assert.ok(text.includes(String(escapedLength)), `the refusal must name the observed post-escape length ${escapedLength}: ${text}`)
+-
+-    const after = await rosterRowFor(fx, threadId)
+-    assert.equal(after.blocked_by, null, 'a refused call must not have written anything')
+-  })
+-})
+diff --git a/test/spawn/caps-relaxed.test.ts b/test/spawn/caps-relaxed.test.ts
+index 514ddb8f..6e69a5c2 100644
+--- a/test/spawn/caps-relaxed.test.ts
++++ b/test/spawn/caps-relaxed.test.ts
+@@ -25,6 +25,8 @@ const FORMER_DECISION_OUTCOME_MAX = 4000
+ const FORMER_SESSION_BODY_MAX = 8000
+ const FORMER_THREAD_RECORD_SERIALISED_MAX_BYTES = 65536
+ const FORMER_DECISION_RECORD_SERIALISED_MAX_BYTES = 65536
++const FORMER_THREAD_TITLE_MAX = 200
++const FORMER_HEADER_TEXT_MAX = 500
+ 
+ type Fixture = { spawned: SpawnedServer; repo: string; pluginData: string; homeDir: string }
+ 
+@@ -433,6 +435,94 @@ test('caps-relaxed.a-decision-record-past-the-former-decision-record-byte-cap-is
+   })
+ })
+ 
++test('caps-relaxed.open-thread-header-fields-past-their-former-caps-are-accepted-verbatim', async () => {
++  await withFixture(async (fx) => {
++    const TITLE_PAYLOAD = buildVerbatimPayload(FORMER_THREAD_TITLE_MAX + 50, 'This is the long thread title payload.')
++    const ACTIVE_GOAL_PAYLOAD = buildVerbatimPayload(FORMER_HEADER_TEXT_MAX + 100, 'This is the long active goal payload.')
++    const NEXT_STEP_PAYLOAD = buildVerbatimPayload(FORMER_HEADER_TEXT_MAX + 100, 'This is the long next step payload.')
++
++    const opened = await callOpenThread(fx, {
++      title: TITLE_PAYLOAD,
++      slug: 'header-fields-past-former-caps',
++      active_goal: ACTIVE_GOAL_PAYLOAD,
++      next_step: NEXT_STEP_PAYLOAD
++    })
++    assert.equal(
++      opened.isError,
++      undefined,
++      `open_thread must accept header fields past their former caps, got: ${opened.isError === true ? firstTextOf(opened) : 'no error'}`
++    )
++    const threadId = (opened.structuredContent as { thread_id: string }).thread_id
++
++    const stored = readThreadRecord(fx, threadId)
++    assert.equal(stored.title, TITLE_PAYLOAD, 'the stored title must equal the sent payload exactly')
++    assert.equal(stored.spine.active_goal, ACTIVE_GOAL_PAYLOAD, 'the stored active goal must equal the sent payload exactly')
++    assert.equal(stored.spine.next_step, NEXT_STEP_PAYLOAD, 'the stored next step must equal the sent payload exactly')
++  })
++})
++
++test('caps-relaxed.update-thread-header-fields-past-their-former-caps-are-accepted-verbatim', async () => {
++  await withFixture(async (fx) => {
++    const ACTIVE_GOAL_PAYLOAD = buildVerbatimPayload(FORMER_HEADER_TEXT_MAX + 100, 'This is the long active goal payload.')
++    const NEXT_STEP_PAYLOAD = buildVerbatimPayload(FORMER_HEADER_TEXT_MAX + 100, 'This is the long next step payload.')
++    const LAST_SESSION_PAYLOAD = buildVerbatimPayload(FORMER_HEADER_TEXT_MAX + 100, 'This is the long last session payload.')
++    const BLOCKED_BY_PAYLOAD = buildVerbatimPayload(FORMER_HEADER_TEXT_MAX + 100, 'This is the long blocked by payload.')
++
++    const { threadId } = await openMinimalThread(fx, 'update-header-fields-past-former-caps')
++
++    const updated = await callUpdateThread(fx, {
++      thread_id: threadId,
++      active_goal: ACTIVE_GOAL_PAYLOAD,
++      next_step: NEXT_STEP_PAYLOAD,
++      last_session: LAST_SESSION_PAYLOAD,
++      blocked_by: BLOCKED_BY_PAYLOAD
++    })
++    assert.equal(
++      updated.isError,
++      undefined,
++      `update_thread must accept header fields past their former caps, got: ${updated.isError === true ? firstTextOf(updated) : 'no error'}`
++    )
++
++    const stored = readThreadRecord(fx, threadId)
++    assert.equal(stored.spine.active_goal, ACTIVE_GOAL_PAYLOAD, 'the stored active goal must equal the sent payload exactly')
++    assert.equal(stored.spine.next_step, NEXT_STEP_PAYLOAD, 'the stored next step must equal the sent payload exactly')
++    assert.equal(stored.spine.last_session, LAST_SESSION_PAYLOAD, 'the stored last session must equal the sent payload exactly')
++    assert.equal(stored.blocked_by, BLOCKED_BY_PAYLOAD, 'the stored blocked_by must equal the sent payload exactly')
++  })
++})
++
++test('caps-relaxed.park-thread-next-step-and-landed-past-their-former-caps-are-accepted-verbatim', async () => {
++  await withFixture(async (fx) => {
++    const NEXT_STEP_PAYLOAD = buildVerbatimPayload(FORMER_HEADER_TEXT_MAX + 100, 'This is the long parked next step payload.')
++    const LANDED_PAYLOAD = buildVerbatimPayload(FORMER_HEADER_TEXT_MAX + 100, 'This is the long landed payload.')
++
++    const { threadId } = await openMinimalThread(fx, 'park-header-fields-past-former-caps')
++    const resumed = (await fx.spawned.client.callTool({
++      name: 'resume_thread',
++      arguments: { thread_id: threadId }
++    })) as CallToolResult
++    assert.equal(
++      resumed.isError,
++      undefined,
++      `caps-relaxed fixture: resume_thread refused: ${resumed.isError === true ? firstTextOf(resumed) : 'no error'}`
++    )
++
++    const parked = (await fx.spawned.client.callTool({
++      name: 'park_thread',
++      arguments: { thread_id: threadId, next_step: NEXT_STEP_PAYLOAD, landed: LANDED_PAYLOAD }
++    })) as CallToolResult
++    assert.equal(
++      parked.isError,
++      undefined,
++      `park_thread must accept next_step and landed past their former caps, got: ${parked.isError === true ? firstTextOf(parked) : 'no error'}`
++    )
++
++    const stored = readThreadRecord(fx, threadId)
++    assert.equal(stored.spine.next_step, NEXT_STEP_PAYLOAD, 'the stored next step must equal the sent payload exactly')
++    assert.equal(stored.spine.landed, LANDED_PAYLOAD, 'the stored landed value must equal the sent payload exactly')
++  })
++})
++
+ test('caps-relaxed.session-body-at-former-cap-plus-one-is-accepted-verbatim', async () => {
+   await withFixture(async (fx) => {
+     const BODY_PAYLOAD = buildVerbatimPayload(FORMER_SESSION_BODY_MAX + 1, 'This is the session body payload.')
+diff --git a/test/spawn/lifecycle.test.ts b/test/spawn/lifecycle.test.ts
+index 98fa9366..82699555 100644
+--- a/test/spawn/lifecycle.test.ts
++++ b/test/spawn/lifecycle.test.ts
+@@ -447,7 +447,7 @@ test('amend_criteria.refuses-unresolvable-decision', async () => {
+   })
+ })
+ 
+-test('update_thread.cap-refusal-is-whole-call', async () => {
++test('update_thread.a-refused-call-writes-none-of-its-fields', async () => {
+   await withFixture(async (fx) => {
+     const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+ 
+@@ -458,28 +458,20 @@ test('update_thread.cap-refusal-is-whole-call', async () => {
+     })) as CallToolResult
+     assertOkResult('update_thread (seed active_goal)', seeded)
+ 
+-    const zeroWidthCount = 5
+-    const regularCount = caps.SPINE_NEXT_STEP_MAX - 20
+-    const oversizedNextStep = 'n'.repeat(regularCount) + '​'.repeat(zeroWidthCount)
+-    assert.ok(oversizedNextStep.length <= caps.SPINE_NEXT_STEP_MAX, 'the raw next_step must stay within the wire-level cap on its own')
+-    assert.ok(
+-      escapeStored(oversizedNextStep).length > caps.SPINE_NEXT_STEP_MAX,
+-      'escaping the zero-width characters must be what pushes next_step over its cap'
+-    )
+-
+     const secondGoal = 'a second active goal that would also succeed entirely on its own'
+     const combined = (await fx.spawned.client.callTool({
+       name: 'update_thread',
+-      arguments: { thread_id: threadId, active_goal: secondGoal, next_step: oversizedNextStep }
++      arguments: {
++        thread_id: threadId,
++        active_goal: secondGoal,
++        blocked_by: 'waiting on the infra approval',
++        blocked_by_clear: true
++      }
+     })) as CallToolResult
+-    assert.equal(
+-      combined.isError,
+-      true,
+-      'a call mixing a valid field with a field over its post-escape cap must be refused as one unit'
+-    )
++    assert.equal(combined.isError, true, 'a call mixing a valid field with a refused one must be refused as one unit')
+     const text = firstTextOf(combined)
+     const lines = text.split('\n')
+-    assert.equal(lines[0], 'field: next_step')
++    assert.equal(lines[0], 'field: blocked_by')
+     assert.match(text, /^accepted: /m)
+     assert.match(text, /^example: /m)
+     assert.match(text, /^retryable: true/m)
+@@ -653,34 +645,6 @@ test('close_thread.done-thread-is-terminal', async () => {
+   })
+ })
+ 
+-test('open_thread.title-cap-is-checked-after-escaping', async () => {
+-  await withFixture(async (fx) => {
+-    const zeroWidthCount = 5
+-    const regularCount = 195
+-    const oversizedTitle = 'n'.repeat(regularCount) + '​'.repeat(zeroWidthCount)
+-    assert.ok(oversizedTitle.length <= caps.THREAD_TITLE_MAX, 'the raw title must stay within its own cap')
+-    assert.ok(
+-      escapeStored(oversizedTitle).length > caps.THREAD_TITLE_MAX,
+-      'escaping the zero-width characters must be what pushes the title over its cap'
+-    )
+-
+-    const result = (await fx.spawned.client.callTool({
+-      name: 'open_thread',
+-      arguments: {
+-        title: oversizedTitle,
+-        slug: 'title-cap-thread',
+-        active_goal: 'exercise the title-cap fixture',
+-        next_step: 'exercise the title-cap fixture',
+-        completion_criteria: [{ text: 'a criterion', check: 'the title-cap fixture check', settledness: 'proposed' }]
+-      }
+-    })) as CallToolResult
+-
+-    assert.equal(result.isError, true, 'a title within the raw cap but over the escaped cap must be refused')
+-    const text = firstTextOf(result)
+-    assert.equal(text.split('\n')[0], 'field: title')
+-  })
+-})
+-
+ test('bind_branch.escapes-branch-in-reply-and-structured-content', async () => {
+   await withFixture(async (fx) => {
+     const { threadId } = await createFixtureThread(fx.spawned, fx.published)
+diff --git a/test/spawn/update-thread.test.ts b/test/spawn/update-thread.test.ts
+index 71bd43ac..671519a8 100644
+--- a/test/spawn/update-thread.test.ts
++++ b/test/spawn/update-thread.test.ts
+@@ -9,8 +9,6 @@ import { rawGit } from '../support/git-fixture.ts'
+ import { testRuntime } from '../support/runtime.ts'
+ import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
+ import { openStore } from '../../src/store/records.ts'
+-import { escapeStored } from '../../src/render/escape.ts'
+-import * as caps from '../../src/schema/caps.ts'
+ import type { Thread } from '../../src/schema/thread.ts'
+ 
+ const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
+@@ -326,39 +324,6 @@ test('update_thread.refuses-a-quote-on-a-criterion-that-is-not-confirmed', async
+   })
+ })
+ 
+-test('update_thread.refuses-a-blocked-by-that-passes-its-cap-only-before-escaping', async () => {
+-  await withFixture(async (fx) => {
+-    const opened = await openCriteriaThread(fx, 'blocked-by-cap-thread', [PROPOSED_CRITERION])
+-    const blockedBy = '<'.repeat(caps.THREAD_BLOCKED_BY_MAX)
+-    const escapedLength = escapeStored(blockedBy).length
+-    assert.ok(
+-      escapedLength > caps.THREAD_BLOCKED_BY_MAX,
+-      'the cap fixture needs a value that fits before escaping and overflows after it'
+-    )
+-
+-    const result = await callUpdateThread(fx, {
+-      thread_id: opened.threadId,
+-      blocked_by: blockedBy
+-    })
+-
+-    assert.equal(result.isError, true, 'a value that only overflows after escaping is still over its cap')
+-    const text = firstTextOf(result)
+-    assert.ok(
+-      text.includes('blocked_by exceeds its cap'),
+-      `the refusal has to name the field that overflowed, got: ${text}`
+-    )
+-    assert.ok(
+-      text.includes(`observed ${escapedLength}`),
+-      `the refusal has to report the length it observed after escaping, got: ${text}`
+-    )
+-    assert.equal(
+-      readThreadRecord(fx, opened.threadId).blocked_by,
+-      null,
+-      'a refused call must not have written the blocked_by value'
+-    )
+-  })
+-})
+-
+ test('update_thread.accepts-all-three-settledness-values-in-one-call', async () => {
+   await withFixture(async (fx) => {
+     const opened = await openCriteriaThread(fx, 'settlement-every-value-thread', [
+diff --git a/test/support/briefing-over-budget-fixture.ts b/test/support/briefing-over-budget-fixture.ts
+index c6e5a777..1da711fe 100644
+--- a/test/support/briefing-over-budget-fixture.ts
++++ b/test/support/briefing-over-budget-fixture.ts
+@@ -1,6 +1,8 @@
+ import type { Thread } from '../../src/schema/thread.ts'
+ import type { Runtime } from '../../src/runtime/runtime.ts'
+-import * as caps from '../../src/schema/caps.ts'
++
++const FORMER_THREAD_TITLE_MAX = 200
++const FORMER_HEADER_TEXT_MAX = 500
+ 
+ const ESCAPE_EXPANDING_CODE_POINT = 0x01
+ const ESCAPE_EXPANDING_CHAR = String.fromCodePoint(ESCAPE_EXPANDING_CODE_POINT)
+@@ -10,9 +12,9 @@ const escapeExpandingFill = (length: number): string => ESCAPE_EXPANDING_CHAR.re
+ export const overBudgetThread = (rt: Runtime): Thread => ({
+   id: rt.ulid(),
+   slug: 'over-budget-header-fields',
+-  title: escapeExpandingFill(caps.THREAD_TITLE_MAX),
++  title: escapeExpandingFill(FORMER_THREAD_TITLE_MAX),
+   status: 'open',
+-  blocked_by: escapeExpandingFill(caps.THREAD_BLOCKED_BY_MAX),
++  blocked_by: escapeExpandingFill(FORMER_HEADER_TEXT_MAX),
+   completion_criteria: [
+     {
+       id: rt.ulid(),
+@@ -26,10 +28,10 @@ export const overBudgetThread = (rt: Runtime): Thread => ({
+     }
+   ],
+   spine: {
+-    active_goal: escapeExpandingFill(caps.SPINE_ACTIVE_GOAL_MAX),
+-    next_step: escapeExpandingFill(caps.SPINE_NEXT_STEP_MAX),
+-    landed: escapeExpandingFill(caps.SPINE_LANDED_MAX),
+-    last_session: escapeExpandingFill(caps.SPINE_LAST_SESSION_MAX),
++    active_goal: escapeExpandingFill(FORMER_HEADER_TEXT_MAX),
++    next_step: escapeExpandingFill(FORMER_HEADER_TEXT_MAX),
++    landed: escapeExpandingFill(FORMER_HEADER_TEXT_MAX),
++    last_session: escapeExpandingFill(FORMER_HEADER_TEXT_MAX),
+     open_risks: [],
+     key_decisions: [],
+     out_of_scope: []
+diff --git a/test/unit/briefing-header-cap.test.ts b/test/unit/briefing-header-cap.test.ts
+index 17215c89..b5db186f 100644
+--- a/test/unit/briefing-header-cap.test.ts
++++ b/test/unit/briefing-header-cap.test.ts
+@@ -4,14 +4,6 @@ import { renderBriefingWithPasses, type DecisionIntegrity } from '../../src/rend
+ import { CLIP_MARKER } from '../../src/render/clip.ts'
+ import { escapeStored } from '../../src/render/escape.ts'
+ import { ThreadRecord, type Thread } from '../../src/schema/thread.ts'
+-import {
+-  SPINE_ACTIVE_GOAL_MAX,
+-  SPINE_LANDED_MAX,
+-  SPINE_LAST_SESSION_MAX,
+-  SPINE_NEXT_STEP_MAX,
+-  THREAD_BLOCKED_BY_MAX,
+-  THREAD_TITLE_MAX
+-} from '../../src/schema/caps.ts'
+ import { testRuntime } from '../support/runtime.ts'
+ import { overBudgetThread } from '../support/briefing-over-budget-fixture.ts'
+ 
+@@ -36,6 +28,9 @@ const completeRecordLine = (threadId: string): string =>
+ 
+ const HEADER_FIELD_RENDERED_GRAPHEME_MAX = 500
+ 
++const FORMER_THREAD_TITLE_MAX = 200
++const FORMER_HEADER_TEXT_MAX = 500
++
+ const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+ 
+ const graphemeCount = (text: string): number => Array.from(GRAPHEME_SEGMENTER.segment(text)).length
+@@ -53,40 +48,40 @@ const HEADER_FIELD_FILLS: Readonly<Record<HeaderField, string>> = {
+   next_step: 'x'
+ }
+ 
+-const HEADER_FIELD_WRITE_CAPS: Readonly<Record<HeaderField, number>> = {
+-  title: THREAD_TITLE_MAX,
+-  blocked_by: THREAD_BLOCKED_BY_MAX,
+-  active_goal: SPINE_ACTIVE_GOAL_MAX,
+-  last_session: SPINE_LAST_SESSION_MAX,
+-  landed: SPINE_LANDED_MAX,
+-  next_step: SPINE_NEXT_STEP_MAX
++const HEADER_FIELD_FORMER_WRITE_CAPS: Readonly<Record<HeaderField, number>> = {
++  title: FORMER_THREAD_TITLE_MAX,
++  blocked_by: FORMER_HEADER_TEXT_MAX,
++  active_goal: FORMER_HEADER_TEXT_MAX,
++  last_session: FORMER_HEADER_TEXT_MAX,
++  landed: FORMER_HEADER_TEXT_MAX,
++  next_step: FORMER_HEADER_TEXT_MAX
+ }
+ 
+-const storedAtWriteCap = (field: HeaderField): string =>
+-  HEADER_FIELD_FILLS[field].repeat(HEADER_FIELD_WRITE_CAPS[field])
++const storedAtFormerWriteCap = (field: HeaderField): string =>
++  HEADER_FIELD_FILLS[field].repeat(HEADER_FIELD_FORMER_WRITE_CAPS[field])
+ 
+ const assertFillEscapesOneToOne = (field: HeaderField): void => {
+-  const stored = storedAtWriteCap(field)
++  const stored = storedAtFormerWriteCap(field)
+   const escaped = escapeStored(stored)
+   if (escaped !== stored) {
+     throw new Error(
+-      `the ${field} filler must survive the stored-text escape unchanged for this test to compare a rendered value against a stored one; ${HEADER_FIELD_FILLS[field]} escapes to ${escapeStored(HEADER_FIELD_FILLS[field])} and ${HEADER_FIELD_WRITE_CAPS[field]} stored characters became ${escaped.length} rendered ones`
++      `the ${field} filler must survive the stored-text escape unchanged for this test to compare a rendered value against a stored one; ${HEADER_FIELD_FILLS[field]} escapes to ${escapeStored(HEADER_FIELD_FILLS[field])} and ${HEADER_FIELD_FORMER_WRITE_CAPS[field]} stored characters became ${escaped.length} rendered ones`
+     )
+   }
+ }
+ 
+-const headerFieldsAtWriteCaps = (): Thread => ({
++const headerFieldsAtFormerWriteCaps = (): Thread => ({
+   id: rt.ulid(),
+-  slug: 'header-fields-at-their-write-caps',
+-  title: storedAtWriteCap('title'),
++  slug: 'header-fields-at-their-former-write-caps',
++  title: storedAtFormerWriteCap('title'),
+   status: 'open',
+-  blocked_by: storedAtWriteCap('blocked_by'),
++  blocked_by: storedAtFormerWriteCap('blocked_by'),
+   completion_criteria: [],
+   spine: {
+-    active_goal: storedAtWriteCap('active_goal'),
+-    next_step: storedAtWriteCap('next_step'),
+-    landed: storedAtWriteCap('landed'),
+-    last_session: storedAtWriteCap('last_session'),
++    active_goal: storedAtFormerWriteCap('active_goal'),
++    next_step: storedAtFormerWriteCap('next_step'),
++    landed: storedAtFormerWriteCap('landed'),
++    last_session: storedAtFormerWriteCap('last_session'),
+     open_risks: [],
+     key_decisions: [],
+     out_of_scope: []
+@@ -156,18 +151,32 @@ test('briefing.header-fields-of-escape-expanding-text-render-inside-the-budget',
+   )
+ })
+ 
+-test('briefing.every-header-field-of-escape-expanding-text-is-shortened-to-the-header-cap', () => {
++test('briefing.every-header-field-but-the-next-step-of-escape-expanding-text-is-shortened-to-the-header-cap', () => {
+   const render = renderBriefingWithPasses(overBudgetThread(rt), EMPTY_INTEGRITY, null, null)
+   const lines = render.briefing.split('\n')
++  const clippedFields = HEADER_FIELD_NAMES.filter((field) => field !== 'next_step')
+ 
+   assert.deepEqual(
+-    HEADER_FIELD_NAMES.map((field) => {
++    clippedFields.map((field) => {
+       const rendered = readHeaderField(lines, field)
+       return [field, graphemeCount(rendered), rendered.endsWith(CLIP_MARKER)]
+     }),
+-    HEADER_FIELD_NAMES.map((field) => [field, HEADER_FIELD_RENDERED_GRAPHEME_MAX, true]),
+-    `every one of the six header fields must be shortened to ${HEADER_FIELD_RENDERED_GRAPHEME_MAX} graphemes measured after the stored-text escape, and must end with ${CLIP_MARKER} so the reader can see where the value was cut; a row here whose count is larger names a field whose cap no longer fires, and one field left uncapped is enough to push a record of ordinary size past the reply budget while the other five hide it`
++    clippedFields.map((field) => [field, HEADER_FIELD_RENDERED_GRAPHEME_MAX, true]),
++    `every header field except the next step must be shortened to ${HEADER_FIELD_RENDERED_GRAPHEME_MAX} graphemes measured after the stored-text escape, and must end with ${CLIP_MARKER} so the reader can see where the value was cut`
++  )
++})
++
++test('briefing.the-next-step-renders-whole-however-long-it-is', () => {
++  const thread = overBudgetThread(rt)
++  const render = renderBriefingWithPasses(thread, EMPTY_INTEGRITY, null, null)
++  const rendered = readHeaderField(render.briefing.split('\n'), 'next_step')
++
++  assert.equal(
++    rendered,
++    escapeStored(thread.spine.next_step),
++    `the next step must render whole, because it is the one field a resuming session has to read in full; got ${graphemeCount(rendered)} graphemes against an escaped length of ${escapeStored(thread.spine.next_step).length}`
+   )
++  assert.equal(rendered.endsWith(CLIP_MARKER), false, `a whole next step must not end with ${CLIP_MARKER}`)
+ })
+ 
+ test('briefing.a-header-field-the-renderer-shortened-is-disclosed-even-when-the-render-then-fits', () => {
+@@ -196,10 +205,10 @@ test('briefing.a-header-field-the-renderer-shortened-is-disclosed-even-when-the-
+   )
+ })
+ 
+-test('briefing.header-fields-whose-escape-is-the-identity-render-whole-at-their-write-caps', () => {
++test('briefing.header-fields-whose-escape-is-the-identity-render-whole-at-their-former-write-caps', () => {
+   for (const field of HEADER_FIELD_NAMES) assertFillEscapesOneToOne(field)
+ 
+-  const thread = headerFieldsAtWriteCaps()
++  const thread = headerFieldsAtFormerWriteCaps()
+   const admitted = ThreadRecord.parse(thread)
+   if (!admitted.ok) {
+     throw new Error(
+@@ -213,9 +222,9 @@ test('briefing.header-fields-whose-escape-is-the-identity-render-whole-at-their-
+   assert.deepEqual(
+     HEADER_FIELD_NAMES.map((field) => {
+       const rendered = readHeaderField(lines, field)
+-      return [field, rendered.length, rendered === storedAtWriteCap(field)]
++      return [field, rendered.length, rendered === storedAtFormerWriteCap(field)]
+     }),
+-    HEADER_FIELD_NAMES.map((field) => [field, HEADER_FIELD_WRITE_CAPS[field], true]),
++    HEADER_FIELD_NAMES.map((field) => [field, HEADER_FIELD_FORMER_WRITE_CAPS[field], true]),
+     `a header field whose stored value already sits at its write cap and escapes one character to one character must render whole; a short length or a false here names a field the renderer shortened for no reason, and a shortened value ends with ${CLIP_MARKER} while the briefing now under-reports what the record holds`
+   )
+ })
+diff --git a/test/unit/caps.test.ts b/test/unit/caps.test.ts
+index dfb503fb..680caa79 100644
+--- a/test/unit/caps.test.ts
++++ b/test/unit/caps.test.ts
+@@ -17,13 +17,6 @@ const baseSpine = (): Spine => ({
+   out_of_scope: []
+ })
+ 
+-const buildOversizedAfterEscaping = (limit: number): { raw: string; escapedLength: number } => {
+-  const zeroWidthCount = 5
+-  const regularCount = limit - 20
+-  const raw = 'a'.repeat(regularCount) + '​'.repeat(zeroWidthCount)
+-  return { raw, escapedLength: escapeStored(raw).length }
+-}
+-
+ const parseObservedFromMessage = (message: string): number => {
+   const match = message.match(/observed (\d+) /)
+   if (match === null || match[1] === undefined) {
+@@ -37,8 +30,13 @@ test('caps.refuse-whole-call', () => {
+   const stored: Spine = { ...baseSpine(), open_risks: [{ id: rt.ulid(), scope: 'test', text: 'a pinned risk', refs: [], retired: false }] }
+   const beforeSnapshot = JSON.parse(JSON.stringify(stored)) as Spine
+ 
+-  const validActiveGoal = 'a perfectly valid active goal well within its cap'
+-  const oversizedNextStep = 'n'.repeat(caps.SPINE_NEXT_STEP_MAX + 1)
++  const validActiveGoal = 'a perfectly valid active goal'
++  const overflowingDecisions: KeyDecision[] = Array.from({ length: caps.KEY_DECISIONS_MAX_ELEMENTS + 1 }, (_, i) => ({
++    id: rt.ulid(),
++    decision_id: rt.ulid(),
++    title: `decision ${i}`,
++    scope: 'scope'
++  }))
+ 
+   const soloActiveGoalResult = contributeToSpine(stored, { active_goal: validActiveGoal })
+   assert.equal(soloActiveGoalResult.ok, true)
+@@ -49,7 +47,7 @@ test('caps.refuse-whole-call', () => {
+ 
+   const combinedContribution: SpineContribution = {
+     active_goal: validActiveGoal,
+-    next_step: oversizedNextStep
++    key_decisions: overflowingDecisions
+   }
+   const combinedResult = contributeToSpine(stored, combinedContribution)
+ 
+@@ -137,22 +135,6 @@ test('caps.count-is-capped', () => {
+   assert.equal(refuseResult.field, 'key_decisions_add')
+ })
+ 
+-test('caps.after-escaping', () => {
+-  const stored = baseSpine()
+-  const { raw, escapedLength } = buildOversizedAfterEscaping(caps.SPINE_NEXT_STEP_MAX)
+-
+-  assert.ok(raw.length <= caps.SPINE_NEXT_STEP_MAX, 'the raw input must stay within the cap on its own')
+-  assert.ok(escapedLength > caps.SPINE_NEXT_STEP_MAX, 'escaping must be what pushes the value over its cap')
+-
+-  const result = contributeToSpine(stored, { next_step: raw })
+-
+-  assert.equal(result.ok, false)
+-  if (result.ok) {
+-    throw new Error('expected the escaped length, not the raw length, to trigger a refusal')
+-  }
+-  assert.equal(parseObservedFromMessage(result.message), escapedLength)
+-})
+-
+ test('caps.risk-scope-is-capped-and-escaped', () => {
+   const rt = testRuntime()
+   const stored = baseSpine()
+@@ -212,21 +194,26 @@ test('caps.key-decision-scope-is-capped-and-escaped', () => {
+ })
+ 
+ test('caps.refusal-is-complete', () => {
++  const rt = testRuntime()
+   const stored = baseSpine()
+-  const { raw, escapedLength } = buildOversizedAfterEscaping(caps.SPINE_NEXT_STEP_MAX)
+-  assert.notEqual(escapedLength, raw.length)
++  const overflowingDecisions: KeyDecision[] = Array.from({ length: caps.KEY_DECISIONS_MAX_ELEMENTS + 1 }, (_, i) => ({
++    id: rt.ulid(),
++    decision_id: rt.ulid(),
++    title: `decision ${i}`,
++    scope: 'scope'
++  }))
+ 
+-  const result = contributeToSpine(stored, { next_step: raw })
++  const result = contributeToSpine(stored, { key_decisions: overflowingDecisions })
+ 
+   assert.equal(result.ok, false)
+   if (result.ok) {
+     throw new Error('expected a refusal')
+   }
+-  assert.equal(result.field, 'next_step')
++  assert.equal(result.field, 'key_decisions_add')
+   assert.equal(result.retryable, true)
+   assert.ok(result.accepted.length > 0)
+   assert.ok(result.example.length > 0)
+-  assert.match(result.message, new RegExp(`cap of ${caps.SPINE_NEXT_STEP_MAX}`))
+-  assert.equal(parseObservedFromMessage(result.message), escapedLength)
++  assert.match(result.message, new RegExp(`cap of ${caps.KEY_DECISIONS_MAX_ELEMENTS}`))
++  assert.equal(parseObservedFromMessage(result.message), caps.KEY_DECISIONS_MAX_ELEMENTS + 1)
+   assert.match(result.message, /remedy:/)
+ })
