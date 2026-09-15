@@ -2,10 +2,10 @@ import { riskAnchor, type Risk, type Ulid } from '../schema/thread.ts'
 import { unescapeStored } from '../render/escape.ts'
 
 const WHITE_SPACE_RUN = /\p{White_Space}+/gu
-const EDGE_WHITE_SPACE = /^\p{White_Space}+|\p{White_Space}+$/gu
+const EDGE_SPACE = /^ | $/gu
 
 export const normalisedRiskText = (storedText: string): string =>
-  unescapeStored(storedText).replace(EDGE_WHITE_SPACE, '').replace(WHITE_SPACE_RUN, ' ').toLowerCase()
+  unescapeStored(storedText).replace(WHITE_SPACE_RUN, ' ').replace(EDGE_SPACE, '').toLowerCase()
 
 export const riskIdentity = (anchor: Ulid | null, storedText: string): string =>
   JSON.stringify([anchor, normalisedRiskText(storedText)])
