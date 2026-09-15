@@ -1173,3 +1173,28 @@ test('briefing.a-retired-risk-renders-nowhere', () => {
     `a retired risk must not render its id; got ${JSON.stringify(rendered)}`
   )
 })
+
+test('briefing.a-risk-whose-criterion-no-longer-exists-stays-in-view-when-the-next-step-names-a-goal', () => {
+  const focusGoal = criterion({ ordinal: 1, text: 'the queue drains under load' })
+  const otherGoal = criterion({ ordinal: 2, text: 'the cache stays warm' })
+  const thread = baseThread({
+    completion_criteria: [focusGoal, otherGoal],
+    spine: {
+      ...baseThread().spine,
+      next_step: 'drain the queue under load',
+      next_step_criterion_id: focusGoal.id,
+      open_risks: [
+        risk({ text: 'the risk on the goal in focus', criterion_id: focusGoal.id }),
+        risk({ text: 'the risk on the other open goal', criterion_id: otherGoal.id }),
+        risk({ text: 'the risk whose goal is gone', criterion_id: rt.ulid() })
+      ]
+    }
+  })
+
+  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
+
+  assert.ok(rendered.includes('the risk on the goal in focus'), rendered)
+  assert.ok(rendered.includes('the risk whose goal is gone'), `a risk anchored to a criterion the thread no longer holds bears on nothing narrower, so it stays in view:\n${rendered}`)
+  assert.ok(!rendered.includes('the risk on the other open goal'), rendered)
+  assert.ok(rendered.includes('- 1 more risk on other open goals'), rendered)
+})

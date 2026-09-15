@@ -108,6 +108,54 @@ export const resolveScalarField = (
   }
 }
 
+const NEXT_STEP_PATH = 'spine.next_step'
+const NEXT_STEP_ANCHOR_PATH = 'spine.next_step_criterion_id'
+
+type NextStepPair = readonly [Spine['next_step'], Ulid | null]
+
+const nextStepPairOf = (thread: Thread): NextStepPair => [thread.spine.next_step, nextStepAnchor(thread.spine)]
+
+const pairMemberResolution = (
+  recordName: string,
+  path: string,
+  oursValue: unknown,
+  theirsValue: unknown
+): ScalarResolution =>
+  isDeepStrictEqual(oursValue, theirsValue)
+    ? { path, value: oursValue, conflict: null, dispatchedRule: null }
+    : {
+        path,
+        value: oursValue,
+        conflict: conflict(recordName, path, oursValue, theirsValue),
+        dispatchedRule: 'conflict-on-divergence'
+      }
+
+const resolveNextStepPair = (
+  recordName: string,
+  base: Thread | null,
+  ours: Thread,
+  theirs: Thread
+): ReadonlyMap<string, ScalarResolution> => {
+  const pair = resolveScalarField(recordName, base, ours, theirs, {
+    path: NEXT_STEP_PATH,
+    rule: THREAD_RULES[NEXT_STEP_PATH],
+    get: nextStepPairOf
+  })
+  if (pair.conflict === null) {
+    const [nextStep, anchor] = pair.value as NextStepPair
+    return new Map([
+      [NEXT_STEP_PATH, { path: NEXT_STEP_PATH, value: nextStep, conflict: null, dispatchedRule: null }],
+      [NEXT_STEP_ANCHOR_PATH, { path: NEXT_STEP_ANCHOR_PATH, value: anchor, conflict: null, dispatchedRule: null }]
+    ])
+  }
+  const [oursNextStep, oursAnchor] = nextStepPairOf(ours)
+  const [theirsNextStep, theirsAnchor] = nextStepPairOf(theirs)
+  return new Map([
+    [NEXT_STEP_PATH, pairMemberResolution(recordName, NEXT_STEP_PATH, oursNextStep, theirsNextStep)],
+    [NEXT_STEP_ANCHOR_PATH, pairMemberResolution(recordName, NEXT_STEP_ANCHOR_PATH, oursAnchor, theirsAnchor)]
+  ])
+}
+
 const byIdAscending = (a: { id: string }, b: { id: string }): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 
 type IdOwner = { id: string }
@@ -210,8 +258,10 @@ const resolveUpdatedAt = (ours: Thread, theirs: Thread): UpdatedAtResolution => 
 export const mergeThreadTraced = (base: Thread | null, ours: Thread, theirs: Thread): MergeTrace<Thread> => {
   const recordName = `thread:${ours.id}`
 
-  const scalarResolutions = SCALAR_DESCRIPTORS.map((descriptor) =>
-    resolveScalarField(recordName, base, ours, theirs, descriptor)
+  const nextStepPair = resolveNextStepPair(recordName, base, ours, theirs)
+  const scalarResolutions = SCALAR_DESCRIPTORS.map(
+    (descriptor) =>
+      nextStepPair.get(descriptor.path) ?? resolveScalarField(recordName, base, ours, theirs, descriptor)
   )
   const criteriaResolution = unionCriteria(recordName, ours.completion_criteria, theirs.completion_criteria)
   const openRisksResolution = unionByIdWithConflict(

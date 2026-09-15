@@ -698,3 +698,57 @@ test('merge.a-next-step-criterion-set-on-one-side-is-kept-and-none-adds-no-key',
   if (!neither.ok) throw new Error('expected the merge to succeed')
   assert.equal('next_step_criterion_id' in neither.merged.spine, false)
 })
+
+const withNextStep = (nextStep: string, criterionId: string | null): Thread =>
+  baseThread({
+    spine: { ...baseSpine(), next_step: nextStep, ...(criterionId === null ? {} : { next_step_criterion_id: criterionId }) }
+  })
+
+test('merge.next-step-and-its-criterion-merge-as-one-pair', () => {
+  const namedOnOneSideReplacedOnTheOther = mergeThread(
+    withNextStep('drain the queue', null),
+    withNextStep('drain the queue', ULID_B),
+    withNextStep('warm the cache', null)
+  )
+  assert.equal(namedOnOneSideReplacedOnTheOther.ok, false, 'a criterion named for one next step must never merge onto the next step the other side wrote')
+  if (namedOnOneSideReplacedOnTheOther.ok) throw new Error('expected the merge to refuse')
+  assert.deepEqual(
+    namedOnOneSideReplacedOnTheOther.conflicts.map((found) => found.field),
+    ['spine.next_step', 'spine.next_step_criterion_id']
+  )
+
+  const renamedOnOneSideReplacedOnTheOther = mergeThread(
+    withNextStep('drain the queue', ULID_B),
+    withNextStep('drain the queue', ULID_C),
+    withNextStep('warm the cache', ULID_B)
+  )
+  assert.equal(renamedOnOneSideReplacedOnTheOther.ok, false, 'a criterion changed on one side must never merge onto the next step the other side replaced')
+  if (renamedOnOneSideReplacedOnTheOther.ok) throw new Error('expected the merge to refuse')
+  assert.deepEqual(
+    renamedOnOneSideReplacedOnTheOther.conflicts.map((found) => found.field),
+    ['spine.next_step', 'spine.next_step_criterion_id']
+  )
+
+  const sameCriterionDifferentSteps = mergeThread(
+    withNextStep('drain the queue', ULID_B),
+    withNextStep('drain the queue faster', ULID_B),
+    withNextStep('drain the queue sooner', ULID_B)
+  )
+  assert.equal(sameCriterionDifferentSteps.ok, false)
+  if (sameCriterionDifferentSteps.ok) throw new Error('expected the merge to refuse')
+  assert.deepEqual(
+    sameCriterionDifferentSteps.conflicts.map((found) => found.field),
+    ['spine.next_step'],
+    'both sides name the same criterion, so only the next step itself is in dispute'
+  )
+
+  const replacedOnOneSideOnly = mergeThread(
+    withNextStep('drain the queue', ULID_B),
+    withNextStep('drain the queue', ULID_B),
+    withNextStep('warm the cache', null)
+  )
+  assert.equal(replacedOnOneSideOnly.ok, true, 'a pair changed on one side only is taken whole')
+  if (!replacedOnOneSideOnly.ok) throw new Error('expected the merge to succeed')
+  assert.equal(replacedOnOneSideOnly.merged.spine.next_step, 'warm the cache')
+  assert.equal('next_step_criterion_id' in replacedOnOneSideOnly.merged.spine, false)
+})

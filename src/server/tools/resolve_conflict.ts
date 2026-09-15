@@ -155,6 +155,15 @@ export const missingResolutionRefusal = (missing: readonly string[]): Refusal =>
   message: `resolutions is missing a winner for: ${missing.join('; ')}.`
 })
 
+export const splitNextStepPairRefusal = (record: string): Refusal => ({
+  ok: false,
+  field: 'resolutions',
+  accepted: 'the same winner for both spine.next_step and spine.next_step_criterion_id of one record',
+  example: 'name local for both, or remote for both',
+  retryable: true,
+  message: `resolutions names different winners for ${record} spine.next_step and spine.next_step_criterion_id, which would pair a next step with a criterion it was never written with; remedy: name the same winner for both and retry.`
+})
+
 export const threadUnavailableRefusal = (threadId: string): Refusal => ({
   ok: false,
   field: 'resolutions',
@@ -658,6 +667,16 @@ export const resolveConflictTool: ToolSpec<ResolveConflictInput, ResolveConflict
     const missing = reported.filter((c) => !seen.has(keyOf(c.record, c.field)))
     if (missing.length > 0) {
       return { ok: false, refusal: missingResolutionRefusal(missing.map((c) => `${c.record} ${c.field}`)) }
+    }
+
+    const winnerByKey = new Map(input.resolutions.map((r) => [keyOf(r.record, r.field), r.winner] as const))
+    const splitPair = input.resolutions.find((r) => {
+      if (r.field !== 'spine.next_step') return false
+      const anchorWinner = winnerByKey.get(keyOf(r.record, 'spine.next_step_criterion_id'))
+      return anchorWinner !== undefined && anchorWinner !== r.winner
+    })
+    if (splitPair !== undefined) {
+      return { ok: false, refusal: splitNextStepPairRefusal(splitPair.record) }
     }
 
     const threadUpdates = new Map<string, Thread>()

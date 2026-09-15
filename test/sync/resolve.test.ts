@@ -557,3 +557,50 @@ test('resolve_conflict.rejects-invalid', async () => {
     }
   })
 })
+
+test('resolve.a-next-step-and-its-criterion-take-one-winner', async () => {
+  await withTwoSpawnedTeammates(async (ana, ben) => {
+    const threadId = await openAndConvergeThread(ana, ben, 'resolve-next-step-pair-thread')
+    const record = `thread:${threadId}`
+    const criterionId = readThreadOf(ana, threadId).completion_criteria[0]?.id
+    assert.ok(criterionId !== undefined, 'resolve: the fixture thread minted no criterion')
+
+    assertOkResult(
+      'update_thread (ben names the criterion his next step advances)',
+      await callTool(ben, 'update_thread', { thread_id: threadId, next_step: 'ben next step', next_step_criterion_id: criterionId })
+    )
+    assertOkResult('sync_ledger (ben pushes his next step)', await callTool(ben, 'sync_ledger', {}))
+    assertOkResult(
+      'update_thread (ana replaces the next step)',
+      await callTool(ana, 'update_thread', { thread_id: threadId, next_step: 'ana next step' })
+    )
+
+    const anaConflictSync = await callTool(ana, 'sync_ledger', {})
+    assert.equal(anaConflictSync.isError, true, 'expected the sync to be refused over the next step and its criterion')
+    const conflictText = firstTextOf(anaConflictSync)
+    assert.match(conflictText, new RegExp(`${record} spine\\.next_step\\b(?!_)`), conflictText)
+    assert.match(conflictText, new RegExp(`${record} spine\\.next_step_criterion_id`), `the criterion ben named belongs to his next step, so it must be in dispute with it:\n${conflictText}`)
+
+    const split = await callTool(ana, 'resolve_conflict', {
+      resolutions: [
+        { record, field: 'spine.next_step', winner: 'local' },
+        { record, field: 'spine.next_step_criterion_id', winner: 'remote' }
+      ]
+    })
+    assert.equal(split.isError, true, 'a next step from one side with the criterion from the other must be refused')
+    assert.match(firstTextOf(split), /same winner for both/)
+    assert.equal(readThreadOf(ana, threadId).spine.next_step, 'ana next step', 'a refused resolution must not have applied any winner')
+
+    const resolved = await callTool(ana, 'resolve_conflict', {
+      resolutions: [
+        { record, field: 'spine.next_step', winner: 'remote' },
+        { record, field: 'spine.next_step_criterion_id', winner: 'remote' }
+      ]
+    })
+    assertOkResult('resolve_conflict', resolved)
+    const merged = readThreadOf(ana, threadId)
+    assert.equal(merged.spine.next_step, 'ben next step')
+    assert.equal(merged.spine.next_step_criterion_id, criterionId, 'the criterion must arrive with the next step it was written with')
+    assertOkResult('sync_ledger (after resolve_conflict, must push)', await callTool(ana, 'sync_ledger', {}))
+  })
+})
