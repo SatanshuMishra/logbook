@@ -177,6 +177,12 @@ The sentence "merges record by record when both moved" in `sync_ledger`'s descri
 - Every reported path appears exactly once. The existing refusals for a missing, repeated or unreported entry stay, rewritten from fields to paths (`resolve_conflict.ts:131-156`).
 - Files outside the four record directories raise open question Q5.
 
+Found while implementing (step 5):
+
+- **A path is a record when it matches a record address**, `threads/<ulid>.json`, `decisions/<ulid>.json`, `bindings/<ulid>.json` or `sessions/<ulid>/<ulid>.json`. Every other path, including a file inside a record directory that no tool writes, is settled with `content`. Decision `01M2KK8AEJXRDY0XTXV6Z3CMY3`.
+- **The published path pattern is loose**: no leading slash, no NUL, no line break. A tighter pattern would leave a conflict on an unusual file name impossible to settle.
+- `record` is published as an object of any keys and values. The per-directory stored shape is checked in the handler, because a published union of four record schemas cannot say which one applies to which path.
+
 ### What it checks
 
 **The stored shape only.** The record is parsed with the schema for its directory. The id inside it must equal the id in its path, because the path is the record's address, not a judgment on its content. A failure is refused, naming the failing field, and nothing is written.
@@ -184,6 +190,10 @@ The sentence "merges record by record when both moved" in `sync_ledger`'s descri
 **No content rules.** Nothing checks whether a next step matches its criterion, whether a risk is a duplicate, or which side's value was chosen. The PR #258 rule that a next step and its criterion take one winner is removed.
 
 **Escaping, as on every write.** Free-text fields are escaped with `escapeStored`, the same as the tools that write each kind. Versions read from the ledger are already escaped, so the escape must leave escaped text unchanged. It does: `escape.stored-is-idempotent-over-the-escapable-and-markdown-leading-population` (`test/unit/escape.test.ts:225`) proves escaping twice equals escaping once for every escapable and line-leading character. Every emitted token starts with `U`, which is neither, and no raw line break survives, so escaped text has no second line start for a longer input to exploit.
+
+Which fields are free text is read from the record schema, not listed by hand: `escapeStoredRecord` (`src/schema/escape-record.ts`) escapes every string whose field class is `content` or `pointer`. On a record that fits its shape this is exactly the set the writing tools escape, because the two such fields no tool escapes, `slug` and a decision's `commit`, have patterns that admit no character the escape changes. `test/unit/escape-record.test.ts` states the tools' set per kind literally. Decision `01M2KJVBVT46EH83XYZCZNKMZB`.
+
+The record is checked twice: as given, so a refusal names the field the caller sent, and again after escaping, because escaping lengthens text and a length cap applies to what is stored.
 
 ### What counts as stale
 
@@ -209,6 +219,8 @@ It does not push, as today.
 ### Removed from `resolve_conflict.ts`
 
 The `winner` input, `FIELD_HANDLING_TABLE` and its helpers (`:357-552`), `splitNextStepPairRefusal`, `staleRecordedValueRefusal`, `unclassifiableFieldRefusal`, `findUncarriedRemoteDivergence`, `unsafeRemoteDivergenceRefusal`, `divergenceUnverifiableRefusal`, and `EMPTY_TREE_SHA`. `noRemotePositionRefusal` stays, reworded for a saved remote commit that no longer exists locally.
+
+As implemented, also removed: `corruptConflictsRefusal` (an unreadable and a malformed `conflicts.json` share `conflictsUnreadableRefusal`, since `readConflictState` does not tell them apart and the remedy for both is to sync again), `threadUnavailableRefusal`, `unclassifiableRecordRefusal`, `invalidThreadAfterResolutionRefusal` and `invalidDecisionAfterResolutionRefusal`. Added: `payloadMismatchRefusal` (a record path sent `content`, or another path sent `record`), `invalidRecordRefusal` (the record schema's own refusal, its field prefixed `resolutions.<i>.record.`), `recordAddressMismatchRefusal` (an id that differs from the path) and `staleConflictRefusal`. A failure of the re-run `git merge-tree` is reported through `commitFailureRefusal`, because nothing was written and a retry recomputes it.
 
 ---
 
