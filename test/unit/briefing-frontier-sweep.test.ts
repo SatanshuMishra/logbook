@@ -624,7 +624,7 @@ test('briefing.frontier-sweep-finds-no-record-that-loses-an-item-or-hides-a-budg
   assert.equal(
     Math.max(...sweptTextLengths),
     SWEEP_CRITERION_TEXT_MAX,
-    'the criterion text dimension must reach the schema text cap somewhere in the grid, or the sweep never tested the longest admissible criterion text'
+    'the criterion text dimension must reach SWEEP_CRITERION_TEXT_MAX, the former criterion text cap the sweep keeps as its upper bound, somewhere in the grid, or the sweep never tested its longest criterion text'
   )
   for (const fill of FILLS) {
     assert.ok(

@@ -79,6 +79,19 @@ test('criterion.open-thread-stores-the-check-it-was-given', async () => {
   })
 })
 
+test('criterion.open-thread-stores-the-text-and-check-escaped', async () => {
+  await withCriterionFixture(async (rt) => {
+    const controlRun = String.fromCharCode(1).repeat(84)
+    const { threadId } = await openFixtureThread(rt, 'stores-escaped', [
+      { text: `text ${controlRun}`, check: controlRun }
+    ])
+    const stored = readStoredCriteria(rt, threadId)
+    assert.equal(stored.length, 1)
+    assert.equal(stored[0]?.text, `text ${'U+0001'.repeat(84)}`)
+    assert.equal(stored[0]?.check, 'U+0001'.repeat(84))
+  })
+})
+
 test('criterion.amend-criteria-refuses-an-insert-carrying-no-check', async () => {
   await withCriterionFixture(async (rt) => {
     const { threadId } = await openFixtureThread(rt, 'insert-without-check', [
