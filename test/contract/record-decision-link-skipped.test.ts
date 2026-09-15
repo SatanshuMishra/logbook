@@ -54,6 +54,7 @@ test('record-decision.records-the-decision-and-reports-the-skipped-link-when-the
       String(recorded.structured.link_skipped_reason),
       /^the thread record carrying this link failed its stored-shape validation, so the decision was recorded and the spine link was not written: /
     )
+    assert.match(String(recorded.structured.link_skipped_reason), /spine\.key_decisions was refused/)
 
     const reopened = openStore(rt, rt.cwd)
     if (!reopened.ok) throw new Error('link-skipped fixture: the store did not reopen')
@@ -63,6 +64,6 @@ test('record-decision.records-the-decision-and-reports-the-skipped-link-when-the
     assert.equal(decision.record.title, 'one decision past the link limit')
 
     const after = readStoredThread(rt, threadId)
-    assert.deepEqual(after.spine.key_decisions, fullLinks)
+    assert.deepEqual(after, saturated)
   })
 })

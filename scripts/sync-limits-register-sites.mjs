@@ -33,7 +33,7 @@ const refuse = (problem, lines) => {
 }
 
 const recordedSites = rows.map((row) => row.site)
-const sharedSites = rows.filter((row, index) => recordedSites.indexOf(row.site) !== index)
+const sharedSites = rows.filter((row) => recordedSites.indexOf(row.site) !== recordedSites.lastIndexOf(row.site))
 if (sharedSites.length > 0) {
   refuse(`${sharedSites.length} row(s) share a recorded site, so a mirror naming that site is ambiguous`, sharedSites.map((row) => `${row.site} ${row.name}`))
 }
