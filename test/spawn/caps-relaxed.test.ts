@@ -325,7 +325,7 @@ test('caps-relaxed.risk-text-at-former-cap-plus-one-is-accepted-verbatim', async
 
     const updated = await callUpdateThread(fx, {
       thread_id: threadId,
-      risks_add: [{ text: RISK_TEXT_PAYLOAD, scope: 'the area this risk concerns' }]
+      risks_add: [{ text: RISK_TEXT_PAYLOAD, scope: 'the area this risk concerns', criterion_id: null }]
     })
 
     assert.equal(
@@ -616,7 +616,7 @@ test('caps-relaxed.risk-scope-and-reference-past-their-former-caps-are-accepted-
 
     const updated = await callUpdateThread(fx, {
       thread_id: threadId,
-      risks_add: [{ text: 'a risk with a long scope and reference', scope: SCOPE_PAYLOAD, refs: [REF_PAYLOAD] }]
+      risks_add: [{ text: 'a risk with a long scope and reference', scope: SCOPE_PAYLOAD, refs: [REF_PAYLOAD], criterion_id: null }]
     })
     assert.equal(
       updated.isError,

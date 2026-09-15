@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { ALL_TOOLS } from '../../src/server/register.ts'
 import { declare } from '../../src/schema/declare.ts'
 import { census } from '../support/census.ts'
-import { flattenSchemaNodes, isPlainObject, type SchemaNode } from '../support/schema-nodes.ts'
+import { flattenSchemaNodes, isPlainObject, nullableScalarMemberOf, type SchemaNode } from '../support/schema-nodes.ts'
 import { listPublishedTools, type Verdict } from '../support/published.ts'
 import { spawnServer } from '../support/spawn-client.ts'
 
@@ -22,7 +22,7 @@ const carriesUnwalkedSubschema = (node: Record<string, unknown>): boolean => {
 
 export const classifyDescribedNode = (entry: SchemaNode): Verdict => {
   if (!isPlainObject(entry.value)) return 'unclassifiable'
-  if (carriesUnwalkedSubschema(entry.value)) return 'unclassifiable'
+  if (nullableScalarMemberOf(entry.value) === undefined && carriesUnwalkedSubschema(entry.value)) return 'unclassifiable'
   const description = entry.value.description
   if (description === undefined) return 'forbidden'
   if (typeof description !== 'string') return 'unclassifiable'
@@ -78,4 +78,52 @@ test('contract.every-property-described.control.unwalked-subschema-halts', () =>
     value: { type: 'object', additionalProperties: false, description: 'a strict object field' }
   }
   assert.equal(classifyDescribedNode(booleanAdditionalPropertiesNode), 'allowed')
+})
+
+test('contract.every-property-described.control.a-nullable-scalar-is-described-by-its-own-description', () => {
+  const describedNullable: SchemaNode = {
+    path: 'probe.nullableField',
+    value: { anyOf: [{ type: 'string', pattern: '^[0-9A-HJKMNP-TV-Z]{26}$' }, { type: 'null' }], description: 'a criterion id, or null for the whole thread' }
+  }
+  assert.equal(classifyDescribedNode(describedNullable), 'allowed')
+
+  const undescribedNullable: SchemaNode = {
+    path: 'probe.undescribedNullableField',
+    value: { anyOf: [{ type: 'string' }, { type: 'null' }] }
+  }
+  assert.equal(classifyDescribedNode(undescribedNullable), 'forbidden')
+
+  const nullableObject: SchemaNode = {
+    path: 'probe.nullableObjectField',
+    value: {
+      anyOf: [{ type: 'object', properties: { inner: { type: 'string' } } }, { type: 'null' }],
+      description: 'an object whose inner properties no walker reaches'
+    }
+  }
+  assert.equal(classifyDescribedNode(nullableObject), 'unclassifiable')
+
+  for (const [key, subschema] of [
+    ['$ref', '#/$defs/elsewhere'],
+    ['$defs', { elsewhere: { type: 'object', properties: { inner: { type: 'string' } } } }],
+    ['additionalProperties', { type: 'string' }],
+    ['properties', { inner: { type: 'string' } }],
+    ['items', { type: 'string' }],
+    ['oneOf', [{ type: 'string' }, { type: 'integer' }]],
+    ['allOf', [{ type: 'string' }]],
+    ['type', 'string']
+  ] as const) {
+    const nullableBesideSubschema: SchemaNode = {
+      path: `probe.nullableBeside${key}`,
+      value: {
+        anyOf: [{ type: 'string' }, { type: 'null' }],
+        [key]: subschema,
+        description: 'a nullable string sitting beside another schema keyword'
+      }
+    }
+    assert.equal(
+      classifyDescribedNode(nullableBesideSubschema),
+      'unclassifiable',
+      `a nullable anyOf must not vouch for a node that also carries ${key}`
+    )
+  }
 })

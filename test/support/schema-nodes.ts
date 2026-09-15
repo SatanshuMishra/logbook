@@ -3,6 +3,21 @@ export type SchemaNode = { path: string; value: unknown }
 export const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
+const NON_SCALAR_KEYS = ['anyOf', 'oneOf', 'allOf', '$defs', '$ref', 'properties', 'items', 'additionalProperties'] as const
+
+const isBareNullNode = (value: unknown): boolean =>
+  isPlainObject(value) && value.type === 'null' && Object.keys(value).length === 1
+
+export const nullableScalarMemberOf = (node: Record<string, unknown>): Record<string, unknown> | undefined => {
+  const members = node.anyOf
+  if (!Array.isArray(members) || members.length !== 2) return undefined
+  if ('type' in node || NON_SCALAR_KEYS.some((key) => key !== 'anyOf' && key in node)) return undefined
+  const nonNull = members.filter((member) => !isBareNullNode(member))
+  const [member] = nonNull
+  if (nonNull.length !== 1 || !isPlainObject(member)) return undefined
+  return NON_SCALAR_KEYS.some((key) => key in member) ? undefined : member
+}
+
 export const flattenSchemaNodes = (value: unknown, path: string): SchemaNode[] => {
   if (!isPlainObject(value)) return []
 

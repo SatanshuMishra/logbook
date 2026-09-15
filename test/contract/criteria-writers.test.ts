@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { census, type Classified } from '../support/census.ts'
 import { listPublishedTools, type PublishedTool } from '../support/published.ts'
+import { nullableScalarMemberOf } from '../support/schema-nodes.ts'
 import { spawnServer } from '../support/spawn-client.ts'
 import { MARK_DONE_INVARIANTS } from '../../src/server/tools/update_thread.ts'
 
@@ -115,6 +116,10 @@ export const classifyCriteriaTextProperty = (
 ): Classified<SchemaProperty>['verdict'] | 'unclassifiable' => {
   const { node } = entry
   if (!isPlainObject(node)) return 'unclassifiable'
+  const nullableMember = nullableScalarMemberOf(node)
+  if (nullableMember !== undefined) {
+    return classifyCriteriaTextProperty({ ...entry, node: nullableMember }, toolHasThreadId, dispositions)
+  }
   if ('oneOf' in node || 'anyOf' in node || 'allOf' in node) return 'unclassifiable'
 
   const type = node.type
@@ -248,6 +253,53 @@ test('criteria.no-other-tool-writes-criteria.control.unresolvable-shape-halts', 
     node: { description: 'no type keyword at all' }
   }
   assert.equal(classifyCriteriaTextProperty(typelessProperty, true), 'unclassifiable')
+})
+
+test('criteria.no-other-tool-writes-criteria.control.a-nullable-leaf-is-classified-by-its-non-null-member', () => {
+  const nullableRewrite: SchemaProperty = {
+    toolName: 'criteria_rewrite',
+    path: 'criteria_rewrite[].text',
+    node: { anyOf: [{ type: 'string', minLength: 1 }, { type: 'null' }], description: 'the new text for an existing criterion, or null' }
+  }
+  assert.equal(classifyCriteriaTextProperty(nullableRewrite, true, CRITERIA_REWRITE_TEXT_DISPOSITION), 'forbidden')
+
+  const nullableUnmapped: SchemaProperty = {
+    toolName: 'criteria_rewrite',
+    path: 'criteria_rewrite[].wording',
+    node: { anyOf: [{ type: 'string', minLength: 1 }, { type: 'null' }], description: 'the new wording for an existing criterion, or null' }
+  }
+  assert.equal(classifyCriteriaTextProperty(nullableUnmapped, true), 'unclassifiable')
+
+  const nullableAnchor: SchemaProperty = {
+    toolName: 'update_thread',
+    path: 'risks_add[].criterion_id',
+    node: {
+      anyOf: [{ type: 'string', pattern: '^[0-9A-HJKMNP-TV-Z]{26}$' }, { type: 'null' }],
+      description: 'the completion criterion this risk ranks against, or null when the risk bears on the whole thread'
+    }
+  }
+  assert.equal(classifyCriteriaTextProperty(nullableAnchor, true), 'allowed')
+
+  const twoTextMembers: SchemaProperty = {
+    toolName: 'criteria_weird',
+    path: 'criteria_weird',
+    node: { anyOf: [{ type: 'string' }, { type: 'string', minLength: 1 }] }
+  }
+  assert.equal(classifyCriteriaTextProperty(twoTextMembers, true), 'unclassifiable')
+
+  const nullWithExtraKeywords: SchemaProperty = {
+    toolName: 'criteria_weird',
+    path: 'criteria_weird',
+    node: { anyOf: [{ type: 'string' }, { type: 'null', description: 'not a bare null member' }] }
+  }
+  assert.equal(classifyCriteriaTextProperty(nullWithExtraKeywords, true), 'unclassifiable')
+
+  const nullableObject: SchemaProperty = {
+    toolName: 'criteria_weird',
+    path: 'criteria_weird',
+    node: { anyOf: [{ type: 'object', properties: { text: { type: 'string' } } }, { type: 'null' }] }
+  }
+  assert.equal(classifyCriteriaTextProperty(nullableObject, true), 'unclassifiable')
 })
 
 test('criteria.no-other-tool-writes-criteria.control.previously-vulnerable-property-names-are-never-silently-allowed', () => {
