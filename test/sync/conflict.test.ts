@@ -394,3 +394,87 @@ test('sync.a-failed-sync-leaves-a-pending-conflict-file-untouched', () => {
     assert.equal(conflictsAfter, conflictsBefore, 'a failed sync must leave the pending conflict file byte-identical')
   })
 })
+
+const plantRawLedgerFile = (teammate: Teammate, relPath: string, content: string): void => {
+  const write = writeRecords(teammate.rt, layoutIn(teammate), [{ kind: 'raw', relPath, content }], `${teammate.name}: plant ${relPath}`)
+  assert.equal(write.ok, true, `expected ${teammate.name} to plant ${relPath}`)
+}
+
+test('sync.a-project-merge-setting-cannot-merge-a-conflicted-file-outside-the-record-directories-silently', () => {
+  withTwoClones((ana, ben) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+    const notePath = 'notes/team.txt'
+
+    plantRawLedgerFile(ana, notePath, '{"note":"the shared note"}')
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+    plantRawLedgerFile(ben, notePath, '{"note":"ben rewrote it"}')
+    plantRawLedgerFile(ana, notePath, '{"note":"ana rewrote it"}')
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+
+    const infoDir = path.join(ben.repo, '.git', 'info')
+    mkdirSync(infoDir, { recursive: true })
+    writeFileSync(path.join(infoDir, 'attributes'), '*.txt merge=union\n')
+
+    const localBefore = ledgerCommit(ben.rt, ben.repo)
+    const outcome = sync(ben.rt, ben.store, benLayout)
+
+    assert.equal(outcome.ok, false, `a merge=union attribute garbles a file outside the record directories too, so it must be reported: ${JSON.stringify(outcome)}`)
+    assert.deepEqual(conflictStateOf(outcome).paths.map((entry) => entry.path), [notePath])
+    assert.equal(ledgerCommit(ben.rt, ben.repo), localBefore, 'nothing a project setting merged may reach the ledger')
+  })
+})
+
+const gitOrThrow = (rt: Runtime, repo: string, args: string[]): string => {
+  const result = git(rt, repo, args)
+  assert.equal(result.ok, true, `expected git ${args.join(' ')} to succeed in ${repo}`)
+  return result.ok ? result.stdout.trim() : ''
+}
+
+test('sync.a-ledger-entry-that-is-not-a-regular-file-is-refused-instead-of-recorded-as-a-conflict', () => {
+  withTwoClones((ana, ben, remote) => {
+    const benLayout = layoutIn(ben)
+    const threadId = divergeOnNextStep(ana, ben, 'not-a-regular-file-thread')
+    const threadPath = `threads/${threadId}.json`
+
+    const anaLedger = ledgerCommit(ana.rt, ana.repo)
+    const threadsSubtree = gitOrThrow(ana.rt, ana.repo, ['ls-tree', `${anaLedger}:threads`])
+      .split('\n')
+      .map((line) => (line.includes(`${threadId}.json`) ? `160000 commit ${anaLedger}\t${threadId}.json` : line))
+      .join('\n')
+    const rebuiltThreads = (() => {
+      const result = git(ana.rt, ana.repo, ['mktree'], { stdin: `${threadsSubtree}\n` })
+      assert.equal(result.ok, true, 'expected mktree to rebuild the threads subtree')
+      return result.ok ? result.stdout.trim() : ''
+    })()
+    const rebuiltRoot = (() => {
+      const top = gitOrThrow(ana.rt, ana.repo, ['ls-tree', anaLedger])
+        .split('\n')
+        .map((line) => (line.endsWith('\tthreads') ? `040000 tree ${rebuiltThreads}\tthreads` : line))
+        .join('\n')
+      const result = git(ana.rt, ana.repo, ['mktree'], { stdin: `${top}\n` })
+      assert.equal(result.ok, true, 'expected mktree to rebuild the ledger root tree')
+      return result.ok ? result.stdout.trim() : ''
+    })()
+    const crafted = (() => {
+      const result = git(ana.rt, ana.repo, ['commit-tree', rebuiltRoot, '-p', anaLedger], {
+        stdin: 'ana: replace a record with a submodule entry\n',
+        identity: { name: 'ana', email: 'ana@logbook.test' }
+      })
+      assert.equal(result.ok, true, 'expected commit-tree to build the crafted ledger commit')
+      return result.ok ? result.stdout.trim() : ''
+    })()
+    gitOrThrow(ana.rt, ana.repo, ['push', '--force', remote, `${crafted}:${LEDGER_REF}`])
+
+    const localBefore = ledgerCommit(ben.rt, ben.repo)
+    const outcome = sync(ben.rt, ben.store, benLayout)
+
+    assert.equal(outcome.ok, false, `a ledger entry that is not a regular file must be refused: ${JSON.stringify(outcome)}`)
+    if (outcome.ok || outcome.reason !== 'rejected') throw new Error(`expected a local rejection, got ${JSON.stringify(outcome)}`)
+    assert.match(outcome.detail, /not a regular file/, outcome.detail)
+    assert.match(outcome.detail, new RegExp(threadPath.replace('.', '\\.')), outcome.detail)
+    assert.equal(existsSync(path.join(benLayout.state, 'conflicts.json')), false, 'an entry this tool cannot read must not be recorded as a conflict to resolve')
+    assert.equal(ledgerCommit(ben.rt, ben.repo), localBefore, 'nothing may reach the ledger from a tree carrying an entry that is not a regular file')
+  })
+})

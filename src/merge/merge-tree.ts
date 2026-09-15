@@ -1,5 +1,6 @@
 import type { Runtime } from '../runtime/runtime.ts'
 import { gitRun } from '../store/git.ts'
+import { REQUIRED_TREE_ENTRY_MODE, REQUIRED_TREE_ENTRY_TYPE } from '../store/materialise-tree.ts'
 import type { ConflictPath } from './conflict.ts'
 
 export const GIT_MERGE_TREE_FLOOR = '2.38.0'
@@ -7,10 +8,9 @@ export const GIT_MERGE_TREE_FLOOR = '2.38.0'
 const OBJECT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/
 const ABSENT_OBJECT_ID = /^0+$/
 const GIT_VERSION = /git version (\d+)\.(\d+)\.(\d+)/
-const CONFLICT_ENTRY = /^\d{6} ([0-9a-f]{40,64}) ([123])\t([\s\S]+)$/
-const TREE_ENTRY = /^\d{6} \w+ ([0-9a-f]{40,64})\t([\s\S]+)$/
-const DIFF_TREE_META = /^:\d{6} \d{6} ([0-9a-f]{40,64}) ([0-9a-f]{40,64}) [A-Z]\d*$/
-const RECORD_DIRECTORIES: ReadonlySet<string> = new Set(['threads', 'decisions', 'sessions', 'bindings'])
+const CONFLICT_ENTRY = /^(\d{6}) ([0-9a-f]{40,64}) ([123])\t([\s\S]+)$/
+const TREE_ENTRY = /^(\d{6}) (\w+) ([0-9a-f]{40,64})\t([\s\S]+)$/
+const DIFF_TREE_META = /^:\d{6} (\d{6}) ([0-9a-f]{40,64}) ([0-9a-f]{40,64}) [A-Z]\d*$/
 
 type Failure = { ok: false; detail: string }
 
@@ -53,7 +53,10 @@ export const mergeTree = (rt: Runtime, repo: string, local: string, remote: stri
   for (const entry of entries) {
     const match = CONFLICT_ENTRY.exec(entry)
     if (match === null) return { ok: false, detail: `git merge-tree printed a conflict entry this version cannot read: ${entry}` }
-    const [, blob, stage, filePath] = match as unknown as [string, string, string, string]
+    const [, mode, blob, stage, filePath] = match as unknown as [string, string, string, string, string]
+    if (mode !== REQUIRED_TREE_ENTRY_MODE) {
+      return { ok: false, detail: `the ledger holds an entry that is not a regular file, mode ${mode}, at ${filePath}` }
+    }
     const current = byConflictedPath.get(filePath) ?? { path: filePath, base_blob: null, local_blob: null, remote_blob: null }
     const withStage =
       stage === '1' ? { ...current, base_blob: blob } : stage === '2' ? { ...current, local_blob: blob } : { ...current, remote_blob: blob }
@@ -71,7 +74,9 @@ const listBlobs = (rt: Runtime, repo: string, treeish: string): Listing => {
   for (const entry of nulSeparated(run.stdout)) {
     const match = TREE_ENTRY.exec(entry)
     if (match === null) return { ok: false, detail: `git ls-tree printed an entry this version cannot read: ${entry}` }
-    blobs.set(match[2] as string, match[1] as string)
+    const [, mode, type, blob, filePath] = match as unknown as [string, string, string, string, string]
+    if (mode !== REQUIRED_TREE_ENTRY_MODE || type !== REQUIRED_TREE_ENTRY_TYPE) continue
+    blobs.set(filePath, blob)
   }
   return { ok: true, blobs }
 }
@@ -84,8 +89,6 @@ const mergeBaseOf = (rt: Runtime, repo: string, local: string, remote: string): 
   if (run.code === 1 && run.stderr.trim() === '') return { ok: true, commit: null }
   return { ok: false, detail: `git merge-base could not compare ${local} with ${remote}: ${run.stderr.trim()}` }
 }
-
-const isRecordPath = (filePath: string): boolean => RECORD_DIRECTORIES.has(filePath.split('/')[0] ?? '')
 
 const presentOrNull = (blob: string): string | null => (ABSENT_OBJECT_ID.test(blob) ? null : blob)
 
@@ -110,8 +113,13 @@ export const recordsNotTakenWhole = (
     if (match === null || filePath === undefined) {
       return { ok: false, detail: `git diff-tree printed a change this version cannot read: ${tokens[index] ?? ''}` }
     }
-    if (alreadyConflicted.has(filePath) || !isRecordPath(filePath)) continue
-    changed.push({ path: filePath, localBlob: presentOrNull(match[1] as string), mergedBlob: presentOrNull(match[2] as string) })
+    if (alreadyConflicted.has(filePath)) continue
+    const [, mergedMode, localBlob, mergedBlob] = match as unknown as [string, string, string, string]
+    const merged = presentOrNull(mergedBlob)
+    if (merged !== null && mergedMode !== REQUIRED_TREE_ENTRY_MODE) {
+      return { ok: false, detail: `the merged ledger holds an entry that is not a regular file, mode ${mergedMode}, at ${filePath}` }
+    }
+    changed.push({ path: filePath, localBlob: presentOrNull(localBlob), mergedBlob: merged })
   }
   if (changed.length === 0) return { ok: true, paths: [] }
 
