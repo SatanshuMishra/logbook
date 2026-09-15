@@ -26,7 +26,7 @@ export type WriteRecordsOps = {
   git: typeof git
   beforeCas: () => void
   extraParents?: string[]
-  baseTree?: string
+  startFrom?: { tree: string; parent: string | null }
 }
 
 const MAX_ATTEMPTS = 5
@@ -182,10 +182,18 @@ export const writeRecords = (
   let oldRef = readCurrentRef()
   let attempt = 0
 
+  if (ops.startFrom !== undefined && oldRef !== ops.startFrom.parent) {
+    return {
+      ok: false,
+      reason: 'ref-moved',
+      detail: `${LEDGER_REF} is at ${oldRef ?? 'no commit'}, not ${ops.startFrom.parent ?? 'no commit'} that the starting tree was computed from; the write was refused so the starting tree can be recomputed`
+    }
+  }
+
   while (attempt < MAX_ATTEMPTS) {
     attempt += 1
 
-    const treeResult = buildTree(rt, layout, runGit, ops.baseTree ?? oldRef, targets)
+    const treeResult = buildTree(rt, layout, runGit, ops.startFrom?.tree ?? oldRef, targets)
     if (!treeResult.ok) {
       return { ok: false, reason: 'io', detail: treeResult.detail }
     }
@@ -226,7 +234,7 @@ export const writeRecords = (
       return { ok: true, ref: LEDGER_REF, before: oldRef, after: newCommit }
     }
 
-    if (cas.cause === 'ref-moved' && ops.baseTree !== undefined) {
+    if (cas.cause === 'ref-moved' && ops.startFrom !== undefined) {
       return {
         ok: false,
         reason: 'ref-moved',

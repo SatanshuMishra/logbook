@@ -218,7 +218,7 @@ test('write.builds-onto-a-given-starting-tree-instead-of-the-ledger-commit', () 
       const startingTree = treeHoldingOneThread(rt, repo, inStartingTree)
       const added = makeThread(rt, 'added-on-top')
 
-      const result = writeRecords(rt, layout, [added], 'write onto a starting tree', { baseTree: startingTree })
+      const result = writeRecords(rt, layout, [added], 'write onto a starting tree', { startFrom: { tree: startingTree, parent: ledgerWrite.after } })
       assert.equal(result.ok, true)
       if (!result.ok) return
 
@@ -246,7 +246,7 @@ test('write.a-starting-tree-with-no-changes-commits-exactly-that-tree-with-both-
       const startingTree = treeHoldingOneThread(rt, repo, remoteSide)
       const remoteCommit = gitOut(rt, repo, ['commit-tree', startingTree, '-m', 'the remote side'])
 
-      const result = writeRecords(rt, layout, [], 'commit a merged tree', { baseTree: startingTree, extraParents: [remoteCommit] })
+      const result = writeRecords(rt, layout, [], 'commit a merged tree', { startFrom: { tree: startingTree, parent: ledgerWrite.after }, extraParents: [remoteCommit] })
       assert.equal(result.ok, true)
       if (!result.ok) return
 
@@ -274,11 +274,37 @@ test('write.a-starting-tree-write-refuses-rather-than-rebuilding-when-the-ref-mo
         gitOut(rt, repo, ['update-ref', LEDGER_REF, movedTo, ledgerWrite.after])
       }
 
-      const result = writeRecords(rt, layout, [makeThread(rt, 'added-on-top')], 'write onto a starting tree', { baseTree: startingTree, beforeCas })
+      const result = writeRecords(rt, layout, [makeThread(rt, 'added-on-top')], 'write onto a starting tree', { startFrom: { tree: startingTree, parent: ledgerWrite.after }, beforeCas })
       assert.equal(result.ok, false, 'a starting tree was computed against the old ledger commit, so rebuilding it onto the moved ref would drop what the racer wrote')
       if (result.ok) return
       assert.equal(result.reason, 'ref-moved')
       assert.equal(gitOut(rt, repo, ['rev-parse', LEDGER_REF]), movedTo, "the racer's commit must stand")
+    })
+  })
+})
+
+test('write.a-starting-tree-computed-against-a-commit-the-ref-has-left-is-refused-before-writing', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const layout = layoutIn(rt, repo)
+
+      const computedAgainst = writeRecords(rt, layout, [makeThread(rt, 'the-merge-read-this')], 'record what the merge read')
+      assert.equal(computedAgainst.ok, true)
+      if (!computedAgainst.ok) return
+      const movedOn = writeRecords(rt, layout, [makeThread(rt, 'written-after-the-merge-read')], 'record after the merge read')
+      assert.equal(movedOn.ok, true)
+      if (!movedOn.ok) return
+
+      const startingTree = treeHoldingOneThread(rt, repo, makeThread(rt, 'in-the-starting-tree'))
+      const result = writeRecords(rt, layout, [], 'commit a tree computed against the older commit', {
+        startFrom: { tree: startingTree, parent: computedAgainst.after }
+      })
+
+      assert.equal(result.ok, false, 'committing a tree computed against an older commit onto a newer one would drop what the newer one added')
+      if (result.ok) return
+      assert.equal(result.reason, 'ref-moved')
+      assert.equal(gitOut(rt, repo, ['rev-parse', LEDGER_REF]), movedOn.after, 'the ledger must be left where it was')
     })
   })
 })
