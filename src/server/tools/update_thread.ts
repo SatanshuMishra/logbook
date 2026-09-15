@@ -6,7 +6,7 @@ import type { Artifact, KeyDecision, Risk, Settledness, Spine, Thread } from '..
 import { criterionSettledness } from '../../schema/thread.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
-import { contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
+import { checkNextStepCriterion, contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
 import { liveRiskIdsByIdentity, riskIdentity } from '../../domain/risk-identity.ts'
 import { ArtifactAddSchema, commitThread, loadThread, mintArtifacts, openProjectStore } from '../tool-support.ts'
 
@@ -103,6 +103,9 @@ const UpdateThreadInputSchema = z.strictObject({
     .string()
     .optional()
     .describe('replaces the spine next_step field when supplied, stated as one decision about what to do next; omit to leave it unchanged'),
+  next_step_criterion_id: ulidField(
+    'the completion criterion that the next_step sent in this same call advances, which must be neither done nor struck; the briefing then shows the risks on that criterion and the whole-thread risks and counts the rest; a next_step sent without it names no criterion'
+  ).optional(),
   last_session: z
     .string()
     .optional()
@@ -326,7 +329,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
   name: 'update_thread',
   title: 'Update thread',
   description:
-    'Records mid-session progress on one thread: mark criteria done, refresh any of the six running-summary fields, set or clear what the thread is blocked on, and add or retire risks. Every argument is optional and only what is supplied is written, so a call carrying just criteria_done: [{"criterion_id": "<criterion ulid>", "result": "<what the check returned>", "result_status": "verified"}] changes nothing else. Marking a criterion done records what was observed and whether the check was actually run, and it is refused without both. Risks are retired by id rather than by resubmitting the whole list, so a thread with fourteen risks costs one id to change one of them. The criteria_settled argument records who stands behind a criterion, so an answer the human gave lands on the criterion it was about, and a confirmed one carries their own words while any other settledness carries none. The reply reports what changed, not what the record now holds.',
+    'Records mid-session progress on one thread: mark criteria done, refresh any of the six running-summary fields, set or clear what the thread is blocked on, and add or retire risks. Every argument is optional and only what is supplied is written, so a call carrying just criteria_done: [{"criterion_id": "<criterion ulid>", "result": "<what the check returned>", "result_status": "verified"}] changes nothing else. Marking a criterion done records what was observed and whether the check was actually run, and it is refused without both. Risks are retired by id rather than by resubmitting the whole list, so a thread with fourteen risks costs one id to change one of them. The criteria_settled argument records who stands behind a criterion, so an answer the human gave lands on the criterion it was about, and a confirmed one carries their own words while any other settledness carries none. A next_step can name the completion criterion it advances through next_step_criterion_id, and the briefing then shows only the risks on that criterion and the whole-thread risks. The reply reports what changed, not what the record now holds.',
   input: UpdateThreadInputSchema,
   output: UpdateThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -545,10 +548,16 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     const spineContribution: SpineContribution = {
       ...(input.active_goal !== undefined ? { active_goal: input.active_goal } : {}),
       ...(input.next_step !== undefined ? { next_step: input.next_step } : {}),
+      ...(input.next_step_criterion_id !== undefined ? { next_step_criterion_id: input.next_step_criterion_id } : {}),
       ...(input.last_session !== undefined ? { last_session: input.last_session } : {}),
       ...(newRisks.length > 0 ? { open_risks: newRisks } : {}),
       ...(newKeyDecisions.length > 0 ? { key_decisions: newKeyDecisions } : {}),
       ...(newOutOfScope.length > 0 ? { out_of_scope: newOutOfScope } : {})
+    }
+
+    const nextStepCriterionRefused = checkNextStepCriterion(nextCriteria, spineContribution)
+    if (nextStepCriterionRefused !== null) {
+      return { ok: false, refusal: nextStepCriterionRefused }
     }
 
     const spineFieldsUpdated: ('active_goal' | 'next_step' | 'last_session')[] = [

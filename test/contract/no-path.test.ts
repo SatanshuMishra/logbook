@@ -42,7 +42,7 @@ import { LEDGER_REF, casUpdateRef } from '../../src/store/ref.ts'
 import { ensureSingleStore } from '../../src/store/single-store.ts'
 import { withDetail } from '../../src/store/detail.ts'
 import { insertCriterion, rewriteCriterion, strikeCriterion } from '../../src/domain/criteria.ts'
-import { contributeToSpine } from '../../src/domain/spine.ts'
+import { checkNextStepCriterion, contributeToSpine } from '../../src/domain/spine.ts'
 import { transition } from '../../src/domain/lifecycle.ts'
 import { rawGit, withRepo, withRepoNoIdentity } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
@@ -79,6 +79,7 @@ const INSERT_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#insertCriterio
 const REWRITE_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#rewriteCriterion'
 const STRIKE_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#strikeCriterion'
 const CONTRIBUTE_TO_SPINE_PRODUCER: ProducerId = 'domain/spine.ts#contributeToSpine'
+const CHECK_NEXT_STEP_CRITERION_PRODUCER: ProducerId = 'domain/spine.ts#checkNextStepCriterion'
 const TRANSITION_PRODUCER: ProducerId = 'domain/lifecycle.ts#transition'
 const OPEN_THREAD_DUPLICATE_SLUG_PRODUCER: ProducerId = 'server/tools/open_thread.ts#duplicateSlugRefusal'
 const UPDATE_THREAD_UNKNOWN_CRITERION_PRODUCER: ProducerId = 'server/tools/update_thread.ts#unknownCriterionRefusal'
@@ -142,6 +143,7 @@ const RESOLVE_CONFLICT_CORRUPT_PRODUCER: ProducerId = 'server/tools/resolve_conf
 const RESOLVE_CONFLICT_DUPLICATE_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#duplicateResolutionRefusal'
 const RESOLVE_CONFLICT_UNRECOGNISED_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#unrecognisedResolutionRefusal'
 const RESOLVE_CONFLICT_MISSING_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#missingResolutionRefusal'
+const RESOLVE_CONFLICT_SPLIT_NEXT_STEP_PAIR_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#splitNextStepPairRefusal'
 const RESOLVE_CONFLICT_THREAD_UNAVAILABLE_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#threadUnavailableRefusal'
 const RESOLVE_CONFLICT_STALE_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#staleRecordedValueRefusal'
 const RESOLVE_CONFLICT_UNCLASSIFIABLE_FIELD_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#unclassifiableFieldRefusal'
@@ -690,6 +692,21 @@ const collectResolveConflictSingleRepoRefusals = async (): Promise<TaggedRefusal
     refusals.push({ producer: RESOLVE_CONFLICT_NO_REMOTE_POSITION_PRODUCER, refusal: noRemotePosition.refusal })
     refusals.push({ producer: RESOLVE_CONFLICT_HANDLER_PRODUCER, refusal: noRemotePosition.refusal })
 
+    writeConflictsFixture(fixture, [
+      { record: `thread:${fixture.threadId}`, field: 'spine.next_step', ours: 'the local next step', theirs: 'the remote next step' },
+      { record: `thread:${fixture.threadId}`, field: 'spine.next_step_criterion_id', ours: null, theirs: fixture.threadId }
+    ])
+    const splitPair = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {
+      resolutions: [
+        { record: `thread:${fixture.threadId}`, field: 'spine.next_step', winner: 'local' },
+        { record: `thread:${fixture.threadId}`, field: 'spine.next_step_criterion_id', winner: 'remote' }
+      ]
+    })
+    if (splitPair.ok) {
+      throw new Error('expected resolveConflictTool to refuse a next step and its criterion resolved to different winners')
+    }
+    refusals.push({ producer: RESOLVE_CONFLICT_SPLIT_NEXT_STEP_PAIR_PRODUCER, refusal: splitPair.refusal })
+
     writeConflictsFixture(fixture, [singleTitleConflict(fixture, 'a remote title with a stale ours value')])
     const stale = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {
       resolutions: [{ record: `thread:${fixture.threadId}`, field: 'title', winner: 'local' }]
@@ -1192,6 +1209,14 @@ const collectRealRefusals = async (): Promise<TaggedRefusal[]> => {
   })
   if (spineResult.ok) throw new Error('expected contributeToSpine to refuse key decisions past their element cap')
   refusals.push({ producer: CONTRIBUTE_TO_SPINE_PRODUCER, refusal: spineResult })
+
+  const nextStepCriterionResult = checkNextStepCriterion(domainThread.completion_criteria, {
+    next_step_criterion_id: domainRt.ulid()
+  })
+  if (nextStepCriterionResult === null) {
+    throw new Error('expected checkNextStepCriterion to refuse a criterion sent without a next step')
+  }
+  refusals.push({ producer: CHECK_NEXT_STEP_CRITERION_PRODUCER, refusal: nextStepCriterionResult })
 
   const transitionResult = transition(domainRt, domainThread, 'abandoned', '')
   if (transitionResult.ok) throw new Error('expected transition to refuse an abandon with no reason')

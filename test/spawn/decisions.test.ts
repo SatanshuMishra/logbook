@@ -1444,7 +1444,12 @@ const buildDriver = (tool: ToolSpec<never, never>, world: CensusWorld): CensusDr
       buildVariants: async () => [
         {
           rt: world.benRt,
-          input: { resolutions: [{ record: `thread:${world.t1Id}`, field: 'spine.next_step', winner: 'local' }] }
+          input: {
+            resolutions: [
+              { record: `thread:${world.t1Id}`, field: 'spine.next_step', winner: 'local' },
+              { record: `thread:${world.t1Id}`, field: 'spine.next_step_criterion_id', winner: 'local' }
+            ]
+          }
         }
       ]
     }

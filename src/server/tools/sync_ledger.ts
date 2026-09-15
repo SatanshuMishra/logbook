@@ -4,6 +4,7 @@ import { NO_ARGUMENTS } from '../no-arguments.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import { layoutFor } from '../../store/layout.ts'
 import { sync, type RejectedOutcome, type UnreadableLocalRecord } from '../../merge/sync.ts'
+import { nextStepPairNoteFor } from '../../merge/conflict.ts'
 import { withDetail } from '../../store/detail.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { clipWithMarker } from '../../render/clip.ts'
@@ -165,13 +166,14 @@ export const unparseableRecordsRefusal = (records: readonly string[]): Refusal =
 
 export const conflictRefusal = (conflicts: readonly { record: string; field: string }[]): Refusal => {
   const named = conflicts.map((c) => `${c.record} ${c.field}`).join('; ')
+  const pairNote = nextStepPairNoteFor(conflicts.map((c) => c.field))
   return {
     ok: false,
     field: 'sync',
     accepted: 'no field that both sides changed to different values',
     example: 'call resolve_conflict naming a winner for each disagreement this reports',
     retryable: true,
-    message: `sync found disagreements on: ${named}. Nothing was pushed; call resolve_conflict to settle each one, then retry sync_ledger.`
+    message: `sync found disagreements on: ${named}. Nothing was pushed; call resolve_conflict to settle each one, then retry sync_ledger.${pairNote}`
   }
 }
 

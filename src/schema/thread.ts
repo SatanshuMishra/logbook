@@ -37,12 +37,15 @@ export const riskAnchor = (risk: Risk): Ulid | null => risk.criterion_id ?? null
 export type Spine = {
   active_goal: string
   next_step: string
+  next_step_criterion_id?: Ulid | undefined
   landed: string
   last_session: string
   open_risks: Risk[]
   key_decisions: KeyDecision[]
   out_of_scope: OutOfScope[]
 }
+
+export const nextStepAnchor = (spine: Spine): Ulid | null => spine.next_step_criterion_id ?? null
 
 export type Thread = {
   id: Ulid
@@ -177,6 +180,7 @@ const ArtifactSchema = structural(
 const SpineSchema = z.object({
   active_goal: content(z.string().describe('the thread goal currently being worked')),
   next_step: content(z.string().describe('the next concrete step in this thread')),
+  next_step_criterion_id: optionalUlidField('the completion criterion the next step advances, absent when the next step names none'),
   landed: content(z.string().describe('what this thread has landed and verified so far, as the previous session left it')),
   last_session: content(z.string().describe('a summary of the most recent session')),
   open_risks: z.array(RiskSchema).describe('risks still open on this thread').meta({ class: 'structural' }),

@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util'
-import type { Thread, Spine, Criterion, Settledness, ResultStatus } from '../schema/thread.ts'
-import { criterionSettledness } from '../schema/thread.ts'
+import type { Thread, Spine, Criterion, Settledness, ResultStatus, Ulid } from '../schema/thread.ts'
+import { criterionSettledness, nextStepAnchor } from '../schema/thread.ts'
 import type { Decision } from '../schema/decision.ts'
 import type { SessionEntry } from '../schema/session.ts'
 import { conflict } from './conflict.ts'
@@ -28,6 +28,7 @@ export const THREAD_RULES: Record<keyof Thread | `spine.${keyof Spine}`, FieldRu
   updated_at: 'take-later',
   'spine.active_goal': 'conflict-on-divergence',
   'spine.next_step': 'conflict-on-divergence',
+  'spine.next_step_criterion_id': 'conflict-on-divergence',
   'spine.landed': 'conflict-on-divergence',
   'spine.last_session': 'conflict-on-divergence',
   'spine.open_risks': 'union-by-id',
@@ -47,6 +48,11 @@ const SCALAR_DESCRIPTORS: ScalarDescriptor[] = [
   { path: 'created_at', rule: THREAD_RULES.created_at, get: (t) => t.created_at },
   { path: 'spine.active_goal', rule: THREAD_RULES['spine.active_goal'], get: (t) => t.spine.active_goal },
   { path: 'spine.next_step', rule: THREAD_RULES['spine.next_step'], get: (t) => t.spine.next_step },
+  {
+    path: 'spine.next_step_criterion_id',
+    rule: THREAD_RULES['spine.next_step_criterion_id'],
+    get: (t) => nextStepAnchor(t.spine)
+  },
   { path: 'spine.landed', rule: THREAD_RULES['spine.landed'], get: (t) => t.spine.landed },
   { path: 'spine.last_session', rule: THREAD_RULES['spine.last_session'], get: (t) => t.spine.last_session }
 ]
@@ -100,6 +106,51 @@ export const resolveScalarField = (
         `resolveScalarField cannot resolve scalar path "${descriptor.path}" with rule "${descriptor.rule}"`
       )
   }
+}
+
+const NEXT_STEP_PATH = 'spine.next_step'
+const NEXT_STEP_ANCHOR_PATH = 'spine.next_step_criterion_id'
+
+type NextStepPair = readonly [Spine['next_step'], Ulid | null]
+
+const nextStepPairOf = (thread: Thread): NextStepPair => [thread.spine.next_step, nextStepAnchor(thread.spine)]
+
+const pairMemberConflict = (
+  recordName: string,
+  path: typeof NEXT_STEP_PATH | typeof NEXT_STEP_ANCHOR_PATH,
+  oursValue: unknown,
+  theirsValue: unknown
+): ScalarResolution => ({
+  path,
+  value: oursValue,
+  conflict: conflict(recordName, path, oursValue, theirsValue),
+  dispatchedRule: THREAD_RULES[path]
+})
+
+const resolveNextStepPair = (
+  recordName: string,
+  base: Thread | null,
+  ours: Thread,
+  theirs: Thread
+): ReadonlyMap<string, ScalarResolution> => {
+  const pair = resolveScalarField(recordName, base, ours, theirs, {
+    path: NEXT_STEP_PATH,
+    rule: THREAD_RULES[NEXT_STEP_PATH],
+    get: nextStepPairOf
+  })
+  if (pair.conflict === null) {
+    const [nextStep, anchor] = pair.value as NextStepPair
+    return new Map([
+      [NEXT_STEP_PATH, { path: NEXT_STEP_PATH, value: nextStep, conflict: null, dispatchedRule: null }],
+      [NEXT_STEP_ANCHOR_PATH, { path: NEXT_STEP_ANCHOR_PATH, value: anchor, conflict: null, dispatchedRule: null }]
+    ])
+  }
+  const [oursNextStep, oursAnchor] = nextStepPairOf(ours)
+  const [theirsNextStep, theirsAnchor] = nextStepPairOf(theirs)
+  return new Map([
+    [NEXT_STEP_PATH, pairMemberConflict(recordName, NEXT_STEP_PATH, oursNextStep, theirsNextStep)],
+    [NEXT_STEP_ANCHOR_PATH, pairMemberConflict(recordName, NEXT_STEP_ANCHOR_PATH, oursAnchor, theirsAnchor)]
+  ])
 }
 
 const byIdAscending = (a: { id: string }, b: { id: string }): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
@@ -204,8 +255,10 @@ const resolveUpdatedAt = (ours: Thread, theirs: Thread): UpdatedAtResolution => 
 export const mergeThreadTraced = (base: Thread | null, ours: Thread, theirs: Thread): MergeTrace<Thread> => {
   const recordName = `thread:${ours.id}`
 
-  const scalarResolutions = SCALAR_DESCRIPTORS.map((descriptor) =>
-    resolveScalarField(recordName, base, ours, theirs, descriptor)
+  const nextStepPair = resolveNextStepPair(recordName, base, ours, theirs)
+  const scalarResolutions = SCALAR_DESCRIPTORS.map(
+    (descriptor) =>
+      nextStepPair.get(descriptor.path) ?? resolveScalarField(recordName, base, ours, theirs, descriptor)
   )
   const criteriaResolution = unionCriteria(recordName, ours.completion_criteria, theirs.completion_criteria)
   const openRisksResolution = unionByIdWithConflict(
@@ -260,6 +313,7 @@ export const mergeThreadTraced = (base: Thread | null, ours: Thread, theirs: Thr
   const byPath = new Map(scalarResolutions.map((resolution) => [resolution.path, resolution.value] as const))
 
   const mergedPredecessorId = byPath.get('predecessor_id') as Thread['predecessor_id']
+  const mergedNextStepAnchor = byPath.get('spine.next_step_criterion_id') as Ulid | null
 
   const merged: Thread = {
     id: byPath.get('id') as Thread['id'],
@@ -275,6 +329,7 @@ export const mergeThreadTraced = (base: Thread | null, ours: Thread, theirs: Thr
     spine: {
       active_goal: byPath.get('spine.active_goal') as Spine['active_goal'],
       next_step: byPath.get('spine.next_step') as Spine['next_step'],
+      ...(mergedNextStepAnchor === null ? {} : { next_step_criterion_id: mergedNextStepAnchor }),
       landed: byPath.get('spine.landed') as Spine['landed'],
       last_session: byPath.get('spine.last_session') as Spine['last_session'],
       open_risks: openRisksResolution.merged,

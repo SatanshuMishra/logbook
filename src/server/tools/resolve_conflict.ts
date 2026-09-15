@@ -6,13 +6,15 @@ import type { ToolSpec } from '../register.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import type { Runtime } from '../../runtime/runtime.ts'
 import {
+  nextStepAnchor,
   ThreadRecord,
   type Thread,
   type Criterion,
   type Risk,
   type KeyDecision,
   type OutOfScope,
-  type Artifact
+  type Artifact,
+  type Spine
 } from '../../schema/thread.ts'
 import { DecisionRecord, type Decision } from '../../schema/decision.ts'
 import type { Store } from '../../store/records.ts'
@@ -20,7 +22,7 @@ import { layoutFor } from '../../store/layout.ts'
 import { git } from '../../store/git.ts'
 import { advanceMaterialisedStampIfStillCurrent } from '../../store/read-path.ts'
 import { writeRecords, type RecordChange } from '../../store/write-path.ts'
-import type { Conflict } from '../../merge/conflict.ts'
+import { nextStepPairNoteFor, type Conflict } from '../../merge/conflict.ts'
 import { TRACKING_REF } from '../../merge/sync.ts'
 import { THREAD_RULES } from '../../merge/field-merge.ts'
 import { LEDGER_REF } from '../../store/ref.ts'
@@ -150,7 +152,16 @@ export const missingResolutionRefusal = (missing: readonly string[]): Refusal =>
   accepted: 'a winner for every disagreement the last sync_ledger call reported',
   example: 'add an entry naming a winner for each missing disagreement',
   retryable: true,
-  message: `resolutions is missing a winner for: ${missing.join('; ')}.`
+  message: `resolutions is missing a winner for: ${missing.join('; ')}.${nextStepPairNoteFor(missing)}`
+})
+
+export const splitNextStepPairRefusal = (record: string): Refusal => ({
+  ok: false,
+  field: 'resolutions',
+  accepted: 'the same winner for both spine.next_step and spine.next_step_criterion_id of one record',
+  example: 'name local for both, or remote for both',
+  retryable: true,
+  message: `resolutions names different winners for ${record} spine.next_step and spine.next_step_criterion_id, which would pair a next step with a criterion it was never written with; remedy: name the same winner for both and retry.`
 })
 
 export const threadUnavailableRefusal = (threadId: string): Refusal => ({
@@ -338,6 +349,11 @@ const escapeArtifact = (artifact: Artifact): Artifact => ({
   pointer: escapeStored(artifact.pointer)
 })
 
+const withNextStepAnchor = (spine: Spine, anchor: string | null): Spine =>
+  anchor === null
+    ? (Object.fromEntries(Object.entries(spine).filter(([key]) => key !== 'next_step_criterion_id')) as Spine)
+    : { ...spine, next_step_criterion_id: anchor }
+
 type ScalarFieldHandling = {
   kind: 'scalar'
   read: (thread: Thread) => unknown
@@ -414,6 +430,12 @@ export const FIELD_HANDLING_TABLE: Record<keyof typeof THREAD_RULES, FieldHandli
     read: (thread) => thread.spine.next_step,
     apply: (thread, value) => ({ ...thread, spine: { ...thread.spine, next_step: value as string } }),
     escape: escapeIfString
+  },
+  'spine.next_step_criterion_id': {
+    kind: 'scalar',
+    read: (thread) => nextStepAnchor(thread.spine),
+    apply: (thread, value) => ({ ...thread, spine: withNextStepAnchor(thread.spine, value as string | null) }),
+    escape: (value) => value
   },
   'spine.landed': {
     kind: 'scalar',
@@ -645,6 +667,16 @@ export const resolveConflictTool: ToolSpec<ResolveConflictInput, ResolveConflict
     const missing = reported.filter((c) => !seen.has(keyOf(c.record, c.field)))
     if (missing.length > 0) {
       return { ok: false, refusal: missingResolutionRefusal(missing.map((c) => `${c.record} ${c.field}`)) }
+    }
+
+    const winnerByKey = new Map(input.resolutions.map((r) => [keyOf(r.record, r.field), r.winner] as const))
+    const splitPair = input.resolutions.find((r) => {
+      if (r.field !== 'spine.next_step') return false
+      const anchorWinner = winnerByKey.get(keyOf(r.record, 'spine.next_step_criterion_id'))
+      return anchorWinner !== undefined && anchorWinner !== r.winner
+    })
+    if (splitPair !== undefined) {
+      return { ok: false, refusal: splitNextStepPairRefusal(splitPair.record) }
     }
 
     const threadUpdates = new Map<string, Thread>()

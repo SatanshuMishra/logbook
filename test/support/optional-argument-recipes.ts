@@ -549,6 +549,22 @@ const updateThreadRisksAddRefsRecipe = (): Promise<RecipeResult> =>
     (structured, rt, ctx: UpdateThreadFixtureCtx) => ({ refs: findAddedRisk(rt, ctx.threadId, structured)?.refs ?? [] })
   )
 
+const updateThreadNextStepCriterionIdRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'update_thread.next_step_criterion_id',
+    updateThreadTool,
+    openUpdateThreadFixture,
+    (ctx: UpdateThreadFixtureCtx) => ({ thread_id: ctx.threadId, next_step: 'next step criterion probe text' }),
+    (ctx: UpdateThreadFixtureCtx) => ({
+      thread_id: ctx.threadId,
+      next_step: 'next step criterion probe text',
+      next_step_criterion_id: mustGet(ctx.criterionIds, 0, 'the first fixture criterion id')
+    }),
+    (_structured, rt, ctx: UpdateThreadFixtureCtx) => ({
+      next_step_criterion_id: readThreadRecord(rt, ctx.threadId)?.spine.next_step_criterion_id ?? null
+    })
+  )
+
 const updateThreadCriteriaSettledSettledByRecipe = (): Promise<RecipeResult> =>
   runOptionalArgRecipe(
     'update_thread.criteria_settled[].settled_by',
@@ -704,6 +720,30 @@ const openParkThreadCrossSessionFixture = async (rt: Runtime): Promise<ParkThrea
   if (!resumed.ok) throw new Error('optional-argument-recipes: expected the park_thread cross-session fixture pointer to be set')
   return { threadId }
 }
+
+type ParkThreadCriterionFixtureCtx = ParkThreadFixtureCtx & { criterionIds: string[] }
+
+const openParkThreadCriterionFixture = async (rt: Runtime): Promise<ParkThreadCriterionFixtureCtx> => {
+  const { threadId, criterionIds } = await openFixtureThread(rt, 'park-thread-criterion')
+  const resumed = await resumeThreadTool.handler(rt, STUB_TOOL_CTX, { thread_id: threadId })
+  if (!resumed.ok) throw new Error('optional-argument-recipes: expected the park_thread criterion fixture pointer to be set')
+  return { threadId, criterionIds }
+}
+
+const parkThreadNextStepCriterionIdRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'park_thread.next_step_criterion_id',
+    parkThreadTool,
+    openParkThreadCriterionFixture,
+    () => ({ next_step: 'park next step criterion probe text' }),
+    (ctx: ParkThreadCriterionFixtureCtx) => ({
+      next_step: 'park next step criterion probe text',
+      next_step_criterion_id: mustGet(ctx.criterionIds, 0, 'the park_thread fixture criterion id')
+    }),
+    (_structured, rt, ctx: ParkThreadCriterionFixtureCtx) => ({
+      next_step_criterion_id: readThreadRecord(rt, ctx.threadId)?.spine.next_step_criterion_id ?? null
+    })
+  )
 
 type ParkFieldSpec = {
   field: string
@@ -867,6 +907,7 @@ export const RECIPES: ReadonlyMap<string, () => Promise<RecipeResult>> = new Map
   ...simpleUpdateThreadRecipes,
   ['update_thread.risks_add[].refs', updateThreadRisksAddRefsRecipe],
   ['update_thread.criteria_settled[].settled_by', updateThreadCriteriaSettledSettledByRecipe],
+  ['update_thread.next_step_criterion_id', updateThreadNextStepCriterionIdRecipe],
   ['amend_criteria.criterion_id', amendCriteriaCriterionIdRecipe],
   ['amend_criteria.text', amendCriteriaTextRecipe],
   ['amend_criteria.kind', amendCriteriaKindRecipe],
@@ -875,6 +916,7 @@ export const RECIPES: ReadonlyMap<string, () => Promise<RecipeResult>> = new Map
   ['amend_criteria.settled_by', amendCriteriaSettledByRecipe],
   ['amend_criteria.position', amendCriteriaPositionRecipe],
   ...parkThreadRecipes,
+  ['park_thread.next_step_criterion_id', parkThreadNextStepCriterionIdRecipe],
   ...recordDecisionSimpleRecipes,
   ['record_decision.supersedes', recordDecisionSupersedesRecipe],
   ['list_threads.cursor', listThreadsCursorRecipe],

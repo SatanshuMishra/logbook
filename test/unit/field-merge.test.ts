@@ -444,12 +444,14 @@ test('merge.conflicts-on-scalar', () => {
   if (result.ok) {
     throw new Error('expected the merge to refuse')
   }
-  assert.equal(result.conflicts.length, 1)
-  const found = result.conflicts[0]
-  assert.ok(found)
-  assert.equal(found.field, 'spine.next_step')
-  assert.equal(found.ours, 'A')
-  assert.equal(found.theirs, 'B')
+  assert.deepEqual(
+    result.conflicts.map((entry) => [entry.field, entry.ours, entry.theirs]),
+    [
+      ['spine.next_step', 'A', 'B'],
+      ['spine.next_step_criterion_id', null, null]
+    ],
+    'a next step is disputed with its criterion, even where neither side names one, so a later local change to either is caught as stale'
+  )
 })
 
 test('merge.conflict-on-divergence-field-cleared-to-null-still-conflicts', () => {
@@ -614,7 +616,8 @@ test('merge.a-one-sided-risk-removal-conflicts-rather-than-losing', () => {
 
 test('merge.every-declared-rule-path-is-written-by-the-merge', () => {
   const artifact = { id: ULID_C, label: 'the plan', pointer: 'docs/plans/x.md', retired: false }
-  const populated = (): Thread => baseThread({ predecessor_id: ULID_A, artifacts: [artifact] })
+  const populated = (): Thread =>
+    baseThread({ predecessor_id: ULID_A, artifacts: [artifact], spine: { ...baseSpine(), next_step_criterion_id: ULID_D } })
 
   const result = mergeThread(populated(), populated(), populated())
 
@@ -658,11 +661,105 @@ test('merge.rule-table-is-covered.walk-finds-spine-and-top-level-paths', () => {
       'spine.landed',
       'spine.last_session',
       'spine.next_step',
+      'spine.next_step_criterion_id',
       'spine.out_of_scope',
       'spine.open_risks',
       'status',
       'title',
       'updated_at'
     ].sort()
+  )
+})
+
+test('merge.a-next-step-criterion-changed-differently-on-both-sides-conflicts', () => {
+  const base = baseThread()
+  const ours = baseThread({ spine: { ...baseSpine(), next_step_criterion_id: ULID_B } })
+  const theirs = baseThread({ spine: { ...baseSpine(), next_step_criterion_id: ULID_C } })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(result.ok, false)
+  if (result.ok) throw new Error('expected the merge to refuse')
+  assert.deepEqual(
+    result.conflicts.map((found) => found.field),
+    ['spine.next_step', 'spine.next_step_criterion_id'],
+    'the next step is disputed with its criterion even where both sides wrote the same text, so a later local change to it is caught as stale'
+  )
+})
+
+test('merge.a-next-step-criterion-set-on-one-side-is-kept-and-none-adds-no-key', () => {
+  const base = baseThread()
+  const ours = baseThread({ spine: { ...baseSpine(), next_step_criterion_id: ULID_B } })
+
+  const oneSided = mergeThread(base, ours, baseThread())
+  assert.equal(oneSided.ok, true)
+  if (!oneSided.ok) throw new Error('expected the merge to succeed')
+  assert.equal(oneSided.merged.spine.next_step_criterion_id, ULID_B)
+
+  const neither = mergeThread(base, baseThread(), baseThread())
+  assert.equal(neither.ok, true)
+  if (!neither.ok) throw new Error('expected the merge to succeed')
+  assert.equal('next_step_criterion_id' in neither.merged.spine, false)
+})
+
+const withNextStep = (nextStep: string, criterionId: string | null): Thread =>
+  baseThread({
+    spine: { ...baseSpine(), next_step: nextStep, ...(criterionId === null ? {} : { next_step_criterion_id: criterionId }) }
+  })
+
+test('merge.next-step-and-its-criterion-merge-as-one-pair', () => {
+  const namedOnOneSideReplacedOnTheOther = mergeThread(
+    withNextStep('drain the queue', null),
+    withNextStep('drain the queue', ULID_B),
+    withNextStep('warm the cache', null)
+  )
+  assert.equal(namedOnOneSideReplacedOnTheOther.ok, false, 'a criterion named for one next step must never merge onto the next step the other side wrote')
+  if (namedOnOneSideReplacedOnTheOther.ok) throw new Error('expected the merge to refuse')
+  assert.deepEqual(
+    namedOnOneSideReplacedOnTheOther.conflicts.map((found) => found.field),
+    ['spine.next_step', 'spine.next_step_criterion_id']
+  )
+
+  const renamedOnOneSideReplacedOnTheOther = mergeThread(
+    withNextStep('drain the queue', ULID_B),
+    withNextStep('drain the queue', ULID_C),
+    withNextStep('warm the cache', ULID_B)
+  )
+  assert.equal(renamedOnOneSideReplacedOnTheOther.ok, false, 'a criterion changed on one side must never merge onto the next step the other side replaced')
+  if (renamedOnOneSideReplacedOnTheOther.ok) throw new Error('expected the merge to refuse')
+  assert.deepEqual(
+    renamedOnOneSideReplacedOnTheOther.conflicts.map((found) => found.field),
+    ['spine.next_step', 'spine.next_step_criterion_id']
+  )
+
+  const sameCriterionDifferentSteps = mergeThread(
+    withNextStep('drain the queue', ULID_B),
+    withNextStep('drain the queue faster', ULID_B),
+    withNextStep('drain the queue sooner', ULID_B)
+  )
+  assert.equal(sameCriterionDifferentSteps.ok, false)
+  if (sameCriterionDifferentSteps.ok) throw new Error('expected the merge to refuse')
+  assert.deepEqual(
+    sameCriterionDifferentSteps.conflicts.map((found) => found.field),
+    ['spine.next_step', 'spine.next_step_criterion_id'],
+    'both sides name the same criterion, yet a later write can keep the next step and change the criterion, so both are disputed'
+  )
+
+  const replacedOnOneSideOnly = mergeThread(
+    withNextStep('drain the queue', ULID_B),
+    withNextStep('drain the queue', ULID_B),
+    withNextStep('warm the cache', null)
+  )
+  assert.equal(replacedOnOneSideOnly.ok, true, 'a pair changed on one side only is taken whole')
+  if (!replacedOnOneSideOnly.ok) throw new Error('expected the merge to succeed')
+  assert.equal(replacedOnOneSideOnly.merged.spine.next_step, 'warm the cache')
+  assert.equal('next_step_criterion_id' in replacedOnOneSideOnly.merged.spine, false)
+})
+
+test('merge.the-next-step-and-its-criterion-share-one-rule', () => {
+  assert.equal(
+    THREAD_RULES['spine.next_step_criterion_id'],
+    THREAD_RULES['spine.next_step'],
+    'the two halves of the next-step pair merge as one value, so their declared rules cannot differ'
   )
 })
