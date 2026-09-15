@@ -16,7 +16,7 @@ description: Use at session hand-off to wrap up the work of this session.
 9. Call `update_thread` with `update_thread.thread_id` set to the thread this session worked, `update_thread.risks_add` carrying the found risks that were not set aside, each with its text, its scope and its criterion_id, and `update_thread.risks_retire` carrying the open risks gathered as over or repeated.
 10. Print the returned `update_thread.risks_added`, `update_thread.risks_already_present` and `update_thread.risks_retired`.
 11. Print the refusal text `update_thread` returns in place of those fields, alongside the found risks and the open risks gathered as over or repeated, so the risks this session found survive a refused call.
-12. Call `park_thread` with `park_thread.outcome` set to the summary, `park_thread.landed` set to what landed, `park_thread.next_step` set to the next action, and `park_thread.next_step_criterion_id` set to the criterion id that action advances, left out for an action that advances no single criterion.
+12. Call `park_thread` with `park_thread.outcome` set to the summary followed by any update_thread refusal text and the risks printed with it, `park_thread.landed` set to what landed, `park_thread.next_step` set to the next action, and `park_thread.next_step_criterion_id` set to the criterion id that action advances, left out for an action that advances no single criterion.
 13. Print the returned `park_thread.status` and the returned `park_thread.spine_fields_updated`.
 14. Print the refusal text `park_thread` returns in place of a status.
 15. Print the summary, the landing and the next action alongside that refusal text, so the record of this session survives a refused call.

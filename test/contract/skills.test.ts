@@ -584,6 +584,11 @@ test('skill.debrief-chooses-criteria-from-the-thread-record-and-keeps-found-risk
 
   const riskCallIndex = steps.findIndex((step) => stepContainsSpan(step, 'update_thread.risks_add'))
   assert.ok((steps[riskCallIndex] as string).includes('scope'), 'expected every added risk to carry the scope risks_add takes')
+  const foundRisksIndex = steps.findIndex((step) => firstWordOf(step) === 'Gather' && step.includes('risks this session found'))
+  assert.ok(
+    foundRisksIndex !== -1 && foundRisksIndex < riskCallIndex && (steps[foundRisksIndex] as string).includes('scope'),
+    'expected a scope to be gathered with each found risk before update_thread is called'
+  )
 
   const refusalIndex = steps.findIndex((step) => firstWordOf(step) === 'Print' && step.includes('refusal text `update_thread` returns'))
   const parkIndex = steps.findIndex((step) => stepContainsSpan(step, 'park_thread.outcome'))
@@ -592,6 +597,10 @@ test('skill.debrief-chooses-criteria-from-the-thread-record-and-keeps-found-risk
     'expected a refused update_thread to be printed with the found risks before the thread is parked'
   )
   assert.ok((steps[refusalIndex] as string).includes('found risks'), 'expected the found risks to be printed with the update_thread refusal')
+  assert.ok(
+    (steps[parkIndex] as string).includes('refusal'),
+    'expected the park outcome to carry an update_thread refusal and its found risks, so they reach the ledger'
+  )
 })
 
 test('skill.preflight-resumes-before-it-asks-anything', () => {
