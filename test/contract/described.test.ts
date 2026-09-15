@@ -107,14 +107,17 @@ test('contract.every-property-described.control.a-nullable-scalar-is-described-b
     ['$defs', { elsewhere: { type: 'object', properties: { inner: { type: 'string' } } } }],
     ['additionalProperties', { type: 'string' }],
     ['properties', { inner: { type: 'string' } }],
-    ['items', { type: 'string' }]
+    ['items', { type: 'string' }],
+    ['oneOf', [{ type: 'string' }, { type: 'integer' }]],
+    ['allOf', [{ type: 'string' }]],
+    ['type', 'string']
   ] as const) {
     const nullableBesideSubschema: SchemaNode = {
       path: `probe.nullableBeside${key}`,
       value: {
         anyOf: [{ type: 'string' }, { type: 'null' }],
         [key]: subschema,
-        description: 'a nullable string sitting beside a subschema no walker reaches'
+        description: 'a nullable string sitting beside another schema keyword'
       }
     }
     assert.equal(
