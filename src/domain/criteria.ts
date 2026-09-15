@@ -57,15 +57,6 @@ const criterionNotFoundRefusal = (field: string, criterionId: string): Refusal =
   message: `${field} does not match any criterion on this thread; received ${criterionId}.`
 })
 
-const textCapRefusal = (field: string, observed: number, limit: number, remedy: string): Refusal => ({
-  ok: false,
-  field,
-  accepted: `at most ${limit} characters after escaping`,
-  example: 'ship the health check before closing this thread',
-  retryable: true,
-  message: `${field} exceeds its cap of ${limit} characters after escaping; observed ${observed}; remedy: ${remedy}.`
-})
-
 const capacityRefusal = (field: string, limit: number, observed: number, remedy: string): Refusal => ({
   ok: false,
   field,
@@ -155,24 +146,7 @@ export const insertCriterion = (
   }
 
   const escapedText = escapeStored(input.text)
-  if (escapedText.length > caps.CRITERION_TEXT_MAX) {
-    return textCapRefusal(
-      'criteria.insert.text',
-      escapedText.length,
-      caps.CRITERION_TEXT_MAX,
-      'shorten the criterion text and retry'
-    )
-  }
-
   const escapedCheck = input.check === null || input.check === undefined ? undefined : escapeStored(input.check)
-  if (escapedCheck !== undefined && escapedCheck.length > caps.CRITERION_CHECK_MAX) {
-    return textCapRefusal(
-      'criteria.insert.check',
-      escapedCheck.length,
-      caps.CRITERION_CHECK_MAX,
-      'shorten the check and retry'
-    )
-  }
 
   const escapedSettledBy =
     input.settledBy === null || input.settledBy === undefined ? undefined : escapeStored(input.settledBy)
@@ -222,24 +196,7 @@ export const rewriteCriterion = (
   }
 
   const escapedText = escapeStored(input.text)
-  if (escapedText.length > caps.CRITERION_TEXT_MAX) {
-    return textCapRefusal(
-      'criteria.rewrite.text',
-      escapedText.length,
-      caps.CRITERION_TEXT_MAX,
-      'shorten the criterion text and retry'
-    )
-  }
-
   const escapedCheck = input.check === null || input.check === undefined ? undefined : escapeStored(input.check)
-  if (escapedCheck !== undefined && escapedCheck.length > caps.CRITERION_CHECK_MAX) {
-    return textCapRefusal(
-      'criteria.rewrite.check',
-      escapedCheck.length,
-      caps.CRITERION_CHECK_MAX,
-      'shorten the check and retry'
-    )
-  }
 
   const next = thread.completion_criteria.map((criterion) =>
     criterion.id === input.criterionId

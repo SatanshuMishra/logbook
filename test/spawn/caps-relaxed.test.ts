@@ -27,6 +27,8 @@ const FORMER_THREAD_RECORD_SERIALISED_MAX_BYTES = 65536
 const FORMER_DECISION_RECORD_SERIALISED_MAX_BYTES = 65536
 const FORMER_THREAD_TITLE_MAX = 200
 const FORMER_HEADER_TEXT_MAX = 500
+const FORMER_CRITERION_TEXT_MAX = 500
+const FORMER_CRITERION_CHECK_MAX = 500
 
 type Fixture = { spawned: SpawnedServer; repo: string; pluginData: string; homeDir: string }
 
@@ -520,6 +522,78 @@ test('caps-relaxed.park-thread-next-step-and-landed-past-their-former-caps-are-a
     const stored = readThreadRecord(fx, threadId)
     assert.equal(stored.spine.next_step, NEXT_STEP_PAYLOAD, 'the stored next step must equal the sent payload exactly')
     assert.equal(stored.spine.landed, LANDED_PAYLOAD, 'the stored landed value must equal the sent payload exactly')
+  })
+})
+
+test('caps-relaxed.criterion-text-and-check-past-their-former-caps-are-accepted-verbatim', async () => {
+  await withFixture(async (fx) => {
+    const OPENED_TEXT_PAYLOAD = buildVerbatimPayload(FORMER_CRITERION_TEXT_MAX + 100, 'This is the long opened criterion text payload.')
+    const OPENED_CHECK_PAYLOAD = buildVerbatimPayload(FORMER_CRITERION_CHECK_MAX + 100, 'This is the long opened criterion check payload.')
+    const INSERTED_TEXT_PAYLOAD = buildVerbatimPayload(FORMER_CRITERION_TEXT_MAX + 100, 'This is the long inserted criterion text payload.')
+    const INSERTED_CHECK_PAYLOAD = buildVerbatimPayload(FORMER_CRITERION_CHECK_MAX + 100, 'This is the long inserted criterion check payload.')
+    const REWRITTEN_TEXT_PAYLOAD = buildVerbatimPayload(FORMER_CRITERION_TEXT_MAX + 100, 'This is the long rewritten criterion text payload.')
+    const REWRITTEN_CHECK_PAYLOAD = buildVerbatimPayload(FORMER_CRITERION_CHECK_MAX + 100, 'This is the long rewritten criterion check payload.')
+
+    const { threadId, criterionIds } = await openMinimalThread(fx, 'criterion-text-past-former-caps', [
+      { text: OPENED_TEXT_PAYLOAD, check: OPENED_CHECK_PAYLOAD, settledness: 'proposed' }
+    ])
+    const openedCriterionId = criterionIds[0]
+    assert.ok(openedCriterionId !== undefined, 'caps-relaxed fixture: open_thread minted no criterion')
+    const afterOpen = readThreadRecord(fx, threadId).completion_criteria.find((c) => c.id === openedCriterionId)
+    assert.equal(afterOpen?.text, OPENED_TEXT_PAYLOAD, 'open_thread must store the criterion text exactly')
+    assert.equal(afterOpen?.check, OPENED_CHECK_PAYLOAD, 'open_thread must store the criterion check exactly')
+
+    const recorded = await callRecordDecision(fx, {
+      thread_id: threadId,
+      title: 'amend the long criteria',
+      context: 'the fixture needs a decision to amend criteria against',
+      options: ['amend them'],
+      outcome: 'amend them'
+    })
+    assert.equal(
+      recorded.isError,
+      undefined,
+      `caps-relaxed fixture: record_decision refused: ${recorded.isError === true ? firstTextOf(recorded) : 'no error'}`
+    )
+    const decisionId = (recorded.structuredContent as { decision_id: string }).decision_id
+
+    const inserted = await callAmendCriteria(fx, {
+      thread_id: threadId,
+      operation: 'insert',
+      text: INSERTED_TEXT_PAYLOAD,
+      check: INSERTED_CHECK_PAYLOAD,
+      settledness: 'proposed',
+      kind: 'planned',
+      decision_id: decisionId
+    })
+    assert.equal(
+      inserted.isError,
+      undefined,
+      `amend_criteria insert must accept text and check past their former caps, got: ${inserted.isError === true ? firstTextOf(inserted) : 'no error'}`
+    )
+    const insertedCriterionId = (inserted.structuredContent as { criterion_id: string }).criterion_id
+
+    const rewritten = await callAmendCriteria(fx, {
+      thread_id: threadId,
+      operation: 'rewrite',
+      criterion_id: openedCriterionId,
+      text: REWRITTEN_TEXT_PAYLOAD,
+      check: REWRITTEN_CHECK_PAYLOAD,
+      decision_id: decisionId
+    })
+    assert.equal(
+      rewritten.isError,
+      undefined,
+      `amend_criteria rewrite must accept text and check past their former caps, got: ${rewritten.isError === true ? firstTextOf(rewritten) : 'no error'}`
+    )
+
+    const stored = readThreadRecord(fx, threadId)
+    const insertedCriterion = stored.completion_criteria.find((c) => c.id === insertedCriterionId)
+    const rewrittenCriterion = stored.completion_criteria.find((c) => c.id === openedCriterionId)
+    assert.equal(insertedCriterion?.text, INSERTED_TEXT_PAYLOAD, 'the inserted criterion text must be stored exactly')
+    assert.equal(insertedCriterion?.check, INSERTED_CHECK_PAYLOAD, 'the inserted criterion check must be stored exactly')
+    assert.equal(rewrittenCriterion?.text, REWRITTEN_TEXT_PAYLOAD, 'the rewritten criterion text must be stored exactly')
+    assert.equal(rewrittenCriterion?.check, REWRITTEN_CHECK_PAYLOAD, 'the rewritten criterion check must be stored exactly')
   })
 })
 

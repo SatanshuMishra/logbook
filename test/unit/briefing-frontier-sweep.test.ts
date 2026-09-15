@@ -49,6 +49,7 @@ const CRITERIA_COUNTS = [0, 1, 5, 10, 20, caps.CRITERIA_MAX_ELEMENTS, 120, caps.
 const KEY_DECISION_COUNTS = [0, 5, 10, caps.KEY_DECISIONS_MAX_ELEMENTS]
 const BULK_COUNT_DIMENSION_CANDIDATES = [0, 1, 5]
 const SWEEP_RECORD_BYTES_CEILING = 65536
+const SWEEP_CRITERION_TEXT_MAX = 500
 
 const GRAPHEME_DENSITY_PROBE_LENGTH = 4
 
@@ -457,7 +458,7 @@ const sweep = (): SweptRecord[] => {
             .sort((left, right) => left - right)
 
           for (const bulkCount of bulkCounts) {
-            const recordCeiling = largestSatisfying(caps.CRITERION_TEXT_MAX, (candidate) =>
+            const recordCeiling = largestSatisfying(SWEEP_CRITERION_TEXT_MAX, (candidate) =>
               withinRecordCap(shapeAt(candidate, bulkCount))
             )
 
@@ -609,7 +610,7 @@ test('briefing.frontier-sweep-finds-no-record-that-loses-an-item-or-hides-a-budg
     `dimension key-decision count: ${KEY_DECISION_COUNTS.join(', ')} within bounds 0 and ${caps.KEY_DECISIONS_MAX_ELEMENTS}`
   )
   t.diagnostic(
-    `dimension criterion text length: per configuration zero, one, the unclipped-render frontier and both its neighbours, the midpoint beyond it, and the longest text the record byte cap admits; observed span ${Math.min(...sweptTextLengths)} to ${Math.max(...sweptTextLengths)} within bounds 0 and ${caps.CRITERION_TEXT_MAX}`
+    `dimension criterion text length: per configuration zero, one, the unclipped-render frontier and both its neighbours, the midpoint beyond it, and the longest text the record byte cap admits; observed span ${Math.min(...sweptTextLengths)} to ${Math.max(...sweptTextLengths)} within bounds 0 and ${SWEEP_CRITERION_TEXT_MAX}`
   )
   t.diagnostic(
     `dimension bulk count (open risks and out-of-scope elements, held equal): ${BULK_COUNT_DIMENSION_CANDIDATES.join(', ')}, and the largest count the record byte cap admits at that configuration, skipping any listed candidate above that largest count; observed span ${Math.min(...sweptBulkCounts)} to ${Math.max(...sweptBulkCounts)} within bounds 0 and ${caps.RISKS_PER_CALL_MAX_ELEMENTS}`
@@ -622,8 +623,8 @@ test('briefing.frontier-sweep-finds-no-record-that-loses-an-item-or-hides-a-budg
 
   assert.equal(
     Math.max(...sweptTextLengths),
-    caps.CRITERION_TEXT_MAX,
-    'the criterion text dimension must reach the schema text cap somewhere in the grid, or the sweep never tested the longest admissible criterion text'
+    SWEEP_CRITERION_TEXT_MAX,
+    'the criterion text dimension must reach SWEEP_CRITERION_TEXT_MAX, the former criterion text cap the sweep keeps as its upper bound, somewhere in the grid, or the sweep never tested its longest criterion text'
   )
   for (const fill of FILLS) {
     assert.ok(

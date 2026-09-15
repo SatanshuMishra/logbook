@@ -67,7 +67,7 @@ const CriterionSchema = structural(
     ordinal: structural(
       z.number().int().min(1).describe('the rendered position of this criterion, recomputed on render, never merged')
     ),
-    text: content(z.string().max(caps.CRITERION_TEXT_MAX).describe('the criterion text')),
+    text: content(z.string().describe('the criterion text')),
     done: structural(z.boolean().describe('whether this criterion has been satisfied')),
     kind: structural(
       z.enum(['planned', 'detour']).describe('whether this criterion was planned up front or added mid-thread')
@@ -75,7 +75,6 @@ const CriterionSchema = structural(
     check: content(
       z
         .string()
-        .max(caps.CRITERION_CHECK_MAX)
         .nullable()
         .optional()
         .describe('the re-runnable check that decides whether this criterion is true, absent when none is recorded')

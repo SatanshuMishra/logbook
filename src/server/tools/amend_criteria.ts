@@ -2,7 +2,6 @@ import { z } from 'zod'
 import type { ToolSpec } from '../register.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import { ULID_PATTERN } from '../../schema/ids.ts'
-import * as caps from '../../schema/caps.ts'
 import { insertCriterion, rewriteCriterion, strikeCriterion } from '../../domain/criteria.ts'
 import { commitThread, decisionResolver, loadThread, openProjectStore } from '../tool-support.ts'
 
@@ -19,7 +18,6 @@ const AmendCriteriaInputSchema = z.strictObject({
   text: z
     .string()
     .min(1)
-    .max(caps.CRITERION_TEXT_MAX)
     .optional()
     .describe('the criterion text for insert or rewrite; required for those two, ignored for strike'),
   kind: z
@@ -29,7 +27,6 @@ const AmendCriteriaInputSchema = z.strictObject({
   check: z
     .string()
     .min(1)
-    .max(caps.CRITERION_CHECK_MAX)
     .optional()
     .describe(
       'the re-runnable check that decides whether a criterion is true; required for insert unless settledness is unsettled; on a rewrite it is optional and writes the criterion\'s check, and omitting it leaves the existing check unchanged; ignored on strike'

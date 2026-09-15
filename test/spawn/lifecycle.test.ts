@@ -375,7 +375,7 @@ test('amend_criteria.spawn.contract', async () => {
 
 test('amend_criteria.rejects-invalid', async () => {
   await withFixture(async (fx) => {
-    await runRejectsInvalid(fx, 'amend_criteria', ['minItems'])
+    await runRejectsInvalid(fx, 'amend_criteria', ['maxLength', 'minItems'])
   })
 })
 

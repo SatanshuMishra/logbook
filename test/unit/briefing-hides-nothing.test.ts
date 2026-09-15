@@ -16,6 +16,8 @@ import { REBUILD_ROOT, forEachDescendant, lineOf, loadSourceProgram, relativeToR
 const rt = testRuntime()
 
 const FORMER_THREAD_TITLE_MAX = 200
+const FORMER_CRITERION_TEXT_MAX = 500
+const FORMER_CRITERION_CHECK_MAX = 500
 
 const EMPTY_INTEGRITY: DecisionIntegrity = { resolved: 0, dangling: [], quarantined: [] }
 
@@ -263,8 +265,8 @@ test('briefing.a-render-that-fits-its-budget-is-clipped-nowhere', () => {
     completion_criteria: [
       criterionOf({
         ordinal: 1,
-        text: ESCAPE_EXPANDING_CHAR.repeat(caps.CRITERION_TEXT_MAX),
-        check: ESCAPE_EXPANDING_CHAR.repeat(caps.CRITERION_CHECK_MAX)
+        text: ESCAPE_EXPANDING_CHAR.repeat(FORMER_CRITERION_TEXT_MAX),
+        check: ESCAPE_EXPANDING_CHAR.repeat(FORMER_CRITERION_CHECK_MAX)
       })
     ],
     spine: {
