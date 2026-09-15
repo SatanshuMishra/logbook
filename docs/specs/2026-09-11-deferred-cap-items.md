@@ -214,6 +214,8 @@ Plus a skill: before adding a risk, read the live ones and retire any that say t
 
 `readRecordFile` at `src/store/read-path.ts:208` catches every read error, not only "file not found", and quarantines that one record with the error code. There is no size check.
 
+> Amended on 2026-09-14 (decision 01M2H40CVM5RE2M2HQNB40ZYSB): a quarantined record must never be treated as absent where that loses work. Sync refuses to merge when a local record it cannot read is also carried by the other side or the common ancestor and this machine's committed copy differs from the ancestor's, and the cached roster read counts a thread it finds closed as terminal. Both defects predated this item for malformed records; quarantining every read error would have widened them.
+
 ### The problem it solves
 
 One oversized file breaks every thread listing in the project.

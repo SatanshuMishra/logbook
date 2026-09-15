@@ -3,7 +3,7 @@ import type { ToolSpec } from '../register.ts'
 import { NO_ARGUMENTS } from '../no-arguments.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import { layoutFor } from '../../store/layout.ts'
-import { sync, type RejectedOutcome } from '../../merge/sync.ts'
+import { sync, type RejectedOutcome, type UnreadableLocalRecord } from '../../merge/sync.ts'
 import { withDetail } from '../../store/detail.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { clipWithMarker } from '../../render/clip.ts'
@@ -98,10 +98,32 @@ const invalidMergedRecordRefusal = (field: string, detail: string): Refusal =>
     detail
   )
 
+const unreadableLocalRecordsRefusal = (records: readonly UnreadableLocalRecord[], detail: string): Refusal => {
+  const shown = records.slice(0, caps.UNPARSEABLE_RECORDS_SHOWN_MAX)
+  const remainder = records.length - shown.length
+  const rendered = shown.map((record) => {
+    const name = clipWithMarker(escapeStored(record.relPath, 'angle-wrapped'), caps.UNPARSEABLE_RECORD_NAME_MAX)
+    return `<${name}> (${escapeStored(record.reason, 'paren-wrapped')})`
+  })
+  const named = remainder > 0 ? `${rendered.join(', ')} (+${remainder} more)` : rendered.join(', ')
+  return withDetail(
+    {
+      ok: false,
+      field: 'sync',
+      accepted: 'a local ledger whose record files this merge would decide can all be read and parsed on this machine',
+      example: 'restore read access to the named record files, or repair or remove the ones that do not parse, then retry the call',
+      retryable: true,
+      message: `sync stopped before merging: this machine could not read or parse ${records.length} of its own record file(s) that this merge would decide, because the shared ledger or the common ancestor also carries them: ${named}. Merging now would decide those records without this machine's copy and could overwrite committed local work, so nothing was merged and nothing was sent to origin. Restore read access to a file that could not be read, or repair or remove one that does not parse, then run sync_ledger again.`
+    },
+    detail
+  )
+}
+
 export const rejectedRefusal = (outcome: RejectedOutcome): Refusal => {
   if (outcome.cause === 'remote-rejected') return remoteRejectedRefusal(outcome.detail)
   if (outcome.cause === 'contention') return contentionRefusal(outcome.detail)
   if (outcome.cause === 'invalid-merged-record') return invalidMergedRecordRefusal(outcome.field, outcome.detail)
+  if (outcome.cause === 'unreadable-local-record') return unreadableLocalRecordsRefusal(outcome.records, outcome.detail)
   return localSyncFailureRefusal(outcome.detail)
 }
 

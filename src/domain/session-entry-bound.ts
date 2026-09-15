@@ -2,32 +2,16 @@ import { readdirSync } from 'node:fs'
 import path from 'node:path'
 import * as caps from '../schema/caps.ts'
 import { ULID_PATTERN } from '../schema/ids.ts'
-import { SessionRecord, type SessionEntry, type Ulid } from '../schema/session.ts'
-import { readRecordFile, type Slot } from '../store/read-path.ts'
+import { SessionRecord, type Ulid } from '../schema/session.ts'
+import { errnoCode } from '../store/detail.ts'
+import { readRecordFile } from '../store/read-path.ts'
 import { PARK_THREAD_ACTOR } from './session-log.ts'
 
 const JSON_EXTENSION = '.json'
 
-const errnoCode = (error: unknown): string => {
-  if (typeof error === 'object' && error !== null && 'code' in error) {
-    const code = (error as { code?: unknown }).code
-    if (typeof code === 'string' && code.length > 0) return code
-  }
-  return 'unknown'
-}
-
 const sessionsDirFor = (recordsDir: string, threadId: Ulid): string => path.join(recordsDir, 'sessions', threadId)
 
 const stemOf = (fileName: string): string => fileName.slice(0, -JSON_EXTENSION.length)
-
-const readSessionSlot = (filePath: string): Slot<SessionEntry> | null => {
-  try {
-    return readRecordFile(filePath, SessionRecord)
-  } catch (error) {
-    if (errnoCode(error) === 'ENOENT') return null
-    return { quarantined: true, path: filePath, reason: `session entry file could not be read: ${errnoCode(error)}` }
-  }
-}
 
 export const unparkedSessionEntriesSaturateBound = (recordsDir: string, threadId: Ulid): boolean => {
   let entries: string[]
@@ -48,7 +32,7 @@ export const unparkedSessionEntriesSaturateBound = (recordsDir: string, threadId
     if (scanned >= caps.SESSION_UNPARKED_ENTRIES_MAX) break
     scanned += 1
     const filePath = path.join(sessionsDirFor(recordsDir, threadId), name)
-    const slot = readSessionSlot(filePath)
+    const slot = readRecordFile(filePath, SessionRecord)
     if (slot === null) continue
     if (slot.quarantined) {
       count += 1

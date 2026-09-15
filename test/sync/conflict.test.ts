@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
 import { BindingRecord, type Binding } from '../../src/schema/binding.ts'
@@ -8,6 +8,7 @@ import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { readAllRecordFiles } from '../../src/store/read-path.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
 import { sync } from '../../src/merge/sync.ts'
+import { rejectedRefusal } from '../../src/server/tools/sync_ledger.ts'
 import { writeRecords, type RecordChange } from '../../src/store/write-path.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import * as caps from '../../src/schema/caps.ts'
@@ -570,6 +571,128 @@ test('sync.a-locally-quarantined-record-is-logged-not-silently-dropped', () => {
     assert.equal(quarantineLogs[0]?.level, 'warn')
     assert.equal(quarantineLogs[0]?.kind, 'decision')
     assert.equal(typeof quarantineLogs[0]?.reason, 'string')
+  })
+})
+
+test('sync.refuses-to-merge-over-a-local-record-it-cannot-read-that-the-other-side-also-carries', () => {
+  withTwoClones((ana, ben, remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+
+    const original = makeThread(ana.rt, 'unreadable-on-ben')
+    assert.equal(ana.store.commit([original], 'ana: create shared thread').ok, true)
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    const editNextStep = (teammate: Teammate, nextStep: string): RecordChange => {
+      const slot = teammate.store.readThread(original.record.id)
+      if (slot === null || slot.quarantined) throw new Error('expected the shared thread to be readable')
+      return {
+        kind: 'thread',
+        record: { ...slot.record, spine: { ...slot.record.spine, next_step: nextStep }, updated_at: teammate.rt.now() }
+      }
+    }
+    assert.equal(ben.store.commit([editNextStep(ben, 'ben changed the next step')], 'ben: change next step').ok, true)
+    assert.equal(ana.store.commit([editNextStep(ana, 'ana changed the next step')], 'ana: change next step').ok, true)
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+
+    const remoteBefore = git(ben.rt, remote, ['rev-parse', 'refs/logbook/ledger'])
+    assert.equal(remoteBefore.ok, true)
+    const localBefore = git(ben.rt, ben.repo, ['rev-parse', LEDGER_REF])
+    assert.equal(localBefore.ok, true)
+
+    const relPath = path.join('threads', `${original.record.id}.json`)
+    const benThreadPath = path.join(benLayout.records, relPath)
+    const benThreadBytes = readFileSync(benThreadPath, 'utf8')
+    rmSync(benThreadPath)
+    mkdirSync(benThreadPath)
+    const outcome = sync(ben.rt, ben.store, benLayout)
+    rmSync(benThreadPath, { recursive: true })
+    writeFileSync(benThreadPath, benThreadBytes, 'utf8')
+
+    const localAfter = git(ben.rt, ben.repo, ['rev-parse', LEDGER_REF])
+    assert.equal(localAfter.ok, true)
+    const remoteAfter = git(ben.rt, remote, ['rev-parse', 'refs/logbook/ledger'])
+    assert.equal(remoteAfter.ok, true)
+    if (!localBefore.ok || !localAfter.ok || !remoteBefore.ok || !remoteAfter.ok) return
+    assert.equal(
+      localAfter.stdout.trim(),
+      localBefore.stdout.trim(),
+      "ben's ledger ref must not move to a merge computed without ben's unreadable copy"
+    )
+    assert.equal(remoteAfter.stdout.trim(), remoteBefore.stdout.trim(), 'nothing may be pushed')
+
+    const benCommitted = git(ben.rt, ben.repo, ['show', `${LEDGER_REF}:threads/${original.record.id}.json`])
+    assert.equal(benCommitted.ok, true)
+    if (!benCommitted.ok) return
+    assert.equal(JSON.parse(benCommitted.stdout).spine.next_step, 'ben changed the next step')
+
+    assert.equal(outcome.ok, false)
+    if (outcome.ok) return
+    assert.equal(outcome.reason, 'rejected')
+    if (outcome.reason !== 'rejected') return
+    assert.equal(outcome.cause, 'unreadable-local-record')
+    if (outcome.cause !== 'unreadable-local-record') return
+    assert.deepEqual(outcome.records, [{ relPath, reason: 'could not be read: EISDIR' }])
+
+    const refusal = rejectedRefusal(outcome)
+    assert.equal(refusal.retryable, true)
+    assert.ok(refusal.message.includes(`<${relPath}> (could not be read: EISDIR)`), refusal.message)
+    assert.ok(refusal.message.includes('nothing was merged and nothing was sent to origin'), refusal.message)
+  })
+})
+
+test('sync.refuses-to-merge-over-a-local-record-it-cannot-read-that-a-remote-file-under-another-name-would-overwrite', () => {
+  withTwoClones((ana, ben, remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+
+    const seed = makeThread(ana.rt, 'misnamed-seed')
+    assert.equal(ana.store.commit([seed], 'ana: seed a shared thread').ok, true)
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    const benOnly = makeThread(ben.rt, 'ben-unpushed')
+    assert.equal(ben.store.commit([benOnly], 'ben: create a thread without pushing it').ok, true)
+
+    const misnamedRelPath = path.join('threads', `${ana.rt.ulid()}.json`)
+    const misnamedContent = JSON.stringify({
+      ...benOnly.record,
+      spine: { ...benOnly.record.spine, next_step: 'overwritten by the remote' }
+    })
+    const rawWrite = writeRecords(
+      ana.rt,
+      anaLayout,
+      [{ kind: 'raw', relPath: misnamedRelPath, content: misnamedContent }],
+      'ana: carry a copy of that thread under another file name'
+    )
+    assert.equal(rawWrite.ok, true)
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+
+    const localBefore = git(ben.rt, ben.repo, ['rev-parse', LEDGER_REF])
+    const remoteBefore = git(ben.rt, remote, ['rev-parse', 'refs/logbook/ledger'])
+    assert.equal(localBefore.ok && remoteBefore.ok, true)
+
+    const relPath = path.join('threads', `${benOnly.record.id}.json`)
+    const benThreadPath = path.join(benLayout.records, relPath)
+    const benThreadBytes = readFileSync(benThreadPath, 'utf8')
+    rmSync(benThreadPath)
+    mkdirSync(benThreadPath)
+    const outcome = sync(ben.rt, ben.store, benLayout)
+    rmSync(benThreadPath, { recursive: true })
+    writeFileSync(benThreadPath, benThreadBytes, 'utf8')
+
+    const localAfter = git(ben.rt, ben.repo, ['rev-parse', LEDGER_REF])
+    const remoteAfter = git(ben.rt, remote, ['rev-parse', 'refs/logbook/ledger'])
+    if (!localBefore.ok || !remoteBefore.ok || !localAfter.ok || !remoteAfter.ok) throw new Error('expected both refs to read')
+    assert.equal(localAfter.stdout.trim(), localBefore.stdout.trim(), "ben's ledger ref must not move over his unreadable thread")
+    assert.equal(remoteAfter.stdout.trim(), remoteBefore.stdout.trim(), 'nothing may be pushed')
+
+    assert.equal(outcome.ok, false)
+    if (outcome.ok || outcome.reason !== 'rejected' || outcome.cause !== 'unreadable-local-record') {
+      throw new Error(`expected an unreadable-local-record refusal; received ${JSON.stringify(outcome)}`)
+    }
+    assert.deepEqual(outcome.records, [{ relPath, reason: 'could not be read: EISDIR' }])
   })
 })
 
