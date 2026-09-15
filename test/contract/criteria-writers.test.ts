@@ -105,9 +105,8 @@ const FREE_TEXT_LEAF_DISPOSITIONS: Readonly<Record<string, LeafDisposition>> = {
   'update_thread::artifacts_add[].label': 'allowed',
   'update_thread::artifacts_add[].pointer': 'allowed',
   'update_thread::artifacts_retire[]': 'allowed',
-  'resolve_conflict::resolutions[].record': 'allowed',
-  'resolve_conflict::resolutions[].field': 'allowed',
-  'resolve_conflict::resolutions[].winner': 'allowed',
+  'resolve_conflict::resolutions[].path': 'allowed',
+  'resolve_conflict::resolutions[].content': 'allowed',
   'list_threads::cursor': 'allowed'
 }
 

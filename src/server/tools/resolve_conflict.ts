@@ -1,97 +1,72 @@
-import { readFileSync, unlinkSync } from 'node:fs'
-import { isDeepStrictEqual } from 'node:util'
-import path from 'node:path'
 import { z } from 'zod'
 import type { ToolSpec } from '../register.ts'
-import type { Refusal } from '../../schema/declare.ts'
+import type { Declared, Refusal } from '../../schema/declare.ts'
 import type { Runtime } from '../../runtime/runtime.ts'
-import {
-  nextStepAnchor,
-  ThreadRecord,
-  type Thread,
-  type Criterion,
-  type Risk,
-  type KeyDecision,
-  type OutOfScope,
-  type Artifact,
-  type Spine
-} from '../../schema/thread.ts'
-import { DecisionRecord, type Decision } from '../../schema/decision.ts'
-import type { Store } from '../../store/records.ts'
-import { layoutFor } from '../../store/layout.ts'
+import { ThreadRecord } from '../../schema/thread.ts'
+import { DecisionRecord } from '../../schema/decision.ts'
+import { SessionRecord } from '../../schema/session.ts'
+import { BindingRecord } from '../../schema/binding.ts'
+import { escapeStoredRecord } from '../../schema/escape-record.ts'
+import { ULID_PATTERN } from '../../schema/ids.ts'
+import { layoutFor, type StoreLayout } from '../../store/layout.ts'
 import { git } from '../../store/git.ts'
-import { advanceMaterialisedStampIfStillCurrent } from '../../store/read-path.ts'
+import { syncWorkingCopy } from '../../store/read-path.ts'
 import { writeRecords, type RecordChange } from '../../store/write-path.ts'
-import { nextStepPairNoteFor, type Conflict } from '../../merge/conflict.ts'
-import { TRACKING_REF } from '../../merge/sync.ts'
-import { THREAD_RULES } from '../../merge/field-merge.ts'
 import { LEDGER_REF } from '../../store/ref.ts'
 import { withDetail } from '../../store/detail.ts'
-import { clipGraphemes, escapeStored } from '../../render/escape.ts'
+import type { ConflictPath, ConflictState } from '../../merge/conflict.ts'
+import { clearConflictState, readConflictState } from '../../merge/conflict-state.ts'
+import { mergeTree, recordsNotTakenWhole } from '../../merge/merge-tree.ts'
+import { escapeStored } from '../../render/escape.ts'
 import { openProjectStore } from '../tool-support.ts'
-import { ULID_PATTERN } from '../../schema/ids.ts'
 
-const EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 const RESOLUTIONS_MAX_ELEMENTS = 200
-const FIELD_MAX = 300
-const anchoredUlid = /^\^(.*)\$$/.exec(ULID_PATTERN.source)
-const ULID_FRAGMENT = anchoredUlid?.[1]
-if (ULID_FRAGMENT === undefined) {
-  throw new Error(
-    `src/server/tools/resolve_conflict.ts: expected schema/ids.ts ULID_PATTERN to be anchored with a leading ^ and a trailing $ so its fragment could be extracted, but ULID_PATTERN.source was ${JSON.stringify(ULID_PATTERN.source)}`
-  )
-}
-const RECORD_PATTERN = new RegExp(`^(thread|decision):(?:${ULID_FRAGMENT})$`)
-const THREAD_RECORD_PATTERN = new RegExp(`^thread:(${ULID_FRAGMENT})$`)
-const DECISION_RECORD_PATTERN = new RegExp(`^decision:(${ULID_FRAGMENT})$`)
+const RESOLUTION_PATH_MAX = 1024
+const RESOLUTION_PATH_PATTERN = /^[^/\0\r\n][^\0\r\n]*$/
+
+const ULID_FRAGMENT = ULID_PATTERN.source.replace(/^\^/, '').replace(/\$$/, '')
+const THREAD_PATH = new RegExp(`^threads/(${ULID_FRAGMENT})\\.json$`)
+const DECISION_PATH = new RegExp(`^decisions/(${ULID_FRAGMENT})\\.json$`)
+const BINDING_PATH = new RegExp(`^bindings/(${ULID_FRAGMENT})\\.json$`)
+const SESSION_PATH = new RegExp(`^sessions/(${ULID_FRAGMENT})/(${ULID_FRAGMENT})\\.json$`)
 
 const ResolutionSchema = z
   .strictObject({
-    record: z
-      .string()
-      .regex(RECORD_PATTERN)
-      .describe('which record this disagreement is on, thread:<id> or decision:<id>, exactly as sync_ledger reported it'),
-    field: z
+    path: z
       .string()
       .min(1)
-      .max(FIELD_MAX)
-      .describe('which field disagreed, exactly as sync_ledger reported it, for example title or completion_criteria[<id>]'),
-    winner: z.enum(['local', 'remote']).describe("which side wins for this field; the other side's value is discarded")
+      .max(RESOLUTION_PATH_MAX)
+      .regex(RESOLUTION_PATH_PATTERN)
+      .describe('a conflicted file exactly as sync_ledger reported it, for example threads/<id>.json'),
+    record: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe('the whole record as it should now read, for a file under threads/, decisions/, sessions/ or bindings/'),
+    content: z.string().optional().describe('the whole file as it should now read, for any other conflicted file')
   })
-  .describe('one settled disagreement')
+  .describe('one conflicted file as it should now read')
 
 const ResolveConflictInputSchema = z.strictObject({
   resolutions: z
     .array(ResolutionSchema)
     .min(1)
     .max(RESOLUTIONS_MAX_ELEMENTS)
-    .describe('one winner per disagreement sync_ledger reported; every disagreement it reported must appear here exactly once')
+    .describe('one entry per file sync_ledger reported as conflicted; every file it reported must appear here exactly once')
 })
 
 const ResolveConflictOutputSchema = z.object({
-  resolved: z
-    .array(
-      z.object({
-        record: z.string().describe('the record this winner was applied to'),
-        field: z.string().describe('the field this winner was applied to'),
-        winner: z.enum(['local', 'remote']).describe('the side that won for this field')
-      })
-    )
-    .describe('every disagreement this call settled, in the order supplied'),
+  resolved: z.array(z.string()).describe('every conflicted file this call stored, in the order supplied'),
   ref: z.string().describe('the ledger ref the resolution was committed to'),
-  commit: z.string().describe('the new commit recorded on the ledger, a descendant of both the local and remote history at the time of the conflict')
+  commit: z
+    .string()
+    .describe("the new commit recorded on the ledger, whose parents are this machine's ledger and the shared ledger the conflict was found against")
 })
 
 type ResolveConflictInput = z.infer<typeof ResolveConflictInputSchema>
 type ResolveConflictOutput = z.infer<typeof ResolveConflictOutputSchema>
+type Resolution = ResolveConflictInput['resolutions'][number]
 
-type StoredConflict = Conflict
-
-const isStoredConflict = (value: unknown): value is StoredConflict => {
-  if (typeof value !== 'object' || value === null) return false
-  const record = value as Record<string, unknown>
-  return typeof record.record === 'string' && typeof record.field === 'string' && 'ours' in record && 'theirs' in record
-}
+const listPaths = (paths: readonly string[]): string => paths.map((entry) => `<${escapeStored(entry, 'angle-wrapped')}>`).join(', ')
 
 export const noConflictsRefusal = (): Refusal => ({
   ok: false,
@@ -107,124 +82,88 @@ export const conflictsUnreadableRefusal = (detail: string): Refusal =>
     {
       ok: false,
       field: 'resolutions',
-      accepted: 'a readable conflicts state file',
-      example: 'retry the call',
+      accepted: 'conflicts recorded by a prior sync_ledger call that can still be read',
+      example: 'call sync_ledger again',
       retryable: true,
-      message: 'the recorded conflicts could not be read; retry the call.'
+      message: 'the recorded conflicts could not be read; call sync_ledger again to record them afresh.'
     },
     detail
   )
 
-export const corruptConflictsRefusal = (detail: string): Refusal =>
-  withDetail(
-    {
-      ok: false,
-      field: 'resolutions',
-      accepted: 'a well-formed conflicts state file',
-      example: 'call sync_ledger again to regenerate it',
-      retryable: true,
-      message: 'the recorded conflicts are corrupted; call sync_ledger again to regenerate them.'
-    },
-    detail
-  )
-
-export const duplicateResolutionRefusal = (record: string, field: string): Refusal => ({
+export const duplicateResolutionRefusal = (first: number, repeat: number): Refusal => ({
   ok: false,
-  field: 'resolutions',
-  accepted: 'each disagreement named at most once',
+  field: `resolutions.${repeat}.path`,
+  accepted: 'each conflicted file named at most once',
   example: 'remove the repeated entry',
   retryable: true,
-  message: `resolutions names ${record} ${field} more than once.`
+  message: `resolutions.${repeat}.path names the same file as resolutions.${first}.path; name each conflicted file once.`
 })
 
-export const unrecognisedResolutionRefusal = (record: string, field: string): Refusal => ({
+export const unrecognisedResolutionRefusal = (index: number, reported: readonly string[]): Refusal => ({
   ok: false,
-  field: 'resolutions',
-  accepted: 'only disagreements the last sync_ledger call reported',
+  field: `resolutions.${index}.path`,
+  accepted: 'only files the last sync_ledger call reported as conflicted',
   example: 'call sync_ledger to see what it currently reports',
   retryable: true,
-  message: `resolutions names a disagreement that sync_ledger did not report: ${record} ${clipGraphemes(escapeStored(field), FIELD_MAX)}.`
+  message: `resolutions.${index}.path names a file the last sync_ledger call did not report as conflicted; it reported: ${listPaths(reported)}.`
 })
 
 export const missingResolutionRefusal = (missing: readonly string[]): Refusal => ({
   ok: false,
   field: 'resolutions',
-  accepted: 'a winner for every disagreement the last sync_ledger call reported',
-  example: 'add an entry naming a winner for each missing disagreement',
+  accepted: 'an entry for every file the last sync_ledger call reported as conflicted',
+  example: 'add an entry for each missing file',
   retryable: true,
-  message: `resolutions is missing a winner for: ${missing.join('; ')}.${nextStepPairNoteFor(missing)}`
+  message: `resolutions is missing an entry for: ${listPaths(missing)}.`
 })
 
-export const splitNextStepPairRefusal = (record: string): Refusal => ({
+export const payloadMismatchRefusal = (index: number, expected: 'record' | 'content'): Refusal => ({
   ok: false,
-  field: 'resolutions',
-  accepted: 'the same winner for both spine.next_step and spine.next_step_criterion_id of one record',
-  example: 'name local for both, or remote for both',
+  field: `resolutions.${index}.${expected}`,
+  accepted:
+    expected === 'record'
+      ? 'a whole record, and no content, for a file under threads/, decisions/, sessions/ or bindings/ named by its id'
+      : 'the whole file as text, and no record, for any other conflicted file',
+  example: expected === 'record' ? '{"path": "threads/<id>.json", "record": {"id": "<id>"}}' : '{"path": "<file>", "content": "<text>"}',
   retryable: true,
-  message: `resolutions names different winners for ${record} spine.next_step and spine.next_step_criterion_id, which would pair a next step with a criterion it was never written with; remedy: name the same winner for both and retry.`
+  message:
+    expected === 'record'
+      ? `resolutions.${index} names a record file, so send the whole record as record and leave content out.`
+      : `resolutions.${index} names a file that is not a record, so send the whole file as content and leave record out.`
 })
 
-export const threadUnavailableRefusal = (threadId: string): Refusal => ({
+export const invalidRecordRefusal = (index: number, refusal: Refusal): Refusal => ({
+  ...refusal,
+  field: `resolutions.${index}.record.${refusal.field}`,
+  message: `resolutions.${index}.record.${refusal.message}`
+})
+
+export const recordAddressMismatchRefusal = (index: number, field: string, fromPath: string): Refusal => ({
   ok: false,
-  field: 'resolutions',
-  accepted: 'a thread that still exists and parses cleanly in the local ledger',
-  example: 'call sync_ledger again to refresh the conflict list',
+  field: `resolutions.${index}.record.${field}`,
+  accepted: `the ${field} named by the record's path`,
+  example: fromPath,
   retryable: true,
-  message: `thread ${threadId} named in a conflict could not be loaded from the local ledger; call sync_ledger again to refresh the conflict list.`
+  message: `resolutions.${index}.record.${field} must be ${fromPath}, the ${field} in its path; a record is stored at the address its ids give it.`
 })
 
-export const staleRecordedValueRefusal = (record: string, field: string): Refusal => ({
+export const staleConflictRefusal = (): Refusal => ({
   ok: false,
   field: 'resolutions',
-  accepted: 'a recorded local value that still matches what is live in the local ledger',
-  example: 'call sync_ledger again to refresh the conflict list',
+  accepted: 'conflicted files unchanged on this machine since sync_ledger reported them',
+  example: 'call sync_ledger again',
   retryable: true,
-  message: `${record} ${field} has changed locally since sync_ledger recorded this disagreement, so the recorded local value is stale; call sync_ledger again to refresh the conflict list before retrying resolve_conflict.`
-})
-
-export const unclassifiableFieldRefusal = (record: string, field: string): Refusal => ({
-  ok: false,
-  field: 'resolutions',
-  accepted: 'a field this tool knows how to apply a winner to',
-  example: 'title',
-  retryable: false,
-  message: `${record} names a field this tool does not know how to apply: ${field}.`
-})
-
-export const unclassifiableRecordRefusal = (record: string): Refusal => ({
-  ok: false,
-  field: 'resolutions',
-  accepted: 'a record of the form thread:<id> or decision:<id>',
-  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
-  retryable: false,
-  message: `resolutions names a record this tool does not recognise: ${record}.`
-})
-
-export const invalidThreadAfterResolutionRefusal = (issue: string): Refusal => ({
-  ok: false,
-  field: 'resolutions',
-  accepted: 'a thread record that matches its stored shape after applying the chosen winners',
-  example: 'resolve this disagreement with the other winner',
-  retryable: true,
-  message: `the thread record after applying these winners failed its stored-shape validation: ${issue}`
-})
-
-export const invalidDecisionAfterResolutionRefusal = (issue: string): Refusal => ({
-  ok: false,
-  field: 'resolutions',
-  accepted: 'a decision record that stays within its stored-shape caps',
-  example: 'resolve this disagreement in a separate call',
-  retryable: true,
-  message: `the decision record chosen by this resolution failed its stored-shape validation: ${issue}`
+  message:
+    'a conflicted file changed on this machine since sync_ledger reported it, or the conflict no longer stands, so nothing was written; call sync_ledger again and review what it reports.'
 })
 
 export const noRemotePositionRefusal = (): Refusal => ({
   ok: false,
   field: 'resolutions',
-  accepted: 'a project where sync_ledger has already fetched the remote ledger',
+  accepted: 'a project still holding the shared ledger commit the last sync_ledger call found the conflict against',
   example: 'call sync_ledger again first',
   retryable: true,
-  message: 'the remote ledger position from the last sync could not be found; call sync_ledger again first.'
+  message: 'the shared ledger commit the conflict was found against is no longer on this machine; call sync_ledger again first.'
 })
 
 export const commitFailureRefusal = (detail: string): Refusal =>
@@ -235,567 +174,192 @@ export const commitFailureRefusal = (detail: string): Refusal =>
       accepted: 'a ledger that is not concurrently moving and remains writable',
       example: 'retry the call',
       retryable: true,
-      message: 'the ledger commit for these resolutions did not complete; retry the call.'
+      message: 'the ledger commit for these resolutions did not complete; nothing was written, retry the call.'
     },
     detail
   )
 
-export const unsafeRemoteDivergenceRefusal = (uncarried: readonly string[]): Refusal => ({
-  ok: false,
-  field: 'resolutions',
-  accepted: 'a remote whose only divergence from the shared ancestor is the set of disagreements sync_ledger reported',
-  example: 'call sync_ledger again once the remote and local histories have re-converged',
-  retryable: true,
-  message: `the remote ledger carries a change this resolution would not preserve, so nothing was written: ${uncarried.join('; ')}. Call sync_ledger again to pick it up before retrying resolve_conflict.`
-})
+type RecordAddress =
+  | { kind: 'thread'; id: string }
+  | { kind: 'decision'; id: string }
+  | { kind: 'binding'; id: string }
+  | { kind: 'session'; threadId: string; id: string }
 
-export const divergenceUnverifiableRefusal = (detail: string): Refusal =>
-  withDetail(
-    {
-      ok: false,
-      field: 'resolutions',
-      accepted: 'a local git history this tool can diff against the remote tracking ref',
-      example: 'retry the call',
-      retryable: true,
-      message: 'whether the remote ledger carries an unresolved change could not be checked, so nothing was written; retry the call.'
-    },
-    detail
+const recordAddressOf = (filePath: string): RecordAddress | null => {
+  const thread = THREAD_PATH.exec(filePath)
+  if (thread !== null) return { kind: 'thread', id: thread[1] as string }
+  const decision = DECISION_PATH.exec(filePath)
+  if (decision !== null) return { kind: 'decision', id: decision[1] as string }
+  const binding = BINDING_PATH.exec(filePath)
+  if (binding !== null) return { kind: 'binding', id: binding[1] as string }
+  const session = SESSION_PATH.exec(filePath)
+  if (session !== null) return { kind: 'session', threadId: session[1] as string, id: session[2] as string }
+  return null
+}
+
+type Attempt<T> = { ok: true; value: T } | { ok: false; refusal: Refusal }
+
+const storedShape = <T>(index: number, declared: Declared<T>, record: unknown): Attempt<T> => {
+  const given = declared.parse(record)
+  if (!given.ok) return { ok: false, refusal: invalidRecordRefusal(index, given) }
+  const stored = declared.parse(escapeStoredRecord(declared, given.value))
+  return stored.ok ? { ok: true, value: stored.value } : { ok: false, refusal: invalidRecordRefusal(index, stored) }
+}
+
+const addressed = <T extends { id: string }>(
+  index: number,
+  shaped: Attempt<T>,
+  expected: Readonly<Record<string, string>>,
+  toChange: (record: T) => RecordChange
+): Attempt<RecordChange> => {
+  if (!shaped.ok) return shaped
+  const record = shaped.value as T & Record<string, unknown>
+  const mismatched = Object.entries(expected).find(([field, value]) => record[field] !== value)
+  if (mismatched !== undefined) {
+    return { ok: false, refusal: recordAddressMismatchRefusal(index, mismatched[0], mismatched[1]) }
+  }
+  return { ok: true, value: toChange(shaped.value) }
+}
+
+const changeFor = (index: number, resolution: Resolution): Attempt<RecordChange> => {
+  const address = recordAddressOf(resolution.path)
+  if (address === null) {
+    if (resolution.content === undefined || resolution.record !== undefined) {
+      return { ok: false, refusal: payloadMismatchRefusal(index, 'content') }
+    }
+    return { ok: true, value: { kind: 'raw', relPath: resolution.path, content: resolution.content } }
+  }
+  if (resolution.record === undefined || resolution.content !== undefined) {
+    return { ok: false, refusal: payloadMismatchRefusal(index, 'record') }
+  }
+  switch (address.kind) {
+    case 'thread':
+      return addressed(index, storedShape(index, ThreadRecord, resolution.record), { id: address.id }, (record) => ({ kind: 'thread', record }))
+    case 'decision':
+      return addressed(index, storedShape(index, DecisionRecord, resolution.record), { id: address.id }, (record) => ({ kind: 'decision', record }))
+    case 'binding':
+      return addressed(index, storedShape(index, BindingRecord, resolution.record), { id: address.id }, (record) => ({ kind: 'binding', record }))
+    case 'session':
+      return addressed(
+        index,
+        storedShape(index, SessionRecord, resolution.record),
+        { thread_id: address.threadId, id: address.id },
+        (record) => ({ kind: 'session', record })
+      )
+    default: {
+      const exhaustive: never = address
+      throw new Error(`resolve_conflict: a record address of an unrecognised kind reached changeFor: ${JSON.stringify(exhaustive)}`)
+    }
+  }
+}
+
+const unmatchedResolution = (resolutions: readonly Resolution[], reported: readonly string[]): Refusal | null => {
+  const reportedPaths = new Set(reported)
+  const firstIndexByPath = new Map<string, number>()
+  for (const [index, resolution] of resolutions.entries()) {
+    const first = firstIndexByPath.get(resolution.path)
+    if (first !== undefined) return duplicateResolutionRefusal(first, index)
+    if (!reportedPaths.has(resolution.path)) return unrecognisedResolutionRefusal(index, reported)
+    firstIndexByPath.set(resolution.path, index)
+  }
+  const missing = reported.filter((entry) => !firstIndexByPath.has(entry))
+  return missing.length > 0 ? missingResolutionRefusal(missing) : null
+}
+
+const readRef = (rt: Runtime, repo: string, ref: string): string | null => {
+  const read = git(rt, repo, ['rev-parse', '--verify', '--quiet', ref])
+  return read.ok ? read.stdout.trim() : null
+}
+
+const byPath = (a: ConflictPath, b: ConflictPath): number => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
+
+const stillTheSameConflict = (saved: readonly ConflictPath[], current: readonly ConflictPath[]): boolean => {
+  const localBlobBySavedPath = new Map(saved.map((entry) => [entry.path, entry.local_blob] as const))
+  return (
+    saved.length === current.length &&
+    current.every((entry) => localBlobBySavedPath.has(entry.path) && localBlobBySavedPath.get(entry.path) === entry.local_blob)
   )
-
-const readConflicts = (conflictsPath: string): { ok: true; value: StoredConflict[] } | { ok: false; refusal: Refusal } => {
-  let raw: string
-  try {
-    raw = readFileSync(conflictsPath, 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { ok: false, refusal: noConflictsRefusal() }
-    }
-    return { ok: false, refusal: conflictsUnreadableRefusal(error instanceof Error ? error.message : String(error)) }
-  }
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch (error) {
-    return { ok: false, refusal: corruptConflictsRefusal(error instanceof Error ? error.message : String(error)) }
-  }
-
-  if (!Array.isArray(parsed) || !parsed.every(isStoredConflict)) {
-    return { ok: false, refusal: corruptConflictsRefusal('conflicts.json did not contain the expected array shape') }
-  }
-  if (parsed.length === 0) {
-    return { ok: false, refusal: noConflictsRefusal() }
-  }
-  return { ok: true, value: parsed }
 }
 
-const clearConflictsFile = (conflictsPath: string): void => {
-  try {
-    unlinkSync(conflictsPath)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error
-    }
+type MergedOnto = { tree: string; local: string }
+
+const remergeUnchanged = (rt: Runtime, layout: StoreLayout, state: ConflictState): Attempt<MergedOnto> => {
+  const repo = layout.projectRoot
+  if (readRef(rt, repo, `${state.remote_commit}^{commit}`) === null) {
+    return { ok: false, refusal: noRemotePositionRefusal() }
   }
-}
+  const local = readRef(rt, repo, LEDGER_REF)
+  if (local === null) return { ok: false, refusal: staleConflictRefusal() }
 
-const keyOf = (record: string, field: string): string => `${record}\0${field}`
+  const merged = mergeTree(rt, repo, local, state.remote_commit)
+  if (!merged.ok) return { ok: false, refusal: commitFailureRefusal(`git could not merge ${local} with ${state.remote_commit}: ${merged.detail}`) }
+  const notWhole = recordsNotTakenWhole(rt, repo, local, state.remote_commit, merged.tree, new Set(merged.conflicted.map((entry) => entry.path)))
+  if (!notWhole.ok) return { ok: false, refusal: commitFailureRefusal(notWhole.detail) }
 
-const byIdAscending = (a: { id: string }, b: { id: string }): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
-
-const replaceById = <T extends { id: string }>(items: readonly T[], id: string, value: T): T[] => {
-  const found = items.some((item) => item.id === id)
-  const next = found ? items.map((item) => (item.id === id ? value : item)) : [...items, value]
-  return [...next].sort(byIdAscending)
-}
-
-const withRecomputedOrdinals = (criteria: readonly Criterion[]): Criterion[] =>
-  criteria.map((criterion, index) => ({ ...criterion, ordinal: index + 1 }))
-
-const loadThreadRaw = (store: Store, id: string): Thread | null => {
-  const slot = store.readThread(id)
-  if (slot === null || slot.quarantined) return null
-  return slot.record
-}
-
-const loadDecisionRaw = (store: Store, id: string): Decision | null => {
-  const slot = store.readDecision(id)
-  if (slot === null || slot.quarantined) return null
-  return slot.record
-}
-
-const escapeIfString = (value: unknown): unknown => (typeof value === 'string' ? escapeStored(value) : value)
-
-const escapeCriterion = (criterion: Criterion): Criterion => ({ ...criterion, text: escapeStored(criterion.text) })
-
-const escapeRisk = (risk: Risk): Risk => ({
-  ...risk,
-  scope: escapeStored(risk.scope),
-  text: escapeStored(risk.text),
-  refs: risk.refs.map((ref) => escapeStored(ref))
-})
-
-const escapeKeyDecision = (keyDecision: KeyDecision): KeyDecision => ({
-  ...keyDecision,
-  title: escapeStored(keyDecision.title),
-  scope: escapeStored(keyDecision.scope)
-})
-
-const escapeOutOfScope = (outOfScope: OutOfScope): OutOfScope => ({ ...outOfScope, text: escapeStored(outOfScope.text) })
-
-const escapeArtifact = (artifact: Artifact): Artifact => ({
-  ...artifact,
-  label: escapeStored(artifact.label),
-  pointer: escapeStored(artifact.pointer)
-})
-
-const withNextStepAnchor = (spine: Spine, anchor: string | null): Spine =>
-  anchor === null
-    ? (Object.fromEntries(Object.entries(spine).filter(([key]) => key !== 'next_step_criterion_id')) as Spine)
-    : { ...spine, next_step_criterion_id: anchor }
-
-type ScalarFieldHandling = {
-  kind: 'scalar'
-  read: (thread: Thread) => unknown
-  apply: (thread: Thread, value: unknown) => Thread
-  escape: (value: unknown) => unknown
-}
-
-type IndexedFieldHandling = {
-  kind: 'indexed'
-  find: (thread: Thread, id: string) => unknown
-  replace: (thread: Thread, id: string, value: unknown) => Thread
-  escape: (value: unknown) => unknown
-}
-
-type NoConflictFieldHandling = { kind: 'no-conflict' }
-
-export type FieldHandling = ScalarFieldHandling | IndexedFieldHandling | NoConflictFieldHandling
-
-const NO_CONFLICT_FIELD: NoConflictFieldHandling = { kind: 'no-conflict' }
-
-export const FIELD_HANDLING_TABLE: Record<keyof typeof THREAD_RULES, FieldHandling> = {
-  id: NO_CONFLICT_FIELD,
-  slug: {
-    kind: 'scalar',
-    read: (thread) => thread.slug,
-    apply: (thread, value) => ({ ...thread, slug: value as Thread['slug'] }),
-    escape: (value) => value
-  },
-  title: {
-    kind: 'scalar',
-    read: (thread) => thread.title,
-    apply: (thread, value) => ({ ...thread, title: value as Thread['title'] }),
-    escape: escapeIfString
-  },
-  status: {
-    kind: 'scalar',
-    read: (thread) => thread.status,
-    apply: (thread, value) => ({ ...thread, status: value as Thread['status'] }),
-    escape: (value) => value
-  },
-  blocked_by: {
-    kind: 'scalar',
-    read: (thread) => thread.blocked_by,
-    apply: (thread, value) => ({ ...thread, blocked_by: value as Thread['blocked_by'] }),
-    escape: escapeIfString
-  },
-  predecessor_id: NO_CONFLICT_FIELD,
-  completion_criteria: {
-    kind: 'indexed',
-    find: (thread, id) => thread.completion_criteria.find((item) => item.id === id) ?? null,
-    replace: (thread, id, value) => ({
-      ...thread,
-      completion_criteria: withRecomputedOrdinals(replaceById(thread.completion_criteria, id, value as Criterion))
-    }),
-    escape: (value) => escapeCriterion(value as Criterion)
-  },
-  artifacts: {
-    kind: 'indexed',
-    find: (thread, id) => (thread.artifacts ?? []).find((item) => item.id === id) ?? null,
-    replace: (thread, id, value) => ({ ...thread, artifacts: replaceById(thread.artifacts ?? [], id, value as Artifact) }),
-    escape: (value) => escapeArtifact(value as Artifact)
-  },
-  spine: NO_CONFLICT_FIELD,
-  created_at: NO_CONFLICT_FIELD,
-  updated_at: NO_CONFLICT_FIELD,
-  'spine.active_goal': {
-    kind: 'scalar',
-    read: (thread) => thread.spine.active_goal,
-    apply: (thread, value) => ({ ...thread, spine: { ...thread.spine, active_goal: value as string } }),
-    escape: escapeIfString
-  },
-  'spine.next_step': {
-    kind: 'scalar',
-    read: (thread) => thread.spine.next_step,
-    apply: (thread, value) => ({ ...thread, spine: { ...thread.spine, next_step: value as string } }),
-    escape: escapeIfString
-  },
-  'spine.next_step_criterion_id': {
-    kind: 'scalar',
-    read: (thread) => nextStepAnchor(thread.spine),
-    apply: (thread, value) => ({ ...thread, spine: withNextStepAnchor(thread.spine, value as string | null) }),
-    escape: (value) => value
-  },
-  'spine.landed': {
-    kind: 'scalar',
-    read: (thread) => thread.spine.landed,
-    apply: (thread, value) => ({ ...thread, spine: { ...thread.spine, landed: value as string } }),
-    escape: escapeIfString
-  },
-  'spine.last_session': {
-    kind: 'scalar',
-    read: (thread) => thread.spine.last_session,
-    apply: (thread, value) => ({ ...thread, spine: { ...thread.spine, last_session: value as string } }),
-    escape: escapeIfString
-  },
-  'spine.open_risks': {
-    kind: 'indexed',
-    find: (thread, id) => thread.spine.open_risks.find((item) => item.id === id) ?? null,
-    replace: (thread, id, value) => ({
-      ...thread,
-      spine: { ...thread.spine, open_risks: replaceById(thread.spine.open_risks, id, value as Risk) }
-    }),
-    escape: (value) => escapeRisk(value as Risk)
-  },
-  'spine.key_decisions': {
-    kind: 'indexed',
-    find: (thread, id) => thread.spine.key_decisions.find((item) => item.id === id) ?? null,
-    replace: (thread, id, value) => ({
-      ...thread,
-      spine: { ...thread.spine, key_decisions: replaceById(thread.spine.key_decisions, id, value as KeyDecision) }
-    }),
-    escape: (value) => escapeKeyDecision(value as KeyDecision)
-  },
-  'spine.out_of_scope': {
-    kind: 'indexed',
-    find: (thread, id) => thread.spine.out_of_scope.find((item) => item.id === id) ?? null,
-    replace: (thread, id, value) => ({
-      ...thread,
-      spine: { ...thread.spine, out_of_scope: replaceById(thread.spine.out_of_scope, id, value as OutOfScope) }
-    }),
-    escape: (value) => escapeOutOfScope(value as OutOfScope)
-  }
-}
-
-const escapeRegexLiteral = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
-const INDEXED_FIELD_PATHS: readonly string[] = (Object.keys(FIELD_HANDLING_TABLE) as (keyof typeof THREAD_RULES)[]).filter(
-  (path) => FIELD_HANDLING_TABLE[path].kind === 'indexed'
-)
-
-export const INDEXED_FIELD_PATTERN = new RegExp(
-  `^(${INDEXED_FIELD_PATHS.map(escapeRegexLiteral).join('|')})\\[(${ULID_FRAGMENT})\\]$`
-)
-
-const FIELD_HANDLING_KEYS = new Set<string>(Object.keys(FIELD_HANDLING_TABLE))
-
-const handlingFor = (field: string): FieldHandling | undefined =>
-  FIELD_HANDLING_KEYS.has(field) ? FIELD_HANDLING_TABLE[field as keyof typeof THREAD_RULES] : undefined
-
-const parseIndexedField = (field: string): { path: string; id: string } | null => {
-  const match = INDEXED_FIELD_PATTERN.exec(field)
-  if (match === null) return null
-  const path = match[1]
-  const id = match[2]
-  if (path === undefined || id === undefined) return null
-  return { path, id }
-}
-
-type FieldLookup = { recognized: true; value: unknown } | { recognized: false }
-
-const currentThreadFieldValue = (thread: Thread, field: string): FieldLookup => {
-  const scalar = handlingFor(field)
-  if (scalar !== undefined && scalar.kind === 'scalar') {
-    return { recognized: true, value: scalar.read(thread) }
-  }
-
-  const indexed = parseIndexedField(field)
-  if (indexed === null) return { recognized: false }
-  const indexedHandling = handlingFor(indexed.path)
-  if (indexedHandling === undefined || indexedHandling.kind !== 'indexed') return { recognized: false }
-  return { recognized: true, value: indexedHandling.find(thread, indexed.id) }
-}
-
-const escapeChosenThreadValue = (field: string, value: unknown): unknown => {
-  const scalar = handlingFor(field)
-  if (scalar !== undefined && scalar.kind === 'scalar') {
-    return scalar.escape(value)
-  }
-
-  const indexed = parseIndexedField(field)
-  if (indexed === null) return value
-  const indexedHandling = handlingFor(indexed.path)
-  if (indexedHandling === undefined || indexedHandling.kind !== 'indexed') return value
-  return indexedHandling.escape(value)
-}
-
-const escapeChosenDecision = (decision: Decision): Decision => ({
-  ...decision,
-  title: escapeStored(decision.title),
-  context: escapeStored(decision.context),
-  outcome: escapeStored(decision.outcome),
-  options: decision.options.map((option) => escapeStored(option))
-})
-
-const applyThreadField = (thread: Thread, field: string, value: unknown): Thread | null => {
-  const scalar = handlingFor(field)
-  if (scalar !== undefined && scalar.kind === 'scalar') {
-    return scalar.apply(thread, value)
-  }
-
-  const indexed = parseIndexedField(field)
-  if (indexed === null) return null
-  const indexedHandling = handlingFor(indexed.path)
-  if (indexedHandling === undefined || indexedHandling.kind !== 'indexed') return null
-  return indexedHandling.replace(thread, indexed.id, value)
-}
-
-type RemotePathIdentity =
-  | { kind: 'thread' | 'decision'; record: string }
-  | { kind: 'session'; threadId: string }
-  | { kind: 'other'; relPath: string }
-
-const REMOTE_THREAD_PATH_PATTERN = /^threads\/([^/]+)\.json$/
-const REMOTE_DECISION_PATH_PATTERN = /^decisions\/([^/]+)\.json$/
-const REMOTE_SESSION_PATH_PATTERN = /^sessions\/([^/]+)\//
-
-const identifyRemotePath = (relPath: string): RemotePathIdentity => {
-  const threadMatch = REMOTE_THREAD_PATH_PATTERN.exec(relPath)
-  if (threadMatch !== null && threadMatch[1] !== undefined) {
-    return { kind: 'thread', record: `thread:${threadMatch[1]}` }
-  }
-  const decisionMatch = REMOTE_DECISION_PATH_PATTERN.exec(relPath)
-  if (decisionMatch !== null && decisionMatch[1] !== undefined) {
-    return { kind: 'decision', record: `decision:${decisionMatch[1]}` }
-  }
-  const sessionMatch = REMOTE_SESSION_PATH_PATTERN.exec(relPath)
-  if (sessionMatch !== null && sessionMatch[1] !== undefined) {
-    return { kind: 'session', threadId: sessionMatch[1] }
-  }
-  return { kind: 'other', relPath }
-}
-
-const describeUncarriedPath = (identity: RemotePathIdentity): string => {
-  if (identity.kind === 'session') {
-    return `a session entry logged on thread ${identity.threadId}`
-  }
-  if (identity.kind === 'other') {
-    return 'a ledger-tracked change outside threads, decisions and sessions'
-  }
-  return identity.record
-}
-
-type DivergenceCheck =
-  | { ok: true; uncarried: string[] }
-  | { ok: false; refusal: Refusal }
-
-const findUncarriedRemoteDivergence = (
-  rt: Runtime,
-  projectRoot: string,
-  localVal: string | null,
-  remoteVal: string,
-  coveredRecords: ReadonlySet<string>
-): DivergenceCheck => {
-  let baseVal = EMPTY_TREE_SHA
-  if (localVal !== null) {
-    const mergeBase = git(rt, projectRoot, ['merge-base', localVal, remoteVal])
-    if (mergeBase.ok) {
-      baseVal = mergeBase.stdout.trim()
-    } else if (!/not a valid object name|fatal: no merge base/i.test(mergeBase.stderr)) {
-      return { ok: false, refusal: divergenceUnverifiableRefusal(mergeBase.stderr.trim()) }
-    }
-  }
-
-  const diff = git(rt, projectRoot, ['diff', '--name-only', baseVal, remoteVal])
-  if (!diff.ok) {
-    return { ok: false, refusal: divergenceUnverifiableRefusal(diff.stderr.trim()) }
-  }
-
-  const relPaths = diff.stdout
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-
-  const uncarried: string[] = []
-  for (const relPath of relPaths) {
-    const identity = identifyRemotePath(relPath)
-    if (identity.kind === 'thread' || identity.kind === 'decision') {
-      if (coveredRecords.has(identity.record)) continue
-    }
-    uncarried.push(describeUncarriedPath(identity))
-  }
-
-  return { ok: true, uncarried: [...new Set(uncarried)] }
+  const current = [...merged.conflicted, ...notWhole.paths].sort(byPath)
+  if (!stillTheSameConflict(state.paths, current)) return { ok: false, refusal: staleConflictRefusal() }
+  return { ok: true, value: { tree: merged.tree, local } }
 }
 
 export const resolveConflictTool: ToolSpec<ResolveConflictInput, ResolveConflictOutput> = {
   name: 'resolve_conflict',
   title: 'Resolve conflict',
   description:
-    'Settles a sync that was refused because two people changed the same field to different values, by naming which side wins for each disagreement. Takes a list of {record, field, winner} where winner is either local or remote, and every disagreement the last sync reported must appear exactly once; a partial list is refused and names what is missing. The losing value is discarded, which is why the server never does this on its own.',
+    "Settles a sync that was refused because this machine and the shared ledger changed the same files, by storing each file as it should now read once both versions have been reviewed. Takes resolutions, a list of {path, record} carrying the whole record for a file under threads, decisions, sessions or bindings, or {path, content} carrying the whole text of any other file; every file the last sync reported must appear exactly once, and a partial list is refused naming what is missing. A record is refused only when it does not fit its stored shape, and nothing about its content is judged. Everything that merged cleanly is kept. It commits on this machine and does not push, so run sync_ledger afterwards.",
   input: ResolveConflictInputSchema,
   output: ResolveConflictOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   handler: async (rt, _ctx, input) => {
     const opened = openProjectStore(rt)
     if (!opened.ok) return { ok: false, refusal: opened.refusal }
-    const store = opened.value
 
     const layout = layoutFor(rt, rt.cwd)
     if (!layout.ok) return { ok: false, refusal: layout }
 
-    const conflictsFilePath = path.join(layout.value.state, 'conflicts.json')
-    const read = readConflicts(conflictsFilePath)
-    if (!read.ok) return { ok: false, refusal: read.refusal }
-    const reported = read.value
+    const saved = readConflictState(layout.value)
+    if (saved.kind === 'absent') return { ok: false, refusal: noConflictsRefusal() }
+    if (saved.kind === 'unreadable') return { ok: false, refusal: conflictsUnreadableRefusal(saved.detail) }
+    const state = saved.state
 
-    const reportedMap = new Map(reported.map((c) => [keyOf(c.record, c.field), c] as const))
-
-    const seen = new Set<string>()
-    for (const resolution of input.resolutions) {
-      const key = keyOf(resolution.record, resolution.field)
-      if (seen.has(key)) {
-        return { ok: false, refusal: duplicateResolutionRefusal(resolution.record, resolution.field) }
-      }
-      seen.add(key)
-      if (!reportedMap.has(key)) {
-        return { ok: false, refusal: unrecognisedResolutionRefusal(resolution.record, resolution.field) }
-      }
-    }
-
-    const missing = reported.filter((c) => !seen.has(keyOf(c.record, c.field)))
-    if (missing.length > 0) {
-      return { ok: false, refusal: missingResolutionRefusal(missing.map((c) => `${c.record} ${c.field}`)) }
-    }
-
-    const winnerByKey = new Map(input.resolutions.map((r) => [keyOf(r.record, r.field), r.winner] as const))
-    const splitPair = input.resolutions.find((r) => {
-      if (r.field !== 'spine.next_step') return false
-      const anchorWinner = winnerByKey.get(keyOf(r.record, 'spine.next_step_criterion_id'))
-      return anchorWinner !== undefined && anchorWinner !== r.winner
-    })
-    if (splitPair !== undefined) {
-      return { ok: false, refusal: splitNextStepPairRefusal(splitPair.record) }
-    }
-
-    const threadUpdates = new Map<string, Thread>()
-    const decisionUpdates = new Map<string, Decision>()
-
-    for (const resolution of input.resolutions) {
-      const conflictRecord = reportedMap.get(keyOf(resolution.record, resolution.field))
-      if (conflictRecord === undefined) {
-        throw new Error('resolve_conflict: a resolved key vanished from the reported conflict map')
-      }
-      const chosen = resolution.winner === 'local' ? conflictRecord.ours : conflictRecord.theirs
-
-      const threadMatch = THREAD_RECORD_PATTERN.exec(resolution.record)
-      if (threadMatch !== null) {
-        const threadId = threadMatch[1]
-        if (threadId === undefined) {
-          return { ok: false, refusal: unclassifiableRecordRefusal(resolution.record) }
-        }
-        const current = threadUpdates.get(threadId) ?? loadThreadRaw(store, threadId)
-        if (current === null) {
-          return { ok: false, refusal: threadUnavailableRefusal(threadId) }
-        }
-        const lookup = currentThreadFieldValue(current, resolution.field)
-        if (lookup.recognized && !isDeepStrictEqual(lookup.value, conflictRecord.ours)) {
-          return { ok: false, refusal: staleRecordedValueRefusal(resolution.record, resolution.field) }
-        }
-        const escapedChosen = escapeChosenThreadValue(resolution.field, chosen)
-        const next = applyThreadField(current, resolution.field, escapedChosen)
-        if (next === null) {
-          return { ok: false, refusal: unclassifiableFieldRefusal(resolution.record, resolution.field) }
-        }
-        threadUpdates.set(threadId, next)
-        continue
-      }
-
-      const decisionMatch = DECISION_RECORD_PATTERN.exec(resolution.record)
-      if (decisionMatch !== null) {
-        const decisionId = decisionMatch[1]
-        if (decisionId === undefined) {
-          return { ok: false, refusal: unclassifiableRecordRefusal(resolution.record) }
-        }
-        if (resolution.field === 'decision') {
-          const liveDecision = loadDecisionRaw(store, decisionId)
-          if (!isDeepStrictEqual(liveDecision, conflictRecord.ours)) {
-            return { ok: false, refusal: staleRecordedValueRefusal(resolution.record, resolution.field) }
-          }
-        }
-        decisionUpdates.set(decisionId, escapeChosenDecision(chosen as Decision))
-        continue
-      }
-
-      return { ok: false, refusal: unclassifiableRecordRefusal(resolution.record) }
-    }
+    const unmatched = unmatchedResolution(
+      input.resolutions,
+      state.paths.map((entry) => entry.path)
+    )
+    if (unmatched !== null) return { ok: false, refusal: unmatched }
 
     const changes: RecordChange[] = []
-
-    for (const thread of threadUpdates.values()) {
-      const withTimestamp: Thread = { ...thread, updated_at: rt.now() }
-      const validated = ThreadRecord.parse(withTimestamp)
-      if (!validated.ok) {
-        return { ok: false, refusal: invalidThreadAfterResolutionRefusal(validated.message) }
-      }
-      changes.push({ kind: 'thread', record: validated.value })
+    for (const [index, resolution] of input.resolutions.entries()) {
+      const change = changeFor(index, resolution)
+      if (!change.ok) return { ok: false, refusal: change.refusal }
+      changes.push(change.value)
     }
 
-    for (const decision of decisionUpdates.values()) {
-      const validated = DecisionRecord.parse(decision)
-      if (!validated.ok) {
-        return { ok: false, refusal: invalidDecisionAfterResolutionRefusal(validated.message) }
-      }
-      changes.push({ kind: 'decision', record: validated.value })
-    }
+    const onto = remergeUnchanged(rt, layout.value, state)
+    if (!onto.ok) return { ok: false, refusal: onto.refusal }
 
-    const remoteRef = git(rt, layout.value.projectRoot, ['rev-parse', TRACKING_REF])
-    if (!remoteRef.ok) {
-      return { ok: false, refusal: noRemotePositionRefusal() }
-    }
-    const remoteVal = remoteRef.stdout.trim()
-
-    const localRef = git(rt, layout.value.projectRoot, ['rev-parse', LEDGER_REF])
-    const localVal = localRef.ok ? localRef.stdout.trim() : null
-
-    const coveredRecords = new Set(reported.map((c) => c.record))
-    const divergence = findUncarriedRemoteDivergence(rt, layout.value.projectRoot, localVal, remoteVal, coveredRecords)
-    if (!divergence.ok) {
-      return { ok: false, refusal: divergence.refusal }
-    }
-    if (divergence.uncarried.length > 0) {
-      return { ok: false, refusal: unsafeRemoteDivergenceRefusal(divergence.uncarried) }
-    }
-
-    const commitResult = writeRecords(rt, layout.value, changes, `resolve ${changes.length} conflicting record(s)`, {
-      extraParents: [remoteVal]
+    const committed = writeRecords(rt, layout.value, changes, `resolve ${changes.length} conflicted file(s)`, {
+      startFrom: { tree: onto.value.tree, parent: onto.value.local },
+      extraParents: [state.remote_commit]
     })
-    if (!commitResult.ok) {
-      return { ok: false, refusal: commitFailureRefusal(commitResult.detail) }
-    }
+    if (!committed.ok) return { ok: false, refusal: commitFailureRefusal(committed.detail) }
 
-    const advance = advanceMaterialisedStampIfStillCurrent(rt, layout.value, commitResult.before, commitResult.after)
-    if (!advance.advanced && advance.reason === 'stamp-mismatch') {
+    clearConflictState(layout.value)
+    const materialised = syncWorkingCopy(rt, layout.value)
+    if (!materialised.ok) {
       rt.log({
         level: 'error',
-        event: 'store.materialised-stamp-advance-skipped',
+        event: 'resolve.materialise-after-commit-failed',
         ref: LEDGER_REF,
-        before: commitResult.before,
-        after: commitResult.after,
-        observed: advance.observed
+        after: committed.after,
+        cause: materialised.cause
       })
     }
-    clearConflictsFile(conflictsFilePath)
 
+    const resolved = input.resolutions.map((resolution) => resolution.path)
     return {
       ok: true,
-      text: `resolved ${input.resolutions.length} disagreement(s) across ${changes.length} record(s).`,
-      structured: {
-        resolved: input.resolutions.map((r) => ({ record: r.record, field: r.field, winner: r.winner })),
-        ref: commitResult.ref,
-        commit: commitResult.after
-      }
+      text: `stored ${resolved.length} conflicted file(s) as reviewed in ledger commit ${committed.after}; run sync_ledger to share the resolution.`,
+      structured: { resolved, ref: committed.ref, commit: committed.after }
     }
   }
 }

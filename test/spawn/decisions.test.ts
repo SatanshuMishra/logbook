@@ -1190,6 +1190,7 @@ type CensusWorld = {
   t0Id: string
   decisionId: string
   t1Id: string
+  t1Composed: Thread
 }
 
 const sha256 = (content: string): string => createHash('sha256').update(content).digest('hex')
@@ -1445,10 +1446,7 @@ const buildDriver = (tool: ToolSpec<never, never>, world: CensusWorld): CensusDr
         {
           rt: world.benRt,
           input: {
-            resolutions: [
-              { record: `thread:${world.t1Id}`, field: 'spine.next_step', winner: 'local' },
-              { record: `thread:${world.t1Id}`, field: 'spine.next_step_criterion_id', winner: 'local' }
-            ]
+            resolutions: [{ path: `threads/${world.t1Id}.json`, record: world.t1Composed }]
           }
         }
       ]
@@ -1723,7 +1721,8 @@ test('decision.is-immutable', async () => {
       benDecisionsDir: path.join(benLayout.records, 'decisions'),
       t0Id,
       decisionId,
-      t1Id: conflictThread.record.id
+      t1Id: conflictThread.record.id,
+      t1Composed: anaEdit.record as Thread
     }
 
     const drivers = ALL_TOOLS.map((tool) => buildDriver(tool, world))
