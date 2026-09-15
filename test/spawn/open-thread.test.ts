@@ -339,7 +339,7 @@ test('open_thread.reports-an-absent-check-as-null-rather-than-an-empty-string', 
   })
 })
 
-const SLUG_PAST_THE_OS_ARGUMENT_LIMIT = 'a'.repeat(1_100_000)
+const SLUG_PAST_THE_OS_ARGUMENT_LIMIT = 'a'.repeat(2_200_000)
 const LEDGER_LOG_MAX_BUFFER_BYTES = 16 * 1024 * 1024
 
 const ledgerHeadCommitObject = (repo: string): string => {
