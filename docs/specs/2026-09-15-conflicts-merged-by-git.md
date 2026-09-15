@@ -115,6 +115,11 @@ The paths that do not merge stay as they are: nothing to do, push, and fast-forw
 
 `buildTree` starts from the tree of the current ledger commit (`src/store/write-path.ts:94-99`). Both the clean merge and `resolve_conflict` need to start from git's merged tree instead. Add a starting-tree option to `writeRecords`, keeping the compare-and-swap against the current ledger commit. The clean merge passes zero changes.
 
+Two consequences follow from how `writeRecords` behaves today:
+
+- **A moved ref is refused, not retried.** Without the option, a moved ref is retried by rebuilding onto the new commit. A starting tree was computed against the old commit, so rebuilding would drop whatever the new commit added. With the option, a moved ref returns `ref-moved` and the caller recomputes: sync already retries its attempt on `ref-moved` (`sync.ts:527`), and `resolve_conflict` refuses as retryable.
+- **The disk copy must be materialised afterwards.** After the commit, `writeRecords` writes only the given records to disk, but the tree also carries the other side's files. Every caller therefore runs `syncWorkingCopy`, which rewrites the working copy whenever its stamp does not match the ledger ref. None may advance the stamp alone.
+
 ### Removed from `sync.ts`
 
 `readOursRecordSet`, `readScratchRecordSet`, `walkCarriedFiles`, `carriedChanges`, `computeMerge`, the scratch materialisation of three ledgers, and the checks that depended on parsing them. Two of those checks raise open questions Q1 and Q2.
@@ -177,7 +182,7 @@ The sentence "merges record by record when both moved" in `sync_ledger`'s descri
 
 **No content rules.** Nothing checks whether a next step matches its criterion, whether a risk is a duplicate, or which side's value was chosen. The PR #258 rule that a next step and its criterion take one winner is removed.
 
-**Escaping, as on every write.** Free-text fields are escaped with `escapeStored`, the same as the tools that write each kind. Versions read from the ledger are already escaped, so the escape must leave escaped text unchanged. From reading `src/render/escape.ts`, an escape emits only `U+`, hex digits and letters, none of which are escaped again; a test proves this before the design relies on it.
+**Escaping, as on every write.** Free-text fields are escaped with `escapeStored`, the same as the tools that write each kind. Versions read from the ledger are already escaped, so the escape must leave escaped text unchanged. It does: `escape.stored-is-idempotent-over-the-escapable-and-markdown-leading-population` (`test/unit/escape.test.ts:225`) proves escaping twice equals escaping once for every escapable and line-leading character. Every emitted token starts with `U`, which is neither, and no raw line break survives, so escaped text has no second line start for a longer input to exploit.
 
 ### What counts as stale
 
@@ -195,7 +200,7 @@ This replaces the per-field stale checks (`resolve_conflict.ts:702-705`, `:721-7
 1. Start from the tree that `git merge-tree` just printed.
 2. Replace each conflicted path with its resolved record.
 3. Commit with the current local commit and the saved remote commit as parents, through the compare-and-swap on `LEDGER_REF`.
-4. Materialise the working copy, advance the materialised stamp as today (`resolve_conflict.ts:778-788`), and delete `conflicts.json`.
+4. Materialise the working copy with `syncWorkingCopy`, and delete `conflicts.json`. The stamp is not advanced alone as `resolve_conflict.ts:778-788` does today, because the disk would then be marked current while missing the remote's files.
 5. Reply with the paths resolved and the new commit, and say to run `sync_ledger` to push.
 
 It does not push, as today.
@@ -338,7 +343,7 @@ The human ruled every question as recommended on 2026-09-15.
 One implementation pull request, then the release pull request OR44 requires. Splitting `sync_ledger` from `resolve_conflict` leaves `main` reporting conflicts that no tool can settle.
 
 1. Rewrite the five reproduction tests to the new input and add the tests for the three new criteria. Each must fail on today's code. Where a test goes through the new conflict reply or the new `resolve_conflict` input, today's code fails it at that contract, before its symptom assertion is reached. That is expected: the symptoms were already proven red against today's code by the original reproduction tests (thread session entry `01M2KDH7NWQS9FD6E40503MQHT`), and each symptom assertion is proven to carry its fix in step 7. The rewritten clean-merge scenario in `sync.two-clones-offline.spawn` passes today and stays green as a guard.
-2. Prove escaping leaves escaped text unchanged.
+2. Prove escaping leaves escaped text unchanged. Done before this step was reached: the existing census at `test/unit/escape.test.ts:225` already proves it, so no test was added.
 3. Add the starting-tree option to `writeRecords`.
 4. Merge through `git merge-tree` in `sync.ts`, save the new conflict state, and return the new reply and resource.
 5. Rewrite `resolve_conflict`.
