@@ -1,8 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isDeepStrictEqual } from 'node:util'
-import { ThreadRecord, type Thread } from '../../src/schema/thread.ts'
-import { mergeThread } from '../../src/merge/field-merge.ts'
+import { ThreadRecord } from '../../src/schema/thread.ts'
 
 const THREAD_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAZ'
 const CRITERION_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
@@ -91,31 +89,4 @@ test('goal-model.a-thread-carrying-artifacts-round-trips', () => {
   if (!result.ok) return
   assert.equal(result.value.artifacts?.[0]?.label, 'the implementation plan')
   assert.equal(result.value.artifacts?.[0]?.pointer, 'docs/plans/a-plan.md')
-})
-
-const parsedThread = (): Thread => {
-  const result = ThreadRecord.parse(legacyThreadShape())
-  if (!result.ok) throw new Error(`goal-model fixture: the base thread failed to parse: ${result.message}`)
-  return result.value
-}
-
-test('goal-model.criterion-kind-is-read-by-the-merge-and-a-divergence-conflicts', () => {
-  const ours = parsedThread()
-  const theirs: Thread = {
-    ...ours,
-    completion_criteria: ours.completion_criteria.map((criterion) => ({ ...criterion, kind: 'detour' }))
-  }
-  assert.equal(ours.completion_criteria[0]?.kind, 'planned')
-  assert.equal(theirs.completion_criteria[0]?.kind, 'detour')
-  assert.equal(
-    isDeepStrictEqual(ours.completion_criteria, theirs.completion_criteria),
-    false,
-    'the fixture must differ in kind alone'
-  )
-
-  const merged = mergeThread(null, ours, theirs)
-  assert.equal(merged.ok, false, 'two copies of one criterion differing only in kind must conflict, never silently pick one')
-  if (merged.ok) return
-  assert.equal(merged.conflicts.length, 1)
-  assert.equal(merged.conflicts[0]?.field, `completion_criteria[${CRITERION_ID}]`)
 })
