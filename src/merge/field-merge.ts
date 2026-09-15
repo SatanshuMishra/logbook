@@ -115,20 +115,17 @@ type NextStepPair = readonly [Spine['next_step'], Ulid | null]
 
 const nextStepPairOf = (thread: Thread): NextStepPair => [thread.spine.next_step, nextStepAnchor(thread.spine)]
 
-const pairMemberResolution = (
+const pairMemberConflict = (
   recordName: string,
-  path: string,
+  path: typeof NEXT_STEP_PATH | typeof NEXT_STEP_ANCHOR_PATH,
   oursValue: unknown,
   theirsValue: unknown
-): ScalarResolution =>
-  isDeepStrictEqual(oursValue, theirsValue)
-    ? { path, value: oursValue, conflict: null, dispatchedRule: null }
-    : {
-        path,
-        value: oursValue,
-        conflict: conflict(recordName, path, oursValue, theirsValue),
-        dispatchedRule: 'conflict-on-divergence'
-      }
+): ScalarResolution => ({
+  path,
+  value: oursValue,
+  conflict: conflict(recordName, path, oursValue, theirsValue),
+  dispatchedRule: THREAD_RULES[path]
+})
 
 const resolveNextStepPair = (
   recordName: string,
@@ -151,8 +148,13 @@ const resolveNextStepPair = (
   const [oursNextStep, oursAnchor] = nextStepPairOf(ours)
   const [theirsNextStep, theirsAnchor] = nextStepPairOf(theirs)
   return new Map([
-    [NEXT_STEP_PATH, pairMemberResolution(recordName, NEXT_STEP_PATH, oursNextStep, theirsNextStep)],
-    [NEXT_STEP_ANCHOR_PATH, pairMemberResolution(recordName, NEXT_STEP_ANCHOR_PATH, oursAnchor, theirsAnchor)]
+    [NEXT_STEP_PATH, pairMemberConflict(recordName, NEXT_STEP_PATH, oursNextStep, theirsNextStep)],
+    [
+      NEXT_STEP_ANCHOR_PATH,
+      oursAnchor === theirsAnchor
+        ? { path: NEXT_STEP_ANCHOR_PATH, value: oursAnchor, conflict: null, dispatchedRule: null }
+        : pairMemberConflict(recordName, NEXT_STEP_ANCHOR_PATH, oursAnchor, theirsAnchor)
+    ]
   ])
 }
 

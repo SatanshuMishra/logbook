@@ -680,7 +680,8 @@ test('merge.a-next-step-criterion-changed-differently-on-both-sides-conflicts', 
   if (result.ok) throw new Error('expected the merge to refuse')
   assert.deepEqual(
     result.conflicts.map((found) => found.field),
-    ['spine.next_step_criterion_id']
+    ['spine.next_step', 'spine.next_step_criterion_id'],
+    'the next step is disputed with its criterion even where both sides wrote the same text, so a later local change to it is caught as stale'
   )
 })
 
@@ -739,7 +740,7 @@ test('merge.next-step-and-its-criterion-merge-as-one-pair', () => {
   assert.deepEqual(
     sameCriterionDifferentSteps.conflicts.map((found) => found.field),
     ['spine.next_step'],
-    'both sides name the same criterion, so only the next step itself is in dispute'
+    'both sides name the same criterion, and the criterion changes only with a next step, so disputing the next step covers the pair'
   )
 
   const replacedOnOneSideOnly = mergeThread(
@@ -751,4 +752,12 @@ test('merge.next-step-and-its-criterion-merge-as-one-pair', () => {
   if (!replacedOnOneSideOnly.ok) throw new Error('expected the merge to succeed')
   assert.equal(replacedOnOneSideOnly.merged.spine.next_step, 'warm the cache')
   assert.equal('next_step_criterion_id' in replacedOnOneSideOnly.merged.spine, false)
+})
+
+test('merge.the-next-step-and-its-criterion-share-one-rule', () => {
+  assert.equal(
+    THREAD_RULES['spine.next_step_criterion_id'],
+    THREAD_RULES['spine.next_step'],
+    'the two halves of the next-step pair merge as one value, so their declared rules cannot differ'
+  )
 })
