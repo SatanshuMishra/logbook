@@ -26,9 +26,6 @@ import { SessionRecord, type SessionEntry } from '../../src/schema/session.ts'
 import { itemCountOverBudgetThread } from '../support/briefing-item-count-over-budget-fixture.ts'
 import {
   THREAD_SLUG_MAX,
-  RISK_REF_MAX,
-  KEY_DECISION_TITLE_MAX,
-  OUT_OF_SCOPE_TEXT_MAX,
   SESSION_BODY_MAX,
   ARTIFACT_LABEL_MAX,
   ARTIFACT_POINTER_MAX
@@ -39,6 +36,9 @@ const FORMER_THREAD_TITLE_MAX = 200
 const FORMER_RISK_TEXT_MAX = 500
 const FORMER_CRITERION_TEXT_MAX = 500
 const FORMER_CRITERION_CHECK_MAX = 500
+const FORMER_RISK_REF_MAX = 200
+const FORMER_KEY_DECISION_TITLE_MAX = 200
+const FORMER_OUT_OF_SCOPE_TEXT_MAX = 300
 const FORMER_CRITERION_RESULT_MAX = 1000
 const FORMER_CRITERION_SETTLED_BY_MAX = 500
 
@@ -140,10 +140,10 @@ const buildFloorFixture = (rawTextFor: FloorRawText, sessionBodies: readonly str
   const relatedSlugText = slugSafeFillFor(RELATED_SLUG_FLOOR, THREAD_SLUG_MAX)
   const riskText = rawTextFor(RISK_TEXT_FLOOR, FORMER_RISK_TEXT_MAX)
   const settledRiskText = rawTextFor(RISK_TEXT_FLOOR, FORMER_RISK_TEXT_MAX)
-  const riskRefText = rawTextFor(RISK_REF_FLOOR, RISK_REF_MAX)
-  const keyDecisionText = rawTextFor(KEY_DECISION_TITLE_FLOOR, KEY_DECISION_TITLE_MAX)
-  const settledKeyDecisionText = rawTextFor(KEY_DECISION_TITLE_FLOOR, KEY_DECISION_TITLE_MAX)
-  const outOfScopeText = rawTextFor(OUT_OF_SCOPE_TEXT_FLOOR, OUT_OF_SCOPE_TEXT_MAX)
+  const riskRefText = rawTextFor(RISK_REF_FLOOR, FORMER_RISK_REF_MAX)
+  const keyDecisionText = rawTextFor(KEY_DECISION_TITLE_FLOOR, FORMER_KEY_DECISION_TITLE_MAX)
+  const settledKeyDecisionText = rawTextFor(KEY_DECISION_TITLE_FLOOR, FORMER_KEY_DECISION_TITLE_MAX)
+  const outOfScopeText = rawTextFor(OUT_OF_SCOPE_TEXT_FLOOR, FORMER_OUT_OF_SCOPE_TEXT_MAX)
   const criterionText = rawTextFor(CRITERION_TEXT_FLOOR, FORMER_CRITERION_TEXT_MAX)
   const criterionCheckText = rawTextFor(CRITERION_CHECK_FLOOR, FORMER_CRITERION_CHECK_MAX)
   const criterionResultText = rawTextFor(CRITERION_RESULT_FLOOR, FORMER_CRITERION_RESULT_MAX)
@@ -687,9 +687,9 @@ test('briefing.every-floor-is-at-most-the-write-cap-it-governs', () => {
     { name: 'related title floor vs former thread title cap', floor: RELATED_TITLE_FLOOR, cap: FORMER_THREAD_TITLE_MAX },
     { name: 'related slug floor vs thread slug cap', floor: RELATED_SLUG_FLOOR, cap: THREAD_SLUG_MAX },
     { name: 'risk text floor vs risk text cap', floor: RISK_TEXT_FLOOR, cap: FORMER_RISK_TEXT_MAX },
-    { name: 'risk reference floor vs risk reference cap', floor: RISK_REF_FLOOR, cap: RISK_REF_MAX },
-    { name: 'key decision title floor vs key decision title cap', floor: KEY_DECISION_TITLE_FLOOR, cap: KEY_DECISION_TITLE_MAX },
-    { name: 'out of scope text floor vs out of scope text cap', floor: OUT_OF_SCOPE_TEXT_FLOOR, cap: OUT_OF_SCOPE_TEXT_MAX },
+    { name: 'risk reference floor vs former risk reference cap', floor: RISK_REF_FLOOR, cap: FORMER_RISK_REF_MAX },
+    { name: 'key decision title floor vs former key decision title cap', floor: KEY_DECISION_TITLE_FLOOR, cap: FORMER_KEY_DECISION_TITLE_MAX },
+    { name: 'out of scope text floor vs former out of scope text cap', floor: OUT_OF_SCOPE_TEXT_FLOOR, cap: FORMER_OUT_OF_SCOPE_TEXT_MAX },
     { name: 'criterion text floor vs former criterion text cap', floor: CRITERION_TEXT_FLOOR, cap: FORMER_CRITERION_TEXT_MAX },
     { name: 'criterion check floor vs former criterion check cap', floor: CRITERION_CHECK_FLOOR, cap: FORMER_CRITERION_CHECK_MAX },
     { name: 'criterion result floor vs criterion result cap', floor: CRITERION_RESULT_FLOOR, cap: FORMER_CRITERION_RESULT_MAX },

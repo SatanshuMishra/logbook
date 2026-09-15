@@ -29,6 +29,11 @@ const FORMER_THREAD_TITLE_MAX = 200
 const FORMER_HEADER_TEXT_MAX = 500
 const FORMER_CRITERION_TEXT_MAX = 500
 const FORMER_CRITERION_CHECK_MAX = 500
+const FORMER_RISK_SCOPE_MAX = 200
+const FORMER_RISK_REF_MAX = 200
+const FORMER_KEY_DECISION_TITLE_MAX = 200
+const FORMER_KEY_DECISION_SCOPE_MAX = 200
+const FORMER_OUT_OF_SCOPE_TEXT_MAX = 300
 
 type Fixture = { spawned: SpawnedServer; repo: string; pluginData: string; homeDir: string }
 
@@ -594,6 +599,89 @@ test('caps-relaxed.criterion-text-and-check-past-their-former-caps-are-accepted-
     assert.equal(insertedCriterion?.check, INSERTED_CHECK_PAYLOAD, 'the inserted criterion check must be stored exactly')
     assert.equal(rewrittenCriterion?.text, REWRITTEN_TEXT_PAYLOAD, 'the rewritten criterion text must be stored exactly')
     assert.equal(rewrittenCriterion?.check, REWRITTEN_CHECK_PAYLOAD, 'the rewritten criterion check must be stored exactly')
+  })
+})
+
+test('caps-relaxed.risk-scope-and-reference-past-their-former-caps-are-accepted-verbatim', async () => {
+  await withFixture(async (fx) => {
+    const SCOPE_PAYLOAD = buildVerbatimPayload(FORMER_RISK_SCOPE_MAX + 100, 'This is the long risk scope payload.')
+    const REF_PAYLOAD = buildVerbatimPayload(FORMER_RISK_REF_MAX + 100, 'This is the long risk reference payload.')
+
+    const { threadId } = await openMinimalThread(fx, 'risk-scope-past-former-caps')
+
+    const updated = await callUpdateThread(fx, {
+      thread_id: threadId,
+      risks_add: [{ text: 'a risk with a long scope and reference', scope: SCOPE_PAYLOAD, refs: [REF_PAYLOAD] }]
+    })
+    assert.equal(
+      updated.isError,
+      undefined,
+      `update_thread must accept a risk scope and reference past their former caps, got: ${updated.isError === true ? firstTextOf(updated) : 'no error'}`
+    )
+
+    const risk = readThreadRecord(fx, threadId).spine.open_risks[0]
+    assert.ok(risk !== undefined, 'caps-relaxed fixture: the risk vanished from the stored spine')
+    assert.equal(risk.scope, SCOPE_PAYLOAD, 'the stored risk scope must equal the sent payload exactly')
+    assert.deepEqual(risk.refs, [REF_PAYLOAD], 'the stored risk reference must equal the sent payload exactly')
+  })
+})
+
+test('caps-relaxed.key-decision-title-and-scope-past-their-former-caps-are-accepted-verbatim', async () => {
+  await withFixture(async (fx) => {
+    const RECORDED_SCOPE_PAYLOAD = buildVerbatimPayload(FORMER_KEY_DECISION_SCOPE_MAX + 100, 'This is the long recorded decision scope payload.')
+    const LINKED_TITLE_PAYLOAD = buildVerbatimPayload(FORMER_KEY_DECISION_TITLE_MAX + 100, 'This is the long linked decision title payload.')
+    const LINKED_SCOPE_PAYLOAD = buildVerbatimPayload(FORMER_KEY_DECISION_SCOPE_MAX + 100, 'This is the long linked decision scope payload.')
+
+    const { threadId } = await openMinimalThread(fx, 'key-decision-past-former-caps')
+
+    const recorded = await callRecordDecision(fx, {
+      thread_id: threadId,
+      title: 'a decision with a long scope',
+      context: 'the fixture records a decision whose scope is past its former cap',
+      options: ['record it'],
+      outcome: 'record it',
+      scope: RECORDED_SCOPE_PAYLOAD
+    })
+    assert.equal(
+      recorded.isError,
+      undefined,
+      `record_decision must accept a scope past its former cap, got: ${recorded.isError === true ? firstTextOf(recorded) : 'no error'}`
+    )
+    const decisionId = (recorded.structuredContent as { decision_id: string }).decision_id
+
+    const linked = await callUpdateThread(fx, {
+      thread_id: threadId,
+      key_decisions_add: [{ decision_id: decisionId, title: LINKED_TITLE_PAYLOAD, scope: LINKED_SCOPE_PAYLOAD }]
+    })
+    assert.equal(
+      linked.isError,
+      undefined,
+      `update_thread must accept a key decision title and scope past their former caps, got: ${linked.isError === true ? firstTextOf(linked) : 'no error'}`
+    )
+
+    const keyDecisions = readThreadRecord(fx, threadId).spine.key_decisions
+    assert.equal(keyDecisions.length, 2, 'caps-relaxed fixture: expected the recorded link and the added link')
+    assert.equal(keyDecisions[0]?.scope, RECORDED_SCOPE_PAYLOAD, 'the scope record_decision linked must equal the sent payload exactly')
+    assert.equal(keyDecisions[1]?.title, LINKED_TITLE_PAYLOAD, 'the added key decision title must equal the sent payload exactly')
+    assert.equal(keyDecisions[1]?.scope, LINKED_SCOPE_PAYLOAD, 'the added key decision scope must equal the sent payload exactly')
+  })
+})
+
+test('caps-relaxed.out-of-scope-statement-past-its-former-cap-is-accepted-verbatim', async () => {
+  await withFixture(async (fx) => {
+    const STATEMENT_PAYLOAD = buildVerbatimPayload(FORMER_OUT_OF_SCOPE_TEXT_MAX + 100, 'This is the long out-of-scope statement payload.')
+
+    const { threadId } = await openMinimalThread(fx, 'out-of-scope-past-former-cap')
+
+    const updated = await callUpdateThread(fx, { thread_id: threadId, out_of_scope_add: [STATEMENT_PAYLOAD] })
+    assert.equal(
+      updated.isError,
+      undefined,
+      `update_thread must accept an out-of-scope statement past its former cap, got: ${updated.isError === true ? firstTextOf(updated) : 'no error'}`
+    )
+
+    const entry = readThreadRecord(fx, threadId).spine.out_of_scope[0]
+    assert.equal(entry?.text, STATEMENT_PAYLOAD, 'the stored out-of-scope statement must equal the sent payload exactly')
   })
 })
 

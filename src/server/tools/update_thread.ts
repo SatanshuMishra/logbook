@@ -15,9 +15,9 @@ const optionalUlidField = (description: string) => z.string().regex(ULID_PATTERN
 const RiskAddSchema = z
   .strictObject({
     text: z.string().min(1).describe('the risk text to record on the spine'),
-    scope: z.string().min(1).max(caps.RISK_SCOPE_MAX).describe('the criterion or area of the thread this risk concerns'),
+    scope: z.string().min(1).describe('the criterion or area of the thread this risk concerns'),
     refs: z
-      .array(z.string().regex(/\S/).max(caps.RISK_REF_MAX).describe('one external pointer backing this risk'))
+      .array(z.string().regex(/\S/).describe('one external pointer backing this risk'))
       .max(caps.RISK_REFS_MAX_ELEMENTS)
       .optional()
       .describe('external pointers backing this risk; omit or send an empty array for none'),
@@ -30,8 +30,8 @@ const RiskAddSchema = z
 const KeyDecisionAddSchema = z
   .strictObject({
     decision_id: ulidField('the decision record this key decision links to; must already be recorded on this project'),
-    title: z.string().min(1).max(caps.KEY_DECISION_TITLE_MAX).describe('the decision title as it should render on the spine'),
-    scope: z.string().min(1).max(caps.KEY_DECISION_SCOPE_MAX).describe('the criterion or area of the thread this decision resolved')
+    title: z.string().min(1).describe('the decision title as it should render on the spine'),
+    scope: z.string().min(1).describe('the criterion or area of the thread this decision resolved')
   })
   .describe('one decision to link into the spine')
 
@@ -132,7 +132,7 @@ const UpdateThreadInputSchema = z.strictObject({
     .optional()
     .describe('key decisions to link into the spine; each one is minted a stable id'),
   out_of_scope_add: z
-    .array(z.string().min(1).max(caps.OUT_OF_SCOPE_TEXT_MAX).describe('one statement of what this thread explicitly excludes'))
+    .array(z.string().min(1).describe('one statement of what this thread explicitly excludes'))
     .max(caps.OUT_OF_SCOPE_MAX_ELEMENTS)
     .optional()
     .describe('out-of-scope statements to append; each one is minted a stable id'),

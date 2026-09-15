@@ -6,5 +6,5 @@ export const structural = <T extends z.ZodType>(schema: T): T => schema.meta({ c
 
 export const content = <T extends z.ZodType>(schema: T): T => schema.meta({ class: 'content' }) as T
 
-export const pointer = (max: number, description: string) =>
-  z.string().max(max).regex(POINTER_PATTERN).describe(description).meta({ class: 'pointer' })
+export const pointer = (description: string) =>
+  z.string().regex(POINTER_PATTERN).describe(description).meta({ class: 'pointer' })
