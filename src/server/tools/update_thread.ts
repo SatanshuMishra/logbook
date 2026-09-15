@@ -3,11 +3,11 @@ import type { ToolSpec } from '../register.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import { ULID_PATTERN } from '../../schema/ids.ts'
 import type { Artifact, KeyDecision, Risk, Settledness, Spine, Thread } from '../../schema/thread.ts'
-import { criterionSettledness, riskAnchor } from '../../schema/thread.ts'
+import { criterionSettledness } from '../../schema/thread.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { checkNextStepCriterion, contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
-import { riskIdentity } from '../../domain/risk-identity.ts'
+import { liveRiskIdsByIdentity, riskIdentity } from '../../domain/risk-identity.ts'
 import { ArtifactAddSchema, commitThread, loadThread, mintArtifacts, openProjectStore } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
@@ -503,16 +503,11 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
       return { ok: false, refusal: danglingRiskCriterionRefusal(danglingRiskCriteria) }
     }
 
-    const liveRiskIdentities = survivingRisks
-      .filter((risk) => !risk.retired)
-      .map((risk) => [riskIdentity(riskAnchor(risk), risk.text), risk.id] as const)
-    const liveRiskIdsByIdentity = new Map(
-      liveRiskIdentities.filter(([identity], index) => liveRiskIdentities.findIndex(([other]) => other === identity) === index)
-    )
+    const liveRiskIds = liveRiskIdsByIdentity(survivingRisks)
     const resolvedRisks = riskEntries.reduce<{ minted: Risk[]; mintedIdentities: string[]; alreadyPresent: string[] }>(
       (resolved, entry) => {
         const identity = riskIdentity(entry.criterion_id, escapeStored(entry.text))
-        const liveId = liveRiskIdsByIdentity.get(identity)
+        const liveId = liveRiskIds.get(identity)
         if (liveId !== undefined) {
           return resolved.alreadyPresent.includes(liveId)
             ? resolved
