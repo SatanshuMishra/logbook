@@ -180,7 +180,7 @@ The sentence "merges record by record when both moved" in `sync_ledger`'s descri
 Found while implementing (step 5):
 
 - **A path is a record when it matches a record address**, `threads/<ulid>.json`, `decisions/<ulid>.json`, `bindings/<ulid>.json` or `sessions/<ulid>/<ulid>.json`. Every other path, including a file inside a record directory that no tool writes, is settled with `content`. Decision `01M2KK8AEJXRDY0XTXV6Z3CMY3`.
-- **The published path pattern is loose**: no leading slash, no NUL, no line break. A tighter pattern would leave a conflict on an unusual file name impossible to settle.
+- **The published path pattern is loose**: no leading slash, no NUL, no line break. A tighter pattern would leave a conflict on an unusual file name impossible to settle. For the same reason the path cap, `RESOLUTION_PATH_MAX`, is 4096, Linux's `PATH_MAX`, recorded with its reason in `docs/registers/size-limits.json`.
 - `record` is published as an object of any keys and values. The per-directory stored shape is checked in the handler, because a published union of four record schemas cannot say which one applies to which path.
 
 ### What it checks
@@ -238,6 +238,8 @@ As implemented, also removed: `corruptConflictsRefusal` (an unreadable and a mal
 | In `test/sync/resolve.test.ts`: the three next-step pair and stale tests, `resolve.spine-landed-conflict-resolves`, `resolve.artifacts-conflict-resolves`, `conflict.resolve-names-the-winner` | 6 tests | the c1 to c3 tests |
 
 `conflict.partial-list-refused`, `resolve_conflict.spawn.contract` and `resolve_conflict.rejects-invalid` are rewritten for the new input.
+
+Found while deleting (step 6): the three `no-literal-identifiers` entries are made-up candidates whose `file` is only a label; the census classifies them by their flags and never opens the file. Deleting them would delete three control tests, so their label was changed to `unit/records.test.ts` instead. The `mergeThread` case was the only user of `parsedThread` and `isDeepStrictEqual` in `test/unit/goal-model-fields.test.ts`, which went with it.
 
 `sync.two-clones-offline.spawn` (`test/sync/two-clones-spawn.test.ts`) had both clones record a decision on one thread and expected a clean merge. Under git that is a conflict, so the scenario is rewritten: each clone records a decision on a different thread and logs a session entry on the other's, and it must still merge. The store-level `sync.two-clones-offline.store` writes only decision files and keeps its scenario.
 
