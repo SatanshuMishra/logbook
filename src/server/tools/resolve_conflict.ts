@@ -22,7 +22,7 @@ import { layoutFor } from '../../store/layout.ts'
 import { git } from '../../store/git.ts'
 import { advanceMaterialisedStampIfStillCurrent } from '../../store/read-path.ts'
 import { writeRecords, type RecordChange } from '../../store/write-path.ts'
-import type { Conflict } from '../../merge/conflict.ts'
+import { nextStepPairNoteFor, type Conflict } from '../../merge/conflict.ts'
 import { TRACKING_REF } from '../../merge/sync.ts'
 import { THREAD_RULES } from '../../merge/field-merge.ts'
 import { LEDGER_REF } from '../../store/ref.ts'
@@ -152,7 +152,7 @@ export const missingResolutionRefusal = (missing: readonly string[]): Refusal =>
   accepted: 'a winner for every disagreement the last sync_ledger call reported',
   example: 'add an entry naming a winner for each missing disagreement',
   retryable: true,
-  message: `resolutions is missing a winner for: ${missing.join('; ')}.`
+  message: `resolutions is missing a winner for: ${missing.join('; ')}.${nextStepPairNoteFor(missing)}`
 })
 
 export const splitNextStepPairRefusal = (record: string): Refusal => ({
