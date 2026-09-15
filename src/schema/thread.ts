@@ -171,12 +171,10 @@ const ArtifactSchema = structural(
 )
 
 const SpineSchema = z.object({
-  active_goal: content(z.string().max(caps.SPINE_ACTIVE_GOAL_MAX).describe('the thread goal currently being worked')),
-  next_step: content(z.string().max(caps.SPINE_NEXT_STEP_MAX).describe('the next concrete step in this thread')),
-  landed: content(
-    z.string().max(caps.SPINE_LANDED_MAX).describe('what this thread has landed and verified so far, as the previous session left it')
-  ),
-  last_session: content(z.string().max(caps.SPINE_LAST_SESSION_MAX).describe('a summary of the most recent session')),
+  active_goal: content(z.string().describe('the thread goal currently being worked')),
+  next_step: content(z.string().describe('the next concrete step in this thread')),
+  landed: content(z.string().describe('what this thread has landed and verified so far, as the previous session left it')),
+  last_session: content(z.string().describe('a summary of the most recent session')),
   open_risks: z.array(RiskSchema).describe('risks still open on this thread').meta({ class: 'structural' }),
   key_decisions: z
     .array(KeyDecisionSchema)
@@ -195,12 +193,11 @@ const ThreadShape = z.object({
   slug: content(
     z.string().min(1).max(caps.THREAD_SLUG_MAX).regex(SLUG_PATTERN).describe('a short lowercase label for the thread')
   ),
-  title: content(z.string().min(1).max(caps.THREAD_TITLE_MAX).describe('the thread title')),
+  title: content(z.string().min(1).describe('the thread title')),
   status: structural(z.enum(['open', 'done', 'abandoned']).describe('the thread lifecycle state')),
   blocked_by: content(
     z
       .string()
-      .max(caps.THREAD_BLOCKED_BY_MAX)
       .nullable()
       .describe('the reason this thread is blocked, or null when it is not blocked')
   ),

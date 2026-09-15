@@ -294,6 +294,8 @@ Nothing gets built for this item. The length-cap ruling removes every cap it con
 ### What it costs
 
 - No mechanical backstop against a runaway agent pasting a log into a field. What still catches it: the briefing budget, and the record's visibility in git.
+
+> Amended on 2026-09-14 (decision 01M2H5P26VGP2EMW5D1W7WWYPM): the next step renders whole, so the briefing budget does not catch it. A next step longer than the budget yields a briefing flagged over budget but not shortened. A budget-derived ceiling for the next step, disclosed as shortened, is deferred to the render-budget second pass.
 - Each removed cap goes from the stored shape as well (`src/schema/thread.ts:70`, `:78`, `:174-179`, `:196`, `:198`, `:203`), because records are checked against it on read and a failing record is quarantined whole (`src/store/read-path.ts:227-229`).
 
 ### On its own

@@ -13,15 +13,7 @@ export type SpineContribution = {
   out_of_scope?: OutOfScope[]
 }
 
-type ScalarField = { [K in keyof Spine]: Spine[K] extends unknown[] ? never : K }[keyof Spine]
 type CollectionField = { [K in keyof Spine]: Spine[K] extends unknown[] ? K : never }[keyof Spine]
-
-const SCALAR_CAP: Record<ScalarField, number> = {
-  active_goal: caps.SPINE_ACTIVE_GOAL_MAX,
-  next_step: caps.SPINE_NEXT_STEP_MAX,
-  landed: caps.SPINE_LANDED_MAX,
-  last_session: caps.SPINE_LAST_SESSION_MAX
-}
 
 const COLLECTION_ELEMENTS_CAP: Record<CollectionField, number | null> = {
   open_risks: null,
@@ -35,7 +27,6 @@ const CALLER_FIELD: Record<CollectionField, string> = {
   out_of_scope: 'out_of_scope_add'
 }
 
-const SCALAR_FIELDS: ScalarField[] = Object.keys(SCALAR_CAP) as ScalarField[]
 const COLLECTION_FIELDS: CollectionField[] = Object.keys(COLLECTION_ELEMENTS_CAP) as CollectionField[]
 
 const capRefusal = (field: string, limit: number, observed: number, unit: string, remedy: string): Refusal => ({
@@ -53,13 +44,6 @@ const checkTextCap = (field: string, value: string, limit: number, remedy: strin
     return capRefusal(field, limit, observed, 'characters', remedy)
   }
   return null
-}
-
-const checkScalarField = (field: ScalarField, value: string | undefined): Refusal | null => {
-  if (value === undefined) {
-    return null
-  }
-  return checkTextCap(field, value, SCALAR_CAP[field], 'shorten the value and retry')
 }
 
 const checkCollectionCount = (field: CollectionField, storedCount: number, contributedCount: number): Refusal | null => {
@@ -217,12 +201,6 @@ const mergeSpine = (stored: Spine, contribution: SpineContribution): Spine => ({
 })
 
 export const contributeToSpine = (stored: Spine, contribution: SpineContribution): Ok<Spine> | Refusal => {
-  for (const field of SCALAR_FIELDS) {
-    const refusal = checkScalarField(field, contribution[field])
-    if (refusal !== null) {
-      return refusal
-    }
-  }
   for (const field of COLLECTION_FIELDS) {
     const refusal = checkCollectionField(field, stored, contribution)
     if (refusal !== null) {

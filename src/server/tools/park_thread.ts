@@ -33,12 +33,10 @@ const ParkThreadInputSchema = z.strictObject({
   ).optional(),
   next_step: z
     .string()
-    .max(caps.SPINE_NEXT_STEP_MAX)
     .optional()
-    .describe('replaces the spine next_step field when supplied; omit to leave it unchanged'),
+    .describe('replaces the spine next_step field when supplied, stated as one decision about what to do next; omit to leave it unchanged'),
   landed: z
     .string()
-    .max(caps.SPINE_LANDED_MAX)
     .optional()
     .describe(
       'what this thread has landed and verified, replacing the stored value when supplied; omit to leave it unchanged'

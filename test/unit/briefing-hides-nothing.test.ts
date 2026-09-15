@@ -15,6 +15,8 @@ import { REBUILD_ROOT, forEachDescendant, lineOf, loadSourceProgram, relativeToR
 
 const rt = testRuntime()
 
+const FORMER_THREAD_TITLE_MAX = 200
+
 const EMPTY_INTEGRITY: DecisionIntegrity = { resolved: 0, dangling: [], quarantined: [] }
 
 type SliceSite = { file: string; line: number; expression: string; discardsElements: boolean }
@@ -255,7 +257,7 @@ const threadOf = (overrides: Partial<Thread> = {}): Thread => ({
 })
 
 test('briefing.a-render-that-fits-its-budget-is-clipped-nowhere', () => {
-  const predecessor = threadOf({ title: ESCAPE_EXPANDING_CHAR.repeat(caps.THREAD_TITLE_MAX), status: 'done' })
+  const predecessor = threadOf({ title: ESCAPE_EXPANDING_CHAR.repeat(FORMER_THREAD_TITLE_MAX), status: 'done' })
   const thread = threadOf({
     predecessor_id: predecessor.id,
     completion_criteria: [

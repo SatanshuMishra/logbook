@@ -8,7 +8,6 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { rawGit } from '../support/git-fixture.ts'
 import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
 import { escapeStored } from '../../src/render/escape.ts'
-import * as caps from '../../src/schema/caps.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const ENTRY = join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
@@ -99,18 +98,6 @@ const rosterRowFor = async (fx: Fixture, threadId: string): Promise<Record<strin
   const row = (threads as unknown[]).find((candidate) => isRecord(candidate) && candidate.id === threadId)
   if (!isRecord(row)) throw new Error(`list_threads returned no row for thread ${threadId}`)
   return row
-}
-
-const refusalTextOf = (result: CallToolResult): string =>
-  (result.content ?? [])
-    .map((block) => (isRecord(block) && block.type === 'text' && typeof block.text === 'string' ? block.text : ''))
-    .join('\n')
-
-const fieldNameOf = (text: string): string | null => {
-  const match = /^field: (.+)$/m.exec(text)
-  if (match === null) return null
-  const captured = match[1]
-  return captured === undefined ? null : captured
 }
 
 test('blocked-by.update-thread-sets-what-a-thread-is-blocked-on', async () => {
@@ -209,30 +196,5 @@ test('blocked-by.list-threads-structured-content-carries-the-escaped-form-not-ra
       escapeStored(HOSTILE_BLOCKED_BY),
       `list_threads must return the escaped form of blocked_by, not the raw hostile text it was set with: ${JSON.stringify(row.blocked_by)}`
     )
-  })
-})
-
-test('blocked-by.a-value-that-only-exceeds-the-cap-after-escaping-is-refused', async () => {
-  await withFixture(async (fx) => {
-    const threadId = await openThread(fx, 'blocked-by-post-escape-cap')
-    const RAW_BLOCKED_BY = '\n'.repeat(100)
-    assert.ok(RAW_BLOCKED_BY.length <= caps.THREAD_BLOCKED_BY_MAX, 'the fixture value must pass the raw cap unmodified')
-    const escapedLength = escapeStored(RAW_BLOCKED_BY).length
-    assert.ok(escapedLength > caps.THREAD_BLOCKED_BY_MAX, 'the fixture value must exceed the cap only after escaping')
-
-    const result = (await fx.spawned.client.callTool({
-      name: 'update_thread',
-      arguments: { thread_id: threadId, blocked_by: RAW_BLOCKED_BY }
-    })) as CallToolResult
-
-    assert.equal(result.isError, true, 'a blocked_by whose escaped form exceeds the cap must be refused')
-    const text = refusalTextOf(result)
-    const field = fieldNameOf(text)
-    assert.equal(field, 'blocked_by', `the refusal must name field blocked_by, not thread or anything else: ${text}`)
-    assert.ok(text.includes(String(caps.THREAD_BLOCKED_BY_MAX)), `the refusal must name the cap ${caps.THREAD_BLOCKED_BY_MAX}: ${text}`)
-    assert.ok(text.includes(String(escapedLength)), `the refusal must name the observed post-escape length ${escapedLength}: ${text}`)
-
-    const after = await rosterRowFor(fx, threadId)
-    assert.equal(after.blocked_by, null, 'a refused call must not have written anything')
   })
 })

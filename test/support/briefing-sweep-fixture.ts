@@ -14,6 +14,8 @@ export type SweepShape = {
 
 export type SweepFixture = { thread: Thread; predecessor: Thread; integrity: DecisionIntegrity }
 
+const FORMER_THREAD_TITLE_MAX = 200
+const FORMER_HEADER_TEXT_MAX = 500
 const CRITERION_CHECK_HELD_LENGTH = 40
 const CRITERION_RESULT_HELD_LENGTH = 60
 const RISK_REF_HELD_LENGTH = 40
@@ -84,7 +86,7 @@ export const buildSweepFixture = (rt: Runtime, shape: SweepShape): SweepFixture 
   const predecessor: Thread = {
     id: rt.ulid(),
     slug: 'p'.repeat(caps.THREAD_SLUG_MAX),
-    title: fillOf(caps.THREAD_TITLE_MAX),
+    title: fillOf(FORMER_THREAD_TITLE_MAX),
     status: 'done',
     blocked_by: null,
     completion_criteria: [],
@@ -104,16 +106,16 @@ export const buildSweepFixture = (rt: Runtime, shape: SweepShape): SweepFixture 
   const thread: Thread = {
     id: rt.ulid(),
     slug: 's'.repeat(caps.THREAD_SLUG_MAX),
-    title: fillOf(caps.THREAD_TITLE_MAX),
+    title: fillOf(FORMER_THREAD_TITLE_MAX),
     status: 'open',
-    blocked_by: fillOf(caps.THREAD_BLOCKED_BY_MAX),
+    blocked_by: fillOf(FORMER_HEADER_TEXT_MAX),
     predecessor_id: predecessor.id,
     completion_criteria: criteria,
     spine: {
-      active_goal: fillOf(caps.SPINE_ACTIVE_GOAL_MAX),
-      next_step: fillOf(caps.SPINE_NEXT_STEP_MAX),
+      active_goal: fillOf(FORMER_HEADER_TEXT_MAX),
+      next_step: fillOf(FORMER_HEADER_TEXT_MAX),
       landed: '',
-      last_session: fillOf(caps.SPINE_LAST_SESSION_MAX),
+      last_session: fillOf(FORMER_HEADER_TEXT_MAX),
       open_risks: risks,
       key_decisions: keyDecisions,
       out_of_scope: outOfScope

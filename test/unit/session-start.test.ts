@@ -6,7 +6,6 @@ import { join } from 'node:path'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import { openStore } from '../../src/store/records.ts'
 import type { RecordChange } from '../../src/store/write-path.ts'
-import * as caps from '../../src/schema/caps.ts'
 import { CLIP_MARKER } from '../../src/render/clip.ts'
 import { BANNER_MAX_GRAPHEMES, renderThreadListing, runSessionStart } from '../../src/cli/session-start.ts'
 import { layoutFor } from '../../src/store/layout.ts'
@@ -96,8 +95,10 @@ test('session-start.roster-line-still-carries-slug-title-next-step-and-id', () =
 })
 
 const LONG_THREAD_COUNT = 16
-const LONG_TITLE = 'a'.repeat(caps.THREAD_TITLE_MAX)
-const LONG_NEXT_STEP = 'b'.repeat(caps.SPINE_NEXT_STEP_MAX)
+const FORMER_THREAD_TITLE_MAX = 200
+const FORMER_SPINE_NEXT_STEP_MAX = 500
+const LONG_TITLE = 'a'.repeat(FORMER_THREAD_TITLE_MAX)
+const LONG_NEXT_STEP = 'b'.repeat(FORMER_SPINE_NEXT_STEP_MAX)
 
 const makeLongThread = (rt: Runtime, index: number): Extract<RecordChange, { kind: 'thread' }> => ({
   kind: 'thread',

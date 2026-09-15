@@ -17,13 +17,6 @@ const baseSpine = (): Spine => ({
   out_of_scope: []
 })
 
-const buildOversizedAfterEscaping = (limit: number): { raw: string; escapedLength: number } => {
-  const zeroWidthCount = 5
-  const regularCount = limit - 20
-  const raw = 'a'.repeat(regularCount) + '​'.repeat(zeroWidthCount)
-  return { raw, escapedLength: escapeStored(raw).length }
-}
-
 const parseObservedFromMessage = (message: string): number => {
   const match = message.match(/observed (\d+) /)
   if (match === null || match[1] === undefined) {
@@ -37,8 +30,13 @@ test('caps.refuse-whole-call', () => {
   const stored: Spine = { ...baseSpine(), open_risks: [{ id: rt.ulid(), scope: 'test', text: 'a pinned risk', refs: [], retired: false }] }
   const beforeSnapshot = JSON.parse(JSON.stringify(stored)) as Spine
 
-  const validActiveGoal = 'a perfectly valid active goal well within its cap'
-  const oversizedNextStep = 'n'.repeat(caps.SPINE_NEXT_STEP_MAX + 1)
+  const validActiveGoal = 'a perfectly valid active goal'
+  const overflowingDecisions: KeyDecision[] = Array.from({ length: caps.KEY_DECISIONS_MAX_ELEMENTS + 1 }, (_, i) => ({
+    id: rt.ulid(),
+    decision_id: rt.ulid(),
+    title: `decision ${i}`,
+    scope: 'scope'
+  }))
 
   const soloActiveGoalResult = contributeToSpine(stored, { active_goal: validActiveGoal })
   assert.equal(soloActiveGoalResult.ok, true)
@@ -49,7 +47,7 @@ test('caps.refuse-whole-call', () => {
 
   const combinedContribution: SpineContribution = {
     active_goal: validActiveGoal,
-    next_step: oversizedNextStep
+    key_decisions: overflowingDecisions
   }
   const combinedResult = contributeToSpine(stored, combinedContribution)
 
@@ -137,22 +135,6 @@ test('caps.count-is-capped', () => {
   assert.equal(refuseResult.field, 'key_decisions_add')
 })
 
-test('caps.after-escaping', () => {
-  const stored = baseSpine()
-  const { raw, escapedLength } = buildOversizedAfterEscaping(caps.SPINE_NEXT_STEP_MAX)
-
-  assert.ok(raw.length <= caps.SPINE_NEXT_STEP_MAX, 'the raw input must stay within the cap on its own')
-  assert.ok(escapedLength > caps.SPINE_NEXT_STEP_MAX, 'escaping must be what pushes the value over its cap')
-
-  const result = contributeToSpine(stored, { next_step: raw })
-
-  assert.equal(result.ok, false)
-  if (result.ok) {
-    throw new Error('expected the escaped length, not the raw length, to trigger a refusal')
-  }
-  assert.equal(parseObservedFromMessage(result.message), escapedLength)
-})
-
 test('caps.risk-scope-is-capped-and-escaped', () => {
   const rt = testRuntime()
   const stored = baseSpine()
@@ -212,21 +194,26 @@ test('caps.key-decision-scope-is-capped-and-escaped', () => {
 })
 
 test('caps.refusal-is-complete', () => {
+  const rt = testRuntime()
   const stored = baseSpine()
-  const { raw, escapedLength } = buildOversizedAfterEscaping(caps.SPINE_NEXT_STEP_MAX)
-  assert.notEqual(escapedLength, raw.length)
+  const overflowingDecisions: KeyDecision[] = Array.from({ length: caps.KEY_DECISIONS_MAX_ELEMENTS + 1 }, (_, i) => ({
+    id: rt.ulid(),
+    decision_id: rt.ulid(),
+    title: `decision ${i}`,
+    scope: 'scope'
+  }))
 
-  const result = contributeToSpine(stored, { next_step: raw })
+  const result = contributeToSpine(stored, { key_decisions: overflowingDecisions })
 
   assert.equal(result.ok, false)
   if (result.ok) {
     throw new Error('expected a refusal')
   }
-  assert.equal(result.field, 'next_step')
+  assert.equal(result.field, 'key_decisions_add')
   assert.equal(result.retryable, true)
   assert.ok(result.accepted.length > 0)
   assert.ok(result.example.length > 0)
-  assert.match(result.message, new RegExp(`cap of ${caps.SPINE_NEXT_STEP_MAX}`))
-  assert.equal(parseObservedFromMessage(result.message), escapedLength)
+  assert.match(result.message, new RegExp(`cap of ${caps.KEY_DECISIONS_MAX_ELEMENTS}`))
+  assert.equal(parseObservedFromMessage(result.message), caps.KEY_DECISIONS_MAX_ELEMENTS + 1)
   assert.match(result.message, /remedy:/)
 })

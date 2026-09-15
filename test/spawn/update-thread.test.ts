@@ -9,8 +9,6 @@ import { rawGit } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
 import { openStore } from '../../src/store/records.ts'
-import { escapeStored } from '../../src/render/escape.ts'
-import * as caps from '../../src/schema/caps.ts'
 import type { Thread } from '../../src/schema/thread.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -322,39 +320,6 @@ test('update_thread.refuses-a-quote-on-a-criterion-that-is-not-confirmed', async
       storedCriterion(fx, opened.threadId, criterionId).settled_by ?? null,
       null,
       'a refused call must not have written the stray quote first'
-    )
-  })
-})
-
-test('update_thread.refuses-a-blocked-by-that-passes-its-cap-only-before-escaping', async () => {
-  await withFixture(async (fx) => {
-    const opened = await openCriteriaThread(fx, 'blocked-by-cap-thread', [PROPOSED_CRITERION])
-    const blockedBy = '<'.repeat(caps.THREAD_BLOCKED_BY_MAX)
-    const escapedLength = escapeStored(blockedBy).length
-    assert.ok(
-      escapedLength > caps.THREAD_BLOCKED_BY_MAX,
-      'the cap fixture needs a value that fits before escaping and overflows after it'
-    )
-
-    const result = await callUpdateThread(fx, {
-      thread_id: opened.threadId,
-      blocked_by: blockedBy
-    })
-
-    assert.equal(result.isError, true, 'a value that only overflows after escaping is still over its cap')
-    const text = firstTextOf(result)
-    assert.ok(
-      text.includes('blocked_by exceeds its cap'),
-      `the refusal has to name the field that overflowed, got: ${text}`
-    )
-    assert.ok(
-      text.includes(`observed ${escapedLength}`),
-      `the refusal has to report the length it observed after escaping, got: ${text}`
-    )
-    assert.equal(
-      readThreadRecord(fx, opened.threadId).blocked_by,
-      null,
-      'a refused call must not have written the blocked_by value'
     )
   })
 })
