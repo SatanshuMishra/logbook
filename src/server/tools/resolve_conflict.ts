@@ -192,8 +192,8 @@ export const unclassifiableRecordRefusal = (record: string): Refusal => ({
 export const invalidThreadAfterResolutionRefusal = (issue: string): Refusal => ({
   ok: false,
   field: 'resolutions',
-  accepted: 'a thread record that stays within the whole-record byte cap after applying the chosen winners',
-  example: 'resolve fewer disagreements on this thread in one call, or shorten the winning value first',
+  accepted: 'a thread record that matches its stored shape after applying the chosen winners',
+  example: 'resolve this disagreement with the other winner',
   retryable: true,
   message: `the thread record after applying these winners failed its stored-shape validation: ${issue}`
 })

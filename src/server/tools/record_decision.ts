@@ -9,7 +9,7 @@ import { ThreadRecord, type KeyDecision, type Thread } from '../../schema/thread
 import type { RecordChange } from '../../store/write-path.ts'
 import { readProjectHead } from '../../store/git.ts'
 import { withDetail } from '../../store/detail.ts'
-import { byteSizeOf, openProjectStore, loadThread, decisionResolver } from '../tool-support.ts'
+import { openProjectStore, loadThread, decisionResolver } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 
@@ -88,34 +88,6 @@ export const invalidDecisionRefusal = (issue: string): Refusal => ({
   retryable: true,
   message: `the decision record failed its stored-shape validation: ${issue}`
 })
-
-const heaviestDecisionFieldOf = (decision: Decision): { field: string; bytes: number } => {
-  const measured = Object.entries(decision as unknown as Record<string, unknown>).map(([key, value]) => ({
-    field: key,
-    bytes: byteSizeOf(value)
-  }))
-  return measured.reduce(
-    (worst, candidate) => (candidate.bytes > worst.bytes ? candidate : worst),
-    { field: 'decision', bytes: 0 }
-  )
-}
-
-const overDecisionByteCapRefusal = (decision: Decision, observed: number): Refusal => {
-  const heaviest = heaviestDecisionFieldOf(decision)
-  return {
-    ok: false,
-    field: 'decision',
-    accepted: `a serialised decision record of at most ${caps.DECISION_RECORD_SERIALISED_MAX_BYTES} bytes`,
-    example: 'remove an entry from the largest field and retry',
-    retryable: true,
-    message: `the decision record after this change is ${observed} bytes, over its cap of ${caps.DECISION_RECORD_SERIALISED_MAX_BYTES} bytes; its largest field is ${heaviest.field} at ${heaviest.bytes} bytes; remedy: remove or shorten an entry in ${heaviest.field} and retry.`
-  }
-}
-
-const refuseOverDecisionByteCap = (decision: Decision): Refusal | null => {
-  const bytes = byteSizeOf(decision)
-  return bytes > caps.DECISION_RECORD_SERIALISED_MAX_BYTES ? overDecisionByteCapRefusal(decision, bytes) : null
-}
 
 export const commitFailureRefusal = (detail: string): Refusal =>
   withDetail(
@@ -207,23 +179,6 @@ export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOut
     const decisionId = rt.ulid()
     const createdAt = rt.now()
 
-    const rawProspectiveDecision: Decision = {
-      id: decisionId,
-      thread_id: thread.id,
-      title: escapedTitle,
-      context: input.context,
-      options: escapedOptions,
-      outcome: input.outcome,
-      commit,
-      supersedes,
-      created_at: createdAt
-    }
-
-    const rawOverCap = refuseOverDecisionByteCap(rawProspectiveDecision)
-    if (rawOverCap !== null) {
-      return { ok: false, refusal: rawOverCap }
-    }
-
     const escapedContext = escapeStored(input.context)
     const escapedOutcome = escapeStored(input.outcome)
 
@@ -237,11 +192,6 @@ export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOut
       commit,
       supersedes,
       created_at: createdAt
-    }
-
-    const overCap = refuseOverDecisionByteCap(decision)
-    if (overCap !== null) {
-      return { ok: false, refusal: overCap }
     }
 
     const validated = DecisionRecord.parse(decision)
@@ -263,24 +213,18 @@ export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOut
       updated_at: rt.now()
     }
 
-    const prospectiveBytes = Buffer.byteLength(JSON.stringify(prospective), 'utf8')
-    const prospectiveValidated =
-      prospectiveBytes > caps.THREAD_RECORD_SERIALISED_MAX_BYTES ? null : ThreadRecord.parse(prospective)
+    const prospectiveValidated = ThreadRecord.parse(prospective)
 
-    const linkSkippedReason =
-      prospectiveValidated === null
-        ? `linking this decision would take the thread record to ${prospectiveBytes} bytes, over its cap of ${caps.THREAD_RECORD_SERIALISED_MAX_BYTES} bytes; the decision was recorded and the spine link was not written; remedy: strike an entry from the thread running summary, then link this decision with update_thread key_decisions_add.`
-        : prospectiveValidated.ok
-          ? null
-          : `the thread record carrying this link failed its stored-shape validation, so the decision was recorded and the spine link was not written: ${prospectiveValidated.message}`
+    const linkSkippedReason = prospectiveValidated.ok
+      ? null
+      : `the thread record carrying this link failed its stored-shape validation, so the decision was recorded and the spine link was not written: ${prospectiveValidated.message}`
 
-    const changes: RecordChange[] =
-      prospectiveValidated !== null && prospectiveValidated.ok
-        ? [
-            { kind: 'decision', record: validated.value },
-            { kind: 'thread', record: prospectiveValidated.value }
-          ]
-        : [{ kind: 'decision', record: validated.value }]
+    const changes: RecordChange[] = prospectiveValidated.ok
+      ? [
+          { kind: 'decision', record: validated.value },
+          { kind: 'thread', record: prospectiveValidated.value }
+        ]
+      : [{ kind: 'decision', record: validated.value }]
 
     const committed = store.commit(changes, `record decision ${validated.value.id} on thread ${thread.slug}`)
     if (!committed.ok) {

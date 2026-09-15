@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,10 +10,8 @@ import { testRuntime } from '../support/runtime.ts'
 import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
 import { openStore } from '../../src/store/records.ts'
 import { escapeStored } from '../../src/render/escape.ts'
-import { layoutFor } from '../../src/store/layout.ts'
-import * as caps from '../../src/schema/caps.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
-import type { Criterion, Thread } from '../../src/schema/thread.ts'
+import type { Thread } from '../../src/schema/thread.ts'
 import type { Decision } from '../../src/schema/decision.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -25,6 +23,8 @@ const FORMER_RISK_TEXT_MAX = 500
 const FORMER_DECISION_CONTEXT_MAX = 4000
 const FORMER_DECISION_OUTCOME_MAX = 4000
 const FORMER_SESSION_BODY_MAX = 8000
+const FORMER_THREAD_RECORD_SERIALISED_MAX_BYTES = 65536
+const FORMER_DECISION_RECORD_SERIALISED_MAX_BYTES = 65536
 
 type Fixture = { spawned: SpawnedServer; repo: string; pluginData: string; homeDir: string }
 
@@ -134,18 +134,6 @@ const readSessionEntryBody = (fx: Fixture, threadId: string, entryId: string): s
     throw new Error(`caps-relaxed fixture: session entry "${entryId}" could not be re-read from the store`)
   }
   return slot.record.body
-}
-
-const listDecisionFiles = (fx: Fixture): string[] => {
-  const rt = runtimeFor(fx)
-  const layout = layoutFor(rt, fx.repo)
-  if (!layout.ok) throw new Error(`caps-relaxed fixture: could not resolve the store layout: ${layout.message}`)
-  try {
-    return readdirSync(join(layout.value.records, 'decisions'))
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw error
-  }
 }
 
 const VERBATIM_MARKER = 'and that is the whole of it.'
@@ -371,398 +359,77 @@ test('caps-relaxed.decision-context-and-outcome-at-former-cap-plus-one-are-accep
   })
 })
 
-test('caps-relaxed.whole-thread-byte-cap-still-refuses-growth-driven-by-criterion-result', async () => {
+test('caps-relaxed.a-criterion-result-past-the-former-thread-record-byte-cap-is-accepted-and-the-thread-stays-writable', async () => {
   await withFixture(async (fx) => {
-    const rt = runtimeFor(fx)
-    const opened = openStore(rt, fx.repo)
-    assert.equal(opened.ok, true, 'caps-relaxed fixture: could not open the store to seed the byte-cap regression fixture')
-    if (!opened.ok) return
-    const store = opened.value
-
-    const { threadId, criterionIds } = await openMinimalThread(fx, 'byte-cap-regression-thread', [
-      { text: 'the target criterion this fixture eventually marks done', check: 'the fixture check', settledness: 'proposed' }
-    ])
-    const targetId = criterionIds[0]
-    assert.ok(targetId !== undefined, 'caps-relaxed fixture: open_thread minted no target criterion')
-
-    const CRITERION_TEXT_AT_CAP = 't'.repeat(caps.CRITERION_TEXT_MAX)
-    const CRITERION_CHECK_AT_CAP = 'c'.repeat(caps.CRITERION_CHECK_MAX)
-    const CRITERION_RESULT_AT_CAP = 'r'.repeat(FORMER_CRITERION_RESULT_MAX)
-    const CAP = caps.THREAD_RECORD_SERIALISED_MAX_BYTES
-
-    const fillerCriterion = (ordinal: number): Criterion => ({
-      id: rt.ulid(),
-      ordinal,
-      text: CRITERION_TEXT_AT_CAP,
-      done: true,
-      kind: 'planned',
-      check: CRITERION_CHECK_AT_CAP,
-      result: CRITERION_RESULT_AT_CAP,
-      result_status: 'verified',
-      struck_by: null,
-      settledness: 'proposed',
-      settled_by: null
-    })
-
-    const tunableFiller = (ordinal: number, contentLength: number): Criterion => {
-      const textLen = Math.min(contentLength, caps.CRITERION_TEXT_MAX)
-      const checkLen = Math.min(Math.max(contentLength - textLen, 0), caps.CRITERION_CHECK_MAX)
-      const resultLen = Math.min(Math.max(contentLength - textLen - checkLen, 0), FORMER_CRITERION_RESULT_MAX)
-      return {
-        id: rt.ulid(),
-        ordinal,
-        text: 't'.repeat(textLen),
-        done: false,
-        kind: 'planned',
-        check: checkLen > 0 ? 'c'.repeat(checkLen) : null,
-        result: resultLen > 0 ? 'r'.repeat(resultLen) : null,
-        result_status: null,
-        struck_by: null,
-        settledness: 'proposed',
-        settled_by: null
-      }
-    }
-
-    const withFillerCriterion = (thread: Thread): Thread => ({
-      ...thread,
-      completion_criteria: [...thread.completion_criteria, fillerCriterion(thread.completion_criteria.length + 1)]
-    })
-
-    const withTunableFiller = (thread: Thread, contentLength: number): Thread => ({
-      ...thread,
-      completion_criteria: [...thread.completion_criteria, tunableFiller(thread.completion_criteria.length + 1, contentLength)]
-    })
-
-    const withTargetResultAtCap = (thread: Thread): Thread => ({
-      ...thread,
-      completion_criteria: thread.completion_criteria.map((c) =>
-        c.id === targetId ? { ...c, done: true, result: CRITERION_RESULT_AT_CAP, result_status: 'verified' as const } : c
-      )
-    })
-
-    const bytesOf = (thread: Thread): number => Buffer.byteLength(JSON.stringify(thread), 'utf8')
-
-    const base = readThreadRecord(fx, threadId)
-    const marginalBytes = bytesOf(withTargetResultAtCap(base)) - bytesOf(base)
-    assert.ok(marginalBytes > 0, 'caps-relaxed fixture: marking the target criterion done must itself grow the thread record')
-    const budget = CAP - marginalBytes
-
-    const growCoarse = (thread: Thread): Thread => {
-      const candidate = withFillerCriterion(thread)
-      if (bytesOf(candidate) > budget) return thread
-      if (candidate.completion_criteria.length >= caps.CRITERIA_RETENTION_MAX_ELEMENTS - 1) return candidate
-      return growCoarse(candidate)
-    }
-
-    const coarse = growCoarse(base)
-    assert.ok(bytesOf(coarse) <= budget, 'caps-relaxed fixture: the coarse growth phase must not itself cross the target-completion budget')
-
-    const maxTunableContentLength = caps.CRITERION_TEXT_MAX + caps.CRITERION_CHECK_MAX + FORMER_CRITERION_RESULT_MAX
-    let lowContentLength = 0
-    let highContentLength = maxTunableContentLength
-    while (lowContentLength < highContentLength) {
-      const midContentLength = Math.floor((lowContentLength + highContentLength) / 2)
-      if (bytesOf(withTunableFiller(coarse, midContentLength)) > budget) {
-        highContentLength = midContentLength
-      } else {
-        lowContentLength = midContentLength + 1
-      }
-    }
-    assert.ok(
-      lowContentLength <= maxTunableContentLength,
-      'caps-relaxed fixture: a single tunable filler could not close the gap to the target-completion budget'
+    const RESULT_PAYLOAD = buildVerbatimPayload(
+      FORMER_THREAD_RECORD_SERIALISED_MAX_BYTES + 4000,
+      'This is the large criterion result payload.'
     )
 
-    const saturated = withTunableFiller(coarse, lowContentLength)
-    assert.ok(
-      bytesOf(saturated) <= caps.THREAD_RECORD_SERIALISED_MAX_BYTES,
-      'caps-relaxed fixture: the saturated thread must itself still fit inside the byte cap'
-    )
-    assert.ok(
-      bytesOf(withTargetResultAtCap(saturated)) > caps.THREAD_RECORD_SERIALISED_MAX_BYTES,
-      'caps-relaxed fixture: marking the target done at the byte cap must leave no room and cross the cap'
-    )
-
-    const seeded = store.commit([{ kind: 'thread', record: saturated }], 'seed the byte-cap regression fixture')
-    assert.equal(seeded.ok, true, 'caps-relaxed fixture: could not seed the saturated thread before the tool is called')
-
-    const refused = await callUpdateThread(fx, {
-      thread_id: threadId,
-      criteria_done: [{ criterion_id: targetId, result: CRITERION_RESULT_AT_CAP, result_status: 'verified' }]
-    })
-
-    assert.equal(
-      refused.isError,
-      true,
-      'a criterion result that would push the whole thread record past its byte cap must still be refused'
-    )
-    const text = firstTextOf(refused)
-    assert.equal(text.split('\n')[0], 'field: thread', `the refusal must name field thread: ${text}`)
-    assert.ok(
-      text.includes(String(caps.THREAD_RECORD_SERIALISED_MAX_BYTES)),
-      `the refusal must report the whole-record cap of ${caps.THREAD_RECORD_SERIALISED_MAX_BYTES}: ${text}`
-    )
-    assert.ok(
-      text.includes('completion_criteria'),
-      `the refusal must name completion_criteria as the heaviest field: ${text}`
-    )
-
-    const stillStored = readThreadRecord(fx, threadId)
-    assert.equal(stillStored.completion_criteria.length, saturated.completion_criteria.length, 'the refused call must not have written any new criteria')
-    const targetAfter = stillStored.completion_criteria.find((c) => c.id === targetId)
-    assert.ok(targetAfter !== undefined, 'caps-relaxed fixture: the target criterion vanished after the refusal')
-    assert.equal(targetAfter.done, false, 'a refused call must not have marked the target criterion done')
-    assert.equal(targetAfter.result ?? null, null, 'a refused call must not have written a result on the target criterion')
-  })
-})
-
-test('caps-relaxed.new-decision-record-byte-cap-refuses-growth-driven-by-context-and-outcome', async () => {
-  await withFixture(async (fx) => {
-    const { threadId } = await openMinimalThread(fx, 'decision-byte-cap-thread')
-
-    const beforeDecisionFiles = listDecisionFiles(fx)
-    const beforeThread = readThreadRecord(fx, threadId)
-
-    const OVERSIZED_CONTEXT = buildLongPlainAsciiText(40000)
-    const OVERSIZED_OUTCOME = buildLongPlainAsciiText(40000)
-
-    const recorded = await callRecordDecision(fx, {
-      thread_id: threadId,
-      title: 'a decision whose size alone must trip the new record cap',
-      context: OVERSIZED_CONTEXT,
-      options: ['keep the current approach'],
-      outcome: OVERSIZED_OUTCOME
-    })
-
-    assert.equal(
-      recorded.isError,
-      true,
-      'a decision whose context and outcome combine past the whole-record byte cap must be refused'
-    )
-    const text = firstTextOf(recorded)
-    assert.equal(text.split('\n')[0], 'field: decision', `the refusal must name field decision: ${text}`)
-    assert.ok(
-      text.includes(String(caps.DECISION_RECORD_SERIALISED_MAX_BYTES)),
-      `the refusal must report the new decision-record byte cap of ${caps.DECISION_RECORD_SERIALISED_MAX_BYTES}: ${text}`
-    )
-    assert.ok(
-      text.includes('context') || text.includes('outcome'),
-      `the refusal must name context or outcome as the heaviest field: ${text}`
-    )
-
-    const afterDecisionFiles = listDecisionFiles(fx)
-    assert.deepEqual(afterDecisionFiles, beforeDecisionFiles, 'a refused record_decision call must not have written a decision file')
-
-    const afterThread = readThreadRecord(fx, threadId)
-    assert.equal(
-      afterThread.spine.key_decisions.length,
-      beforeThread.spine.key_decisions.length,
-      'a refused record_decision call must not have linked anything into the thread spine'
-    )
-  })
-})
-
-test('caps-relaxed.oversized-raw-decision-context-is-refused-before-escaping-expands-it', async () => {
-  await withFixture(async (fx) => {
-    const RAW_CONTEXT_LENGTH = 70000
-    const RAW_CONTEXT = '<'.repeat(RAW_CONTEXT_LENGTH)
-    const ESCAPED_CONTEXT_LENGTH = RAW_CONTEXT_LENGTH * 6
-
-    const { threadId } = await openMinimalThread(fx, 'pre-escape-guard-decision-thread')
-
-    const recorded = await callRecordDecision(fx, {
-      thread_id: threadId,
-      title: 'a decision whose context is built entirely of always-escaped characters',
-      context: RAW_CONTEXT,
-      options: ['keep the current approach'],
-      outcome: 'keep the current approach'
-    })
-
-    assert.equal(
-      recorded.isError,
-      true,
-      'a raw decision context already over the whole-record byte cap must be refused'
-    )
-    const text = firstTextOf(recorded)
-    assert.equal(text.split('\n')[0], 'field: decision', `the refusal must name field decision: ${text}`)
-    assert.ok(
-      text.includes(String(caps.DECISION_RECORD_SERIALISED_MAX_BYTES)),
-      `the refusal must report the decision-record byte cap of ${caps.DECISION_RECORD_SERIALISED_MAX_BYTES}: ${text}`
-    )
-
-    const observedMatch = text.match(/is (\d+) bytes, over its cap/)
-    assert.ok(observedMatch !== null, `the refusal must report an observed byte count: ${text}`)
-    const observedBytes = Number((observedMatch as RegExpMatchArray)[1])
-
-    assert.ok(
-      observedBytes < ESCAPED_CONTEXT_LENGTH / 2,
-      `the refusal must be based on the raw ${RAW_CONTEXT_LENGTH}-byte context, not the escaped ${ESCAPED_CONTEXT_LENGTH}-byte form; observed ${observedBytes} bytes shows escapeStored ran before the refusal fired`
-    )
-    assert.ok(
-      observedBytes >= RAW_CONTEXT_LENGTH,
-      `the reported byte count must at least cover the raw context length of ${RAW_CONTEXT_LENGTH}; observed ${observedBytes}`
-    )
-  })
-})
-
-const assertPreEscapeThreadRefusal = (result: CallToolResult, rawLength: number, escapedLength: number): void => {
-  assert.equal(result.isError, true, 'a raw value already over the whole-thread-record byte cap must be refused')
-  const text = firstTextOf(result)
-  assert.equal(text.split('\n')[0], 'field: thread', `the refusal must name field thread: ${text}`)
-  assert.ok(
-    text.includes(String(caps.THREAD_RECORD_SERIALISED_MAX_BYTES)),
-    `the refusal must report the thread-record byte cap of ${caps.THREAD_RECORD_SERIALISED_MAX_BYTES}: ${text}`
-  )
-  const observedMatch = text.match(/is (\d+) bytes, over its cap/)
-  assert.ok(observedMatch !== null, `the refusal must report an observed byte count: ${text}`)
-  const observedBytes = Number((observedMatch as RegExpMatchArray)[1])
-  assert.ok(
-    observedBytes < escapedLength / 2,
-    `the refusal must be based on the raw ${rawLength}-byte value, not its ${escapedLength}-byte escaped form; observed ${observedBytes} bytes shows escapeStored ran before the refusal fired`
-  )
-  assert.ok(
-    observedBytes >= rawLength,
-    `the reported byte count must at least cover the raw value length of ${rawLength}; observed ${observedBytes}`
-  )
-}
-
-test('caps-relaxed.oversized-raw-criterion-result-is-refused-before-escaping-expands-it', async () => {
-  await withFixture(async (fx) => {
-    const RAW_LENGTH = 70000
-    const RAW_RESULT = '<'.repeat(RAW_LENGTH)
-    const ESCAPED_LENGTH = RAW_LENGTH * 6
-
-    const { threadId, criterionIds } = await openMinimalThread(fx, 'pre-escape-guard-result-thread', [
-      { text: 'the target criterion this fixture marks done', check: 'the fixture check', settledness: 'proposed' }
+    const { threadId, criterionIds } = await openMinimalThread(fx, 'thread-record-past-former-cap', [
+      { text: 'the large result is stored whole', check: 'the stored result equals the sent payload', settledness: 'proposed' }
     ])
     const criterionId = criterionIds[0]
     assert.ok(criterionId !== undefined, 'caps-relaxed fixture: open_thread minted no criterion')
 
     const marked = await callUpdateThread(fx, {
       thread_id: threadId,
-      criteria_done: [{ criterion_id: criterionId, result: RAW_RESULT, result_status: 'verified' }]
+      criteria_done: [{ criterion_id: criterionId, result: RESULT_PAYLOAD, result_status: 'verified' }]
     })
-
-    assertPreEscapeThreadRefusal(marked, RAW_LENGTH, ESCAPED_LENGTH)
-
-    const stored = readThreadRecord(fx, threadId)
-    const criterion = stored.completion_criteria.find((c) => c.id === criterionId)
-    assert.ok(criterion !== undefined, 'caps-relaxed fixture: the criterion vanished from the stored thread')
-    assert.equal(criterion.done, false, 'a refused call must not have marked the criterion done')
-    assert.equal(criterion.result ?? null, null, 'a refused call must not have written a result on the criterion')
-  })
-})
-
-test('caps-relaxed.oversized-raw-settled-by-is-refused-before-escaping-expands-it-on-open-thread', async () => {
-  await withFixture(async (fx) => {
-    const RAW_LENGTH = 70000
-    const RAW_SETTLED_BY = '<'.repeat(RAW_LENGTH)
-    const ESCAPED_LENGTH = RAW_LENGTH * 6
-
-    const opened = await callOpenThread(fx, {
-      title: 'open-thread settled_by pre-escape guard thread',
-      slug: 'open-thread-settled-by-pre-escape-guard-thread',
-      active_goal: 'exercise the open_thread settled_by pre-escape guard',
-      next_step: 'exercise the open_thread settled_by pre-escape guard',
-      completion_criteria: [
-        {
-          text: 'the gate blocks before the turn ends',
-          check: 'the stop-gate tests pass',
-          settledness: 'confirmed',
-          settled_by: RAW_SETTLED_BY
-        }
-      ]
-    })
-
-    assertPreEscapeThreadRefusal(opened, RAW_LENGTH, ESCAPED_LENGTH)
-  })
-})
-
-test('caps-relaxed.oversized-raw-settled-by-is-refused-before-escaping-expands-it-on-update-thread', async () => {
-  await withFixture(async (fx) => {
-    const RAW_LENGTH = 70000
-    const RAW_SETTLED_BY = '<'.repeat(RAW_LENGTH)
-    const ESCAPED_LENGTH = RAW_LENGTH * 6
-
-    const { threadId, criterionIds } = await openMinimalThread(fx, 'update-thread-settled-by-pre-escape-guard-thread', [
-      { text: 'the queue drains under load', check: 'the load test exits 0', settledness: 'proposed' }
-    ])
-    const criterionId = criterionIds[0]
-    assert.ok(criterionId !== undefined, 'caps-relaxed fixture: open_thread minted no criterion')
-
-    const settled = await callUpdateThread(fx, {
-      thread_id: threadId,
-      criteria_settled: [{ criterion_id: criterionId, settledness: 'confirmed', settled_by: RAW_SETTLED_BY }]
-    })
-
-    assertPreEscapeThreadRefusal(settled, RAW_LENGTH, ESCAPED_LENGTH)
-
-    const stored = readThreadRecord(fx, threadId)
-    const criterion = stored.completion_criteria.find((c) => c.id === criterionId)
-    assert.ok(criterion !== undefined, 'caps-relaxed fixture: the criterion vanished from the stored thread')
-    assert.equal(criterion.settled_by ?? null, null, 'a refused call must not have written a settled_by on the criterion')
-  })
-})
-
-test('caps-relaxed.oversized-raw-settled-by-is-refused-before-escaping-expands-it-on-amend-criteria-insert', async () => {
-  await withFixture(async (fx) => {
-    const RAW_LENGTH = 70000
-    const RAW_SETTLED_BY = '<'.repeat(RAW_LENGTH)
-    const ESCAPED_LENGTH = RAW_LENGTH * 6
-
-    const { threadId } = await openMinimalThread(fx, 'amend-criteria-settled-by-pre-escape-guard-thread')
-
-    const decision = await callRecordDecision(fx, {
-      thread_id: threadId,
-      title: 'a criterion is added mid-thread',
-      context: 'the team discovered a requirement that was not part of the original plan',
-      options: ['add a criterion for it', 'leave it out of the definition of done'],
-      outcome: 'add a criterion for it'
-    })
-    assert.equal(decision.isError, undefined, `caps-relaxed fixture: record_decision refused the amend_criteria fixture: ${firstTextOf(decision)}`)
-    const decisionId = (decision.structuredContent as { decision_id: string }).decision_id
-
-    const beforeThread = readThreadRecord(fx, threadId)
-
-    const inserted = await callAmendCriteria(fx, {
-      thread_id: threadId,
-      operation: 'insert',
-      decision_id: decisionId,
-      text: 'the newly discovered requirement is satisfied',
-      kind: 'detour',
-      check: 'the new acceptance test passes',
-      settledness: 'confirmed',
-      settled_by: RAW_SETTLED_BY
-    })
-
-    assertPreEscapeThreadRefusal(inserted, RAW_LENGTH, ESCAPED_LENGTH)
-
-    const afterThread = readThreadRecord(fx, threadId)
     assert.equal(
-      afterThread.completion_criteria.length,
-      beforeThread.completion_criteria.length,
-      'a refused insert must not have written a new criterion'
+      marked.isError,
+      undefined,
+      `a criterion result that takes the thread record past ${FORMER_THREAD_RECORD_SERIALISED_MAX_BYTES} bytes must be accepted, got: ${marked.isError === true ? firstTextOf(marked) : 'no error'}`
     )
+
+    const stored = readThreadRecord(fx, threadId)
+    assert.ok(
+      Buffer.byteLength(JSON.stringify(stored), 'utf8') > FORMER_THREAD_RECORD_SERIALISED_MAX_BYTES,
+      'the stored thread record must itself be past the former byte cap'
+    )
+    const criterion = stored.completion_criteria.find((c) => c.id === criterionId)
+    assert.ok(criterion !== undefined, 'caps-relaxed fixture: the criterion vanished from the stored thread')
+    assert.equal(criterion.result, RESULT_PAYLOAD, 'the stored result must equal the sent payload exactly, character for character')
+
+    const followUp = await callUpdateThread(fx, { thread_id: threadId, next_step: 'continue after the large result' })
+    assert.equal(
+      followUp.isError,
+      undefined,
+      `a later write to a thread past the former byte cap must be accepted, got: ${followUp.isError === true ? firstTextOf(followUp) : 'no error'}`
+    )
+    assert.equal(readThreadRecord(fx, threadId).spine.next_step, 'continue after the large result')
   })
 })
 
-test('caps-relaxed.oversized-raw-risk-text-is-refused-before-escaping-expands-it', async () => {
+test('caps-relaxed.a-decision-record-past-the-former-decision-record-byte-cap-is-accepted-and-linked', async () => {
   await withFixture(async (fx) => {
-    const RAW_LENGTH = 70000
-    const RAW_RISK_TEXT = '<'.repeat(RAW_LENGTH)
-    const ESCAPED_LENGTH = RAW_LENGTH * 6
+    const CONTEXT_PAYLOAD = buildVerbatimPayload(40000, 'This is the large decision context payload.')
+    const OUTCOME_PAYLOAD = buildVerbatimPayload(40000, 'This is the large decision outcome payload.')
 
-    const { threadId } = await openMinimalThread(fx, 'risk-text-pre-escape-guard-thread')
+    const { threadId } = await openMinimalThread(fx, 'decision-record-past-former-cap')
 
-    const updated = await callUpdateThread(fx, {
+    const recorded = await callRecordDecision(fx, {
       thread_id: threadId,
-      risks_add: [{ text: RAW_RISK_TEXT, scope: 'the area this risk concerns' }]
+      title: 'a decision whose reasoning runs long',
+      context: CONTEXT_PAYLOAD,
+      options: ['keep the current approach', 'adopt the alternative'],
+      outcome: OUTCOME_PAYLOAD
     })
+    assert.equal(
+      recorded.isError,
+      undefined,
+      `a decision record past ${FORMER_DECISION_RECORD_SERIALISED_MAX_BYTES} bytes must be accepted, got: ${recorded.isError === true ? firstTextOf(recorded) : 'no error'}`
+    )
+    const structured = recorded.structuredContent as { decision_id: string; linked: boolean }
+    assert.equal(structured.linked, true, 'the decision must be linked into the running summary')
 
-    assertPreEscapeThreadRefusal(updated, RAW_LENGTH, ESCAPED_LENGTH)
-
-    const stored = readThreadRecord(fx, threadId)
-    assert.equal(stored.spine.open_risks.length, 0, 'a refused call must not have written a risk to the stored spine')
+    const decision = readDecisionRecord(fx, structured.decision_id)
+    assert.ok(
+      Buffer.byteLength(JSON.stringify(decision), 'utf8') > FORMER_DECISION_RECORD_SERIALISED_MAX_BYTES,
+      'the stored decision record must itself be past the former byte cap'
+    )
+    assert.equal(decision.context, CONTEXT_PAYLOAD, 'the stored context must equal the sent payload exactly')
+    assert.equal(decision.outcome, OUTCOME_PAYLOAD, 'the stored outcome must equal the sent payload exactly')
   })
 })
 
@@ -807,103 +474,5 @@ test('caps-relaxed.session-body-past-32000-characters-is-refused-reporting-the-n
     const text = firstTextOf(logged)
     assert.equal(text.split('\n')[0], 'field: body', `the refusal must name field body: ${text}`)
     assert.ok(text.includes('32000'), `the refusal must report the new bound of 32000: ${text}`)
-  })
-})
-
-test('caps-relaxed.clearing-blocked-by-while-growing-a-criterion-result-is-measured-against-the-record-that-gets-written', async () => {
-  await withFixture(async (fx) => {
-    const CAP = caps.THREAD_RECORD_SERIALISED_MAX_BYTES
-    const OVER_CAP_MARGIN = 249
-    const bytesOf = (thread: Thread): number => Buffer.byteLength(JSON.stringify(thread), 'utf8')
-
-    const { threadId, criterionIds } = await openMinimalThread(fx, 'shrink-while-growing-thread', [
-      { text: 'the criterion this call marks done', check: 'the fixture check', settledness: 'proposed' }
-    ])
-    const criterionId = criterionIds[0]
-    assert.ok(criterionId !== undefined, 'caps-relaxed fixture: open_thread minted no criterion')
-
-    const BLOCKED_BY = buildLongPlainAsciiText(caps.THREAD_BLOCKED_BY_MAX)
-    const blocked = await callUpdateThread(fx, { thread_id: threadId, blocked_by: BLOCKED_BY })
-    assert.equal(blocked.isError, undefined, `caps-relaxed fixture: could not seed blocked_by: ${firstTextOf(blocked)}`)
-
-    const before = readThreadRecord(fx, threadId)
-    assert.equal(before.blocked_by, BLOCKED_BY, 'caps-relaxed fixture: the seeded blocked_by must be stored verbatim')
-
-    const withResult = (result: string): Thread => ({
-      ...before,
-      completion_criteria: before.completion_criteria.map((c) =>
-        c.id === criterionId ? { ...c, done: true, result, result_status: 'verified' as const } : c
-      )
-    })
-    const RESULT = 'r'.repeat(CAP + OVER_CAP_MARGIN - bytesOf(withResult('')))
-    const keptShape = withResult(RESULT)
-    const clearedShape: Thread = { ...keptShape, blocked_by: null }
-    assert.equal(
-      bytesOf(keptShape),
-      CAP + OVER_CAP_MARGIN,
-      'caps-relaxed fixture: a record that kept the cleared blocked_by must sit just past the cap'
-    )
-    assert.ok(
-      bytesOf(clearedShape) <= CAP,
-      `caps-relaxed fixture: the record this call would actually write must fit under the cap, got ${bytesOf(clearedShape)}`
-    )
-
-    const updated = await callUpdateThread(fx, {
-      thread_id: threadId,
-      criteria_done: [{ criterion_id: criterionId, result: RESULT, result_status: 'verified' }],
-      blocked_by_clear: true
-    })
-
-    assert.equal(
-      updated.isError,
-      undefined,
-      `a call that clears blocked_by while growing a result must be measured against the record it writes, not against one that keeps the cleared value: ${updated.isError === true ? firstTextOf(updated) : 'no error'}`
-    )
-
-    const stored = readThreadRecord(fx, threadId)
-    assert.equal(stored.blocked_by, null, 'the accepted call must have cleared blocked_by')
-    const criterion = stored.completion_criteria.find((c) => c.id === criterionId)
-    assert.ok(criterion !== undefined, 'caps-relaxed fixture: the criterion vanished from the stored thread')
-    assert.equal(criterion.done, true, 'the accepted call must have marked the criterion done')
-    assert.equal(criterion.result, RESULT, 'the stored result must equal the sent payload exactly, character for character')
-    assert.ok(bytesOf(stored) <= CAP, `the written record must itself fit under the byte cap, got ${bytesOf(stored)}`)
-  })
-})
-
-test('caps-relaxed.growth-from-two-groups-in-one-call-is-refused-before-escaping-expands-either', async () => {
-  await withFixture(async (fx) => {
-    const RAW_LENGTH = 40000
-    const RAW_PAYLOAD = '<'.repeat(RAW_LENGTH)
-    const ESCAPED_LENGTH = RAW_LENGTH * 6
-
-    assert.ok(
-      RAW_LENGTH < caps.THREAD_RECORD_SERIALISED_MAX_BYTES,
-      'caps-relaxed fixture: neither group may cross the whole-record cap on its own'
-    )
-    assert.ok(
-      RAW_LENGTH * 2 > caps.THREAD_RECORD_SERIALISED_MAX_BYTES,
-      'caps-relaxed fixture: the two groups together must cross the whole-record cap'
-    )
-
-    const { threadId, criterionIds } = await openMinimalThread(fx, 'cumulative-growth-thread', [
-      { text: 'the criterion this call marks done', check: 'the fixture check', settledness: 'proposed' }
-    ])
-    const criterionId = criterionIds[0]
-    assert.ok(criterionId !== undefined, 'caps-relaxed fixture: open_thread minted no criterion')
-
-    const attempted = await callUpdateThread(fx, {
-      thread_id: threadId,
-      criteria_done: [{ criterion_id: criterionId, result: RAW_PAYLOAD, result_status: 'verified' }],
-      risks_add: [{ text: RAW_PAYLOAD, scope: 'the area this risk concerns' }]
-    })
-
-    assertPreEscapeThreadRefusal(attempted, RAW_LENGTH * 2, ESCAPED_LENGTH * 2)
-
-    const stored = readThreadRecord(fx, threadId)
-    assert.equal(stored.spine.open_risks.length, 0, 'a refused call must not have written a risk to the stored spine')
-    const criterion = stored.completion_criteria.find((c) => c.id === criterionId)
-    assert.ok(criterion !== undefined, 'caps-relaxed fixture: the criterion vanished from the stored thread')
-    assert.equal(criterion.done, false, 'a refused call must not have marked the criterion done')
-    assert.equal(criterion.result ?? null, null, 'a refused call must not have written a result on the criterion')
   })
 })

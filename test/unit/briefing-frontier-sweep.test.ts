@@ -48,6 +48,7 @@ const ANCHORINGS = [
 const CRITERIA_COUNTS = [0, 1, 5, 10, 20, caps.CRITERIA_MAX_ELEMENTS, 120, caps.CRITERIA_RETENTION_MAX_ELEMENTS]
 const KEY_DECISION_COUNTS = [0, 5, 10, caps.KEY_DECISIONS_MAX_ELEMENTS]
 const BULK_COUNT_DIMENSION_CANDIDATES = [0, 1, 5]
+const SWEEP_RECORD_BYTES_CEILING = 65536
 
 const GRAPHEME_DENSITY_PROBE_LENGTH = 4
 
@@ -440,7 +441,7 @@ const sweep = (): SweptRecord[] => {
           })
 
           const withinRecordCap = (shape: SweepShape): boolean =>
-            serialisedRecordBytes(shape) <= caps.THREAD_RECORD_SERIALISED_MAX_BYTES
+            serialisedRecordBytes(shape) <= SWEEP_RECORD_BYTES_CEILING
 
           const saturatingBulkCount = largestSatisfying(caps.RISKS_PER_CALL_MAX_ELEMENTS, (candidate) =>
             withinRecordCap(shapeAt(0, candidate))

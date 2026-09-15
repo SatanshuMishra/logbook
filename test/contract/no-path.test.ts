@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { Refusal } from '../../src/schema/declare.ts'
-import type { Criterion, Thread } from '../../src/schema/thread.ts'
+import type { Thread } from '../../src/schema/thread.ts'
 import { ThreadRecord } from '../../src/schema/thread.ts'
 import { BindingRecord } from '../../src/schema/binding.ts'
 import { DecisionRecord } from '../../src/schema/decision.ts'
@@ -19,7 +19,7 @@ import { toolRefusal } from '../../src/server/errors.ts'
 import type { ToolContext } from '../../src/server/register.ts'
 import { openThreadTool } from '../../src/server/tools/open_thread.ts'
 import { updateThreadTool } from '../../src/server/tools/update_thread.ts'
-import { closeThreadTool } from '../../src/server/tools/close_thread.ts'
+import { closeThreadTool, invalidThreadRecordRefusal } from '../../src/server/tools/close_thread.ts'
 import { bindBranchTool, invalidCommittedBindingRefusal } from '../../src/server/tools/bind_branch.ts'
 import { amendCriteriaTool } from '../../src/server/tools/amend_criteria.ts'
 import { resumeThreadTool } from '../../src/server/tools/resume_thread.ts'
@@ -86,7 +86,7 @@ const UPDATE_THREAD_UNKNOWN_DECISION_PRODUCER: ProducerId = 'server/tools/update
 const UPDATE_THREAD_CONFLICTING_BLOCKAGE_PRODUCER: ProducerId =
   'server/tools/update_thread.ts#conflictingBlockageRefusal'
 const UPDATE_THREAD_BLOCKED_BY_CAP_PRODUCER: ProducerId = 'server/tools/update_thread.ts#blockedByCapRefusal'
-const CLOSE_THREAD_WHOLE_RECORD_CAP_PRODUCER: ProducerId = 'server/tools/close_thread.ts#wholeRecordCapRefusal'
+const CLOSE_THREAD_INVALID_THREAD_RECORD_PRODUCER: ProducerId = 'server/tools/close_thread.ts#invalidThreadRecordRefusal'
 const CLOSE_THREAD_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/close_thread.ts#commitFailureRefusal'
 const BIND_BRANCH_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/bind_branch.ts#commitFailureRefusal'
 const BIND_BRANCH_INVALID_BINDING_PRODUCER: ProducerId = 'server/tools/bind_branch.ts#invalidBindingRefusal'
@@ -97,7 +97,6 @@ const OPEN_PROJECT_STORE_PRODUCER: ProducerId = 'server/tool-support.ts#openProj
 const LOAD_THREAD_PRODUCER: ProducerId = 'server/tool-support.ts#loadThread'
 const LOAD_THREAD_FOR_REFERENCE_PRODUCER: ProducerId = 'server/tool-support.ts#loadThreadForReference'
 const COMMIT_THREAD_PRODUCER: ProducerId = 'server/tool-support.ts#commitThread'
-const OVER_BYTE_CAP_REFUSAL_PRODUCER: ProducerId = 'server/tool-support.ts#refuseOverThreadByteCap'
 const BINDING_RECORD_PARSE_PRODUCER: ProducerId = 'schema/binding.ts#BindingRecord.parse'
 const BINDING_RECORD_REFUSE_PRODUCER: ProducerId = 'schema/binding.ts#BindingRecord.refuse'
 const DECISION_RECORD_PARSE_PRODUCER: ProducerId = 'schema/decision.ts#DecisionRecord.parse'
@@ -186,80 +185,6 @@ const censusFixtureThread = (rt: Runtime): Thread => ({
   created_at: rt.now(),
   updated_at: rt.now()
 })
-
-const OVER_CAP_FILL_CHUNK_SIZES: readonly number[] = [caps.CRITERION_TEXT_MAX, 100, 20, 4, 1, 0]
-
-const overCapProbeCriterion = (rt: Runtime, text: string): Criterion => ({
-  id: rt.ulid(),
-  ordinal: 1,
-  text,
-  done: false,
-  kind: 'planned',
-  struck_by: null,
-  settledness: 'proposed',
-  settled_by: null
-})
-
-const buildThreadAtWholeRecordCapEdge = (rt: Runtime): Thread => {
-  const base: Thread = {
-    id: rt.ulid(),
-    slug: 'census-over-cap-thread',
-    title: 'Census over-cap thread',
-    status: 'open',
-    blocked_by: null,
-    completion_criteria: [],
-    spine: {
-      active_goal: 'census over-cap goal',
-      next_step: 'census over-cap next step',
-      landed: '',
-      last_session: 'census over-cap last session',
-      open_risks: [],
-      key_decisions: [],
-      out_of_scope: []
-    },
-    created_at: rt.now(),
-    updated_at: rt.now()
-  }
-
-  const sizeOf = (criteria: Criterion[]): number =>
-    Buffer.byteLength(JSON.stringify({ ...base, completion_criteria: criteria }), 'utf8')
-
-  let criteria: Criterion[] = []
-  for (const chunk of OVER_CAP_FILL_CHUNK_SIZES) {
-    while (true) {
-      const next = [...criteria, overCapProbeCriterion(rt, 'x'.repeat(chunk))]
-      if (next.length > caps.CRITERIA_RETENTION_MAX_ELEMENTS) break
-      if (sizeOf(next) > caps.THREAD_RECORD_SERIALISED_MAX_BYTES) break
-      criteria = next
-    }
-  }
-  if (criteria.length === 0) {
-    throw new Error('census over-cap fixture: the multi-resolution fill added no completion criteria')
-  }
-
-  const gap = caps.THREAD_RECORD_SERIALISED_MAX_BYTES - sizeOf(criteria)
-  if (gap < 0) {
-    throw new Error(`census over-cap fixture: the fill already exceeds the whole-record byte cap by ${-gap} bytes`)
-  }
-  const lastIndex = criteria.length - 1
-  const last = criteria[lastIndex] as Criterion
-  const extendedText = last.text + 'x'.repeat(gap)
-  if (extendedText.length > caps.CRITERION_TEXT_MAX) {
-    throw new Error(
-      `census over-cap fixture: closing a ${gap}-byte gap would push one criterion's text past its own ${caps.CRITERION_TEXT_MAX}-character cap`
-    )
-  }
-  criteria = [...criteria.slice(0, lastIndex), { ...last, text: extendedText }]
-
-  const atEdge: Thread = { ...base, completion_criteria: criteria }
-  const edgeSize = Buffer.byteLength(JSON.stringify(atEdge), 'utf8')
-  if (edgeSize !== caps.THREAD_RECORD_SERIALISED_MAX_BYTES) {
-    throw new Error(
-      `census over-cap fixture: expected exactly ${caps.THREAD_RECORD_SERIALISED_MAX_BYTES} bytes at the cap edge, computed ${edgeSize}`
-    )
-  }
-  return atEdge
-}
 
 const buildToolFixtureRepo = (): string => {
   const repo = mkdtempSync(join(tmpdir(), 'logbook-tool-fixture-'))
@@ -371,21 +296,6 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
       refusal: overflowingBlockedBy.refusal
     })
 
-    const fixtureCriterionId = firstOpen.structured.completion_criteria[0]?.id
-    if (fixtureCriterionId === undefined) {
-      throw new Error('expected the census tool fixture thread to carry a completion criterion for the byte-cap probe')
-    }
-    const rawOverByteCap = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
-      thread_id: threadId,
-      criteria_done: [
-        { criterion_id: fixtureCriterionId, result: CONTROL_CHAR_OVERFLOW(70000), result_status: 'verified' }
-      ]
-    })
-    if (rawOverByteCap.ok) {
-      throw new Error('expected updateThreadTool to refuse a raw result already over the whole-thread byte cap')
-    }
-    refusals.push({ producer: OVER_BYTE_CAP_REFUSAL_PRODUCER, refusal: rawOverByteCap.refusal })
-
     const missingKind = await amendCriteriaTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,
       operation: 'insert',
@@ -405,19 +315,15 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     refusals.push({ producer: BIND_BRANCH_INVALID_BINDING_PRODUCER, refusal: invalidBinding.refusal })
     refusals.push({ producer: BIND_BRANCH_HANDLER_PRODUCER, refusal: invalidBinding.refusal })
 
-    const overCapThread = buildThreadAtWholeRecordCapEdge(rt)
-    const overCapSeed = store.commit([{ kind: 'thread', record: overCapThread }], 'seed census over-cap thread fixture')
-    if (!overCapSeed.ok) throw new Error('expected the census over-cap thread fixture to seed successfully')
-    const overCapClose = await closeThreadTool.handler(rt, STUB_TOOL_CTX, {
-      thread_id: overCapThread.id,
-      outcome: 'abandoned',
-      detail: 'census whole-record cap probe'
+    const closeWithOpenCriterion = await closeThreadTool.handler(rt, STUB_TOOL_CTX, {
+      thread_id: threadId,
+      outcome: 'done',
+      detail: 'census close probe with a criterion still open'
     })
-    if (overCapClose.ok) {
-      throw new Error('expected closeThreadTool to refuse when closing a thread already at the byte-cap edge pushes it over the cap')
+    if (closeWithOpenCriterion.ok) {
+      throw new Error('expected closeThreadTool to refuse closing as done while a criterion is still open')
     }
-    refusals.push({ producer: CLOSE_THREAD_WHOLE_RECORD_CAP_PRODUCER, refusal: overCapClose.refusal })
-    refusals.push({ producer: CLOSE_THREAD_HANDLER_PRODUCER, refusal: overCapClose.refusal })
+    refusals.push({ producer: CLOSE_THREAD_HANDLER_PRODUCER, refusal: closeWithOpenCriterion.refusal })
 
     const titleOverflow = await recordDecisionTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,
@@ -664,6 +570,13 @@ const collectDefensiveGuardRefusals = (): TaggedRefusal[] => {
     refusal: invalidSessionEntryRefusal(sessionParseForGuard.message)
   })
 
+  const threadParseForGuard = ThreadRecord.parse({})
+  if (threadParseForGuard.ok) throw new Error('expected ThreadRecord.parse to refuse an empty thread')
+  refusals.push({
+    producer: CLOSE_THREAD_INVALID_THREAD_RECORD_PRODUCER,
+    refusal: invalidThreadRecordRefusal(threadParseForGuard.message)
+  })
+
   refusals.push({
     producer: RESOLVE_CONFLICT_UNCLASSIFIABLE_RECORD_PRODUCER,
     refusal: unclassifiableRecordRefusal('binding:01ARZ3NDEKTSV4RRFFQ69G5FAV')
@@ -849,31 +762,15 @@ const collectResolveConflictSingleRepoRefusals = async (): Promise<TaggedRefusal
     if (threadUnavailable.ok) throw new Error('expected resolveConflictTool to refuse when the named thread cannot be loaded')
     refusals.push({ producer: RESOLVE_CONFLICT_THREAD_UNAVAILABLE_PRODUCER, refusal: threadUnavailable.refusal })
 
-    const atEdgeThread = buildThreadAtWholeRecordCapEdge(fixture.rt)
-    const seededEdge = fixture.store.commit(
-      [{ kind: 'thread', record: atEdgeThread }],
-      'seed a whole-record-cap-edge thread for a resolve_conflict census probe'
-    )
-    if (!seededEdge.ok) throw new Error('expected the whole-record-cap-edge thread to seed successfully')
-    const lastIndex = atEdgeThread.completion_criteria.length - 1
-    const targetCriterion = atEdgeThread.completion_criteria[lastIndex]
-    if (targetCriterion === undefined) {
-      throw new Error('expected the whole-record-cap-edge thread to carry at least one completion criterion')
-    }
-    const oversizedCriterion = { ...targetCriterion, text: `${targetCriterion.text}x` }
-    writeConflictsFixture(fixture, [
-      {
-        record: `thread:${atEdgeThread.id}`,
-        field: `completion_criteria[${targetCriterion.id}]`,
-        ours: targetCriterion,
-        theirs: oversizedCriterion
-      }
-    ])
+    writeConflictsFixture(fixture, [singleTitleConflict(fixture, '')])
     const invalidThread = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {
-      resolutions: [{ record: `thread:${atEdgeThread.id}`, field: `completion_criteria[${targetCriterion.id}]`, winner: 'remote' }]
+      resolutions: [{ record: `thread:${fixture.threadId}`, field: 'title', winner: 'remote' }]
     })
     if (invalidThread.ok) {
-      throw new Error('expected resolveConflictTool to refuse a winner that would push the thread past its whole-record byte cap')
+      throw new Error('expected resolveConflictTool to refuse a winning title that fails stored-shape validation')
+    }
+    if (!invalidThread.refusal.message.includes('failed its stored-shape validation')) {
+      throw new Error(`expected the stored-shape refusal, got '${invalidThread.refusal.message}'`)
     }
     refusals.push({ producer: RESOLVE_CONFLICT_INVALID_THREAD_PRODUCER, refusal: invalidThread.refusal })
 
