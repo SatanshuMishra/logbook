@@ -13,7 +13,7 @@ import { git } from '../../store/git.ts'
 import { syncWorkingCopy } from '../../store/read-path.ts'
 import { writeRecords, type RecordChange } from '../../store/write-path.ts'
 import { LEDGER_REF } from '../../store/ref.ts'
-import { withDetail } from '../../store/detail.ts'
+import { describeError, withDetail } from '../../store/detail.ts'
 import type { ConflictPath, ConflictState } from '../../merge/conflict.ts'
 import { clearConflictState, readConflictState } from '../../merge/conflict-state.ts'
 import { mergeTree, recordsNotTakenWhole } from '../../merge/merge-tree.ts'
@@ -281,6 +281,13 @@ const stillTheSameConflict = (saved: readonly ConflictPath[], current: readonly 
   )
 }
 
+const resolutionCommitAfterFailure = (rt: Runtime, layout: StoreLayout, local: string, remote: string): string | null => {
+  const current = readRef(rt, layout.projectRoot, LEDGER_REF)
+  if (current === null || current === local) return null
+  const parents = [readRef(rt, layout.projectRoot, `${current}^1`), readRef(rt, layout.projectRoot, `${current}^2`)]
+  return parents[0] === local && parents[1] === remote ? current : null
+}
+
 type MergedOnto = { tree: string; local: string }
 
 const remergeUnchanged = (rt: Runtime, layout: StoreLayout, state: ConflictState): Attempt<MergedOnto> => {
@@ -341,25 +348,41 @@ export const resolveConflictTool: ToolSpec<ResolveConflictInput, ResolveConflict
       startFrom: { tree: onto.value.tree, parent: onto.value.local },
       extraParents: [state.remote_commit]
     })
-    if (!committed.ok) return { ok: false, refusal: commitFailureRefusal(committed.detail) }
+    const landed = committed.ok
+      ? committed.after
+      : resolutionCommitAfterFailure(rt, layout.value, onto.value.local, state.remote_commit)
+    if (landed === null) {
+      if (committed.ok) throw new Error('resolve_conflict: a successful commit carried no commit id')
+      return { ok: false, refusal: commitFailureRefusal(committed.detail) }
+    }
 
-    clearConflictState(layout.value)
     const materialised = syncWorkingCopy(rt, layout.value)
     if (!materialised.ok) {
       rt.log({
         level: 'error',
         event: 'resolve.materialise-after-commit-failed',
         ref: LEDGER_REF,
-        after: committed.after,
+        after: landed,
         cause: materialised.cause
+      })
+    }
+    try {
+      clearConflictState(layout.value)
+    } catch (error) {
+      rt.log({
+        level: 'error',
+        event: 'resolve.conflict-state-not-cleared',
+        ref: LEDGER_REF,
+        after: landed,
+        detail: describeError(error)
       })
     }
 
     const resolved = input.resolutions.map((resolution) => resolution.path)
     return {
       ok: true,
-      text: `stored ${resolved.length} conflicted file(s) as reviewed in ledger commit ${committed.after}; run sync_ledger to share the resolution.`,
-      structured: { resolved, ref: committed.ref, commit: committed.after }
+      text: `stored ${resolved.length} conflicted file(s) as reviewed in ledger commit ${landed}; run sync_ledger to share the resolution.`,
+      structured: { resolved, ref: LEDGER_REF, commit: landed }
     }
   }
 }
