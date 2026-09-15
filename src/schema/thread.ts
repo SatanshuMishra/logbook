@@ -155,8 +155,8 @@ const OutOfScopeSchema = structural(
 const ArtifactSchema = structural(
   z.object({
     id: ulidField('the artifact entry identity, a ULID'),
-    label: content(z.string().min(1).max(caps.ARTIFACT_LABEL_MAX).describe('what this artifact is, in a few words')),
-    pointer: pointer('a path or url naming where this artifact lives').max(caps.ARTIFACT_POINTER_MAX),
+    label: content(z.string().min(1).describe('what this artifact is, in a few words')),
+    pointer: pointer('a path or url naming where this artifact lives'),
     retired: structural(
       z.boolean().describe('whether this artifact has been retired')
     )
@@ -184,7 +184,7 @@ const SpineSchema = z.object({
 const ThreadShape = z.object({
   id: ulidField('the thread identity, a ULID'),
   slug: content(
-    z.string().min(1).max(caps.THREAD_SLUG_MAX).regex(SLUG_PATTERN).describe('a short lowercase label for the thread')
+    z.string().min(1).regex(SLUG_PATTERN).describe('a short lowercase label for the thread')
   ),
   title: content(z.string().min(1).describe('the thread title')),
   status: structural(z.enum(['open', 'done', 'abandoned']).describe('the thread lifecycle state')),

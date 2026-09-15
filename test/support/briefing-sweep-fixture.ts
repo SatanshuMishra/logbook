@@ -1,7 +1,6 @@
 import type { Thread, Criterion, Risk, KeyDecision, OutOfScope } from '../../src/schema/thread.ts'
 import { RISK_TEXT_FLOOR, type DecisionIntegrity } from '../../src/render/briefing.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
-import * as caps from '../../src/schema/caps.ts'
 
 export type SweepShape = {
   fill: string
@@ -18,6 +17,7 @@ const FORMER_THREAD_TITLE_MAX = 200
 const FORMER_HEADER_TEXT_MAX = 500
 const FORMER_KEY_DECISION_TITLE_MAX = 200
 const FORMER_OUT_OF_SCOPE_TEXT_MAX = 300
+const FORMER_THREAD_SLUG_MAX = 64
 const CRITERION_CHECK_HELD_LENGTH = 40
 const CRITERION_RESULT_HELD_LENGTH = 60
 const RISK_REF_HELD_LENGTH = 40
@@ -26,7 +26,7 @@ export const SWEEP_FIXTURE_HELD_FIXED = [
   'open_risks and out_of_scope always carry the same element count as each other, each item at its own text cap, and every risk carries exactly one reference at a fixed short length',
   'every criterion carries a populated check at a fixed short length, ordinals ascend from one, and no criterion is struck',
   'the last criterion is marked done with a populated result and result_status at a fixed short length, so the rendered result line is exercised, except in the one cell where anchoring is on and there is exactly one criterion, where that sole criterion is also the anchor and is kept open instead so the anchored criterion never settles; every criterion before the last always stays open',
-  'title, slug, blocked_by, active_goal, next_step and last_session are held at their schema caps',
+  'title, slug, blocked_by, active_goal, next_step and last_session are held at their former schema caps',
   'a predecessor thread is always resolved, and the written pointer is passed as null',
   'key decisions split evenly into dangling and quarantined decision ids, so no decision resolves'
 ]
@@ -87,7 +87,7 @@ export const buildSweepFixture = (rt: Runtime, shape: SweepShape): SweepFixture 
 
   const predecessor: Thread = {
     id: rt.ulid(),
-    slug: 'p'.repeat(caps.THREAD_SLUG_MAX),
+    slug: 'p'.repeat(FORMER_THREAD_SLUG_MAX),
     title: fillOf(FORMER_THREAD_TITLE_MAX),
     status: 'done',
     blocked_by: null,
@@ -107,7 +107,7 @@ export const buildSweepFixture = (rt: Runtime, shape: SweepShape): SweepFixture 
 
   const thread: Thread = {
     id: rt.ulid(),
-    slug: 's'.repeat(caps.THREAD_SLUG_MAX),
+    slug: 's'.repeat(FORMER_THREAD_SLUG_MAX),
     title: fillOf(FORMER_THREAD_TITLE_MAX),
     status: 'open',
     blocked_by: fillOf(FORMER_HEADER_TEXT_MAX),

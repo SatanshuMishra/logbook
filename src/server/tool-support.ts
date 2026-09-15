@@ -2,7 +2,6 @@ import { z } from 'zod'
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Refusal } from '../schema/declare.ts'
 import { ThreadRecord, type Artifact, type Thread, type Ulid } from '../schema/thread.ts'
-import * as caps from '../schema/caps.ts'
 import { openStore, type Store } from '../store/records.ts'
 import { withDetail } from '../store/detail.ts'
 import type { DecisionResolver } from '../domain/criteria.ts'
@@ -11,12 +10,8 @@ export type Attempt<T> = { ok: true; value: T } | { ok: false; refusal: Refusal 
 
 export const ArtifactAddSchema = z
   .strictObject({
-    label: z.string().min(1).max(caps.ARTIFACT_LABEL_MAX).describe('what this artifact is, in a few words'),
-    pointer: z
-      .string()
-      .min(1)
-      .max(caps.ARTIFACT_POINTER_MAX)
-      .describe('a path or url naming where this artifact lives')
+    label: z.string().min(1).describe('what this artifact is, in a few words'),
+    pointer: z.string().min(1).describe('a path or url naming where this artifact lives')
   })
   .describe('one document this thread needs, stored as a pointer and never as content')
 

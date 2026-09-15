@@ -38,7 +38,6 @@ const OpenThreadInputSchema = z.strictObject({
   slug: z
     .string()
     .min(1)
-    .max(caps.THREAD_SLUG_MAX)
     .regex(SLUG_PATTERN)
     .describe('a short lowercase label unique in this project, letters digits and hyphens, for example merge-and-sync'),
   predecessor_id: z
@@ -150,7 +149,7 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
   name: 'open_thread',
   title: 'Open thread',
   description:
-    `Creates a new thread of work and returns its id. A thread needs a one-line title, a short slug that is unique in this project, what the work is, and what happens next. Completion criteria are optional at this moment; when supplied, every criterion records who stands behind it: confirmed when the human said so, proposed when derived, or unsettled when done is not yet known. A confirmed or proposed criterion also carries its own check, the re-runnable thing that decides whether it is true, and a criterion missing what its settledness requires is refused. A confirmed criterion also carries settled_by, the human's own words quoted verbatim, and a settled_by given on any other settledness is refused. Criteria are supplied as objects and the server assigns each one a stable id and its display ordinal, so [{"text": "the merge test passes in both push orders", "check": "npm test exits 0", "settledness": "proposed"}] is a complete value. The slug is lowercase letters, digits and hyphens, up to ${caps.THREAD_SLUG_MAX} characters, for example merge-and-sync.`,
+    `Creates a new thread of work and returns its id. A thread needs a one-line title, a short slug that is unique in this project, what the work is, and what happens next. Completion criteria are optional at this moment; when supplied, every criterion records who stands behind it: confirmed when the human said so, proposed when derived, or unsettled when done is not yet known. A confirmed or proposed criterion also carries its own check, the re-runnable thing that decides whether it is true, and a criterion missing what its settledness requires is refused. A confirmed criterion also carries settled_by, the human's own words quoted verbatim, and a settled_by given on any other settledness is refused. Criteria are supplied as objects and the server assigns each one a stable id and its display ordinal, so [{"text": "the merge test passes in both push orders", "check": "npm test exits 0", "settledness": "proposed"}] is a complete value. The slug is lowercase letters, digits and hyphens, for example merge-and-sync.`,
   input: OpenThreadInputSchema,
   output: OpenThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },

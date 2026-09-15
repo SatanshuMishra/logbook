@@ -277,7 +277,7 @@ test('record_decision.spawn.contract', async () => {
 test('record_decision.rejects-invalid', async () => {
   await withSpawnFixture(async (fx) => {
     const threadId = await createFixtureThread(fx.spawned, fx.published)
-    await runRejectsInvalid(fx, 'record_decision', ['minItems'], { thread_id: threadId })
+    await runRejectsInvalid(fx, 'record_decision', ['maxLength', 'minItems'], { thread_id: threadId })
   })
 })
 

@@ -6,10 +6,7 @@ import { previousSessionEntries } from '../domain/session-log.ts'
 import { escapeStored, escapeStoredBlock, firstNonEmptyStoredLine } from './escape.ts'
 import { CLIP_MARKER_GRAPHEMES, clipWithMarker, clipWithMarkerFloor } from './clip.ts'
 import {
-  ARTIFACT_LABEL_MAX,
-  ARTIFACT_POINTER_MAX,
-  SESSION_BODY_MAX,
-  THREAD_SLUG_MAX
+  SESSION_BODY_MAX
 } from '../schema/caps.ts'
 
 const FORMER_RISK_TEXT_MAX = 500
@@ -20,6 +17,9 @@ const FORMER_CRITERION_CHECK_MAX = 500
 const FORMER_RISK_REF_MAX = 200
 const FORMER_KEY_DECISION_TITLE_MAX = 200
 const FORMER_OUT_OF_SCOPE_TEXT_MAX = 300
+const FORMER_THREAD_SLUG_MAX = 64
+const FORMER_ARTIFACT_LABEL_MAX = 200
+const FORMER_ARTIFACT_POINTER_MAX = 500
 
 export type DecisionIntegrity = {
   resolved: number
@@ -61,7 +61,7 @@ const fitsBudget = (briefing: string, threadId: string, hasPreviousSession: bool
   resumePayloadBytes(briefing, threadId, hasPreviousSession) <= RESUME_PAYLOAD_TARGET_BYTES
 
 export const RELATED_TITLE_FLOOR = 100
-export const RELATED_SLUG_FLOOR = THREAD_SLUG_MAX
+export const RELATED_SLUG_FLOOR = FORMER_THREAD_SLUG_MAX
 export const RISK_TEXT_FLOOR = FORMER_RISK_TEXT_MAX
 export const RISK_REF_FLOOR = FORMER_RISK_REF_MAX
 export const KEY_DECISION_TITLE_FLOOR = FORMER_KEY_DECISION_TITLE_MAX
@@ -71,8 +71,8 @@ export const CRITERION_CHECK_FLOOR = FORMER_CRITERION_CHECK_MAX
 export const CRITERION_RESULT_FLOOR = 500
 export const CRITERION_SETTLED_BY_FLOOR = FORMER_CRITERION_SETTLED_BY_MAX
 export const SESSION_ENTRY_TEXT_FLOOR = 200
-export const ARTIFACT_LABEL_FLOOR = ARTIFACT_LABEL_MAX
-export const ARTIFACT_POINTER_FLOOR = ARTIFACT_POINTER_MAX
+export const ARTIFACT_LABEL_FLOOR = FORMER_ARTIFACT_LABEL_MAX
+export const ARTIFACT_POINTER_FLOOR = FORMER_ARTIFACT_POINTER_MAX
 
 const HEADER_FIELD_ESCAPED_GRAPHEME_MAX = FORMER_HEADER_FIELD_WRITE_MAX
 

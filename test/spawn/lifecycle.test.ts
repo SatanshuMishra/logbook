@@ -267,7 +267,7 @@ test('open_thread.spawn.contract', async () => {
 
 test('open_thread.rejects-invalid', async () => {
   await withFixture(async (fx) => {
-    await runRejectsInvalid(fx, 'open_thread', ['minItems'])
+    await runRejectsInvalid(fx, 'open_thread', ['maxLength', 'minItems'])
   })
 })
 
@@ -302,7 +302,7 @@ test('update_thread.spawn.contract', async () => {
 
 test('update_thread.rejects-invalid', async () => {
   await withFixture(async (fx) => {
-    await runRejectsInvalid(fx, 'update_thread', ['minItems'])
+    await runRejectsInvalid(fx, 'update_thread', ['maxLength', 'minItems'])
   })
 })
 
