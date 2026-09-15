@@ -215,6 +215,30 @@ test('write.no-orphan-record', () => {
   })
 })
 
+test('write.a-long-message-git-refuses-reports-gits-own-reason', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const layout = layoutIn(rt, repo)
+      const missingParent = '0000000000000000000000000000000000000001'
+
+      const change = makeThread(rt, 'long-message-refused')
+      const result = writeRecords(rt, layout, [change], `record ${'a'.repeat(4 * 1024 * 1024)}`, {
+        extraParents: [missingParent]
+      })
+
+      assert.equal(result.ok, false, 'a commit naming a parent that does not exist must be refused')
+      if (result.ok) return
+      assert.equal(result.reason, 'io')
+      assert.match(
+        result.detail,
+        new RegExp(`${missingParent} is not a valid object`),
+        `the refusal must carry git's reason even when git exits before reading the whole message, got: ${result.detail.slice(0, 300)}`
+      )
+    })
+  })
+})
+
 test('write.leaves-no-temporary-index-on-success', () => {
   withRepo((repo) => {
     withPluginData((pluginData) => {

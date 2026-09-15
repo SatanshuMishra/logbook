@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +10,7 @@ import { rawGit } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
 import { openStore } from '../../src/store/records.ts'
+import { LEDGER_REF } from '../../src/store/ref.ts'
 import type { Thread } from '../../src/schema/thread.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -333,6 +335,51 @@ test('open_thread.reports-an-absent-check-as-null-rather-than-an-empty-string', 
       first.check,
       null,
       'an unsettled criterion records no check, and null says that where an empty string is indistinguishable from a check someone stored as empty'
+    )
+  })
+})
+
+const SLUG_PAST_THE_OS_ARGUMENT_LIMIT = 'a'.repeat(2_200_000)
+const LEDGER_LOG_MAX_BUFFER_BYTES = 16 * 1024 * 1024
+
+const ledgerHeadCommitObject = (repo: string): string => {
+  const result = spawnSync('git', ['-C', repo, 'cat-file', 'commit', LEDGER_REF], {
+    encoding: 'utf8',
+    maxBuffer: LEDGER_LOG_MAX_BUFFER_BYTES
+  })
+  assert.equal(result.status, 0, `open-thread fixture: reading the ledger head commit failed: ${result.stderr}`)
+  return result.stdout
+}
+
+const replyHead = (result: CallToolResult): string => (result.isError === true ? firstTextOf(result).slice(0, 500) : 'no error')
+
+test('open_thread.a-slug-past-the-os-argument-limit-is-committed-and-its-thread-stays-writable', async () => {
+  await withFixture(async (fx) => {
+    const opened = await callOpenThread(fx, {
+      title: 'a thread',
+      slug: SLUG_PAST_THE_OS_ARGUMENT_LIMIT,
+      active_goal: 'ship the recording model',
+      next_step: 'read the spec'
+    })
+    assert.equal(
+      opened.isError,
+      undefined,
+      `a slug longer than the operating system allows in one process argument must still open its thread, got: ${replyHead(opened)}`
+    )
+    assert.ok(
+      ledgerHeadCommitObject(fx.repo).endsWith(`\n\nopen thread ${SLUG_PAST_THE_OS_ARGUMENT_LIMIT}\n`),
+      'the ledger commit must store the message exactly as a short slug stores it: the message followed by one line break'
+    )
+
+    const threadId = (opened.structuredContent as { thread_id: string }).thread_id
+    const updated = (await fx.spawned.client.callTool({
+      name: 'update_thread',
+      arguments: { thread_id: threadId, next_step: 'read the plan' }
+    })) as CallToolResult
+    assert.equal(
+      updated.isError,
+      undefined,
+      `every later write names the slug in its commit, so it must succeed too, got: ${replyHead(updated)}`
     )
   })
 })

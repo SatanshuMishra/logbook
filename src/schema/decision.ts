@@ -24,10 +24,10 @@ const ulidField = (description: string) => structural(z.string().regex(ULID_PATT
 const DecisionShape = z.object({
   id: ulidField('the decision identity, a ULID'),
   thread_id: ulidField('the thread this decision belongs to'),
-  title: content(z.string().min(1).max(caps.DECISION_TITLE_MAX).describe('the decision title')),
+  title: content(z.string().min(1).describe('the decision title')),
   context: content(z.string().describe('the context the decision was made in')),
   options: z
-    .array(content(z.string().max(caps.DECISION_OPTION_MAX).describe('one option that was considered')))
+    .array(content(z.string().describe('one option that was considered')))
     .max(caps.DECISION_OPTIONS_MAX_ELEMENTS)
     .describe('the options considered')
     .meta({ class: 'content' }),

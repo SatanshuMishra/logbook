@@ -15,10 +15,10 @@ const ulidField = (description: string) => z.string().regex(ULID_PATTERN).descri
 
 const RecordDecisionInputSchema = z.strictObject({
   thread_id: ulidField('the id of the thread this decision belongs to; the thread must currently be open'),
-  title: z.string().min(1).max(caps.DECISION_TITLE_MAX).describe('a one-line title for the decision'),
+  title: z.string().min(1).describe('a one-line title for the decision'),
   context: z.string().describe('the situation that forced this choice'),
   options: z
-    .array(z.string().max(caps.DECISION_OPTION_MAX).describe('one option that was on the table'))
+    .array(z.string().describe('one option that was on the table'))
     .max(caps.DECISION_OPTIONS_MAX_ELEMENTS)
     .describe('the options that were on the table, for example ["ship the fast path", "keep the safe default"]'),
   outcome: z.string().describe('the outcome that was chosen and why'),
@@ -60,24 +60,6 @@ const RecordDecisionOutputSchema = z.object({
 
 type RecordDecisionInput = z.infer<typeof RecordDecisionInputSchema>
 type RecordDecisionOutput = z.infer<typeof RecordDecisionOutputSchema>
-
-export const titleCapRefusal = (observed: number): Refusal => ({
-  ok: false,
-  field: 'title',
-  accepted: `at most ${caps.DECISION_TITLE_MAX} characters after escaping`,
-  example: 'ship the fast path for the merge queue',
-  retryable: true,
-  message: `title exceeds its cap of ${caps.DECISION_TITLE_MAX} characters after escaping; observed ${observed}; remedy: shorten the title and retry.`
-})
-
-export const optionCapRefusal = (index: number, observed: number): Refusal => ({
-  ok: false,
-  field: 'options',
-  accepted: `at most ${caps.DECISION_OPTION_MAX} characters after escaping, per option`,
-  example: 'ship the fast path',
-  retryable: true,
-  message: `options[${index}] exceeds its cap of ${caps.DECISION_OPTION_MAX} characters after escaping; observed ${observed}; remedy: shorten the option text and retry.`
-})
 
 export const invalidDecisionRefusal = (issue: string): Refusal => ({
   ok: false,
@@ -149,16 +131,7 @@ export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOut
     }
 
     const escapedTitle = escapeStored(input.title)
-    if (escapedTitle.length > caps.DECISION_TITLE_MAX) {
-      return { ok: false, refusal: titleCapRefusal(escapedTitle.length) }
-    }
-
     const escapedOptions = input.options.map((option) => escapeStored(option))
-    const oversizedIndex = escapedOptions.findIndex((option) => option.length > caps.DECISION_OPTION_MAX)
-    if (oversizedIndex !== -1) {
-      const oversizedOption = escapedOptions[oversizedIndex]
-      return { ok: false, refusal: optionCapRefusal(oversizedIndex, oversizedOption === undefined ? 0 : oversizedOption.length) }
-    }
 
     const escapedScope = input.scope === undefined ? '' : escapeStored(input.scope)
 

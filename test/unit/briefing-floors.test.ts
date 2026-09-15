@@ -25,10 +25,7 @@ import { ThreadRecord, type Thread, type Criterion, type Risk, type KeyDecision,
 import { SessionRecord, type SessionEntry } from '../../src/schema/session.ts'
 import { itemCountOverBudgetThread } from '../support/briefing-item-count-over-budget-fixture.ts'
 import {
-  THREAD_SLUG_MAX,
   SESSION_BODY_MAX,
-  ARTIFACT_LABEL_MAX,
-  ARTIFACT_POINTER_MAX
 } from '../../src/schema/caps.ts'
 import { testRuntime } from '../support/runtime.ts'
 
@@ -39,6 +36,9 @@ const FORMER_CRITERION_CHECK_MAX = 500
 const FORMER_RISK_REF_MAX = 200
 const FORMER_KEY_DECISION_TITLE_MAX = 200
 const FORMER_OUT_OF_SCOPE_TEXT_MAX = 300
+const FORMER_THREAD_SLUG_MAX = 64
+const FORMER_ARTIFACT_LABEL_MAX = 200
+const FORMER_ARTIFACT_POINTER_MAX = 500
 const FORMER_CRITERION_RESULT_MAX = 1000
 const FORMER_CRITERION_SETTLED_BY_MAX = 500
 
@@ -137,7 +137,7 @@ const slugSafeFillFor = (floor: number, cap: number): string => SLUG_SAFE_FILL_C
 
 const buildFloorFixture = (rawTextFor: FloorRawText, sessionBodies: readonly string[]): Fixture => {
   const relatedTitleText = rawTextFor(RELATED_TITLE_FLOOR, FORMER_THREAD_TITLE_MAX)
-  const relatedSlugText = slugSafeFillFor(RELATED_SLUG_FLOOR, THREAD_SLUG_MAX)
+  const relatedSlugText = slugSafeFillFor(RELATED_SLUG_FLOOR, FORMER_THREAD_SLUG_MAX)
   const riskText = rawTextFor(RISK_TEXT_FLOOR, FORMER_RISK_TEXT_MAX)
   const settledRiskText = rawTextFor(RISK_TEXT_FLOOR, FORMER_RISK_TEXT_MAX)
   const riskRefText = rawTextFor(RISK_REF_FLOOR, FORMER_RISK_REF_MAX)
@@ -148,8 +148,8 @@ const buildFloorFixture = (rawTextFor: FloorRawText, sessionBodies: readonly str
   const criterionCheckText = rawTextFor(CRITERION_CHECK_FLOOR, FORMER_CRITERION_CHECK_MAX)
   const criterionResultText = rawTextFor(CRITERION_RESULT_FLOOR, FORMER_CRITERION_RESULT_MAX)
   const criterionSettledByText = rawTextFor(CRITERION_SETTLED_BY_FLOOR, FORMER_CRITERION_SETTLED_BY_MAX)
-  const artifactLabelText = rawTextFor(ARTIFACT_LABEL_FLOOR, ARTIFACT_LABEL_MAX)
-  const artifactPointerText = rawTextFor(ARTIFACT_POINTER_FLOOR, ARTIFACT_POINTER_MAX)
+  const artifactLabelText = rawTextFor(ARTIFACT_LABEL_FLOOR, FORMER_ARTIFACT_LABEL_MAX)
+  const artifactPointerText = rawTextFor(ARTIFACT_POINTER_FLOOR, FORMER_ARTIFACT_POINTER_MAX)
   const oldestSessionBody = sessionBodies[0]
   if (oldestSessionBody === undefined) {
     throw new Error(
@@ -685,7 +685,7 @@ test('briefing.a-clip-floor-clamped-field-does-not-trip-the-shortened-text-bulle
 test('briefing.every-floor-is-at-most-the-write-cap-it-governs', () => {
   const pairs: Array<{ name: string; floor: number; cap: number }> = [
     { name: 'related title floor vs former thread title cap', floor: RELATED_TITLE_FLOOR, cap: FORMER_THREAD_TITLE_MAX },
-    { name: 'related slug floor vs thread slug cap', floor: RELATED_SLUG_FLOOR, cap: THREAD_SLUG_MAX },
+    { name: 'related slug floor vs former thread slug cap', floor: RELATED_SLUG_FLOOR, cap: FORMER_THREAD_SLUG_MAX },
     { name: 'risk text floor vs risk text cap', floor: RISK_TEXT_FLOOR, cap: FORMER_RISK_TEXT_MAX },
     { name: 'risk reference floor vs former risk reference cap', floor: RISK_REF_FLOOR, cap: FORMER_RISK_REF_MAX },
     { name: 'key decision title floor vs former key decision title cap', floor: KEY_DECISION_TITLE_FLOOR, cap: FORMER_KEY_DECISION_TITLE_MAX },
@@ -695,8 +695,8 @@ test('briefing.every-floor-is-at-most-the-write-cap-it-governs', () => {
     { name: 'criterion result floor vs criterion result cap', floor: CRITERION_RESULT_FLOOR, cap: FORMER_CRITERION_RESULT_MAX },
     { name: 'criterion settled by floor vs criterion settled by cap', floor: CRITERION_SETTLED_BY_FLOOR, cap: FORMER_CRITERION_SETTLED_BY_MAX },
     { name: 'session entry text floor vs session body cap', floor: SESSION_ENTRY_TEXT_FLOOR, cap: SESSION_BODY_MAX },
-    { name: 'artifact label floor vs artifact label cap', floor: ARTIFACT_LABEL_FLOOR, cap: ARTIFACT_LABEL_MAX },
-    { name: 'artifact pointer floor vs artifact pointer cap', floor: ARTIFACT_POINTER_FLOOR, cap: ARTIFACT_POINTER_MAX }
+    { name: 'artifact label floor vs former artifact label cap', floor: ARTIFACT_LABEL_FLOOR, cap: FORMER_ARTIFACT_LABEL_MAX },
+    { name: 'artifact pointer floor vs former artifact pointer cap', floor: ARTIFACT_POINTER_FLOOR, cap: FORMER_ARTIFACT_POINTER_MAX }
   ]
 
   for (const pair of pairs) {

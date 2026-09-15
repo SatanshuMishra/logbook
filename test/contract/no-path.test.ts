@@ -113,8 +113,6 @@ const PARK_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/park_thread.ts#pa
 const RESUME_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/resume_thread.ts#resumeThreadTool.handler'
 const UPDATE_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/update_thread.ts#updateThreadTool.handler'
 
-const RECORD_DECISION_TITLE_CAP_PRODUCER: ProducerId = 'server/tools/record_decision.ts#titleCapRefusal'
-const RECORD_DECISION_OPTION_CAP_PRODUCER: ProducerId = 'server/tools/record_decision.ts#optionCapRefusal'
 const RECORD_DECISION_INVALID_PRODUCER: ProducerId = 'server/tools/record_decision.ts#invalidDecisionRefusal'
 const RECORD_DECISION_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/record_decision.ts#commitFailureRefusal'
 const RECORD_DECISION_UNKNOWN_CRITERION_PRODUCER: ProducerId = 'server/tools/record_decision.ts#unknownCriterionRefusal'
@@ -311,27 +309,6 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     }
     refusals.push({ producer: CLOSE_THREAD_HANDLER_PRODUCER, refusal: closeWithOpenCriterion.refusal })
 
-    const titleOverflow = await recordDecisionTool.handler(rt, STUB_TOOL_CTX, {
-      thread_id: threadId,
-      title: CONTROL_CHAR_OVERFLOW(34),
-      context: 'a census context',
-      options: ['a census option'],
-      outcome: 'a census outcome'
-    })
-    if (titleOverflow.ok) throw new Error('expected recordDecisionTool to refuse a title that overflows its cap once escaped')
-    refusals.push({ producer: RECORD_DECISION_TITLE_CAP_PRODUCER, refusal: titleOverflow.refusal })
-    refusals.push({ producer: RECORD_DECISION_HANDLER_PRODUCER, refusal: titleOverflow.refusal })
-
-    const optionOverflow = await recordDecisionTool.handler(rt, STUB_TOOL_CTX, {
-      thread_id: threadId,
-      title: 'a census title',
-      context: 'a census context',
-      options: [CONTROL_CHAR_OVERFLOW(84)],
-      outcome: 'a census outcome'
-    })
-    if (optionOverflow.ok) throw new Error('expected recordDecisionTool to refuse an option that overflows its cap once escaped')
-    refusals.push({ producer: RECORD_DECISION_OPTION_CAP_PRODUCER, refusal: optionOverflow.refusal })
-
     const unknownDecisionCriterion = await recordDecisionTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,
       title: 'a census title',
@@ -344,6 +321,7 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
       throw new Error('expected recordDecisionTool to refuse a criterion_id that names no criterion on this thread')
     }
     refusals.push({ producer: RECORD_DECISION_UNKNOWN_CRITERION_PRODUCER, refusal: unknownDecisionCriterion.refusal })
+    refusals.push({ producer: RECORD_DECISION_HANDLER_PRODUCER, refusal: unknownDecisionCriterion.refusal })
 
     const unresolvedSupersedes = await recordDecisionTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,
@@ -764,13 +742,16 @@ const collectResolveConflictSingleRepoRefusals = async (): Promise<TaggedRefusal
       throw new Error('expected the recorded decision to read back cleanly')
     }
     const liveDecision = liveDecisionSlot.record
-    const oversizedDecision = { ...liveDecision, title: CONTROL_CHAR_OVERFLOW(40) }
-    writeConflictsFixture(fixture, [{ record: `decision:${decisionId}`, field: 'decision', ours: liveDecision, theirs: oversizedDecision }])
+    const untitledDecision = { ...liveDecision, title: '' }
+    writeConflictsFixture(fixture, [{ record: `decision:${decisionId}`, field: 'decision', ours: liveDecision, theirs: untitledDecision }])
     const invalidDecision = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {
       resolutions: [{ record: `decision:${decisionId}`, field: 'decision', winner: 'remote' }]
     })
     if (invalidDecision.ok) {
-      throw new Error('expected resolveConflictTool to refuse a winning decision that fails stored-shape validation once escaped')
+      throw new Error('expected resolveConflictTool to refuse a winning decision that fails stored-shape validation')
+    }
+    if (!invalidDecision.refusal.message.includes('failed its stored-shape validation')) {
+      throw new Error(`expected the stored-shape refusal, got '${invalidDecision.refusal.message}'`)
     }
     refusals.push({ producer: RESOLVE_CONFLICT_INVALID_DECISION_PRODUCER, refusal: invalidDecision.refusal })
   } finally {

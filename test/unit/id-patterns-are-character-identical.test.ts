@@ -1,7 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as ids from '../../src/schema/ids.ts'
-import { THREAD_SLUG_MAX } from '../../src/schema/caps.ts'
 
 type PatternExpectation = {
   source: string
@@ -14,7 +13,7 @@ const PATTERN_EXPECTATIONS: Record<string, PatternExpectation> = {
     flags: ''
   },
   SLUG_PATTERN: {
-    source: '^[a-z0-9][a-z0-9-]{0,63}$',
+    source: '^[a-z0-9][a-z0-9-]*$',
     flags: ''
   },
   ISO_PATTERN: {
@@ -65,13 +64,4 @@ test('id-patterns.every-exported-pattern-source-and-flags-are-pinned', () => {
       `id-patterns: PATTERN_EXPECTATIONS names ${declaredName}, which src/schema/ids.ts no longer exports`
     )
   }
-})
-
-test('id-patterns.slug-pattern-quantifier-tracks-thread-slug-max', () => {
-  const expectedSource = `^[a-z0-9][a-z0-9-]{0,${THREAD_SLUG_MAX - 1}}$`
-  assert.equal(
-    ids.SLUG_PATTERN.source,
-    expectedSource,
-    `id-patterns: SLUG_PATTERN's quantifier no longer equals THREAD_SLUG_MAX (${THREAD_SLUG_MAX}) minus the one mandatory leading character; the two must stay linked or slug-length validation and the cap it claims to enforce will disagree`
-  )
 })

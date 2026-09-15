@@ -16,7 +16,7 @@ import {
 } from '../../src/render/briefing.ts'
 import { CLIP_MARKER } from '../../src/render/clip.ts'
 import { ThreadRecord, type Thread, type Criterion, type Risk, type KeyDecision, type OutOfScope } from '../../src/schema/thread.ts'
-import { SESSION_BODY_MAX, THREAD_SLUG_MAX } from '../../src/schema/caps.ts'
+import { SESSION_BODY_MAX } from '../../src/schema/caps.ts'
 import { SessionRecord, type SessionEntry } from '../../src/schema/session.ts'
 import type { Pointer } from '../../src/domain/pointer.ts'
 import { testRuntime } from '../support/runtime.ts'
@@ -29,6 +29,7 @@ import { itemCountOverBudgetThread } from '../support/briefing-item-count-over-b
 const rt = testRuntime()
 
 const FORMER_KEY_DECISION_TITLE_MAX = 200
+const FORMER_THREAD_SLUG_MAX = 64
 
 const EMPTY_INTEGRITY: DecisionIntegrity = { resolved: 0, dangling: [], quarantined: [] }
 
@@ -739,7 +740,7 @@ const decisionRecordSizedThread = (): Thread => {
   const outOfScope: OutOfScope[] = Array.from({ length: 40 }, () => ({ id: rt.ulid(), text: text(300) }))
   return {
     id: rt.ulid(),
-    slug: 'a'.repeat(THREAD_SLUG_MAX),
+    slug: 'a'.repeat(FORMER_THREAD_SLUG_MAX),
     title: text(200),
     status: 'open',
     blocked_by: text(500),
