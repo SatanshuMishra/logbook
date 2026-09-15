@@ -604,3 +604,42 @@ test('resolve.a-next-step-and-its-criterion-take-one-winner', async () => {
     assertOkResult('sync_ledger (after resolve_conflict, must push)', await callTool(ana, 'sync_ledger', {}))
   })
 })
+
+test('resolve.a-pair-member-changed-locally-after-the-refused-sync-is-refused-as-stale', async () => {
+  await withTwoSpawnedTeammates(async (ana, ben) => {
+    const threadId = await openAndConvergeThread(ana, ben, 'resolve-next-step-pair-stale-thread')
+    const record = `thread:${threadId}`
+    const criterionId = readThreadOf(ana, threadId).completion_criteria[0]?.id
+    assert.ok(criterionId !== undefined, 'resolve: the fixture thread minted no criterion')
+
+    assertOkResult(
+      'update_thread (ben names the criterion for the shared next step)',
+      await callTool(ben, 'update_thread', { thread_id: threadId, next_step: 'the shared next step', next_step_criterion_id: criterionId })
+    )
+    assertOkResult('sync_ledger (ben pushes)', await callTool(ben, 'sync_ledger', {}))
+    assertOkResult(
+      'update_thread (ana writes the same next step without a criterion)',
+      await callTool(ana, 'update_thread', { thread_id: threadId, next_step: 'the shared next step' })
+    )
+    const anaConflictSync = await callTool(ana, 'sync_ledger', {})
+    assert.equal(anaConflictSync.isError, true, 'expected the sync to be refused over the criterion')
+
+    assertOkResult(
+      'update_thread (ana changes her next step before resolving)',
+      await callTool(ana, 'update_thread', { thread_id: threadId, next_step: 'ana later next step' })
+    )
+
+    const reportedFields = [
+      ...firstTextOf(anaConflictSync).matchAll(new RegExp(`${record} (spine\\.next_step(?:_criterion_id)?)(?![_a-z])`, 'g'))
+    ].map((match) => match[1] as string)
+    assert.ok(reportedFields.includes('spine.next_step_criterion_id'), `expected the criterion to be reported in dispute:\n${firstTextOf(anaConflictSync)}`)
+
+    const stale = await callTool(ana, 'resolve_conflict', {
+      resolutions: [...new Set(reportedFields)].map((field) => ({ record, field, winner: 'remote' }))
+    })
+    const stored = readThreadOf(ana, threadId)
+    assert.equal(stale.isError, true, `the criterion was recorded against a next step ana has since replaced, so resolving it must be refused, but it stored ${JSON.stringify([stored.spine.next_step, stored.spine.next_step_criterion_id])}`)
+    assert.equal(stored.spine.next_step, 'ana later next step')
+    assert.equal(Object.hasOwn(stored.spine, 'next_step_criterion_id'), false, 'a refused resolution must not have applied the criterion')
+  })
+})
