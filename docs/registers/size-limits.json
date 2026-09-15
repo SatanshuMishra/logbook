@@ -73,7 +73,7 @@
   },
   {
     "name": "MAX_SYNC_ATTEMPTS",
-    "site": "src/merge/sync.ts:45",
+    "site": "src/merge/sync.ts:28",
     "value": 5,
     "basis": "unrecorded",
     "reason": null,
@@ -666,24 +666,6 @@
     "mirror_relation": null
   },
   {
-    "name": "UNPARSEABLE_RECORDS_SHOWN_MAX",
-    "site": "src/schema/caps.ts:27",
-    "value": 5,
-    "basis": "unrecorded",
-    "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
-  },
-  {
-    "name": "UNPARSEABLE_RECORD_NAME_MAX",
-    "site": "src/schema/caps.ts:28",
-    "value": 100,
-    "basis": "unrecorded",
-    "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
-  },
-  {
     "name": "PACKAGE_JSON_SEARCH_DEPTH",
     "site": "src/server/main.ts:13",
     "value": 10,
@@ -775,7 +757,7 @@
   },
   {
     "name": "MAX_ATTEMPTS",
-    "site": "src/store/write-path.ts:31",
+    "site": "src/store/write-path.ts:32",
     "value": 5,
     "basis": "unrecorded",
     "reason": null,
@@ -784,7 +766,7 @@
   },
   {
     "name": "SESSION_UNPARKED_ENTRIES_MAX",
-    "site": "src/schema/caps.ts:30",
+    "site": "src/schema/caps.ts:27",
     "value": 25,
     "basis": "chosen",
     "reason": "Ruled by the human operator on 2026-09-11 (decision 01M27EQRZQF4R46NWA44Y10ZY0); across the twenty-four historical un-parked runs this store has carried, the largest legitimate run is 24 and the pathological one is 154; 25 refuses exactly that one run, at its 26th append, and leaves the other twenty-three alone; the margin is therefore zero, which is the known cost of the ruling; the bound is a pathology bound, not a page bound, and makes no claim to keep a briefing inside any size.",

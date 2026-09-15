@@ -3,13 +3,11 @@ import type { ToolSpec } from '../register.ts'
 import { NO_ARGUMENTS } from '../no-arguments.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import { layoutFor } from '../../store/layout.ts'
-import { sync, type RejectedOutcome, type UnreadableLocalRecord } from '../../merge/sync.ts'
-import { nextStepPairNoteFor } from '../../merge/conflict.ts'
+import { sync, type RejectedOutcome } from '../../merge/sync.ts'
+import type { ConflictReportEntry } from '../../merge/conflict.ts'
+import { GIT_MERGE_TREE_FLOOR } from '../../merge/merge-tree.ts'
 import { withDetail } from '../../store/detail.ts'
 import { escapeStored } from '../../render/escape.ts'
-import { clipWithMarker } from '../../render/clip.ts'
-import * as caps from '../../schema/caps.ts'
-import { ULID_PATTERN } from '../../schema/ids.ts'
 import { openProjectStore } from '../tool-support.ts'
 
 const SyncLedgerInputSchema = NO_ARGUMENTS
@@ -86,102 +84,64 @@ const localSyncFailureRefusal = (detail: string): Refusal =>
     detail
   )
 
-const invalidMergedRecordRefusal = (field: string, detail: string): Refusal =>
-  withDetail(
-    {
-      ok: false,
-      field: 'sync',
-      accepted: 'a merge whose every resulting record still matches its stored shape',
-      example: field,
-      retryable: false,
-      message: `the merge produced a record that does not match its stored shape (${field}); nothing was written locally and nothing was sent to origin.`
-    },
-    detail
-  )
-
-const unreadableLocalRecordsRefusal = (records: readonly UnreadableLocalRecord[], detail: string): Refusal => {
-  const shown = records.slice(0, caps.UNPARSEABLE_RECORDS_SHOWN_MAX)
-  const remainder = records.length - shown.length
-  const rendered = shown.map((record) => {
-    const name = clipWithMarker(escapeStored(record.relPath, 'angle-wrapped'), caps.UNPARSEABLE_RECORD_NAME_MAX)
-    return `<${name}> (${escapeStored(record.reason, 'paren-wrapped')})`
-  })
-  const named = remainder > 0 ? `${rendered.join(', ')} (+${remainder} more)` : rendered.join(', ')
-  return withDetail(
-    {
-      ok: false,
-      field: 'sync',
-      accepted: 'a local ledger whose record files this merge would decide can all be read and parsed on this machine',
-      example: 'restore read access to the named record files, or repair or remove the ones that do not parse, then retry the call',
-      retryable: true,
-      message: `sync stopped before merging: this machine could not read or parse ${records.length} of its own record file(s) that this merge would decide, because the shared ledger or the common ancestor also carries them: ${named}. Merging now would decide those records without this machine's copy and could overwrite committed local work, so nothing was merged and nothing was sent to origin. Restore read access to a file that could not be read, or repair or remove one that does not parse, then run sync_ledger again.`
-    },
-    detail
-  )
-}
-
 export const rejectedRefusal = (outcome: RejectedOutcome): Refusal => {
   if (outcome.cause === 'remote-rejected') return remoteRejectedRefusal(outcome.detail)
   if (outcome.cause === 'contention') return contentionRefusal(outcome.detail)
-  if (outcome.cause === 'invalid-merged-record') return invalidMergedRecordRefusal(outcome.field, outcome.detail)
-  if (outcome.cause === 'unreadable-local-record') return unreadableLocalRecordsRefusal(outcome.records, outcome.detail)
   return localSyncFailureRefusal(outcome.detail)
 }
 
-const RECORD_DIRECTORIES = new Set(['threads', 'decisions', 'bindings'])
-const SESSIONS_DIRECTORY = 'sessions'
-const RECORD_FILE_SUFFIX = '.json'
-const PATH_SEPARATORS = /[\\/]/
-const NOT_WRITTEN_SUFFIX = ' (not a name this version writes)'
+export const gitTooOldRefusal = (found: string): Refusal => ({
+  ok: false,
+  field: 'sync',
+  accepted: `git ${GIT_MERGE_TREE_FLOOR} or later, which can merge two ledgers without a working tree`,
+  example: `upgrade git to ${GIT_MERGE_TREE_FLOOR} or later, then run sync_ledger again`,
+  retryable: false,
+  message: `this machine's git is ${escapeStored(found)}, and merging this ledger with the shared copy needs git ${GIT_MERGE_TREE_FLOOR} or later; nothing was merged and nothing was pushed. Pushing and fast-forwarding still work on this version, so sync succeeds whenever only one side has moved.`
+})
 
-const isWrittenShape = (relPath: string): boolean => {
-  const segments = relPath.split(PATH_SEPARATORS)
-  const last = segments[segments.length - 1]
-  if (last === undefined || !last.endsWith(RECORD_FILE_SUFFIX)) return false
-  const id = last.slice(0, last.length - RECORD_FILE_SUFFIX.length)
-  if (!ULID_PATTERN.test(id)) return false
-  if (segments.length === 2) return RECORD_DIRECTORIES.has(segments[0] as string)
-  if (segments.length === 3) return segments[0] === SESSIONS_DIRECTORY && ULID_PATTERN.test(segments[1] as string)
-  return false
+const CONFLICT_ADDRESS_PREFIX = 'logbook://conflict/'
+
+const versionLine = (label: string, blob: string | null, absent: string): string =>
+  `${label}: ${blob === null ? absent : `${CONFLICT_ADDRESS_PREFIX}${blob}`}`
+
+const changesText = (changes: readonly string[] | null): string => {
+  if (changes === null) return 'could not be listed, a version is not valid JSON'
+  if (changes.length === 0) return 'nothing'
+  return changes.map((change) => escapeStored(change)).join(', ')
 }
 
-export const unparseableRecordsRefusal = (records: readonly string[]): Refusal => {
-  const shown = records.slice(0, caps.UNPARSEABLE_RECORDS_SHOWN_MAX)
-  const remainder = records.length - shown.length
-  const rendered = shown.map((record) => {
-    const escaped = clipWithMarker(escapeStored(record, 'angle-wrapped'), caps.UNPARSEABLE_RECORD_NAME_MAX)
-    const bracketed = `<${escaped}>`
-    return isWrittenShape(record) ? bracketed : `${bracketed}${NOT_WRITTEN_SUFFIX}`
-  })
-  const named = remainder > 0 ? `${rendered.join(', ')} (+${remainder} more)` : rendered.join(', ')
-  return {
-    ok: false,
-    field: 'sync',
-    accepted: 'a shared ledger whose every record file this version can read',
-    example: 'upgrade this plugin to the version that wrote those records, or have the teammate who wrote them repair or remove them on the shared copy',
-    retryable: false,
-    message: `sync stopped before merging: the shared ledger carries ${records.length} record file(s) this version cannot read: ${named}. Nothing was merged and nothing was sent to origin. Repeating this call cannot help, because the bytes live on the shared copy: upgrade this plugin to the version that wrote those records, or have the teammate who wrote them repair or remove them, then run sync_ledger again.`
-  }
-}
+const renderConflictEntry = (entry: ConflictReportEntry): string =>
+  [
+    `<${escapeStored(entry.path, 'angle-wrapped')}>`,
+    versionLine('ancestor', entry.base_blob, 'none, the two ledgers share no history'),
+    versionLine('local', entry.local_blob, 'deleted on this machine'),
+    versionLine('remote', entry.remote_blob, 'deleted on the shared copy'),
+    ...(entry.base_blob === null
+      ? [`differs between the two: ${changesText(entry.local_changes)}`]
+      : [`changed locally: ${changesText(entry.local_changes)}`, `changed remotely: ${changesText(entry.remote_changes)}`])
+  ].join('\n')
 
-export const conflictRefusal = (conflicts: readonly { record: string; field: string }[]): Refusal => {
-  const named = conflicts.map((c) => `${c.record} ${c.field}`).join('; ')
-  const pairNote = nextStepPairNoteFor(conflicts.map((c) => c.field))
-  return {
-    ok: false,
-    field: 'sync',
-    accepted: 'no field that both sides changed to different values',
-    example: 'call resolve_conflict naming a winner for each disagreement this reports',
-    retryable: true,
-    message: `sync found disagreements on: ${named}. Nothing was pushed; call resolve_conflict to settle each one, then retry sync_ledger.${pairNote}`
-  }
-}
+const REVIEW_GUIDANCE =
+  "Review before resolving. Read each file's ancestor, local and remote versions whole, and read the thread's decisions and session entries on both sides where they explain a change. Compose each record as it should now read, keeping every change from both sides that still belongs. When both versions are valid alternatives rather than one being out of date, bring them to the user with a recommended resolution and wait for their choice or their own. Do not take one side whole without having reviewed the other. Then call resolve_conflict once with every file listed above, and run sync_ledger again."
+
+export const conflictRefusal = (entries: readonly ConflictReportEntry[]): Refusal => ({
+  ok: false,
+  field: 'sync',
+  accepted: 'a merge in which no file was changed differently on both sides',
+  example: 'review each conflicted file, then call resolve_conflict with each record as it should now read',
+  retryable: true,
+  message: [
+    `sync found ${entries.length} file(s) changed differently on this machine and on the shared copy since they last agreed. Nothing was merged and nothing was pushed.`,
+    ...entries.map(renderConflictEntry),
+    REVIEW_GUIDANCE
+  ].join('\n\n')
+})
 
 export const syncLedgerTool: ToolSpec<SyncLedgerInput, SyncLedgerOutput> = {
   name: 'sync_ledger',
   title: 'Sync ledger',
   description:
-    "Brings this machine's ledger and the shared one into agreement: it fetches, works out which side is ahead, merges record by record when both moved, and pushes. Takes no arguments. When two people changed the same single-value field to different things it refuses instead of choosing, keeps both versions readable, pushes nothing, and reports what disagreed so resolve_conflict can settle it. Running it when nothing changed is cheap and reports that nothing changed, which is different from reporting that it could not reach the shared copy.",
+    "Brings this machine's ledger and the shared one into agreement: it fetches, works out which side is ahead, has git merge the two when both moved, and pushes. Takes no arguments. When both sides changed the same record file, it refuses instead of choosing, pushes nothing, and reports each such file with where to read its ancestor, local and remote versions, so they can be reviewed and settled with resolve_conflict. Running it when nothing changed is cheap and reports that nothing changed, which is different from reporting that it could not reach the shared copy.",
   input: SyncLedgerInputSchema,
   output: SyncLedgerOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -209,10 +169,10 @@ export const syncLedgerTool: ToolSpec<SyncLedgerInput, SyncLedgerOutput> = {
     }
 
     if (outcome.reason === 'conflict') {
-      return { ok: false, refusal: conflictRefusal(outcome.conflicts) }
+      return { ok: false, refusal: conflictRefusal(outcome.entries) }
     }
-    if (outcome.reason === 'unparseable') {
-      return { ok: false, refusal: unparseableRecordsRefusal(outcome.records) }
+    if (outcome.reason === 'git-too-old') {
+      return { ok: false, refusal: gitTooOldRefusal(outcome.found) }
     }
     if (outcome.reason === 'offline') {
       return { ok: false, refusal: offlineRefusal(outcome.detail) }

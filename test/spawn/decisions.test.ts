@@ -1711,8 +1711,10 @@ test('decision.is-immutable', async () => {
     assert.equal(benConflictSync.ok, false)
     if (benConflictSync.ok) return
     assert.equal(benConflictSync.reason, 'conflict')
-    const nextStepConflict = benConflictSync.conflicts.find((c) => c.field === 'spine.next_step')
-    assert.ok(nextStepConflict !== undefined)
+    assert.ok(
+      benConflictSync.state.paths.some((entry) => entry.path === `threads/${conflictThread.record.id}.json`),
+      'expected the census conflict thread to be reported as conflicted'
+    )
 
     const world: CensusWorld = {
       anaRt: anaToolRt,

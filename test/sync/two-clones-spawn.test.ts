@@ -6,14 +6,12 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
-import type { Runtime } from '../../src/runtime/runtime.ts'
 import type { Declared } from '../../src/schema/declare.ts'
 import { DecisionRecord, type Decision } from '../../src/schema/decision.ts'
 import { SessionRecord, type SessionEntry } from '../../src/schema/session.ts'
 import { ThreadRecord, type Thread } from '../../src/schema/thread.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { readAllRecordFiles } from '../../src/store/read-path.ts'
-import { writeRecords } from '../../src/store/write-path.ts'
 import { rawGit } from '../support/git-fixture.ts'
 import { readResourceText } from '../support/resources-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
@@ -166,9 +164,6 @@ const assertRecordsAreClean = (layout: StoreLayout): void => {
     assert.equal(parsed.ok, true, `${file} failed schema validation`)
   }
 }
-
-const runtimeOf = (teammate: SpawnedTeammate): Runtime =>
-  testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: teammate.pluginData } })
 
 const refusalTextOf = (label: string, result: CallToolResult): string => {
   assert.equal(result.isError, true, `${label} expected a refusal, got a success: ${JSON.stringify(result)}`)
@@ -393,6 +388,8 @@ test('sync.a-conflict-reply-gives-every-version-of-the-conflicted-record-and-ask
       assert.equal(version.spine.active_goal, side.goal, `the ${side.label} version must be that side's whole thread`)
     }
 
+    assert.match(text, /changed locally: [^\n]*spine\.active_goal/, `the reply must list what the local side changed:\n${text}`)
+    assert.match(text, /changed remotely: [^\n]*spine\.active_goal/, `the reply must list what the remote side changed:\n${text}`)
     assert.match(text, /review/i, `the reply must direct a review of both versions:\n${text}`)
     assert.match(text, /user/i, `the reply must say when to bring the conflict to the user:\n${text}`)
     assert.doesNotMatch(text, /winner/i, `the reply must not ask for a side to be picked:\n${text}`)
@@ -403,67 +400,6 @@ test('sync.a-conflict-reply-gives-every-version-of-the-conflicted-record-and-ask
     await assert.rejects(
       readResourceText(ana.spawned, `logbook://conflict/${unrelatedBlob}`),
       'logbook://conflict must serve only the versions the current conflict names'
-    )
-  })
-})
-
-test('sync.names-the-unparseable-record-to-the-operator', async () => {
-  await withTwoSpawnedClones(async (ana, ben) => {
-    const openedA = await callTool(ana, 'open_thread', {
-      title: 'a thread ana pushes before the bad record arrives',
-      slug: 'unparseable-record-thread-a',
-      active_goal: 'exercise the unparseable-record fixture',
-      next_step: 'exercise the unparseable-record fixture',
-      completion_criteria: [
-        { text: 'a criterion for the unparseable-record scenario', check: 'the unparseable-record scenario check', settledness: 'proposed' }
-      ]
-    })
-    assertOkResult('open_thread (ana, thread a)', openedA)
-
-    const anaInitialPush = await callTool(ana, 'sync_ledger', {})
-    assertOkResult('sync_ledger (ana initial push)', anaInitialPush)
-
-    const benFastForward = await callTool(ben, 'sync_ledger', {})
-    assertOkResult('sync_ledger (ben initial fast-forward)', benFastForward)
-
-    const badRelPath = 'decisions/not-a-valid-decision-record.json'
-    const rawWrite = writeRecords(
-      runtimeOf(ben),
-      layoutOf(ben),
-      [{ kind: 'raw', relPath: badRelPath, content: '{"this is not a valid decision record":true}' }],
-      'ben: record a decision the schema will reject'
-    )
-    assert.equal(rawWrite.ok, true, 'the fixture must be able to seed a record this version cannot parse')
-
-    const benPushesBadRecord = await callTool(ben, 'sync_ledger', {})
-    assertOkResult('sync_ledger (ben pushes the unparseable record)', benPushesBadRecord)
-
-    const openedB = await callTool(ana, 'open_thread', {
-      title: 'a thread ana opens so her next sync must merge',
-      slug: 'unparseable-record-thread-b',
-      active_goal: 'exercise the unparseable-record fixture',
-      next_step: 'exercise the unparseable-record fixture',
-      completion_criteria: [
-        { text: 'a criterion that makes ana diverge from the shared copy', check: 'the divergence scenario check', settledness: 'proposed' }
-      ]
-    })
-    assertOkResult('open_thread (ana, thread b)', openedB)
-
-    const anaMerge = await callTool(ana, 'sync_ledger', {})
-    const operatorText = refusalTextOf('sync_ledger (ana, merging the unparseable record)', anaMerge)
-
-    assert.ok(
-      operatorText.includes(badRelPath),
-      `the operator must be told which record file could not be parsed: expected the text to name ${badRelPath}, but it read:\n${operatorText}`
-    )
-    assert.ok(
-      /^retryable: false$/m.test(operatorText),
-      `retrying the same call cannot fix bytes that live on the shared copy, so the operator must be told the refusal is not retryable: expected a line reading "retryable: false", but the text read:\n${operatorText}`
-    )
-    assert.equal(
-      /\bpush\b[^\n]*\brejected\b/i.test(operatorText),
-      false,
-      `no push was attempted on this path, so the operator must not be told a push was rejected, but the text read:\n${operatorText}`
     )
   })
 })

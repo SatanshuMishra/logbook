@@ -21,6 +21,7 @@ import type { Classified } from '../support/census.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { openStore } from '../../src/store/records.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
+import { writeConflictState } from '../../src/merge/conflict-state.ts'
 import { SESSION_FIRST_LINE_ENTRIES_MAX } from '../../src/server/resource-render.ts'
 
 type ThreadDetailIds = { threadId: string; criterionIds: string[]; riskIds: string[] }
@@ -75,7 +76,24 @@ const parseIndexShapes = (indexBody: string): string[] =>
       return separatorIndex === -1 ? line : line.slice(0, separatorIndex)
     })
 
-const resolveShapeToUri = (shape: string, ids: SeededIds): string | null => {
+const plantConflictOnThread = (repo: string, pluginData: string, threadId: string): string => {
+  const rt = testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: pluginData } })
+  const layout = layoutFor(rt, repo)
+  if (!layout.ok) throw new Error('resources: layoutFor refused while planting a conflict')
+  const threadPath = `threads/${threadId}.json`
+  const blob = rawGit(repo, ['rev-parse', `${LEDGER_REF}:${threadPath}`]).stdout.trim()
+  const commit = rawGit(repo, ['rev-parse', LEDGER_REF]).stdout.trim()
+  const written = writeConflictState(layout.value, {
+    local_commit: commit,
+    remote_commit: commit,
+    paths: [{ path: threadPath, base_blob: null, local_blob: blob, remote_blob: blob }]
+  })
+  if (!written.ok) throw new Error(`resources: could not plant a conflict: ${written.detail}`)
+  return blob
+}
+
+const resolveShapeToUri = (shape: string, ids: SeededIds & { conflictBlobId: string }): string | null => {
+  if (shape === 'logbook://conflict/{blob_id}') return `logbook://conflict/${ids.conflictBlobId}`
   if (shape === 'logbook://index') return 'logbook://index'
   if (shape === 'logbook://roster') return 'logbook://roster'
   if (shape === 'logbook://thread/{id}') return `logbook://thread/${ids.threadId}`
@@ -99,7 +117,8 @@ const readIndexBody = async (spawned: SpawnedServer): Promise<string> => {
 test('resource.index-addresses-resolve', async () => {
   await withFixture(async (fx) => {
     await fx.spawned.client.listTools()
-    const ids = await seedStore(fx.spawned)
+    const seeded = await seedStore(fx.spawned)
+    const ids = { ...seeded, conflictBlobId: plantConflictOnThread(fx.repo, fx.pluginData, seeded.threadId) }
 
     const indexBody = await readIndexBody(fx.spawned)
     const shapes = parseIndexShapes(indexBody)
@@ -195,7 +214,8 @@ const assertSnapshotsIdentical = (before: StoreSnapshot, after: StoreSnapshot): 
 test('resource.read-is-pure', async () => {
   await withFixture(async (fx) => {
     await fx.spawned.client.listTools()
-    const ids = await seedStore(fx.spawned)
+    const seeded = await seedStore(fx.spawned)
+    const ids = { ...seeded, conflictBlobId: plantConflictOnThread(fx.repo, fx.pluginData, seeded.threadId) }
 
     const rt = testRuntime({
       env: { HOME: fx.homeDir, PATH: process.env.PATH, CLAUDE_PLUGIN_DATA: fx.pluginData },

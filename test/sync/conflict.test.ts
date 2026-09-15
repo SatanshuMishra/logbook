@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 import { BindingRecord, type Binding } from '../../src/schema/binding.ts'
@@ -7,11 +9,10 @@ import { git } from '../../src/store/git.ts'
 import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { readAllRecordFiles } from '../../src/store/read-path.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
-import { sync } from '../../src/merge/sync.ts'
-import { rejectedRefusal } from '../../src/server/tools/sync_ledger.ts'
+import { sync, type SyncOutcome } from '../../src/merge/sync.ts'
+import type { ConflictState } from '../../src/merge/conflict.ts'
 import { writeRecords, type RecordChange } from '../../src/store/write-path.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
-import * as caps from '../../src/schema/caps.ts'
 import type { Teammate } from '../support/clone-fixture.ts'
 import { withTwoClones } from '../support/clone-fixture.ts'
 
@@ -45,6 +46,48 @@ const makeThread = (rt: Runtime, slug: string): Extract<RecordChange, { kind: 't
   }
 })
 
+const ledgerCommit = (rt: Runtime, repo: string): string => {
+  const result = git(rt, repo, ['rev-parse', LEDGER_REF])
+  assert.equal(result.ok, true, `expected ${LEDGER_REF} to resolve in ${repo}`)
+  return result.ok ? result.stdout.trim() : ''
+}
+
+const blobText = (rt: Runtime, repo: string, blob: string | null): string => {
+  assert.ok(blob !== null, 'expected a blob id, not an absent side')
+  const result = git(rt, repo, ['cat-file', '-p', blob])
+  assert.equal(result.ok, true, `expected blob ${blob} to be readable`)
+  return result.ok ? result.stdout : ''
+}
+
+const conflictStateOf = (outcome: SyncOutcome): ConflictState => {
+  assert.equal(outcome.ok, false, `expected a conflict, got ${JSON.stringify(outcome)}`)
+  if (outcome.ok || outcome.reason !== 'conflict') throw new Error(`expected a conflict outcome, got ${JSON.stringify(outcome)}`)
+  return outcome.state
+}
+
+const editNextStep = (teammate: Teammate, threadId: string, nextStep: string): RecordChange => {
+  const slot = teammate.store.readThread(threadId)
+  if (slot === null || slot.quarantined) throw new Error(`expected ${teammate.name} to read thread ${threadId}`)
+  return {
+    kind: 'thread',
+    record: { ...slot.record, spine: { ...slot.record.spine, next_step: nextStep }, updated_at: teammate.rt.now() }
+  }
+}
+
+const divergeOnNextStep = (ana: Teammate, ben: Teammate, slug: string): string => {
+  const anaLayout = layoutIn(ana)
+  const benLayout = layoutIn(ben)
+  const original = makeThread(ana.rt, slug)
+  assert.equal(ana.store.commit([original], `ana: create ${slug}`).ok, true)
+  assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+  assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+  assert.equal(ben.store.commit([editNextStep(ben, original.record.id, 'ben changed the next step')], 'ben: change next step').ok, true)
+  assert.equal(ana.store.commit([editNextStep(ana, original.record.id, 'ana changed the next step')], 'ana: change next step').ok, true)
+  const anaPush = sync(ana.rt, ana.store, anaLayout)
+  assert.equal(anaPush.ok, true)
+  return original.record.id
+}
+
 test('sync.offline-is-an-error', () => {
   withTwoClones((ana, _ben, _remote) => {
     const layout = layoutIn(ana)
@@ -62,144 +105,130 @@ test('sync.offline-is-an-error', () => {
 
 test('sync.conflict-refuses', () => {
   withTwoClones((ana, ben, remote) => {
-    const anaLayout = layoutIn(ana)
     const benLayout = layoutIn(ben)
+    const threadId = divergeOnNextStep(ana, ben, 'shared-thread')
+    const threadPath = `threads/${threadId}.json`
 
-    const original = makeThread(ana.rt, 'shared-thread')
-    const created = ana.store.commit([original], 'ana: create shared thread')
-    assert.equal(created.ok, true)
+    const remoteBefore = ledgerCommit(ben.rt, remote)
+    const localBefore = ledgerCommit(ben.rt, ben.repo)
 
-    const firstAnaSync = sync(ana.rt, ana.store, anaLayout)
-    assert.equal(firstAnaSync.ok, true)
+    const state = conflictStateOf(sync(ben.rt, ben.store, benLayout))
 
-    const firstBenSync = sync(ben.rt, ben.store, benLayout)
-    assert.equal(firstBenSync.ok, true)
-    if (!firstBenSync.ok) return
-    assert.equal(firstBenSync.action, 'fast-forwarded')
+    assert.deepEqual(state.paths.map((entry) => entry.path), [threadPath], 'git merges whole files, so the thread both changed is the conflict')
+    const [entry] = state.paths
+    if (entry === undefined) return
+    assert.equal(JSON.parse(blobText(ben.rt, ben.repo, entry.base_blob)).spine.next_step, 'original next step')
+    assert.equal(JSON.parse(blobText(ben.rt, ben.repo, entry.local_blob)).spine.next_step, 'ben changed the next step')
+    assert.equal(JSON.parse(blobText(ben.rt, ben.repo, entry.remote_blob)).spine.next_step, 'ana changed the next step')
+    assert.equal(state.local_commit, localBefore)
+    assert.equal(state.remote_commit, remoteBefore)
 
-    const benSlot = ben.store.readThread(original.record.id)
-    assert.ok(benSlot !== null && !benSlot.quarantined)
-    if (benSlot === null || benSlot.quarantined) return
-    const benEdit: RecordChange = {
-      kind: 'thread',
-      record: {
-        ...benSlot.record,
-        spine: { ...benSlot.record.spine, next_step: 'ben changed the next step' },
-        updated_at: ben.rt.now()
-      }
-    }
-    const benCommit = ben.store.commit([benEdit], 'ben: change next step')
-    assert.equal(benCommit.ok, true)
-
-    const anaSlot = ana.store.readThread(original.record.id)
-    assert.ok(anaSlot !== null && !anaSlot.quarantined)
-    if (anaSlot === null || anaSlot.quarantined) return
-    const anaEdit: RecordChange = {
-      kind: 'thread',
-      record: {
-        ...anaSlot.record,
-        spine: { ...anaSlot.record.spine, next_step: 'ana changed the next step' },
-        updated_at: ana.rt.now()
-      }
-    }
-    const anaCommit = ana.store.commit([anaEdit], 'ana: change next step')
-    assert.equal(anaCommit.ok, true)
-
-    const secondAnaSync = sync(ana.rt, ana.store, anaLayout)
-    assert.equal(secondAnaSync.ok, true)
-    if (!secondAnaSync.ok) return
-    assert.equal(secondAnaSync.action, 'pushed')
-
-    const remoteBeforeBenSync = git(ben.rt, remote, ['rev-parse', 'refs/logbook/ledger'])
-    assert.equal(remoteBeforeBenSync.ok, true)
-
-    const secondBenSync = sync(ben.rt, ben.store, benLayout)
-
-    assert.equal(secondBenSync.ok, false)
-    if (secondBenSync.ok) return
-    assert.equal(secondBenSync.reason, 'conflict')
-    const nextStepConflict = secondBenSync.conflicts.find((c) => c.field === 'spine.next_step')
-    assert.ok(nextStepConflict !== undefined)
-    assert.equal(nextStepConflict?.ours, 'ben changed the next step')
-    assert.equal(nextStepConflict?.theirs, 'ana changed the next step')
-
-    const benSlotAfter = ben.store.readThread(original.record.id)
+    const benSlotAfter = ben.store.readThread(threadId)
     assert.ok(benSlotAfter !== null && !benSlotAfter.quarantined)
     if (benSlotAfter === null || benSlotAfter.quarantined) return
     assert.equal(benSlotAfter.record.spine.next_step, 'ben changed the next step')
+    assert.equal(ledgerCommit(ben.rt, ben.repo), localBefore, 'a conflict must write nothing locally')
+    assert.equal(ledgerCommit(ben.rt, remote), remoteBefore, 'a conflict must push nothing')
 
-    const anaSlotAfter = ana.store.readThread(original.record.id)
-    assert.ok(anaSlotAfter !== null && !anaSlotAfter.quarantined)
-    if (anaSlotAfter === null || anaSlotAfter.quarantined) return
-    assert.equal(anaSlotAfter.record.spine.next_step, 'ana changed the next step')
-
-    const remoteAfterBenSync = git(ben.rt, remote, ['rev-parse', 'refs/logbook/ledger'])
-    assert.equal(remoteAfterBenSync.ok, true)
-    if (!remoteBeforeBenSync.ok || !remoteAfterBenSync.ok) return
-    assert.equal(remoteAfterBenSync.stdout.trim(), remoteBeforeBenSync.stdout.trim())
-
-    const conflictsFile = readFileSync(path.join(benLayout.state, 'conflicts.json'), 'utf8')
-    const storedConflicts = JSON.parse(conflictsFile) as unknown[]
-    assert.equal(storedConflicts.length, secondBenSync.conflicts.length)
+    assert.deepEqual(JSON.parse(readFileSync(path.join(benLayout.state, 'conflicts.json'), 'utf8')), state)
   })
 })
 
-test('sync.refuses-a-remote-record-it-cannot-parse', () => {
+test('sync.a-project-merge-setting-cannot-merge-a-conflicted-record-silently', () => {
+  withTwoClones((ana, ben, _remote) => {
+    const benLayout = layoutIn(ben)
+    const threadId = divergeOnNextStep(ana, ben, 'union-attribute-thread')
+
+    const infoDir = path.join(ben.repo, '.git', 'info')
+    mkdirSync(infoDir, { recursive: true })
+    writeFileSync(path.join(infoDir, 'attributes'), '*.json merge=union\n')
+
+    const localBefore = ledgerCommit(ben.rt, ben.repo)
+    const outcome = sync(ben.rt, ben.store, benLayout)
+
+    assert.equal(
+      outcome.ok,
+      false,
+      `a merge=union attribute makes git merge both one-line records into one file, which must be reported for review rather than stored: ${JSON.stringify(outcome)}`
+    )
+    const state = conflictStateOf(outcome)
+    assert.deepEqual(state.paths.map((entry) => entry.path), [`threads/${threadId}.json`])
+    assert.equal(ledgerCommit(ben.rt, ben.repo), localBefore, 'nothing a project setting merged may reach the ledger')
+  })
+})
+
+test('sync.merges-a-remote-record-this-version-cannot-parse', () => {
   withTwoClones((ana, ben, remote) => {
     const anaLayout = layoutIn(ana)
     const benLayout = layoutIn(ben)
 
-    const threadA = makeThread(ana.rt, 'thread-a')
-    const createA = ana.store.commit([threadA], 'ana: create thread a')
-    assert.equal(createA.ok, true)
+    assert.equal(ana.store.commit([makeThread(ana.rt, 'thread-a')], 'ana: create thread a').ok, true)
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
 
-    const pushA = sync(ana.rt, ana.store, anaLayout)
-    assert.equal(pushA.ok, true)
-
-    const fastForwardBen = sync(ben.rt, ben.store, benLayout)
-    assert.equal(fastForwardBen.ok, true)
-
-    const badDecisionId = 'not-a-valid-decision-record'
-    const badRelPath = `decisions/${badDecisionId}.json`
+    const badRelPath = 'decisions/not-a-valid-decision-record.json'
     const malformedContent = '{"this is not a valid decision record":true}'
-    const rawWrite = writeRecords(
-      ben.rt,
-      benLayout,
-      [{ kind: 'raw', relPath: badRelPath, content: malformedContent }],
-      'ben: record a decision the schema will reject'
+    assert.equal(
+      writeRecords(ben.rt, benLayout, [{ kind: 'raw', relPath: badRelPath, content: malformedContent }], 'ben: record a decision the schema will reject').ok,
+      true
     )
-    assert.equal(rawWrite.ok, true)
-
-    const pushBadDecision = sync(ben.rt, ben.store, benLayout)
-    assert.equal(pushBadDecision.ok, true)
-    if (!pushBadDecision.ok) return
-    assert.equal(pushBadDecision.action, 'pushed')
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
 
     const threadB = makeThread(ana.rt, 'thread-b')
-    const createB = ana.store.commit([threadB], 'ana: create thread b')
-    assert.equal(createB.ok, true)
-
-    const anaRefBefore = git(ana.rt, ana.repo, ['rev-parse', LEDGER_REF])
-    assert.equal(anaRefBefore.ok, true)
-    if (!anaRefBefore.ok) return
+    assert.equal(ana.store.commit([threadB], 'ana: create thread b').ok, true)
 
     const mergeOutcome = sync(ana.rt, ana.store, anaLayout)
 
-    assert.equal(mergeOutcome.ok, false, 'a merge carrying remote bytes this version cannot parse must be refused')
-    if (mergeOutcome.ok) return
-    assert.equal(mergeOutcome.reason, 'unparseable')
-    if (mergeOutcome.reason !== 'unparseable') return
-    assert.deepEqual(mergeOutcome.records, [badRelPath])
+    assert.equal(mergeOutcome.ok, true, `git merges bytes, so a record this version cannot parse must not stop the merge: ${JSON.stringify(mergeOutcome)}`)
+    if (!mergeOutcome.ok) return
+    assert.equal(mergeOutcome.action, 'merged')
+    const merged = git(ana.rt, ana.repo, ['cat-file', '-p', `${LEDGER_REF}:${badRelPath}`])
+    assert.ok(merged.ok && merged.stdout === malformedContent, 'the record must be kept byte for byte in the merged ledger')
+    const pushed = git(ana.rt, remote, ['cat-file', '-p', `${LEDGER_REF}:threads/${threadB.record.id}.json`])
+    assert.equal(pushed.ok, true, "ana's own new thread must reach the shared copy")
+    const readBack = ana.store.readThread(threadB.record.id)
+    assert.ok(readBack !== null && !readBack.quarantined, "the unparseable record must not stop ana's other records being read")
+  })
+})
 
-    const anaRefAfter = git(ana.rt, ana.repo, ['rev-parse', LEDGER_REF])
-    assert.equal(anaRefAfter.ok, true)
-    if (!anaRefAfter.ok) return
-    assert.equal(anaRefAfter.stdout.trim(), anaRefBefore.stdout.trim(), 'the refused merge must not advance the local ledger ref')
+test('sync.merges-over-a-record-this-clone-cannot-parse-and-keeps-its-bytes', () => {
+  withTwoClones((ana, ben, remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
 
-    const remoteRecordContent = git(ana.rt, remote, ['cat-file', '-p', `${LEDGER_REF}:${badRelPath}`])
-    assert.equal(remoteRecordContent.ok, true, 'the refusal must leave the remote copy of the record intact')
-    if (!remoteRecordContent.ok) return
-    assert.equal(remoteRecordContent.stdout, malformedContent)
+    const threadA = makeThread(ana.rt, 'local-bad-thread-a')
+    assert.equal(ana.store.commit([threadA], 'ana: create thread a').ok, true)
+    const decisionId = ana.rt.ulid()
+    const badRelPath = `decisions/${decisionId}.json`
+    const validDecision = JSON.stringify({
+      id: decisionId,
+      thread_id: threadA.record.id,
+      title: 'a decision both clones hold',
+      context: 'shared before either clone changed it',
+      options: ['one', 'two'],
+      outcome: 'one',
+      commit: null,
+      supersedes: [],
+      created_at: ana.rt.now()
+    })
+    assert.equal(writeRecords(ana.rt, anaLayout, [{ kind: 'raw', relPath: badRelPath, content: validDecision }], 'ana: record a decision').ok, true)
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    assert.equal(ben.store.commit([makeThread(ben.rt, 'local-bad-thread-c')], 'ben: create thread c').ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    const malformedContent = '{"this is not a valid decision record":true}'
+    assert.equal(
+      writeRecords(ana.rt, anaLayout, [{ kind: 'raw', relPath: badRelPath, content: malformedContent }], 'ana: overwrite the shared decision with bytes the schema rejects').ok,
+      true
+    )
+
+    const mergeOutcome = sync(ana.rt, ana.store, anaLayout)
+
+    assert.equal(mergeOutcome.ok, true, `a record this clone cannot parse must not stop the merge: ${JSON.stringify(mergeOutcome)}`)
+    const pushed = git(ana.rt, remote, ['cat-file', '-p', `${LEDGER_REF}:${badRelPath}`])
+    assert.ok(pushed.ok && pushed.stdout === malformedContent, "the record ana holds must reach the shared copy byte for byte, not be dropped by the merge")
   })
 })
 
@@ -267,215 +296,77 @@ test('sync.a-merge-carries-a-remote-only-binding-record-through', () => {
 
     const carriedSlots = readAllRecordFiles<Binding>(path.join(anaLayout.records, 'bindings'), BindingRecord)
     const carriedSlot = carriedSlots.find((slot) => !slot.quarantined && slot.record.id === bindingId)
-    assert.ok(
-      carriedSlot !== undefined && !carriedSlot.quarantined,
-      'the carried binding record must have passed the binding schema the merge validates against'
-    )
+    assert.ok(carriedSlot !== undefined && !carriedSlot.quarantined, 'the carried binding record must read back as a binding')
   })
 })
 
-test('sync.refuses-a-remote-binding-record-it-cannot-parse', () => {
-  withTwoClones((ana, ben, remote) => {
-    const anaLayout = layoutIn(ana)
-    const benLayout = layoutIn(ben)
+const withGitReportingVersion = <T>(version: string, fn: (withOldGit: (rt: Runtime) => Runtime) => T): T => {
+  const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim()
+  assert.ok(realGit.length > 0, 'expected a git on PATH to stand behind the version shim')
+  const shimDir = mkdtempSync(path.join(tmpdir(), 'logbook-old-git-'))
+  const shim = path.join(shimDir, 'git')
+  writeFileSync(shim, `#!/bin/sh\nif [ "$3" = "version" ]; then echo "git version ${version}"; exit 0; fi\nexec "${realGit}" "$@"\n`)
+  chmodSync(shim, 0o755)
+  try {
+    return fn((rt) => ({ ...rt, env: { ...rt.env, PATH: `${shimDir}${path.delimiter}${process.env.PATH ?? ''}` } }))
+  } finally {
+    rmSync(shimDir, { recursive: true, force: true })
+  }
+}
 
-    const threadA = makeThread(ana.rt, 'malformed-binding-thread-a')
-    const createA = ana.store.commit([threadA], 'ana: create thread a')
-    assert.equal(createA.ok, true)
-
-    const pushA = sync(ana.rt, ana.store, anaLayout)
-    assert.equal(pushA.ok, true)
-
-    const fastForwardBen = sync(ben.rt, ben.store, benLayout)
-    assert.equal(fastForwardBen.ok, true)
-
-    const bindingId = ben.rt.ulid()
-    const bindingRelPath = `bindings/${bindingId}.json`
-    const malformedContent = '{"id":"not-a-ulid"}'
-    const bindingWrite = writeRecords(
-      ben.rt,
-      benLayout,
-      [{ kind: 'raw', relPath: bindingRelPath, content: malformedContent }],
-      'ben: record a binding the schema will reject'
-    )
-    assert.equal(bindingWrite.ok, true)
-
-    const pushBadBinding = sync(ben.rt, ben.store, benLayout)
-    assert.equal(pushBadBinding.ok, true)
-    if (!pushBadBinding.ok) return
-    assert.equal(pushBadBinding.action, 'pushed')
-
-    const threadB = makeThread(ana.rt, 'malformed-binding-thread-b')
-    const createB = ana.store.commit([threadB], 'ana: create thread b')
-    assert.equal(createB.ok, true)
-
-    const anaRefBefore = git(ana.rt, ana.repo, ['rev-parse', LEDGER_REF])
-    assert.equal(anaRefBefore.ok, true)
-    if (!anaRefBefore.ok) return
-
-    const mergeOutcome = sync(ana.rt, ana.store, anaLayout)
-
-    assert.equal(mergeOutcome.ok, false, 'a merge carrying a remote binding record the schema rejects must be refused')
-    if (mergeOutcome.ok) return
-    assert.equal(mergeOutcome.reason, 'unparseable')
-    if (mergeOutcome.reason !== 'unparseable') return
-    assert.deepEqual(mergeOutcome.records, [bindingRelPath])
-
-    const anaRefAfter = git(ana.rt, ana.repo, ['rev-parse', LEDGER_REF])
-    assert.equal(anaRefAfter.ok, true)
-    if (!anaRefAfter.ok) return
-    assert.equal(anaRefAfter.stdout.trim(), anaRefBefore.stdout.trim(), 'the refused merge must not advance the local ledger ref')
-
-    const refusedRecordInRef = git(ana.rt, ana.repo, ['cat-file', '-p', `${LEDGER_REF}:${bindingRelPath}`])
-    assert.equal(refusedRecordInRef.ok, false, 'the malformed binding record must never reach the local ledger ref')
-
-    const localListing = git(ana.rt, ana.repo, ['ls-tree', '-r', '--name-only', LEDGER_REF])
-    assert.equal(localListing.ok, true)
-    if (!localListing.ok) return
-    assert.equal(
-      localListing.stdout.includes(bindingRelPath),
-      false,
-      'the malformed binding record must be absent from every path in the local ledger ref'
-    )
-
-    const remoteRecordContent = git(ana.rt, remote, ['cat-file', '-p', `${LEDGER_REF}:${bindingRelPath}`])
-    assert.equal(remoteRecordContent.ok, true, 'the refusal must leave the remote copy of the record intact')
-    if (!remoteRecordContent.ok) return
-    assert.equal(remoteRecordContent.stdout, malformedContent)
-  })
-})
-
-test('sync.a-merge-that-would-overflow-a-stored-cap-refuses-and-writes-nothing', () => {
+test('sync.below-git-2-38-only-a-merge-is-refused', () => {
   withTwoClones((ana, ben, _remote) => {
-    const anaLayout = layoutIn(ana)
-    const benLayout = layoutIn(ben)
+    withGitReportingVersion('2.34.1', (withOldGit) => {
+      const anaLayout = layoutIn(ana)
+      const benLayout = layoutIn(ben)
+      const anaOnOldGit = withOldGit(ana.rt)
+      const benOnOldGit = withOldGit(ben.rt)
 
-    const original = makeThread(ana.rt, 'union-overflow-thread')
-    const created = ana.store.commit([original], 'ana: create thread for the union-overflow probe')
-    assert.equal(created.ok, true)
+      assert.equal(ana.store.commit([makeThread(ana.rt, 'old-git-thread-a')], 'ana: create thread a').ok, true)
+      const push = sync(anaOnOldGit, ana.store, anaLayout)
+      assert.equal(push.ok, true, `a push needs no merge-tree and must work on an old git: ${JSON.stringify(push)}`)
+      const fastForward = sync(benOnOldGit, ben.store, benLayout)
+      assert.equal(fastForward.ok, true, `a fast-forward needs no merge-tree and must work on an old git: ${JSON.stringify(fastForward)}`)
 
-    const firstAnaSync = sync(ana.rt, ana.store, anaLayout)
-    assert.equal(firstAnaSync.ok, true)
+      assert.equal(ben.store.commit([makeThread(ben.rt, 'old-git-thread-c')], 'ben: create thread c').ok, true)
+      assert.equal(sync(benOnOldGit, ben.store, benLayout).ok, true)
+      assert.equal(ana.store.commit([makeThread(ana.rt, 'old-git-thread-b')], 'ana: create thread b').ok, true)
 
-    const firstBenSync = sync(ben.rt, ben.store, benLayout)
-    assert.equal(firstBenSync.ok, true)
+      const localBefore = ledgerCommit(ana.rt, ana.repo)
+      const refused = sync(anaOnOldGit, ana.store, anaLayout)
+      assert.equal(refused.ok, false)
+      if (refused.ok) return
+      assert.equal(refused.reason, 'git-too-old', JSON.stringify(refused))
+      if (refused.reason !== 'git-too-old') return
+      assert.equal(refused.found, '2.34.1')
+      assert.equal(ledgerCommit(ana.rt, ana.repo), localBefore, 'a refused merge must write nothing')
 
-    const benSlot = ben.store.readThread(original.record.id)
-    assert.ok(benSlot !== null && !benSlot.quarantined)
-    if (benSlot === null || benSlot.quarantined) return
-    const benOutOfScope = Array.from({ length: caps.OUT_OF_SCOPE_MAX_ELEMENTS }, (_, i) => ({
-      id: ben.rt.ulid(),
-      text: `ben out-of-scope ${i}`
-    }))
-    const benEdit: RecordChange = {
-      kind: 'thread',
-      record: {
-        ...benSlot.record,
-        spine: { ...benSlot.record.spine, out_of_scope: benOutOfScope },
-        updated_at: ben.rt.now()
-      }
-    }
-    const benCommit = ben.store.commit([benEdit], 'ben: fill out-of-scope to the stored cap')
-    assert.equal(benCommit.ok, true)
-
-    const anaSlot = ana.store.readThread(original.record.id)
-    assert.ok(anaSlot !== null && !anaSlot.quarantined)
-    if (anaSlot === null || anaSlot.quarantined) return
-    const anaOutOfScope = Array.from({ length: caps.OUT_OF_SCOPE_MAX_ELEMENTS }, (_, i) => ({
-      id: ana.rt.ulid(),
-      text: `ana out-of-scope ${i}`
-    }))
-    const anaEdit: RecordChange = {
-      kind: 'thread',
-      record: {
-        ...anaSlot.record,
-        spine: { ...anaSlot.record.spine, out_of_scope: anaOutOfScope },
-        updated_at: ana.rt.now()
-      }
-    }
-    const anaCommit = ana.store.commit([anaEdit], 'ana: fill out-of-scope to the stored cap with disjoint ids')
-    assert.equal(anaCommit.ok, true)
-
-    const secondAnaSync = sync(ana.rt, ana.store, anaLayout)
-    assert.equal(secondAnaSync.ok, true)
-    if (!secondAnaSync.ok) return
-    assert.equal(secondAnaSync.action, 'pushed')
-
-    const benRecordPath = path.join(benLayout.records, 'threads', `${original.record.id}.json`)
-    const benRecordBefore = readFileSync(benRecordPath, 'utf8')
-
-    const secondBenSync = sync(ben.rt, ben.store, benLayout)
-
-    assert.equal(secondBenSync.ok, false, 'a merge whose union overflows a stored array cap must be refused')
-    if (secondBenSync.ok) return
-    assert.equal(secondBenSync.reason, 'rejected')
-    if (secondBenSync.reason !== 'rejected') return
-    assert.equal(secondBenSync.cause, 'invalid-merged-record')
-    assert.equal(secondBenSync.field, 'spine.out_of_scope')
-
-    const benRecordAfter = readFileSync(benRecordPath, 'utf8')
-    assert.equal(benRecordAfter, benRecordBefore, 'a refused merge must leave the local record on disk untouched')
+      const merged = sync(ana.rt, ana.store, anaLayout)
+      assert.equal(merged.ok, true, `only the git version stopped the merge, so the real git must merge: ${JSON.stringify(merged)}`)
+    })
   })
 })
 
 test('sync.clears-a-stale-conflict-file-on-the-next-clean-sync', () => {
-  withTwoClones((ana, ben, remote) => {
-    const anaLayout = layoutIn(ana)
+  withTwoClones((ana, ben, _remote) => {
     const benLayout = layoutIn(ben)
+    const threadId = divergeOnNextStep(ana, ben, 'shared-thread-2')
 
-    const original = makeThread(ana.rt, 'shared-thread-2')
-    const created = ana.store.commit([original], 'ana: create shared thread 2')
-    assert.equal(created.ok, true)
-
-    const firstAnaSync = sync(ana.rt, ana.store, anaLayout)
-    assert.equal(firstAnaSync.ok, true)
-
-    const firstBenSync = sync(ben.rt, ben.store, benLayout)
-    assert.equal(firstBenSync.ok, true)
-
-    const benSlot = ben.store.readThread(original.record.id)
-    assert.ok(benSlot !== null && !benSlot.quarantined)
-    if (benSlot === null || benSlot.quarantined) return
-    const benEdit: RecordChange = {
-      kind: 'thread',
-      record: { ...benSlot.record, spine: { ...benSlot.record.spine, next_step: 'ben moved it' }, updated_at: ben.rt.now() }
-    }
-    assert.equal(ben.store.commit([benEdit], 'ben: change next step').ok, true)
-
-    const anaSlot = ana.store.readThread(original.record.id)
-    assert.ok(anaSlot !== null && !anaSlot.quarantined)
-    if (anaSlot === null || anaSlot.quarantined) return
-    const anaEdit: RecordChange = {
-      kind: 'thread',
-      record: { ...anaSlot.record, spine: { ...anaSlot.record.spine, next_step: 'ana moved it' }, updated_at: ana.rt.now() }
-    }
-    assert.equal(ana.store.commit([anaEdit], 'ana: change next step').ok, true)
-
-    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
-
-    const conflictingBenSync = sync(ben.rt, ben.store, benLayout)
-    assert.equal(conflictingBenSync.ok, false)
-    if (conflictingBenSync.ok) return
-    assert.equal(conflictingBenSync.reason, 'conflict')
-
+    const state = conflictStateOf(sync(ben.rt, ben.store, benLayout))
     const conflictsPath = path.join(benLayout.state, 'conflicts.json')
-    assert.equal((JSON.parse(readFileSync(conflictsPath, 'utf8')) as unknown[]).length > 0, true)
+    assert.equal(state.paths.length > 0, true)
+    assert.equal(existsSync(conflictsPath), true)
 
-    const benCurrentSlot = ben.store.readThread(original.record.id)
-    assert.ok(benCurrentSlot !== null && !benCurrentSlot.quarantined)
-    if (benCurrentSlot === null || benCurrentSlot.quarantined) return
-    const resolvedBenEdit: RecordChange = {
-      kind: 'thread',
-      record: {
-        ...benCurrentSlot.record,
-        spine: { ...benCurrentSlot.record.spine, next_step: 'ana moved it' },
-        updated_at: ben.rt.now()
-      }
-    }
-    assert.equal(ben.store.commit([resolvedBenEdit], "ben: resolve by adopting ana's next step").ok, true)
+    const anasRecord = git(ben.rt, ben.repo, ['cat-file', '-p', `${state.remote_commit}:threads/${threadId}.json`])
+    assert.equal(anasRecord.ok, true)
+    if (!anasRecord.ok) return
+    assert.equal(
+      writeRecords(ben.rt, benLayout, [{ kind: 'raw', relPath: `threads/${threadId}.json`, content: anasRecord.stdout }], "ben: take ana's record whole").ok,
+      true
+    )
 
     const cleanBenSync = sync(ben.rt, ben.store, benLayout)
-    assert.equal(cleanBenSync.ok, true)
+    assert.equal(cleanBenSync.ok, true, JSON.stringify(cleanBenSync))
 
     assert.equal(existsSync(conflictsPath), false)
   })
@@ -483,43 +374,10 @@ test('sync.clears-a-stale-conflict-file-on-the-next-clean-sync', () => {
 
 test('sync.a-failed-sync-leaves-a-pending-conflict-file-untouched', () => {
   withTwoClones((ana, ben, _remote) => {
-    const anaLayout = layoutIn(ana)
     const benLayout = layoutIn(ben)
+    divergeOnNextStep(ana, ben, 'shared-thread-3')
 
-    const original = makeThread(ana.rt, 'shared-thread-3')
-    const created = ana.store.commit([original], 'ana: create shared thread 3')
-    assert.equal(created.ok, true)
-
-    const firstAnaSync = sync(ana.rt, ana.store, anaLayout)
-    assert.equal(firstAnaSync.ok, true)
-
-    const firstBenSync = sync(ben.rt, ben.store, benLayout)
-    assert.equal(firstBenSync.ok, true)
-
-    const benSlot = ben.store.readThread(original.record.id)
-    assert.ok(benSlot !== null && !benSlot.quarantined)
-    if (benSlot === null || benSlot.quarantined) return
-    const benEdit: RecordChange = {
-      kind: 'thread',
-      record: { ...benSlot.record, spine: { ...benSlot.record.spine, next_step: 'ben moved it again' }, updated_at: ben.rt.now() }
-    }
-    assert.equal(ben.store.commit([benEdit], 'ben: change next step').ok, true)
-
-    const anaSlot = ana.store.readThread(original.record.id)
-    assert.ok(anaSlot !== null && !anaSlot.quarantined)
-    if (anaSlot === null || anaSlot.quarantined) return
-    const anaEdit: RecordChange = {
-      kind: 'thread',
-      record: { ...anaSlot.record, spine: { ...anaSlot.record.spine, next_step: 'ana moved it again' }, updated_at: ana.rt.now() }
-    }
-    assert.equal(ana.store.commit([anaEdit], 'ana: change next step').ok, true)
-
-    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
-
-    const conflictingBenSync = sync(ben.rt, ben.store, benLayout)
-    assert.equal(conflictingBenSync.ok, false)
-    if (conflictingBenSync.ok) return
-    assert.equal(conflictingBenSync.reason, 'conflict')
+    conflictStateOf(sync(ben.rt, ben.store, benLayout))
 
     const conflictsPath = path.join(benLayout.state, 'conflicts.json')
     const conflictsBefore = readFileSync(conflictsPath, 'utf8')
@@ -534,280 +392,5 @@ test('sync.a-failed-sync-leaves-a-pending-conflict-file-untouched', () => {
 
     const conflictsAfter = readFileSync(conflictsPath, 'utf8')
     assert.equal(conflictsAfter, conflictsBefore, 'a failed sync must leave the pending conflict file byte-identical')
-  })
-})
-
-test('sync.a-locally-quarantined-record-is-logged-not-silently-dropped', () => {
-  withTwoClones((ana, ben, _remote) => {
-    const anaLayout = layoutIn(ana)
-    const benLayout = layoutIn(ben)
-
-    const threadA = makeThread(ana.rt, 'local-quarantine-thread-a')
-    assert.equal(ana.store.commit([threadA], 'ana: create thread a').ok, true)
-    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
-    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
-
-    const threadC = makeThread(ben.rt, 'local-quarantine-thread-c')
-    assert.equal(ben.store.commit([threadC], 'ben: create thread c').ok, true)
-    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
-
-    const badRelPath = 'decisions/local-quarantine-not-a-valid-decision.json'
-    const rawWrite = writeRecords(
-      ana.rt,
-      anaLayout,
-      [{ kind: 'raw', relPath: badRelPath, content: '{"this is not a valid decision record":true}' }],
-      'ana: record a decision the schema will reject'
-    )
-    assert.equal(rawWrite.ok, true)
-
-    const events: Record<string, unknown>[] = []
-    const watchRt: Runtime = { ...ana.rt, log: (record) => { events.push(record) } }
-
-    const mergeOutcome = sync(watchRt, ana.store, anaLayout)
-    assert.equal(mergeOutcome.ok, true, 'a locally-quarantined record must not block the merge')
-
-    const quarantineLogs = events.filter((record) => record.event === 'sync.local-record-quarantined')
-    assert.equal(quarantineLogs.length, 1, 'the locally-quarantined decision must be named to the operator exactly once')
-    assert.equal(quarantineLogs[0]?.level, 'warn')
-    assert.equal(quarantineLogs[0]?.kind, 'decision')
-    assert.equal(typeof quarantineLogs[0]?.reason, 'string')
-  })
-})
-
-test('sync.refuses-to-merge-over-a-local-record-it-cannot-read-that-the-other-side-also-carries', () => {
-  withTwoClones((ana, ben, remote) => {
-    const anaLayout = layoutIn(ana)
-    const benLayout = layoutIn(ben)
-
-    const original = makeThread(ana.rt, 'unreadable-on-ben')
-    assert.equal(ana.store.commit([original], 'ana: create shared thread').ok, true)
-    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
-    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
-
-    const editNextStep = (teammate: Teammate, nextStep: string): RecordChange => {
-      const slot = teammate.store.readThread(original.record.id)
-      if (slot === null || slot.quarantined) throw new Error('expected the shared thread to be readable')
-      return {
-        kind: 'thread',
-        record: { ...slot.record, spine: { ...slot.record.spine, next_step: nextStep }, updated_at: teammate.rt.now() }
-      }
-    }
-    assert.equal(ben.store.commit([editNextStep(ben, 'ben changed the next step')], 'ben: change next step').ok, true)
-    assert.equal(ana.store.commit([editNextStep(ana, 'ana changed the next step')], 'ana: change next step').ok, true)
-    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
-
-    const remoteBefore = git(ben.rt, remote, ['rev-parse', 'refs/logbook/ledger'])
-    assert.equal(remoteBefore.ok, true)
-    const localBefore = git(ben.rt, ben.repo, ['rev-parse', LEDGER_REF])
-    assert.equal(localBefore.ok, true)
-
-    const relPath = path.join('threads', `${original.record.id}.json`)
-    const benThreadPath = path.join(benLayout.records, relPath)
-    const benThreadBytes = readFileSync(benThreadPath, 'utf8')
-    rmSync(benThreadPath)
-    mkdirSync(benThreadPath)
-    const outcome = sync(ben.rt, ben.store, benLayout)
-    rmSync(benThreadPath, { recursive: true })
-    writeFileSync(benThreadPath, benThreadBytes, 'utf8')
-
-    const localAfter = git(ben.rt, ben.repo, ['rev-parse', LEDGER_REF])
-    assert.equal(localAfter.ok, true)
-    const remoteAfter = git(ben.rt, remote, ['rev-parse', 'refs/logbook/ledger'])
-    assert.equal(remoteAfter.ok, true)
-    if (!localBefore.ok || !localAfter.ok || !remoteBefore.ok || !remoteAfter.ok) return
-    assert.equal(
-      localAfter.stdout.trim(),
-      localBefore.stdout.trim(),
-      "ben's ledger ref must not move to a merge computed without ben's unreadable copy"
-    )
-    assert.equal(remoteAfter.stdout.trim(), remoteBefore.stdout.trim(), 'nothing may be pushed')
-
-    const benCommitted = git(ben.rt, ben.repo, ['show', `${LEDGER_REF}:threads/${original.record.id}.json`])
-    assert.equal(benCommitted.ok, true)
-    if (!benCommitted.ok) return
-    assert.equal(JSON.parse(benCommitted.stdout).spine.next_step, 'ben changed the next step')
-
-    assert.equal(outcome.ok, false)
-    if (outcome.ok) return
-    assert.equal(outcome.reason, 'rejected')
-    if (outcome.reason !== 'rejected') return
-    assert.equal(outcome.cause, 'unreadable-local-record')
-    if (outcome.cause !== 'unreadable-local-record') return
-    assert.deepEqual(outcome.records, [{ relPath, reason: 'could not be read: EISDIR' }])
-
-    const refusal = rejectedRefusal(outcome)
-    assert.equal(refusal.retryable, true)
-    assert.ok(refusal.message.includes(`<${relPath}> (could not be read: EISDIR)`), refusal.message)
-    assert.ok(refusal.message.includes('nothing was merged and nothing was sent to origin'), refusal.message)
-  })
-})
-
-test('sync.refuses-to-merge-over-a-local-record-it-cannot-read-that-a-remote-file-under-another-name-would-overwrite', () => {
-  withTwoClones((ana, ben, remote) => {
-    const anaLayout = layoutIn(ana)
-    const benLayout = layoutIn(ben)
-
-    const seed = makeThread(ana.rt, 'misnamed-seed')
-    assert.equal(ana.store.commit([seed], 'ana: seed a shared thread').ok, true)
-    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
-    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
-
-    const benOnly = makeThread(ben.rt, 'ben-unpushed')
-    assert.equal(ben.store.commit([benOnly], 'ben: create a thread without pushing it').ok, true)
-
-    const misnamedRelPath = path.join('threads', `${ana.rt.ulid()}.json`)
-    const misnamedContent = JSON.stringify({
-      ...benOnly.record,
-      spine: { ...benOnly.record.spine, next_step: 'overwritten by the remote' }
-    })
-    const rawWrite = writeRecords(
-      ana.rt,
-      anaLayout,
-      [{ kind: 'raw', relPath: misnamedRelPath, content: misnamedContent }],
-      'ana: carry a copy of that thread under another file name'
-    )
-    assert.equal(rawWrite.ok, true)
-    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
-
-    const localBefore = git(ben.rt, ben.repo, ['rev-parse', LEDGER_REF])
-    const remoteBefore = git(ben.rt, remote, ['rev-parse', 'refs/logbook/ledger'])
-    assert.equal(localBefore.ok && remoteBefore.ok, true)
-
-    const relPath = path.join('threads', `${benOnly.record.id}.json`)
-    const benThreadPath = path.join(benLayout.records, relPath)
-    const benThreadBytes = readFileSync(benThreadPath, 'utf8')
-    rmSync(benThreadPath)
-    mkdirSync(benThreadPath)
-    const outcome = sync(ben.rt, ben.store, benLayout)
-    rmSync(benThreadPath, { recursive: true })
-    writeFileSync(benThreadPath, benThreadBytes, 'utf8')
-
-    const localAfter = git(ben.rt, ben.repo, ['rev-parse', LEDGER_REF])
-    const remoteAfter = git(ben.rt, remote, ['rev-parse', 'refs/logbook/ledger'])
-    if (!localBefore.ok || !remoteBefore.ok || !localAfter.ok || !remoteAfter.ok) throw new Error('expected both refs to read')
-    assert.equal(localAfter.stdout.trim(), localBefore.stdout.trim(), "ben's ledger ref must not move over his unreadable thread")
-    assert.equal(remoteAfter.stdout.trim(), remoteBefore.stdout.trim(), 'nothing may be pushed')
-
-    assert.equal(outcome.ok, false)
-    if (outcome.ok || outcome.reason !== 'rejected' || outcome.cause !== 'unreadable-local-record') {
-      throw new Error(`expected an unreadable-local-record refusal; received ${JSON.stringify(outcome)}`)
-    }
-    assert.deepEqual(outcome.records, [{ relPath, reason: 'could not be read: EISDIR' }])
-  })
-})
-
-test('sync.an-unparseable-ancestor-record-is-logged-not-silently-degraded', () => {
-  withTwoClones((ana, ben, _remote) => {
-    const anaLayout = layoutIn(ana)
-    const benLayout = layoutIn(ben)
-
-    const threadA = makeThread(ana.rt, 'ancestor-thread-a')
-    assert.equal(ana.store.commit([threadA], 'ana: create thread a').ok, true)
-    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
-    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
-
-    const badRelPath = 'decisions/ancestor-not-a-valid-decision.json'
-    const badWrite = writeRecords(
-      ana.rt,
-      anaLayout,
-      [{ kind: 'raw', relPath: badRelPath, content: '{"this is not a valid decision record":true}' }],
-      'ana: record a decision the schema will reject'
-    )
-    assert.equal(badWrite.ok, true)
-    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
-    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
-
-    const validDecisionContent = JSON.stringify({
-      id: ben.rt.ulid(),
-      thread_id: threadA.record.id,
-      title: 'a decision fixed on top of the ancestor',
-      context: 'the ancestor carried a record this version could not parse',
-      options: ['leave it broken', 'fix it'],
-      outcome: 'fix it',
-      commit: null,
-      supersedes: [],
-      created_at: ben.rt.now()
-    })
-    const fixWrite = writeRecords(
-      ben.rt,
-      benLayout,
-      [{ kind: 'raw', relPath: badRelPath, content: validDecisionContent }],
-      'ben: fix the previously unparseable decision'
-    )
-    assert.equal(fixWrite.ok, true)
-    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
-
-    const threadB = makeThread(ana.rt, 'ancestor-thread-b')
-    assert.equal(ana.store.commit([threadB], 'ana: create thread b').ok, true)
-
-    const events: Record<string, unknown>[] = []
-    const watchRt: Runtime = { ...ana.rt, log: (record) => { events.push(record) } }
-
-    const mergeOutcome = sync(watchRt, ana.store, anaLayout)
-    assert.equal(mergeOutcome.ok, true, 'an unparseable ancestor record must not block the merge')
-
-    const ancestorLogs = events.filter((record) => record.event === 'sync.ancestor-record-unparseable')
-    assert.equal(ancestorLogs.length, 1, 'the unparseable ancestor record must be named to the operator exactly once')
-    assert.equal(ancestorLogs[0]?.level, 'warn')
-    assert.equal(ancestorLogs[0]?.count, 1)
-    assert.deepEqual(ancestorLogs[0]?.records, [badRelPath])
-  })
-})
-
-test('sync.a-scratch-cleanup-failure-does-not-replace-the-merge-outcome', () => {
-  withTwoClones((ana, ben, _remote) => {
-    const anaLayout = layoutIn(ana)
-    const benLayout = layoutIn(ben)
-
-    const threadA = makeThread(ana.rt, 'cleanup-thread-a')
-    assert.equal(ana.store.commit([threadA], 'ana: create thread a').ok, true)
-    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
-    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
-
-    const threadC = makeThread(ben.rt, 'cleanup-thread-c')
-    assert.equal(ben.store.commit([threadC], 'ben: create thread c').ok, true)
-    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
-
-    const threadB = makeThread(ana.rt, 'cleanup-thread-b')
-    assert.equal(ana.store.commit([threadB], 'ana: create thread b').ok, true)
-
-    const removeScratch = (): void => {
-      throw new Error('scratch cleanup exploded')
-    }
-
-    const mergeOutcome = sync(ana.rt, ana.store, anaLayout, { removeScratch })
-
-    assert.equal(mergeOutcome.ok, true, 'a cleanup failure must not replace the merge outcome')
-    if (!mergeOutcome.ok) return
-    assert.equal(mergeOutcome.action, 'merged')
-  })
-})
-
-test('sync.does-not-swallow-a-non-enoent-sessions-directory-error', () => {
-  withTwoClones((ana, ben, _remote) => {
-    const anaLayout = layoutIn(ana)
-    const benLayout = layoutIn(ben)
-
-    const threadA = makeThread(ana.rt, 'thread-a')
-    assert.equal(ana.store.commit([threadA], 'ana: create thread a').ok, true)
-    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
-    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
-
-    const threadC = makeThread(ben.rt, 'thread-c')
-    assert.equal(ben.store.commit([threadC], 'ben: create thread c').ok, true)
-    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
-
-    const threadB = makeThread(ana.rt, 'thread-b')
-    assert.equal(ana.store.commit([threadB], 'ana: create thread b').ok, true)
-
-    const sessionsPath = path.join(anaLayout.records, 'sessions')
-    rmSync(sessionsPath, { recursive: true, force: true })
-    writeFileSync(sessionsPath, 'not a directory')
-
-    try {
-      assert.throws(() => sync(ana.rt, ana.store, anaLayout))
-    } finally {
-      rmSync(sessionsPath, { force: true })
-    }
   })
 })

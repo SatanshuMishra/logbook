@@ -28,7 +28,6 @@ import { listThreadsTool } from '../../src/server/tools/list_threads.ts'
 import { recordDecisionTool, invalidDecisionRefusal } from '../../src/server/tools/record_decision.ts'
 import { logSessionEventTool, invalidSessionEntryRefusal } from '../../src/server/tools/log_session_event.ts'
 import { syncLedgerTool } from '../../src/server/tools/sync_ledger.ts'
-import { writeRecords } from '../../src/store/write-path.ts'
 import {
   resolveConflictTool,
   unclassifiableRecordRefusal,
@@ -134,7 +133,7 @@ const LOG_SESSION_EVENT_HANDLER_PRODUCER: ProducerId = 'server/tools/log_session
 const SYNC_LEDGER_OFFLINE_PRODUCER: ProducerId = 'server/tools/sync_ledger.ts#offlineRefusal'
 const SYNC_LEDGER_REJECTED_PRODUCER: ProducerId = 'server/tools/sync_ledger.ts#rejectedRefusal'
 const SYNC_LEDGER_CONFLICT_PRODUCER: ProducerId = 'server/tools/sync_ledger.ts#conflictRefusal'
-const SYNC_LEDGER_UNPARSEABLE_PRODUCER: ProducerId = 'server/tools/sync_ledger.ts#unparseableRecordsRefusal'
+const SYNC_LEDGER_GIT_TOO_OLD_PRODUCER: ProducerId = 'server/tools/sync_ledger.ts#gitTooOldRefusal'
 const SYNC_LEDGER_HANDLER_PRODUCER: ProducerId = 'server/tools/sync_ledger.ts#syncLedgerTool.handler'
 
 const RESOLVE_CONFLICT_NO_CONFLICTS_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#noConflictsRefusal'
@@ -1006,41 +1005,41 @@ const collectSyncLedgerRejectedRefusal = async (): Promise<TaggedRefusal[]> => {
   return refusals
 }
 
-const UNPARSEABLE_FIXTURE_REL_PATH = 'decisions/a-record-this-version-cannot-read.json'
+const withGitReportingAnOldVersion = async <T>(fn: (onOldGit: (rt: Runtime) => Runtime) => Promise<T>): Promise<T> => {
+  const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim()
+  if (realGit.length === 0) throw new Error('expected a git on PATH to stand behind the old-version shim')
+  const shimDir = mkdtempSync(join(tmpdir(), 'logbook-old-git-'))
+  const shim = join(shimDir, 'git')
+  writeFileSync(shim, `#!/bin/sh\nif [ "$3" = "version" ]; then echo "git version 2.34.1"; exit 0; fi\nexec "${realGit}" "$@"\n`)
+  chmodSync(shim, 0o755)
+  try {
+    return await fn((rt) => ({ ...rt, env: { ...rt.env, PATH: `${shimDir}:${process.env.PATH ?? ''}` } }))
+  } finally {
+    rmSync(shimDir, { recursive: true, force: true })
+  }
+}
 
-const collectSyncLedgerUnparseableRefusal = async (): Promise<TaggedRefusal[]> => {
+const collectSyncLedgerGitTooOldRefusal = async (): Promise<TaggedRefusal[]> => {
   const refusals: TaggedRefusal[] = []
   await withTwoSyncFixtureRepos(async (ana, ben) => {
-    const seed = syncFixtureThread(ana.rt, 'sync-fixture-unparseable', 'sync fixture unparseable thread')
-    const created = ana.store.commit([{ kind: 'thread', record: seed }], 'ana: seed a thread for the unparseable probe')
-    if (!created.ok) throw new Error('expected the sync-unparseable fixture to seed a thread')
+    const seed = syncFixtureThread(ana.rt, 'sync-fixture-old-git', 'sync fixture old git thread')
+    if (!ana.store.commit([{ kind: 'thread', record: seed }], 'ana: seed a thread for the old-git probe').ok) {
+      throw new Error('expected the old-git fixture to seed a thread')
+    }
+    if (!(await syncLedgerTool.handler(ana.rt, STUB_TOOL_CTX, {})).ok) throw new Error('expected the old-git fixture to push the seed')
+    if (!(await syncLedgerTool.handler(ben.rt, STUB_TOOL_CTX, {})).ok) throw new Error('expected the old-git fixture to fast-forward ben')
 
-    const anaFirstSync = await syncLedgerTool.handler(ana.rt, STUB_TOOL_CTX, {})
-    if (!anaFirstSync.ok) throw new Error('expected the sync-unparseable fixture to push the seeded thread')
+    const bensThread = syncFixtureThread(ben.rt, 'sync-fixture-old-git-ben', 'sync fixture old git ben thread')
+    if (!ben.store.commit([{ kind: 'thread', record: bensThread }], 'ben: diverge').ok) throw new Error('expected ben to diverge')
+    if (!(await syncLedgerTool.handler(ben.rt, STUB_TOOL_CTX, {})).ok) throw new Error('expected ben to push his divergence')
+    const anasThread = syncFixtureThread(ana.rt, 'sync-fixture-old-git-ana', 'sync fixture old git ana thread')
+    if (!ana.store.commit([{ kind: 'thread', record: anasThread }], 'ana: diverge').ok) throw new Error('expected ana to diverge')
 
-    const benFirstSync = await syncLedgerTool.handler(ben.rt, STUB_TOOL_CTX, {})
-    if (!benFirstSync.ok) throw new Error('expected the sync-unparseable fixture to fast-forward ben')
-
-    const benLayout = layoutFor(ben.rt, ben.repo)
-    if (!benLayout.ok) throw new Error("expected layoutFor to resolve ben's sync fixture layout")
-    const seededBadRecord = writeRecords(
-      ben.rt,
-      benLayout.value,
-      [{ kind: 'raw', relPath: UNPARSEABLE_FIXTURE_REL_PATH, content: '{"this is not a valid decision record":true}' }],
-      'ben: write a record this version cannot read'
-    )
-    if (!seededBadRecord.ok) throw new Error('expected the sync-unparseable fixture to seed a record the schema rejects')
-
-    const benPush = await syncLedgerTool.handler(ben.rt, STUB_TOOL_CTX, {})
-    if (!benPush.ok) throw new Error('expected the sync-unparseable fixture to push the unreadable record')
-
-    const anaDiverges = syncFixtureThread(ana.rt, 'sync-fixture-unparseable-second', 'sync fixture unparseable second thread')
-    const diverged = ana.store.commit([{ kind: 'thread', record: anaDiverges }], 'ana: diverge so the next sync must merge')
-    if (!diverged.ok) throw new Error('expected the sync-unparseable fixture to diverge ana from the shared copy')
-
-    const anaMerge = await syncLedgerTool.handler(ana.rt, STUB_TOOL_CTX, {})
-    if (anaMerge.ok) throw new Error('expected syncLedgerTool to refuse when the shared copy carries a record it cannot read')
-    refusals.push({ producer: SYNC_LEDGER_UNPARSEABLE_PRODUCER, refusal: anaMerge.refusal })
+    await withGitReportingAnOldVersion(async (onOldGit) => {
+      const anaMerge = await syncLedgerTool.handler(onOldGit(ana.rt), STUB_TOOL_CTX, {})
+      if (anaMerge.ok) throw new Error('expected syncLedgerTool to refuse a merge on a git older than the merge-tree floor')
+      refusals.push({ producer: SYNC_LEDGER_GIT_TOO_OLD_PRODUCER, refusal: anaMerge.refusal })
+    })
   })
   return refusals
 }
@@ -1231,7 +1230,7 @@ const collectRealRefusals = async (): Promise<TaggedRefusal[]> => {
   refusals.push(...(await collectSyncLedgerConflictAndResolveCommitFailureRefusals()))
   refusals.push(...(await collectResolveConflictUnsafeDivergenceRefusal()))
   refusals.push(...(await collectSyncLedgerRejectedRefusal()))
-  refusals.push(...(await collectSyncLedgerUnparseableRefusal()))
+  refusals.push(...(await collectSyncLedgerGitTooOldRefusal()))
 
   return refusals
 }
@@ -1260,6 +1259,19 @@ test('error.discloses-no-path', async () => {
     { path: 'content[0].text', value: `leaked at ${SENTINEL_WIN32}`, declaredExample: '' }
   ]
   assert.throws(() => census(forbiddenWin32, classifyEmittedPath))
+
+  const publishedAddress: EmittedString[] = [
+    { path: 'content[0].text', value: `local: logbook://conflict/${'a'.repeat(40)}\n`, declaredExample: '' }
+  ]
+  assert.doesNotThrow(() => census(publishedAddress, classifyEmittedPath), 'a published logbook address is not a filesystem path')
+
+  const pathBehindTheScheme: EmittedString[] = [
+    { path: 'content[0].text', value: `local: logbook://conflict${SENTINEL_POSIX}`, declaredExample: '' }
+  ]
+  assert.throws(
+    () => census(pathBehindTheScheme, classifyEmittedPath),
+    'a filesystem path carried behind the logbook scheme must still be caught'
+  )
 })
 
 test('error.discloses-no-path.scan-population-matches-the-independently-derived-object-descent-domain', () => {

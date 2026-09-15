@@ -1,61 +1,32 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
-import { BindingRecord, type Binding } from '../schema/binding.ts'
-import { DecisionRecord, type Decision } from '../schema/decision.ts'
-import { SessionRecord, type SessionEntry } from '../schema/session.ts'
-import { ThreadRecord, type Thread } from '../schema/thread.ts'
 import { git } from '../store/git.ts'
 import type { StoreLayout } from '../store/layout.ts'
-import { materialiseTreeInto, plainUnsyncedWrite } from '../store/materialise-tree.ts'
-import {
-  countedMaterialiseGit,
-  countedMaterialiseGitBuffer,
-  discardScratchDir,
-  readAllRecordFiles,
-  syncWorkingCopy,
-  type Quarantined,
-  type SyncWorkingCopyOutcome
-} from '../store/read-path.ts'
+import { syncWorkingCopy, type SyncWorkingCopyOutcome } from '../store/read-path.ts'
 import { LEDGER_REF, casUpdateRef } from '../store/ref.ts'
-import { checkChangeShape, type Store } from '../store/records.ts'
-import { relativePathFor, writeRecords, type RecordChange } from '../store/write-path.ts'
-import { mergeDecision, mergeSession, mergeThread } from './field-merge.ts'
-import type { Conflict } from './conflict.ts'
+import type { Store } from '../store/records.ts'
+import { writeRecords } from '../store/write-path.ts'
+import type { ConflictPath, ConflictReportEntry, ConflictState } from './conflict.ts'
+import { clearConflictState, writeConflictState } from './conflict-state.ts'
+import { differingJsonPaths } from './json-differences.ts'
+import { checkGitVersion, mergeTree, recordsNotTakenWhole } from './merge-tree.ts'
 
 export type SyncAction = 'noop' | 'pushed' | 'pushed-unverified' | 'fast-forwarded' | 'merged'
 
-export type RejectedOutcome =
-  | { ok: false; reason: 'rejected'; cause: 'remote-rejected' | 'contention' | 'local'; detail: string }
-  | { ok: false; reason: 'rejected'; cause: 'invalid-merged-record'; detail: string; field: string }
-  | { ok: false; reason: 'rejected'; cause: 'unreadable-local-record'; detail: string; records: UnreadableLocalRecord[] }
+export type RejectedOutcome = { ok: false; reason: 'rejected'; cause: 'remote-rejected' | 'contention' | 'local'; detail: string }
 
 export type SyncOutcome =
   | { ok: true; action: SyncAction; ref: string; local_sha: string | null; remote_sha: string | null }
-  | { ok: false; reason: 'conflict'; conflicts: Conflict[] }
-  | { ok: false; reason: 'unparseable'; records: string[] }
+  | { ok: false; reason: 'conflict'; state: ConflictState; entries: ConflictReportEntry[] }
+  | { ok: false; reason: 'git-too-old'; found: string }
   | { ok: false; reason: 'offline'; detail: string }
   | RejectedOutcome
 
-export type SyncOps = { beforeCas?: () => void; removeScratch?: (rt: Runtime, dir: string) => void }
+export type SyncOps = { beforeCas?: () => void }
 
 const REMOTE_NAME = 'origin'
 export const TRACKING_REF = 'refs/logbook/sync/origin-ledger'
 const MAX_SYNC_ATTEMPTS = 5
 const LEASE_REJECTION_PATTERN = /stale info|non-fast-forward/
-
-type RecordSet = { threads: Map<string, Thread>; decisions: Map<string, Decision>; sessionsByThread: Map<string, SessionEntry[]> }
-
-type PassthroughFile = { relPath: string }
-
-type CarriedFile = { relPath: string; content: string }
-
-type ScratchRecordSet = RecordSet & { passthrough: PassthroughFile[]; carried: CarriedFile[] }
-
-type OursRecordSet = RecordSet & { unreadable: Quarantined[] }
-
-export type UnreadableLocalRecord = { relPath: string; reason: string }
 
 type AttemptOutcome =
   | { kind: 'return'; outcome: SyncOutcome }
@@ -94,259 +65,6 @@ const isAncestor = (rt: Runtime, repo: string, ancestor: string, descendant: str
 
 const isLeaseRejection = (stderr: string): boolean => LEASE_REJECTION_PATTERN.test(stderr)
 
-const safeDirNames = (dir: string): string[] => {
-  try {
-    return readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw error
-  }
-}
-
-const logLocalQuarantine = (rt: Runtime, kind: 'thread' | 'decision' | 'session', reason: string): void => {
-  rt.log({ level: 'warn', event: 'sync.local-record-quarantined', kind, reason })
-}
-
-const readOursRecordSet = (rt: Runtime, store: Store, layout: StoreLayout): OursRecordSet => {
-  const unreadable: Quarantined[] = []
-  const threads = new Map<string, Thread>()
-  for (const slot of store.readThreads()) {
-    if (slot.quarantined) {
-      logLocalQuarantine(rt, 'thread', slot.reason)
-      unreadable.push(slot)
-    } else {
-      threads.set(slot.record.id, slot.record)
-    }
-  }
-  const decisions = new Map<string, Decision>()
-  for (const slot of readAllRecordFiles<Decision>(path.join(layout.records, 'decisions'), DecisionRecord)) {
-    if (slot.quarantined) {
-      logLocalQuarantine(rt, 'decision', slot.reason)
-      unreadable.push(slot)
-    } else {
-      decisions.set(slot.record.id, slot.record)
-    }
-  }
-  const sessionsByThread = new Map<string, SessionEntry[]>()
-  for (const threadId of safeDirNames(path.join(layout.records, 'sessions'))) {
-    const entries: SessionEntry[] = []
-    for (const slot of store.readSessionEntries(threadId)) {
-      if (slot.quarantined) {
-        logLocalQuarantine(rt, 'session', slot.reason)
-        unreadable.push(slot)
-      } else {
-        entries.push(slot.record)
-      }
-    }
-    sessionsByThread.set(threadId, entries)
-  }
-  return { threads, decisions, sessionsByThread, unreadable }
-}
-
-const RECORD_TOP_LEVEL_DIRS = new Set(['threads', 'decisions', 'sessions'])
-const CARRIED_FORBIDDEN_SEGMENTS = new Set(['..', '.git'])
-
-const carriedPathIsSafe = (root: string, relPath: string): boolean => {
-  if (path.isAbsolute(relPath)) return false
-  if (relPath.split(path.sep).some((segment) => CARRIED_FORBIDDEN_SEGMENTS.has(segment))) return false
-  const resolved = path.resolve(root, relPath)
-  return resolved === path.join(root, relPath) && resolved.startsWith(root + path.sep)
-}
-
-const readDirEntriesOrEmpty = (dir: string) => {
-  try {
-    return readdirSync(dir, { withFileTypes: true })
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw error
-  }
-}
-
-const walkCarriedFiles = (rt: Runtime, root: string, dir: string, acc: CarriedFile[]): void => {
-  for (const entry of readDirEntriesOrEmpty(dir)) {
-    if (dir === root && entry.isDirectory() && RECORD_TOP_LEVEL_DIRS.has(entry.name)) continue
-    const absolutePath = path.join(dir, entry.name)
-    if (entry.isDirectory()) {
-      walkCarriedFiles(rt, root, absolutePath, acc)
-      continue
-    }
-    if (!entry.isFile()) continue
-    const relPath = path.relative(root, absolutePath)
-    if (!carriedPathIsSafe(root, relPath)) {
-      rt.log({ level: 'warn', event: 'sync.remote-file-not-carried', relPath, reason: 'the path is unsafe to carry' })
-      continue
-    }
-    let content: string
-    try {
-      content = readFileSync(absolutePath, 'utf8')
-    } catch (error) {
-      rt.log({
-        level: 'warn',
-        event: 'sync.remote-file-not-carried',
-        relPath,
-        reason: `could not be read: ${error instanceof Error ? error.message : String(error)}`
-      })
-      continue
-    }
-    acc.push({ relPath, content })
-  }
-}
-
-const readScratchRecordSet = (rt: Runtime, root: string): ScratchRecordSet => {
-  const passthrough: PassthroughFile[] = []
-  const captureQuarantined = (absolutePath: string): void => {
-    passthrough.push({ relPath: path.relative(root, absolutePath) })
-  }
-
-  const threads = new Map<string, Thread>()
-  for (const slot of readAllRecordFiles<Thread>(path.join(root, 'threads'), ThreadRecord)) {
-    if (slot.quarantined) {
-      captureQuarantined(slot.path)
-    } else {
-      threads.set(slot.record.id, slot.record)
-    }
-  }
-  const decisions = new Map<string, Decision>()
-  for (const slot of readAllRecordFiles<Decision>(path.join(root, 'decisions'), DecisionRecord)) {
-    if (slot.quarantined) {
-      captureQuarantined(slot.path)
-    } else {
-      decisions.set(slot.record.id, slot.record)
-    }
-  }
-  const sessionsByThread = new Map<string, SessionEntry[]>()
-  for (const threadId of safeDirNames(path.join(root, 'sessions'))) {
-    const entries: SessionEntry[] = []
-    for (const slot of readAllRecordFiles<SessionEntry>(path.join(root, 'sessions', threadId), SessionRecord)) {
-      if (slot.quarantined) {
-        captureQuarantined(slot.path)
-      } else {
-        entries.push(slot.record)
-      }
-    }
-    sessionsByThread.set(threadId, entries)
-  }
-  for (const slot of readAllRecordFiles<Binding>(path.join(root, 'bindings'), BindingRecord)) {
-    if (slot.quarantined) captureQuarantined(slot.path)
-  }
-  const carried: CarriedFile[] = []
-  walkCarriedFiles(rt, root, root, carried)
-  return { threads, decisions, sessionsByThread, passthrough, carried }
-}
-
-type MaterialiseResult = { ok: true; scratch: string } | { ok: false; detail: string }
-
-const materialiseRefToScratch = (rt: Runtime, layout: StoreLayout, ref: string): MaterialiseResult => {
-  const scratch = mkdtempSync(path.join(tmpdir(), 'logbook-sync-scratch-'))
-  const materialised = materialiseTreeInto(rt, layout.projectRoot, ref, scratch, {
-    runGit: countedMaterialiseGit,
-    runGitBuffer: countedMaterialiseGitBuffer,
-    write: plainUnsyncedWrite
-  })
-  if (!materialised.ok) {
-    rmSync(scratch, { recursive: true, force: true })
-    return { ok: false, detail: materialised.detail }
-  }
-  return { ok: true, scratch }
-}
-
-const computeMerge = (
-  ours: RecordSet,
-  theirs: RecordSet,
-  base: RecordSet | null
-): { changes: RecordChange[]; conflicts: Conflict[] } => {
-  const conflicts: Conflict[] = []
-  const changes: RecordChange[] = []
-
-  const threadIds = new Set([...ours.threads.keys(), ...theirs.threads.keys()])
-  for (const id of threadIds) {
-    const oursThread = ours.threads.get(id)
-    const theirsThread = theirs.threads.get(id)
-    if (oursThread !== undefined && theirsThread !== undefined) {
-      const baseThread = base?.threads.get(id) ?? null
-      const result = mergeThread(baseThread, oursThread, theirsThread)
-      if (result.ok) {
-        changes.push({ kind: 'thread', record: result.merged })
-      } else {
-        conflicts.push(...result.conflicts)
-      }
-    } else {
-      changes.push({ kind: 'thread', record: (oursThread ?? theirsThread) as Thread })
-    }
-  }
-
-  const decisionIds = new Set([...ours.decisions.keys(), ...theirs.decisions.keys()])
-  for (const id of decisionIds) {
-    const oursDecision = ours.decisions.get(id)
-    const theirsDecision = theirs.decisions.get(id)
-    if (oursDecision !== undefined && theirsDecision !== undefined) {
-      const result = mergeDecision(oursDecision, theirsDecision)
-      if (result.ok) {
-        changes.push({ kind: 'decision', record: result.merged })
-      } else {
-        conflicts.push(...result.conflicts)
-      }
-    } else {
-      changes.push({ kind: 'decision', record: (oursDecision ?? theirsDecision) as Decision })
-    }
-  }
-
-  const sessionThreadIds = new Set([...ours.sessionsByThread.keys(), ...theirs.sessionsByThread.keys()])
-  for (const threadId of sessionThreadIds) {
-    const oursEntries = ours.sessionsByThread.get(threadId) ?? []
-    const theirsEntries = theirs.sessionsByThread.get(threadId) ?? []
-    const result = mergeSession(oursEntries, theirsEntries)
-    if (result.ok) {
-      for (const entry of result.merged) {
-        changes.push({ kind: 'session', record: entry })
-      }
-    } else {
-      conflicts.push(...result.conflicts)
-    }
-  }
-
-  return { changes, conflicts }
-}
-
-const carriedChanges = (rt: Runtime, layout: StoreLayout, carried: CarriedFile[]): RecordChange[] => {
-  const changes: RecordChange[] = []
-  for (const file of carried) {
-    const localPath = path.join(layout.records, file.relPath)
-    if (existsSync(localPath)) {
-      rt.log({ level: 'warn', event: 'sync.remote-file-kept-local', relPath: file.relPath })
-      continue
-    }
-    changes.push({ kind: 'raw', relPath: file.relPath, content: file.content })
-  }
-  return changes
-}
-
-const conflictsPath = (layout: StoreLayout): string => path.join(layout.state, 'conflicts.json')
-
-type ConflictWriteResult = { ok: true } | { ok: false; detail: string }
-
-const writeConflicts = (layout: StoreLayout, conflicts: Conflict[]): ConflictWriteResult => {
-  try {
-    mkdirSync(layout.state, { recursive: true })
-    writeFileSync(conflictsPath(layout), JSON.stringify(conflicts), 'utf8')
-    return { ok: true }
-  } catch (error) {
-    return { ok: false, detail: error instanceof Error ? error.message : String(error) }
-  }
-}
-
-const clearConflicts = (layout: StoreLayout): void => {
-  try {
-    unlinkSync(conflictsPath(layout))
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error
-    }
-  }
-}
-
 const materialisationRejection = (where: string, outcome: FailedSyncWorkingCopy): AttemptOutcome => ({
   kind: 'return',
   outcome: {
@@ -355,6 +73,11 @@ const materialisationRejection = (where: string, outcome: FailedSyncWorkingCopy)
     cause: 'local',
     detail: `${where}: the records tree could not be materialised from ${LEDGER_REF} (${outcome.cause}): ${outcome.detail}`
   }
+})
+
+const localRejection = (detail: string): AttemptOutcome => ({
+  kind: 'return',
+  outcome: { ok: false, reason: 'rejected', cause: 'local', detail }
 })
 
 const fastForward = (rt: Runtime, layout: StoreLayout, localVal: string | null, remoteVal: string): AttemptOutcome => {
@@ -370,7 +93,7 @@ const fastForward = (rt: Runtime, layout: StoreLayout, localVal: string | null, 
     }
   }
   if (cas.cause === 'ref-moved') return { kind: 'retry' }
-  return { kind: 'return', outcome: { ok: false, reason: 'rejected', cause: 'local', detail: cas.message } }
+  return localRejection(cas.message)
 }
 
 const pushPlain = (rt: Runtime, layout: StoreLayout): AttemptOutcome => {
@@ -392,181 +115,98 @@ const pushPlain = (rt: Runtime, layout: StoreLayout): AttemptOutcome => {
   return { kind: 'return', outcome: { ok: false, reason: 'rejected', cause: 'remote-rejected', detail: result.stderr.trim() } }
 }
 
-const performMerge = (
-  rt: Runtime,
-  store: Store,
-  layout: StoreLayout,
-  localVal: string,
-  remoteVal: string,
-  ops: Partial<SyncOps>
-): AttemptOutcome => {
-  const theirsResult = materialiseRefToScratch(rt, layout, remoteVal)
-  if (!theirsResult.ok) {
-    return { kind: 'return', outcome: { ok: false, reason: 'rejected', cause: 'local', detail: theirsResult.detail } }
-  }
-  const theirsScratch = theirsResult.scratch
-  const removeScratch = ops.removeScratch ?? discardScratchDir
-  const safelyRemoveScratch = (dir: string): void => {
-    try {
-      removeScratch(rt, dir)
-    } catch (error) {
-      rt.log({
-        level: 'error',
-        event: 'sync.scratch-cleanup-failed',
-        dir,
-        detail: error instanceof Error ? error.message : String(error)
-      })
-    }
-  }
+type ParsedVersion = { ok: true; value: unknown } | { ok: false }
+
+const parsedVersion = (rt: Runtime, repo: string, blob: string | null): ParsedVersion => {
+  if (blob === null) return { ok: true, value: undefined }
+  const read = git(rt, repo, ['cat-file', 'blob', blob])
+  if (!read.ok) return { ok: false }
   try {
-    const mergeBaseResult = git(rt, layout.projectRoot, ['merge-base', localVal, remoteVal])
-    const baseVal = mergeBaseResult.ok ? mergeBaseResult.stdout.trim() : null
-    let baseScratch: string | null = null
-    if (baseVal !== null) {
-      const baseResult = materialiseRefToScratch(rt, layout, baseVal)
-      if (!baseResult.ok) {
-        return { kind: 'return', outcome: { ok: false, reason: 'rejected', cause: 'local', detail: baseResult.detail } }
-      }
-      baseScratch = baseResult.scratch
-    }
-    try {
-      const ours = readOursRecordSet(rt, store, layout)
-      const theirs = readScratchRecordSet(rt, theirsScratch)
-      const base = baseScratch !== null ? readScratchRecordSet(rt, baseScratch) : null
-
-      if (base !== null && base.passthrough.length > 0) {
-        rt.log({
-          level: 'warn',
-          event: 'sync.ancestor-record-unparseable',
-          count: base.passthrough.length,
-          records: base.passthrough.map((file) => file.relPath)
-        })
-      }
-
-      if (theirs.passthrough.length > 0) {
-        return {
-          kind: 'return',
-          outcome: {
-            ok: false,
-            reason: 'unparseable',
-            records: theirs.passthrough.map((file) => file.relPath)
-          }
-        }
-      }
-
-      const { changes: mergedChanges, conflicts } = computeMerge(ours, theirs, base)
-      const pathsTheMergeWrites = new Set(mergedChanges.map(relativePathFor))
-
-      const contested = ours.unreadable.flatMap((slot): UnreadableLocalRecord[] => {
-        const relPath = path.relative(layout.records, slot.path)
-        const touched =
-          pathsTheMergeWrites.has(relPath) ||
-          existsSync(path.join(theirsScratch, relPath)) ||
-          (baseScratch !== null && existsSync(path.join(baseScratch, relPath)))
-        if (!touched) return []
-        const treePath = relPath.split(path.sep).join('/')
-        const oursBlob = readRef(rt, layout.projectRoot, `${localVal}:${treePath}`)
-        const baseBlob = baseVal === null ? null : readRef(rt, layout.projectRoot, `${baseVal}:${treePath}`)
-        const unchangedSinceBase = oursBlob !== null && oursBlob === baseBlob
-        return unchangedSinceBase ? [] : [{ relPath, reason: slot.reason }]
-      })
-      if (contested.length > 0) {
-        return {
-          kind: 'return',
-          outcome: {
-            ok: false,
-            reason: 'rejected',
-            cause: 'unreadable-local-record',
-            detail: contested.map((record) => `${record.relPath}: ${record.reason}`).join('; '),
-            records: contested
-          }
-        }
-      }
-
-      if (conflicts.length > 0) {
-        const written = writeConflicts(layout, conflicts)
-        if (!written.ok) {
-          return {
-            kind: 'return',
-            outcome: {
-              ok: false,
-              reason: 'rejected',
-              cause: 'local',
-              detail: `could not persist conflicts: ${written.detail}`
-            }
-          }
-        }
-        return { kind: 'return', outcome: { ok: false, reason: 'conflict', conflicts } }
-      }
-
-      const allChanges = [...mergedChanges, ...carriedChanges(rt, layout, theirs.carried)]
-
-      for (const change of allChanges) {
-        const shape = checkChangeShape(change)
-        if (!shape.ok) {
-          return {
-            kind: 'return',
-            outcome: {
-              ok: false,
-              reason: 'rejected',
-              cause: 'invalid-merged-record',
-              detail: shape.message,
-              field: shape.field
-            }
-          }
-        }
-      }
-
-      const message = `merge ${localVal.slice(0, 12)} with ${remoteVal.slice(0, 12)}`
-      const writeOps = {
-        extraParents: [remoteVal],
-        ...(ops.beforeCas !== undefined ? { beforeCas: ops.beforeCas } : {})
-      }
-      const commitResult = writeRecords(rt, layout, allChanges, message, writeOps)
-      if (!commitResult.ok) {
-        if (commitResult.reason === 'ref-moved') return { kind: 'retry' }
-        return { kind: 'return', outcome: { ok: false, reason: 'rejected', cause: 'local', detail: commitResult.detail } }
-      }
-
-      const materialised = syncWorkingCopy(rt, layout)
-      if (!materialised.ok) {
-        return materialisationRejection('the merge commit was written to the local ledger ref', materialised)
-      }
-
-      const pushResult = git(rt, layout.projectRoot, [
-        'push',
-        `--force-with-lease=${LEDGER_REF}:${remoteVal}`,
-        REMOTE_NAME,
-        `${LEDGER_REF}:${LEDGER_REF}`
-      ])
-      if (!pushResult.ok) {
-        if (isLeaseRejection(pushResult.stderr)) return { kind: 'retry' }
-        return {
-          kind: 'return',
-          outcome: { ok: false, reason: 'rejected', cause: 'remote-rejected', detail: pushResult.stderr.trim() }
-        }
-      }
-
-      const mergeReceipt = readBackAfterPush(rt, layout)
-      return {
-        kind: 'return',
-        outcome: {
-          ok: true,
-          action: mergeReceipt.verified ? 'merged' : 'pushed-unverified',
-          ref: LEDGER_REF,
-          local_sha: mergeReceipt.local_sha,
-          remote_sha: mergeReceipt.remote_sha
-        }
-      }
-    } finally {
-      if (baseScratch !== null) safelyRemoveScratch(baseScratch)
-    }
-  } finally {
-    safelyRemoveScratch(theirsScratch)
+    return { ok: true, value: JSON.parse(read.stdout) }
+  } catch {
+    return { ok: false }
   }
 }
 
-const runAttempt = (rt: Runtime, store: Store, layout: StoreLayout, ops: Partial<SyncOps>): AttemptOutcome => {
+const changesBetween = (before: ParsedVersion, after: ParsedVersion): string[] | null =>
+  before.ok && after.ok ? differingJsonPaths(before.value, after.value) : null
+
+const reportEntry = (rt: Runtime, repo: string, conflicted: ConflictPath): ConflictReportEntry => {
+  const local = parsedVersion(rt, repo, conflicted.local_blob)
+  const remote = parsedVersion(rt, repo, conflicted.remote_blob)
+  if (conflicted.base_blob === null) {
+    const between = changesBetween(local, remote)
+    return { ...conflicted, local_changes: between, remote_changes: between }
+  }
+  const base = parsedVersion(rt, repo, conflicted.base_blob)
+  return { ...conflicted, local_changes: changesBetween(base, local), remote_changes: changesBetween(base, remote) }
+}
+
+const byPath = (a: ConflictPath, b: ConflictPath): number => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
+
+const performMerge = (rt: Runtime, layout: StoreLayout, localVal: string, remoteVal: string, ops: SyncOps): AttemptOutcome => {
+  const repo = layout.projectRoot
+
+  const version = checkGitVersion(rt, repo)
+  if (!version.ok) {
+    return { kind: 'return', outcome: { ok: false, reason: 'git-too-old', found: version.found } }
+  }
+
+  const merged = mergeTree(rt, repo, localVal, remoteVal)
+  if (!merged.ok) return localRejection(`git could not merge ${localVal} with ${remoteVal}: ${merged.detail}`)
+
+  const notWhole = recordsNotTakenWhole(rt, repo, localVal, remoteVal, merged.tree, new Set(merged.conflicted.map((entry) => entry.path)))
+  if (!notWhole.ok) return localRejection(notWhole.detail)
+
+  const conflicted = [...merged.conflicted, ...notWhole.paths].sort(byPath)
+  if (conflicted.length > 0) {
+    const state: ConflictState = { local_commit: localVal, remote_commit: remoteVal, paths: conflicted }
+    const written = writeConflictState(layout, state)
+    if (!written.ok) return localRejection(`could not persist conflicts: ${written.detail}`)
+    return {
+      kind: 'return',
+      outcome: { ok: false, reason: 'conflict', state, entries: conflicted.map((entry) => reportEntry(rt, repo, entry)) }
+    }
+  }
+
+  const commitResult = writeRecords(rt, layout, [], `merge ${localVal.slice(0, 12)} with ${remoteVal.slice(0, 12)}`, {
+    startFrom: { tree: merged.tree, parent: localVal },
+    extraParents: [remoteVal],
+    ...(ops.beforeCas !== undefined ? { beforeCas: ops.beforeCas } : {})
+  })
+  if (!commitResult.ok) {
+    if (commitResult.reason === 'ref-moved') return { kind: 'retry' }
+    return localRejection(commitResult.detail)
+  }
+
+  const materialised = syncWorkingCopy(rt, layout)
+  if (!materialised.ok) {
+    return materialisationRejection('the merge commit was written to the local ledger ref', materialised)
+  }
+
+  const pushResult = git(rt, repo, ['push', `--force-with-lease=${LEDGER_REF}:${remoteVal}`, REMOTE_NAME, `${LEDGER_REF}:${LEDGER_REF}`])
+  if (!pushResult.ok) {
+    if (isLeaseRejection(pushResult.stderr)) return { kind: 'retry' }
+    return {
+      kind: 'return',
+      outcome: { ok: false, reason: 'rejected', cause: 'remote-rejected', detail: pushResult.stderr.trim() }
+    }
+  }
+
+  const mergeReceipt = readBackAfterPush(rt, layout)
+  return {
+    kind: 'return',
+    outcome: {
+      ok: true,
+      action: mergeReceipt.verified ? 'merged' : 'pushed-unverified',
+      ref: LEDGER_REF,
+      local_sha: mergeReceipt.local_sha,
+      remote_sha: mergeReceipt.remote_sha
+    }
+  }
+}
+
+const runAttempt = (rt: Runtime, layout: StoreLayout, ops: SyncOps): AttemptOutcome => {
   const repo = layout.projectRoot
 
   const materialised = syncWorkingCopy(rt, layout)
@@ -619,24 +259,23 @@ const runAttempt = (rt: Runtime, store: Store, layout: StoreLayout, ops: Partial
     return fastForward(rt, layout, localVal, remoteVal)
   }
 
-  return performMerge(rt, store, layout, localVal, remoteVal, ops)
+  return performMerge(rt, layout, localVal, remoteVal, ops)
 }
 
-export const sync = (rt: Runtime, store: Store, layout: StoreLayout, ops: Partial<SyncOps> = {}): SyncOutcome => {
+export const sync = (rt: Runtime, _store: Store, layout: StoreLayout, ops: SyncOps = {}): SyncOutcome => {
   for (let attempt = 1; attempt <= MAX_SYNC_ATTEMPTS; attempt += 1) {
-    const outcome = runAttempt(rt, store, layout, ops)
+    const outcome = runAttempt(rt, layout, ops)
     if (outcome.kind === 'return') {
       if (outcome.outcome.ok === true) {
-        clearConflicts(layout)
+        clearConflictState(layout)
       }
       return outcome.outcome
     }
   }
-  const timeoutOutcome: SyncOutcome = {
+  return {
     ok: false,
     reason: 'rejected',
     cause: 'contention',
     detail: `${LEDGER_REF} kept moving; giving up after ${MAX_SYNC_ATTEMPTS} attempts`
   }
-  return timeoutOutcome
 }
