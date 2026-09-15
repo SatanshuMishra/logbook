@@ -598,8 +598,8 @@ test('skill.debrief-chooses-criteria-from-the-thread-record-and-keeps-found-risk
   )
   assert.ok((steps[refusalIndex] as string).includes('found risks'), 'expected the found risks to be printed with the update_thread refusal')
   assert.ok(
-    (steps[parkIndex] as string).includes('refusal'),
-    'expected the park outcome to carry an update_thread refusal and its found risks, so they reach the ledger'
+    (steps[parkIndex] as string).includes('refusal') && (steps[parkIndex] as string).includes('risks printed with it'),
+    'expected the park outcome to carry an update_thread refusal and the risks printed with it, since the refusal text holds no risk text'
   )
 })
 
