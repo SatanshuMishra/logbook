@@ -642,6 +642,60 @@ test('sync.refuses-to-merge-over-a-local-record-it-cannot-read-that-the-other-si
   })
 })
 
+test('sync.refuses-to-merge-over-a-local-record-it-cannot-read-that-a-remote-file-under-another-name-would-overwrite', () => {
+  withTwoClones((ana, ben, remote) => {
+    const anaLayout = layoutIn(ana)
+    const benLayout = layoutIn(ben)
+
+    const seed = makeThread(ana.rt, 'misnamed-seed')
+    assert.equal(ana.store.commit([seed], 'ana: seed a shared thread').ok, true)
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+    assert.equal(sync(ben.rt, ben.store, benLayout).ok, true)
+
+    const benOnly = makeThread(ben.rt, 'ben-unpushed')
+    assert.equal(ben.store.commit([benOnly], 'ben: create a thread without pushing it').ok, true)
+
+    const misnamedRelPath = path.join('threads', `${ana.rt.ulid()}.json`)
+    const misnamedContent = JSON.stringify({
+      ...benOnly.record,
+      spine: { ...benOnly.record.spine, next_step: 'overwritten by the remote' }
+    })
+    const rawWrite = writeRecords(
+      ana.rt,
+      anaLayout,
+      [{ kind: 'raw', relPath: misnamedRelPath, content: misnamedContent }],
+      'ana: carry a copy of that thread under another file name'
+    )
+    assert.equal(rawWrite.ok, true)
+    assert.equal(sync(ana.rt, ana.store, anaLayout).ok, true)
+
+    const localBefore = git(ben.rt, ben.repo, ['rev-parse', LEDGER_REF])
+    const remoteBefore = git(ben.rt, remote, ['rev-parse', 'refs/logbook/ledger'])
+    assert.equal(localBefore.ok && remoteBefore.ok, true)
+
+    const relPath = path.join('threads', `${benOnly.record.id}.json`)
+    const benThreadPath = path.join(benLayout.records, relPath)
+    const benThreadBytes = readFileSync(benThreadPath, 'utf8')
+    rmSync(benThreadPath)
+    mkdirSync(benThreadPath)
+    const outcome = sync(ben.rt, ben.store, benLayout)
+    rmSync(benThreadPath, { recursive: true })
+    writeFileSync(benThreadPath, benThreadBytes, 'utf8')
+
+    const localAfter = git(ben.rt, ben.repo, ['rev-parse', LEDGER_REF])
+    const remoteAfter = git(ben.rt, remote, ['rev-parse', 'refs/logbook/ledger'])
+    if (!localBefore.ok || !remoteBefore.ok || !localAfter.ok || !remoteAfter.ok) throw new Error('expected both refs to read')
+    assert.equal(localAfter.stdout.trim(), localBefore.stdout.trim(), "ben's ledger ref must not move over his unreadable thread")
+    assert.equal(remoteAfter.stdout.trim(), remoteBefore.stdout.trim(), 'nothing may be pushed')
+
+    assert.equal(outcome.ok, false)
+    if (outcome.ok || outcome.reason !== 'rejected' || outcome.cause !== 'unreadable-local-record') {
+      throw new Error(`expected an unreadable-local-record refusal; received ${JSON.stringify(outcome)}`)
+    }
+    assert.deepEqual(outcome.records, [{ relPath, reason: 'could not be read: EISDIR' }])
+  })
+})
+
 test('sync.an-unparseable-ancestor-record-is-logged-not-silently-degraded', () => {
   withTwoClones((ana, ben, _remote) => {
     const anaLayout = layoutIn(ana)

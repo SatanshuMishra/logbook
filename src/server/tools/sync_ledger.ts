@@ -103,17 +103,17 @@ const unreadableLocalRecordsRefusal = (records: readonly UnreadableLocalRecord[]
   const remainder = records.length - shown.length
   const rendered = shown.map((record) => {
     const name = clipWithMarker(escapeStored(record.relPath, 'angle-wrapped'), caps.UNPARSEABLE_RECORD_NAME_MAX)
-    return `<${name}> (${escapeStored(record.reason)})`
+    return `<${name}> (${escapeStored(record.reason, 'paren-wrapped')})`
   })
   const named = remainder > 0 ? `${rendered.join(', ')} (+${remainder} more)` : rendered.join(', ')
   return withDetail(
     {
       ok: false,
       field: 'sync',
-      accepted: "a local ledger whose every record file the shared ledger also carries can be read on this machine",
-      example: 'make the named record files readable again, then retry the call',
+      accepted: 'a local ledger whose record files this merge would decide can all be read and parsed on this machine',
+      example: 'restore read access to the named record files, or repair or remove the ones that do not parse, then retry the call',
       retryable: true,
-      message: `sync stopped before merging: this machine could not read ${records.length} of its own record file(s) that the shared ledger also carries: ${named}. Merging now would decide those records without this machine's copy and could overwrite committed local work, so nothing was merged and nothing was sent to origin. Make those files readable again, then run sync_ledger again.`
+      message: `sync stopped before merging: this machine could not read or parse ${records.length} of its own record file(s) that this merge would decide, because the shared ledger or the common ancestor also carries them: ${named}. Merging now would decide those records without this machine's copy and could overwrite committed local work, so nothing was merged and nothing was sent to origin. Restore read access to a file that could not be read, or repair or remove one that does not parse, then run sync_ledger again.`
     },
     detail
   )
