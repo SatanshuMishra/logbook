@@ -912,6 +912,7 @@ export const TEST_2_CASES: Test2Case[] = [
       criteria_newly_settled: structured.criteria_newly_settled,
       spine_fields_updated: structured.spine_fields_updated,
       risks_added: structured.risks_added,
+      risks_already_present: structured.risks_already_present,
       risks_retired: structured.risks_retired,
       key_decisions_added: structured.key_decisions_added,
       out_of_scope_added: structured.out_of_scope_added,

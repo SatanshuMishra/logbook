@@ -7,6 +7,7 @@ import { criterionSettledness, riskAnchor } from '../../schema/thread.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
+import { riskIdentity } from '../../domain/risk-identity.ts'
 import { ArtifactAddSchema, commitThread, loadThread, mintArtifacts, openProjectStore } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
@@ -121,7 +122,9 @@ const UpdateThreadInputSchema = z.strictObject({
     .array(RiskAddSchema)
     .max(caps.RISKS_PER_CALL_MAX_ELEMENTS)
     .optional()
-    .describe('new risks to append to the spine; each one is minted a stable id'),
+    .describe(
+      'new risks to append to the spine; each one is minted a stable id, unless a live risk already has the same criterion_id and the same text ignoring case and spacing, in which case nothing is added and that risk id is returned in risks_already_present'
+    ),
   risks_retire: z
     .array(ulidField('the id of an open risk currently on this thread'))
     .max(caps.RISKS_PER_CALL_MAX_ELEMENTS)
@@ -161,6 +164,9 @@ const UpdateThreadOutputSchema = z.object({
     .array(z.enum(['active_goal', 'next_step', 'last_session']))
     .describe('which scalar spine fields this call changed'),
   risks_added: z.array(z.string()).describe('ids minted for risks this call added'),
+  risks_already_present: z
+    .array(z.string())
+    .describe('ids of live risks that entries in risks_add matched by criterion_id and text, returned instead of adding a duplicate'),
   risks_retired: z.array(z.string()).describe('ids of risks this call marked removed'),
   key_decisions_added: z.array(z.string()).describe('ids minted for key decisions this call linked into the spine'),
   out_of_scope_added: z.array(z.string()).describe('ids minted for out-of-scope statements this call added'),
@@ -477,15 +483,6 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     const newArtifacts: Artifact[] = mintArtifacts(rt, input.artifacts_add ?? [])
     const combinedArtifacts = [...survivingArtifacts, ...newArtifacts]
 
-    const newRisks: Risk[] = (input.risks_add ?? []).map((r) => ({
-      id: rt.ulid(),
-      scope: r.scope,
-      text: r.text,
-      refs: r.refs ?? [],
-      criterion_id: r.criterion_id,
-      retired: false
-    }))
-
     const newKeyDecisions: KeyDecision[] = (input.key_decisions_add ?? []).map((kd) => ({
       id: rt.ulid(),
       decision_id: kd.decision_id,
@@ -495,12 +492,52 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
 
     const newOutOfScope = (input.out_of_scope_add ?? []).map((text) => ({ id: rt.ulid(), text }))
 
-    const danglingRiskCriteria = newRisks
-      .map(riskAnchor)
+    const riskEntries = input.risks_add ?? []
+    const danglingRiskCriteria = riskEntries
+      .map((entry) => entry.criterion_id)
       .filter((anchor): anchor is string => anchor !== null && !thread.completion_criteria.some((c) => c.id === anchor))
     if (danglingRiskCriteria.length > 0) {
       return { ok: false, refusal: danglingRiskCriterionRefusal(danglingRiskCriteria) }
     }
+
+    const liveRiskIdentities = survivingRisks
+      .filter((risk) => !risk.retired)
+      .map((risk) => [riskIdentity(riskAnchor(risk), risk.text), risk.id] as const)
+    const liveRiskIdsByIdentity = new Map(
+      liveRiskIdentities.filter(([identity], index) => liveRiskIdentities.findIndex(([other]) => other === identity) === index)
+    )
+    const resolvedRisks = riskEntries.reduce<{ minted: Risk[]; mintedIdentities: string[]; alreadyPresent: string[] }>(
+      (resolved, entry) => {
+        const identity = riskIdentity(entry.criterion_id, escapeStored(entry.text))
+        const liveId = liveRiskIdsByIdentity.get(identity)
+        if (liveId !== undefined) {
+          return resolved.alreadyPresent.includes(liveId)
+            ? resolved
+            : { ...resolved, alreadyPresent: [...resolved.alreadyPresent, liveId] }
+        }
+        if (resolved.mintedIdentities.includes(identity)) return resolved
+        const minted: Risk = {
+          id: rt.ulid(),
+          scope: entry.scope,
+          text: entry.text,
+          refs: entry.refs ?? [],
+          criterion_id: entry.criterion_id,
+          retired: false
+        }
+        return {
+          ...resolved,
+          minted: [...resolved.minted, minted],
+          mintedIdentities: [...resolved.mintedIdentities, identity]
+        }
+      },
+      { minted: [], mintedIdentities: [], alreadyPresent: [] }
+    )
+    const newRisks = resolvedRisks.minted
+    const alreadyPresentRiskIds = resolvedRisks.alreadyPresent
+    const alreadyPresentNote =
+      alreadyPresentRiskIds.length === 0
+        ? ''
+        : ` ${alreadyPresentRiskIds.length} risks were already present as live risks with the same criterion_id and text, so none was added for them: ${alreadyPresentRiskIds.join(', ')}.`
 
     const badDecisionRefs = newKeyDecisions.filter((kd) => {
       const slot = store.readDecision(kd.decision_id)
@@ -547,13 +584,17 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     if (nothingChanged) {
       return {
         ok: true,
-        text: `no fields were supplied; thread ${thread.slug} is unchanged.`,
+        text:
+          alreadyPresentRiskIds.length === 0
+            ? `no fields were supplied; thread ${thread.slug} is unchanged.`
+            : `thread ${thread.slug} is unchanged.${alreadyPresentNote}`,
         structured: {
           thread_id: thread.id,
           criteria_marked_done: [],
           criteria_newly_settled: [],
           spine_fields_updated: [],
           risks_added: [],
+          risks_already_present: alreadyPresentRiskIds,
           risks_retired: [],
           key_decisions_added: [],
           out_of_scope_added: [],
@@ -584,13 +625,14 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
 
     return {
       ok: true,
-      text: `updated thread ${thread.slug}: ${markedDone.length} criteria marked done, ${settledIds.length} criteria settled, ${newRisks.length} risks added, ${retiredIds.length} risks retired.`,
+      text: `updated thread ${thread.slug}: ${markedDone.length} criteria marked done, ${settledIds.length} criteria settled, ${newRisks.length} risks added, ${retiredIds.length} risks retired.${alreadyPresentNote}`,
       structured: {
         thread_id: committed.value.id,
         criteria_marked_done: markedDone,
         criteria_newly_settled: settledIds,
         spine_fields_updated: spineFieldsUpdated,
         risks_added: newRisks.map((r) => r.id),
+        risks_already_present: alreadyPresentRiskIds,
         risks_retired: retiredIds,
         key_decisions_added: newKeyDecisions.map((kd) => kd.id),
         out_of_scope_added: newOutOfScope.map((o) => o.id),

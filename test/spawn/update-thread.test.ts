@@ -584,3 +584,101 @@ test('update_thread.stores-a-whole-thread-risk-with-a-null-anchor', async () => 
     assert.ok(briefing.includes(riskText), `the briefing must show the whole-thread risk, got:\n${briefing}`)
   })
 })
+
+type RiskAddResult = { risks_added: string[]; risks_already_present?: string[] }
+
+test('update_thread.returns-the-live-risk-for-a-duplicate-instead-of-adding-it', async () => {
+  await withFixture(async (fx) => {
+    const opened = await openCriteriaThread(fx, 'risk-duplicate-thread', [PROPOSED_CRITERION])
+
+    const first = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      risks_add: [{ text: 'The queue may starve under load', scope: 'throughput', criterion_id: null }]
+    })
+    assert.equal(first.isError, undefined, `the first risk must be added, got: ${first.isError === true ? firstTextOf(first) : 'no error'}`)
+    const firstId = (first.structuredContent as RiskAddResult).risks_added[0]
+    assert.ok(firstId !== undefined, 'the first risk was not minted an id')
+
+    const second = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      risks_add: [{ text: '  the QUEUE may\tstarve   under load ', scope: 'a different scope', criterion_id: null }]
+    })
+    assert.equal(second.isError, undefined, `a duplicate risk must not be refused, got: ${second.isError === true ? firstTextOf(second) : 'no error'}`)
+    const structured = second.structuredContent as RiskAddResult
+    assert.deepEqual(structured.risks_added, [], 'a duplicate of a live risk must not mint a new risk')
+    assert.deepEqual(structured.risks_already_present, [firstId], 'the duplicate must return the id of the live risk it matched')
+    assert.ok(firstTextOf(second).includes(firstId), `the reply must say which live risk the duplicate matched, got: ${firstTextOf(second)}`)
+
+    const stored = readThreadRecord(fx, opened.threadId).spine.open_risks
+    assert.deepEqual(stored.map((risk) => risk.id), [firstId], 'the thread must still hold exactly the one risk')
+  })
+})
+
+test('update_thread.collapses-identical-risks-in-one-call-into-one-risk', async () => {
+  await withFixture(async (fx) => {
+    const opened = await openCriteriaThread(fx, 'risk-duplicate-in-call-thread', [PROPOSED_CRITERION])
+    const criterionId = criterionAt(opened, 0)
+
+    const result = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      risks_add: [
+        { text: 'the load test may be flaky', scope: 'verification', criterion_id: criterionId },
+        { text: 'The load test may be FLAKY', scope: 'verification', criterion_id: criterionId }
+      ]
+    })
+    assert.equal(result.isError, undefined, `identical risks in one call must not be refused, got: ${result.isError === true ? firstTextOf(result) : 'no error'}`)
+    const structured = result.structuredContent as RiskAddResult
+    assert.equal(structured.risks_added.length, 1, 'two entries saying the same thing on the same anchor must mint one risk')
+    assert.deepEqual(structured.risks_already_present, [], 'no risk was live before this call')
+    assert.equal(readThreadRecord(fx, opened.threadId).spine.open_risks.length, 1, 'the thread must hold exactly one risk')
+  })
+})
+
+test('update_thread.adds-a-risk-whose-text-matches-a-live-risk-on-another-anchor', async () => {
+  await withFixture(async (fx) => {
+    const opened = await openCriteriaThread(fx, 'risk-other-anchor-thread', [PROPOSED_CRITERION])
+    const criterionId = criterionAt(opened, 0)
+    const text = 'the cache may serve stale entries'
+
+    const whole = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      risks_add: [{ text, scope: 'caching', criterion_id: null }]
+    })
+    assert.equal(whole.isError, undefined, `the whole-thread risk must be added, got: ${whole.isError === true ? firstTextOf(whole) : 'no error'}`)
+
+    const anchored = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      risks_add: [{ text, scope: 'caching', criterion_id: criterionId }]
+    })
+    assert.equal(anchored.isError, undefined, `the anchored risk must be added, got: ${anchored.isError === true ? firstTextOf(anchored) : 'no error'}`)
+    const structured = anchored.structuredContent as RiskAddResult
+    assert.equal(structured.risks_added.length, 1, 'the same text on a different anchor is a different risk')
+    assert.deepEqual(structured.risks_already_present, [])
+    assert.equal(readThreadRecord(fx, opened.threadId).spine.open_risks.length, 2)
+  })
+})
+
+test('update_thread.adds-a-risk-whose-text-matches-only-a-retired-risk', async () => {
+  await withFixture(async (fx) => {
+    const opened = await openCriteriaThread(fx, 'risk-retired-match-thread', [PROPOSED_CRITERION])
+    const text = 'the migration may lock the table'
+
+    const first = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      risks_add: [{ text, scope: 'migration', criterion_id: null }]
+    })
+    const firstId = (first.structuredContent as RiskAddResult).risks_added[0]
+    assert.ok(firstId !== undefined, 'the first risk was not minted an id')
+
+    const retired = await callUpdateThread(fx, { thread_id: opened.threadId, risks_retire: [firstId] })
+    assert.equal(retired.isError, undefined, `the risk must be retired, got: ${retired.isError === true ? firstTextOf(retired) : 'no error'}`)
+
+    const again = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      risks_add: [{ text, scope: 'migration', criterion_id: null }]
+    })
+    const structured = again.structuredContent as RiskAddResult
+    assert.equal(structured.risks_added.length, 1, 'a retired risk is not live, so the same text is added again')
+    assert.deepEqual(structured.risks_already_present, [])
+  })
+})
