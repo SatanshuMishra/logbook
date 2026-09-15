@@ -143,6 +143,7 @@ const RESOLVE_CONFLICT_CORRUPT_PRODUCER: ProducerId = 'server/tools/resolve_conf
 const RESOLVE_CONFLICT_DUPLICATE_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#duplicateResolutionRefusal'
 const RESOLVE_CONFLICT_UNRECOGNISED_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#unrecognisedResolutionRefusal'
 const RESOLVE_CONFLICT_MISSING_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#missingResolutionRefusal'
+const RESOLVE_CONFLICT_SPLIT_NEXT_STEP_PAIR_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#splitNextStepPairRefusal'
 const RESOLVE_CONFLICT_THREAD_UNAVAILABLE_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#threadUnavailableRefusal'
 const RESOLVE_CONFLICT_STALE_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#staleRecordedValueRefusal'
 const RESOLVE_CONFLICT_UNCLASSIFIABLE_FIELD_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#unclassifiableFieldRefusal'
@@ -690,6 +691,21 @@ const collectResolveConflictSingleRepoRefusals = async (): Promise<TaggedRefusal
     }
     refusals.push({ producer: RESOLVE_CONFLICT_NO_REMOTE_POSITION_PRODUCER, refusal: noRemotePosition.refusal })
     refusals.push({ producer: RESOLVE_CONFLICT_HANDLER_PRODUCER, refusal: noRemotePosition.refusal })
+
+    writeConflictsFixture(fixture, [
+      { record: `thread:${fixture.threadId}`, field: 'spine.next_step', ours: 'the local next step', theirs: 'the remote next step' },
+      { record: `thread:${fixture.threadId}`, field: 'spine.next_step_criterion_id', ours: null, theirs: fixture.threadId }
+    ])
+    const splitPair = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {
+      resolutions: [
+        { record: `thread:${fixture.threadId}`, field: 'spine.next_step', winner: 'local' },
+        { record: `thread:${fixture.threadId}`, field: 'spine.next_step_criterion_id', winner: 'remote' }
+      ]
+    })
+    if (splitPair.ok) {
+      throw new Error('expected resolveConflictTool to refuse a next step and its criterion resolved to different winners')
+    }
+    refusals.push({ producer: RESOLVE_CONFLICT_SPLIT_NEXT_STEP_PAIR_PRODUCER, refusal: splitPair.refusal })
 
     writeConflictsFixture(fixture, [singleTitleConflict(fixture, 'a remote title with a stale ours value')])
     const stale = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {

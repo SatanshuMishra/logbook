@@ -113,7 +113,7 @@ export const checkNextStepCriterion = (criteria: readonly Criterion[], contribut
   const criterion = criteria.find((candidate) => candidate.id === criterionId)
   if (criterion === undefined) return nextStepCriterionRefusal(criterionId, 'names no completion criterion on this thread')
   if (criterion.struck_by !== null) return nextStepCriterionRefusal(criterionId, 'names a criterion that has been struck')
-  if (criterion.done) return nextStepCriterionRefusal(criterionId, 'names a criterion that is already done')
+  if (criterion.done) return nextStepCriterionRefusal(criterionId, 'names a criterion that is done or that this call marks done')
   return null
 }
 

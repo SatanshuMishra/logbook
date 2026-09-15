@@ -658,6 +658,38 @@ test('update_thread.adds-a-risk-whose-text-matches-a-live-risk-on-another-anchor
   })
 })
 
+test('update_thread.adds-again-a-risk-retired-in-the-same-call', async () => {
+  await withFixture(async (fx) => {
+    const opened = await openCriteriaThread(fx, 'risk-retire-and-add-thread', [PROPOSED_CRITERION])
+    const text = 'the backfill may count rows twice'
+
+    const first = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      risks_add: [{ text, scope: 'backfill', criterion_id: null }]
+    })
+    const firstId = (first.structuredContent as RiskAddResult).risks_added[0]
+    assert.ok(firstId !== undefined, 'the first risk was not minted an id')
+
+    const both = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      risks_retire: [firstId],
+      risks_add: [{ text, scope: 'backfill', criterion_id: null }]
+    })
+    assert.equal(both.isError, undefined, `retiring and re-adding in one call must succeed, got: ${both.isError === true ? firstTextOf(both) : 'no error'}`)
+    const structured = both.structuredContent as RiskAddResult
+    assert.equal(structured.risks_added.length, 1, 'a risk retired in this same call is no longer live, so its text is added again')
+    assert.deepEqual(structured.risks_already_present, [])
+    assert.deepEqual(
+      readThreadRecord(fx, opened.threadId).spine.open_risks.map((risk) => [risk.id === firstId, risk.retired]),
+      [
+        [true, true],
+        [false, false]
+      ],
+      'the first risk is retired and a new live risk holds the same text'
+    )
+  })
+})
+
 test('update_thread.adds-a-risk-whose-text-matches-only-a-retired-risk', async () => {
   await withFixture(async (fx) => {
     const opened = await openCriteriaThread(fx, 'risk-retired-match-thread', [PROPOSED_CRITERION])
@@ -793,7 +825,7 @@ test('update_thread.refuses-a-next-step-criterion-that-is-not-an-open-goal-of-th
       next_step_criterion_id: secondGoal
     })
     assert.equal(done.isError, true, 'a criterion already done is not a goal the next step can advance')
-    assert.match(firstTextOf(done), /names a criterion that is already done/)
+    assert.match(firstTextOf(done), /names a criterion that is done or that this call marks done/)
 
     assert.ok(!Object.hasOwn(readThreadRecord(fx, opened.threadId).spine, 'next_step_criterion_id'), 'no refused call may have stored a criterion')
   })
@@ -812,5 +844,88 @@ test('park_thread.stores-the-criterion-its-next-step-names', async () => {
     assert.equal(parked.isError, undefined, `park_thread must accept the criterion its next step names, got: ${parked.isError === true ? firstTextOf(parked) : 'no error'}`)
     assert.equal(readThreadRecord(fx, opened.threadId).spine.next_step, 'run the load test')
     assert.equal(storedNextStepCriterion(fx, opened.threadId), goal, 'park_thread must store the criterion its next step advances')
+  })
+})
+
+test('update_thread.a-next-step-whose-goal-is-later-done-shows-every-open-risk-again', async () => {
+  await withFixture(async (fx) => {
+    const opened = await openTwoGoalThreadWithRisks(fx, 'next-step-goal-done-thread')
+    const firstGoal = criterionAt(opened, 0)
+
+    const focused = await callUpdateThread(fx, { thread_id: opened.threadId, next_step: 'drain the queue under load', next_step_criterion_id: firstGoal })
+    assert.equal(focused.isError, undefined, `the focused next step must be accepted, got: ${focused.isError === true ? firstTextOf(focused) : 'no error'}`)
+    const marked = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      criteria_done: [{ criterion_id: firstGoal, result: 'the queue drained under load', result_status: 'verified' }]
+    })
+    assert.equal(marked.isError, undefined, `the goal must be marked done, got: ${marked.isError === true ? firstTextOf(marked) : 'no error'}`)
+
+    const briefing = await briefingFor(fx, opened.threadId)
+    assert.ok(briefing.includes(RISK_ON_SECOND_GOAL), `once the named goal is done it focuses nothing, so the other goal's risk is shown:\n${briefing}`)
+    assert.ok(!briefing.includes('on other open goals'), `once the named goal is done nothing is counted as hidden:\n${briefing}`)
+  })
+})
+
+test('update_thread.refuses-a-next-step-criterion-that-has-been-struck', async () => {
+  await withFixture(async (fx) => {
+    const opened = await openCriteriaThread(fx, 'next-step-struck-goal-thread', [PROPOSED_CRITERION, SECOND_PROPOSED_CRITERION])
+    const secondGoal = criterionAt(opened, 1)
+    const decision = await callRecordDecision(fx, {
+      thread_id: opened.threadId,
+      title: 'the cache goal is withdrawn',
+      context: 'the cache goal moved to another thread',
+      options: ['keep the cache goal', 'strike the cache goal'],
+      outcome: 'strike the cache goal'
+    })
+    assert.equal(decision.isError, undefined, `the strike fixture needs a real decision, got: ${firstTextOf(decision)}`)
+    const struck = await callAmendCriteria(fx, {
+      thread_id: opened.threadId,
+      operation: 'strike',
+      decision_id: (decision.structuredContent as { decision_id: string }).decision_id,
+      criterion_id: secondGoal
+    })
+    assert.equal(struck.isError, undefined, `the strike fixture needs the criterion struck, got: ${struck.isError === true ? firstTextOf(struck) : 'no error'}`)
+
+    const refused = await callUpdateThread(fx, { thread_id: opened.threadId, next_step: 'warm the cache', next_step_criterion_id: secondGoal })
+    assert.equal(refused.isError, true, 'a struck criterion is not a goal the next step can advance')
+    assert.match(firstTextOf(refused), /names a criterion that has been struck/)
+  })
+})
+
+test('update_thread.refuses-a-next-step-criterion-this-same-call-marks-done', async () => {
+  await withFixture(async (fx) => {
+    const opened = await openCriteriaThread(fx, 'next-step-goal-done-in-call-thread', [PROPOSED_CRITERION, SECOND_PROPOSED_CRITERION])
+    const firstGoal = criterionAt(opened, 0)
+
+    const refused = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      next_step: 'drain the queue under load',
+      next_step_criterion_id: firstGoal,
+      criteria_done: [{ criterion_id: firstGoal, result: 'the queue drained under load', result_status: 'verified' }]
+    })
+    assert.equal(refused.isError, true, 'a goal this same call finishes is not one the next step can still advance')
+    assert.match(firstTextOf(refused), /names a criterion that is done or that this call marks done/)
+    assert.equal(readThreadRecord(fx, opened.threadId).completion_criteria[0]?.done, false, 'the refused call must not have marked the goal done')
+  })
+})
+
+test('park_thread.refuses-a-next-step-criterion-that-is-already-done', async () => {
+  await withFixture(async (fx) => {
+    const opened = await openCriteriaThread(fx, 'park-next-step-done-goal-thread', [PROPOSED_CRITERION])
+    const goal = criterionAt(opened, 0)
+    const marked = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      criteria_done: [{ criterion_id: goal, result: 'the load test exited 0', result_status: 'verified' }]
+    })
+    assert.equal(marked.isError, undefined, `the goal must be marked done, got: ${marked.isError === true ? firstTextOf(marked) : 'no error'}`)
+    await briefingFor(fx, opened.threadId)
+
+    const parked = (await fx.spawned.client.callTool({
+      name: 'park_thread',
+      arguments: { outcome: 'ran the load test', next_step: 'run the load test again', next_step_criterion_id: goal }
+    })) as CallToolResult
+    assert.equal(parked.isError, true, 'park_thread must refuse a criterion that is already done')
+    assert.match(firstTextOf(parked), /names a criterion that is done or that this call marks done/)
+    assert.equal(readThreadRecord(fx, opened.threadId).spine.next_step === 'run the load test again', false, 'the refused park must not have stored its next step')
   })
 })
