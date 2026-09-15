@@ -26,6 +26,7 @@ export type WriteRecordsOps = {
   git: typeof git
   beforeCas: () => void
   extraParents?: string[]
+  baseTree?: string
 }
 
 const MAX_ATTEMPTS = 5
@@ -88,12 +89,12 @@ const buildTree = (
   rt: Runtime,
   layout: StoreLayout,
   runGit: typeof git,
-  oldRef: string | null,
+  startingTree: string | null,
   targets: Target[]
 ): TreeResult =>
   withSharedIndex(writeIndexScratchDir(layout), (indexFile) => {
-    if (oldRef !== null) {
-      const readTree = runGit(rt, layout.projectRoot, ['read-tree', oldRef], { indexFile })
+    if (startingTree !== null) {
+      const readTree = runGit(rt, layout.projectRoot, ['read-tree', startingTree], { indexFile })
       if (!readTree.ok) {
         return { ok: false, detail: `read-tree: ${readTree.stderr}` }
       }
@@ -184,7 +185,7 @@ export const writeRecords = (
   while (attempt < MAX_ATTEMPTS) {
     attempt += 1
 
-    const treeResult = buildTree(rt, layout, runGit, oldRef, targets)
+    const treeResult = buildTree(rt, layout, runGit, ops.baseTree ?? oldRef, targets)
     if (!treeResult.ok) {
       return { ok: false, reason: 'io', detail: treeResult.detail }
     }
@@ -223,6 +224,14 @@ export const writeRecords = (
         }
       }
       return { ok: true, ref: LEDGER_REF, before: oldRef, after: newCommit }
+    }
+
+    if (cas.cause === 'ref-moved' && ops.baseTree !== undefined) {
+      return {
+        ok: false,
+        reason: 'ref-moved',
+        detail: `${LEDGER_REF} moved while writing onto a starting tree computed from ${oldRef ?? 'no commit'}; the write was refused so the starting tree can be recomputed against the new commit`
+      }
     }
 
     if (cas.cause === 'ref-moved') {

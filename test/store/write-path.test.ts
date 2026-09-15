@@ -188,6 +188,101 @@ test('write.retries-on-moved-ref', () => {
   })
 })
 
+const gitOut = (rt: Runtime, repo: string, args: string[], stdin?: string): string => {
+  const result = git(rt, repo, args, stdin === undefined ? {} : { stdin })
+  assert.equal(result.ok, true, `git ${args.join(' ')} failed: ${result.ok ? '' : result.stderr}`)
+  return result.ok ? result.stdout.trim() : ''
+}
+
+const treeHoldingOneThread = (rt: Runtime, repo: string, change: Extract<RecordChange, { kind: 'thread' }>): string => {
+  const blob = gitOut(rt, repo, ['hash-object', '-w', '--stdin'], JSON.stringify(change.record))
+  const threads = gitOut(rt, repo, ['mktree'], `100644 blob ${blob}\t${change.record.id}.json\n`)
+  return gitOut(rt, repo, ['mktree'], `040000 tree ${threads}\tthreads\n`)
+}
+
+const ledgerPaths = (rt: Runtime, repo: string): string[] =>
+  gitOut(rt, repo, ['ls-tree', '-r', '--name-only', LEDGER_REF]).split('\n').sort()
+
+test('write.builds-onto-a-given-starting-tree-instead-of-the-ledger-commit', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const layout = layoutIn(rt, repo)
+
+      const onLedger = makeThread(rt, 'on-the-ledger')
+      const ledgerWrite = writeRecords(rt, layout, [onLedger], 'record a thread on the ledger')
+      assert.equal(ledgerWrite.ok, true)
+      if (!ledgerWrite.ok) return
+
+      const inStartingTree = makeThread(rt, 'in-the-starting-tree')
+      const startingTree = treeHoldingOneThread(rt, repo, inStartingTree)
+      const added = makeThread(rt, 'added-on-top')
+
+      const result = writeRecords(rt, layout, [added], 'write onto a starting tree', { baseTree: startingTree })
+      assert.equal(result.ok, true)
+      if (!result.ok) return
+
+      assert.deepEqual(
+        ledgerPaths(rt, repo),
+        [`threads/${added.record.id}.json`, `threads/${inStartingTree.record.id}.json`].sort(),
+        'the commit must hold the starting tree plus the written record, and nothing the ledger commit held that the starting tree does not'
+      )
+      assert.equal(gitOut(rt, repo, ['rev-parse', `${LEDGER_REF}^1`]), ledgerWrite.after, 'the first parent must still be the ledger commit the write replaced')
+    })
+  })
+})
+
+test('write.a-starting-tree-with-no-changes-commits-exactly-that-tree-with-both-parents', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const layout = layoutIn(rt, repo)
+
+      const ledgerWrite = writeRecords(rt, layout, [makeThread(rt, 'local-side')], 'record the local side')
+      assert.equal(ledgerWrite.ok, true)
+      if (!ledgerWrite.ok) return
+
+      const remoteSide = makeThread(rt, 'remote-side')
+      const startingTree = treeHoldingOneThread(rt, repo, remoteSide)
+      const remoteCommit = gitOut(rt, repo, ['commit-tree', startingTree, '-m', 'the remote side'])
+
+      const result = writeRecords(rt, layout, [], 'commit a merged tree', { baseTree: startingTree, extraParents: [remoteCommit] })
+      assert.equal(result.ok, true)
+      if (!result.ok) return
+
+      assert.equal(gitOut(rt, repo, ['rev-parse', `${LEDGER_REF}^{tree}`]), startingTree)
+      assert.deepEqual(gitOut(rt, repo, ['rev-list', '--parents', '-n', '1', LEDGER_REF]).split(' ').slice(1), [ledgerWrite.after, remoteCommit])
+    })
+  })
+})
+
+test('write.a-starting-tree-write-refuses-rather-than-rebuilding-when-the-ref-moves', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const layout = layoutIn(rt, repo)
+
+      const ledgerWrite = writeRecords(rt, layout, [makeThread(rt, 'before-the-race')], 'record before the race')
+      assert.equal(ledgerWrite.ok, true)
+      if (!ledgerWrite.ok) return
+
+      const startingTree = treeHoldingOneThread(rt, repo, makeThread(rt, 'in-the-starting-tree'))
+      let movedTo = ''
+      const beforeCas = (): void => {
+        const racer = treeHoldingOneThread(rt, repo, makeThread(rt, 'written-by-the-racer'))
+        movedTo = gitOut(rt, repo, ['commit-tree', racer, '-p', ledgerWrite.after, '-m', 'a racing writer'])
+        gitOut(rt, repo, ['update-ref', LEDGER_REF, movedTo, ledgerWrite.after])
+      }
+
+      const result = writeRecords(rt, layout, [makeThread(rt, 'added-on-top')], 'write onto a starting tree', { baseTree: startingTree, beforeCas })
+      assert.equal(result.ok, false, 'a starting tree was computed against the old ledger commit, so rebuilding it onto the moved ref would drop what the racer wrote')
+      if (result.ok) return
+      assert.equal(result.reason, 'ref-moved')
+      assert.equal(gitOut(rt, repo, ['rev-parse', LEDGER_REF]), movedTo, "the racer's commit must stand")
+    })
+  })
+})
+
 test('write.no-orphan-record', () => {
   withRepo((repo) => {
     withPluginData((pluginData) => {
