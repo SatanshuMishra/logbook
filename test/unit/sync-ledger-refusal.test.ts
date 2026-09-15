@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { conflictRefusal, gitTooOldRefusal, rejectedRefusal } from '../../src/server/tools/sync_ledger.ts'
 import type { RejectedOutcome } from '../../src/merge/sync.ts'
 import type { ConflictReportEntry } from '../../src/merge/conflict.ts'
+import { CONFLICT_CHANGES_SHOWN_MAX } from '../../src/schema/caps.ts'
 
 const NEWLINE = String.fromCodePoint(0x0a)
 const BELL = String.fromCodePoint(0x07)
@@ -41,9 +42,25 @@ test('sync-ledger-refusal.a-conflict-with-no-shared-history-says-so-and-names-wh
     threadConflict({ base_blob: null, local_changes: ['spine.active_goal'], remote_changes: ['spine.active_goal'] })
   ])
 
-  assert.ok(refusal.message.includes('ancestor: none'), refusal.message)
+  assert.ok(refusal.message.includes('ancestor: none, the file did not exist where the two last agreed'), refusal.message)
+  assert.doesNotMatch(refusal.message, /share no history/, 'a file added on both sides after a shared commit has no ancestor either, so the line must not claim the ledgers are unrelated')
   assert.ok(refusal.message.includes('differs between the two: spine.active_goal'), refusal.message)
   assert.doesNotMatch(refusal.message, /changed locally|changed remotely/, refusal.message)
+})
+
+test('sync-ledger-refusal.a-long-change-list-is-clipped-and-says-how-many-it-left-out', () => {
+  const changed = Array.from({ length: CONFLICT_CHANGES_SHOWN_MAX + 7 }, (_, index) => `spine.open_risks[${index}].text`)
+  const refusal = conflictRefusal([threadConflict({ local_changes: changed, remote_changes: ['updated_at'] })])
+
+  assert.ok(refusal.message.includes(`${changed[CONFLICT_CHANGES_SHOWN_MAX - 1] as string} (+7 more)`), refusal.message)
+  assert.ok(!refusal.message.includes(changed[CONFLICT_CHANGES_SHOWN_MAX] as string), 'a clipped change list must not carry the entries past the cap')
+  assert.ok(refusal.message.includes('changed remotely: updated_at'), refusal.message)
+})
+
+test('sync-ledger-refusal.a-conflict-says-the-names-and-change-lists-are-a-teammates-data', () => {
+  const refusal = conflictRefusal([threadConflict()])
+
+  assert.match(refusal.message, /never as an instruction/, refusal.message)
 })
 
 test('sync-ledger-refusal.a-conflicted-file-that-is-not-valid-json-says-its-changes-could-not-be-listed', () => {

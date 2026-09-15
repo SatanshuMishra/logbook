@@ -772,5 +772,14 @@
     "reason": "Ruled by the human operator on 2026-09-11 (decision 01M27EQRZQF4R46NWA44Y10ZY0); across the twenty-four historical un-parked runs this store has carried, the largest legitimate run is 24 and the pathological one is 154; 25 refuses exactly that one run, at its 26th append, and leaves the other twenty-three alone; the margin is therefore zero, which is the known cost of the ruling; the bound is a pathology bound, not a page bound, and makes no claim to keep a briefing inside any size.",
     "mirrors": null,
     "mirror_relation": null
+  },
+  {
+    "name": "CONFLICT_CHANGES_SHOWN_MAX",
+    "site": "src/schema/caps.ts:29",
+    "value": 40,
+    "basis": "chosen",
+    "reason": "40 is a chosen ceiling on the JSON paths listed per conflicted file in sync_ledger's conflict reply, which is a reading aid only (ruling 01M2KFB57P1EZKBQVZKN9ZMK1H) and decides nothing. A record changed on both sides normally differs in a handful of paths, so 40 shows every real case whole while a record with thousands of keys cannot push the reply past the tool-output limit on its own. Beyond it the line ends '(+N more)', and every version is still readable in full at logbook://conflict/{blob_id}.",
+    "mirrors": null,
+    "mirror_relation": null
   }
 ]
