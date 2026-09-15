@@ -4,7 +4,7 @@ import type { Binding } from '../schema/binding.ts'
 import type { Decision } from '../schema/decision.ts'
 import type { SessionEntry } from '../schema/session.ts'
 import type { Artifact, Criterion, KeyDecision, OutOfScope, Risk, Thread } from '../schema/thread.ts'
-import { criterionSettledness } from '../schema/thread.ts'
+import { criterionSettledness, nextStepAnchor, riskAnchor } from '../schema/thread.ts'
 import type { Pointer } from '../domain/pointer.ts'
 import type { DecisionIntegrity } from '../render/briefing.ts'
 
@@ -154,10 +154,15 @@ const renderDetailArtifactLine = (artifact: Artifact): string =>
 const renderDetailBindingLine = (binding: Binding): string =>
   `- ${escapeStored(binding.id)} ${escapeStored(binding.branch)}`
 
+const renderDetailRiskAnchor = (risk: Risk): string => {
+  const anchor = riskAnchor(risk)
+  return anchor === null ? 'on the whole thread' : `on criterion ${escapeStored(anchor)}`
+}
+
 const renderDetailRiskLine = (risk: Risk): string =>
   risk.scope === ''
-    ? `- ${escapeStored(risk.id)} ${escapeStored(risk.text)}`
-    : `- ${escapeStored(risk.id)} [${escapeStored(risk.scope, 'bracket-wrapped')}] ${escapeStored(risk.text)}`
+    ? `- ${escapeStored(risk.id)} ${renderDetailRiskAnchor(risk)} ${escapeStored(risk.text)}`
+    : `- ${escapeStored(risk.id)} ${renderDetailRiskAnchor(risk)} [${escapeStored(risk.scope, 'bracket-wrapped')}] ${escapeStored(risk.text)}`
 
 const renderDetailKeyDecisionLine = (keyDecision: KeyDecision): string =>
   keyDecision.scope === ''
@@ -190,7 +195,9 @@ export const renderThreadDetail = (
 ): string => {
   const criteriaLines = thread.completion_criteria.map(renderDetailCriterionLine)
   const artifactLines = (thread.artifacts ?? []).map(renderDetailArtifactLine)
-  const riskLines = thread.spine.open_risks.map(renderDetailRiskLine)
+  const riskLines = thread.spine.open_risks.filter((risk) => !risk.retired).map(renderDetailRiskLine)
+  const retiredRiskLines = thread.spine.open_risks.filter((risk) => risk.retired).map(renderDetailRiskLine)
+  const nextStepAnchorId = nextStepAnchor(thread.spine)
   const keyDecisionLines = thread.spine.key_decisions.map(renderDetailKeyDecisionLine)
   const outOfScopeLines = thread.spine.out_of_scope.map(renderDetailOutOfScopeLine)
   const danglingLines = decisionIntegrity.dangling.map(renderDetailDanglingLine)
@@ -216,6 +223,7 @@ export const renderThreadDetail = (
     `Active goal: ${escapeStored(thread.spine.active_goal)}`,
     `Landed: ${escapeStored(thread.spine.landed)}`,
     `Next step: ${escapeStored(thread.spine.next_step)}`,
+    `Next step criterion: ${nextStepAnchorId === null ? 'none' : escapeStored(nextStepAnchorId)}`,
     `Last session: ${escapeStored(thread.spine.last_session)}`,
     ...lastSessionNoteLines,
     'Artifacts:',
@@ -226,6 +234,8 @@ export const renderThreadDetail = (
     ...criteriaLines,
     'Open risks:',
     ...riskLines,
+    'Retired risks:',
+    ...retiredRiskLines,
     'Key decisions:',
     ...keyDecisionLines,
     'Out of scope:',
