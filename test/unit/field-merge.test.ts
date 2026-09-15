@@ -444,12 +444,14 @@ test('merge.conflicts-on-scalar', () => {
   if (result.ok) {
     throw new Error('expected the merge to refuse')
   }
-  assert.equal(result.conflicts.length, 1)
-  const found = result.conflicts[0]
-  assert.ok(found)
-  assert.equal(found.field, 'spine.next_step')
-  assert.equal(found.ours, 'A')
-  assert.equal(found.theirs, 'B')
+  assert.deepEqual(
+    result.conflicts.map((entry) => [entry.field, entry.ours, entry.theirs]),
+    [
+      ['spine.next_step', 'A', 'B'],
+      ['spine.next_step_criterion_id', null, null]
+    ],
+    'a next step is disputed with its criterion, even where neither side names one, so a later local change to either is caught as stale'
+  )
 })
 
 test('merge.conflict-on-divergence-field-cleared-to-null-still-conflicts', () => {
@@ -739,8 +741,8 @@ test('merge.next-step-and-its-criterion-merge-as-one-pair', () => {
   if (sameCriterionDifferentSteps.ok) throw new Error('expected the merge to refuse')
   assert.deepEqual(
     sameCriterionDifferentSteps.conflicts.map((found) => found.field),
-    ['spine.next_step'],
-    'both sides name the same criterion, and the criterion changes only with a next step, so disputing the next step covers the pair'
+    ['spine.next_step', 'spine.next_step_criterion_id'],
+    'both sides name the same criterion, yet a later write can keep the next step and change the criterion, so both are disputed'
   )
 
   const replacedOnOneSideOnly = mergeThread(
