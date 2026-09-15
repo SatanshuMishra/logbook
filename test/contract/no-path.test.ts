@@ -42,7 +42,7 @@ import { LEDGER_REF, casUpdateRef } from '../../src/store/ref.ts'
 import { ensureSingleStore } from '../../src/store/single-store.ts'
 import { withDetail } from '../../src/store/detail.ts'
 import { insertCriterion, rewriteCriterion, strikeCriterion } from '../../src/domain/criteria.ts'
-import { contributeToSpine } from '../../src/domain/spine.ts'
+import { checkNextStepCriterion, contributeToSpine } from '../../src/domain/spine.ts'
 import { transition } from '../../src/domain/lifecycle.ts'
 import { rawGit, withRepo, withRepoNoIdentity } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
@@ -79,6 +79,7 @@ const INSERT_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#insertCriterio
 const REWRITE_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#rewriteCriterion'
 const STRIKE_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#strikeCriterion'
 const CONTRIBUTE_TO_SPINE_PRODUCER: ProducerId = 'domain/spine.ts#contributeToSpine'
+const CHECK_NEXT_STEP_CRITERION_PRODUCER: ProducerId = 'domain/spine.ts#checkNextStepCriterion'
 const TRANSITION_PRODUCER: ProducerId = 'domain/lifecycle.ts#transition'
 const OPEN_THREAD_DUPLICATE_SLUG_PRODUCER: ProducerId = 'server/tools/open_thread.ts#duplicateSlugRefusal'
 const UPDATE_THREAD_UNKNOWN_CRITERION_PRODUCER: ProducerId = 'server/tools/update_thread.ts#unknownCriterionRefusal'
@@ -1192,6 +1193,14 @@ const collectRealRefusals = async (): Promise<TaggedRefusal[]> => {
   })
   if (spineResult.ok) throw new Error('expected contributeToSpine to refuse key decisions past their element cap')
   refusals.push({ producer: CONTRIBUTE_TO_SPINE_PRODUCER, refusal: spineResult })
+
+  const nextStepCriterionResult = checkNextStepCriterion(domainThread.completion_criteria, {
+    next_step_criterion_id: domainRt.ulid()
+  })
+  if (nextStepCriterionResult === null) {
+    throw new Error('expected checkNextStepCriterion to refuse a criterion sent without a next step')
+  }
+  refusals.push({ producer: CHECK_NEXT_STEP_CRITERION_PRODUCER, refusal: nextStepCriterionResult })
 
   const transitionResult = transition(domainRt, domainThread, 'abandoned', '')
   if (transitionResult.ok) throw new Error('expected transition to refuse an abandon with no reason')

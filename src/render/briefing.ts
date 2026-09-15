@@ -1,5 +1,5 @@
 import type { Thread, Criterion, Risk, KeyDecision, OutOfScope, Artifact } from '../schema/thread.ts'
-import { criterionSettledness, riskAnchor } from '../schema/thread.ts'
+import { criterionSettledness, nextStepAnchor, riskAnchor } from '../schema/thread.ts'
 import type { SessionEntry } from '../schema/session.ts'
 import type { Pointer } from '../domain/pointer.ts'
 import { previousSessionEntries } from '../domain/session-log.ts'
@@ -208,6 +208,9 @@ const renderOlderSessionEntriesLine = (count: number, threadId: string): string 
 const renderUnreadableSessionEntriesLine = (count: number, threadId: string): string =>
   `- ${count} session log entr${count === 1 ? 'y' : 'ies'} on this thread could not be read; see logbook://sessions/${escapeStored(threadId)} for the complete record`
 
+const renderOtherGoalRisksLine = (count: number, threadId: string): string =>
+  `- ${count} more ${count === 1 ? 'risk' : 'risks'} on other open goals; see logbook://thread/${escapeStored(threadId)} for the complete record`
+
 const renderSettledRiskLine = (risk: Risk, textClip: number): string =>
   `- risk ${escapeStored(risk.id)} ${clipFloor(risk.text, textClip)}`
 
@@ -237,6 +240,18 @@ const laneFor = (criterionId: string | null, criteriaById: ReadonlyMap<string, C
 }
 
 type Laned<T> = { live: T[]; settled: T[] }
+
+const openCriterionId = (criterionId: string | null, criteriaById: ReadonlyMap<string, Criterion>): string | null => {
+  if (criterionId === null) return null
+  const criterion = criteriaById.get(criterionId)
+  return criterion !== undefined && criterion.struck_by === null && !criterion.done ? criterionId : null
+}
+
+const bearsOnFocus = (
+  anchor: string | null,
+  focusCriterionId: string | null,
+  criteriaById: ReadonlyMap<string, Criterion>
+): boolean => focusCriterionId === null || anchor === null || anchor === focusCriterionId || !criteriaById.has(anchor)
 
 const laneSplit = <T>(
   items: readonly T[],
@@ -393,6 +408,7 @@ const assembleBriefing = (
   predecessor: Thread | null,
   artifacts: readonly Artifact[],
   risks: Laned<Risk>,
+  otherGoalRiskCount: number,
   keyDecisions: Laned<KeyDecision>,
   outOfScope: readonly OutOfScope[],
   criteria: readonly Criterion[],
@@ -441,6 +457,10 @@ const assembleBriefing = (
   const relatedLines = relatedThreads.map((item) => renderRelatedLine(item, renderClip))
   const artifactLines = artifacts.map((item) => renderArtifactLine(item, renderClip))
   const riskBlocks = risks.live.map((item) => renderRiskBlock(item, renderClip))
+  const otherGoalRiskLines = [otherGoalRiskCount]
+    .filter((count) => count > 0)
+    .map((count) => renderOtherGoalRisksLine(count, thread.id))
+  const openRiskLines = [...riskBlocks, ...otherGoalRiskLines]
   const keyDecisionLines = keyDecisions.live.map((item) => renderKeyDecisionLine(item, renderClip.keyDecision))
   const outOfScopeLines = outOfScope.map((item) => renderOutOfScopeLine(item, renderClip.outOfScope))
   const criterionBlocks =
@@ -499,9 +519,9 @@ const assembleBriefing = (
     ...relatedThreads.slice(0, 1).map(() => ''),
     ...relatedThreads.slice(0, 1).map(() => '**Related:**'),
     ...relatedLines,
-    ...riskBlocks.slice(0, 1).map(() => ''),
-    ...riskBlocks.slice(0, 1).map(() => '**Open risks:**'),
-    ...riskBlocks,
+    ...openRiskLines.slice(0, 1).map(() => ''),
+    ...openRiskLines.slice(0, 1).map(() => '**Open risks:**'),
+    ...openRiskLines,
     ...keyDecisionLines.slice(0, 1).map(() => ''),
     ...keyDecisionLines.slice(0, 1).map(() => '**Key decisions:**'),
     ...keyDecisionLines,
@@ -544,7 +564,13 @@ export const renderBriefingWithPasses = (
   const liveRisks = thread.spine.open_risks.filter((risk) => !risk.retired)
   const liveArtifacts = (thread.artifacts ?? []).filter((artifact) => !artifact.retired)
 
-  const risks = laneSplit(liveRisks, riskAnchor, criteriaById)
+  const risksByLane = laneSplit(liveRisks, riskAnchor, criteriaById)
+  const focusCriterionId = openCriterionId(nextStepAnchor(thread.spine), criteriaById)
+  const risks: Laned<Risk> = {
+    live: risksByLane.live.filter((risk) => bearsOnFocus(riskAnchor(risk), focusCriterionId, criteriaById)),
+    settled: risksByLane.settled
+  }
+  const otherGoalRiskCount = risksByLane.live.length - risks.live.length
   const keyDecisions = laneSplit(thread.spine.key_decisions, (keyDecision) => keyDecision.criterion_id ?? null, criteriaById)
   const sessions = splitNewestFromOlder(previousSessionEntries(sessionEntries))
 
@@ -556,6 +582,7 @@ export const renderBriefingWithPasses = (
       predecessor,
       liveArtifacts,
       risks,
+      otherGoalRiskCount,
       keyDecisions,
       thread.spine.out_of_scope,
       thread.completion_criteria,

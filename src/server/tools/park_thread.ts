@@ -13,7 +13,7 @@ import type { StoreLayout } from '../../store/layout.ts'
 import { layoutFor } from '../../store/layout.ts'
 import { readPointer, releasePointer, releasePointerIfOwned } from '../../domain/pointer.ts'
 import { withDetail } from '../../store/detail.ts'
-import { contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
+import { checkNextStepCriterion, contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
 import type { Runtime } from '../../runtime/runtime.ts'
 import { openProjectStore } from '../tool-support.ts'
 
@@ -35,6 +35,9 @@ const ParkThreadInputSchema = z.strictObject({
     .string()
     .optional()
     .describe('replaces the spine next_step field when supplied, stated as one decision about what to do next; omit to leave it unchanged'),
+  next_step_criterion_id: ulidField(
+    'the completion criterion that the next_step sent in this same call advances, which must be neither done nor struck; the briefing then shows the risks on that criterion and the whole-thread risks and counts the rest; a next_step sent without it names no criterion'
+  ).optional(),
   landed: z
     .string()
     .optional()
@@ -252,7 +255,12 @@ const parkResolvedThread = (
 
   const spineContribution: SpineContribution = {
     ...(input.next_step !== undefined ? { next_step: input.next_step } : {}),
+    ...(input.next_step_criterion_id !== undefined ? { next_step_criterion_id: input.next_step_criterion_id } : {}),
     ...(input.landed !== undefined ? { landed: input.landed } : {})
+  }
+  const nextStepCriterionRefused = checkNextStepCriterion(thread.completion_criteria, spineContribution)
+  if (nextStepCriterionRefused !== null) {
+    return { ok: false, refusal: nextStepCriterionRefused }
   }
   const spineFieldsUpdated: ('next_step' | 'landed')[] = [
     ...(input.next_step !== undefined ? (['next_step'] as const) : []),
@@ -315,7 +323,7 @@ export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
   name: 'park_thread',
   title: 'Park thread',
   description:
-    'Ends work on the thread being worked right now, in a single call: it writes the session log entry, refreshes the next_step and landed fields, and releases the record of what is being worked. The last_session field is no longer accepted here; it is derived from the session log. Send the outcome as text plus the next step; the thread id is optional because the machine already knows which thread is being worked. Omit the outcome and the thread is still parked and the session log entry that closes this session is still written, just carrying no outcome text. The thread stays open, parking is not closing, and a parked thread appears in the next roster.',
+    'Ends work on the thread being worked right now, in a single call: it writes the session log entry, refreshes the next_step and landed fields, and releases the record of what is being worked. The last_session field is no longer accepted here; it is derived from the session log. Send the outcome as text plus the next step; the thread id is optional because the machine already knows which thread is being worked. Omit the outcome and the thread is still parked and the session log entry that closes this session is still written, just carrying no outcome text. The next_step can name the completion criterion it advances through next_step_criterion_id, and the briefing then shows only the risks on that criterion and the whole-thread risks. The thread stays open, parking is not closing, and a parked thread appears in the next roster.',
   input: ParkThreadInputSchema,
   output: ParkThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },

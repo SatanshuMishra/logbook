@@ -6,13 +6,15 @@ import type { ToolSpec } from '../register.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import type { Runtime } from '../../runtime/runtime.ts'
 import {
+  nextStepAnchor,
   ThreadRecord,
   type Thread,
   type Criterion,
   type Risk,
   type KeyDecision,
   type OutOfScope,
-  type Artifact
+  type Artifact,
+  type Spine
 } from '../../schema/thread.ts'
 import { DecisionRecord, type Decision } from '../../schema/decision.ts'
 import type { Store } from '../../store/records.ts'
@@ -338,6 +340,11 @@ const escapeArtifact = (artifact: Artifact): Artifact => ({
   pointer: escapeStored(artifact.pointer)
 })
 
+const withNextStepAnchor = (spine: Spine, anchor: string | null): Spine =>
+  anchor === null
+    ? (Object.fromEntries(Object.entries(spine).filter(([key]) => key !== 'next_step_criterion_id')) as Spine)
+    : { ...spine, next_step_criterion_id: anchor }
+
 type ScalarFieldHandling = {
   kind: 'scalar'
   read: (thread: Thread) => unknown
@@ -414,6 +421,12 @@ export const FIELD_HANDLING_TABLE: Record<keyof typeof THREAD_RULES, FieldHandli
     read: (thread) => thread.spine.next_step,
     apply: (thread, value) => ({ ...thread, spine: { ...thread.spine, next_step: value as string } }),
     escape: escapeIfString
+  },
+  'spine.next_step_criterion_id': {
+    kind: 'scalar',
+    read: (thread) => nextStepAnchor(thread.spine),
+    apply: (thread, value) => ({ ...thread, spine: withNextStepAnchor(thread.spine, value as string | null) }),
+    escape: (value) => value
   },
   'spine.landed': {
     kind: 'scalar',

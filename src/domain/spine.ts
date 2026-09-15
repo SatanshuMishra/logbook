@@ -1,11 +1,12 @@
 import type { Ok, Refusal } from '../schema/declare.ts'
-import type { KeyDecision, OutOfScope, Risk, Spine } from '../schema/thread.ts'
+import type { Criterion, KeyDecision, OutOfScope, Risk, Spine, Ulid } from '../schema/thread.ts'
 import * as caps from '../schema/caps.ts'
 import { escapeStored } from '../render/escape.ts'
 
 export type SpineContribution = {
   active_goal?: string
   next_step?: string
+  next_step_criterion_id?: Ulid
   landed?: string
   last_session?: string
   open_risks?: Risk[]
@@ -13,7 +14,7 @@ export type SpineContribution = {
   out_of_scope?: OutOfScope[]
 }
 
-type CollectionField = { [K in keyof Spine]: Spine[K] extends unknown[] ? K : never }[keyof Spine]
+type CollectionField = { [K in keyof Spine]-?: Spine[K] extends unknown[] ? K : never }[keyof Spine]
 
 const COLLECTION_ELEMENTS_CAP: Record<CollectionField, number | null> = {
   open_risks: null,
@@ -94,6 +95,33 @@ const checkCollectionField = (field: CollectionField, stored: Spine, contributio
   return checkCollectionCount('out_of_scope', stored.out_of_scope.length, contributed.length)
 }
 
+const nextStepCriterionRefusal = (criterionId: Ulid, reason: string): Refusal => ({
+  ok: false,
+  field: 'next_step_criterion_id',
+  accepted: 'the id of a completion criterion on this thread that is neither done nor struck, sent together with next_step',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: true,
+  message: `next_step_criterion_id ${criterionId} ${reason}; remedy: send it together with next_step and name a criterion that is still open, or omit it.`
+})
+
+export const checkNextStepCriterion = (criteria: readonly Criterion[], contribution: SpineContribution): Refusal | null => {
+  const criterionId = contribution.next_step_criterion_id
+  if (criterionId === undefined) return null
+  if (contribution.next_step === undefined) {
+    return nextStepCriterionRefusal(criterionId, 'was sent without next_step, and it only names the criterion a next_step sent in the same call advances')
+  }
+  const criterion = criteria.find((candidate) => candidate.id === criterionId)
+  if (criterion === undefined) return nextStepCriterionRefusal(criterionId, 'names no completion criterion on this thread')
+  if (criterion.struck_by !== null) return nextStepCriterionRefusal(criterionId, 'names a criterion that has been struck')
+  if (criterion.done) return nextStepCriterionRefusal(criterionId, 'names a criterion that is already done')
+  return null
+}
+
+const nextStepAnchorField = (stored: Spine, contribution: SpineContribution): Pick<Spine, 'next_step_criterion_id'> => {
+  const anchor = contribution.next_step === undefined ? stored.next_step_criterion_id : contribution.next_step_criterion_id
+  return anchor === undefined ? {} : { next_step_criterion_id: anchor }
+}
+
 const escapeRisk = (risk: Risk): Risk => ({
   ...risk,
   scope: escapeStored(risk.scope),
@@ -115,6 +143,7 @@ const escapeOutOfScope = (entry: OutOfScope): OutOfScope => ({
 const mergeSpine = (stored: Spine, contribution: SpineContribution): Spine => ({
   active_goal: contribution.active_goal !== undefined ? escapeStored(contribution.active_goal) : stored.active_goal,
   next_step: contribution.next_step !== undefined ? escapeStored(contribution.next_step) : stored.next_step,
+  ...nextStepAnchorField(stored, contribution),
   landed: contribution.landed !== undefined ? escapeStored(contribution.landed) : stored.landed,
   last_session: contribution.last_session !== undefined ? escapeStored(contribution.last_session) : stored.last_session,
   open_risks:

@@ -614,7 +614,8 @@ test('merge.a-one-sided-risk-removal-conflicts-rather-than-losing', () => {
 
 test('merge.every-declared-rule-path-is-written-by-the-merge', () => {
   const artifact = { id: ULID_C, label: 'the plan', pointer: 'docs/plans/x.md', retired: false }
-  const populated = (): Thread => baseThread({ predecessor_id: ULID_A, artifacts: [artifact] })
+  const populated = (): Thread =>
+    baseThread({ predecessor_id: ULID_A, artifacts: [artifact], spine: { ...baseSpine(), next_step_criterion_id: ULID_D } })
 
   const result = mergeThread(populated(), populated(), populated())
 
@@ -658,6 +659,7 @@ test('merge.rule-table-is-covered.walk-finds-spine-and-top-level-paths', () => {
       'spine.landed',
       'spine.last_session',
       'spine.next_step',
+      'spine.next_step_criterion_id',
       'spine.out_of_scope',
       'spine.open_risks',
       'status',
@@ -665,4 +667,34 @@ test('merge.rule-table-is-covered.walk-finds-spine-and-top-level-paths', () => {
       'updated_at'
     ].sort()
   )
+})
+
+test('merge.a-next-step-criterion-changed-differently-on-both-sides-conflicts', () => {
+  const base = baseThread()
+  const ours = baseThread({ spine: { ...baseSpine(), next_step_criterion_id: ULID_B } })
+  const theirs = baseThread({ spine: { ...baseSpine(), next_step_criterion_id: ULID_C } })
+
+  const result = mergeThread(base, ours, theirs)
+
+  assert.equal(result.ok, false)
+  if (result.ok) throw new Error('expected the merge to refuse')
+  assert.deepEqual(
+    result.conflicts.map((found) => found.field),
+    ['spine.next_step_criterion_id']
+  )
+})
+
+test('merge.a-next-step-criterion-set-on-one-side-is-kept-and-none-adds-no-key', () => {
+  const base = baseThread()
+  const ours = baseThread({ spine: { ...baseSpine(), next_step_criterion_id: ULID_B } })
+
+  const oneSided = mergeThread(base, ours, baseThread())
+  assert.equal(oneSided.ok, true)
+  if (!oneSided.ok) throw new Error('expected the merge to succeed')
+  assert.equal(oneSided.merged.spine.next_step_criterion_id, ULID_B)
+
+  const neither = mergeThread(base, baseThread(), baseThread())
+  assert.equal(neither.ok, true)
+  if (!neither.ok) throw new Error('expected the merge to succeed')
+  assert.equal('next_step_criterion_id' in neither.merged.spine, false)
 })

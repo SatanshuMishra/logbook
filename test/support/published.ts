@@ -96,7 +96,11 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
       phrase: 'set or clear what the thread is blocked on',
       providers: ['update_thread.blocked_by', 'update_thread.blocked_by_clear']
     },
-    { phrase: 'add or retire risks', providers: ['update_thread.risks_add', 'update_thread.risks_retire'] }
+    { phrase: 'add or retire risks', providers: ['update_thread.risks_add', 'update_thread.risks_retire'] },
+    {
+      phrase: 'can name the completion criterion it advances through next_step_criterion_id',
+      providers: ['update_thread.next_step_criterion_id']
+    }
   ],
   close_thread: [
     {
@@ -138,7 +142,11 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
       providers: []
     },
     { phrase: 'Send the outcome as text', providers: ['park_thread.outcome'] },
-    { phrase: 'the thread id is optional', providers: ['park_thread.thread_id'] }
+    { phrase: 'the thread id is optional', providers: ['park_thread.thread_id'] },
+    {
+      phrase: 'can name the completion criterion it advances through next_step_criterion_id',
+      providers: ['park_thread.next_step_criterion_id']
+    }
   ],
   record_decision: [
     {
