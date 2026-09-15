@@ -32,17 +32,21 @@ test('risk-identity.keeps-a-character-javascript-counts-as-space-but-unicode-doe
   )
 })
 
+const RETIRED_RISK_ID = '01M2HH0000000000000000000A'
+const FIRST_LIVE_RISK_ID = '01M2HH0000000000000000000B'
+const SECOND_LIVE_RISK_ID = '01M2HH0000000000000000000C'
+
 test('risk-identity.live-risk-ids-by-identity-returns-the-first-live-risk-in-stored-order', () => {
   const byIdentity = liveRiskIdsByIdentity([
-    riskWith('01M2HH0000000000000000000A', 'the queue may starve', true),
-    riskWith('01M2HH0000000000000000000B', 'The queue  may starve', false),
-    riskWith('01M2HH0000000000000000000C', 'the QUEUE may starve', false)
+    riskWith(RETIRED_RISK_ID, 'the queue may starve', true),
+    riskWith(FIRST_LIVE_RISK_ID, 'The queue  may starve', false),
+    riskWith(SECOND_LIVE_RISK_ID, 'the QUEUE may starve', false)
   ])
 
   assert.equal(byIdentity.size, 1, 'three spellings of one risk on one anchor are one identity')
   assert.equal(
     byIdentity.get(riskIdentity(null, escapeStored('the queue may starve'))),
-    '01M2HH0000000000000000000B',
+    FIRST_LIVE_RISK_ID,
     'a retired risk never matches, and of two live risks with one identity the first in stored order is returned'
   )
 })
