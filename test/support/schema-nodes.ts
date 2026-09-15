@@ -11,7 +11,7 @@ const isBareNullNode = (value: unknown): boolean =>
 export const nullableScalarMemberOf = (node: Record<string, unknown>): Record<string, unknown> | undefined => {
   const members = node.anyOf
   if (!Array.isArray(members) || members.length !== 2) return undefined
-  if ('type' in node || 'oneOf' in node || 'allOf' in node) return undefined
+  if ('type' in node || NON_SCALAR_KEYS.some((key) => key !== 'anyOf' && key in node)) return undefined
   const nonNull = members.filter((member) => !isBareNullNode(member))
   const [member] = nonNull
   if (nonNull.length !== 1 || !isPlainObject(member)) return undefined

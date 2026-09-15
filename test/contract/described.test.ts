@@ -101,4 +101,26 @@ test('contract.every-property-described.control.a-nullable-scalar-is-described-b
     }
   }
   assert.equal(classifyDescribedNode(nullableObject), 'unclassifiable')
+
+  for (const [key, subschema] of [
+    ['$ref', '#/$defs/elsewhere'],
+    ['$defs', { elsewhere: { type: 'object', properties: { inner: { type: 'string' } } } }],
+    ['additionalProperties', { type: 'string' }],
+    ['properties', { inner: { type: 'string' } }],
+    ['items', { type: 'string' }]
+  ] as const) {
+    const nullableBesideSubschema: SchemaNode = {
+      path: `probe.nullableBeside${key}`,
+      value: {
+        anyOf: [{ type: 'string' }, { type: 'null' }],
+        [key]: subschema,
+        description: 'a nullable string sitting beside a subschema no walker reaches'
+      }
+    }
+    assert.equal(
+      classifyDescribedNode(nullableBesideSubschema),
+      'unclassifiable',
+      `a nullable anyOf must not vouch for a node that also carries ${key}`
+    )
+  }
 })
