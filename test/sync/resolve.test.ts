@@ -583,6 +583,13 @@ test('resolve.a-next-step-and-its-criterion-take-one-winner', async () => {
     const conflictText = firstTextOf(anaConflictSync)
     assert.match(conflictText, new RegExp(`${record} spine\\.next_step\\b(?!_)`), conflictText)
     assert.match(conflictText, new RegExp(`${record} spine\\.next_step_criterion_id`), `the criterion ben named belongs to his next step, so it must be in dispute with it:\n${conflictText}`)
+    assert.match(conflictText, /name the same winner for both/, `the sync refusal must say the two fields take one winner:\n${conflictText}`)
+
+    const halfOnly = await callTool(ana, 'resolve_conflict', {
+      resolutions: [{ record, field: 'spine.next_step', winner: 'remote' }]
+    })
+    assert.equal(halfOnly.isError, true, 'a resolution naming only the next step must be refused')
+    assert.match(firstTextOf(halfOnly), /name the same winner for both/, `the missing-winner refusal must say the two fields take one winner:\n${firstTextOf(halfOnly)}`)
 
     const split = await callTool(ana, 'resolve_conflict', {
       resolutions: [
