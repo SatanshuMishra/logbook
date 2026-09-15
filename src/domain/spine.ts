@@ -38,14 +38,6 @@ const capRefusal = (field: string, limit: number, observed: number, unit: string
   message: `${field} exceeds its cap of ${limit} ${unit}; observed ${observed} ${unit} for this call; remedy: ${remedy}.`
 })
 
-const checkTextCap = (field: string, value: string, limit: number, remedy: string): Refusal | null => {
-  const observed = escapeStored(value).length
-  if (observed > limit) {
-    return capRefusal(field, limit, observed, 'characters', remedy)
-  }
-  return null
-}
-
 const checkCollectionCount = (field: CollectionField, storedCount: number, contributedCount: number): Refusal | null => {
   const limit = COLLECTION_ELEMENTS_CAP[field]
   if (limit === null) {
@@ -66,15 +58,6 @@ const checkCollectionCount = (field: CollectionField, storedCount: number, contr
 
 const checkRiskElements = (contributed: Risk[]): Refusal | null => {
   for (const [index, risk] of contributed.entries()) {
-    const scopeRefusal = checkTextCap(
-      `risks_add[${index}].scope`,
-      risk.scope,
-      caps.RISK_SCOPE_MAX,
-      'shorten the scope and retry'
-    )
-    if (scopeRefusal !== null) {
-      return scopeRefusal
-    }
     if (risk.refs.length > caps.RISK_REFS_MAX_ELEMENTS) {
       return capRefusal(
         `risks_add[${index}].refs`,
@@ -83,56 +66,6 @@ const checkRiskElements = (contributed: Risk[]): Refusal | null => {
         'entries',
         'remove refs and retry'
       )
-    }
-    for (const [refIndex, ref] of risk.refs.entries()) {
-      const refRefusal = checkTextCap(
-        `risks_add[${index}].refs[${refIndex}]`,
-        ref,
-        caps.RISK_REF_MAX,
-        'shorten the ref and retry'
-      )
-      if (refRefusal !== null) {
-        return refRefusal
-      }
-    }
-  }
-  return null
-}
-
-const checkKeyDecisionElements = (contributed: KeyDecision[]): Refusal | null => {
-  for (const [index, entry] of contributed.entries()) {
-    const refusal = checkTextCap(
-      `key_decisions_add[${index}].title`,
-      entry.title,
-      caps.KEY_DECISION_TITLE_MAX,
-      'shorten the title and retry'
-    )
-    if (refusal !== null) {
-      return refusal
-    }
-    const scopeRefusal = checkTextCap(
-      `key_decisions_add[${index}].scope`,
-      entry.scope,
-      caps.KEY_DECISION_SCOPE_MAX,
-      'shorten the scope and retry'
-    )
-    if (scopeRefusal !== null) {
-      return scopeRefusal
-    }
-  }
-  return null
-}
-
-const checkOutOfScopeElements = (contributed: OutOfScope[]): Refusal | null => {
-  for (const [index, entry] of contributed.entries()) {
-    const refusal = checkTextCap(
-      `out_of_scope_add[${index}]`,
-      entry.text,
-      caps.OUT_OF_SCOPE_TEXT_MAX,
-      'shorten the statement and retry'
-    )
-    if (refusal !== null) {
-      return refusal
     }
   }
   return null
@@ -152,15 +85,13 @@ const checkCollectionField = (field: CollectionField, stored: Spine, contributio
     if (contributed === undefined) {
       return null
     }
-    const countRefusal = checkCollectionCount('key_decisions', stored.key_decisions.length, contributed.length)
-    return countRefusal !== null ? countRefusal : checkKeyDecisionElements(contributed)
+    return checkCollectionCount('key_decisions', stored.key_decisions.length, contributed.length)
   }
   const contributed = contribution.out_of_scope
   if (contributed === undefined) {
     return null
   }
-  const countRefusal = checkCollectionCount('out_of_scope', stored.out_of_scope.length, contributed.length)
-  return countRefusal !== null ? countRefusal : checkOutOfScopeElements(contributed)
+  return checkCollectionCount('out_of_scope', stored.out_of_scope.length, contributed.length)
 }
 
 const escapeRisk = (risk: Risk): Risk => ({

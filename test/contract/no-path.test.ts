@@ -117,7 +117,6 @@ const RECORD_DECISION_TITLE_CAP_PRODUCER: ProducerId = 'server/tools/record_deci
 const RECORD_DECISION_OPTION_CAP_PRODUCER: ProducerId = 'server/tools/record_decision.ts#optionCapRefusal'
 const RECORD_DECISION_INVALID_PRODUCER: ProducerId = 'server/tools/record_decision.ts#invalidDecisionRefusal'
 const RECORD_DECISION_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/record_decision.ts#commitFailureRefusal'
-const RECORD_DECISION_SCOPE_CAP_PRODUCER: ProducerId = 'server/tools/record_decision.ts#scopeCapRefusal'
 const RECORD_DECISION_UNKNOWN_CRITERION_PRODUCER: ProducerId = 'server/tools/record_decision.ts#unknownCriterionRefusal'
 const RECORD_DECISION_UNRESOLVED_SUPERSEDES_PRODUCER: ProducerId =
   'server/tools/record_decision.ts#unresolvedSupersedesRefusal'
@@ -333,16 +332,6 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     if (optionOverflow.ok) throw new Error('expected recordDecisionTool to refuse an option that overflows its cap once escaped')
     refusals.push({ producer: RECORD_DECISION_OPTION_CAP_PRODUCER, refusal: optionOverflow.refusal })
 
-    const scopeOverflow = await recordDecisionTool.handler(rt, STUB_TOOL_CTX, {
-      thread_id: threadId,
-      title: 'a census title',
-      context: 'a census context',
-      options: ['a census option'],
-      outcome: 'a census outcome',
-      scope: CONTROL_CHAR_OVERFLOW(34)
-    })
-    if (scopeOverflow.ok) throw new Error('expected recordDecisionTool to refuse a scope that overflows its cap once escaped')
-    refusals.push({ producer: RECORD_DECISION_SCOPE_CAP_PRODUCER, refusal: scopeOverflow.refusal })
     const unknownDecisionCriterion = await recordDecisionTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,
       title: 'a census title',

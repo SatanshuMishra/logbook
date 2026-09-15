@@ -5,7 +5,6 @@ import { census, type Classified } from '../support/census.ts'
 import { listPublishedTools, type PublishedTool } from '../support/published.ts'
 import { spawnServer } from '../support/spawn-client.ts'
 import { MARK_DONE_INVARIANTS } from '../../src/server/tools/update_thread.ts'
-import * as caps from '../../src/schema/caps.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const AMEND_CRITERIA_TOOL_NAME = 'amend_criteria'
@@ -228,7 +227,7 @@ test('criteria.no-other-tool-writes-criteria.control.unrelated-scope-text-is-all
     node: {
       type: 'string',
       minLength: 1,
-      maxLength: caps.RISK_SCOPE_MAX,
+      maxLength: 200,
       description: 'the criterion or area of the thread this risk concerns'
     }
   }

@@ -121,12 +121,10 @@ const CriterionSchema = structural(
 const RiskSchema = structural(
   z.object({
     id: ulidField('the risk identity, a ULID'),
-    scope: content(
-      z.string().max(caps.RISK_SCOPE_MAX).describe('the criterion or area of the thread this risk concerns')
-    ),
+    scope: content(z.string().describe('the criterion or area of the thread this risk concerns')),
     text: content(z.string().describe('the risk text')),
     refs: z
-      .array(pointer(caps.RISK_REF_MAX, 'one external pointer backing this risk'))
+      .array(pointer('one external pointer backing this risk'))
       .max(caps.RISK_REFS_MAX_ELEMENTS)
       .describe('external pointers backing this risk')
       .meta({ class: 'pointer' }),
@@ -141,12 +139,8 @@ const KeyDecisionSchema = structural(
   z.object({
     id: ulidField('the key-decision link identity, a ULID'),
     decision_id: ulidField('the decision record this key decision links to'),
-    title: content(
-      z.string().max(caps.KEY_DECISION_TITLE_MAX).describe('the decision title as it should render on the spine')
-    ),
-    scope: content(
-      z.string().max(caps.KEY_DECISION_SCOPE_MAX).describe('the criterion or area of the thread this decision resolved')
-    ),
+    title: content(z.string().describe('the decision title as it should render on the spine')),
+    scope: content(z.string().describe('the criterion or area of the thread this decision resolved')),
     criterion_id: optionalUlidField('the criterion this decision ranks against, absent when the decision is unanchored')
   })
 )
@@ -154,7 +148,7 @@ const KeyDecisionSchema = structural(
 const OutOfScopeSchema = structural(
   z.object({
     id: ulidField('the out-of-scope entry identity, a ULID'),
-    text: content(z.string().max(caps.OUT_OF_SCOPE_TEXT_MAX).describe('the out-of-scope statement'))
+    text: content(z.string().describe('the out-of-scope statement'))
   })
 )
 
@@ -162,7 +156,7 @@ const ArtifactSchema = structural(
   z.object({
     id: ulidField('the artifact entry identity, a ULID'),
     label: content(z.string().min(1).max(caps.ARTIFACT_LABEL_MAX).describe('what this artifact is, in a few words')),
-    pointer: pointer(caps.ARTIFACT_POINTER_MAX, 'a path or url naming where this artifact lives'),
+    pointer: pointer('a path or url naming where this artifact lives').max(caps.ARTIFACT_POINTER_MAX),
     retired: structural(
       z.boolean().describe('whether this artifact has been retired')
     )

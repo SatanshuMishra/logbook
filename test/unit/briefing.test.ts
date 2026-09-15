@@ -16,7 +16,7 @@ import {
 } from '../../src/render/briefing.ts'
 import { CLIP_MARKER } from '../../src/render/clip.ts'
 import { ThreadRecord, type Thread, type Criterion, type Risk, type KeyDecision, type OutOfScope } from '../../src/schema/thread.ts'
-import { KEY_DECISION_TITLE_MAX, SESSION_BODY_MAX, THREAD_SLUG_MAX } from '../../src/schema/caps.ts'
+import { SESSION_BODY_MAX, THREAD_SLUG_MAX } from '../../src/schema/caps.ts'
 import { SessionRecord, type SessionEntry } from '../../src/schema/session.ts'
 import type { Pointer } from '../../src/domain/pointer.ts'
 import { testRuntime } from '../support/runtime.ts'
@@ -27,6 +27,8 @@ import { buildSweepFixture, type SweepShape } from '../support/briefing-sweep-fi
 import { itemCountOverBudgetThread } from '../support/briefing-item-count-over-budget-fixture.ts'
 
 const rt = testRuntime()
+
+const FORMER_KEY_DECISION_TITLE_MAX = 200
 
 const EMPTY_INTEGRITY: DecisionIntegrity = { resolved: 0, dangling: [], quarantined: [] }
 
@@ -731,7 +733,7 @@ const decisionRecordSizedThread = (): Thread => {
   const keyDecisions: KeyDecision[] = Array.from({ length: KEY_DECISIONS_AT_RECORD_BYTE_CEILING }, () => ({
     id: rt.ulid(),
     decision_id: rt.ulid(),
-    title: text(KEY_DECISION_TITLE_MAX),
+    title: text(FORMER_KEY_DECISION_TITLE_MAX),
     scope: 'x'
   }))
   const outOfScope: OutOfScope[] = Array.from({ length: 40 }, () => ({ id: rt.ulid(), text: text(300) }))

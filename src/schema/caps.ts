@@ -7,16 +7,11 @@ export const CRITERIA_MAX_ELEMENTS = 40
 export const CRITERIA_RETENTION_MAX_ELEMENTS = 200
 
 export const RISKS_PER_CALL_MAX_ELEMENTS = 40
-export const RISK_SCOPE_MAX = 200
 export const RISK_REFS_MAX_ELEMENTS = 10
-export const RISK_REF_MAX = 200
 
 export const KEY_DECISIONS_MAX_ELEMENTS = 200
-export const KEY_DECISION_TITLE_MAX = 200
-export const KEY_DECISION_SCOPE_MAX = 200
 
 export const OUT_OF_SCOPE_MAX_ELEMENTS = 40
-export const OUT_OF_SCOPE_TEXT_MAX = 300
 
 export const ARTIFACT_LABEL_MAX = 200
 export const ARTIFACT_POINTER_MAX = 500

@@ -16,6 +16,8 @@ export type SweepFixture = { thread: Thread; predecessor: Thread; integrity: Dec
 
 const FORMER_THREAD_TITLE_MAX = 200
 const FORMER_HEADER_TEXT_MAX = 500
+const FORMER_KEY_DECISION_TITLE_MAX = 200
+const FORMER_OUT_OF_SCOPE_TEXT_MAX = 300
 const CRITERION_CHECK_HELD_LENGTH = 40
 const CRITERION_RESULT_HELD_LENGTH = 60
 const RISK_REF_HELD_LENGTH = 40
@@ -73,14 +75,14 @@ export const buildSweepFixture = (rt: Runtime, shape: SweepShape): SweepFixture 
   const keyDecisions: KeyDecision[] = Array.from({ length: shape.keyDecisionCount }, () => ({
     id: rt.ulid(),
     decision_id: rt.ulid(),
-    title: fillOf(caps.KEY_DECISION_TITLE_MAX),
+    title: fillOf(FORMER_KEY_DECISION_TITLE_MAX),
     scope: 'sweep',
     ...anchor
   }))
 
   const outOfScope: OutOfScope[] = Array.from({ length: shape.bulkCount }, () => ({
     id: rt.ulid(),
-    text: fillOf(caps.OUT_OF_SCOPE_TEXT_MAX)
+    text: fillOf(FORMER_OUT_OF_SCOPE_TEXT_MAX)
   }))
 
   const predecessor: Thread = {

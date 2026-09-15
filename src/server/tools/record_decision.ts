@@ -25,7 +25,6 @@ const RecordDecisionInputSchema = z.strictObject({
   scope: z
     .string()
     .min(1)
-    .max(caps.KEY_DECISION_SCOPE_MAX)
     .optional()
     .describe(
       'the criterion or area of the thread this decision resolved, stored on the spine link; omit it and the decision is recorded with no particular scope'
@@ -102,15 +101,6 @@ export const commitFailureRefusal = (detail: string): Refusal =>
     detail
   )
 
-export const scopeCapRefusal = (observed: number): Refusal => ({
-  ok: false,
-  field: 'scope',
-  accepted: `at most ${caps.KEY_DECISION_SCOPE_MAX} characters after escaping`,
-  example: 'the merge queue fast path',
-  retryable: true,
-  message: `scope exceeds its cap of ${caps.KEY_DECISION_SCOPE_MAX} characters after escaping; observed ${observed}; remedy: shorten the scope and retry.`
-})
-
 export const unknownCriterionRefusal = (id: string): Refusal => ({
   ok: false,
   field: 'criterion_id',
@@ -171,9 +161,6 @@ export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOut
     }
 
     const escapedScope = input.scope === undefined ? '' : escapeStored(input.scope)
-    if (escapedScope.length > caps.KEY_DECISION_SCOPE_MAX) {
-      return { ok: false, refusal: scopeCapRefusal(escapedScope.length) }
-    }
 
     const commit = readProjectHead(rt, rt.cwd)
     const decisionId = rt.ulid()
