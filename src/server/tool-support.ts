@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Refusal } from '../schema/declare.ts'
 import { ThreadRecord, type Artifact, type Thread, type Ulid } from '../schema/thread.ts'
+import { escapeStored } from '../render/escape.ts'
 import { openStore, type Store } from '../store/records.ts'
 import { withDetail } from '../store/detail.ts'
 import type { DecisionResolver } from '../domain/criteria.ts'
@@ -18,7 +19,12 @@ export const ArtifactAddSchema = z
 export type ArtifactAdd = z.infer<typeof ArtifactAddSchema>
 
 export const mintArtifacts = (rt: Runtime, entries: readonly ArtifactAdd[]): Artifact[] =>
-  entries.map((entry) => ({ id: rt.ulid(), label: entry.label, pointer: entry.pointer, retired: false }))
+  entries.map((entry) => ({
+    id: rt.ulid(),
+    label: escapeStored(entry.label),
+    pointer: escapeStored(entry.pointer),
+    retired: false
+  }))
 
 export const openProjectStore = (rt: Runtime): Attempt<Store> => {
   const opened = openStore(rt, rt.cwd)
