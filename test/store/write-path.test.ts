@@ -223,7 +223,7 @@ test('write.a-long-message-git-refuses-reports-gits-own-reason', () => {
       const missingParent = '0000000000000000000000000000000000000001'
 
       const change = makeThread(rt, 'long-message-refused')
-      const result = writeRecords(rt, layout, [change], `record ${'a'.repeat(1_000_000)}`, {
+      const result = writeRecords(rt, layout, [change], `record ${'a'.repeat(4 * 1024 * 1024)}`, {
         extraParents: [missingParent]
       })
 
