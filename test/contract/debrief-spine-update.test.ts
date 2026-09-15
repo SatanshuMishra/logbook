@@ -86,6 +86,11 @@ const bootstrapRepo = (): string => {
   return repo
 }
 
+const NEXT_STEP_CRITERION_FIELD = 'next_step_criterion_id'
+
+const parkFixtureValueFor = (field: string, criterionId: string): string =>
+  field === NEXT_STEP_CRITERION_FIELD ? criterionId : `debrief fixture value for ${field}`
+
 const callOk = async (spawned: SpawnedServer, name: string, args: Record<string, unknown>): Promise<CallToolResult> => {
   const result = (await spawned.client.callTool({ name, arguments: args })) as CallToolResult
   assert.notEqual(result.isError, true, `debrief-spine-update: calling "${name}" failed: ${JSON.stringify(result.content)}`)
@@ -134,14 +139,17 @@ test('debrief.returns-a-non-empty-spine-update', async () => {
         }
       ]
     })
-    const threadId = (opened.structuredContent as { thread_id: string }).thread_id
+    const openedStructured = opened.structuredContent as { thread_id: string; completion_criteria: { id: string }[] }
+    const threadId = openedStructured.thread_id
+    const criterionId = openedStructured.completion_criteria[0]?.id
+    assert.ok(criterionId !== undefined, 'debrief-spine-update: open_thread minted no completion criterion')
 
     await callOk(spawned, 'resume_thread', { thread_id: threadId })
 
     const parked = await callOk(
       spawned,
       PARK_TOOL_NAME,
-      Object.fromEntries(documented.map((field) => [field, `debrief fixture value for ${field}`]))
+      Object.fromEntries(documented.map((field) => [field, parkFixtureValueFor(field, criterionId)]))
     )
     const spineFieldsUpdated = (parked.structuredContent as { spine_fields_updated: string[] }).spine_fields_updated
     assert.ok(

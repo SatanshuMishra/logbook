@@ -8,8 +8,15 @@ description: Use at session hand-off to wrap up the work of this session.
 1. Gather what happened in this session as one plain summary.
 2. Gather what this session landed, by naming which goals moved and what their checks returned, what was verified rather than assumed, and what was started and where exactly it stopped.
 3. Gather the next action a later session takes first, specific enough to begin without re-deriving anything, naming the file and the place in it for an action that involves one, and stated as an action rather than as a goal or a phase name.
-4. Call `park_thread` with `park_thread.outcome` set to the summary, `park_thread.landed` set to what landed, and `park_thread.next_step` set to the next action.
-5. Print the returned `park_thread.status` and the returned `park_thread.spine_fields_updated`.
-6. Print the refusal text `park_thread` returns in place of a status.
-7. Print the summary, the landing and the next action alongside that refusal text, so the record of this session survives a refused call.
-8. Stop.
+4. Gather the id of the open completion criterion that next action advances, or no id for an action that advances no single criterion.
+5. Gather the risks this session found, each paired with the id of the completion criterion it threatens, or with null for a risk that bears on the whole thread.
+6. Gather the live risks the thread already holds, read from its record at logbook://thread/ followed by the thread id.
+7. Gather, among the found risks, each one that a live risk already states in other words, and set it aside in favour of that live risk.
+8. Gather the live risks this session showed to be over, and each live risk that repeats another live risk in other words, keeping the clearer one of each pair.
+9. Call `update_thread` with `update_thread.thread_id` set to the thread this session worked, `update_thread.risks_add` carrying the found risks that were not set aside, each with its criterion_id, and `update_thread.risks_retire` carrying the live risks gathered as over or repeated.
+10. Print the returned `update_thread.risks_added`, `update_thread.risks_already_present` and `update_thread.risks_retired`.
+11. Call `park_thread` with `park_thread.outcome` set to the summary, `park_thread.landed` set to what landed, `park_thread.next_step` set to the next action, and `park_thread.next_step_criterion_id` set to the criterion id that action advances, left out for an action that advances no single criterion.
+12. Print the returned `park_thread.status` and the returned `park_thread.spine_fields_updated`.
+13. Print the refusal text `park_thread` returns in place of a status.
+14. Print the summary, the landing and the next action alongside that refusal text, so the record of this session survives a refused call.
+15. Stop.
