@@ -658,6 +658,38 @@ test('update_thread.adds-a-risk-whose-text-matches-a-live-risk-on-another-anchor
   })
 })
 
+test('update_thread.adds-again-a-risk-retired-in-the-same-call', async () => {
+  await withFixture(async (fx) => {
+    const opened = await openCriteriaThread(fx, 'risk-retire-and-add-thread', [PROPOSED_CRITERION])
+    const text = 'the backfill may count rows twice'
+
+    const first = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      risks_add: [{ text, scope: 'backfill', criterion_id: null }]
+    })
+    const firstId = (first.structuredContent as RiskAddResult).risks_added[0]
+    assert.ok(firstId !== undefined, 'the first risk was not minted an id')
+
+    const both = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      risks_retire: [firstId],
+      risks_add: [{ text, scope: 'backfill', criterion_id: null }]
+    })
+    assert.equal(both.isError, undefined, `retiring and re-adding in one call must succeed, got: ${both.isError === true ? firstTextOf(both) : 'no error'}`)
+    const structured = both.structuredContent as RiskAddResult
+    assert.equal(structured.risks_added.length, 1, 'a risk retired in this same call is no longer live, so its text is added again')
+    assert.deepEqual(structured.risks_already_present, [])
+    assert.deepEqual(
+      readThreadRecord(fx, opened.threadId).spine.open_risks.map((risk) => [risk.id === firstId, risk.retired]),
+      [
+        [true, true],
+        [false, false]
+      ],
+      'the first risk is retired and a new live risk holds the same text'
+    )
+  })
+})
+
 test('update_thread.adds-a-risk-whose-text-matches-only-a-retired-risk', async () => {
   await withFixture(async (fx) => {
     const opened = await openCriteriaThread(fx, 'risk-retired-match-thread', [PROPOSED_CRITERION])
