@@ -21,7 +21,7 @@ import { escapeStored } from '../../render/escape.ts'
 import { openProjectStore } from '../tool-support.ts'
 
 const RESOLUTIONS_MAX_ELEMENTS = 200
-const RESOLUTION_PATH_MAX = 1024
+const RESOLUTION_PATH_MAX = 4096
 const RESOLUTION_PATH_PATTERN = /^[^/\0\r\n][^\0\r\n]*$/
 
 const ULID_FRAGMENT = ULID_PATTERN.source.replace(/^\^/, '').replace(/\$$/, '')

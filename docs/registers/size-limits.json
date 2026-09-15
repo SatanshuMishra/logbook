@@ -712,7 +712,7 @@
   },
   {
     "name": "RESOLUTIONS_MAX_ELEMENTS",
-    "site": "src/server/tools/resolve_conflict.ts:35",
+    "site": "src/server/tools/resolve_conflict.ts:23",
     "value": 200,
     "basis": "unrecorded",
     "reason": null,
@@ -720,11 +720,11 @@
     "mirror_relation": null
   },
   {
-    "name": "FIELD_MAX",
-    "site": "src/server/tools/resolve_conflict.ts:36",
-    "value": 300,
-    "basis": "unrecorded",
-    "reason": null,
+    "name": "RESOLUTION_PATH_MAX",
+    "site": "src/server/tools/resolve_conflict.ts:24",
+    "value": 4096,
+    "basis": "chosen",
+    "reason": "4096 is a chosen ceiling on the path a caller sends, set to Linux PATH_MAX, the largest path limit of the systems Logbook runs on (macOS PATH_MAX is 1024). It is far above any record address Logbook writes, the longest being sessions/<ulid>/<ulid>.json at 67 characters, and high enough that a conflicted file with any path this machine can hold can still be settled, which is why the path pattern beside it is also kept loose (decision 01M2KK8AEJXRDY0XTXV6Z3CMY3).",
     "mirrors": null,
     "mirror_relation": null
   },
