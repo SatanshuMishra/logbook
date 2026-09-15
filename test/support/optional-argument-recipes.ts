@@ -364,7 +364,7 @@ const openUpdateThreadFixture = async (rt: Runtime): Promise<UpdateThreadFixture
   const { threadId, criterionIds } = await openFixtureThread(rt, 'update-thread', 2)
   const withRisk = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
     thread_id: threadId,
-    risks_add: [{ text: 'a pre-existing fixture risk', scope: 'a pre-existing fixture scope' }]
+    risks_add: [{ text: 'a pre-existing fixture risk', scope: 'a pre-existing fixture scope', criterion_id: null }]
   })
   if (!withRisk.ok) throw new Error('optional-argument-recipes: expected the pre-existing risk to be added')
   const riskId = mustGet(withRisk.structured.risks_added as string[], 0, 'a minted risk id')
@@ -485,7 +485,9 @@ const SIMPLE_UPDATE_FIELDS: SimpleUpdateFieldSpec[] = [
   },
   {
     field: 'risks_add',
-    sentinelExtra: () => ({ risks_add: [{ text: 'sentinel risks_add risk text', scope: 'sentinel risks_add risk scope' }] }),
+    sentinelExtra: () => ({
+      risks_add: [{ text: 'sentinel risks_add risk text', scope: 'sentinel risks_add risk scope', criterion_id: null }]
+    }),
     extract: (structured) => ({ risks_added: structured.risks_added })
   },
   {
@@ -536,35 +538,15 @@ const updateThreadRisksAddRefsRecipe = (): Promise<RecipeResult> =>
     openUpdateThreadFixture,
     (ctx: UpdateThreadFixtureCtx) => ({
       thread_id: ctx.threadId,
-      risks_add: [{ text: 'refs probe risk text', scope: 'refs probe risk scope' }]
-    }),
-    (ctx: UpdateThreadFixtureCtx) => ({
-      thread_id: ctx.threadId,
-      risks_add: [{ text: 'refs probe risk text', scope: 'refs probe risk scope', refs: ['sentinel-ref-pointer'] }]
-    }),
-    (structured, rt, ctx: UpdateThreadFixtureCtx) => ({ refs: findAddedRisk(rt, ctx.threadId, structured)?.refs ?? [] })
-  )
-
-const updateThreadRisksAddCriterionIdRecipe = (): Promise<RecipeResult> =>
-  runOptionalArgRecipe(
-    'update_thread.risks_add[].criterion_id',
-    updateThreadTool,
-    openUpdateThreadFixture,
-    (ctx: UpdateThreadFixtureCtx) => ({
-      thread_id: ctx.threadId,
-      risks_add: [{ text: 'criterion probe risk text', scope: 'criterion probe risk scope' }]
+      risks_add: [{ text: 'refs probe risk text', scope: 'refs probe risk scope', criterion_id: null }]
     }),
     (ctx: UpdateThreadFixtureCtx) => ({
       thread_id: ctx.threadId,
       risks_add: [
-        {
-          text: 'criterion probe risk text',
-          scope: 'criterion probe risk scope',
-          criterion_id: mustGet(ctx.criterionIds, 0, 'the first fixture criterion id')
-        }
+        { text: 'refs probe risk text', scope: 'refs probe risk scope', refs: ['sentinel-ref-pointer'], criterion_id: null }
       ]
     }),
-    (structured, rt, ctx: UpdateThreadFixtureCtx) => ({ criterion_id: findAddedRisk(rt, ctx.threadId, structured)?.criterion_id ?? null })
+    (structured, rt, ctx: UpdateThreadFixtureCtx) => ({ refs: findAddedRisk(rt, ctx.threadId, structured)?.refs ?? [] })
   )
 
 const updateThreadCriteriaSettledSettledByRecipe = (): Promise<RecipeResult> =>
@@ -884,7 +866,6 @@ export const RECIPES: ReadonlyMap<string, () => Promise<RecipeResult>> = new Map
   ['open_thread.completion_criteria[].settled_by', openThreadCriterionSettledByRecipe],
   ...simpleUpdateThreadRecipes,
   ['update_thread.risks_add[].refs', updateThreadRisksAddRefsRecipe],
-  ['update_thread.risks_add[].criterion_id', updateThreadRisksAddCriterionIdRecipe],
   ['update_thread.criteria_settled[].settled_by', updateThreadCriteriaSettledSettledByRecipe],
   ['amend_criteria.criterion_id', amendCriteriaCriterionIdRecipe],
   ['amend_criteria.text', amendCriteriaTextRecipe],

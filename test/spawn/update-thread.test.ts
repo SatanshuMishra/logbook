@@ -537,3 +537,50 @@ test('update_thread.stores-an-artifact-label-and-pointer-escaped', async () => {
     assert.equal(artifact?.pointer, escapeStored(pointer), 'the stored artifact pointer must be escaped like every other stored string')
   })
 })
+
+test('update_thread.refuses-a-risk-that-declares-no-anchor', async () => {
+  await withFixture(async (fx) => {
+    const opened = await openCriteriaThread(fx, 'risk-anchor-owed-thread', [PROPOSED_CRITERION])
+
+    const result = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      risks_add: [{ text: 'the queue may starve under load', scope: 'throughput' }]
+    })
+
+    assert.equal(result.isError, true, 'a risk that declares neither a criterion nor the whole thread must be refused')
+    const text = firstTextOf(result)
+    assert.ok(text.includes('criterion_id'), `the refusal has to name the missing anchor field, got: ${text}`)
+    assert.deepEqual(readThreadRecord(fx, opened.threadId).spine.open_risks, [], 'a refused call must not have stored the risk')
+  })
+})
+
+test('update_thread.stores-a-whole-thread-risk-with-a-null-anchor', async () => {
+  await withFixture(async (fx) => {
+    const opened = await openCriteriaThread(fx, 'risk-anchor-whole-thread', [PROPOSED_CRITERION])
+    const riskText = 'the release may slip past the freeze'
+
+    const result = await callUpdateThread(fx, {
+      thread_id: opened.threadId,
+      risks_add: [{ text: riskText, scope: 'release', criterion_id: null }]
+    })
+    assert.equal(
+      result.isError,
+      undefined,
+      `update_thread must accept null as the whole-thread anchor, got: ${result.isError === true ? firstTextOf(result) : 'no error'}`
+    )
+
+    const [risk] = readThreadRecord(fx, opened.threadId).spine.open_risks
+    assert.ok(risk !== undefined, 'the whole-thread risk was not stored')
+    assert.equal(risk.text, riskText)
+    assert.ok(Object.hasOwn(risk, 'criterion_id'), 'the stored risk must carry its declared anchor, not omit it')
+    assert.equal(risk.criterion_id, null, 'a whole-thread risk is stored with a null anchor')
+
+    const resumed = (await fx.spawned.client.callTool({
+      name: 'resume_thread',
+      arguments: { thread_id: opened.threadId }
+    })) as CallToolResult
+    assert.equal(resumed.isError, undefined, `resume_thread must read a thread holding a null-anchored risk, got: ${firstTextOf(resumed)}`)
+    const briefing = (resumed.structuredContent as { briefing: string }).briefing
+    assert.ok(briefing.includes(riskText), `the briefing must show the whole-thread risk, got:\n${briefing}`)
+  })
+})

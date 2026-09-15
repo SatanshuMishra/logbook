@@ -1,5 +1,5 @@
 import type { Thread, Criterion, Risk, KeyDecision, OutOfScope, Artifact } from '../schema/thread.ts'
-import { criterionSettledness } from '../schema/thread.ts'
+import { criterionSettledness, riskAnchor } from '../schema/thread.ts'
 import type { SessionEntry } from '../schema/session.ts'
 import type { Pointer } from '../domain/pointer.ts'
 import { previousSessionEntries } from '../domain/session-log.ts'
@@ -228,8 +228,8 @@ const renderPointerStatus = (pointer: Pointer | null, threadId: string): string 
 
 type Lane = 'live' | 'settled'
 
-const laneFor = (criterionId: string | undefined, criteriaById: ReadonlyMap<string, Criterion>): Lane => {
-  if (criterionId === undefined) return 'live'
+const laneFor = (criterionId: string | null, criteriaById: ReadonlyMap<string, Criterion>): Lane => {
+  if (criterionId === null) return 'live'
   const criterion = criteriaById.get(criterionId)
   if (criterion === undefined) return 'live'
   if (criterion.struck_by !== null || criterion.done) return 'settled'
@@ -238,12 +238,13 @@ const laneFor = (criterionId: string | undefined, criteriaById: ReadonlyMap<stri
 
 type Laned<T> = { live: T[]; settled: T[] }
 
-const laneSplit = <T extends { criterion_id?: string | undefined }>(
+const laneSplit = <T>(
   items: readonly T[],
+  anchorOf: (item: T) => string | null,
   criteriaById: ReadonlyMap<string, Criterion>
 ): Laned<T> => ({
-  live: items.filter((item) => laneFor(item.criterion_id, criteriaById) === 'live'),
-  settled: items.filter((item) => laneFor(item.criterion_id, criteriaById) === 'settled')
+  live: items.filter((item) => laneFor(anchorOf(item), criteriaById) === 'live'),
+  settled: items.filter((item) => laneFor(anchorOf(item), criteriaById) === 'settled')
 })
 
 type PreviousSession = { newest: SessionEntry[]; older: SessionEntry[] }
@@ -543,8 +544,8 @@ export const renderBriefingWithPasses = (
   const liveRisks = thread.spine.open_risks.filter((risk) => !risk.retired)
   const liveArtifacts = (thread.artifacts ?? []).filter((artifact) => !artifact.retired)
 
-  const risks = laneSplit(liveRisks, criteriaById)
-  const keyDecisions = laneSplit(thread.spine.key_decisions, criteriaById)
+  const risks = laneSplit(liveRisks, riskAnchor, criteriaById)
+  const keyDecisions = laneSplit(thread.spine.key_decisions, (keyDecision) => keyDecision.criterion_id ?? null, criteriaById)
   const sessions = splitNewestFromOlder(previousSessionEntries(sessionEntries))
 
   const renderWith = (renderClip: RenderClip, budgetExceeded: boolean): string =>

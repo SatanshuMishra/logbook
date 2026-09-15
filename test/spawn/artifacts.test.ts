@@ -143,7 +143,7 @@ test('artifacts.re-retiring-an-entry-changes-nothing', async () => {
 
     const added = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,
-      risks_add: [{ text: 'a risk to retire twice', scope: 're-retire' }]
+      risks_add: [{ text: 'a risk to retire twice', scope: 're-retire', criterion_id: null }]
     })
     assert.equal(added.ok, true, 'expected the risk add call to succeed')
     if (!added.ok) throw new Error('expected the add to succeed')
@@ -195,7 +195,7 @@ test('artifacts.risks-retire-marks-the-entry-and-never-deletes-it', async () => 
 
     const added = await updateThreadTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,
-      risks_add: [{ text: 'a risk', scope: 'merge' }]
+      risks_add: [{ text: 'a risk', scope: 'merge', criterion_id: null }]
     })
     assert.equal(added.ok, true, 'expected the risk add call to succeed')
     if (!added.ok) throw new Error('expected the add to succeed')

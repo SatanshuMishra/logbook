@@ -54,8 +54,8 @@ const seedThreadWithRisksAndCriteria = async (spawned: SpawnedServer): Promise<T
     arguments: {
       thread_id: threadId,
       risks_add: [
-        { text: 'the first thread detail risk', scope: 'the first thread detail criterion' },
-        { text: 'the second thread detail risk', scope: 'the second thread detail criterion' }
+        { text: 'the first thread detail risk', scope: 'the first thread detail criterion', criterion_id: null },
+        { text: 'the second thread detail risk', scope: 'the second thread detail criterion', criterion_id: null }
       ]
     }
   })) as CallToolResult

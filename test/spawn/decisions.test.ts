@@ -534,7 +534,8 @@ test('update_thread.refuses-an-empty-risk-reference', async () => {
           {
             text: 'a risk whose reference is the empty string',
             scope: 'an area of the thread',
-            refs: ['']
+            refs: [''],
+            criterion_id: null
           }
         ]
       }
@@ -558,7 +559,8 @@ test('update_thread.refuses-an-empty-risk-reference', async () => {
           {
             text: 'a risk whose reference is whitespace only',
             scope: 'an area of the thread',
-            refs: ['   ']
+            refs: ['   '],
+            criterion_id: null
           }
         ]
       }
@@ -586,7 +588,8 @@ test('update_thread.refuses-an-empty-risk-reference', async () => {
           {
             text: 'a risk whose reference is a real pointer',
             scope: 'an area of the thread',
-            refs: ['docs/specs/goal-model.md#L120']
+            refs: ['docs/specs/goal-model.md#L120'],
+            criterion_id: null
           }
         ]
       }

@@ -3,14 +3,13 @@ import type { ToolSpec } from '../register.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import { ULID_PATTERN } from '../../schema/ids.ts'
 import type { Artifact, KeyDecision, Risk, Settledness, Spine, Thread } from '../../schema/thread.ts'
-import { criterionSettledness } from '../../schema/thread.ts'
+import { criterionSettledness, riskAnchor } from '../../schema/thread.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
 import { ArtifactAddSchema, commitThread, loadThread, mintArtifacts, openProjectStore } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
-const optionalUlidField = (description: string) => z.string().regex(ULID_PATTERN).optional().describe(description)
 
 const RiskAddSchema = z
   .strictObject({
@@ -21,9 +20,13 @@ const RiskAddSchema = z
       .max(caps.RISK_REFS_MAX_ELEMENTS)
       .optional()
       .describe('external pointers backing this risk; omit or send an empty array for none'),
-    criterion_id: optionalUlidField(
-      'the completion criterion this risk ranks against; refused when it names no criterion on this thread'
-    )
+    criterion_id: z
+      .string()
+      .regex(ULID_PATTERN)
+      .nullable()
+      .describe(
+        'the completion criterion this risk ranks against, or null when the risk bears on the whole thread; refused when it names no criterion on this thread'
+      )
   })
   .describe('one new risk to append to the spine')
 
@@ -307,7 +310,7 @@ export const unknownDecisionRefusal = (ids: string[]): Refusal => ({
 const danglingRiskCriterionRefusal = (ids: string[]): Refusal => ({
   ok: false,
   field: 'risks_add',
-  accepted: 'a criterion_id that names a completion criterion already present on this thread',
+  accepted: 'a criterion_id that names a completion criterion already present on this thread, or null when the risk bears on the whole thread',
   example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
   retryable: true,
   message: `risks_add names criterion ids not present on this thread: ${ids.join(', ')}.`
@@ -492,14 +495,11 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
 
     const newOutOfScope = (input.out_of_scope_add ?? []).map((text) => ({ id: rt.ulid(), text }))
 
-    const danglingRiskCriteria = newRisks.filter(
-      (r) => r.criterion_id !== undefined && !thread.completion_criteria.some((c) => c.id === r.criterion_id)
-    )
+    const danglingRiskCriteria = newRisks
+      .map(riskAnchor)
+      .filter((anchor): anchor is string => anchor !== null && !thread.completion_criteria.some((c) => c.id === anchor))
     if (danglingRiskCriteria.length > 0) {
-      return {
-        ok: false,
-        refusal: danglingRiskCriterionRefusal(danglingRiskCriteria.map((r) => r.criterion_id as string))
-      }
+      return { ok: false, refusal: danglingRiskCriterionRefusal(danglingRiskCriteria) }
     }
 
     const badDecisionRefs = newKeyDecisions.filter((kd) => {

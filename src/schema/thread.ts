@@ -27,10 +27,12 @@ export type Criterion = {
 
 export const criterionSettledness = (criterion: Criterion): Settledness => criterion.settledness ?? 'proposed'
 
-export type Risk = { id: Ulid; scope: string; text: string; refs: string[]; criterion_id?: Ulid | undefined; retired: boolean }
+export type Risk = { id: Ulid; scope: string; text: string; refs: string[]; criterion_id?: Ulid | null | undefined; retired: boolean }
 export type KeyDecision = { id: Ulid; decision_id: Ulid; title: string; scope: string; criterion_id?: Ulid | undefined }
 export type OutOfScope = { id: Ulid; text: string }
 export type Artifact = { id: Ulid; label: string; pointer: string; retired: boolean }
+
+export const riskAnchor = (risk: Risk): Ulid | null => risk.criterion_id ?? null
 
 export type Spine = {
   active_goal: string
@@ -128,7 +130,16 @@ const RiskSchema = structural(
       .max(caps.RISK_REFS_MAX_ELEMENTS)
       .describe('external pointers backing this risk')
       .meta({ class: 'pointer' }),
-    criterion_id: optionalUlidField('the criterion this risk ranks against, absent when the risk is unanchored'),
+    criterion_id: structural(
+      z
+        .string()
+        .regex(ULID_PATTERN)
+        .nullable()
+        .optional()
+        .describe(
+          'the criterion this risk ranks against, null when the risk bears on the whole thread, and absent on a risk recorded before every risk declared its anchor'
+        )
+    ),
     retired: structural(
       z.boolean().describe('whether this risk has been retired')
     )
