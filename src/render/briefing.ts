@@ -5,6 +5,7 @@ import type { Pointer } from '../domain/pointer.ts'
 import { previousSessionEntries } from '../domain/session-log.ts'
 import { escapeStored, escapeStoredBlock, firstNonEmptyStoredLine } from './escape.ts'
 import { CLIP_MARKER_GRAPHEMES, clipWithMarker, clipWithMarkerFloor } from './clip.ts'
+import { toRosterRow } from './roster.ts'
 import {
   SESSION_BODY_MAX
 } from '../schema/caps.ts'
@@ -60,6 +61,9 @@ const fitsBudget = (briefing: string, threadId: string, hasPreviousSession: bool
   briefing.length <= BRIEFING_MAX_CHARS &&
   resumePayloadBytes(briefing, threadId, hasPreviousSession) <= RESUME_PAYLOAD_TARGET_BYTES
 
+export const fitsResumePayload = (briefing: string, threadId: string, hasPreviousSession: boolean): boolean =>
+  fitsBudget(briefing, threadId, hasPreviousSession)
+
 export const RELATED_TITLE_FLOOR = 100
 export const RELATED_SLUG_FLOOR = FORMER_THREAD_SLUG_MAX
 export const RISK_TEXT_FLOOR = FORMER_RISK_TEXT_MAX
@@ -90,6 +94,9 @@ const CONTINUATION_RULE =
 
 const LEGACY_LAST_SESSION_MARKER =
   '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead'
+
+export const BRIEFED_ALREADY_LINE =
+  '- this session was already briefed on this thread, so only the head of the briefing is shown'
 
 const CRITERIA_OWED_LINE = '- none recorded; a definition of done is still owed.'
 
@@ -210,6 +217,9 @@ const renderOlderSessionEntriesLine = (count: number, threadId: string): string 
 
 const renderUnreadableSessionEntriesLine = (count: number, threadId: string): string =>
   `- ${count} session log entr${count === 1 ? 'y' : 'ies'} on this thread could not be read; see logbook://sessions/${escapeStored(threadId)} for the complete record`
+
+const renderUnreadableDecisionsHandleLine = (count: number): string =>
+  `- ${count} linked decision record${count === 1 ? '' : 's'} could not be read`
 
 const renderOtherGoalRisksLine = (count: number, threadId: string): string =>
   `- ${count} more ${count === 1 ? 'risk' : 'risks'} on other open goals; see logbook://thread/${escapeStored(threadId)} for the complete record`
@@ -550,6 +560,42 @@ const assembleBriefing = (
     ...notShownBulletLines
       .slice(0, 1)
       .map(() => `See ${notShownAddress} for the complete record.`)
+  ].join('\n')
+}
+
+export const renderHandle = (
+  thread: Thread,
+  decisionIntegrity: DecisionIntegrity,
+  pointer: Pointer | null,
+  unreadableSessionEntryCount: number
+): string => {
+  const row = toRosterRow(thread)
+  const unreadableDecisionCount = decisionIntegrity.dangling.length + decisionIntegrity.quarantined.length
+  const nextStepLines = thread.spine.next_step.length === 0 ? [] : [thread.spine.next_step]
+  const notShownBulletLines = [
+    BRIEFED_ALREADY_LINE,
+    ...[unreadableDecisionCount].filter((count) => count > 0).map(renderUnreadableDecisionsHandleLine),
+    ...[unreadableSessionEntryCount]
+      .filter((count) => count > 0)
+      .map((count) => renderUnreadableSessionEntriesLine(count, thread.id))
+  ]
+
+  return [
+    BRIEFING_HEADING,
+    '',
+    `**Thread:** ${clip(thread.title, HEADER_FIELD_ESCAPED_GRAPHEME_MAX)}`,
+    `**Status:** ${escapeStored(thread.status)}`,
+    renderBlockage(thread.blocked_by),
+    renderPointerStatus(pointer, thread.id),
+    `**Criteria:** ${row.criteria_done} of ${row.criteria_total} done`,
+    ...nextStepLines.slice(0, 1).map(() => ''),
+    ...nextStepLines.slice(0, 1).map(() => '**Next step:**'),
+    ...nextStepLines.slice(0, 1).map(() => ''),
+    ...nextStepLines.map((value) => escapeStoredBlock(value)),
+    '',
+    '**Not shown:**',
+    ...notShownBulletLines,
+    `See logbook://thread/${escapeStored(thread.id)} for the complete record.`
   ].join('\n')
 }
 
