@@ -102,7 +102,7 @@ const markDone = async (fx: Fixture, threadId: string, criterionId: string, resu
 }
 
 const briefingOf = async (fx: Fixture, threadId: string): Promise<string> => {
-  const resumed = await callTool(fx, 'resume_thread', { thread_id: threadId })
+  const resumed = await callTool(fx, 'resume_thread', { thread_id: threadId, full_briefing: true })
   assertOkResult('resume_thread (criterion-reopen assert)', resumed)
   return (resumed.structuredContent as { briefing: string }).briefing
 }

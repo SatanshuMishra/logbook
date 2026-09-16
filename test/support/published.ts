@@ -134,7 +134,11 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
         'in a single call: it marks the thread as the one being worked on this machine and renders what the previous session left.',
       providers: []
     },
-    { phrase: 'Takes one thread id', providers: ['resume_thread.thread_id'] }
+    { phrase: 'Takes one thread id', providers: ['resume_thread.thread_id'] },
+    {
+      phrase: 'pass full_briefing to ask for the whole text back',
+      providers: ['resume_thread.full_briefing']
+    }
   ],
   park_thread: [
     {
