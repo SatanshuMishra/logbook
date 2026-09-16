@@ -13,6 +13,9 @@ import { layoutFor } from '../../src/store/layout.ts'
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const ENTRY = join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
 
+const SDK_COMPLETION_VALUES_CAP = 100
+const THREADS_TO_EXCEED_THE_SDK_COMPLETION_CAP = SDK_COMPLETION_VALUES_CAP + 1
+
 type Fixture = { spawned: SpawnedServer; repo: string; pluginData: string }
 
 const runSetupStep = (repo: string, args: string[]): void => {
@@ -212,15 +215,15 @@ test('completion.session-entry-ids-refuses-a-traversal-thread-id', async () => {
 test('completion.is-bounded', async () => {
   await withFixture(async (fx) => {
     await fx.spawned.client.listTools()
-    await seedThreads(fx.spawned, 300, 'bounded')
+    await seedThreads(fx.spawned, THREADS_TO_EXCEED_THE_SDK_COMPLETION_CAP, 'bounded')
 
     const completion = await fx.spawned.client.complete({
       ref: { type: 'ref/resource', uri: 'logbook://thread/{id}' },
       argument: { name: 'id', value: 'bounded-' }
     })
 
-    assert.equal(completion.completion.values.length, 100)
+    assert.equal(completion.completion.values.length, SDK_COMPLETION_VALUES_CAP)
     assert.equal(completion.completion.hasMore, true)
-    assert.equal(completion.completion.total, 300)
+    assert.equal(completion.completion.total, THREADS_TO_EXCEED_THE_SDK_COMPLETION_CAP)
   })
 })

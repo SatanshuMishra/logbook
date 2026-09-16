@@ -4,7 +4,6 @@ import { extname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 export const REQUIRED_FILES = [
-  'bin/logbook-cli.ts',
   'bin/logbook-server.ts',
   'hooks/hooks.json',
   'hooks/lib/io.ts',
