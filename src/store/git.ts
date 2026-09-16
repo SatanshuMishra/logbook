@@ -80,7 +80,9 @@ const exitedBeforeReadingStdin = (result: { error?: Error; status: number | null
 const bufferOverflowMessage = (args: string[]): string =>
   `git ${args.join(' ')} produced more than GIT_BUFFER_MAX_BYTES (${GIT_BUFFER_MAX_BYTES}) bytes of output; refusing rather than risk mistaking a truncated read for a short ledger`
 
-export const git = (rt: Runtime, repo: string, args: string[], opts: GitOpts = {}): GitResult => {
+export type GitRun = { code: number; stdout: string; stderr: string }
+
+export const gitRun = (rt: Runtime, repo: string, args: string[], opts: GitOpts = {}): GitRun => {
   const indexFile = opts.indexFile ?? freshIndexPath()
   const env = buildGitEnv(rt, indexFile, opts)
   try {
@@ -92,18 +94,19 @@ export const git = (rt: Runtime, repo: string, args: string[], opts: GitOpts = {
     })
     if (result.error && !exitedBeforeReadingStdin(result)) {
       if (isBufferOverflow(result.error as NodeJS.ErrnoException)) {
-        return { ok: false, code: -1, stderr: bufferOverflowMessage(args) }
+        return { code: -1, stdout: '', stderr: bufferOverflowMessage(args) }
       }
-      return { ok: false, code: -1, stderr: result.error.message }
+      return { code: -1, stdout: '', stderr: result.error.message }
     }
-    const code = result.status ?? -1
-    if (code === 0) {
-      return { ok: true, stdout: result.stdout }
-    }
-    return { ok: false, code, stderr: result.stderr }
+    return { code: result.status ?? -1, stdout: result.stdout, stderr: result.stderr }
   } finally {
     removeSelfAllocatedIndex(indexFile, opts)
   }
+}
+
+export const git = (rt: Runtime, repo: string, args: string[], opts: GitOpts = {}): GitResult => {
+  const run = gitRun(rt, repo, args, opts)
+  return run.code === 0 ? { ok: true, stdout: run.stdout } : { ok: false, code: run.code, stderr: run.stderr }
 }
 
 export const gitBuffer = (rt: Runtime, repo: string, args: string[], opts: GitBufferOpts = {}): GitBufferResult => {

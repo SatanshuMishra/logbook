@@ -54,9 +54,20 @@ const derivePopulation = (): string[] =>
     collectOptionalArguments(spec.name, declare(spec.name, spec.input as unknown as z.ZodType).jsonSchema)
   )
 
+const indexedFieldOf = (path: string): RegExp => {
+  const withinTool = path.slice(path.indexOf('.') + 1)
+  const pattern = withinTool
+    .split('[]')
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('\\.\\d+')
+  return new RegExp(`^${pattern}$`)
+}
+
+const refusalNamesTheArgument = (path: string, field: string): boolean => field === keyOf(path) || indexedFieldOf(path).test(field)
+
 const classifyLandingSite = (entry: LandingSiteEntry): Verdict => {
   if (entry.noDifference) return 'unclassifiable'
-  if (entry.refused) return entry.refusal !== null && entry.refusal.field === keyOf(entry.path) ? 'allowed' : 'unclassifiable'
+  if (entry.refused) return entry.refusal !== null && refusalNamesTheArgument(entry.path, entry.refusal.field) ? 'allowed' : 'unclassifiable'
   if (isEmptyish(entry.omitted)) return 'allowed'
   const value = entry.omitted
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || Array.isArray(value)) {
@@ -182,6 +193,30 @@ test('contract.optional-arguments-are-absent.no-code-derives-a-substitute.contro
     unrelatedRefusal.refusal?.message ?? '',
     /thread_id must resolve/,
     'contract.optional-arguments-are-absent: the unrelated refusal message must not mention the argument under test'
+  )
+
+  const namingTheIndexedArgument: LandingSiteEntry = {
+    path: 'resolve_conflict.resolutions[].record',
+    site: 'refused',
+    omitted: undefined,
+    refused: true,
+    noDifference: false,
+    refusal: { field: 'resolutions.0.record', message: 'resolutions.0 names a record file, so send the whole record as record.' }
+  }
+  assert.equal(
+    classifyLandingSite(namingTheIndexedArgument),
+    'allowed',
+    'contract.optional-arguments-are-absent: a refusal naming an array item argument by its indexed path names the argument under test'
+  )
+
+  const namingAFieldInsideTheArgument: LandingSiteEntry = {
+    ...namingTheIndexedArgument,
+    refusal: { field: 'resolutions.0.record.title', message: 'resolutions.0.record.title was refused.' }
+  }
+  assert.throws(
+    () => census([namingAFieldInsideTheArgument], classifyLandingSite),
+    /census halted on an unclassifiable item:/,
+    'contract.optional-arguments-are-absent: a refusal naming a field inside the argument is not a refusal of its omission'
   )
 })
 

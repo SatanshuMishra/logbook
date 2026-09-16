@@ -162,7 +162,7 @@ test('contract.no-literal-identifiers', () => {
 
   const synthetic: LiteralCandidate[] = [
     {
-      file: 'unit/field-merge.test.ts',
+      file: 'unit/records.test.ts',
       line: 1,
       text: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
       insideAssertCall: true,
@@ -176,7 +176,7 @@ test('contract.no-literal-identifiers', () => {
 test('contract.no-literal-identifiers.halts-on-a-binding-only-referenced-inside-assertions', () => {
   const synthetic: LiteralCandidate[] = [
     {
-      file: 'unit/field-merge.test.ts',
+      file: 'unit/records.test.ts',
       line: 1,
       text: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
       insideAssertCall: false,
@@ -190,7 +190,7 @@ test('contract.no-literal-identifiers.halts-on-a-binding-only-referenced-inside-
 test('contract.no-literal-identifiers.halts-on-an-unresolvable-binding-shape', () => {
   const synthetic: LiteralCandidate[] = [
     {
-      file: 'unit/field-merge.test.ts',
+      file: 'unit/records.test.ts',
       line: 1,
       text: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
       insideAssertCall: false,

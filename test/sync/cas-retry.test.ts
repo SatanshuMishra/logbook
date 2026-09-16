@@ -110,6 +110,7 @@ test('sync.cas-retry', () => {
     let racerUpdateRefSucceeded = false
 
     const beforeCas = (): void => {
+      if (racerUpdateRefSucceeded) return
       const readTree = git(ana.rt, ana.repo, ['read-tree', beforeRace], { indexFile: racerIndexFile })
       assert.equal(readTree.ok, true, 'racer read-tree failed to seed the racing index')
       if (!readTree.ok) return

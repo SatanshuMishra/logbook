@@ -10,6 +10,7 @@ import { rawGit } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
 import { layoutFor } from '../../src/store/layout.ts'
+import { openStore } from '../../src/store/records.ts'
 import { writePointer } from '../../src/domain/pointer.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -250,8 +251,13 @@ const recipeResolveConflict: Recipe = async (scenario) => {
 
     if (scenario === 'foreign') writeForeignPointer(ana.repo, ana.pluginData)
 
+    const anaStore = openStore(testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: ana.pluginData } }), ana.repo)
+    if (!anaStore.ok) throw new Error('write-tools.ignore-the-pointer: could not open ana\'s store to compose the resolved record')
+    const anasThread = anaStore.value.readThread(threadId)
+    if (anasThread === null || anasThread.quarantined) throw new Error('write-tools.ignore-the-pointer: could not read ana\'s thread to compose the resolved record')
+
     return await callTool(ana.spawned, 'resolve_conflict', {
-      resolutions: [{ record: `thread:${threadId}`, field: 'spine.active_goal', winner: 'local' }]
+      resolutions: [{ path: `threads/${threadId}.json`, record: anasThread.record }]
     })
   } finally {
     await ana.spawned.close()

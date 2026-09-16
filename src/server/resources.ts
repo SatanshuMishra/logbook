@@ -6,6 +6,8 @@ import type { Variables } from '@modelcontextprotocol/sdk/shared/uriTemplate.js'
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Slot, Store, Thread } from '../store/records.ts'
 import { layoutFor } from '../store/layout.ts'
+import { git } from '../store/git.ts'
+import { readConflictState } from '../merge/conflict-state.ts'
 import { readAllRecordFiles } from '../store/read-path.ts'
 import { BindingRecord, type Binding } from '../schema/binding.ts'
 import { readPointer } from '../domain/pointer.ts'
@@ -45,6 +47,10 @@ const ADDRESSES: readonly Address[] = [
   {
     shape: 'logbook://session/{thread_id}/{entry_id}',
     description: 'one session-log entry, resolved by its thread id and its own id'
+  },
+  {
+    shape: 'logbook://conflict/{blob_id}',
+    description: 'one version of a file the last sync reported as conflicted, served only while that conflict is outstanding'
   }
 ]
 
@@ -249,6 +255,36 @@ const readSessionEntryResourceBody = (rt: Runtime, threadId: string, entryId: st
   return renderSessionEntryResource(slot.record)
 }
 
+const OBJECT_ID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/
+
+const readConflictVersionBody = (rt: Runtime, blobId: string): string => {
+  if (!OBJECT_ID_PATTERN.test(blobId)) {
+    throw new McpError(
+      ErrorCode.InvalidParams,
+      `logbook://conflict: 'blob_id' must be a git object id matching ${escapeStored(OBJECT_ID_PATTERN.source)}, got '${escapeStored(blobId, 'single-quoted')}'`
+    )
+  }
+  const layout = layoutFor(rt, rt.cwd)
+  if (!layout.ok) {
+    throw new McpError(ErrorCode.InternalError, `logbook://conflict: the store could not be located: ${escapeStored(layout.message)}`)
+  }
+  const read = readConflictState(layout.value)
+  const named =
+    read.kind === 'present' &&
+    read.state.paths.some((entry) => entry.base_blob === blobId || entry.local_blob === blobId || entry.remote_blob === blobId)
+  if (!named) {
+    throw new McpError(
+      ErrorCode.InvalidParams,
+      `logbook://conflict: no outstanding conflict names '${escapeStored(blobId, 'single-quoted')}'; run sync_ledger to see what it currently reports`
+    )
+  }
+  const blob = git(rt, layout.value.projectRoot, ['cat-file', 'blob', blobId])
+  if (!blob.ok) {
+    throw new McpError(ErrorCode.InternalError, `logbook://conflict: the version '${escapeStored(blobId, 'single-quoted')}' could not be read from git`)
+  }
+  return blob.stdout
+}
+
 const readRosterResourceBody = (rt: Runtime): string => {
   const store = openStoreForRead(rt, 'logbook://roster')
   const { resumable, terminal } = store.readResumable()
@@ -364,6 +400,22 @@ export const registerResources = (server: McpServer, rt: Runtime): void => {
           mimeType: 'text/markdown',
           text: readSessionEntryResourceBody(rt, variableAsString(variables, 'thread_id'), variableAsString(variables, 'entry_id'))
         }
+      ]
+    })
+  )
+
+  server.registerResource(
+    'conflict',
+    new ResourceTemplate('logbook://conflict/{blob_id}', { list: undefined }),
+    {
+      title: 'Conflicted version',
+      description:
+        'One version of a file the last sync_ledger reported as conflicted, exactly as stored, served only while that conflict is outstanding.',
+      mimeType: 'application/json'
+    },
+    (uri, variables) => ({
+      contents: [
+        { uri: uri.href, mimeType: 'application/json', text: readConflictVersionBody(rt, variableAsString(variables, 'blob_id')) }
       ]
     })
   )

@@ -8,6 +8,8 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { openStore } from '../../src/store/records.ts'
 import { layoutFor } from '../../src/store/layout.ts'
 import { writeRecords } from '../../src/store/write-path.ts'
+import { LEDGER_REF } from '../../src/store/ref.ts'
+import { SESSION_BODY_MAX } from '../../src/schema/caps.ts'
 import type { Thread } from '../../src/schema/thread.ts'
 import { rawGit } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
@@ -251,69 +253,33 @@ const readThreadOf = (teammate: SpawnedTeammate, threadId: string) => {
   return slot.record
 }
 
-const buildTwoFieldConflict = async (
-  ana: SpawnedTeammate,
-  ben: SpawnedTeammate,
-  slug: string
-): Promise<{ threadId: string; anaConflictSync: CallToolResult }> => {
-  const opened = await callTool(ana, 'open_thread', {
-    title: 'resolve conflict fixture thread',
-    slug,
-    active_goal: 'exercise the resolve-conflict fixture',
-    next_step: 'exercise the resolve-conflict fixture',
-    completion_criteria: [{ text: 'a criterion for the resolve fixture', check: 'the resolve fixture check', settledness: 'proposed' }]
-  })
-  assertOkResult('open_thread', opened)
-  const threadId = (opened.structuredContent as { thread_id: string }).thread_id
-
-  assertOkResult('sync_ledger (ana initial push)', await callTool(ana, 'sync_ledger', {}))
-  assertOkResult('sync_ledger (ben initial fast-forward)', await callTool(ben, 'sync_ledger', {}))
-
-  const benUpdate = await callTool(ben, 'update_thread', {
-    thread_id: threadId,
-    active_goal: 'ben active goal',
-    next_step: 'ben next step'
-  })
-  assertOkResult('update_thread (ben)', benUpdate)
-
-  const benPush = await callTool(ben, 'sync_ledger', {})
-  assertOkResult('sync_ledger (ben pushes his edit)', benPush)
-  assert.equal((benPush.structuredContent as { action: string }).action, 'pushed')
-
-  const anaUpdate = await callTool(ana, 'update_thread', {
-    thread_id: threadId,
-    active_goal: 'ana active goal',
-    next_step: 'ana next step'
-  })
-  assertOkResult('update_thread (ana)', anaUpdate)
-
-  const anaConflictSync = await callTool(ana, 'sync_ledger', {})
-  assert.equal(anaConflictSync.isError, true, 'expected the second sync to be refused with a real two-field conflict')
-  const conflictText = firstTextOf(anaConflictSync)
-  assert.match(conflictText, new RegExp(`thread:${threadId} spine\\.active_goal`))
-  assert.match(conflictText, new RegExp(`thread:${threadId} spine\\.next_step`))
-
-  return { threadId, anaConflictSync }
-}
-
-const writeThreadOf = (teammate: SpawnedTeammate, threadId: string, mutate: (thread: Thread) => Thread): void => {
+const plantThreadRecord = (teammate: SpawnedTeammate, thread: Thread): void => {
   const rt = testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: teammate.pluginData } })
-  const opened = openStore(rt, teammate.repo)
-  if (!opened.ok) throw new Error(`resolve: could not open ${teammate.name}'s store to plant a divergent thread field`)
-  const slot = opened.value.readThread(threadId)
-  if (slot === null || slot.quarantined) {
-    throw new Error(`resolve: thread "${threadId}" could not be re-read from ${teammate.name}'s store before planting a divergent field`)
-  }
   const layout = layoutFor(rt, teammate.repo)
-  if (!layout.ok) throw new Error(`resolve: layoutFor refused for ${teammate.name} while planting a divergent thread field`)
-  const mutated: Thread = { ...mutate(slot.record), updated_at: rt.now() }
+  if (!layout.ok) throw new Error(`resolve: layoutFor refused for ${teammate.name} while planting a thread record`)
   const write = writeRecords(
     rt,
     layout.value,
-    [{ kind: 'thread', record: mutated }],
-    `${teammate.name}: plant a divergent thread field for a resolve_conflict fixture`
+    [{ kind: 'thread', record: { ...thread, updated_at: rt.now() } }],
+    `${teammate.name}: plant a thread record for a resolve_conflict fixture`
   )
-  if (!write.ok) throw new Error(`resolve: writeRecords failed for ${teammate.name} while planting a divergent thread field: ${write.detail}`)
+  if (!write.ok) throw new Error(`resolve: writeRecords failed for ${teammate.name} while planting a thread record: ${write.detail}`)
+}
+
+const readDecisionOf = (teammate: SpawnedTeammate, decisionId: string) => {
+  const rt = testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: teammate.pluginData } })
+  const opened = openStore(rt, teammate.repo)
+  if (!opened.ok) throw new Error(`resolve: could not open ${teammate.name}'s store to read a decision`)
+  const slot = opened.value.readDecision(decisionId)
+  return slot === null || slot.quarantined ? null : slot.record
+}
+
+const readSessionEntryOf = (teammate: SpawnedTeammate, threadId: string, entryId: string) => {
+  const rt = testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: teammate.pluginData } })
+  const opened = openStore(rt, teammate.repo)
+  if (!opened.ok) throw new Error(`resolve: could not open ${teammate.name}'s store to read a session entry`)
+  const slot = opened.value.readSessionEntry(threadId, entryId)
+  return slot === null || slot.quarantined ? null : slot.record
 }
 
 const openAndConvergeThread = async (ana: SpawnedTeammate, ben: SpawnedTeammate, slug: string): Promise<string> => {
@@ -332,124 +298,6 @@ const openAndConvergeThread = async (ana: SpawnedTeammate, ben: SpawnedTeammate,
 
   return threadId
 }
-
-const ARTIFACT_CONFLICT_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAA'
-
-test('resolve.spine-landed-conflict-resolves', async () => {
-  await withTwoSpawnedTeammates(async (ana, ben) => {
-    const threadId = await openAndConvergeThread(ana, ben, 'resolve-spine-landed-thread')
-
-    writeThreadOf(ben, threadId, (thread) => ({ ...thread, spine: { ...thread.spine, landed: 'ben has landed the write path' } }))
-    const benPush = await callTool(ben, 'sync_ledger', {})
-    assertOkResult('sync_ledger (ben pushes his landed edit)', benPush)
-    assert.equal((benPush.structuredContent as { action: string }).action, 'pushed')
-
-    writeThreadOf(ana, threadId, (thread) => ({ ...thread, spine: { ...thread.spine, landed: 'ana has landed the write path' } }))
-
-    const anaConflictSync = await callTool(ana, 'sync_ledger', {})
-    assert.equal(anaConflictSync.isError, true, 'expected the second sync to be refused with a spine.landed conflict')
-    const conflictText = firstTextOf(anaConflictSync)
-    assert.match(conflictText, new RegExp(`thread:${threadId} spine\\.landed`))
-
-    const resolved = await callTool(ana, 'resolve_conflict', {
-      resolutions: [{ record: `thread:${threadId}`, field: 'spine.landed', winner: 'local' }]
-    })
-    assertOkResult('resolve_conflict', resolved)
-
-    const mergedThread = readThreadOf(ana, threadId)
-    assert.equal(mergedThread.spine.landed, 'ana has landed the write path', 'the local winner must be applied verbatim')
-
-    const pushedAfterResolve = await callTool(ana, 'sync_ledger', {})
-    assertOkResult('sync_ledger (after resolve_conflict, must push)', pushedAfterResolve)
-  })
-})
-
-test('resolve.artifacts-conflict-resolves', async () => {
-  await withTwoSpawnedTeammates(async (ana, ben) => {
-    const threadId = await openAndConvergeThread(ana, ben, 'resolve-artifacts-thread')
-
-    writeThreadOf(ben, threadId, (thread) => ({
-      ...thread,
-      artifacts: [{ id: ARTIFACT_CONFLICT_ID, label: 'ben plan', pointer: 'docs/plans/ben.md', retired: false }]
-    }))
-    const benPush = await callTool(ben, 'sync_ledger', {})
-    assertOkResult('sync_ledger (ben pushes his artifact edit)', benPush)
-    assert.equal((benPush.structuredContent as { action: string }).action, 'pushed')
-
-    writeThreadOf(ana, threadId, (thread) => ({
-      ...thread,
-      artifacts: [{ id: ARTIFACT_CONFLICT_ID, label: 'ana plan', pointer: 'docs/plans/ana.md', retired: false }]
-    }))
-
-    const anaConflictSync = await callTool(ana, 'sync_ledger', {})
-    assert.equal(anaConflictSync.isError, true, 'expected the second sync to be refused with an artifacts conflict')
-    const conflictText = firstTextOf(anaConflictSync)
-    assert.match(conflictText, new RegExp(`thread:${threadId} artifacts\\[${ARTIFACT_CONFLICT_ID}\\]`))
-
-    const resolved = await callTool(ana, 'resolve_conflict', {
-      resolutions: [{ record: `thread:${threadId}`, field: `artifacts[${ARTIFACT_CONFLICT_ID}]`, winner: 'remote' }]
-    })
-    assertOkResult('resolve_conflict', resolved)
-
-    const mergedThread = readThreadOf(ana, threadId)
-    assert.deepEqual(
-      mergedThread.artifacts,
-      [{ id: ARTIFACT_CONFLICT_ID, label: 'ben plan', pointer: 'docs/plans/ben.md', retired: false }],
-      'the remote winner must be applied verbatim'
-    )
-
-    const pushedAfterResolve = await callTool(ana, 'sync_ledger', {})
-    assertOkResult('sync_ledger (after resolve_conflict, must push)', pushedAfterResolve)
-  })
-})
-
-test('conflict.resolve-names-the-winner', async () => {
-  await withTwoSpawnedTeammates(async (ana, ben) => {
-    const { threadId } = await buildTwoFieldConflict(ana, ben, 'resolve-names-the-winner-thread')
-
-    const resolved = await callTool(ana, 'resolve_conflict', {
-      resolutions: [
-        { record: `thread:${threadId}`, field: 'spine.active_goal', winner: 'local' },
-        { record: `thread:${threadId}`, field: 'spine.next_step', winner: 'remote' },
-        { record: `thread:${threadId}`, field: 'spine.next_step_criterion_id', winner: 'remote' }
-      ]
-    })
-    assertOkResult('resolve_conflict', resolved)
-    const structured = resolved.structuredContent as {
-      resolved: { record: string; field: string; winner: string }[]
-    }
-    assert.deepEqual(structured.resolved, [
-      { record: `thread:${threadId}`, field: 'spine.active_goal', winner: 'local' },
-      { record: `thread:${threadId}`, field: 'spine.next_step', winner: 'remote' },
-      { record: `thread:${threadId}`, field: 'spine.next_step_criterion_id', winner: 'remote' }
-    ])
-
-    const mergedThread = readThreadOf(ana, threadId)
-    assert.equal(mergedThread.spine.active_goal, 'ana active goal', 'the local winner must be applied verbatim')
-    assert.equal(mergedThread.spine.next_step, 'ben next step', 'the remote winner must be applied verbatim')
-
-    const pushedAfterResolve = await callTool(ana, 'sync_ledger', {})
-    assertOkResult('sync_ledger (after resolve_conflict, must push)', pushedAfterResolve)
-  })
-})
-
-test('conflict.partial-list-refused', async () => {
-  await withTwoSpawnedTeammates(async (ana, ben) => {
-    const { threadId } = await buildTwoFieldConflict(ana, ben, 'partial-list-refused-thread')
-
-    const partial = await callTool(ana, 'resolve_conflict', {
-      resolutions: [{ record: `thread:${threadId}`, field: 'spine.active_goal', winner: 'local' }]
-    })
-    assert.equal(partial.isError, true, 'a resolutions list missing a reported disagreement must be refused')
-    const text = firstTextOf(partial)
-    assert.equal(text.split('\n')[0], 'field: resolutions')
-    assert.match(text, new RegExp(`thread:${threadId} spine\\.next_step`), 'the refusal must name the omitted record and field')
-
-    const untouchedThread = readThreadOf(ana, threadId)
-    assert.equal(untouchedThread.spine.active_goal, 'ana active goal', 'a refused resolution must not have applied any winner')
-    assert.equal(untouchedThread.spine.next_step, 'ana next step', 'a refused resolution must not have applied any winner')
-  })
-})
 
 test('sync_ledger.spawn.contract', async () => {
   await withSpawnFixtureWithRemote(async (fx) => {
@@ -503,35 +351,261 @@ test('sync_ledger.rejects-invalid', async () => {
   })
 })
 
+const threadPathOf = (threadId: string): string => `threads/${threadId}.json`
+
+const ledgerCommitOf = (teammate: SpawnedTeammate): string => rawGit(teammate.repo, ['rev-parse', LEDGER_REF]).stdout.trim()
+
+const syncAndExpectConflictOn = async (teammate: SpawnedTeammate, threadId: string, label: string): Promise<void> => {
+  const synced = await callTool(teammate, 'sync_ledger', {})
+  assert.equal(synced.isError, true, `expected ${label} to be refused over the thread both clones changed`)
+  assert.match(firstTextOf(synced), new RegExp(`threads/${threadId}\\.json`), firstTextOf(synced))
+}
+
+test('resolve.stores-the-composed-record-and-both-clones-hold-it', async () => {
+  await withTwoSpawnedTeammates(async (ana, ben) => {
+    const threadId = await openAndConvergeThread(ana, ben, 'resolve-composed-record-thread')
+    const criterionId = readThreadOf(ana, threadId).completion_criteria[0]?.id
+    assert.ok(criterionId !== undefined, 'resolve: the fixture thread minted no criterion')
+
+    assertOkResult(
+      'update_thread (ben changes the goal, next step and last session)',
+      await callTool(ben, 'update_thread', {
+        thread_id: threadId,
+        active_goal: 'ben goal',
+        next_step: 'ben step',
+        next_step_criterion_id: criterionId,
+        last_session: 'ben session'
+      })
+    )
+    assertOkResult('sync_ledger (ben pushes)', await callTool(ben, 'sync_ledger', {}))
+    assertOkResult('update_thread (ana changes only the goal)', await callTool(ana, 'update_thread', { thread_id: threadId, active_goal: 'ana goal' }))
+    await syncAndExpectConflictOn(ana, threadId, "ana's sync")
+
+    const bensThread = readThreadOf(ben, threadId)
+    const composed: Thread = { ...bensThread, spine: { ...bensThread.spine, active_goal: 'ana goal' } }
+    assertOkResult('resolve_conflict', await callTool(ana, 'resolve_conflict', { resolutions: [{ path: threadPathOf(threadId), record: composed }] }))
+    assertOkResult('sync_ledger (ana pushes the resolution)', await callTool(ana, 'sync_ledger', {}))
+    assertOkResult('sync_ledger (ben picks up the resolution)', await callTool(ben, 'sync_ledger', {}))
+
+    for (const teammate of [ana, ben]) {
+      assert.deepEqual(readThreadOf(teammate, threadId), composed, `${teammate.name}'s clone must hold exactly the record ana composed from both versions`)
+    }
+  })
+})
+
+const REMOTE_ONLY_RECORDS = [
+  {
+    name: 'a-new-decision',
+    create: async (ben: SpawnedTeammate, threadId: string) => {
+      const recorded = await callTool(ben, 'record_decision', {
+        thread_id: threadId,
+        title: 'ben picks the fast path',
+        context: 'a choice ben made while ana was offline',
+        options: ['the fast path', 'the safe path'],
+        outcome: 'the fast path'
+      })
+      assertOkResult('record_decision (ben)', recorded)
+      const decisionId = (recorded.structuredContent as { decision_id: string }).decision_id
+      return (teammate: SpawnedTeammate): boolean => readDecisionOf(teammate, decisionId) !== null
+    }
+  },
+  {
+    name: 'a-new-session-entry',
+    create: async (ben: SpawnedTeammate, threadId: string) => {
+      const logged = await callTool(ben, 'log_session_event', { thread_id: threadId, actor: 'ben', body: 'ben worked the thread while ana was offline' })
+      assertOkResult('log_session_event (ben)', logged)
+      const entryId = (logged.structuredContent as { session_entry_id: string }).session_entry_id
+      return (teammate: SpawnedTeammate): boolean => readSessionEntryOf(teammate, threadId, entryId) !== null
+    }
+  }
+] as const
+
+for (const scenario of REMOTE_ONLY_RECORDS) {
+  test(`resolve.settles-a-conflict-while-the-remote-carries-${scenario.name}`, async () => {
+    await withTwoSpawnedTeammates(async (ana, ben) => {
+      const threadId = await openAndConvergeThread(ana, ben, `resolve-remote-carries-${scenario.name}`)
+
+      const holdsBensRecord = await scenario.create(ben, threadId)
+      assertOkResult(`update_thread (ben changes the goal, ${scenario.name})`, await callTool(ben, 'update_thread', { thread_id: threadId, active_goal: 'ben goal' }))
+      assertOkResult(`sync_ledger (ben pushes, ${scenario.name})`, await callTool(ben, 'sync_ledger', {}))
+      assertOkResult(`update_thread (ana changes the goal, ${scenario.name})`, await callTool(ana, 'update_thread', { thread_id: threadId, active_goal: 'ana goal' }))
+      await syncAndExpectConflictOn(ana, threadId, `ana's sync (${scenario.name})`)
+
+      const bensThread = readThreadOf(ben, threadId)
+      const composed: Thread = { ...bensThread, spine: { ...bensThread.spine, active_goal: 'ana goal' } }
+      assertOkResult(
+        `resolve_conflict (${scenario.name})`,
+        await callTool(ana, 'resolve_conflict', { resolutions: [{ path: threadPathOf(threadId), record: composed }] })
+      )
+
+      const anaPush = await callTool(ana, 'sync_ledger', {})
+      assertOkResult(`sync_ledger (ana pushes the resolution, ${scenario.name})`, anaPush)
+      assert.equal((anaPush.structuredContent as { action: string }).action, 'pushed')
+      assertOkResult(`sync_ledger (ben picks up the resolution, ${scenario.name})`, await callTool(ben, 'sync_ledger', {}))
+
+      for (const teammate of [ana, ben]) {
+        assert.equal(readThreadOf(teammate, threadId).spine.active_goal, 'ana goal', `${teammate.name}'s clone must hold the composed goal (${scenario.name})`)
+        assert.equal(holdsBensRecord(teammate), true, `${teammate.name}'s clone must still hold ${scenario.name} ben pushed (${scenario.name})`)
+      }
+    })
+  })
+}
+
+test('resolve.settles-a-conflict-between-ledgers-that-share-no-history', async () => {
+  await withTwoSpawnedTeammates(async (ana, ben) => {
+    const opened = await callTool(ana, 'open_thread', {
+      title: 'resolve conflict fixture thread',
+      slug: 'resolve-unrelated-histories',
+      active_goal: 'ana goal',
+      next_step: 'exercise the resolve-conflict fixture',
+      completion_criteria: [{ text: 'a criterion for the resolve fixture', check: 'the resolve fixture check', settledness: 'proposed' }]
+    })
+    assertOkResult('open_thread (ana)', opened)
+    const threadId = (opened.structuredContent as { thread_id: string }).thread_id
+    assertOkResult('sync_ledger (ana pushes)', await callTool(ana, 'sync_ledger', {}))
+
+    const anasThread = readThreadOf(ana, threadId)
+    plantThreadRecord(ben, { ...anasThread, spine: { ...anasThread.spine, active_goal: 'ben goal' } })
+    await syncAndExpectConflictOn(ben, threadId, "ben's first sync")
+
+    const composed: Thread = { ...anasThread, spine: { ...anasThread.spine, active_goal: 'ben goal, then ana goal' } }
+    assertOkResult('resolve_conflict', await callTool(ben, 'resolve_conflict', { resolutions: [{ path: threadPathOf(threadId), record: composed }] }))
+    assert.deepEqual(readThreadOf(ben, threadId), composed)
+    assertOkResult('sync_ledger (ben pushes the resolution)', await callTool(ben, 'sync_ledger', {}))
+  })
+})
+
+const setUpGoalConflict = async (ana: SpawnedTeammate, ben: SpawnedTeammate, slug: string): Promise<{ threadId: string; bensThread: Thread }> => {
+  const threadId = await openAndConvergeThread(ana, ben, slug)
+  assertOkResult('update_thread (ben changes the goal)', await callTool(ben, 'update_thread', { thread_id: threadId, active_goal: 'ben goal' }))
+  assertOkResult('sync_ledger (ben pushes)', await callTool(ben, 'sync_ledger', {}))
+  assertOkResult('update_thread (ana changes the goal)', await callTool(ana, 'update_thread', { thread_id: threadId, active_goal: 'ana goal' }))
+  await syncAndExpectConflictOn(ana, threadId, "ana's sync")
+  return { threadId, bensThread: readThreadOf(ben, threadId) }
+}
+
+const SHAPE_FAILURES = [
+  {
+    name: 'a-field-of-the-wrong-type',
+    field: 'resolutions.0.record.spine.active_goal',
+    break: (thread: Thread): unknown => ({ ...thread, spine: { ...thread.spine, active_goal: 42 } })
+  },
+  {
+    name: 'an-id-that-differs-from-its-path',
+    field: 'resolutions.0.record.id',
+    break: (thread: Thread): unknown => ({ ...thread, id: '01ARZ3NDEKTSV4RRFFQ69G5FAV' })
+  }
+] as const
+
+for (const failure of SHAPE_FAILURES) {
+  test(`resolve.refuses-a-composed-record-with-${failure.name}-and-writes-nothing`, async () => {
+    await withTwoSpawnedTeammates(async (ana, ben) => {
+      const { threadId, bensThread } = await setUpGoalConflict(ana, ben, `resolve-shape-${failure.name}`)
+      const before = ledgerCommitOf(ana)
+
+      const refused = await callTool(ana, 'resolve_conflict', {
+        resolutions: [{ path: threadPathOf(threadId), record: failure.break(bensThread) }]
+      })
+      assert.equal(refused.isError, true, `a record that does not fit its stored shape must be refused (${failure.name})`)
+      assert.equal(firstTextOf(refused).split('\n')[0], `field: ${failure.field}`, firstTextOf(refused))
+      assert.equal(ledgerCommitOf(ana), before, `a refused resolution must leave the ledger where it was (${failure.name})`)
+
+      const composed: Thread = { ...bensThread, spine: { ...bensThread.spine, active_goal: 'ana goal' } }
+      assertOkResult(
+        `resolve_conflict (a valid record after the refusal, ${failure.name})`,
+        await callTool(ana, 'resolve_conflict', { resolutions: [{ path: threadPathOf(threadId), record: composed }] })
+      )
+    })
+  })
+}
+
+test('resolve.stores-a-next-step-paired-with-the-other-sides-criterion-as-given', async () => {
+  await withTwoSpawnedTeammates(async (ana, ben) => {
+    const threadId = await openAndConvergeThread(ana, ben, 'resolve-no-content-rules-thread')
+    const criterionId = readThreadOf(ana, threadId).completion_criteria[0]?.id
+    assert.ok(criterionId !== undefined, 'resolve: the fixture thread minted no criterion')
+
+    assertOkResult(
+      'update_thread (ben names the criterion his next step advances)',
+      await callTool(ben, 'update_thread', { thread_id: threadId, next_step: 'ben next step', next_step_criterion_id: criterionId })
+    )
+    assertOkResult('sync_ledger (ben pushes)', await callTool(ben, 'sync_ledger', {}))
+    assertOkResult('update_thread (ana replaces the next step)', await callTool(ana, 'update_thread', { thread_id: threadId, next_step: 'ana next step' }))
+    await syncAndExpectConflictOn(ana, threadId, "ana's sync")
+
+    const anasThread = readThreadOf(ana, threadId)
+    const composed: Thread = { ...anasThread, spine: { ...anasThread.spine, next_step: 'ana next step', next_step_criterion_id: criterionId } }
+    assertOkResult(
+      'resolve_conflict (ana pairs her next step with the criterion ben named)',
+      await callTool(ana, 'resolve_conflict', { resolutions: [{ path: threadPathOf(threadId), record: composed }] })
+    )
+    assert.deepEqual(readThreadOf(ana, threadId), composed, 'Logbook stores the composed record without judging which criterion a next step advances')
+  })
+})
+
+
+test('conflict.partial-list-refused', async () => {
+  await withTwoSpawnedTeammates(async (ana, ben) => {
+    const firstThreadId = await openAndConvergeThread(ana, ben, 'partial-list-refused-first-thread')
+    const secondThreadId = await openAndConvergeThread(ana, ben, 'partial-list-refused-second-thread')
+    for (const threadId of [firstThreadId, secondThreadId]) {
+      assertOkResult('update_thread (ben changes a goal)', await callTool(ben, 'update_thread', { thread_id: threadId, active_goal: 'ben goal' }))
+    }
+    assertOkResult('sync_ledger (ben pushes both goals)', await callTool(ben, 'sync_ledger', {}))
+    for (const threadId of [firstThreadId, secondThreadId]) {
+      assertOkResult('update_thread (ana changes a goal)', await callTool(ana, 'update_thread', { thread_id: threadId, active_goal: 'ana goal' }))
+    }
+    await syncAndExpectConflictOn(ana, secondThreadId, "ana's sync over two threads")
+    const before = ledgerCommitOf(ana)
+    const bensFirstThread = readThreadOf(ben, firstThreadId)
+    const composed: Thread = { ...bensFirstThread, spine: { ...bensFirstThread.spine, active_goal: 'ana and ben goal' } }
+
+    const missingOne = await callTool(ana, 'resolve_conflict', { resolutions: [{ path: threadPathOf(firstThreadId), record: composed }] })
+    assert.equal(missingOne.isError, true, 'a resolutions list missing a reported file must be refused')
+    const text = firstTextOf(missingOne)
+    assert.equal(text.split('\n')[0], 'field: resolutions')
+    assert.match(text, new RegExp(`threads/${secondThreadId}\\.json`), `the refusal must name the omitted file:\n${text}`)
+
+    const unreported = await callTool(ana, 'resolve_conflict', {
+      resolutions: [
+        { path: threadPathOf(firstThreadId), record: composed },
+        { path: threadPathOf(secondThreadId), record: readThreadOf(ben, secondThreadId) },
+        { path: 'threads/01ARZ3NDEKTSV4RRFFQ69G5FAV.json', record: composed }
+      ]
+    })
+    assert.equal(unreported.isError, true, 'a resolutions list naming a file sync_ledger did not report must be refused')
+    assert.equal(firstTextOf(unreported).split('\n')[0], 'field: resolutions.2.path', firstTextOf(unreported))
+
+    assert.equal(ledgerCommitOf(ana), before, 'a refused resolution must leave the ledger where it was')
+    assert.equal(readThreadOf(ana, firstThreadId).spine.active_goal, 'ana goal', 'a refused resolution must not store any record')
+  })
+})
+
 test('resolve_conflict.spawn.contract', async () => {
   await withTwoSpawnedTeammates(async (ana, ben) => {
-    const { threadId } = await buildTwoFieldConflict(ana, ben, 'resolve-conflict-spawn-contract-thread')
+    const { threadId, bensThread } = await setUpGoalConflict(ana, ben, 'resolve-conflict-spawn-contract-thread')
 
     const listed = await ana.spawned.client.listTools()
     assert.ok(listed.tools.some((t) => t.name === 'resolve_conflict'))
     const outputSchemaRaw = listed.tools.find((t) => t.name === 'resolve_conflict')?.outputSchema
     if (!isRecord(outputSchemaRaw)) throw new Error('resolve_conflict published no output schema')
 
-    const result = await callTool(ana, 'resolve_conflict', {
-      resolutions: [
-        { record: `thread:${threadId}`, field: 'spine.active_goal', winner: 'local' },
-        { record: `thread:${threadId}`, field: 'spine.next_step', winner: 'remote' },
-        { record: `thread:${threadId}`, field: 'spine.next_step_criterion_id', winner: 'remote' }
-      ]
-    })
+    const composed: Thread = { ...bensThread, spine: { ...bensThread.spine, active_goal: 'ana goal' } }
+    const result = await callTool(ana, 'resolve_conflict', { resolutions: [{ path: threadPathOf(threadId), record: composed }] })
     assertOkResult('resolve_conflict', result)
     assertConformsToOutputSchema('resolve_conflict', outputSchemaRaw, result.structuredContent)
+    const structured = result.structuredContent as { resolved: string[]; commit: string }
+    assert.deepEqual(structured.resolved, [threadPathOf(threadId)])
+    assert.equal(structured.commit, ledgerCommitOf(ana))
     assert.doesNotMatch(ana.spawned.stderr(), JSON_RPC_FRAMING_PATTERN)
   })
 })
-
-const RECORD_PATTERN_SYNTHESISER_GAP_FIELDS = new Set(['resolutions.0.field', 'resolutions.0.winner'])
 
 test('resolve_conflict.rejects-invalid', async () => {
   await withSpawnFixtureNoRemote(async (fx) => {
     const schema = schemaFor(fx.published, 'resolve_conflict')
     const { mutations, missing } = generateSchemaCases('resolve_conflict', schema, {
-      resolutions: [{ record: 'thread:01ARZ3NDEKTSV4RRFFQ69G5FAV', field: 'title', winner: 'local' }]
+      resolutions: [{ path: 'threads/01ARZ3NDEKTSV4RRFFQ69G5FAV.json', record: {} }]
     })
     assert.deepEqual(
       new Set(missing.map((m) => m.class)),
@@ -542,160 +616,141 @@ test('resolve_conflict.rejects-invalid', async () => {
 
     for (const mutation of mutations) {
       const result = (await fx.spawned.client.callTool({ name: 'resolve_conflict', arguments: mutation.input })) as CallToolResult
-      assert.equal(
-        result.isError,
-        true,
-        `resolve_conflict mutation "${mutation.field}" (${mutation.class}) should have been refused as a tool error`
-      )
-      if (RECORD_PATTERN_SYNTHESISER_GAP_FIELDS.has(mutation.field)) {
-        const text = firstTextOf(result)
-        assert.equal(
-          text.split('\n')[0],
-          'field: resolutions.0.record',
-          "the schema example synthesiser has no entry for resolve_conflict's non-whitelisted record pattern, so every nested-item mutation's fixture record is itself invalid; that pre-existing defect is reported ahead of the field this mutation actually targets"
-        )
-        continue
-      }
       assertRefusalNamesField('resolve_conflict', mutation, result)
     }
   })
 })
 
-test('resolve.a-next-step-and-its-criterion-take-one-winner', async () => {
+const plantRawFile = (teammate: SpawnedTeammate, relPath: string, content: string): void => {
+  const rt = testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: teammate.pluginData } })
+  const layout = layoutFor(rt, teammate.repo)
+  if (!layout.ok) throw new Error(`resolve: layoutFor refused for ${teammate.name} while planting a file`)
+  const write = writeRecords(rt, layout.value, [{ kind: 'raw', relPath, content }], `${teammate.name}: plant a file outside the record directories`)
+  if (!write.ok) throw new Error(`resolve: writeRecords failed for ${teammate.name} while planting a file: ${write.detail}`)
+}
+
+const ledgerFileOf = (teammate: SpawnedTeammate, relPath: string): string =>
+  rawGit(teammate.repo, ['cat-file', 'blob', `${LEDGER_REF}:${relPath}`]).stdout
+
+test('resolve.stores-a-conflicted-file-outside-the-record-directories-as-the-text-given', async () => {
   await withTwoSpawnedTeammates(async (ana, ben) => {
-    const threadId = await openAndConvergeThread(ana, ben, 'resolve-next-step-pair-thread')
-    const record = `thread:${threadId}`
-    const criterionId = readThreadOf(ana, threadId).completion_criteria[0]?.id
-    assert.ok(criterionId !== undefined, 'resolve: the fixture thread minted no criterion')
+    const notePath = 'notes/team.txt'
+    plantRawFile(ana, notePath, 'the shared note\n')
+    assertOkResult('sync_ledger (ana pushes the note)', await callTool(ana, 'sync_ledger', {}))
+    assertOkResult('sync_ledger (ben picks up the note)', await callTool(ben, 'sync_ledger', {}))
 
-    assertOkResult(
-      'update_thread (ben names the criterion his next step advances)',
-      await callTool(ben, 'update_thread', { thread_id: threadId, next_step: 'ben next step', next_step_criterion_id: criterionId })
-    )
-    assertOkResult('sync_ledger (ben pushes his next step)', await callTool(ben, 'sync_ledger', {}))
-    assertOkResult(
-      'update_thread (ana replaces the next step)',
-      await callTool(ana, 'update_thread', { thread_id: threadId, next_step: 'ana next step' })
-    )
+    plantRawFile(ben, notePath, 'ben rewrote the note\n')
+    assertOkResult('sync_ledger (ben pushes his note)', await callTool(ben, 'sync_ledger', {}))
+    plantRawFile(ana, notePath, 'ana rewrote the note\n')
+    const refused = await callTool(ana, 'sync_ledger', {})
+    assert.equal(refused.isError, true, 'expected the note both clones rewrote to conflict')
+    assert.match(firstTextOf(refused), /notes\/team\.txt/, firstTextOf(refused))
 
-    const anaConflictSync = await callTool(ana, 'sync_ledger', {})
-    assert.equal(anaConflictSync.isError, true, 'expected the sync to be refused over the next step and its criterion')
-    const conflictText = firstTextOf(anaConflictSync)
-    assert.match(conflictText, new RegExp(`${record} spine\\.next_step\\b(?!_)`), conflictText)
-    assert.match(conflictText, new RegExp(`${record} spine\\.next_step_criterion_id`), `the criterion ben named belongs to his next step, so it must be in dispute with it:\n${conflictText}`)
-    assert.match(conflictText, /name the same winner for both/, `the sync refusal must say the two fields take one winner:\n${conflictText}`)
+    const asRecord = await callTool(ana, 'resolve_conflict', { resolutions: [{ path: notePath, record: { text: 'ana and ben' } }] })
+    assert.equal(asRecord.isError, true, 'a file outside the record directories must be settled with content, not a record')
+    assert.equal(firstTextOf(asRecord).split('\n')[0], 'field: resolutions.0.content', firstTextOf(asRecord))
 
-    const halfOnly = await callTool(ana, 'resolve_conflict', {
-      resolutions: [{ record, field: 'spine.next_step', winner: 'remote' }]
-    })
-    assert.equal(halfOnly.isError, true, 'a resolution naming only the next step must be refused')
-    assert.match(firstTextOf(halfOnly), /name the same winner for both/, `the missing-winner refusal must say the two fields take one winner:\n${firstTextOf(halfOnly)}`)
+    const composed = '# ana rewrote the note\nand ben rewrote it too\n'
+    assertOkResult('resolve_conflict', await callTool(ana, 'resolve_conflict', { resolutions: [{ path: notePath, content: composed }] }))
+    assertOkResult('sync_ledger (ana pushes the resolution)', await callTool(ana, 'sync_ledger', {}))
+    assertOkResult('sync_ledger (ben picks up the resolution)', await callTool(ben, 'sync_ledger', {}))
 
-    const split = await callTool(ana, 'resolve_conflict', {
-      resolutions: [
-        { record, field: 'spine.next_step', winner: 'local' },
-        { record, field: 'spine.next_step_criterion_id', winner: 'remote' }
-      ]
-    })
-    assert.equal(split.isError, true, 'a next step from one side with the criterion from the other must be refused')
-    assert.match(firstTextOf(split), /same winner for both/)
-    assert.equal(readThreadOf(ana, threadId).spine.next_step, 'ana next step', 'a refused resolution must not have applied any winner')
-
-    const resolved = await callTool(ana, 'resolve_conflict', {
-      resolutions: [
-        { record, field: 'spine.next_step', winner: 'remote' },
-        { record, field: 'spine.next_step_criterion_id', winner: 'remote' }
-      ]
-    })
-    assertOkResult('resolve_conflict', resolved)
-    const merged = readThreadOf(ana, threadId)
-    assert.equal(merged.spine.next_step, 'ben next step')
-    assert.equal(merged.spine.next_step_criterion_id, criterionId, 'the criterion must arrive with the next step it was written with')
-    assertOkResult('sync_ledger (after resolve_conflict, must push)', await callTool(ana, 'sync_ledger', {}))
+    for (const teammate of [ana, ben]) {
+      assert.equal(ledgerFileOf(teammate, notePath), composed, `${teammate.name}'s ledger must hold the note exactly as ana gave it`)
+    }
   })
 })
 
-test('resolve.a-pair-member-changed-locally-after-the-refused-sync-is-refused-as-stale', async () => {
+test('resolve.keeps-a-local-change-to-another-file-made-after-the-refused-sync', async () => {
   await withTwoSpawnedTeammates(async (ana, ben) => {
-    const threadId = await openAndConvergeThread(ana, ben, 'resolve-next-step-pair-stale-thread')
-    const record = `thread:${threadId}`
-    const criterionId = readThreadOf(ana, threadId).completion_criteria[0]?.id
-    assert.ok(criterionId !== undefined, 'resolve: the fixture thread minted no criterion')
+    const { threadId, bensThread } = await setUpGoalConflict(ana, ben, 'resolve-local-change-elsewhere-thread')
+    const logged = await callTool(ana, 'log_session_event', { thread_id: threadId, actor: 'ana', body: 'ana noted something while reviewing' })
+    assertOkResult('log_session_event (ana, while reviewing)', logged)
+    const entryId = (logged.structuredContent as { session_entry_id: string }).session_entry_id
 
+    const composed: Thread = { ...bensThread, spine: { ...bensThread.spine, active_goal: 'ana goal' } }
     assertOkResult(
-      'update_thread (ben names the criterion for the shared next step)',
-      await callTool(ben, 'update_thread', { thread_id: threadId, next_step: 'the shared next step', next_step_criterion_id: criterionId })
+      'resolve_conflict (after a local session entry)',
+      await callTool(ana, 'resolve_conflict', { resolutions: [{ path: threadPathOf(threadId), record: composed }] })
     )
-    assertOkResult('sync_ledger (ben pushes)', await callTool(ben, 'sync_ledger', {}))
-    assertOkResult(
-      'update_thread (ana writes the same next step without a criterion)',
-      await callTool(ana, 'update_thread', { thread_id: threadId, next_step: 'the shared next step' })
-    )
-    const anaConflictSync = await callTool(ana, 'sync_ledger', {})
-    assert.equal(anaConflictSync.isError, true, 'expected the sync to be refused over the criterion')
+    assert.notEqual(readSessionEntryOf(ana, threadId, entryId), null, "the session entry ana logged while reviewing must be kept")
+    assertOkResult('sync_ledger (ana pushes the resolution)', await callTool(ana, 'sync_ledger', {}))
+    assertOkResult('sync_ledger (ben picks up the resolution)', await callTool(ben, 'sync_ledger', {}))
+    assert.notEqual(readSessionEntryOf(ben, threadId, entryId), null, "ben's clone must hold the entry ana logged while reviewing")
+  })
+})
 
-    assertOkResult(
-      'update_thread (ana changes her next step before resolving)',
-      await callTool(ana, 'update_thread', { thread_id: threadId, next_step: 'ana later next step' })
-    )
+test('resolve.refuses-when-a-conflicted-record-changed-locally-after-the-refused-sync', async () => {
+  await withTwoSpawnedTeammates(async (ana, ben) => {
+    const { threadId, bensThread } = await setUpGoalConflict(ana, ben, 'resolve-stale-conflict-thread')
+    assertOkResult('update_thread (ana changes the goal again)', await callTool(ana, 'update_thread', { thread_id: threadId, active_goal: 'ana later goal' }))
+    const before = ledgerCommitOf(ana)
 
-    const reportedFields = [
-      ...firstTextOf(anaConflictSync).matchAll(new RegExp(`${record} (spine\\.next_step(?:_criterion_id)?)(?![_a-z])`, 'g'))
-    ].map((match) => match[1] as string)
-    assert.ok(reportedFields.includes('spine.next_step_criterion_id'), `expected the criterion to be reported in dispute:\n${firstTextOf(anaConflictSync)}`)
+    const composed: Thread = { ...bensThread, spine: { ...bensThread.spine, active_goal: 'ana goal' } }
+    const stale = await callTool(ana, 'resolve_conflict', { resolutions: [{ path: threadPathOf(threadId), record: composed }] })
+    assert.equal(stale.isError, true, 'the version ana reviewed is no longer her local version, so the resolution must be refused')
+    assert.match(firstTextOf(stale), /call sync_ledger again/, firstTextOf(stale))
+    assert.equal(ledgerCommitOf(ana), before, 'a stale resolution must leave the ledger where it was')
+    assert.equal(readThreadOf(ana, threadId).spine.active_goal, 'ana later goal')
 
-    const stale = await callTool(ana, 'resolve_conflict', {
-      resolutions: [...new Set(reportedFields)].map((field) => ({ record, field, winner: 'remote' }))
-    })
+    await syncAndExpectConflictOn(ana, threadId, "ana's sync after the stale refusal")
+    assertOkResult('resolve_conflict (after syncing again)', await callTool(ana, 'resolve_conflict', { resolutions: [{ path: threadPathOf(threadId), record: composed }] }))
+  })
+})
+
+test('resolve.escapes-a-composed-record-as-the-writing-tools-would', async () => {
+  await withTwoSpawnedTeammates(async (ana, ben) => {
+    const { threadId, bensThread } = await setUpGoalConflict(ana, ben, 'resolve-escapes-thread')
+    const composed: Thread = { ...bensThread, spine: { ...bensThread.spine, active_goal: '# ana <goal>' } }
+    assertOkResult('resolve_conflict', await callTool(ana, 'resolve_conflict', { resolutions: [{ path: threadPathOf(threadId), record: composed }] }))
     const stored = readThreadOf(ana, threadId)
-    assert.equal(stale.isError, true, `the criterion was recorded against a next step ana has since replaced, so resolving it must be refused, but it stored ${JSON.stringify([stored.spine.next_step, stored.spine.next_step_criterion_id])}`)
-    assert.equal(stored.spine.next_step, 'ana later next step')
-    assert.equal(Object.hasOwn(stored.spine, 'next_step_criterion_id'), false, 'a refused resolution must not have applied the criterion')
+    assert.equal(stored.spine.active_goal, 'U+0023 ana U+003Cgoal>', 'the composed goal must be stored escaped, as update_thread stores it')
+    assert.equal(stored.id, threadId)
+    assert.equal(stored.slug, bensThread.slug)
   })
 })
 
-const CRITERION_CHANGED_UNDER_THE_SAME_NEXT_STEP = [
-  { name: 'named-after-the-sync', bothNameIt: false, anaLaterNamesIt: true },
-  { name: 'cleared-after-the-sync', bothNameIt: true, anaLaterNamesIt: false }
-] as const
+const plantSessionEntry = (teammate: SpawnedTeammate, threadId: string, entryId: string, body: string): void => {
+  const rt = testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: teammate.pluginData } })
+  const layout = layoutFor(rt, teammate.repo)
+  if (!layout.ok) throw new Error(`resolve: layoutFor refused for ${teammate.name} while planting a session entry`)
+  const write = writeRecords(
+    rt,
+    layout.value,
+    [{ kind: 'session', record: { id: entryId, thread_id: threadId, actor: teammate.name, body, created_at: rt.now() } }],
+    `${teammate.name}: plant a session entry for a resolve_conflict fixture`
+  )
+  if (!write.ok) throw new Error(`resolve: writeRecords failed for ${teammate.name} while planting a session entry: ${write.detail}`)
+}
 
-test('resolve.a-criterion-changed-locally-under-an-unchanged-next-step-is-refused-as-stale', async () => {
-  for (const scenario of CRITERION_CHANGED_UNDER_THE_SAME_NEXT_STEP) {
-    await withTwoSpawnedTeammates(async (ana, ben) => {
-      const threadId = await openAndConvergeThread(ana, ben, `resolve-pair-stale-${scenario.name}`)
-      const record = `thread:${threadId}`
-      const criterionId = readThreadOf(ana, threadId).completion_criteria[0]?.id
-      assert.ok(criterionId !== undefined, 'resolve: the fixture thread minted no criterion')
-      const named = (nextStep: string, namesIt: boolean): Record<string, unknown> => ({
-        thread_id: threadId,
-        next_step: nextStep,
-        ...(namesIt ? { next_step_criterion_id: criterionId } : {})
-      })
+test('resolve.refuses-a-composed-record-that-only-breaks-its-cap-once-escaped', async () => {
+  await withTwoSpawnedTeammates(async (ana, ben) => {
+    const threadId = await openAndConvergeThread(ana, ben, 'resolve-escaped-cap-thread')
+    const entryId = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
+    const entryPath = `sessions/${threadId}/${entryId}.json`
+    plantSessionEntry(ben, threadId, entryId, 'ben wrote this entry')
+    assertOkResult('sync_ledger (ben pushes his entry)', await callTool(ben, 'sync_ledger', {}))
+    plantSessionEntry(ana, threadId, entryId, 'ana wrote this entry')
+    const refusedSync = await callTool(ana, 'sync_ledger', {})
+    assert.equal(refusedSync.isError, true, 'expected the entry both clones wrote to conflict')
+    assert.match(firstTextOf(refusedSync), new RegExp(`sessions/${threadId}/${entryId}\\.json`), firstTextOf(refusedSync))
 
-      assertOkResult(`update_thread (ben, ${scenario.name})`, await callTool(ben, 'update_thread', named('ben next step', scenario.bothNameIt)))
-      assertOkResult(`sync_ledger (ben pushes, ${scenario.name})`, await callTool(ben, 'sync_ledger', {}))
-      assertOkResult(`update_thread (ana, ${scenario.name})`, await callTool(ana, 'update_thread', named('ana next step', scenario.bothNameIt)))
-      const anaConflictSync = await callTool(ana, 'sync_ledger', {})
-      assert.equal(anaConflictSync.isError, true, `expected the sync to be refused over the next step (${scenario.name})`)
+    const composed = {
+      id: entryId,
+      thread_id: threadId,
+      actor: 'ana',
+      body: String.fromCodePoint(0x3c).repeat(SESSION_BODY_MAX),
+      created_at: '2026-09-15T00:00:00.000Z'
+    }
+    const before = ledgerCommitOf(ana)
+    const refused = await callTool(ana, 'resolve_conflict', { resolutions: [{ path: entryPath, record: composed }] })
+    assert.equal(refused.isError, true, 'a body that fits its cap as sent but not once escaped must be refused')
+    assert.equal(firstTextOf(refused).split('\n')[0], 'field: resolutions.0.record.body', firstTextOf(refused))
+    assert.equal(ledgerCommitOf(ana), before, 'a refused resolution must leave the ledger where it was')
 
-      assertOkResult(
-        `update_thread (ana rewrites the same next step, ${scenario.name})`,
-        await callTool(ana, 'update_thread', named('ana next step', scenario.anaLaterNamesIt))
-      )
-
-      const reportedFields = [
-        ...firstTextOf(anaConflictSync).matchAll(new RegExp(`${record} (spine\\.next_step(?:_criterion_id)?)(?![_a-z])`, 'g'))
-      ].map((match) => match[1] as string)
-      const resolved = await callTool(ana, 'resolve_conflict', {
-        resolutions: [...new Set(reportedFields)].map((field) => ({ record, field, winner: 'remote' }))
-      })
-      const stored = readThreadOf(ana, threadId)
-      assert.equal(
-        resolved.isError,
-        true,
-        `ana changed the criterion under her next step after the sync, so taking ben's next step must be refused as stale (${scenario.name}), but it stored ${JSON.stringify([stored.spine.next_step, stored.spine.next_step_criterion_id ?? null])}`
-      )
-      assert.equal(stored.spine.next_step, 'ana next step')
-    })
-  }
+    assertOkResult(
+      'resolve_conflict (a body that still fits once escaped)',
+      await callTool(ana, 'resolve_conflict', { resolutions: [{ path: entryPath, record: { ...composed, body: 'ana and ben wrote this entry' } }] })
+    )
+  })
 })

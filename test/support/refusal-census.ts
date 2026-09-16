@@ -6,6 +6,7 @@ import * as ts from 'typescript'
 import type { Classified } from './census.ts'
 import type { Refusal } from '../../src/schema/declare.ts'
 import { ThreadRecord } from '../../src/schema/thread.ts'
+import { ADDRESS_SHAPES } from '../../src/server/resources.ts'
 
 export type EmittedString = { path: string; value: string; declaredExample: string }
 
@@ -88,6 +89,17 @@ const scrubAnchoredExampleOccurrences = (value: string, declaredExample: string)
   return value.replace(anchoredPattern, '$1')
 }
 
+const ADDRESS_VARIABLE = /\\\{[a-z_]+\\\}/g
+const ADDRESS_VARIABLE_VALUE = '[0-9A-Za-z_-]+'
+const ADDRESS_END = `(?=$|[\\s'"])`
+
+const PUBLISHED_ADDRESS_PATTERNS: readonly RegExp[] = ADDRESS_SHAPES.map(
+  (shape) => new RegExp(`${escapeForRegex(shape).replace(ADDRESS_VARIABLE, ADDRESS_VARIABLE_VALUE)}${ADDRESS_END}`, 'g')
+)
+
+const scrubPublishedAddresses = (value: string): string =>
+  PUBLISHED_ADDRESS_PATTERNS.reduce((scrubbed, pattern) => scrubbed.replace(pattern, 'a-published-logbook-address'), value)
+
 export const classifyEmittedPath = (
   s: EmittedString
 ): Classified<EmittedString>['verdict'] | 'unclassifiable' => {
@@ -97,7 +109,7 @@ export const classifyEmittedPath = (
     return 'unclassifiable'
   }
 
-  const scrubbed = scrubAnchoredExampleOccurrences(s.value, s.declaredExample)
+  const scrubbed = scrubPublishedAddresses(scrubAnchoredExampleOccurrences(s.value, s.declaredExample))
   const looksLikePath = POSIX_ABSOLUTE_PATTERN.test(scrubbed) || WIN32_ABSOLUTE_PATTERN.test(scrubbed)
   return looksLikePath ? 'forbidden' : 'allowed'
 }

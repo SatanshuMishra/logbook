@@ -17,7 +17,7 @@ const UNWALKED_SUBSCHEMA_KEYS = ['anyOf', 'oneOf', 'allOf', '$defs', '$ref'] as 
 
 const carriesUnwalkedSubschema = (node: Record<string, unknown>): boolean => {
   if (UNWALKED_SUBSCHEMA_KEYS.some((key) => key in node)) return true
-  return isPlainObject(node.additionalProperties)
+  return isPlainObject(node.additionalProperties) && Object.keys(node.additionalProperties).length > 0
 }
 
 export const classifyDescribedNode = (entry: SchemaNode): Verdict => {
@@ -78,6 +78,18 @@ test('contract.every-property-described.control.unwalked-subschema-halts', () =>
     value: { type: 'object', additionalProperties: false, description: 'a strict object field' }
   }
   assert.equal(classifyDescribedNode(booleanAdditionalPropertiesNode), 'allowed')
+
+  const openObjectOfAnythingNode: SchemaNode = {
+    path: 'probe.openObjectField',
+    value: { type: 'object', propertyNames: { type: 'string' }, additionalProperties: {}, description: 'an object of any keys and values' }
+  }
+  assert.equal(classifyDescribedNode(openObjectOfAnythingNode), 'allowed')
+
+  const undescribedOpenObjectOfAnythingNode: SchemaNode = {
+    path: 'probe.undescribedOpenObjectField',
+    value: { type: 'object', additionalProperties: {} }
+  }
+  assert.equal(classifyDescribedNode(undescribedOpenObjectOfAnythingNode), 'forbidden')
 })
 
 test('contract.every-property-described.control.a-nullable-scalar-is-described-by-its-own-description', () => {

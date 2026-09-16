@@ -1403,7 +1403,7 @@ const schemaFor = (schemas: Map<string, JsonSchemaNode>, name: string): JsonSche
 const SYNTHETIC_ULID = '0'.repeat(26)
 
 const VALID_INSTANCE_OVERRIDES: Readonly<Record<string, Record<string, unknown>>> = {
-  resolve_conflict: { resolutions: [{ record: `thread:${SYNTHETIC_ULID}`, field: 'title', winner: 'local' }] }
+  resolve_conflict: { resolutions: [{ path: `threads/${SYNTHETIC_ULID}.json`, record: {} }] }
 }
 
 const validInstanceFor = (name: string, schema: JsonSchemaNode): Record<string, unknown> =>

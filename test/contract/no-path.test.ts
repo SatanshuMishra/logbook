@@ -28,12 +28,7 @@ import { listThreadsTool } from '../../src/server/tools/list_threads.ts'
 import { recordDecisionTool, invalidDecisionRefusal } from '../../src/server/tools/record_decision.ts'
 import { logSessionEventTool, invalidSessionEntryRefusal } from '../../src/server/tools/log_session_event.ts'
 import { syncLedgerTool } from '../../src/server/tools/sync_ledger.ts'
-import { writeRecords } from '../../src/store/write-path.ts'
-import {
-  resolveConflictTool,
-  unclassifiableRecordRefusal,
-  divergenceUnverifiableRefusal
-} from '../../src/server/tools/resolve_conflict.ts'
+import { resolveConflictTool } from '../../src/server/tools/resolve_conflict.ts'
 import { commitThread, loadThread, loadThreadForReference, openProjectStore } from '../../src/server/tool-support.ts'
 import { git, readIdentity, type Identity } from '../../src/store/git.ts'
 import { createStoreDirectories, layoutFor, type StoreLayout } from '../../src/store/layout.ts'
@@ -134,30 +129,20 @@ const LOG_SESSION_EVENT_HANDLER_PRODUCER: ProducerId = 'server/tools/log_session
 const SYNC_LEDGER_OFFLINE_PRODUCER: ProducerId = 'server/tools/sync_ledger.ts#offlineRefusal'
 const SYNC_LEDGER_REJECTED_PRODUCER: ProducerId = 'server/tools/sync_ledger.ts#rejectedRefusal'
 const SYNC_LEDGER_CONFLICT_PRODUCER: ProducerId = 'server/tools/sync_ledger.ts#conflictRefusal'
-const SYNC_LEDGER_UNPARSEABLE_PRODUCER: ProducerId = 'server/tools/sync_ledger.ts#unparseableRecordsRefusal'
+const SYNC_LEDGER_GIT_TOO_OLD_PRODUCER: ProducerId = 'server/tools/sync_ledger.ts#gitTooOldRefusal'
 const SYNC_LEDGER_HANDLER_PRODUCER: ProducerId = 'server/tools/sync_ledger.ts#syncLedgerTool.handler'
 
 const RESOLVE_CONFLICT_NO_CONFLICTS_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#noConflictsRefusal'
 const RESOLVE_CONFLICT_UNREADABLE_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#conflictsUnreadableRefusal'
-const RESOLVE_CONFLICT_CORRUPT_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#corruptConflictsRefusal'
 const RESOLVE_CONFLICT_DUPLICATE_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#duplicateResolutionRefusal'
 const RESOLVE_CONFLICT_UNRECOGNISED_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#unrecognisedResolutionRefusal'
 const RESOLVE_CONFLICT_MISSING_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#missingResolutionRefusal'
-const RESOLVE_CONFLICT_SPLIT_NEXT_STEP_PAIR_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#splitNextStepPairRefusal'
-const RESOLVE_CONFLICT_THREAD_UNAVAILABLE_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#threadUnavailableRefusal'
-const RESOLVE_CONFLICT_STALE_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#staleRecordedValueRefusal'
-const RESOLVE_CONFLICT_UNCLASSIFIABLE_FIELD_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#unclassifiableFieldRefusal'
-const RESOLVE_CONFLICT_UNCLASSIFIABLE_RECORD_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#unclassifiableRecordRefusal'
-const RESOLVE_CONFLICT_INVALID_THREAD_PRODUCER: ProducerId =
-  'server/tools/resolve_conflict.ts#invalidThreadAfterResolutionRefusal'
-const RESOLVE_CONFLICT_INVALID_DECISION_PRODUCER: ProducerId =
-  'server/tools/resolve_conflict.ts#invalidDecisionAfterResolutionRefusal'
+const RESOLVE_CONFLICT_PAYLOAD_MISMATCH_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#payloadMismatchRefusal'
+const RESOLVE_CONFLICT_INVALID_RECORD_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#invalidRecordRefusal'
+const RESOLVE_CONFLICT_ADDRESS_MISMATCH_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#recordAddressMismatchRefusal'
+const RESOLVE_CONFLICT_STALE_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#staleConflictRefusal'
 const RESOLVE_CONFLICT_NO_REMOTE_POSITION_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#noRemotePositionRefusal'
 const RESOLVE_CONFLICT_COMMIT_FAILURE_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#commitFailureRefusal'
-const RESOLVE_CONFLICT_UNSAFE_DIVERGENCE_PRODUCER: ProducerId =
-  'server/tools/resolve_conflict.ts#unsafeRemoteDivergenceRefusal'
-const RESOLVE_CONFLICT_DIVERGENCE_UNVERIFIABLE_PRODUCER: ProducerId =
-  'server/tools/resolve_conflict.ts#divergenceUnverifiableRefusal'
 const RESOLVE_CONFLICT_HANDLER_PRODUCER: ProducerId = 'server/tools/resolve_conflict.ts#resolveConflictTool.handler'
 
 const STUB_TOOL_CTX = {} as unknown as ToolContext
@@ -533,11 +518,6 @@ const collectDefensiveGuardRefusals = (): TaggedRefusal[] => {
     refusal: invalidThreadRecordRefusal(threadParseForGuard.message)
   })
 
-  refusals.push({
-    producer: RESOLVE_CONFLICT_UNCLASSIFIABLE_RECORD_PRODUCER,
-    refusal: unclassifiableRecordRefusal('binding:01ARZ3NDEKTSV4RRFFQ69G5FAV')
-  })
-
   const invalidBindingAtCommit = BindingRecord.parse({ id: randomUUID(), thread_id: randomUUID(), branch: '', created_at: '2026-09-02T00:00:00.000Z' })
   if (invalidBindingAtCommit.ok) throw new Error('expected BindingRecord.parse to refuse a binding with an empty branch')
   refusals.push({
@@ -545,16 +525,6 @@ const collectDefensiveGuardRefusals = (): TaggedRefusal[] => {
     refusal: invalidCommittedBindingRefusal(
       `${invalidBindingAtCommit.field} failed its stored-shape validation: ${invalidBindingAtCommit.message}`
     )
-  })
-
-  withRepo((repo) => {
-    const rt = testRuntime()
-    const brokenDiff = git(rt, repo, ['diff', '--name-only', 'not-a-real-revision', 'also-not-a-real-revision'])
-    if (brokenDiff.ok) throw new Error('expected git diff to fail against revisions that do not exist')
-    refusals.push({
-      producer: RESOLVE_CONFLICT_DIVERGENCE_UNVERIFIABLE_PRODUCER,
-      refusal: divergenceUnverifiableRefusal(brokenDiff.stderr.trim())
-    })
   })
 
   return refusals
@@ -611,166 +581,89 @@ const cleanupResolveConflictFixture = (fixture: ResolveConflictFixture): void =>
   rmSync(fixture.pluginDataHome, { recursive: true, force: true })
 }
 
-const writeConflictsFixture = (fixture: ResolveConflictFixture, conflicts: readonly Record<string, unknown>[]): void => {
-  mkdirSync(fixture.layout.state, { recursive: true })
-  writeFileSync(join(fixture.layout.state, 'conflicts.json'), JSON.stringify(conflicts), 'utf8')
-}
+type ResolveConflictResolutions = Parameters<typeof resolveConflictTool.handler>[2]['resolutions']
 
-const singleTitleConflict = (fixture: ResolveConflictFixture, theirsTitle: string): Record<string, unknown> => ({
-  record: `thread:${fixture.threadId}`,
-  field: 'title',
-  ours: fixture.threadTitle,
-  theirs: theirsTitle
-})
+const ABSENT_COMMIT = '0'.repeat(40)
+const NOTE_PATH = 'notes/census-note.txt'
+
+const writeConflictsFixture = (fixture: ResolveConflictFixture, remoteCommit: string, paths: readonly string[]): void => {
+  const localCommit = rawGit(fixture.repo, ['rev-parse', LEDGER_REF]).stdout.trim()
+  mkdirSync(fixture.layout.state, { recursive: true })
+  writeFileSync(
+    join(fixture.layout.state, 'conflicts.json'),
+    JSON.stringify({
+      local_commit: localCommit,
+      remote_commit: remoteCommit,
+      paths: paths.map((path) => ({ path, base_blob: null, local_blob: ABSENT_COMMIT, remote_blob: ABSENT_COMMIT }))
+    }),
+    'utf8'
+  )
+}
 
 const collectResolveConflictSingleRepoRefusals = async (): Promise<TaggedRefusal[]> => {
   const fixture = await buildResolveConflictFixture()
   const refusals: TaggedRefusal[] = []
   try {
-    const noConflicts = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {
-      resolutions: [{ record: `thread:${fixture.threadId}`, field: 'title', winner: 'local' }]
-    })
-    if (noConflicts.ok) throw new Error('expected resolveConflictTool to refuse when no conflicts are recorded')
-    refusals.push({ producer: RESOLVE_CONFLICT_NO_CONFLICTS_PRODUCER, refusal: noConflicts.refusal })
+    const threadPath = `threads/${fixture.threadId}.json`
+    const threadSlot = fixture.store.readThread(fixture.threadId)
+    if (threadSlot === null || threadSlot.quarantined) throw new Error('expected the resolve-conflict fixture thread to read back cleanly')
+    const thread = threadSlot.record
+    const bothFiles: [ResolveConflictResolutions[number], ResolveConflictResolutions[number]] = [
+      { path: threadPath, record: thread },
+      { path: NOTE_PATH, content: 'a census note' }
+    ]
+    const resolve = async (resolutions: ResolveConflictResolutions, expectation: string): Promise<Refusal> => {
+      const result = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, { resolutions })
+      if (result.ok) throw new Error(`expected resolveConflictTool to refuse ${expectation}`)
+      return result.refusal
+    }
+
+    refusals.push({ producer: RESOLVE_CONFLICT_NO_CONFLICTS_PRODUCER, refusal: await resolve(bothFiles, 'when no conflicts are recorded') })
 
     const conflictsPath = join(fixture.layout.state, 'conflicts.json')
     mkdirSync(conflictsPath, { recursive: true })
-    const unreadable = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {
-      resolutions: [{ record: `thread:${fixture.threadId}`, field: 'title', winner: 'local' }]
-    })
-    if (unreadable.ok) throw new Error('expected resolveConflictTool to refuse when the conflicts file cannot be read')
-    refusals.push({ producer: RESOLVE_CONFLICT_UNREADABLE_PRODUCER, refusal: unreadable.refusal })
+    refusals.push({ producer: RESOLVE_CONFLICT_UNREADABLE_PRODUCER, refusal: await resolve(bothFiles, 'when the conflicts file cannot be read') })
     rmSync(conflictsPath, { recursive: true, force: true })
 
-    mkdirSync(fixture.layout.state, { recursive: true })
-    writeFileSync(conflictsPath, JSON.stringify({ not: 'an array' }), 'utf8')
-    const corrupt = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {
-      resolutions: [{ record: `thread:${fixture.threadId}`, field: 'title', winner: 'local' }]
-    })
-    if (corrupt.ok) throw new Error('expected resolveConflictTool to refuse when the conflicts file is not the expected shape')
-    refusals.push({ producer: RESOLVE_CONFLICT_CORRUPT_PRODUCER, refusal: corrupt.refusal })
+    writeFileSync(conflictsPath, JSON.stringify([{ record: `thread:${fixture.threadId}`, field: 'title' }]), 'utf8')
+    refusals.push({ producer: RESOLVE_CONFLICT_UNREADABLE_PRODUCER, refusal: await resolve(bothFiles, 'when the conflicts file is not the expected shape') })
 
-    writeConflictsFixture(fixture, [
-      singleTitleConflict(fixture, 'a remote title'),
-      { record: `thread:${fixture.threadId}`, field: 'spine.next_step', ours: '', theirs: 'a remote next step' }
-    ])
+    writeConflictsFixture(fixture, ABSENT_COMMIT, [threadPath, NOTE_PATH])
 
-    const duplicate = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {
-      resolutions: [
-        { record: `thread:${fixture.threadId}`, field: 'title', winner: 'local' },
-        { record: `thread:${fixture.threadId}`, field: 'title', winner: 'remote' }
-      ]
+    refusals.push({
+      producer: RESOLVE_CONFLICT_DUPLICATE_PRODUCER,
+      refusal: await resolve([...bothFiles, { path: threadPath, record: thread }], 'a resolutions list naming one file twice')
     })
-    if (duplicate.ok) throw new Error('expected resolveConflictTool to refuse a resolutions list naming the same disagreement twice')
-    refusals.push({ producer: RESOLVE_CONFLICT_DUPLICATE_PRODUCER, refusal: duplicate.refusal })
+    refusals.push({
+      producer: RESOLVE_CONFLICT_UNRECOGNISED_PRODUCER,
+      refusal: await resolve([...bothFiles, { path: `threads/${fixture.rt.ulid()}.json`, record: thread }], 'a file sync_ledger did not report')
+    })
+    refusals.push({ producer: RESOLVE_CONFLICT_MISSING_PRODUCER, refusal: await resolve([bothFiles[0]], 'a list missing a reported file') })
 
-    const unrecognised = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {
-      resolutions: [{ record: `thread:${fixture.threadId}`, field: 'status', winner: 'local' }]
+    refusals.push({
+      producer: RESOLVE_CONFLICT_PAYLOAD_MISMATCH_PRODUCER,
+      refusal: await resolve([{ path: threadPath, content: 'a thread sent as text' }, bothFiles[1]], 'a record file sent as content')
     })
-    if (unrecognised.ok) {
-      throw new Error('expected resolveConflictTool to refuse a resolution naming a disagreement sync_ledger did not report')
-    }
-    refusals.push({ producer: RESOLVE_CONFLICT_UNRECOGNISED_PRODUCER, refusal: unrecognised.refusal })
+    refusals.push({
+      producer: RESOLVE_CONFLICT_PAYLOAD_MISMATCH_PRODUCER,
+      refusal: await resolve([bothFiles[0], { path: NOTE_PATH, record: thread }], 'a text file sent as a record')
+    })
 
-    const missing = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {
-      resolutions: [{ record: `thread:${fixture.threadId}`, field: 'title', winner: 'local' }]
-    })
-    if (missing.ok) {
-      throw new Error('expected resolveConflictTool to refuse a resolutions list missing one of the reported disagreements')
-    }
-    refusals.push({ producer: RESOLVE_CONFLICT_MISSING_PRODUCER, refusal: missing.refusal })
+    const invalidRecord = await resolve([{ path: threadPath, record: { ...thread, title: '' } }, bothFiles[1]], 'a record that does not fit its stored shape')
+    if (invalidRecord.field !== 'resolutions.0.record.title') throw new Error(`expected the stored-shape refusal to name resolutions.0.record.title, got '${invalidRecord.field}'`)
+    refusals.push({ producer: RESOLVE_CONFLICT_INVALID_RECORD_PRODUCER, refusal: invalidRecord })
 
-    const noRemotePosition = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {
-      resolutions: [
-        { record: `thread:${fixture.threadId}`, field: 'title', winner: 'local' },
-        { record: `thread:${fixture.threadId}`, field: 'spine.next_step', winner: 'local' }
-      ]
+    refusals.push({
+      producer: RESOLVE_CONFLICT_ADDRESS_MISMATCH_PRODUCER,
+      refusal: await resolve([{ path: threadPath, record: { ...thread, id: fixture.rt.ulid() } }, bothFiles[1]], 'a record whose id differs from its path')
     })
-    if (noRemotePosition.ok) {
-      throw new Error('expected resolveConflictTool to refuse when no remote ledger position has ever been recorded')
-    }
-    refusals.push({ producer: RESOLVE_CONFLICT_NO_REMOTE_POSITION_PRODUCER, refusal: noRemotePosition.refusal })
-    refusals.push({ producer: RESOLVE_CONFLICT_HANDLER_PRODUCER, refusal: noRemotePosition.refusal })
 
-    writeConflictsFixture(fixture, [
-      { record: `thread:${fixture.threadId}`, field: 'spine.next_step', ours: 'the local next step', theirs: 'the remote next step' },
-      { record: `thread:${fixture.threadId}`, field: 'spine.next_step_criterion_id', ours: null, theirs: fixture.threadId }
-    ])
-    const splitPair = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {
-      resolutions: [
-        { record: `thread:${fixture.threadId}`, field: 'spine.next_step', winner: 'local' },
-        { record: `thread:${fixture.threadId}`, field: 'spine.next_step_criterion_id', winner: 'remote' }
-      ]
-    })
-    if (splitPair.ok) {
-      throw new Error('expected resolveConflictTool to refuse a next step and its criterion resolved to different winners')
-    }
-    refusals.push({ producer: RESOLVE_CONFLICT_SPLIT_NEXT_STEP_PAIR_PRODUCER, refusal: splitPair.refusal })
+    const noRemotePosition = await resolve(bothFiles, 'when the remote commit the conflict was found against is gone')
+    refusals.push({ producer: RESOLVE_CONFLICT_NO_REMOTE_POSITION_PRODUCER, refusal: noRemotePosition })
+    refusals.push({ producer: RESOLVE_CONFLICT_HANDLER_PRODUCER, refusal: noRemotePosition })
 
-    writeConflictsFixture(fixture, [singleTitleConflict(fixture, 'a remote title with a stale ours value')])
-    const stale = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {
-      resolutions: [{ record: `thread:${fixture.threadId}`, field: 'title', winner: 'local' }]
-    })
-    if (stale.ok) {
-      throw new Error('expected resolveConflictTool to refuse when the recorded local value no longer matches the live thread')
-    }
-    refusals.push({ producer: RESOLVE_CONFLICT_STALE_PRODUCER, refusal: stale.refusal })
-
-    writeConflictsFixture(fixture, [{ record: `thread:${fixture.threadId}`, field: 'nonexistent_field', ours: 'a', theirs: 'b' }])
-    const unclassifiableField = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {
-      resolutions: [{ record: `thread:${fixture.threadId}`, field: 'nonexistent_field', winner: 'local' }]
-    })
-    if (unclassifiableField.ok) {
-      throw new Error('expected resolveConflictTool to refuse a field it does not know how to apply a winner to')
-    }
-    refusals.push({ producer: RESOLVE_CONFLICT_UNCLASSIFIABLE_FIELD_PRODUCER, refusal: unclassifiableField.refusal })
-
-    const missingThreadId = fixture.rt.ulid()
-    writeConflictsFixture(fixture, [{ record: `thread:${missingThreadId}`, field: 'title', ours: 'a title', theirs: 'another title' }])
-    const threadUnavailable = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {
-      resolutions: [{ record: `thread:${missingThreadId}`, field: 'title', winner: 'local' }]
-    })
-    if (threadUnavailable.ok) throw new Error('expected resolveConflictTool to refuse when the named thread cannot be loaded')
-    refusals.push({ producer: RESOLVE_CONFLICT_THREAD_UNAVAILABLE_PRODUCER, refusal: threadUnavailable.refusal })
-
-    writeConflictsFixture(fixture, [singleTitleConflict(fixture, '')])
-    const invalidThread = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {
-      resolutions: [{ record: `thread:${fixture.threadId}`, field: 'title', winner: 'remote' }]
-    })
-    if (invalidThread.ok) {
-      throw new Error('expected resolveConflictTool to refuse a winning title that fails stored-shape validation')
-    }
-    if (!invalidThread.refusal.message.includes('failed its stored-shape validation')) {
-      throw new Error(`expected the stored-shape refusal, got '${invalidThread.refusal.message}'`)
-    }
-    refusals.push({ producer: RESOLVE_CONFLICT_INVALID_THREAD_PRODUCER, refusal: invalidThread.refusal })
-
-    const recordedDecision = await recordDecisionTool.handler(fixture.rt, STUB_TOOL_CTX, {
-      thread_id: fixture.threadId,
-      title: 'a census decision title',
-      context: 'a census decision context',
-      options: ['a census option'],
-      outcome: 'a census decision outcome'
-    })
-    if (!recordedDecision.ok) throw new Error('expected recordDecisionTool to record the resolve-conflict decision fixture')
-    const decisionId = recordedDecision.structured.decision_id
-    const liveDecisionSlot = fixture.store.readDecision(decisionId)
-    if (liveDecisionSlot === null || liveDecisionSlot.quarantined) {
-      throw new Error('expected the recorded decision to read back cleanly')
-    }
-    const liveDecision = liveDecisionSlot.record
-    const untitledDecision = { ...liveDecision, title: '' }
-    writeConflictsFixture(fixture, [{ record: `decision:${decisionId}`, field: 'decision', ours: liveDecision, theirs: untitledDecision }])
-    const invalidDecision = await resolveConflictTool.handler(fixture.rt, STUB_TOOL_CTX, {
-      resolutions: [{ record: `decision:${decisionId}`, field: 'decision', winner: 'remote' }]
-    })
-    if (invalidDecision.ok) {
-      throw new Error('expected resolveConflictTool to refuse a winning decision that fails stored-shape validation')
-    }
-    if (!invalidDecision.refusal.message.includes('failed its stored-shape validation')) {
-      throw new Error(`expected the stored-shape refusal, got '${invalidDecision.refusal.message}'`)
-    }
-    refusals.push({ producer: RESOLVE_CONFLICT_INVALID_DECISION_PRODUCER, refusal: invalidDecision.refusal })
+    writeConflictsFixture(fixture, rawGit(fixture.repo, ['rev-parse', LEDGER_REF]).stdout.trim(), [threadPath, NOTE_PATH])
+    refusals.push({ producer: RESOLVE_CONFLICT_STALE_PRODUCER, refusal: await resolve(bothFiles, 'when the recorded conflict no longer stands') })
   } finally {
     cleanupResolveConflictFixture(fixture)
   }
@@ -919,68 +812,12 @@ const collectSyncLedgerConflictAndResolveCommitFailureRefusals = async (): Promi
     rawGit(ben.repo, ['config', '--unset', 'user.email'])
 
     const resolveCommitFailure = await resolveConflictTool.handler(ben.rt, STUB_TOOL_CTX, {
-      resolutions: [{ record: `thread:${original.id}`, field: 'title', winner: 'local' }]
+      resolutions: [{ path: `threads/${original.id}.json`, record: benSlot.record }]
     })
     if (resolveCommitFailure.ok) {
       throw new Error('expected resolveConflictTool to refuse when the ledger commit cannot complete')
     }
     refusals.push({ producer: RESOLVE_CONFLICT_COMMIT_FAILURE_PRODUCER, refusal: resolveCommitFailure.refusal })
-  })
-  return refusals
-}
-
-const collectResolveConflictUnsafeDivergenceRefusal = async (): Promise<TaggedRefusal[]> => {
-  const refusals: TaggedRefusal[] = []
-  await withTwoSyncFixtureRepos(async (ana, ben) => {
-    const original = syncFixtureThread(ana.rt, 'sync-fixture-divergence-thread', 'sync fixture original title 2')
-    const created = ana.store.commit([{ kind: 'thread', record: original }], 'ana: create divergence fixture thread')
-    if (!created.ok) throw new Error('expected the divergence fixture to seed a thread')
-
-    const anaFirstSync = await syncLedgerTool.handler(ana.rt, STUB_TOOL_CTX, {})
-    if (!anaFirstSync.ok) throw new Error('expected the divergence fixture to push the initial thread')
-
-    const benFirstSync = await syncLedgerTool.handler(ben.rt, STUB_TOOL_CTX, {})
-    if (!benFirstSync.ok) throw new Error('expected the divergence fixture to fast-forward ben')
-
-    const benSlot = ben.store.readThread(original.id)
-    if (benSlot === null || benSlot.quarantined) throw new Error('expected ben to read back the divergence fixture thread')
-    const benEdit = ben.store.commit(
-      [{ kind: 'thread', record: { ...benSlot.record, title: 'ben changed the title 2', updated_at: ben.rt.now() } }],
-      'ben: change title 2'
-    )
-    if (!benEdit.ok) throw new Error('expected ben to commit a local title change')
-
-    const anaSlot = ana.store.readThread(original.id)
-    if (anaSlot === null || anaSlot.quarantined) throw new Error('expected ana to read back the divergence fixture thread')
-    const anaEdit = ana.store.commit(
-      [{ kind: 'thread', record: { ...anaSlot.record, title: 'ana changed the title 2', updated_at: ana.rt.now() } }],
-      'ana: change title 2'
-    )
-    if (!anaEdit.ok) throw new Error('expected ana to commit a local title change')
-
-    const anaDecision = await recordDecisionTool.handler(ana.rt, STUB_TOOL_CTX, {
-      thread_id: original.id,
-      title: 'a divergence fixture decision',
-      context: 'a divergence fixture context',
-      options: ['a divergence fixture option'],
-      outcome: 'a divergence fixture outcome',
-      scope: 'the divergence fixture'
-    })
-    if (!anaDecision.ok) throw new Error('expected ana to record a decision unrelated to the title conflict')
-
-    const anaSecondSync = await syncLedgerTool.handler(ana.rt, STUB_TOOL_CTX, {})
-    if (!anaSecondSync.ok) throw new Error('expected ana to push both the title change and the unrelated decision')
-
-    const benSecondSync = await syncLedgerTool.handler(ben.rt, STUB_TOOL_CTX, {})
-    if (benSecondSync.ok) throw new Error('expected syncLedgerTool to refuse when both sides changed the title')
-
-    const resolveDivergence = await resolveConflictTool.handler(ben.rt, STUB_TOOL_CTX, {
-      resolutions: [{ record: `thread:${original.id}`, field: 'title', winner: 'local' }]
-    })
-    if (resolveDivergence.ok) {
-      throw new Error('expected resolveConflictTool to refuse when the remote carries a change the resolution would not preserve')
-    }
-    refusals.push({ producer: RESOLVE_CONFLICT_UNSAFE_DIVERGENCE_PRODUCER, refusal: resolveDivergence.refusal })
   })
   return refusals
 }
@@ -1006,41 +843,41 @@ const collectSyncLedgerRejectedRefusal = async (): Promise<TaggedRefusal[]> => {
   return refusals
 }
 
-const UNPARSEABLE_FIXTURE_REL_PATH = 'decisions/a-record-this-version-cannot-read.json'
+const withGitReportingAnOldVersion = async <T>(fn: (onOldGit: (rt: Runtime) => Runtime) => Promise<T>): Promise<T> => {
+  const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim()
+  if (realGit.length === 0) throw new Error('expected a git on PATH to stand behind the old-version shim')
+  const shimDir = mkdtempSync(join(tmpdir(), 'logbook-old-git-'))
+  const shim = join(shimDir, 'git')
+  writeFileSync(shim, `#!/bin/sh\nif [ "$3" = "version" ]; then echo "git version 2.34.1"; exit 0; fi\nexec "${realGit}" "$@"\n`)
+  chmodSync(shim, 0o755)
+  try {
+    return await fn((rt) => ({ ...rt, env: { ...rt.env, PATH: `${shimDir}:${process.env.PATH ?? ''}` } }))
+  } finally {
+    rmSync(shimDir, { recursive: true, force: true })
+  }
+}
 
-const collectSyncLedgerUnparseableRefusal = async (): Promise<TaggedRefusal[]> => {
+const collectSyncLedgerGitTooOldRefusal = async (): Promise<TaggedRefusal[]> => {
   const refusals: TaggedRefusal[] = []
   await withTwoSyncFixtureRepos(async (ana, ben) => {
-    const seed = syncFixtureThread(ana.rt, 'sync-fixture-unparseable', 'sync fixture unparseable thread')
-    const created = ana.store.commit([{ kind: 'thread', record: seed }], 'ana: seed a thread for the unparseable probe')
-    if (!created.ok) throw new Error('expected the sync-unparseable fixture to seed a thread')
+    const seed = syncFixtureThread(ana.rt, 'sync-fixture-old-git', 'sync fixture old git thread')
+    if (!ana.store.commit([{ kind: 'thread', record: seed }], 'ana: seed a thread for the old-git probe').ok) {
+      throw new Error('expected the old-git fixture to seed a thread')
+    }
+    if (!(await syncLedgerTool.handler(ana.rt, STUB_TOOL_CTX, {})).ok) throw new Error('expected the old-git fixture to push the seed')
+    if (!(await syncLedgerTool.handler(ben.rt, STUB_TOOL_CTX, {})).ok) throw new Error('expected the old-git fixture to fast-forward ben')
 
-    const anaFirstSync = await syncLedgerTool.handler(ana.rt, STUB_TOOL_CTX, {})
-    if (!anaFirstSync.ok) throw new Error('expected the sync-unparseable fixture to push the seeded thread')
+    const bensThread = syncFixtureThread(ben.rt, 'sync-fixture-old-git-ben', 'sync fixture old git ben thread')
+    if (!ben.store.commit([{ kind: 'thread', record: bensThread }], 'ben: diverge').ok) throw new Error('expected ben to diverge')
+    if (!(await syncLedgerTool.handler(ben.rt, STUB_TOOL_CTX, {})).ok) throw new Error('expected ben to push his divergence')
+    const anasThread = syncFixtureThread(ana.rt, 'sync-fixture-old-git-ana', 'sync fixture old git ana thread')
+    if (!ana.store.commit([{ kind: 'thread', record: anasThread }], 'ana: diverge').ok) throw new Error('expected ana to diverge')
 
-    const benFirstSync = await syncLedgerTool.handler(ben.rt, STUB_TOOL_CTX, {})
-    if (!benFirstSync.ok) throw new Error('expected the sync-unparseable fixture to fast-forward ben')
-
-    const benLayout = layoutFor(ben.rt, ben.repo)
-    if (!benLayout.ok) throw new Error("expected layoutFor to resolve ben's sync fixture layout")
-    const seededBadRecord = writeRecords(
-      ben.rt,
-      benLayout.value,
-      [{ kind: 'raw', relPath: UNPARSEABLE_FIXTURE_REL_PATH, content: '{"this is not a valid decision record":true}' }],
-      'ben: write a record this version cannot read'
-    )
-    if (!seededBadRecord.ok) throw new Error('expected the sync-unparseable fixture to seed a record the schema rejects')
-
-    const benPush = await syncLedgerTool.handler(ben.rt, STUB_TOOL_CTX, {})
-    if (!benPush.ok) throw new Error('expected the sync-unparseable fixture to push the unreadable record')
-
-    const anaDiverges = syncFixtureThread(ana.rt, 'sync-fixture-unparseable-second', 'sync fixture unparseable second thread')
-    const diverged = ana.store.commit([{ kind: 'thread', record: anaDiverges }], 'ana: diverge so the next sync must merge')
-    if (!diverged.ok) throw new Error('expected the sync-unparseable fixture to diverge ana from the shared copy')
-
-    const anaMerge = await syncLedgerTool.handler(ana.rt, STUB_TOOL_CTX, {})
-    if (anaMerge.ok) throw new Error('expected syncLedgerTool to refuse when the shared copy carries a record it cannot read')
-    refusals.push({ producer: SYNC_LEDGER_UNPARSEABLE_PRODUCER, refusal: anaMerge.refusal })
+    await withGitReportingAnOldVersion(async (onOldGit) => {
+      const anaMerge = await syncLedgerTool.handler(onOldGit(ana.rt), STUB_TOOL_CTX, {})
+      if (anaMerge.ok) throw new Error('expected syncLedgerTool to refuse a merge on a git older than the merge-tree floor')
+      refusals.push({ producer: SYNC_LEDGER_GIT_TOO_OLD_PRODUCER, refusal: anaMerge.refusal })
+    })
   })
   return refusals
 }
@@ -1229,9 +1066,8 @@ const collectRealRefusals = async (): Promise<TaggedRefusal[]> => {
   refusals.push(...(await collectResolveConflictSingleRepoRefusals()))
   refusals.push(...(await collectSyncLedgerOfflineRefusal()))
   refusals.push(...(await collectSyncLedgerConflictAndResolveCommitFailureRefusals()))
-  refusals.push(...(await collectResolveConflictUnsafeDivergenceRefusal()))
   refusals.push(...(await collectSyncLedgerRejectedRefusal()))
-  refusals.push(...(await collectSyncLedgerUnparseableRefusal()))
+  refusals.push(...(await collectSyncLedgerGitTooOldRefusal()))
 
   return refusals
 }
@@ -1260,6 +1096,19 @@ test('error.discloses-no-path', async () => {
     { path: 'content[0].text', value: `leaked at ${SENTINEL_WIN32}`, declaredExample: '' }
   ]
   assert.throws(() => census(forbiddenWin32, classifyEmittedPath))
+
+  const publishedAddress: EmittedString[] = [
+    { path: 'content[0].text', value: `local: logbook://conflict/${'a'.repeat(40)}\n`, declaredExample: '' }
+  ]
+  assert.doesNotThrow(() => census(publishedAddress, classifyEmittedPath), 'a published logbook address is not a filesystem path')
+
+  const pathBehindTheScheme: EmittedString[] = [
+    { path: 'content[0].text', value: `local: logbook://conflict${SENTINEL_POSIX}`, declaredExample: '' }
+  ]
+  assert.throws(
+    () => census(pathBehindTheScheme, classifyEmittedPath),
+    'a filesystem path carried behind the logbook scheme must still be caught'
+  )
 })
 
 test('error.discloses-no-path.scan-population-matches-the-independently-derived-object-descent-domain', () => {

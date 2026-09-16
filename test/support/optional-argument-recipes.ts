@@ -14,6 +14,10 @@ import { resumeThreadTool } from '../../src/server/tools/resume_thread.ts'
 import { parkThreadTool } from '../../src/server/tools/park_thread.ts'
 import { recordDecisionTool } from '../../src/server/tools/record_decision.ts'
 import { listThreadsTool } from '../../src/server/tools/list_threads.ts'
+import { resolveConflictTool } from '../../src/server/tools/resolve_conflict.ts'
+import { writeConflictState } from '../../src/merge/conflict-state.ts'
+import { layoutFor } from '../../src/store/layout.ts'
+import { LEDGER_REF } from '../../src/store/ref.ts'
 import { openProjectStore } from '../../src/server/tool-support.ts'
 import { testRuntime } from './runtime.ts'
 
@@ -898,6 +902,44 @@ const listThreadsLimitRecipe = (): Promise<RecipeResult> =>
     (structured) => ({ next_cursor: structured.next_cursor })
   )
 
+const ABSENT_COMMIT = '0'.repeat(40)
+
+const recordConflictOn = async (rt: Runtime, conflictedPath: (threadId: string) => string): Promise<string> => {
+  const { threadId } = await openFixtureThread(rt, 'resolve-conflict')
+  const layout = layoutFor(rt, rt.cwd)
+  if (!layout.ok) throw new Error('optional-argument-recipes: expected the resolve_conflict fixture layout to resolve')
+  const ledger = spawnSync('git', ['-C', layout.value.projectRoot, 'rev-parse', LEDGER_REF], { env: FIXTURE_GIT_ENV, encoding: 'utf8' })
+  if (ledger.status !== 0) throw new Error(`optional-argument-recipes: could not read the fixture ledger commit: ${ledger.stderr}`)
+  const filePath = conflictedPath(threadId)
+  const written = writeConflictState(layout.value, {
+    local_commit: ledger.stdout.trim(),
+    remote_commit: ABSENT_COMMIT,
+    paths: [{ path: filePath, base_blob: null, local_blob: null, remote_blob: null }]
+  })
+  if (!written.ok) throw new Error(`optional-argument-recipes: could not record the fixture conflict: ${written.detail}`)
+  return filePath
+}
+
+const resolveConflictRecordRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'resolve_conflict.resolutions[].record',
+    resolveConflictTool,
+    (rt) => recordConflictOn(rt, (threadId) => `threads/${threadId}.json`),
+    (filePath: string) => ({ resolutions: [{ path: filePath }] }),
+    (filePath: string) => ({ resolutions: [{ path: filePath, record: {} }] }),
+    NO_EXTRACT
+  )
+
+const resolveConflictContentRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'resolve_conflict.resolutions[].content',
+    resolveConflictTool,
+    (rt) => recordConflictOn(rt, () => 'notes/optional-argument-fixture.txt'),
+    (filePath: string) => ({ resolutions: [{ path: filePath }] }),
+    (filePath: string) => ({ resolutions: [{ path: filePath, content: 'a fixture note' }] }),
+    NO_EXTRACT
+  )
+
 export const RECIPES: ReadonlyMap<string, () => Promise<RecipeResult>> = new Map([
   ['open_thread.predecessor_id', openThreadPredecessorIdRecipe],
   ['open_thread.artifacts', openThreadArtifactsRecipe],
@@ -920,7 +962,9 @@ export const RECIPES: ReadonlyMap<string, () => Promise<RecipeResult>> = new Map
   ...recordDecisionSimpleRecipes,
   ['record_decision.supersedes', recordDecisionSupersedesRecipe],
   ['list_threads.cursor', listThreadsCursorRecipe],
-  ['list_threads.limit', listThreadsLimitRecipe]
+  ['list_threads.limit', listThreadsLimitRecipe],
+  ['resolve_conflict.resolutions[].record', resolveConflictRecordRecipe],
+  ['resolve_conflict.resolutions[].content', resolveConflictContentRecipe]
 ])
 
 export type Test2Case = {

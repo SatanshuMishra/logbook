@@ -171,7 +171,7 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
   ],
   sync_ledger: [{ phrase: 'Takes no arguments', providers: [] }],
   resolve_conflict: [
-    { phrase: 'Takes a list of {record, field, winner}', providers: ['resolve_conflict.resolutions'] }
+    { phrase: 'Takes resolutions, a list of {path, record}', providers: ['resolve_conflict.resolutions'] }
   ],
   list_threads: [
     { phrase: 'pass `cursor` from a previous reply to read the next page', providers: ['list_threads.cursor'] },

@@ -73,7 +73,7 @@
   },
   {
     "name": "MAX_SYNC_ATTEMPTS",
-    "site": "src/merge/sync.ts:45",
+    "site": "src/merge/sync.ts:28",
     "value": 5,
     "basis": "unrecorded",
     "reason": null,
@@ -666,24 +666,6 @@
     "mirror_relation": null
   },
   {
-    "name": "UNPARSEABLE_RECORDS_SHOWN_MAX",
-    "site": "src/schema/caps.ts:27",
-    "value": 5,
-    "basis": "unrecorded",
-    "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
-  },
-  {
-    "name": "UNPARSEABLE_RECORD_NAME_MAX",
-    "site": "src/schema/caps.ts:28",
-    "value": 100,
-    "basis": "unrecorded",
-    "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
-  },
-  {
     "name": "PACKAGE_JSON_SEARCH_DEPTH",
     "site": "src/server/main.ts:13",
     "value": 10,
@@ -730,7 +712,7 @@
   },
   {
     "name": "RESOLUTIONS_MAX_ELEMENTS",
-    "site": "src/server/tools/resolve_conflict.ts:35",
+    "site": "src/server/tools/resolve_conflict.ts:23",
     "value": 200,
     "basis": "unrecorded",
     "reason": null,
@@ -738,11 +720,11 @@
     "mirror_relation": null
   },
   {
-    "name": "FIELD_MAX",
-    "site": "src/server/tools/resolve_conflict.ts:36",
-    "value": 300,
-    "basis": "unrecorded",
-    "reason": null,
+    "name": "RESOLUTION_PATH_MAX",
+    "site": "src/server/tools/resolve_conflict.ts:24",
+    "value": 4096,
+    "basis": "chosen",
+    "reason": "4096 is a chosen ceiling on the path a caller sends, set to Linux PATH_MAX, the largest path limit of the systems Logbook runs on (macOS PATH_MAX is 1024). It is far above any record address Logbook writes, the longest being sessions/<ulid>/<ulid>.json at 67 characters, and high enough that a conflicted file with any path this machine can hold can still be settled, which is why the path pattern beside it is also kept loose (decision 01M2KK8AEJXRDY0XTXV6Z3CMY3).",
     "mirrors": null,
     "mirror_relation": null
   },
@@ -775,7 +757,7 @@
   },
   {
     "name": "MAX_ATTEMPTS",
-    "site": "src/store/write-path.ts:31",
+    "site": "src/store/write-path.ts:32",
     "value": 5,
     "basis": "unrecorded",
     "reason": null,
@@ -784,10 +766,19 @@
   },
   {
     "name": "SESSION_UNPARKED_ENTRIES_MAX",
-    "site": "src/schema/caps.ts:30",
+    "site": "src/schema/caps.ts:27",
     "value": 25,
     "basis": "chosen",
     "reason": "Ruled by the human operator on 2026-09-11 (decision 01M27EQRZQF4R46NWA44Y10ZY0); across the twenty-four historical un-parked runs this store has carried, the largest legitimate run is 24 and the pathological one is 154; 25 refuses exactly that one run, at its 26th append, and leaves the other twenty-three alone; the margin is therefore zero, which is the known cost of the ruling; the bound is a pathology bound, not a page bound, and makes no claim to keep a briefing inside any size.",
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
+    "name": "CONFLICT_CHANGES_SHOWN_MAX",
+    "site": "src/schema/caps.ts:29",
+    "value": 40,
+    "basis": "chosen",
+    "reason": "40 is a chosen ceiling on the JSON paths listed per conflicted file in sync_ledger's conflict reply, which is a reading aid only (ruling 01M2KFB57P1EZKBQVZKN9ZMK1H) and decides nothing. A record changed on both sides normally differs in a handful of paths, so 40 shows every real case whole while a record with thousands of keys cannot push the reply past the tool-output limit on its own. Beyond it the line ends '(+N more)', and every version is still readable in full at logbook://conflict/{blob_id}.",
     "mirrors": null,
     "mirror_relation": null
   }
