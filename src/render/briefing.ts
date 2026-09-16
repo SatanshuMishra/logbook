@@ -5,7 +5,6 @@ import type { Pointer } from '../domain/pointer.ts'
 import { previousSessionEntries } from '../domain/session-log.ts'
 import { escapeStored, escapeStoredBlock, firstNonEmptyStoredLine } from './escape.ts'
 import { CLIP_MARKER_GRAPHEMES, clipWithMarker, clipWithMarkerFloor } from './clip.ts'
-import { toRosterRow } from './roster.ts'
 import {
   SESSION_BODY_MAX
 } from '../schema/caps.ts'
@@ -569,7 +568,8 @@ export const renderHandle = (
   pointer: Pointer | null,
   unreadableSessionEntryCount: number
 ): string => {
-  const row = toRosterRow(thread)
+  const unstruck = thread.completion_criteria.filter((criterion) => criterion.struck_by === null)
+  const doneCount = unstruck.filter((criterion) => criterion.done).length
   const unreadableDecisionCount = decisionIntegrity.dangling.length + decisionIntegrity.quarantined.length
   const nextStepLines = thread.spine.next_step.length === 0 ? [] : [thread.spine.next_step]
   const notShownBulletLines = [
@@ -587,7 +587,7 @@ export const renderHandle = (
     `**Status:** ${escapeStored(thread.status)}`,
     renderBlockage(thread.blocked_by),
     renderPointerStatus(pointer, thread.id),
-    `**Criteria:** ${row.criteria_done} of ${row.criteria_total} done`,
+    `**Criteria:** ${doneCount} of ${unstruck.length} done`,
     ...nextStepLines.slice(0, 1).map(() => ''),
     ...nextStepLines.slice(0, 1).map(() => '**Next step:**'),
     ...nextStepLines.slice(0, 1).map(() => ''),
