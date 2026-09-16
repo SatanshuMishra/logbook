@@ -107,7 +107,7 @@ One file, `briefed.json`, in the state directory beside `active-thread.json`. It
 See logbook://thread/<id> for the complete record.
 ```
 
-The heading, the four header lines and the `Next step` block are the existing renderers: `BRIEFING_HEADING`, the `Thread` and `Status` lines from `assembleBriefing`, `renderBlockage` and `renderPointerStatus`, `src/render/briefing.ts:229`. `Criteria` counts unstruck criteria exactly as the roster does, `toRosterRow` in `src/render/roster.ts:34`, reused rather than recomputed.
+The heading, the four header lines and the `Next step` block are the existing renderers: `BRIEFING_HEADING`, the `Thread` and `Status` lines from `assembleBriefing`, `renderBlockage` and `renderPointerStatus`, `src/render/briefing.ts:229`. `Criteria` counts unstruck criteria by the same rule the roster uses, `toRosterRow` in `src/render/roster.ts:34`, but reproduced locally rather than imported: `test/contract/resume-path-has-no-settledness-aggregate.test.ts:251` refuses any import that widens the forward closure of the briefing renderer onto files the resume path never runs, and importing the roster does exactly that.
 
 The `Not shown` block carries the line above plus the integrity warnings the full briefing would have shown and this form drops: the count of linked decision records that could not be read, and the count of session log entries that could not be read. A session working from the handle still learns that part of the record is unreadable.
 
@@ -147,6 +147,19 @@ Hook, `test/hooks/stop-gate-latch-order.test.ts` or a sibling: a transcript whos
 
 `test/contract/skills.test.ts` is not edited. It passing unchanged is the evidence that the skill contract did not move.
 
+Three existing spawn tests use `resume_thread` as a way to re-read a thread two or three times inside one
+session, `test/spawn/criterion-reopen.test.ts:104` and `test/spawn/resume.test.ts:700`. They pass
+`full_briefing: true` at those call sites and keep every assertion. Their breaking without that argument is
+what makes this release major rather than minor.
+
+Two censuses constrain the change beyond the sections above. The optional-argument census,
+`test/contract/optional-arguments-are-absent.test.ts:79`, requires a registered recipe proving that omitting
+`full_briefing` derives no substitute: the whole briefing simply is not forced. The limits register,
+`docs/registers/size-limits.json`, gains a row for `BRIEFED_THREADS_MAX` and nineteen rows move, because
+inserting lines into `src/render/briefing.ts` shifts every constant declared below them.
+
 ## Release
 
-Minor, `11.2.0`, if no pinned contract has to be rewritten to accommodate the change. If the suite shows one that does, the release is major under OR44 and the version is `12.0.0`. The decision follows the suite, not this paragraph.
+Major, `12.0.0`. The suite decided it: three committed spawn tests of published behaviour failed without being
+touched, because a second resume of one thread in one session no longer returns the same text. That is a
+contract break under OR44 whatever the shape of the reply, which did not change.

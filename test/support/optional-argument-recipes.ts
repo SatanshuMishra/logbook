@@ -19,6 +19,7 @@ import { writeConflictState } from '../../src/merge/conflict-state.ts'
 import { layoutFor } from '../../src/store/layout.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
 import { openProjectStore } from '../../src/server/tool-support.ts'
+import { BRIEFED_ALREADY_LINE } from '../../src/render/briefing.ts'
 import { testRuntime } from './runtime.ts'
 
 export const STUB_TOOL_CTX = {} as unknown as ToolContext
@@ -902,6 +903,25 @@ const listThreadsLimitRecipe = (): Promise<RecipeResult> =>
     (structured) => ({ next_cursor: structured.next_cursor })
   )
 
+const resumeThreadFullBriefingRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'resume_thread.full_briefing',
+    resumeThreadTool,
+    async (rt) => {
+      const ctx = await openFixtureThread(rt, 'resume-thread-full-briefing')
+      const briefed = await resumeThreadTool.handler(rt, STUB_TOOL_CTX, { thread_id: ctx.threadId })
+      if (!briefed.ok) {
+        throw new Error('optional-argument-recipes: expected the resume_thread.full_briefing fixture to be briefed once')
+      }
+      return ctx
+    },
+    (ctx) => ({ thread_id: ctx.threadId }),
+    (ctx) => ({ thread_id: ctx.threadId, full_briefing: true }),
+    (structured) => ({
+      whole_briefing_rendered: !String(structured.briefing).includes(BRIEFED_ALREADY_LINE)
+    })
+  )
+
 const ABSENT_COMMIT = '0'.repeat(40)
 
 const recordConflictOn = async (rt: Runtime, conflictedPath: (threadId: string) => string): Promise<string> => {
@@ -963,6 +983,7 @@ export const RECIPES: ReadonlyMap<string, () => Promise<RecipeResult>> = new Map
   ['record_decision.supersedes', recordDecisionSupersedesRecipe],
   ['list_threads.cursor', listThreadsCursorRecipe],
   ['list_threads.limit', listThreadsLimitRecipe],
+  ['resume_thread.full_briefing', resumeThreadFullBriefingRecipe],
   ['resolve_conflict.resolutions[].record', resolveConflictRecordRecipe],
   ['resolve_conflict.resolutions[].content', resolveConflictContentRecipe]
 ])

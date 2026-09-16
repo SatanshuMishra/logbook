@@ -20,6 +20,8 @@ const PLUGIN_DATA_ENV_KEY = 'CLAUDE_PLUGIN_DATA'
 
 const FULL_BRIEFING_MARKER = '**Completion criteria:**'
 
+const PROBE_THREAD_ID = '01M0NDPM0ACCR9CD68PMHYWGGD'
+
 type Harness = { runtimeFor: (sessionId: string) => Runtime }
 
 const setUpRepo = (repo: string): void => {
@@ -128,11 +130,8 @@ test('resume_thread.a-new-session-is-briefed-again-on-a-thread-an-earlier-sessio
 })
 
 test('resume_thread.full-briefing-asks-for-the-whole-text-back-on-a-thread-already-briefed', async () => {
-  assert.equal(
-    resumeThreadTool.input.safeParse({ thread_id: '01M0NDPM0ACCR9CD68PMHYWGGD', full_briefing: true }).success,
-    true,
-    'the input must accept the one override that asks for more text'
-  )
+  const withOverride = resumeThreadTool.input.safeParse({ thread_id: PROBE_THREAD_ID, full_briefing: true })
+  assert.equal(withOverride.success, true, 'the input must accept the one override that asks for more text')
 
   await withHarness(async (harness) => {
     const rt = harness.runtimeFor(FIRST_SESSION)
@@ -147,10 +146,7 @@ test('resume_thread.full-briefing-asks-for-the-whole-text-back-on-a-thread-alrea
 })
 
 test('resume_thread.takes-no-input-that-asks-for-less-than-the-rule-gives', () => {
-  const parsed = resumeThreadTool.input.safeParse({
-    thread_id: '01M0NDPM0ACCR9CD68PMHYWGGD',
-    briefing: 'none'
-  })
+  const parsed = resumeThreadTool.input.safeParse({ thread_id: PROBE_THREAD_ID, briefing: 'none' })
 
   assert.equal(parsed.success, false, 'the input is strict, so no key can be introduced that suppresses a briefing')
 })
