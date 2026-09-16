@@ -8,6 +8,7 @@ import { rawGit } from '../support/git-fixture.ts'
 export type PathClassification = { path: string; bucket: string }
 
 const DOCS_PREFIX = 'docs/'
+const EVALS_PREFIX = 'evals/'
 const README_FILE = 'README.md'
 
 const REPO_INFRA_PREFIXES = ['node_modules/', '.github/', 'scripts/', '.claude-plugin/']
@@ -33,6 +34,9 @@ export const classify = (filePath: string): PathClassification => {
   if (filePath.startsWith(DOCS_PREFIX) || filePath === README_FILE) {
     return { path: filePath, bucket: 'documentation' }
   }
+  if (filePath.startsWith(EVALS_PREFIX)) {
+    return { path: filePath, bucket: 'eval-suite' }
+  }
   if (REPO_INFRA_PREFIXES.some((prefix) => filePath.startsWith(prefix))) {
     return { path: filePath, bucket: 'repository-infrastructure' }
   }
@@ -53,6 +57,7 @@ export const classify = (filePath: string): PathClassification => {
 const bucketVerdict = (bucket: string): Classified<PathClassification>['verdict'] | 'unclassifiable' => {
   if (bucket === 'documentation') return 'allowed'
   if (bucket === 'repository-infrastructure') return 'allowed'
+  if (bucket === 'eval-suite') return 'allowed'
   if (bucket === 'new-tree') return 'allowed'
   if (bucket === 'legacy-javascript-module') return 'forbidden'
   return 'unclassifiable'
