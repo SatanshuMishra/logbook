@@ -116,9 +116,11 @@ Closing as `done` passes a structural gate, evaluated inside `close_thread`:
 
 When the gate fails the call is refused and the thread does not move. Criteria are set when the thread
 is opened. The set of criteria afterwards changes only through `amend_criteria`, which requires
-`amend_criteria.decision_id` naming a decision that actually resolves; it inserts, rewrites or
-strikes. A struck criterion is retained forever, never deleted. Marking a criterion done is a
-different operation and belongs to `update_thread`.
+`amend_criteria.decision_id` naming a decision that actually resolves; it inserts, rewrites,
+strikes or reopens. A struck criterion is retained forever, never deleted. Reopening a criterion
+marked done keeps its id and the result recorded when it was marked done, so the risks, key
+decisions and next step anchored to it return to the live view of the briefing. Marking a criterion
+done is a different operation and belongs to `update_thread`.
 
 ## Decisions
 

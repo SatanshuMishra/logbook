@@ -28,6 +28,11 @@ export type StrikeCriterionInput = {
   decisionId: string | null | undefined
 }
 
+export type ReopenCriterionInput = {
+  criterionId: string
+  decisionId: string | null | undefined
+}
+
 type ResolvedDecision = { ok: true; value: string } | Refusal
 
 const missingDecisionRefusal = (field: string): Refusal => ({
@@ -91,6 +96,15 @@ const doneCriterionRefusal = (field: string, criterionId: string): Refusal => ({
   example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
   retryable: true,
   message: `${field} names a criterion already marked done, whose recorded result answers the check as it was written and is never rewritten; strike it and insert a replacement instead; received ${criterionId}.`
+})
+
+const notDoneCriterionRefusal = (field: string, criterionId: string): Refusal => ({
+  ok: false,
+  field,
+  accepted: 'the id of a criterion currently marked done',
+  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  retryable: true,
+  message: `${field} names a criterion that is not marked done, so there is nothing to reopen; a criterion that has not been met is already open; received ${criterionId}.`
 })
 
 const positionRefusal = (field: string, length: number): Refusal => ({
@@ -229,6 +243,39 @@ export const strikeCriterion = (
   const decisionId = decisionResult.value
   const next = thread.completion_criteria.map((criterion) =>
     criterion.id === input.criterionId ? { ...criterion, struck_by: decisionId } : criterion
+  )
+
+  return {
+    ok: true,
+    value: { ...thread, completion_criteria: recomputeOrdinals(next), updated_at: rt.now() }
+  }
+}
+
+export const reopenCriterion = (
+  rt: Runtime,
+  thread: Thread,
+  input: ReopenCriterionInput,
+  resolveDecision: DecisionResolver
+): Ok<Thread> | Refusal => {
+  const decisionResult = requireDecision('decision_id', input.decisionId, resolveDecision)
+  if (!decisionResult.ok) {
+    return decisionResult
+  }
+
+  const target = thread.completion_criteria.find((criterion) => criterion.id === input.criterionId)
+  if (target === undefined) {
+    return criterionNotFoundRefusal('criteria.reopen.criterion_id', input.criterionId)
+  }
+  if (target.struck_by !== null) {
+    return struckCriterionRefusal('criterion_id', input.criterionId)
+  }
+  if (!target.done) {
+    return notDoneCriterionRefusal('criterion_id', input.criterionId)
+  }
+
+  const decisionId = decisionResult.value
+  const next = thread.completion_criteria.map((criterion) =>
+    criterion.id === input.criterionId ? { ...criterion, done: false, reopened_by: decisionId } : criterion
   )
 
   return {

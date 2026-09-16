@@ -36,7 +36,7 @@ import { openStore, type Store } from '../../src/store/records.ts'
 import { LEDGER_REF, casUpdateRef } from '../../src/store/ref.ts'
 import { ensureSingleStore } from '../../src/store/single-store.ts'
 import { withDetail } from '../../src/store/detail.ts'
-import { insertCriterion, rewriteCriterion, strikeCriterion } from '../../src/domain/criteria.ts'
+import { insertCriterion, reopenCriterion, rewriteCriterion, strikeCriterion } from '../../src/domain/criteria.ts'
 import { checkNextStepCriterion, contributeToSpine } from '../../src/domain/spine.ts'
 import { transition } from '../../src/domain/lifecycle.ts'
 import { rawGit, withRepo, withRepoNoIdentity } from '../support/git-fixture.ts'
@@ -73,6 +73,7 @@ const WITH_DETAIL_PRODUCER: ProducerId = 'store/detail.ts#withDetail'
 const INSERT_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#insertCriterion'
 const REWRITE_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#rewriteCriterion'
 const STRIKE_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#strikeCriterion'
+const REOPEN_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#reopenCriterion'
 const CONTRIBUTE_TO_SPINE_PRODUCER: ProducerId = 'domain/spine.ts#contributeToSpine'
 const CHECK_NEXT_STEP_CRITERION_PRODUCER: ProducerId = 'domain/spine.ts#checkNextStepCriterion'
 const TRANSITION_PRODUCER: ProducerId = 'domain/lifecycle.ts#transition'
@@ -1035,6 +1036,15 @@ const collectRealRefusals = async (): Promise<TaggedRefusal[]> => {
   )
   if (strikeResult.ok) throw new Error('expected strikeCriterion to refuse without a decision id')
   refusals.push({ producer: STRIKE_CRITERION_PRODUCER, refusal: strikeResult })
+
+  const reopenResult = reopenCriterion(
+    domainRt,
+    domainThread,
+    { criterionId: 'unknown-criterion-id', decisionId: undefined },
+    neverResolves
+  )
+  if (reopenResult.ok) throw new Error('expected reopenCriterion to refuse without a decision id')
+  refusals.push({ producer: REOPEN_CRITERION_PRODUCER, refusal: reopenResult })
 
   const spineResult = contributeToSpine(domainThread.spine, {
     key_decisions: Array.from({ length: caps.KEY_DECISIONS_MAX_ELEMENTS + 1 }, (_, index) => ({

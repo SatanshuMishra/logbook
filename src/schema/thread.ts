@@ -21,11 +21,14 @@ export type Criterion = {
   result?: string | null | undefined
   result_status?: ResultStatus | null | undefined
   struck_by: Ulid | null
+  reopened_by?: Ulid | null | undefined
   settledness?: Settledness | undefined
   settled_by?: string | null | undefined
 }
 
 export const criterionSettledness = (criterion: Criterion): Settledness => criterion.settledness ?? 'proposed'
+
+export const criterionReopenedBy = (criterion: Criterion): Ulid | null => criterion.reopened_by ?? null
 
 export type Risk = { id: Ulid; scope: string; text: string; refs: string[]; criterion_id?: Ulid | null | undefined; retired: boolean }
 export type KeyDecision = { id: Ulid; decision_id: Ulid; title: string; scope: string; criterion_id?: Ulid | undefined }
@@ -104,6 +107,16 @@ const CriterionSchema = structural(
         .regex(ULID_PATTERN)
         .nullable()
         .describe('the decision id that struck this criterion, or null when it has not been struck')
+    ),
+    reopened_by: structural(
+      z
+        .string()
+        .regex(ULID_PATTERN)
+        .nullable()
+        .optional()
+        .describe(
+          'the decision id that reopened this criterion after it was marked done, absent or null when it stands as it was last written'
+        )
     ),
     settledness: structural(
       z
