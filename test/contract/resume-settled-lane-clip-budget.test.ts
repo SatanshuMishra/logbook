@@ -150,7 +150,7 @@ test('resume_thread.a-settled-risk-shortens-no-further-than-its-share-of-the-rea
       }
     }
 
-    const resumed = await resumeThreadTool.handler(rt, STUB_TOOL_CTX, { thread_id: threadId })
+    const resumed = await resumeThreadTool.handler(rt, STUB_TOOL_CTX, { thread_id: threadId, full_briefing: true })
     if (!resumed.ok) {
       throw new Error(`expected resume_thread to resume the fixture thread, it refused: ${resumed.refusal.message}`)
     }

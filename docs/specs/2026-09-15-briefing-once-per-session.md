@@ -34,7 +34,7 @@ The verbatim gate is not what forces the second echo. `verbatimEchoVerdict` writ
 
 ## The rule
 
-The first resume of a given thread within a given session renders the full briefing. Every later resume of that same thread within that same session renders the handle. A new session renders the full briefing again, for every thread.
+A session is briefed in full the first time it meets a thread, and gets the handle every time after. Opening a thread counts as meeting it: the session supplied the goal, the next step and the criteria, so it holds what the briefing would say. A new session renders the full briefing again, for every thread.
 
 | Situation | What the session has been briefed on | What `resume_thread` returns |
 |---|---|---|
@@ -42,6 +42,7 @@ The first resume of a given thread within a given session renders the full brief
 | Same thread parked mid-session, then resumed for more work | that thread | handle |
 | A different thread parked or closed, this one opened | the other thread, not this one | full briefing |
 | Same thread, resumed a third and fourth time | that thread | handle |
+| A thread this session opened itself | that thread, recorded by `open_thread` | handle |
 
 The server applies the rule. There is no input that asks for less, so the short form is a shortcut the server grants and never a discretion the model exercises. The only override forces the full briefing back, for a session that lost it.
 
@@ -65,7 +66,7 @@ The briefed record, the handle render, the override input on `resume_thread`, th
 
 **No PreCompact hook.** A compaction keeps the session id while dropping the briefing from the window, so the server can withhold a briefing the session no longer holds. `test/hooks/precompact-absent.test.ts` pins the deliberate absence of that hook, so this spec covers the hole with the override and leaves clearing the record on compaction to a separate decision.
 
-**No change to `skills/file/SKILL.md`.** A newly filed thread's `resume_thread` call is that thread's first resume in the session, so it still renders the full briefing. Whether a session that just authored a thread needs its briefing read back is a separate question.
+**No change to `skills/file/SKILL.md`.** The skill keeps its `resume_thread` call and its verbatim print; what it prints is the handle, because `open_thread` records the thread it just created as one this session has met. A session does not need read back to it what it just wrote.
 
 **No cap on `next_step`.** The full briefing renders `next_step` unclipped, `src/render/briefing.ts:523`, and can exceed its budget on a long one. The handle inherits that behaviour unchanged, including the breach log. Capping stored fields belongs to `docs/specs/2026-09-11-deferred-cap-items.md`.
 
@@ -82,6 +83,8 @@ One file, `briefed.json`, in the state directory beside `active-thread.json`. It
 ```
 
 `readBriefed(rt, layout)` returns the set of thread ids this session has been briefed on. It returns the empty set when the file is absent, when it does not parse, when it does not match the shape, when any element is not a ULID, or when `session_id` differs from `rt.sessionId`. Unreadable and unparseable cases log at `warn`, matching `readRecordingGateState`, `src/hooklib/recording-gate-state.ts:40`. No case returns a non-empty set for a session that cannot be proven to own the record.
+
+`open_thread` calls `recordBriefed` on the thread it creates, after the commit succeeds and only then. A layout that will not resolve is not an error here: the record is a saving, and failing to write it costs one whole briefing.
 
 `recordBriefed(rt, layout, threadId)` writes `{ session_id: rt.sessionId, thread_ids }` through `durableWrite`, where `thread_ids` is the prior set plus this thread when the record already belongs to this session, and `[threadId]` otherwise. The list is capped at `BRIEFED_THREADS_MAX = 100`, oldest dropped first. Dropping an id costs one extra full briefing, which is the safe direction.
 
@@ -125,7 +128,7 @@ full_briefing?: boolean
 
 Default false. True renders the full briefing whatever the record says, and still records the thread as briefed. No value of any input suppresses a briefing the rule would otherwise render; the override moves in one direction only. Its description names the case it exists for: a session whose context was compacted and which no longer holds the briefing it was given.
 
-The handler, after it loads the thread and writes the pointer, reads the briefed record and renders the full briefing when `full_briefing` is true or the thread id is not in the set, and the handle otherwise. It calls `recordBriefed` only on a full render, since a handle briefs nobody.
+The handler, after it loads the thread and writes the pointer, reads the briefed record and renders the full briefing when `full_briefing` is true or the thread id is not in the set, and the handle otherwise. It calls `recordBriefed` only on a full render, since a handle briefs nobody. The other writer is `open_thread`, Section 1.
 
 The output shape does not change: `thread_id`, `briefing`, `previous_session`.
 

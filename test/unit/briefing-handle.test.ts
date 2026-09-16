@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {
   renderBriefing,
   renderHandle,
-  BRIEFED_ALREADY_LINE,
+  BRIEFING_HEAD_ONLY_LINE,
   type DecisionIntegrity
 } from '../../src/render/briefing.ts'
 import type { Thread, Criterion } from '../../src/schema/thread.ts'
@@ -83,7 +83,7 @@ test('handle.carries-the-head-of-the-briefing-and-says-why-it-is-short', () => {
   assert.ok(handle.includes('**Criteria:** 1 of 3 done'))
   assert.ok(handle.includes('**Next step:**'))
   assert.ok(handle.includes('run the unit test'))
-  assert.ok(handle.includes(BRIEFED_ALREADY_LINE))
+  assert.ok(handle.includes(BRIEFING_HEAD_ONLY_LINE))
   assert.ok(handle.includes(`See logbook://thread/${thread.id} for the complete record.`))
 })
 

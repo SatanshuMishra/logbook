@@ -235,7 +235,7 @@ git commit -m "feat(resume): record which threads a session has been briefed on"
 
 **Interfaces:**
 - Consumes: `Thread`, `DecisionIntegrity`, `Pointer`, and the private helpers already in `src/render/briefing.ts`: `BRIEFING_HEADING`, `clip`, `escapeStored`, `escapeStoredBlock`, `renderBlockage`, `renderPointerStatus`, `renderUnreadableSessionEntriesLine`, `HEADER_FIELD_ESCAPED_GRAPHEME_MAX`; `toRosterRow` from `src/render/roster.ts`.
-- Produces: `renderHandle(thread: Thread, decisionIntegrity: DecisionIntegrity, pointer: Pointer | null, unreadableSessionEntryCount: number): string`, `fitsResumePayload(briefing: string, threadId: string, hasPreviousSession: boolean): boolean`, `BRIEFED_ALREADY_LINE: string`.
+- Produces: `renderHandle(thread: Thread, decisionIntegrity: DecisionIntegrity, pointer: Pointer | null, unreadableSessionEntryCount: number): string`, `fitsResumePayload(briefing: string, threadId: string, hasPreviousSession: boolean): boolean`, `BRIEFING_HEAD_ONLY_LINE: string`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -251,7 +251,7 @@ test('handle.carries-the-head-of-the-briefing-and-says-why-it-is-short', () => {
   assert.ok(handle.includes('**Currently being worked:** yes'))
   assert.ok(handle.includes('**Criteria:** 1 of 3 done'))
   assert.ok(handle.includes('**Next step:**'))
-  assert.ok(handle.includes(BRIEFED_ALREADY_LINE))
+  assert.ok(handle.includes(BRIEFING_HEAD_ONLY_LINE))
   assert.ok(handle.includes('See logbook://thread/'))
 })
 
@@ -308,7 +308,7 @@ import { toRosterRow } from './roster.ts'
 Add these beside the other module constants:
 
 ```ts
-export const BRIEFED_ALREADY_LINE =
+export const BRIEFING_HEAD_ONLY_LINE =
   '- this session was already briefed on this thread, so only the head of the briefing is shown'
 
 const renderUnreadableDecisionsHandleLine = (count: number): string =>
@@ -335,7 +335,7 @@ export const renderHandle = (
   const unreadableDecisionCount = decisionIntegrity.dangling.length + decisionIntegrity.quarantined.length
   const nextStepLines = thread.spine.next_step.length === 0 ? [] : [thread.spine.next_step]
   const notShownBulletLines = [
-    BRIEFED_ALREADY_LINE,
+    BRIEFING_HEAD_ONLY_LINE,
     ...[unreadableDecisionCount].filter((count) => count > 0).map(renderUnreadableDecisionsHandleLine),
     ...[unreadableSessionEntryCount]
       .filter((count) => count > 0)
@@ -402,10 +402,10 @@ test('resume_thread.briefs-a-session-once-per-thread-and-hands-back-the-head-aft
     const third = await resume(rt, { thread_id: threadId })
 
     assert.ok(first.briefing.includes('**Completion criteria:**'), 'the first resume of a thread in a session must render the full briefing')
-    assert.ok(second.briefing.includes(BRIEFED_ALREADY_LINE), 'the second resume of the same thread in the same session must render the head')
+    assert.ok(second.briefing.includes(BRIEFING_HEAD_ONLY_LINE), 'the second resume of the same thread in the same session must render the head')
     assert.ok(second.briefing.length < first.briefing.length)
     assert.ok(other.briefing.includes('**Completion criteria:**'), 'a different thread in the same session must render the full briefing')
-    assert.ok(third.briefing.includes(BRIEFED_ALREADY_LINE), 'every later resume of a briefed thread must render the head')
+    assert.ok(third.briefing.includes(BRIEFING_HEAD_ONLY_LINE), 'every later resume of a briefed thread must render the head')
   })
 })
 
@@ -426,7 +426,7 @@ test('resume_thread.full-briefing-asks-for-the-whole-text-back-on-a-thread-alrea
     await resume(rt, { thread_id: threadId })
     const forced = await resume(rt, { thread_id: threadId, full_briefing: true })
     assert.ok(forced.briefing.includes('**Completion criteria:**'))
-    assert.equal(forced.briefing.includes(BRIEFED_ALREADY_LINE), false)
+    assert.equal(forced.briefing.includes(BRIEFING_HEAD_ONLY_LINE), false)
   })
 })
 

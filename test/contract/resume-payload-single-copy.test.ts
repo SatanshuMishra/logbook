@@ -94,7 +94,7 @@ const resumeAndMeasure = async (rt: Runtime, threadId: string): Promise<ResumedR
 test('resume_thread.the-payload-size-prediction-tracks-a-head-reply-as-tightly-as-a-whole-briefing', async () => {
   await withHarness(async (harness) => {
     const rt = harness.runtimeFor(FIRST_SESSION)
-    const threadId = await openOrdinaryThread(rt, 'resume-payload-single-copy-head')
+    const threadId = await openOrdinaryThread(harness.runtimeFor(SECOND_SESSION), 'resume-payload-single-copy-head')
 
     const whole = await resumeAndMeasure(rt, threadId)
     const head = await resumeAndMeasure(rt, threadId)

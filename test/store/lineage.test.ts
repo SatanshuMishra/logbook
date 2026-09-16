@@ -58,7 +58,8 @@ test('lineage.briefing-renders-the-predecessor-it-was-opened-with', async () => 
     if (!second.ok) throw new Error('expected the successor thread to open')
 
     const resumed = await resumeThreadTool.handler(rt, STUB_TOOL_CTX, {
-      thread_id: second.structured.thread_id
+      thread_id: second.structured.thread_id,
+      full_briefing: true
     })
     assert.equal(resumed.ok, true)
     if (!resumed.ok) throw new Error('expected the successor thread to resume')

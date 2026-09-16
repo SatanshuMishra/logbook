@@ -577,7 +577,7 @@ test('update_thread.stores-a-whole-thread-risk-with-a-null-anchor', async () => 
 
     const resumed = (await fx.spawned.client.callTool({
       name: 'resume_thread',
-      arguments: { thread_id: opened.threadId }
+      arguments: { thread_id: opened.threadId, full_briefing: true }
     })) as CallToolResult
     assert.equal(resumed.isError, undefined, `resume_thread must read a thread holding a null-anchored risk, got: ${firstTextOf(resumed)}`)
     const briefing = (resumed.structuredContent as { briefing: string }).briefing
@@ -743,7 +743,7 @@ const storedNextStepCriterion = (fx: Fixture, threadId: string): unknown =>
   new Map<string, unknown>(Object.entries(readThreadRecord(fx, threadId).spine)).get('next_step_criterion_id')
 
 const briefingFor = async (fx: Fixture, threadId: string): Promise<string> => {
-  const resumed = (await fx.spawned.client.callTool({ name: 'resume_thread', arguments: { thread_id: threadId } })) as CallToolResult
+  const resumed = (await fx.spawned.client.callTool({ name: 'resume_thread', arguments: { thread_id: threadId, full_briefing: true } })) as CallToolResult
   assert.equal(resumed.isError, undefined, `resume_thread must render the briefing, got: ${resumed.isError === true ? firstTextOf(resumed) : 'no error'}`)
   return (resumed.structuredContent as { briefing: string }).briefing
 }

@@ -94,8 +94,8 @@ const CONTINUATION_RULE =
 const LEGACY_LAST_SESSION_MARKER =
   '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead'
 
-export const BRIEFED_ALREADY_LINE =
-  '- this session was already briefed on this thread, so only the head of the briefing is shown'
+export const BRIEFING_HEAD_ONLY_LINE =
+  '- this session has already seen this thread, so only the head of the briefing is shown'
 
 const CRITERIA_OWED_LINE = '- none recorded; a definition of done is still owed.'
 
@@ -573,7 +573,7 @@ export const renderHandle = (
   const unreadableDecisionCount = decisionIntegrity.dangling.length + decisionIntegrity.quarantined.length
   const nextStepLines = thread.spine.next_step.length === 0 ? [] : [thread.spine.next_step]
   const notShownBulletLines = [
-    BRIEFED_ALREADY_LINE,
+    BRIEFING_HEAD_ONLY_LINE,
     ...[unreadableDecisionCount].filter((count) => count > 0).map(renderUnreadableDecisionsHandleLine),
     ...[unreadableSessionEntryCount]
       .filter((count) => count > 0)
