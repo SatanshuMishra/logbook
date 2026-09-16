@@ -91,6 +91,33 @@ const resumeAndMeasure = async (rt: Runtime, threadId: string): Promise<ResumedR
   }
 }
 
+test('resume_thread.the-payload-size-prediction-tracks-a-head-reply-as-tightly-as-a-whole-briefing', async () => {
+  await withHarness(async (harness) => {
+    const rt = harness.runtimeFor(FIRST_SESSION)
+    const threadId = await openOrdinaryThread(rt, 'resume-payload-single-copy-head')
+
+    const whole = await resumeAndMeasure(rt, threadId)
+    const head = await resumeAndMeasure(rt, threadId)
+
+    assert.ok(
+      head.briefing.length < whole.briefing.length,
+      'the second resume in one session must return the head, or this test measures two whole briefings'
+    )
+
+    const predicted = resumePayloadBytes(head.briefing, head.threadId, head.hasPreviousSession)
+    const gap = predicted - head.envelopeBytes
+
+    assert.ok(
+      predicted >= head.envelopeBytes,
+      `expected the predicted resume payload size to be at least the size of the head reply the server serialises: predicted ${predicted} bytes against an actual ${head.envelopeBytes} bytes`
+    )
+    assert.ok(
+      gap <= PREDICTED_OVER_ACTUAL_TOLERANCE_BYTES,
+      `expected the prediction to exceed the actual serialised head reply by at most ${PREDICTED_OVER_ACTUAL_TOLERANCE_BYTES} bytes: predicted ${predicted} bytes against an actual ${head.envelopeBytes} bytes, a gap of ${gap} bytes`
+    )
+  })
+})
+
 test('resume_thread.the-payload-size-prediction-tracks-the-serialised-reply-in-both-directions', async () => {
   await withHarness(async (harness) => {
     const firstRuntime = harness.runtimeFor(FIRST_SESSION)
