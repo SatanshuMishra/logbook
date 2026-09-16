@@ -50,9 +50,12 @@ export const seed = (source, find, replace) => {
 }
 
 const main = () => {
-  const dirty = git(['status', '--porcelain']).stdout.trim()
+  const targets = [...new Set(MUTANTS.map((mutant) => mutant.file))]
+  const dirty = git(['status', '--porcelain', '--', ...targets]).stdout.trim()
   if (dirty.length > 0) {
-    console.error(`seeded-mutants: the working tree is dirty, so a restore could not be told apart from an edit:\n${dirty}`)
+    console.error(
+      `seeded-mutants: a file this run mutates is already modified, so a restore could not be told apart from an edit:\n${dirty}`
+    )
     process.exit(1)
   }
 
