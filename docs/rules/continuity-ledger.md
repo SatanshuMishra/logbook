@@ -218,12 +218,13 @@ Print `resume_thread.briefing` exactly as it is returned. A hook checks that the
 verbatim and blocks otherwise. That hook enforces the verbatim echo only — it does not enforce
 stopping, so stopping after the briefing is your duty.
 
-The first resume of a thread in a session returns the whole briefing. Every later resume of that same
-thread in that same session returns its head: the thread, its status, its blockage, whether it is being
-worked, the criteria count, the next step, and a line naming what it leaves out. A resume of a different
-thread, or of the same thread under a new session, returns the whole briefing again. The server decides
+A session is briefed in full the first time it meets a thread, and gets the head of that briefing every
+time after: the thread, its status, its blockage, whether it is being worked, the criteria count, the next
+step, and a line naming what it leaves out. Opening a thread counts as meeting it, so the resume that
+follows `open_thread` returns the head rather than reading back what this session just wrote. A thread this
+session has not met, and any thread under a new session, returns the whole briefing. The server decides
 which form comes back and no input asks for less; `resume_thread.full_briefing` asks for the whole text
-back, for a session whose context no longer holds the briefing it was given.
+back, for a session whose context no longer holds what it was given.
 
 `logbook://index` lists every readable address, and reads are available without a tool call.
 
