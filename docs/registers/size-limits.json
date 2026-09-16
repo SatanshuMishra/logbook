@@ -1,23 +1,5 @@
 [
   {
-    "name": "STDOUT_FD",
-    "site": "bin/logbook-cli.ts:7",
-    "value": 1,
-    "basis": "unrecorded",
-    "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
-  },
-  {
-    "name": "STDERR_FD",
-    "site": "bin/logbook-cli.ts:8",
-    "value": 2,
-    "basis": "unrecorded",
-    "reason": null,
-    "mirrors": null,
-    "mirror_relation": null
-  },
-  {
     "name": "STDERR_FD",
     "site": "bin/logbook-server.ts:7",
     "value": 2,
