@@ -19,7 +19,7 @@ import { writeConflictState } from '../../src/merge/conflict-state.ts'
 import { layoutFor } from '../../src/store/layout.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
 import { openProjectStore } from '../../src/server/tool-support.ts'
-import { BRIEFED_ALREADY_LINE } from '../../src/render/briefing.ts'
+import { BRIEFING_HEAD_ONLY_LINE } from '../../src/render/briefing.ts'
 import { testRuntime } from './runtime.ts'
 
 export const STUB_TOOL_CTX = {} as unknown as ToolContext
@@ -918,7 +918,7 @@ const resumeThreadFullBriefingRecipe = (): Promise<RecipeResult> =>
     (ctx) => ({ thread_id: ctx.threadId }),
     (ctx) => ({ thread_id: ctx.threadId, full_briefing: true }),
     (structured) => ({
-      whole_briefing_rendered: !String(structured.briefing).includes(BRIEFED_ALREADY_LINE)
+      whole_briefing_rendered: !String(structured.briefing).includes(BRIEFING_HEAD_ONLY_LINE)
     })
   )
 
