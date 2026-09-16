@@ -455,7 +455,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
       const completed =
         completion === undefined
           ? c
-          : { ...c, done: true, result: completion.result, result_status: completion.result_status }
+          : { ...c, done: true, result: completion.result, result_status: completion.result_status, reopened_by: null }
       const settlement = settlements.get(c.id)
       return settlement === undefined
         ? completed

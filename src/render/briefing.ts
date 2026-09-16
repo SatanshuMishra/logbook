@@ -1,5 +1,5 @@
 import type { Thread, Criterion, Risk, KeyDecision, OutOfScope, Artifact } from '../schema/thread.ts'
-import { criterionSettledness, nextStepAnchor, riskAnchor } from '../schema/thread.ts'
+import { criterionReopenedBy, criterionSettledness, nextStepAnchor, riskAnchor } from '../schema/thread.ts'
 import type { SessionEntry } from '../schema/session.ts'
 import type { Pointer } from '../domain/pointer.ts'
 import { previousSessionEntries } from '../domain/session-log.ts'
@@ -118,7 +118,8 @@ const blockWasShortened = (text: string, max: number): boolean =>
 
 const criterionStatus = (criterion: Criterion): string => {
   if (criterion.struck_by !== null) return 'struck'
-  return criterion.done ? 'done' : 'open'
+  if (criterion.done) return 'done'
+  return criterionReopenedBy(criterion) !== null ? 'reopened' : 'open'
 }
 
 const settlednessLabel = (criterion: Criterion): string => {
@@ -167,7 +168,9 @@ const renderCriterionBlock = (criterion: Criterion, renderClip: RenderClip): str
   [
     renderCriterionLine(criterion, renderClip.criterion),
     renderCheckLine(criterion, renderClip.criterionCheck),
-    ...[criterion].filter((entry) => entry.done).map((entry) => renderResultLine(entry, renderClip.criterionResult)),
+    ...[criterion]
+      .filter((entry) => entry.done || criterionReopenedBy(entry) !== null)
+      .map((entry) => renderResultLine(entry, renderClip.criterionResult)),
     ...[criterion]
       .filter((entry) => criterionSettledness(entry) === 'confirmed')
       .map((entry) => renderSettledByLine(entry, renderClip.criterionSettledBy))
@@ -369,7 +372,9 @@ const largestFittingClipRender = (
 const criterionTextWasShortened = (criterion: Criterion, renderClip: RenderClip): boolean =>
   wasClipped(criterion.text, renderClip.criterion) ||
   (typeof criterion.check === 'string' && wasClipped(criterion.check, renderClip.criterionCheck)) ||
-  (criterion.done && typeof criterion.result === 'string' && wasClipped(criterion.result, renderClip.criterionResult)) ||
+  ((criterion.done || criterionReopenedBy(criterion) !== null) &&
+    typeof criterion.result === 'string' &&
+    wasClipped(criterion.result, renderClip.criterionResult)) ||
   (criterionSettledness(criterion) === 'confirmed' &&
     typeof criterion.settled_by === 'string' &&
     wasClipped(criterion.settled_by, renderClip.criterionSettledBy))

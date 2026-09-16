@@ -111,8 +111,12 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
   ],
   amend_criteria: [
     {
-      phrase: 'inserting a new one, rewriting the text of an existing one, or striking it',
+      phrase: 'inserting a new one, rewriting the text of an existing one, striking it, or reopening a done one',
       providers: ['amend_criteria.operation', 'amend_criteria.text', 'amend_criteria.criterion_id']
+    },
+    {
+      phrase: 'Reopening a criterion marked done sets it open again while keeping its id',
+      providers: ['amend_criteria.operation', 'amend_criteria.criterion_id', 'amend_criteria.decision_id']
     },
     { phrase: 'Every amendment carries a decision_id', providers: ['amend_criteria.decision_id'] },
     { phrase: 'Insert also takes an optional zero-based position', providers: ['amend_criteria.position'] },

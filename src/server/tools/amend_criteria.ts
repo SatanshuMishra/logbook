@@ -2,24 +2,26 @@ import { z } from 'zod'
 import type { ToolSpec } from '../register.ts'
 import type { Refusal } from '../../schema/declare.ts'
 import { ULID_PATTERN } from '../../schema/ids.ts'
-import { insertCriterion, rewriteCriterion, strikeCriterion } from '../../domain/criteria.ts'
+import { insertCriterion, reopenCriterion, rewriteCriterion, strikeCriterion } from '../../domain/criteria.ts'
 import { commitThread, decisionResolver, loadThread, openProjectStore } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 
 const AmendCriteriaInputSchema = z.strictObject({
   thread_id: ulidField('the id of the thread carrying the criterion to amend'),
-  operation: z.enum(['insert', 'rewrite', 'strike']).describe('which of the three amendment kinds to apply'),
+  operation: z.enum(['insert', 'rewrite', 'strike', 'reopen']).describe('which of the four amendment kinds to apply'),
   decision_id: ulidField(
     'the decision record that resolves and justifies this amendment; must already be recorded on this project'
   ),
-  criterion_id: ulidField('the id of the criterion to rewrite or strike; required for rewrite and strike, ignored for insert')
+  criterion_id: ulidField(
+    'the id of the criterion to rewrite, strike or reopen; required for those three, ignored for insert'
+  )
     .optional(),
   text: z
     .string()
     .min(1)
     .optional()
-    .describe('the criterion text for insert or rewrite; required for those two, ignored for strike'),
+    .describe('the criterion text for insert or rewrite; required for those two, ignored for strike and reopen'),
   kind: z
     .enum(['planned', 'detour'])
     .optional()
@@ -29,33 +31,33 @@ const AmendCriteriaInputSchema = z.strictObject({
     .min(1)
     .optional()
     .describe(
-      'the re-runnable check that decides whether a criterion is true; required for insert unless settledness is unsettled; on a rewrite it is optional and writes the criterion\'s check, and omitting it leaves the existing check unchanged; ignored on strike'
+      'the re-runnable check that decides whether a criterion is true; required for insert unless settledness is unsettled; on a rewrite it is optional and writes the criterion\'s check, and omitting it leaves the existing check unchanged; ignored on strike and reopen'
     ),
   settledness: z
     .enum(['confirmed', 'proposed', 'unsettled'])
     .optional()
     .describe(
-      'who stands behind an inserted criterion: confirmed when the human stated or agreed it, proposed when you derived it, unsettled when done is genuinely not known for this part yet; required for insert, and refused on rewrite and strike because neither writes it'
+      'who stands behind an inserted criterion: confirmed when the human stated or agreed it, proposed when you derived it, unsettled when done is genuinely not known for this part yet; required for insert, and refused on rewrite, strike and reopen because none of them writes it'
     ),
   settled_by: z
     .string()
     .regex(/\S/)
     .optional()
     .describe(
-      'the human words behind a confirmed inserted criterion, quoted verbatim; required when settledness is confirmed, refused on any other settledness, and refused on rewrite and strike because neither writes it'
+      'the human words behind a confirmed inserted criterion, quoted verbatim; required when settledness is confirmed, refused on any other settledness, and refused on rewrite, strike and reopen because none of them writes it'
     ),
   position: z
     .number()
     .int()
     .min(0)
     .optional()
-    .describe('the zero-based index an inserted criterion should occupy; omit to append at the end, ignored for rewrite and strike')
+    .describe('the zero-based index an inserted criterion should occupy; omit to append at the end, ignored for rewrite, strike and reopen')
 })
 
 const AmendCriteriaOutputSchema = z.object({
   thread_id: z.string().describe('the id of the thread that was amended'),
-  operation: z.enum(['insert', 'rewrite', 'strike']).describe('which amendment kind was applied'),
-  criterion_id: z.string().describe('the id of the criterion that was inserted, rewritten, or struck')
+  operation: z.enum(['insert', 'rewrite', 'strike', 'reopen']).describe('which amendment kind was applied'),
+  criterion_id: z.string().describe('the id of the criterion that was inserted, rewritten, struck, or reopened')
 })
 
 type AmendCriteriaInput = z.infer<typeof AmendCriteriaInputSchema>
@@ -117,7 +119,7 @@ export const amendCriteriaTool: ToolSpec<AmendCriteriaInput, AmendCriteriaOutput
   name: 'amend_criteria',
   title: 'Amend criteria',
   description:
-    'Amends one completion criterion on a thread by inserting a new one, rewriting the text of an existing one, or striking it, and no other kind of edit reaches a criterion once it exists. Every amendment carries a decision_id that must resolve to a decision record already stored on this project; an id that resolves to nothing is refused. Striking a criterion keeps it on the thread marked struck rather than deleting it, so a struck criterion still renders in the history it came from. An inserted criterion records who stands behind it: confirmed when the human said so, proposed when derived, or unsettled when done is not yet known. A confirmed or proposed insert also carries a check, the re-runnable thing that decides whether it is true, and an insert missing what its settledness requires is refused. A confirmed insert also carries settled_by, the human\'s own words quoted verbatim, and a settled_by given on any other settledness is refused. Insert also takes an optional zero-based position: {"operation": "insert", "text": "the merge test passes in both push orders", "check": "npm test exits 0", "settledness": "proposed", "kind": "detour", "decision_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV", "position": 0} inserts a criterion at the very front of the list, and omitting position appends it at the end instead.',
+    'Amends one completion criterion by inserting a new one, rewriting the text of an existing one, striking it, or reopening a done one, and no other kind of edit reaches a criterion once it exists. Every amendment carries a decision_id that must resolve to a decision record already stored on this project; an id that resolves to nothing is refused. Striking a criterion keeps it on the thread marked struck rather than deleting it, so a struck criterion still renders in the history it came from. An inserted criterion records who stands behind it: confirmed when the human said so, proposed when derived, or unsettled when done is not yet known. A confirmed or proposed insert also carries a check, the re-runnable thing that decides whether it is true, and an insert missing what its settledness requires is refused. A confirmed insert also carries settled_by, the human\'s own words quoted verbatim, and a settled_by given on any other settledness is refused. Reopening a criterion marked done sets it open again while keeping its id, so the risks, key decisions and next step anchored to it return to the live view of the briefing, and it keeps the result recorded when it was marked done as history beside it; a reopen of a criterion that is not marked done is refused: {"operation": "reopen", "criterion_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV", "decision_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV"}. Insert also takes an optional zero-based position: {"operation": "insert", "text": "the merge test passes in both push orders", "check": "npm test exits 0", "settledness": "proposed", "kind": "detour", "decision_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV", "position": 0} inserts a criterion at the very front of the list, and omitting position appends it at the end instead.',
   input: AmendCriteriaInputSchema,
   output: AmendCriteriaOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -203,6 +205,33 @@ export const amendCriteriaTool: ToolSpec<AmendCriteriaInput, AmendCriteriaOutput
         ok: true,
         text: `rewrote criterion ${input.criterion_id} on thread ${thread.slug}.`,
         structured: { thread_id: committed.value.id, operation: 'rewrite', criterion_id: input.criterion_id }
+      }
+    }
+
+    if (input.operation === 'reopen') {
+      if (input.settledness !== undefined) {
+        return { ok: false, refusal: settlednessNotAmendableRefusal('settledness', 'reopen') }
+      }
+      if (input.settled_by !== undefined) {
+        return { ok: false, refusal: settlednessNotAmendableRefusal('settled_by', 'reopen') }
+      }
+      if (input.criterion_id === undefined) return { ok: false, refusal: missingFieldRefusal('criterion_id', 'reopen') }
+
+      const result = reopenCriterion(
+        rt,
+        thread,
+        { criterionId: input.criterion_id, decisionId: input.decision_id },
+        resolveDecision
+      )
+      if (!result.ok) return { ok: false, refusal: result }
+
+      const committed = commitThread(store, result.value, `reopen criterion on thread ${thread.slug}`)
+      if (!committed.ok) return { ok: false, refusal: committed.refusal }
+
+      return {
+        ok: true,
+        text: `reopened criterion ${input.criterion_id} on thread ${thread.slug}.`,
+        structured: { thread_id: committed.value.id, operation: 'reopen', criterion_id: input.criterion_id }
       }
     }
 
