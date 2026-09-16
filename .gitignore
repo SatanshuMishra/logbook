@@ -1,6 +1,7 @@
 .mitosis/
 .DS_Store
 /dist/
+/docs/
 .inspector-data/
 reports/
 *.tmp-*
