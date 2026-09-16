@@ -11,7 +11,7 @@ const RULE_TEXT =
   'a description string under src/server/tools/ is split into tokens on /[A-Za-z0-9]+/g; a token matching ' +
   'ULID_PATTERN from src/schema/ids.ts is discarded because it names an example identifier and not a number; for ' +
   'every surviving token, its leading run of ASCII digits is taken; a leading run of two or more digits is ' +
-  'forbidden when its numeric value equals the value of some constant recorded in docs/registers/size-limits.json, ' +
+  'forbidden when its numeric value equals the value of some constant recorded in test/registers/size-limits.json, ' +
   'and passes otherwise; a leading run of exactly one digit is exempt by construction, because the register holds ' +
   'single-digit values that would otherwise fire on ordinary prose. "A description string" means the string ' +
   'argument of a .describe(...) call and the value of a description: property. A digit run inside an ' +
@@ -96,7 +96,7 @@ const classifyDigitRun = (
 ): Classified<DigitRunSite>['verdict'] | 'unclassifiable' => (forbidden.has(Number(site.run)) ? 'forbidden' : 'allowed')
 
 const describeDigitRunFailure = (forbidden: ReadonlySet<number>) => (site: DigitRunSite): string =>
-  `no-literal-limits-in-descriptions: ${site.file}:${site.line} carries the literal digit run "${site.run}", which equals a value recorded in docs/registers/size-limits.json (forbidden values: ${[...forbidden].sort((a, b) => a - b).join(', ')}); ${RULE_TEXT}`
+  `no-literal-limits-in-descriptions: ${site.file}:${site.line} carries the literal digit run "${site.run}", which equals a value recorded in test/registers/size-limits.json (forbidden values: ${[...forbidden].sort((a, b) => a - b).join(', ')}); ${RULE_TEXT}`
 
 const firstFailure = <T,>(
   items: readonly T[],
@@ -122,7 +122,7 @@ test('contract.no-literal-limits-in-descriptions.forbidden-set-is-non-empty', ()
   const forbidden = registeredValues()
   assert.ok(
     forbidden.size > 0,
-    'no-literal-limits-in-descriptions: docs/registers/size-limits.json produced 0 forbidden values; a census that ' +
+    'no-literal-limits-in-descriptions: test/registers/size-limits.json produced 0 forbidden values; a census that ' +
       'compares a real population against an empty forbidden set can never fail and proves nothing'
   )
 })
