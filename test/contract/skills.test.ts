@@ -323,7 +323,7 @@ const solePointerThreadId = (repo: string, pluginData: string, homeDir: string):
   return pointer.thread_id
 }
 
-type DriveContext = { threadId: string; outcome: string; criterionId: string }
+type DriveContext = { threadId: string; outcome: string; criterionId: string; decisionId: string }
 
 const CALL_ARGS_BY_TOOL: Record<string, (ctx: DriveContext) => Record<string, unknown>> = {
   list_threads: () => ({}),
@@ -364,6 +364,20 @@ const CALL_ARGS_BY_TOOL: Record<string, (ctx: DriveContext) => Record<string, un
     thread_id: ctx.threadId,
     actor: 'claude',
     body: 'exercised the documented file skill sequence before the thread existed'
+  }),
+  record_decision: (ctx) => ({
+    thread_id: ctx.threadId,
+    title: 'reopen the criterion the found risk shows incomplete',
+    context: 'the fixture criterion was marked done and a found risk bears on it',
+    options: ['reopen the criterion', 'record the risk against the whole thread'],
+    outcome: 'reopen the criterion so the risk returns to the live view',
+    criterion_id: ctx.criterionId
+  }),
+  amend_criteria: (ctx) => ({
+    thread_id: ctx.threadId,
+    operation: 'reopen',
+    criterion_id: ctx.criterionId,
+    decision_id: ctx.decisionId
   })
 }
 
@@ -403,6 +417,16 @@ const foldOpenedThreadInto = (ctx: DriveContext, result: CallToolResult): DriveC
   return { ...ctx, threadId: openedThreadIdFrom(structured), criterionId: openedCriterionIdFrom(structured) }
 }
 
+const recordedDecisionIdFrom = (result: CallToolResult): string => {
+  const structured = result.structuredContent
+  if (!isPlainObject(structured) || typeof structured.decision_id !== 'string' || structured.decision_id.length === 0) {
+    throw new Error(
+      `skills.test: record_decision reply carried no string "decision_id": ${JSON.stringify(result.content)}`
+    )
+  }
+  return structured.decision_id
+}
+
 type DriveOutcome = { ctx: DriveContext; openedThreadId: string | undefined }
 
 const driveCallSequence = async (
@@ -425,6 +449,9 @@ const driveCallSequence = async (
     if (toolName === 'open_thread') {
       const foldedCtx = foldOpenedThreadInto(outcome.ctx, result)
       outcome = { ctx: foldedCtx, openedThreadId: foldedCtx.threadId }
+    }
+    if (toolName === 'record_decision') {
+      outcome = { ...outcome, ctx: { ...outcome.ctx, decisionId: recordedDecisionIdFrom(result) } }
     }
   }
   return outcome
@@ -603,6 +630,40 @@ test('skill.debrief-chooses-criteria-from-the-thread-record-and-keeps-found-risk
   )
 })
 
+test('skill.debrief-reopens-a-criterion-a-found-risk-shows-incomplete', () => {
+  const steps = parseSkill(readSkillFile(DEBRIEF_SKILL_PATH)).steps
+
+  const doneRisksIndex = steps.findIndex(
+    (step) => firstWordOf(step) === 'Gather' && step.includes('record shows as done')
+  )
+  assert.notEqual(doneRisksIndex, -1, 'expected a step gathering the found risks that bear on a criterion the record shows as done')
+
+  const decisionIndex = steps.findIndex((step) => stepContainsSpan(step, 'record_decision'))
+  assert.notEqual(decisionIndex, -1, 'expected a step recording the decision that justifies the reopen')
+  assert.ok(doneRisksIndex < decisionIndex, 'expected those risks to be gathered before the decision is recorded')
+
+  const reopenIndex = steps.findIndex(
+    (step) => stepContainsSpan(step, 'amend_criteria.operation') && step.includes('reopen')
+  )
+  assert.notEqual(reopenIndex, -1, 'expected a step calling amend_criteria with the reopen operation')
+  assert.ok(decisionIndex < reopenIndex, 'expected the decision to be recorded before the criterion is reopened')
+  assert.ok(
+    stepContainsSpan(steps[reopenIndex] as string, 'amend_criteria.decision_id'),
+    'expected the reopen call to carry the decision id that justifies it'
+  )
+  assert.ok(
+    stepContainsSpan(steps[reopenIndex] as string, 'amend_criteria.criterion_id'),
+    'expected the reopen call to name the criterion it reopens'
+  )
+
+  const riskCallIndex = steps.findIndex((step) => stepContainsSpan(step, 'update_thread.risks_add'))
+  assert.notEqual(riskCallIndex, -1, 'expected an update_thread step adding the found risks')
+  assert.ok(
+    reopenIndex < riskCallIndex,
+    'expected the criterion to be reopened before update_thread records the risk against it'
+  )
+})
+
 test('skill.preflight-resumes-before-it-asks-anything', () => {
   const preflight = readSkillFile(PREFLIGHT_SKILL_PATH).content
   const resumeAt = preflight.indexOf('Call `resume_thread`')
@@ -675,6 +736,7 @@ test('skill.cannot-strand', async () => {
     await driveCallSequence(spawned, preflightCalls, {
       threadId,
       criterionId,
+      decisionId: '',
       outcome: 'exercised the documented preflight sequence'
     })
     assert.equal(
@@ -683,9 +745,29 @@ test('skill.cannot-strand', async () => {
       'expected exactly one pointer to be set after driving the documented preflight sequence'
     )
 
+    const markedDone = (await spawned.client.callTool({
+      name: 'update_thread',
+      arguments: {
+        thread_id: threadId,
+        criteria_done: [
+          {
+            criterion_id: criterionId,
+            result: 'the skills contract fixture marked this criterion done before the debrief drive',
+            result_status: 'verified'
+          }
+        ]
+      }
+    })) as CallToolResult
+    assert.notEqual(
+      markedDone.isError,
+      true,
+      `skills.test: fixture criteria_done call failed: ${JSON.stringify(markedDone.content)}`
+    )
+
     await driveCallSequence(spawned, debriefCalls, {
       threadId,
       criterionId,
+      decisionId: '',
       outcome: 'exercised the documented debrief sequence'
     })
     assert.equal(
@@ -697,6 +779,7 @@ test('skill.cannot-strand', async () => {
     const fileDrive = await driveCallSequence(spawned, fileCalls, {
       threadId,
       criterionId,
+      decisionId: '',
       outcome: 'exercised the documented file sequence'
     })
     assert.equal(
