@@ -4,6 +4,7 @@ import path from 'node:path'
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { census, type Classified } from '../support/census.ts'
+import { skipWithoutLocalDocs } from '../support/local-docs.ts'
 
 type Verdict = Classified<unknown>['verdict'] | 'unclassifiable'
 
@@ -252,7 +253,7 @@ const describePairFilesExist = (pair: SpecErrataPair): string => {
   return `spec-errata-census: registry entry "${pair.name}" names ${missing.join(' and ')}, which ${verb} exist on disk; a registered pair whose file is gone drops silently out of coverage`
 }
 
-test('spec-errata-census.the-pair-registry-includes-every-errata-file-on-disk', () => {
+test('spec-errata-census.the-pair-registry-includes-every-errata-file-on-disk', { skip: skipWithoutLocalDocs }, () => {
   const filesOnDisk = listErrataFilesOnDisk()
   assert.ok(
     filesOnDisk.length > 0,
@@ -261,7 +262,7 @@ test('spec-errata-census.the-pair-registry-includes-every-errata-file-on-disk', 
   halts(filesOnDisk, classifyErrataFileIsRegistered(REGISTERED_ERRATA_RELATIVE_PATHS), describeErrataFileIsRegistered)
 })
 
-test('spec-errata-census.the-pair-registry-includes-every-errata-file-on-disk.control.an-unregistered-disk-file-halts-while-a-registered-one-passes', () => {
+test('spec-errata-census.the-pair-registry-includes-every-errata-file-on-disk.control.an-unregistered-disk-file-halts-while-a-registered-one-passes', { skip: skipWithoutLocalDocs }, () => {
   const registeredExample: ErrataFileOnDisk = { relativePath: 'docs/specs/2026-01-01-fixture-errata.md' }
   const unregisteredExample: ErrataFileOnDisk = { relativePath: 'docs/specs/2099-01-01-fixture-errata.md' }
   const fixtureRegistry = new Set([registeredExample.relativePath])
@@ -278,7 +279,7 @@ test('spec-errata-census.the-pair-registry-includes-every-errata-file-on-disk.co
   assert.match(describeErrataFileIsRegistered(unregisteredExample), /2099-01-01-fixture-errata\.md/)
 })
 
-test('spec-errata-census.every-specification-with-an-errata-row-names-a-registered-errata-path', () => {
+test('spec-errata-census.every-specification-with-an-errata-row-names-a-registered-errata-path', { skip: skipWithoutLocalDocs }, () => {
   const specsWithErrataRow = listSpecFilesWithErrataRow()
   assert.ok(
     specsWithErrataRow.length > 0,
@@ -291,7 +292,7 @@ test('spec-errata-census.every-specification-with-an-errata-row-names-a-register
   )
 })
 
-test('spec-errata-census.every-specification-with-an-errata-row-names-a-registered-errata-path.control.an-unregistered-target-halts-while-a-registered-one-passes', () => {
+test('spec-errata-census.every-specification-with-an-errata-row-names-a-registered-errata-path.control.an-unregistered-target-halts-while-a-registered-one-passes', { skip: skipWithoutLocalDocs }, () => {
   const registeredPath = 'docs/specs/2026-01-01-fixture-errata.md'
   const fixtureRegistry = new Set([registeredPath])
   const registeredExample: SpecFileWithErrataRow = {
@@ -315,7 +316,7 @@ test('spec-errata-census.every-specification-with-an-errata-row-names-a-register
   assert.match(describeErrataRowNamesRegisteredPath(unregisteredExample), /2026-01-02-fixture-errata\.md/)
 })
 
-test('spec-errata-census.every-registry-entry-names-files-that-exist-on-disk', () => {
+test('spec-errata-census.every-registry-entry-names-files-that-exist-on-disk', { skip: skipWithoutLocalDocs }, () => {
   assert.ok(
     PAIRS.length > 0,
     'spec-errata-census: the pair registry is empty; a census over an empty population proves nothing'
@@ -323,7 +324,7 @@ test('spec-errata-census.every-registry-entry-names-files-that-exist-on-disk', (
   halts(PAIRS, classifyPairFilesExist, describePairFilesExist)
 })
 
-test('spec-errata-census.every-registry-entry-names-files-that-exist-on-disk.control.a-registry-entry-naming-a-missing-file-halts-while-a-real-pair-passes', () => {
+test('spec-errata-census.every-registry-entry-names-files-that-exist-on-disk.control.a-registry-entry-naming-a-missing-file-halts-while-a-real-pair-passes', { skip: skipWithoutLocalDocs }, () => {
   const missingFilePair: SpecErrataPair = {
     name: 'fixture-with-a-missing-errata-file',
     errataPath: path.join(ROOT, 'docs', 'specs', 'this-errata-file-does-not-exist-errata.md'),
@@ -343,14 +344,14 @@ test('spec-errata-census.every-registry-entry-names-files-that-exist-on-disk.con
 })
 
 for (const pair of PAIRS) {
-  test(`spec-errata-census.${pair.name}.the-population-of-errata-entries-is-non-empty`, () => {
+  test(`spec-errata-census.${pair.name}.the-population-of-errata-entries-is-non-empty`, { skip: skipWithoutLocalDocs }, () => {
     const errata = readErrata(readErrataFile(pair.errataPath), pair.errataPath)
     guardNonEmpty(errata, pair.errataPath)
   })
 }
 
 for (const pair of PAIRS) {
-  test(`spec-errata-census.${pair.name}.every-heading-that-names-an-erratum-id-matches-the-heading-pattern-exactly`, () => {
+  test(`spec-errata-census.${pair.name}.every-heading-that-names-an-erratum-id-matches-the-heading-pattern-exactly`, { skip: skipWithoutLocalDocs }, () => {
     const candidates = extractHeadingCandidates(readErrataFile(pair.errataPath))
     assert.ok(
       candidates.length > 0,
@@ -360,7 +361,7 @@ for (const pair of PAIRS) {
   })
 }
 
-test('spec-errata-census.every-heading-that-names-an-erratum-id-matches-the-heading-pattern-exactly.control.a-near-miss-heading-halts-the-census', () => {
+test('spec-errata-census.every-heading-that-names-an-erratum-id-matches-the-heading-pattern-exactly.control.a-near-miss-heading-halts-the-census', { skip: skipWithoutLocalDocs }, () => {
   const hyphenForm: HeadingCandidate = { line: 1, text: '## E4 - hyphen form' }
   const enDashForm: HeadingCandidate = { line: 2, text: '## E4 – en dash form' }
   const deeperLevel: HeadingCandidate = { line: 3, text: '### E4 — deeper' }
@@ -381,7 +382,7 @@ test('spec-errata-census.every-heading-that-names-an-erratum-id-matches-the-head
   assert.doesNotThrow(() => census([genuine], classifyHeadingCandidate))
 })
 
-test('spec-errata-census.every-heading-that-names-an-erratum-id-matches-the-heading-pattern-exactly.control.a-genuine-non-erratum-heading-is-allowed', () => {
+test('spec-errata-census.every-heading-that-names-an-erratum-id-matches-the-heading-pattern-exactly.control.a-genuine-non-erratum-heading-is-allowed', { skip: skipWithoutLocalDocs }, () => {
   const documentTitle: HeadingCandidate = { line: 1, text: '# Errata: SPEC Continuity Goal Model' }
   const futureProseSection: HeadingCandidate = { line: 2, text: '## Appendix' }
 
@@ -391,14 +392,14 @@ test('spec-errata-census.every-heading-that-names-an-erratum-id-matches-the-head
 })
 
 for (const pair of PAIRS) {
-  test(`spec-errata-census.${pair.name}.every-erratum-carries-an-anchor-line`, () => {
+  test(`spec-errata-census.${pair.name}.every-erratum-carries-an-anchor-line`, { skip: skipWithoutLocalDocs }, () => {
     const errata = readErrata(readErrataFile(pair.errataPath), pair.errataPath)
     guardNonEmpty(errata, pair.errataPath)
     halts(errata, classifyHasAnchor, describeHasAnchor(pair.errataPath))
   })
 }
 
-test('spec-errata-census.every-erratum-carries-an-anchor-line.control.an-entry-without-an-anchor-line-halts-while-one-with-passes', () => {
+test('spec-errata-census.every-erratum-carries-an-anchor-line.control.an-entry-without-an-anchor-line-halts-while-one-with-passes', { skip: skipWithoutLocalDocs }, () => {
   const withAnchor: Erratum = { id: 'E9', title: 'a fixture entry', line: 1, anchor: 'some fixture text' }
   const withoutAnchor: Erratum = { id: 'E10', title: 'another fixture entry', line: 5, anchor: undefined }
 
@@ -413,7 +414,7 @@ test('spec-errata-census.every-erratum-carries-an-anchor-line.control.an-entry-w
   assert.match(describeHasAnchor(ERRATA_PATH)(withoutAnchor), /E10/)
 })
 
-test('spec-errata-census.the-heading-and-anchor-parser-does-not-borrow-an-anchor-from-a-later-section', () => {
+test('spec-errata-census.the-heading-and-anchor-parser-does-not-borrow-an-anchor-from-a-later-section', { skip: skipWithoutLocalDocs }, () => {
   const fixture = [
     '## E1 — no anchor of its own',
     '',
@@ -429,14 +430,14 @@ test('spec-errata-census.the-heading-and-anchor-parser-does-not-borrow-an-anchor
 })
 
 for (const pair of PAIRS) {
-  test(`spec-errata-census.${pair.name}.every-erratum-id-is-unique`, () => {
+  test(`spec-errata-census.${pair.name}.every-erratum-id-is-unique`, { skip: skipWithoutLocalDocs }, () => {
     const errata = readErrata(readErrataFile(pair.errataPath), pair.errataPath)
     guardNonEmpty(errata, pair.errataPath)
     guardUniqueIds(errata, pair.errataPath)
   })
 }
 
-test('spec-errata-census.every-erratum-id-is-unique.control.a-duplicated-id-fails-named-with-its-count', () => {
+test('spec-errata-census.every-erratum-id-is-unique.control.a-duplicated-id-fails-named-with-its-count', { skip: skipWithoutLocalDocs }, () => {
   const fixture = [
     '## E1 — first entry',
     '',
@@ -459,7 +460,7 @@ test('spec-errata-census.every-erratum-id-is-unique.control.a-duplicated-id-fail
 })
 
 for (const pair of PAIRS) {
-  test(`spec-errata-census.${pair.name}.every-anchor-occurs-exactly-once-in-the-specification`, () => {
+  test(`spec-errata-census.${pair.name}.every-anchor-occurs-exactly-once-in-the-specification`, { skip: skipWithoutLocalDocs }, () => {
     const errata = readErrata(readErrataFile(pair.errataPath), pair.errataPath)
     guardNonEmpty(errata, pair.errataPath)
     const specText = readSpecFile(pair.specPath)
@@ -467,7 +468,7 @@ for (const pair of PAIRS) {
   })
 }
 
-test('spec-errata-census.every-anchor-occurs-exactly-once-in-the-specification.control.a-fabricated-anchor-halts-while-a-real-one-passes', () => {
+test('spec-errata-census.every-anchor-occurs-exactly-once-in-the-specification.control.a-fabricated-anchor-halts-while-a-real-one-passes', { skip: skipWithoutLocalDocs }, () => {
   const specText = 'The quick brown fox jumps over the lazy dog.'
   const realAnchor: Erratum = { id: 'E9', title: 'a fixture entry', line: 1, anchor: 'quick brown fox' }
   const fabricatedAnchor: Erratum = {
@@ -494,7 +495,7 @@ test('spec-errata-census.every-anchor-occurs-exactly-once-in-the-specification.c
   )
 })
 
-test('spec-errata-census.every-anchor-occurs-exactly-once-in-the-specification.control.a-repeated-anchor-halts-with-its-count-stated-while-a-unique-one-passes', () => {
+test('spec-errata-census.every-anchor-occurs-exactly-once-in-the-specification.control.a-repeated-anchor-halts-with-its-count-stated-while-a-unique-one-passes', { skip: skipWithoutLocalDocs }, () => {
   const specText = 'quick brown fox jumps; a quick brown fox naps.'
   const repeatedAnchor: Erratum = { id: 'E12', title: 'a repeated-anchor fixture entry', line: 1, anchor: 'quick brown fox' }
   const uniqueAnchor: Erratum = { id: 'E13', title: 'a unique-anchor fixture entry', line: 2, anchor: 'jumps; a quick' }
@@ -511,7 +512,7 @@ test('spec-errata-census.every-anchor-occurs-exactly-once-in-the-specification.c
   assert.match(describeAnchorVerbatim(specText, SPEC_PATH)(repeatedAnchor), /occurs 2 times/)
 })
 
-test('spec-errata-census.the-heading-and-anchor-parser-reads-the-real-em-dash-heading-form', () => {
+test('spec-errata-census.the-heading-and-anchor-parser-reads-the-real-em-dash-heading-form', { skip: skipWithoutLocalDocs }, () => {
   const fixture = [
     '## E7 — a fixture heading using the real em dash',
     '',
@@ -532,7 +533,7 @@ test('spec-errata-census.the-heading-and-anchor-parser-reads-the-real-em-dash-he
 })
 
 for (const pair of PAIRS) {
-  test(`spec-errata-census.${pair.name}.the-specification-points-at-the-errata-document`, () => {
+  test(`spec-errata-census.${pair.name}.the-specification-points-at-the-errata-document`, { skip: skipWithoutLocalDocs }, () => {
     const specText = readSpecFile(pair.specPath)
     const row = findErrataMetadataRow(specText)
     const errataRelativePath = toRepoRelative(pair.errataPath)
@@ -547,7 +548,7 @@ for (const pair of PAIRS) {
   })
 }
 
-test('spec-errata-census.the-specification-points-at-the-errata-document.control.a-missing-metadata-row-is-refused-while-a-present-one-passes', () => {
+test('spec-errata-census.the-specification-points-at-the-errata-document.control.a-missing-metadata-row-is-refused-while-a-present-one-passes', { skip: skipWithoutLocalDocs }, () => {
   const withRow = [
     '| **Date** | 2026-08-28 |',
     `| **Errata** | Corrections live in \`${ERRATA_RELATIVE_PATH}\`. |`

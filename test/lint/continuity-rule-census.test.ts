@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { census } from '../support/census.ts'
+import { skipWithoutLocalDocs } from '../support/local-docs.ts'
 import type { Classified } from '../support/census.ts'
 import { TOOL_SPECS } from '../../src/server/tools/index.ts'
 
@@ -57,7 +58,7 @@ const isRejectedAsForbidden = (error: unknown): boolean =>
 
 const syntheticSpan = (text: string): DocumentSpan => ({ file: 'synthetic', line: 1, text })
 
-test('contract.continuity-rule-names-no-tool-absent-from-the-registry', () => {
+test('contract.continuity-rule-names-no-tool-absent-from-the-registry', { skip: skipWithoutLocalDocs }, () => {
   const toolNames = registeredToolNames()
   assert.ok(
     toolNames.size > 0,
@@ -83,7 +84,7 @@ test('contract.continuity-rule-names-no-tool-absent-from-the-registry', () => {
   assert.doesNotThrow(() => census(spans, (span) => classifyDocumentSpan(span, toolNames)))
 })
 
-test('contract.continuity-rule-names-no-tool-absent-from-the-registry.control.an-unregistered-tool-name-is-forbidden-and-named', () => {
+test('contract.continuity-rule-names-no-tool-absent-from-the-registry.control.an-unregistered-tool-name-is-forbidden-and-named', { skip: skipWithoutLocalDocs }, () => {
   const toolNames = registeredToolNames()
   const synthetic = [syntheticSpan('transition_thread')]
   assert.equal(classifyDocumentSpan(synthetic[0] as DocumentSpan, toolNames), 'forbidden')
@@ -93,14 +94,14 @@ test('contract.continuity-rule-names-no-tool-absent-from-the-registry.control.an
   )
 })
 
-test('contract.continuity-rule-names-no-tool-absent-from-the-registry.control.an-unrecognised-underscored-identifier-halts-the-census', () => {
+test('contract.continuity-rule-names-no-tool-absent-from-the-registry.control.an-unrecognised-underscored-identifier-halts-the-census', { skip: skipWithoutLocalDocs }, () => {
   const toolNames = registeredToolNames()
   const synthetic = [syntheticSpan('mcp__ledger__open_thread')]
   assert.equal(classifyDocumentSpan(synthetic[0] as DocumentSpan, toolNames), 'unclassifiable')
   assert.throws(() => census(synthetic, (span) => classifyDocumentSpan(span, toolNames)), isHaltedOnUnclassifiable)
 })
 
-test('contract.continuity-rule-names-no-tool-absent-from-the-registry.control.registered-qualified-and-non-identifier-spans-are-allowed', () => {
+test('contract.continuity-rule-names-no-tool-absent-from-the-registry.control.registered-qualified-and-non-identifier-spans-are-allowed', { skip: skipWithoutLocalDocs }, () => {
   const toolNames = registeredToolNames()
   const synthetic = [
     syntheticSpan('open_thread'),
