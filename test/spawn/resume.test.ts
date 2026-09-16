@@ -217,10 +217,18 @@ const createFixtureThread = async (
   return { threadId: structured.thread_id, criterionId: firstCriterion.id }
 }
 
-const callResume = async (spawned: EitherServer, published: PublishedTool[], threadId: string): Promise<CallToolResult> => {
+const callResume = async (
+  spawned: EitherServer,
+  published: PublishedTool[],
+  threadId: string,
+  extras: Record<string, unknown> = {}
+): Promise<CallToolResult> => {
   const schema = schemaFor(published, 'resume_thread')
   const { valid } = generateSchemaCases('resume_thread', schema, { thread_id: threadId })
-  return (await spawned.client.callTool({ name: 'resume_thread', arguments: valid })) as CallToolResult
+  return (await spawned.client.callTool({
+    name: 'resume_thread',
+    arguments: { ...valid, ...extras }
+  })) as CallToolResult
 }
 
 const callPark = async (
@@ -697,7 +705,7 @@ test('resume.last-session-renders-the-previous-sessions-entries-newest-first', a
     const parkEntryId = parkEntryIds[0]
     assert.ok(parkEntryId !== undefined, 'the park call must have written a session log entry')
 
-    const resumed = await callResume(fx.spawned, fx.published, threadId)
+    const resumed = await callResume(fx.spawned, fx.published, threadId, { full_briefing: true })
     assertOkResult('resume_thread (last-session derivation)', resumed)
     const briefing = (resumed.structuredContent as { briefing: string }).briefing
     const lines = briefing.split('\n')
