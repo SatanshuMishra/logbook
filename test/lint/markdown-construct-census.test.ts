@@ -15,7 +15,7 @@ const SURROGATE_HIGH = 0xdfff
 const ORDINARY_SPACE = ' '
 const WHITESPACE_CLASS = /\s/
 const PARAGRAPH_NODE = 'paragraph'
-const EXISTING_PROOF_SOURCE = new URL('./escape.test.ts', import.meta.url)
+const EXISTING_PROOF_SOURCE = new URL('../unit/escape.test.ts', import.meta.url)
 const PACKAGE_MANIFEST = new URL('../../package.json', import.meta.url)
 
 const parser = new Parser()

@@ -11,6 +11,7 @@
   },
   "scripts": {
     "test": "node --test \"test/unit/**/*.test.ts\" \"test/store/**/*.test.ts\" \"test/contract/**/*.test.ts\" \"test/sync/**/*.test.ts\" \"test/spawn/**/*.test.ts\" \"test/hooks/**/*.test.ts\"",
+    "lint": "node --test \"test/lint/**/*.test.ts\"",
     "prepare": "node scripts/install-githooks.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "inspect": "mcp-inspector --config inspector.config.json --server logbook",
