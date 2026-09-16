@@ -372,7 +372,7 @@ test('resume_thread.spawn.contract', async () => {
       completion_criteria: [{ text: fixtureCriterion, check: 'the resume wiring proof check', settledness: 'proposed' }]
     })
     const outputSchema = outputSchemaFor(fx.outputSchemas, 'resume_thread')
-    const result = await callResume(fx.spawned, fx.published, threadId)
+    const result = await callResume(fx.spawned, fx.published, threadId, { full_briefing: true })
     assertOkResult('resume_thread', result)
     assertConformsToOutputSchema('resume_thread', outputSchema, result.structuredContent)
     assert.doesNotMatch(fx.spawned.stderr(), JSON_RPC_FRAMING_PATTERN)
@@ -438,7 +438,7 @@ test('resume.decision-integrity-reports-resolved-dangling-and-quarantined-end-to
     )
     assert.equal(seeded.ok, true, 'resume integrity probe fixture must be able to seed the extra links')
 
-    const resumed = await callResume(fx.spawned, fx.published, threadId)
+    const resumed = await callResume(fx.spawned, fx.published, threadId, { full_briefing: true })
     assertOkResult('resume_thread (decision integrity, end to end)', resumed)
     const briefing = (resumed.structuredContent as { briefing: string }).briefing
     const lines = briefing.split('\n')
@@ -731,7 +731,7 @@ test('resume.last-session-falls-back-to-the-stored-text-marked-as-legacy', async
     })) as CallToolResult
     assertOkResult('update_thread (legacy last session)', updated)
 
-    const resumed = await callResume(fx.spawned, fx.published, threadId)
+    const resumed = await callResume(fx.spawned, fx.published, threadId, { full_briefing: true })
     assertOkResult('resume_thread (legacy last session)', resumed)
     const briefing = (resumed.structuredContent as { briefing: string }).briefing
     const lines = briefing.split('\n')
@@ -1140,7 +1140,7 @@ test('resume.a-forged-boundary-actor-cannot-drop-entries-from-the-last-session',
     })) as CallToolResult
     assertOkResult('log_session_event (honest entry two)', secondLogged)
 
-    const resumed = await callResume(fx.spawned, fx.published, threadId)
+    const resumed = await callResume(fx.spawned, fx.published, threadId, { full_briefing: true })
     assertOkResult('resume_thread (forged boundary actor)', resumed)
     const briefing = (resumed.structuredContent as { briefing: string }).briefing
 
@@ -1201,7 +1201,7 @@ test('resume.briefing-counts-and-addresses-an-unreadable-session-entry', async (
     const unreadableEntryId = rt.ulid()
     writeFileSync(join(sessionEntriesDir(layout, threadId), `${unreadableEntryId}.json`), '{not-json', 'utf8')
 
-    const resumed = await callResume(fx.spawned, fx.published, threadId)
+    const resumed = await callResume(fx.spawned, fx.published, threadId, { full_briefing: true })
     assertOkResult('resume_thread (unreadable session entry probe)', resumed)
     const structured = resumed.structuredContent as { briefing: string }
 

@@ -304,7 +304,7 @@ test('decision.outcome-body-is-absent-from-both-briefing-surfaces', async () => 
 
     const resumed = (await fx.spawned.client.callTool({
       name: 'resume_thread',
-      arguments: { thread_id: threadId }
+      arguments: { thread_id: threadId, full_briefing: true }
     })) as CallToolResult
     assertOkResult('resume_thread (briefing)', resumed)
     const briefing = (resumed.structuredContent as { briefing: string }).briefing
