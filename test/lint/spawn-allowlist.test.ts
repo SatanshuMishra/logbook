@@ -22,7 +22,12 @@ const SPAWN_TOKENS = [
   'worker_threads'
 ] as const
 
-const SPAWN_ALLOWLIST = ['src/store/git.ts', 'scripts/install-githooks.mjs', 'scripts/d6-check.cjs'] as const
+const SPAWN_ALLOWLIST = [
+  'src/store/git.ts',
+  'scripts/install-githooks.mjs',
+  'scripts/d6-check.cjs',
+  'scripts/seeded-mutants.mjs'
+] as const
 
 const RECORD_TYPE_MODULES = ['schema/thread', 'schema/decision', 'schema/session', 'schema/binding'] as const
 
