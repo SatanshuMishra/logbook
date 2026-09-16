@@ -15,3 +15,6 @@ graphify-out/
 /dark-top.png
 /fig1.png
 /wide-light.png
+
+# claude plugin eval writes one directory per run
+evals/results/
