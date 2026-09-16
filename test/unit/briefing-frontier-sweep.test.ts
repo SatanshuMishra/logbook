@@ -45,11 +45,105 @@ const ANCHORINGS = [
   { name: 'anchored-to-current-criterion', anchored: true }
 ] as const
 
-const CRITERIA_COUNTS = [0, 1, 5, 10, 20, caps.CRITERIA_MAX_ELEMENTS, 120, caps.CRITERIA_RETENTION_MAX_ELEMENTS]
-const KEY_DECISION_COUNTS = [0, 5, 10, caps.KEY_DECISIONS_MAX_ELEMENTS]
-const BULK_COUNT_DIMENSION_CANDIDATES = [0, 1, 5]
 const SWEEP_RECORD_BYTES_CEILING = 65536
 const SWEEP_CRITERION_TEXT_MAX = 500
+
+type PinnedOutcome = 'within' | 'breaching' | 'inadmissible'
+
+type PinnedShape = {
+  name: string
+  criteriaCount: number
+  keyDecisionCount: number
+  criterionTextLength: number
+  bulkCount: number
+  expected: Readonly<Record<string, PinnedOutcome>>
+}
+
+const PINNED_SHAPES: readonly PinnedShape[] = [
+  {
+    name: 'empty',
+    criteriaCount: 0,
+    keyDecisionCount: 0,
+    criterionTextLength: 0,
+    bulkCount: 0,
+    expected: { ascii: 'within', cjk: 'within', delimiter: 'within' }
+  },
+  {
+    name: 'empty-at-max-criterion-text',
+    criteriaCount: 0,
+    keyDecisionCount: 0,
+    criterionTextLength: SWEEP_CRITERION_TEXT_MAX,
+    bulkCount: 0,
+    expected: { ascii: 'within', cjk: 'within', delimiter: 'within' }
+  },
+  {
+    name: 'one-criterion-one-risk',
+    criteriaCount: 1,
+    keyDecisionCount: 0,
+    criterionTextLength: 0,
+    bulkCount: 1,
+    expected: { ascii: 'within', cjk: 'within', delimiter: 'within' }
+  },
+  {
+    name: 'five-criteria',
+    criteriaCount: 5,
+    keyDecisionCount: 0,
+    criterionTextLength: 0,
+    bulkCount: 1,
+    expected: { ascii: 'within', cjk: 'within', delimiter: 'within' }
+  },
+  {
+    name: 'five-criteria-short-text',
+    criteriaCount: 5,
+    keyDecisionCount: 0,
+    criterionTextLength: 2,
+    bulkCount: 1,
+    expected: { ascii: 'within', cjk: 'within', delimiter: 'within' }
+  },
+  {
+    name: 'five-criteria-at-max-criterion-text',
+    criteriaCount: 5,
+    keyDecisionCount: 0,
+    criterionTextLength: SWEEP_CRITERION_TEXT_MAX,
+    bulkCount: 1,
+    expected: { ascii: 'within', cjk: 'breaching', delimiter: 'within' }
+  },
+  {
+    name: 'criteria-saturated',
+    criteriaCount: caps.CRITERIA_MAX_ELEMENTS,
+    keyDecisionCount: 0,
+    criterionTextLength: 1,
+    bulkCount: 0,
+    expected: { ascii: 'within', cjk: 'breaching', delimiter: 'within' }
+  },
+  {
+    name: 'criteria-saturated-with-bulk',
+    criteriaCount: caps.CRITERIA_MAX_ELEMENTS,
+    keyDecisionCount: 0,
+    criterionTextLength: 1,
+    bulkCount: 5,
+    expected: { ascii: 'breaching', cjk: 'breaching', delimiter: 'breaching' }
+  },
+  {
+    name: 'criteria-at-retention-cap',
+    criteriaCount: caps.CRITERIA_RETENTION_MAX_ELEMENTS,
+    keyDecisionCount: 0,
+    criterionTextLength: 1,
+    bulkCount: 0,
+    expected: { ascii: 'breaching', cjk: 'breaching', delimiter: 'breaching' }
+  },
+  {
+    name: 'key-decisions-at-cap',
+    criteriaCount: caps.CRITERIA_MAX_ELEMENTS,
+    keyDecisionCount: caps.KEY_DECISIONS_MAX_ELEMENTS,
+    criterionTextLength: 1,
+    bulkCount: 1,
+    expected: { ascii: 'inadmissible', cjk: 'inadmissible', delimiter: 'inadmissible' }
+  }
+]
+
+const CRITERIA_COUNTS = [...new Set(PINNED_SHAPES.map((shape) => shape.criteriaCount))].sort((a, b) => a - b)
+const KEY_DECISION_COUNTS = [...new Set(PINNED_SHAPES.map((shape) => shape.keyDecisionCount))].sort((a, b) => a - b)
 
 const GRAPHEME_DENSITY_PROBE_LENGTH = 4
 
@@ -294,24 +388,13 @@ const measure = (shape: SweepShape): Measured => {
 
 const isAdmissible = (shape: SweepShape): boolean => ThreadRecord.parse(buildSweepFixture(rt, shape).thread).ok
 
-const largestSatisfying = (upperBound: number, holds: (candidate: number) => boolean): number => {
-  let low = -1
-  let high = upperBound
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2)
-    if (holds(middle)) low = middle
-    else high = middle - 1
-  }
-  return low
-}
-
 const OUTCOME_CLASSES = [
   'schema-inadmissible',
   'admissible-within-both-caps',
   'admissible-breaching-a-cap'
 ] as const
 
-type Outcome = (typeof OUTCOME_CLASSES)[number] | 'frontier-not-located'
+type Outcome = (typeof OUTCOME_CLASSES)[number]
 
 type SweptRecord = {
   fill: string
@@ -346,163 +429,118 @@ const verdictOf = (record: SweptRecord): 'allowed' | 'forbidden' | 'unclassifiab
 const describe = (record: SweptRecord): string =>
   `${record.fill}/${record.anchoring} criteria=${record.criteriaCount} criterionText=${record.criterionTextLength} keyDecisions=${record.keyDecisionCount} risks=${record.bulkCount} outOfScope=${record.bulkCount} rendered ${record.chars} characters (cap ${BRIEFING_MAX_CHARS}) and ${record.bytes} resume-payload bytes (cap ${RESUME_PAYLOAD_MAX_BYTES})`
 
-type FrontierScan = { lengths: number[]; frontierLocated: boolean }
-
-const criterionTextLengthsFor = (partial: Omit<SweepShape, 'criterionTextLength'>, recordCeiling: number): FrontierScan => {
-  const at = (criterionTextLength: number): SweepShape => ({ ...partial, criterionTextLength })
-
-  const cache = new Map<number, number>()
-  const charsAt = (length: number): number => {
-    const cached = cache.get(length)
-    if (cached !== undefined) return cached
-    const fresh = measure(at(length)).chars
-    cache.set(length, fresh)
-    return fresh
-  }
-
-  const spread = (frontier: number): number[] => {
-    const beyond = Math.min(recordCeiling, frontier + 1)
-    const lengths = [
-      0,
-      1,
-      Math.max(0, frontier - 1),
-      frontier,
-      beyond,
-      Math.floor((beyond + recordCeiling) / 2),
-      recordCeiling
-    ]
-    return [...new Set(lengths.filter((length) => length <= recordCeiling))].sort((left, right) => left - right)
-  }
-
-  if (recordCeiling < 2) {
-    return { lengths: Array.from({ length: recordCeiling + 1 }, (_, index) => index), frontierLocated: true }
-  }
-
-  const base = charsAt(0)
-  const slope = charsAt(1) - base
-  if (slope <= 0) return { lengths: spread(0), frontierLocated: true }
-
-  const onUnclippedLine = (length: number): boolean => charsAt(length) === base + slope * length
-  if (onUnclippedLine(recordCeiling)) return { lengths: spread(recordCeiling), frontierLocated: true }
-
-  const isFrontier = (candidate: number): boolean =>
-    candidate < recordCeiling && onUnclippedLine(candidate) && !onUnclippedLine(candidate + 1)
-
-  const predicted = Math.min(recordCeiling, Math.max(0, Math.floor((BRIEFING_MAX_CHARS - base) / slope)))
-  const frontier = isFrontier(predicted) ? predicted : largestSatisfying(recordCeiling, onUnclippedLine)
-  if (!isFrontier(frontier)) return { lengths: [], frontierLocated: false }
-
-  return { lengths: spread(frontier), frontierLocated: true }
+const outcomeOf = (shape: SweepShape, expected: PinnedOutcome): Outcome => {
+  if (expected === 'inadmissible') return 'schema-inadmissible'
+  const measured = measure(shape)
+  return measured.chars <= BRIEFING_MAX_CHARS && measured.bytes <= RESUME_PAYLOAD_MAX_BYTES
+    ? 'admissible-within-both-caps'
+    : 'admissible-breaching-a-cap'
 }
+
+const expectedOutcomeClass = (expected: PinnedOutcome): Outcome =>
+  expected === 'inadmissible'
+    ? 'schema-inadmissible'
+    : expected === 'within'
+      ? 'admissible-within-both-caps'
+      : 'admissible-breaching-a-cap'
+
+const admissibleHere = (shape: SweepShape): boolean =>
+  isAdmissible(shape) && serialisedRecordBytes(shape) <= SWEEP_RECORD_BYTES_CEILING
 
 const sweep = (): SweptRecord[] => {
   const swept: SweptRecord[] = []
 
   for (const fill of FILLS) {
     for (const anchoring of ANCHORINGS) {
-      for (const criteriaCount of CRITERIA_COUNTS) {
-        for (const keyDecisionCount of KEY_DECISION_COUNTS) {
-          const shapeAt = (criterionTextLength: number, bulkCount: number): SweepShape => ({
-            fill: fill.char,
-            anchored: anchoring.anchored,
-            criteriaCount,
-            keyDecisionCount,
-            criterionTextLength,
-            bulkCount
-          })
-
-          const record = (
-            criterionTextLength: number,
-            bulkCount: number,
-            outcome: Outcome,
-            measured: Measured | null
-          ): SweptRecord => ({
-            fill: fill.name,
-            anchoring: anchoring.name,
-            criteriaCount,
-            keyDecisionCount,
-            criterionTextLength,
-            bulkCount,
-            outcome,
-            chars: measured === null ? null : measured.chars,
-            bytes: measured === null ? null : measured.bytes,
-            withinBudget: measured === null ? null : measured.withinBudget,
-            itemsHeld: measured === null ? null : measured.itemsHeld,
-            itemsRendered: measured === null ? null : measured.itemsRendered,
-            criterionRows: measured === null ? null : measured.criterionRows,
-            checkRows: measured === null ? null : measured.checkRows,
-            populatedCheckRows: measured === null ? null : measured.populatedCheckRows,
-            populatedResultRows: measured === null ? null : measured.populatedResultRows,
-            riskRefRows: measured === null ? null : measured.riskRefRows,
-            floorHonoured: measured === null ? null : measured.floorHonoured,
-            floorViolatingField: measured === null ? null : measured.floorViolatingField,
-            floorViolatingLength: measured === null ? null : measured.floorViolatingLength,
-            floorViolatingFloor: measured === null ? null : measured.floorViolatingFloor,
-            floorViolatingExpectedMinimum: measured === null ? null : measured.floorViolatingExpectedMinimum
-          })
-
-          const withinRecordCap = (shape: SweepShape): boolean =>
-            serialisedRecordBytes(shape) <= SWEEP_RECORD_BYTES_CEILING
-
-          const saturatingBulkCount = largestSatisfying(caps.RISKS_PER_CALL_MAX_ELEMENTS, (candidate) =>
-            withinRecordCap(shapeAt(0, candidate))
-          )
-
-          if (saturatingBulkCount < 0) {
-            swept.push(record(0, 0, 'schema-inadmissible', null))
-            continue
-          }
-
-          const bulkCounts = [...new Set([...BULK_COUNT_DIMENSION_CANDIDATES, saturatingBulkCount])]
-            .filter((candidate) => candidate <= saturatingBulkCount)
-            .sort((left, right) => left - right)
-
-          for (const bulkCount of bulkCounts) {
-            const recordCeiling = largestSatisfying(SWEEP_CRITERION_TEXT_MAX, (candidate) =>
-              withinRecordCap(shapeAt(candidate, bulkCount))
-            )
-
-            const { lengths, frontierLocated } = criterionTextLengthsFor(
-              {
-                fill: fill.char,
-                anchored: anchoring.anchored,
-                criteriaCount,
-                keyDecisionCount,
-                bulkCount
-              },
-              recordCeiling
-            )
-
-            if (!frontierLocated) {
-              swept.push(record(-1, bulkCount, 'frontier-not-located', null))
-              continue
-            }
-
-            for (const criterionTextLength of lengths) {
-              const shape = shapeAt(criterionTextLength, bulkCount)
-              if (!isAdmissible(shape)) {
-                swept.push(record(criterionTextLength, bulkCount, 'schema-inadmissible', null))
-                continue
-              }
-              const measured = measure(shape)
-              const withinBoth = measured.chars <= BRIEFING_MAX_CHARS && measured.bytes <= RESUME_PAYLOAD_MAX_BYTES
-              swept.push(
-                record(
-                  criterionTextLength,
-                  bulkCount,
-                  withinBoth ? 'admissible-within-both-caps' : 'admissible-breaching-a-cap',
-                  measured
-                )
-              )
-            }
-          }
+      for (const pinned of PINNED_SHAPES) {
+        const shape: SweepShape = {
+          fill: fill.char,
+          anchored: anchoring.anchored,
+          criteriaCount: pinned.criteriaCount,
+          keyDecisionCount: pinned.keyDecisionCount,
+          criterionTextLength: pinned.criterionTextLength,
+          bulkCount: pinned.bulkCount
         }
+
+        const expected = pinned.expected[fill.name]
+        assert.ok(
+          expected !== undefined,
+          `the pinned shape ${pinned.name} declares no expected outcome for the ${fill.name} fill; every pinned row states what it is supposed to produce so that a cap change fails loudly rather than testing a boundary that has moved`
+        )
+
+        const admissible = admissibleHere(shape)
+        assert.equal(
+          admissible,
+          expected !== 'inadmissible',
+          `the pinned shape ${pinned.name} on the ${fill.name} fill declares ${expected} but the record is ${admissible ? 'admissible' : 'inadmissible'}; a cap has moved and this row no longer sits where it was pinned`
+        )
+
+        const base = {
+          fill: fill.name,
+          anchoring: anchoring.name,
+          criteriaCount: pinned.criteriaCount,
+          keyDecisionCount: pinned.keyDecisionCount,
+          criterionTextLength: pinned.criterionTextLength,
+          bulkCount: pinned.bulkCount
+        }
+
+        if (!admissible) {
+          swept.push({
+            ...base,
+            outcome: 'schema-inadmissible',
+            chars: null,
+            bytes: null,
+            withinBudget: null,
+            itemsHeld: null,
+            itemsRendered: null,
+            criterionRows: null,
+            checkRows: null,
+            populatedCheckRows: null,
+            populatedResultRows: null,
+            riskRefRows: null,
+            floorHonoured: null,
+            floorViolatingField: null,
+            floorViolatingLength: null,
+            floorViolatingFloor: null,
+            floorViolatingExpectedMinimum: null
+          })
+          continue
+        }
+
+        const measured = measure(shape)
+        const outcome = outcomeOf(shape, expected as PinnedOutcome)
+        assert.equal(
+          outcome,
+          expectedOutcomeClass(expected as PinnedOutcome),
+          `the pinned shape ${pinned.name} on the ${fill.name} fill declares ${expected} but rendered ${measured.chars} characters (cap ${BRIEFING_MAX_CHARS}) and ${measured.bytes} payload bytes (cap ${RESUME_PAYLOAD_MAX_BYTES}); a cap has moved and this row no longer sits on the side of the budget it was pinned to`
+        )
+
+        swept.push({
+          ...base,
+          outcome,
+          chars: measured.chars,
+          bytes: measured.bytes,
+          withinBudget: measured.withinBudget,
+          itemsHeld: measured.itemsHeld,
+          itemsRendered: measured.itemsRendered,
+          criterionRows: measured.criterionRows,
+          checkRows: measured.checkRows,
+          populatedCheckRows: measured.populatedCheckRows,
+          populatedResultRows: measured.populatedResultRows,
+          riskRefRows: measured.riskRefRows,
+          floorHonoured: measured.floorHonoured,
+          floorViolatingField: measured.floorViolatingField,
+          floorViolatingLength: measured.floorViolatingLength,
+          floorViolatingFloor: measured.floorViolatingFloor,
+          floorViolatingExpectedMinimum: measured.floorViolatingExpectedMinimum
+        })
       }
     }
   }
 
   return swept
 }
+
 
 const oneRiskWithSeveralReferencesThread = (): Thread => ({
   id: rt.ulid(),
@@ -600,7 +638,10 @@ test('briefing.frontier-sweep-finds-no-record-that-loses-an-item-or-hides-a-budg
   const sweptTextLengths = swept.map((record) => record.criterionTextLength)
   const sweptBulkCounts = swept.map((record) => record.bulkCount)
 
-  t.diagnostic(`frontier sweep classified ${swept.length} records in ${elapsedMs.toFixed(0)}ms`)
+  t.diagnostic(`pinned sweep classified ${swept.length} records in ${elapsedMs.toFixed(0)}ms across ${PINNED_SHAPES.length} pinned shapes`)
+  for (const pinned of PINNED_SHAPES) {
+    t.diagnostic(`pinned shape ${pinned.name}: criteria=${pinned.criteriaCount} keyDecisions=${pinned.keyDecisionCount} criterionText=${pinned.criterionTextLength} bulk=${pinned.bulkCount} expected ${FILLS.map((entry) => `${entry.name}=${pinned.expected[entry.name]}`).join(' ')}`)
+  }
   t.diagnostic(`dimension fill: ${FILLS.map((entry) => entry.name).join(', ')}`)
   t.diagnostic(`dimension anchoring: ${ANCHORINGS.map((entry) => entry.name).join(', ')}`)
   t.diagnostic(
@@ -610,10 +651,10 @@ test('briefing.frontier-sweep-finds-no-record-that-loses-an-item-or-hides-a-budg
     `dimension key-decision count: ${KEY_DECISION_COUNTS.join(', ')} within bounds 0 and ${caps.KEY_DECISIONS_MAX_ELEMENTS}`
   )
   t.diagnostic(
-    `dimension criterion text length: per configuration zero, one, the unclipped-render frontier and both its neighbours, the midpoint beyond it, and the longest text the record byte cap admits; observed span ${Math.min(...sweptTextLengths)} to ${Math.max(...sweptTextLengths)} within bounds 0 and ${SWEEP_CRITERION_TEXT_MAX}`
+    `dimension criterion text length: pinned per shape rather than searched for; observed span ${Math.min(...sweptTextLengths)} to ${Math.max(...sweptTextLengths)} within bounds 0 and ${SWEEP_CRITERION_TEXT_MAX}`
   )
   t.diagnostic(
-    `dimension bulk count (open risks and out-of-scope elements, held equal): ${BULK_COUNT_DIMENSION_CANDIDATES.join(', ')}, and the largest count the record byte cap admits at that configuration, skipping any listed candidate above that largest count; observed span ${Math.min(...sweptBulkCounts)} to ${Math.max(...sweptBulkCounts)} within bounds 0 and ${caps.RISKS_PER_CALL_MAX_ELEMENTS}`
+    `dimension bulk count (open risks and out-of-scope elements, held equal): pinned per shape; observed span ${Math.min(...sweptBulkCounts)} to ${Math.max(...sweptBulkCounts)} within bounds 0 and ${caps.RISKS_PER_CALL_MAX_ELEMENTS}`
   )
   for (const outcome of OUTCOME_CLASSES) {
     t.diagnostic(`class ${outcome}: ${swept.filter((record) => record.outcome === outcome).length}`)
