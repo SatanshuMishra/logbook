@@ -8,6 +8,8 @@ import { ULID_LENGTH } from '../../schema/ulid-length.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
 import { ArtifactAddSchema, commitThread, loadThreadForReference, mintArtifacts, openProjectStore } from '../tool-support.ts'
+import { layoutFor } from '../../store/layout.ts'
+import { recordBriefed } from '../../domain/briefed.ts'
 
 const CriterionCreateSchema = z
   .strictObject({
@@ -241,6 +243,9 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
 
     const committed = commitThread(store, thread, `open thread ${thread.slug}`)
     if (!committed.ok) return { ok: false, refusal: committed.refusal }
+
+    const layout = layoutFor(rt, rt.cwd)
+    if (layout.ok) recordBriefed(rt, layout.value, committed.value.id)
 
     return {
       ok: true,

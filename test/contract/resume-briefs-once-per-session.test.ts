@@ -7,7 +7,7 @@ import type { Runtime } from '../../src/runtime/runtime.ts'
 import type { ToolContext } from '../../src/server/register.ts'
 import { openThreadTool } from '../../src/server/tools/open_thread.ts'
 import { resumeThreadTool } from '../../src/server/tools/resume_thread.ts'
-import { BRIEFED_ALREADY_LINE } from '../../src/render/briefing.ts'
+import { BRIEFING_HEAD_ONLY_LINE } from '../../src/render/briefing.ts'
 import { rawGit } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
 
@@ -15,6 +15,7 @@ const STUB_TOOL_CTX = {} as unknown as ToolContext
 
 const FIRST_SESSION = 'resume-briefs-once-session-one'
 const SECOND_SESSION = 'resume-briefs-once-session-two'
+const AUTHOR_SESSION = 'resume-briefs-once-session-author'
 
 const PLUGIN_DATA_ENV_KEY = 'CLAUDE_PLUGIN_DATA'
 
@@ -87,9 +88,10 @@ const resume = async (rt: Runtime, input: { thread_id: string; full_briefing?: b
 
 test('resume_thread.briefs-a-session-once-per-thread-and-hands-back-the-head-after-that', async () => {
   await withHarness(async (harness) => {
+    const author = harness.runtimeFor(AUTHOR_SESSION)
     const rt = harness.runtimeFor(FIRST_SESSION)
-    const threadId = await openOrdinaryThread(rt, 'resume-briefs-once')
-    const otherId = await openOrdinaryThread(rt, 'resume-briefs-once-other')
+    const threadId = await openOrdinaryThread(author, 'resume-briefs-once')
+    const otherId = await openOrdinaryThread(author, 'resume-briefs-once-other')
 
     const first = await resume(rt, { thread_id: threadId })
     const second = await resume(rt, { thread_id: threadId })
@@ -101,7 +103,7 @@ test('resume_thread.briefs-a-session-once-per-thread-and-hands-back-the-head-aft
       'the first resume of a thread in a session must render the full briefing'
     )
     assert.ok(
-      second.includes(BRIEFED_ALREADY_LINE),
+      second.includes(BRIEFING_HEAD_ONLY_LINE),
       'the second resume of the same thread in the same session must render the head'
     )
     assert.equal(second.includes(FULL_BRIEFING_MARKER), false)
@@ -111,21 +113,35 @@ test('resume_thread.briefs-a-session-once-per-thread-and-hands-back-the-head-aft
       'a thread this session has not been briefed on must render the full briefing'
     )
     assert.ok(
-      third.includes(BRIEFED_ALREADY_LINE),
+      third.includes(BRIEFING_HEAD_ONLY_LINE),
       'every later resume of a briefed thread must render the head'
     )
   })
 })
 
+test('resume_thread.hands-back-the-head-for-a-thread-this-session-opened-itself', async () => {
+  await withHarness(async (harness) => {
+    const rt = harness.runtimeFor(FIRST_SESSION)
+    const threadId = await openOrdinaryThread(rt, 'resume-briefs-once-authored')
+
+    const first = await resume(rt, { thread_id: threadId })
+
+    assert.ok(
+      first.includes(BRIEFING_HEAD_ONLY_LINE),
+      'a session that opened a thread itself already holds what the briefing would say, so its first resume must return the head'
+    )
+    assert.equal(first.includes(FULL_BRIEFING_MARKER), false)
+  })
+})
+
 test('resume_thread.a-new-session-is-briefed-again-on-a-thread-an-earlier-session-read', async () => {
   await withHarness(async (harness) => {
-    const first = harness.runtimeFor(FIRST_SESSION)
-    const threadId = await openOrdinaryThread(first, 'resume-briefs-once-new-session')
-    await resume(first, { thread_id: threadId })
-
+    const threadId = await openOrdinaryThread(harness.runtimeFor(AUTHOR_SESSION), 'resume-briefs-once-new-session')
+    const first = await resume(harness.runtimeFor(FIRST_SESSION), { thread_id: threadId })
     const second = await resume(harness.runtimeFor(SECOND_SESSION), { thread_id: threadId })
 
-    assert.ok(second.includes(FULL_BRIEFING_MARKER))
+    assert.ok(first.includes(FULL_BRIEFING_MARKER), 'the session that read it first must have been briefed in full')
+    assert.ok(second.includes(FULL_BRIEFING_MARKER), 'being briefed in one session must not brief another')
   })
 })
 
@@ -141,7 +157,7 @@ test('resume_thread.full-briefing-asks-for-the-whole-text-back-on-a-thread-alrea
     const forced = await resume(rt, { thread_id: threadId, full_briefing: true })
 
     assert.ok(forced.includes(FULL_BRIEFING_MARKER))
-    assert.equal(forced.includes(BRIEFED_ALREADY_LINE), false)
+    assert.equal(forced.includes(BRIEFING_HEAD_ONLY_LINE), false)
   })
 })
 
