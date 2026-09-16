@@ -211,15 +211,15 @@ const classifySiteAgainstRegister = (
 const describeSiteFailure = (registerByPathName: ReadonlyMap<string, LimitRow>) => (site: ResolvedSite): string => {
   const row = registerByPathName.get(pathNameKey(toPosixPath(site.file), site.name))
   if (row === undefined) {
-    return `limits-register-census: ${site.file}:${site.line} declares const ${site.name} = ${formatValue(site.value)}, which ${SWEEP_PREDICATE} put in the population, but no row in docs/registers/size-limits.json names it; add one with basis "unrecorded" and reason null if nothing is known`
+    return `limits-register-census: ${site.file}:${site.line} declares const ${site.name} = ${formatValue(site.value)}, which ${SWEEP_PREDICATE} put in the population, but no row in test/registers/size-limits.json names it; add one with basis "unrecorded" and reason null if nothing is known`
   }
   const registeredLine = linePartOf(row.site)
   if (registeredLine !== site.line) {
-    return `limits-register-census: docs/registers/size-limits.json row for ${site.name} at ${site.file} names line ${registeredLine}, but the live declaration is at line ${site.line}; update the row's "site" to "${site.file}:${site.line}"`
+    return `limits-register-census: test/registers/size-limits.json row for ${site.name} at ${site.file} names line ${registeredLine}, but the live declaration is at line ${site.line}; update the row's "site" to "${site.file}:${site.line}"`
   }
   const registeredValue = numericValueOf(row.value)
   if (registeredValue !== site.value) {
-    return `limits-register-census: docs/registers/size-limits.json row ${row.site} (${site.name}) records value ${formatValue(registeredValue)}, but the live constant is ${formatValue(site.value)}`
+    return `limits-register-census: test/registers/size-limits.json row ${row.site} (${site.name}) records value ${formatValue(registeredValue)}, but the live constant is ${formatValue(site.value)}`
   }
   return `limits-register-census: ${row.site} (${site.name}) unexpectedly failed classification`
 }
@@ -231,7 +231,7 @@ const classifyRegisterRowAgainstLiveSites = (
   liveKeys.has(pathNameKey(pathPartOf(row.site), row.name)) ? 'allowed' : 'forbidden'
 
 const describeOrphanRowFailure = (row: LimitRow): string =>
-  `limits-register-census: docs/registers/size-limits.json row ${row.site} (${row.name}) names no live top-level const among the swept sites (${SWEEP_PREDICATE}); the constant "${row.name}" this row describes no longer exists at "${pathPartOf(row.site)}", or it was renamed or moved; remove or update the row`
+  `limits-register-census: test/registers/size-limits.json row ${row.site} (${row.name}) names no live top-level const among the swept sites (${SWEEP_PREDICATE}); the constant "${row.name}" this row describes no longer exists at "${pathPartOf(row.site)}", or it was renamed or moved; remove or update the row`
 
 const firstFailure = <T,>(
   items: readonly T[],

@@ -4,6 +4,7 @@ import path from 'node:path'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { census, type Classified } from '../support/census.ts'
+import { skipWithoutLocalDocs } from '../support/local-docs.ts'
 
 type Verdict = Classified<unknown>['verdict'] | 'unclassifiable'
 type RegisterName = 'FILED' | 'NEW'
@@ -397,14 +398,14 @@ const describeOrdinal = (item: OrdinalItem): string => {
 
 const declarationMatchesData = (complete: boolean, pendingCount: number): boolean => complete === (pendingCount === 0)
 
-test('disposal-census.every-heading-in-both-registers-has-exactly-one-disposal-entry-and-back', () => {
+test('disposal-census.every-heading-in-both-registers-has-exactly-one-disposal-entry-and-back', { skip: skipWithoutLocalDocs }, () => {
   const headings = allHeadings()
   const { entries } = loadRegister()
   guardNonEmpty(headings, entries)
   halts(pairByOrdinal(headings, entries), classifyPairing, describePairing)
 })
 
-test('disposal-census.every-heading-in-both-registers-has-exactly-one-disposal-entry-and-back.control.a-heading-without-an-entry-and-an-entry-without-a-heading-both-halt', () => {
+test('disposal-census.every-heading-in-both-registers-has-exactly-one-disposal-entry-and-back.control.a-heading-without-an-entry-and-an-entry-without-a-heading-both-halt', { skip: skipWithoutLocalDocs }, () => {
   const heading: Heading = { register: 'FILED', ordinal: 7, id: 'F6a', title: 'a filed item', line: 132 }
   const entry: RegisterEntry = {
     register: 'FILED',
@@ -420,14 +421,14 @@ test('disposal-census.every-heading-in-both-registers-has-exactly-one-disposal-e
   assert.match(describePairing({ register: 'FILED', ordinal: 7, heading, entry: null }), /ordinal 7 — "F6a" titled "a filed item"/)
 })
 
-test('disposal-census.each-entry-names-the-identifier-of-the-heading-at-its-ordinal', () => {
+test('disposal-census.each-entry-names-the-identifier-of-the-heading-at-its-ordinal', { skip: skipWithoutLocalDocs }, () => {
   const headings = allHeadings()
   const { entries } = loadRegister()
   guardNonEmpty(headings, entries)
   halts(pairByOrdinal(headings, entries), classifyIdentity, describeIdentity)
 })
 
-test('disposal-census.each-entry-names-the-identifier-of-the-heading-at-its-ordinal.control.an-identifier-that-drifts-from-its-ordinal-halts', () => {
+test('disposal-census.each-entry-names-the-identifier-of-the-heading-at-its-ordinal.control.an-identifier-that-drifts-from-its-ordinal-halts', { skip: skipWithoutLocalDocs }, () => {
   const heading: Heading = { register: 'FILED', ordinal: 12, id: 'F6a', title: 'a third private copy', line: 132 }
   const entryFor = (id: string): RegisterEntry => ({
     register: 'FILED',
@@ -445,14 +446,14 @@ test('disposal-census.each-entry-names-the-identifier-of-the-heading-at-its-ordi
   )
 })
 
-test('disposal-census.every-class-is-legal-for-the-register-it-appears-in-or-is-the-pending-sentinel', () => {
+test('disposal-census.every-class-is-legal-for-the-register-it-appears-in-or-is-the-pending-sentinel', { skip: skipWithoutLocalDocs }, () => {
   const headings = allHeadings()
   const { entries } = loadRegister()
   guardNonEmpty(headings, entries)
   halts([...entries.FILED, ...entries.NEW], classifyClass, describeClass)
 })
 
-test('disposal-census.every-class-is-legal-for-the-register-it-appears-in-or-is-the-pending-sentinel.control.a-filed-only-class-on-a-new-entry-halts-and-is-named', () => {
+test('disposal-census.every-class-is-legal-for-the-register-it-appears-in-or-is-the-pending-sentinel.control.a-filed-only-class-on-a-new-entry-halts-and-is-named', { skip: skipWithoutLocalDocs }, () => {
   const newEntry = (disposalClass: string): RegisterEntry => ({
     register: 'NEW',
     index: 0,
@@ -482,14 +483,14 @@ test('disposal-census.every-class-is-legal-for-the-register-it-appears-in-or-is-
   assert.doesNotMatch(describeClass(filedEntry('absorbed-into-a-unit')), /only disposal class/)
 })
 
-test('disposal-census.every-disposed-entry-carries-the-evidence-its-class-requires', () => {
+test('disposal-census.every-disposed-entry-carries-the-evidence-its-class-requires', { skip: skipWithoutLocalDocs }, () => {
   const headings = allHeadings()
   const { entries } = loadRegister()
   guardNonEmpty(headings, entries)
   halts([...entries.FILED, ...entries.NEW].filter(isDisposed), classifyEvidence, describeEvidence)
 })
 
-test('disposal-census.every-disposed-entry-carries-the-evidence-its-class-requires.control.each-class-refuses-the-wrong-evidence', () => {
+test('disposal-census.every-disposed-entry-carries-the-evidence-its-class-requires.control.each-class-refuses-the-wrong-evidence', { skip: skipWithoutLocalDocs }, () => {
   const entryOf = (register: RegisterName, disposalClass: string, evidence: Record<string, unknown>): RegisterEntry => {
     const id = register === 'FILED' ? 'F3a' : 'N1'
     return { register, index: 0, ordinal: 1, id, disposalClass, raw: { ordinal: 1, id, class: disposalClass, ...evidence } }
@@ -601,7 +602,7 @@ test('disposal-census.every-disposed-entry-carries-the-evidence-its-class-requir
   )
 })
 
-test('disposal-census.every-disposed-entry-carries-the-evidence-its-class-requires.control.a-group-and-a-criterion-that-do-not-name-each-other-halt', () => {
+test('disposal-census.every-disposed-entry-carries-the-evidence-its-class-requires.control.a-group-and-a-criterion-that-do-not-name-each-other-halt', { skip: skipWithoutLocalDocs }, () => {
   const threadUlid = '01M130AYZYVWAGDKGHJX9AXPFG'
   const decisionUlid = '01M1FF5VA6JCR7QH8Q727WBR1D'
   const { primary, secondary } = boundPairs()
@@ -697,7 +698,7 @@ test('disposal-census.every-disposed-entry-carries-the-evidence-its-class-requir
   )
 })
 
-test('disposal-census.every-group-the-closed-vocabulary-declares-is-carried-by-at-least-one-register-entry', () => {
+test('disposal-census.every-group-the-closed-vocabulary-declares-is-carried-by-at-least-one-register-entry', { skip: skipWithoutLocalDocs }, () => {
   const headings = allHeadings()
   const { entries } = loadRegister()
   guardNonEmpty(headings, entries)
@@ -708,7 +709,7 @@ test('disposal-census.every-group-the-closed-vocabulary-declares-is-carried-by-a
   halts(groupUsage(CARRIED_GROUPS, entries), classifyGroupUsage, describeGroupUsage)
 })
 
-test('disposal-census.every-group-the-closed-vocabulary-declares-is-carried-by-at-least-one-register-entry.control.a-declared-but-unused-group-halts-while-a-used-one-passes', () => {
+test('disposal-census.every-group-the-closed-vocabulary-declares-is-carried-by-at-least-one-register-entry.control.a-declared-but-unused-group-halts-while-a-used-one-passes', { skip: skipWithoutLocalDocs }, () => {
   const entryOf = (register: RegisterName, ordinal: number, disposalClass: string, group: string): RegisterEntry => {
     const id = `${register === 'FILED' ? 'F' : 'N'}${ordinal}`
     return {
@@ -755,7 +756,7 @@ test('disposal-census.every-group-the-closed-vocabulary-declares-is-carried-by-a
   )
 })
 
-test('disposal-census.no-two-groups-in-the-closed-vocabulary-share-a-criterion', () => {
+test('disposal-census.no-two-groups-in-the-closed-vocabulary-share-a-criterion', { skip: skipWithoutLocalDocs }, () => {
   const collisions = criterionCollisions(CARRIED_CRITERION_BY_GROUP)
   assert.equal(
     new Set(Object.values(CARRIED_CRITERION_BY_GROUP)).size,
@@ -764,7 +765,7 @@ test('disposal-census.no-two-groups-in-the-closed-vocabulary-share-a-criterion',
   )
 })
 
-test('disposal-census.no-two-groups-in-the-closed-vocabulary-share-a-criterion.control.distinct-pairs-collide-with-nothing-while-a-shared-id-names-both-groups', () => {
+test('disposal-census.no-two-groups-in-the-closed-vocabulary-share-a-criterion.control.distinct-pairs-collide-with-nothing-while-a-shared-id-names-both-groups', { skip: skipWithoutLocalDocs }, () => {
   const distinct: Readonly<Record<string, string>> = {
     'group-a': '01M1FF7SD3QR5Z119AXS3RNCJD',
     'group-b': '01M1FF7XPBMPE7G7HN21SS3CQV'
@@ -786,14 +787,14 @@ test('disposal-census.no-two-groups-in-the-closed-vocabulary-share-a-criterion.c
   )
 })
 
-test('disposal-census.ordinals-are-unique-within-a-register-and-run-contiguously-from-one', () => {
+test('disposal-census.ordinals-are-unique-within-a-register-and-run-contiguously-from-one', { skip: skipWithoutLocalDocs }, () => {
   const headings = allHeadings()
   const { entries } = loadRegister()
   guardNonEmpty(headings, entries)
   halts(ordinalItems(entries), classifyOrdinal, describeOrdinal)
 })
 
-test('disposal-census.ordinals-are-unique-within-a-register-and-run-contiguously-from-one.control.a-repeated-a-zero-and-an-overrun-ordinal-all-halt', () => {
+test('disposal-census.ordinals-are-unique-within-a-register-and-run-contiguously-from-one.control.a-repeated-a-zero-and-an-overrun-ordinal-all-halt', { skip: skipWithoutLocalDocs }, () => {
   const item = (ordinal: number, occurrences: number, total: number): OrdinalItem => ({
     register: 'FILED',
     ordinal,
@@ -810,7 +811,7 @@ test('disposal-census.ordinals-are-unique-within-a-register-and-run-contiguously
   assert.match(describeOrdinal(item(4, 1, 3)), /outside 1\.\.3/)
 })
 
-test('disposal-census.the-disposal-complete-flag-is-true-exactly-when-nothing-is-pending', () => {
+test('disposal-census.the-disposal-complete-flag-is-true-exactly-when-nothing-is-pending', { skip: skipWithoutLocalDocs }, () => {
   const headings = allHeadings()
   const { complete, entries } = loadRegister()
   guardNonEmpty(headings, entries)
@@ -824,7 +825,7 @@ test('disposal-census.the-disposal-complete-flag-is-true-exactly-when-nothing-is
   assert.equal(declarationMatchesData(complete, pending.length), true, detail)
 })
 
-test('disposal-census.the-disposal-complete-flag-is-true-exactly-when-nothing-is-pending.control.the-flag-cannot-be-flipped-to-silence-a-pending-item', () => {
+test('disposal-census.the-disposal-complete-flag-is-true-exactly-when-nothing-is-pending.control.the-flag-cannot-be-flipped-to-silence-a-pending-item', { skip: skipWithoutLocalDocs }, () => {
   assert.equal(declarationMatchesData(false, 7), true)
   assert.equal(declarationMatchesData(true, 0), true)
   assert.equal(declarationMatchesData(true, 1), false)

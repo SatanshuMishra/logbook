@@ -4,6 +4,7 @@ import path from 'node:path'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { census, type Classified } from '../support/census.ts'
+import { skipWithoutLocalDocs } from '../support/local-docs.ts'
 
 type Verdict = Classified<unknown>['verdict'] | 'unclassifiable'
 type TableKind = 'assertion' | 'invariant'
@@ -523,7 +524,7 @@ const DECOY_DOCUMENT: readonly string[] = [
   ''
 ]
 
-test('assertions-are-not-invariants.the-tables-are-discovered-from-the-document.control.decoys-are-excluded-an-unnamed-table-is-read-and-an-empty-scan-fails-loudly', () => {
+test('assertions-are-not-invariants.the-tables-are-discovered-from-the-document.control.decoys-are-excluded-an-unnamed-table-is-read-and-an-empty-scan-fails-loudly', { skip: skipWithoutLocalDocs }, () => {
   const discovered = discoverTables(DECOY_DOCUMENT)
   assert.deepEqual(
     discovered.map((table) => table.source.label),
@@ -557,13 +558,13 @@ test('assertions-are-not-invariants.the-tables-are-discovered-from-the-document.
   )
 })
 
-test('assertions-are-not-invariants.every-row-in-the-discovered-tables-parses-into-its-declared-shape', () => {
+test('assertions-are-not-invariants.every-row-in-the-discovered-tables-parses-into-its-declared-shape', { skip: skipWithoutLocalDocs }, () => {
   const { all } = readTables()
   guardNonEmpty(all, 'assertion or invariant row')
   halts(all, classifyRowShape, explainRowShape)
 })
 
-test('assertions-are-not-invariants.every-row-in-the-discovered-tables-parses-into-its-declared-shape.control.a-malformed-row-halts-the-census', () => {
+test('assertions-are-not-invariants.every-row-in-the-discovered-tables-parses-into-its-declared-shape.control.a-malformed-row-halts-the-census', { skip: skipWithoutLocalDocs }, () => {
   const missingTracesTo = parseRow(tableSource('6.1'), 1, '| **A8** | For every call, an absent value is refused |')
   const unbolded = parseRow(tableSource('5.1'), 2, '| R-1 | Every cause this agent established is on the record. |')
   const frontMatterShape = parseRow(
@@ -587,7 +588,7 @@ test('assertions-are-not-invariants.every-row-in-the-discovered-tables-parses-in
   assert.doesNotThrow(() => census([genuine], classifyRowShape))
 })
 
-test('assertions-are-not-invariants.both-populations-are-non-empty', () => {
+test('assertions-are-not-invariants.both-populations-are-non-empty', { skip: skipWithoutLocalDocs }, () => {
   const { assertions, invariants } = readTables()
   guardNonEmpty(assertions, 'assertion row')
   guardNonEmpty(invariants, 'invariant row')
@@ -596,7 +597,7 @@ test('assertions-are-not-invariants.both-populations-are-non-empty', () => {
   guardNonEmpty(needlesOf(parsedOnly(assertions)), 'assertion needle to search for')
 })
 
-test('assertions-are-not-invariants.the-parsed-assertion-ids-match-section-nine-in-both-directions', () => {
+test('assertions-are-not-invariants.the-parsed-assertion-ids-match-section-nine-in-both-directions', { skip: skipWithoutLocalDocs }, () => {
   const { lines, assertions } = readTables()
   guardNonEmpty(assertions, 'assertion row')
   const entry = findCoverageLine(lines, ASSERTION_COVERAGE_PREFIX)
@@ -608,7 +609,7 @@ test('assertions-are-not-invariants.the-parsed-assertion-ids-match-section-nine-
   )
 })
 
-test('assertions-are-not-invariants.the-parsed-invariant-ids-match-section-nine-in-both-directions', () => {
+test('assertions-are-not-invariants.the-parsed-invariant-ids-match-section-nine-in-both-directions', { skip: skipWithoutLocalDocs }, () => {
   const { lines, invariants } = readTables()
   guardNonEmpty(invariants, 'invariant row')
   const entry = findCoverageLine(lines, INVARIANT_COVERAGE_PREFIX)
@@ -620,7 +621,7 @@ test('assertions-are-not-invariants.the-parsed-invariant-ids-match-section-nine-
   )
 })
 
-test('assertions-are-not-invariants.the-coverage-reader-expands-a-range-and-reads-a-written-out-run-identically.control', () => {
+test('assertions-are-not-invariants.the-coverage-reader-expands-a-range-and-reads-a-written-out-run-identically.control', { skip: skipWithoutLocalDocs }, () => {
   const ranged = coverageFixture('**Every invariant belongs to a unit.** `A8`–`A10` → U2. `S6`, `S7` → U9.')
   const writtenOut = coverageFixture('**Every invariant belongs to a unit.** `A8`, `A9`, `A10` → U2. `S6`, `S7` → U9.')
   assert.deepEqual(readCoverageIds(ranged, INVARIANT_ID_PATTERN), ['A8', 'A9', 'A10', 'S6', 'S7'])
@@ -640,7 +641,7 @@ test('assertions-are-not-invariants.the-coverage-reader-expands-a-range-and-read
   )
 })
 
-test('assertions-are-not-invariants.every-id-series-is-contiguous-with-no-gap-and-no-duplicate', () => {
+test('assertions-are-not-invariants.every-id-series-is-contiguous-with-no-gap-and-no-duplicate', { skip: skipWithoutLocalDocs }, () => {
   const { assertions, invariants } = readTables()
   guardNonEmpty(assertions, 'assertion row')
   guardNonEmpty(invariants, 'invariant row')
@@ -654,7 +655,7 @@ test('assertions-are-not-invariants.every-id-series-is-contiguous-with-no-gap-an
   )
 })
 
-test('assertions-are-not-invariants.every-id-series-is-contiguous-with-no-gap-and-no-duplicate.control.a-gap-and-a-duplicate-each-fail-while-a-run-starting-away-from-one-passes', () => {
+test('assertions-are-not-invariants.every-id-series-is-contiguous-with-no-gap-and-no-duplicate.control.a-gap-and-a-duplicate-each-fail-while-a-run-starting-away-from-one-passes', { skip: skipWithoutLocalDocs }, () => {
   assert.doesNotThrow(() => guardContiguousSeries(['A8', 'A9', 'A10'], 'invariant'))
   assert.doesNotThrow(() => guardContiguousSeries(['S5', 'S6', 'O6', 'O7'], 'invariant'))
   assert.throws(() => guardContiguousSeries(['A8', 'A10'], 'invariant'), /runs A8 through A10 but carries 2 ids/)
@@ -662,7 +663,7 @@ test('assertions-are-not-invariants.every-id-series-is-contiguous-with-no-gap-an
   assert.throws(() => guardContiguousSeries(['A8', 'not-an-id'], 'invariant'), /does not read as a letter prefix/)
 })
 
-test('assertions-are-not-invariants.every-parsed-statement-carries-non-trivial-text', () => {
+test('assertions-are-not-invariants.every-parsed-statement-carries-non-trivial-text', { skip: skipWithoutLocalDocs }, () => {
   const { assertions, invariants } = readTables()
   guardNonEmpty(assertions, 'assertion row')
   guardNonEmpty(invariants, 'invariant row')
@@ -670,7 +671,7 @@ test('assertions-are-not-invariants.every-parsed-statement-carries-non-trivial-t
   guardStatementLength(parsedOnly(invariants), 'invariant')
 })
 
-test('assertions-are-not-invariants.every-assertion-needle-is-long-enough-to-be-decidable', () => {
+test('assertions-are-not-invariants.every-assertion-needle-is-long-enough-to-be-decidable', { skip: skipWithoutLocalDocs }, () => {
   const { assertions } = readTables()
   const needles = needlesOf(parsedOnly(assertions))
   guardNonEmpty(needles, 'assertion needle')
@@ -682,7 +683,7 @@ test('assertions-are-not-invariants.every-assertion-needle-is-long-enough-to-be-
   }
 })
 
-test('assertions-are-not-invariants.no-assertion-statement-appears-in-any-invariant', () => {
+test('assertions-are-not-invariants.no-assertion-statement-appears-in-any-invariant', { skip: skipWithoutLocalDocs }, () => {
   const { assertions, invariants } = readTables()
   guardNonEmpty(assertions, 'assertion row')
   guardNonEmpty(invariants, 'invariant row')
@@ -691,7 +692,7 @@ test('assertions-are-not-invariants.no-assertion-statement-appears-in-any-invari
   halts(invariants, classifyInvariant(needles), explainInvariant(needles))
 })
 
-test('assertions-are-not-invariants.no-assertion-statement-appears-in-any-invariant.control.an-invariant-row-carrying-assertion-text-is-forbidden', () => {
+test('assertions-are-not-invariants.no-assertion-statement-appears-in-any-invariant.control.an-invariant-row-carrying-assertion-text-is-forbidden', { skip: skipWithoutLocalDocs }, () => {
   const { assertions } = readTables()
   const parsedAssertions = parsedOnly(assertions)
   const needles = needlesOf(parsedAssertions)
@@ -740,7 +741,7 @@ test('assertions-are-not-invariants.no-assertion-statement-appears-in-any-invari
   )
 })
 
-test('assertions-are-not-invariants.no-assertion-statement-appears-in-any-invariant.control.an-invariant-citing-only-an-assertion-id-is-allowed', () => {
+test('assertions-are-not-invariants.no-assertion-statement-appears-in-any-invariant.control.an-invariant-citing-only-an-assertion-id-is-allowed', { skip: skipWithoutLocalDocs }, () => {
   const { assertions, invariants } = readTables()
   const needles = needlesOf(parsedOnly(assertions))
   const citing = invariants.filter((row) => ASSERTION_ID_MENTION_PATTERN.test(row.statement ?? ''))
@@ -765,7 +766,7 @@ test('assertions-are-not-invariants.no-assertion-statement-appears-in-any-invari
   assert.doesNotThrow(() => census([synthetic], classifyInvariant(needles)))
 })
 
-test('assertions-are-not-invariants.no-assertion-statement-appears-in-any-invariant.control.an-unparsed-row-halts-with-a-message-distinct-from-a-forbidden-one', () => {
+test('assertions-are-not-invariants.no-assertion-statement-appears-in-any-invariant.control.an-unparsed-row-halts-with-a-message-distinct-from-a-forbidden-one', { skip: skipWithoutLocalDocs }, () => {
   const { assertions } = readTables()
   const parsedAssertions = parsedOnly(assertions)
   const needles = needlesOf(parsedAssertions)

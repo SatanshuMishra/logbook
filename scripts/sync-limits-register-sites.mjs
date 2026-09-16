@@ -4,7 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const REGISTER_PATH = path.join(ROOT, 'docs', 'registers', 'size-limits.json')
+const REGISTER_PATH = path.join(ROOT, 'test', 'registers', 'size-limits.json')
 
 const rows = JSON.parse(readFileSync(REGISTER_PATH, 'utf8'))
 const linesByFile = new Map()

@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { census } from '../support/census.ts'
+import { skipWithoutLocalDocs } from '../support/local-docs.ts'
 import type { Classified } from '../support/census.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -91,7 +92,7 @@ const isHaltedOnUnclassifiable = (error: unknown): boolean =>
 const isRejectedAsForbidden = (error: unknown): boolean =>
   error instanceof Error && error.message.includes('census rejected a forbidden item')
 
-test('contract.readme-publishes-every-published-promise', () => {
+test('contract.readme-publishes-every-published-promise', { skip: skipWithoutLocalDocs }, () => {
   const rows = promiseTableRows(readSpec())
   assert.ok(
     rows.length > 0,
@@ -115,7 +116,7 @@ test('contract.readme-publishes-every-published-promise', () => {
   assert.doesNotThrow(() => census(rows, (row) => classifyPromiseRow(row, readme)))
 })
 
-test('contract.readme-publishes-every-published-promise.control.a-promise-absent-from-the-readme-is-forbidden-and-named', () => {
+test('contract.readme-publishes-every-published-promise.control.a-promise-absent-from-the-readme-is-forbidden-and-named', { skip: skipWithoutLocalDocs }, () => {
   const synthetic: PromiseRow[] = [{ line: 1, text: '| **LG99** | **A promise nobody published** |' }]
   assert.equal(classifyPromiseRow(synthetic[0] as PromiseRow, '# a readme naming no promise\n'), 'forbidden')
   assert.throws(
@@ -124,19 +125,19 @@ test('contract.readme-publishes-every-published-promise.control.a-promise-absent
   )
 })
 
-test('contract.readme-publishes-every-published-promise.control.an-unparsable-promise-row-halts-the-census', () => {
+test('contract.readme-publishes-every-published-promise.control.an-unparsable-promise-row-halts-the-census', { skip: skipWithoutLocalDocs }, () => {
   const synthetic: PromiseRow[] = [{ line: 1, text: '| LG4 | a row that lost its bold identifier |' }]
   assert.equal(classifyPromiseRow(synthetic[0] as PromiseRow, '**LG4**'), 'unclassifiable')
   assert.throws(() => census(synthetic, (row) => classifyPromiseRow(row, '**LG4**')), isHaltedOnUnclassifiable)
 })
 
-test('contract.readme-publishes-every-published-promise.control.a-longer-identifier-does-not-satisfy-a-shorter-one', () => {
+test('contract.readme-publishes-every-published-promise.control.a-longer-identifier-does-not-satisfy-a-shorter-one', { skip: skipWithoutLocalDocs }, () => {
   assert.equal(mentionsPromise('**LG17** and **LG10**', 'LG1'), false)
   assert.equal(mentionsPromise('**LG1** and **LG17**', 'LG1'), true)
   assert.equal(mentionsPromise('XLG1X', 'LG1'), false)
 })
 
-test('contract.readme-publishes-every-published-promise.control.a-header-row-and-a-separator-row-are-allowed', () => {
+test('contract.readme-publishes-every-published-promise.control.a-header-row-and-a-separator-row-are-allowed', { skip: skipWithoutLocalDocs }, () => {
   const synthetic: PromiseRow[] = [
     { line: 1, text: '| ID | Promise |' },
     { line: 2, text: '|---|---|' }
@@ -147,7 +148,7 @@ test('contract.readme-publishes-every-published-promise.control.a-header-row-and
   )
 })
 
-test('contract.readme-names-no-promise-the-spec-does-not-declare', () => {
+test('contract.readme-names-no-promise-the-spec-does-not-declare', { skip: skipWithoutLocalDocs }, () => {
   const declared = new Set(declaredPromiseIds(promiseTableRows(readSpec())))
   assert.ok(
     declared.size > 0,
@@ -163,7 +164,7 @@ test('contract.readme-names-no-promise-the-spec-does-not-declare', () => {
   assert.doesNotThrow(() => census(mentions, (mention) => classifyPromiseMention(mention, declared)))
 })
 
-test('contract.readme-names-no-promise-the-spec-does-not-declare.control.an-undeclared-identifier-is-forbidden-and-a-malformed-one-halts', () => {
+test('contract.readme-names-no-promise-the-spec-does-not-declare.control.an-undeclared-identifier-is-forbidden-and-a-malformed-one-halts', { skip: skipWithoutLocalDocs }, () => {
   const declared = new Set(['LG1'])
   const undeclared = promiseMentions('this readme promises **LG42** to everyone\n')
   assert.equal(undeclared.length, 1)
@@ -182,7 +183,7 @@ test('contract.readme-names-no-promise-the-spec-does-not-declare.control.an-unde
   )
 })
 
-test('contract.readme-states-the-single-session-limit', () => {
+test('contract.readme-states-the-single-session-limit', { skip: skipWithoutLocalDocs }, () => {
   assert.ok(
     readReadme().includes(SINGLE_SESSION_LIMIT_PHRASE),
     `readme.promises: ${README_REL_PATH} does not carry the phrase "${SINGLE_SESSION_LIMIT_PHRASE}"; the single-session limit must be stated as a limit rather than discovered`

@@ -6,7 +6,7 @@ The current version lives in `package.json:3` and `.claude-plugin/plugin.json:3`
 
 ## What Logbook promises
 
-These are the promises Logbook publishes. Each carries the identifier the goal model gives it (`docs/specs/2026-08-28-continuity-goal-model.md`, section 4.1), and a test fails the build if any of those identifiers stops appearing here or if this file names one the goal model does not declare (`test/contract/readme-promises-census.test.ts`). The two documents cannot drift apart in silence.
+These are the promises Logbook publishes. Each carries the identifier the goal model gives it in section 4.1 of the goal-model specification, a local development document. Wherever that specification is present, a lint test fails if any of those identifiers stops appearing here or if this file names one the goal model does not declare (`test/lint/readme-promises-census.test.ts`).
 
 The case for Logbook is **continuity and auditability** — that a later session picks up where an earlier one stopped, and that you can always see how a record came to be there. Logbook makes no claim about making any model perform better.
 
@@ -32,7 +32,7 @@ The case for Logbook is **continuity and auditability** — that a later session
 
 ## What Logbook does not do
 
-These are non-goals — things deliberately not built, each with its reason. They are held by decision records and review, not by an automated check. The grounds are recorded in full in `docs/specs/2026-08-28-continuity-goal-model.md`, section 3.2.
+These are non-goals — things deliberately not built, each with its reason. They are held by decision records and review, not by an automated check. The grounds are recorded in full in section 3.2 of the goal-model specification, a local development document.
 
 | Not a goal | Why |
 |---|---|
@@ -77,9 +77,9 @@ What the repository does not state: neither `.claude-plugin/plugin.json:1-9` nor
 | `hooks/` | Seven lifecycle hooks — `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SessionEnd`, `Stop`, `SubagentStop` — wired in `hooks/hooks.json:1-31`, plus their shared helpers under `hooks/lib/`. There is deliberately no `PreCompact` hook; a dedicated test enforces its absence (`test/hooks/precompact-absent.test.ts:7-18`). |
 | `src/` | The TypeScript source, organized by feature: `schema/` (validated record shapes), `domain/` (thread-lifecycle rules), `store/` (the storage engine), `server/` (the MCP server and its tools), `hooklib/` (hook support code, including the write guard), `merge/` (multi-clone sync and conflict resolution), `render/` (text rendering for briefings and rosters), `runtime/` (process-level helpers, including the Node floor check), `cli/` (session-start/session-end helpers) |
 | `skills/` | Three Claude Code skills, `preflight`, `debrief` and `file`, each one `SKILL.md` (`skills/preflight/SKILL.md`, `skills/debrief/SKILL.md`, `skills/file/SKILL.md`) |
-| `test/` | The automated suite, split by concern: `unit/`, `store/`, `contract/`, `sync/`, `spawn/`, `hooks/` |
+| `test/` | The automated suite, split by concern: `unit/`, `store/`, `contract/`, `sync/`, `spawn/`, `hooks/`, `lint/`, plus `registers/`, which holds the limits register the lint suite checks the code against |
 | `scripts/` | Development-time scripts: git-hook installation, a packaging check, an audit-markdown generator |
-| `docs/` | Development documentation. Includes `docs/specs/`, `docs/audits/`, and `docs/rules/` — the last of these holding the standing continuity rule this repository authors for an operator to install |
+| `docs/` | Local development documents: specifications, plans, audits and rules. Git ignores the directory, so it is not part of the published repository; the lint tests that check it run only where it exists (`test/support/local-docs.ts`) |
 | `.claude-plugin/` | The plugin manifest (`plugin.json`) and the marketplace manifest (`marketplace.json`) |
 
 At the repository root: `package.json`, `tsconfig.json`, `.npmrc`, `.mcp.json` (declares the MCP server under the server key `ledger`, `.mcp.json:3`, pointing at `bin/logbook-server.ts`, `.mcp.json:5`), `inspector.config.json`.

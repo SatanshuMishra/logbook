@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-export const REGISTER_PATH = fileURLToPath(new URL('../../docs/registers/size-limits.json', import.meta.url))
+export const REGISTER_PATH = fileURLToPath(new URL('../registers/size-limits.json', import.meta.url))
 
 export type LimitBasis = 'measured' | 'derived' | 'external' | 'chosen' | 'unrecorded'
 export type MirrorRelation = 'equal' | 'at-most' | 'at-least'
