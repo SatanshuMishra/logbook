@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "claudeVersion": "2.1.273",
+  "startedAt": "2026-09-16T07:34:29.659Z",
+  "durationSeconds": 0,
+  "costUsd": 0,
+  "partial": true,
+  "partialReason": "cost_ceiling",
+  "suite": {
+    "root": "/Users/satanshumishra/Documents/DevLabs/logbook",
+    "ablation": "none",
+    "threshold": 1,
+    "concurrency": 1,
+    "plugins": [
+      {
+        "name": "logbook",
+        "version": "12.0.0",
+        "path": "/Users/satanshumishra/Documents/DevLabs/logbook"
+      }
+    ]
+  },
+  "cases": [],
+  "aggregates": {
+    "casesTotal": 0,
+    "casesPassed": 0,
+    "overallScore": 0,
+    "overallPassRate": 0
+  }
+}
