@@ -1,13 +1,14 @@
 import { readFileSync } from 'node:fs'
+import type { LedgerToolName } from '../server/tool-names.ts'
 
 type TranscriptEntry = Record<string, unknown>
 
-const readEntries = (transcriptPath: string): TranscriptEntry[] => {
+const readEntriesIfPresent = (transcriptPath: string): TranscriptEntry[] | null => {
   let raw: string
   try {
     raw = readFileSync(transcriptPath, 'utf8')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw error
   }
   const entries: TranscriptEntry[] = []
@@ -25,6 +26,8 @@ const readEntries = (transcriptPath: string): TranscriptEntry[] => {
   }
   return entries
 }
+
+const readEntries = (transcriptPath: string): TranscriptEntry[] => readEntriesIfPresent(transcriptPath) ?? []
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>
   typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null
@@ -117,4 +120,40 @@ export const findLastResumeBriefing = (transcriptPath: unknown): string | null =
     pendingToolUseId = null
   }
   return lastBriefing
+}
+
+const RECORDING_TOOL_NAMES: readonly LedgerToolName[] = [
+  'open_thread',
+  'update_thread',
+  'close_thread',
+  'amend_criteria',
+  'park_thread',
+  'record_decision',
+  'log_session_event'
+]
+
+const LEDGER_TOOL_PREFIX_PATTERN = /^mcp__(?:plugin_logbook_)?ledger__(.+)$/
+
+const contentPartsOf = (entry: TranscriptEntry): Record<string, unknown>[] => {
+  const message = asRecord(entry.message)
+  const content = message === null ? undefined : message.content
+  if (!Array.isArray(content)) return []
+  return content.map(asRecord).filter((part): part is Record<string, unknown> => part !== null)
+}
+
+const isRecordingCall = (part: Record<string, unknown>): boolean =>
+  part.type === 'tool_use' &&
+  typeof part.id === 'string' &&
+  typeof part.name === 'string' &&
+  (RECORDING_TOOL_NAMES as readonly string[]).includes(LEDGER_TOOL_PREFIX_PATTERN.exec(part.name)?.[1] ?? '')
+
+export const ledgerRecordingStored = (transcriptPath: unknown): boolean | null => {
+  if (typeof transcriptPath !== 'string' || transcriptPath.length === 0) return null
+  const entries = readEntriesIfPresent(transcriptPath)
+  if (entries === null) return null
+  const parts = entries.flatMap(contentPartsOf)
+  const recordingCallIds = new Set(parts.filter(isRecordingCall).map((part) => part.id))
+  return parts.some(
+    (part) => part.type === 'tool_result' && recordingCallIds.has(part.tool_use_id) && part.is_error !== true
+  )
 }

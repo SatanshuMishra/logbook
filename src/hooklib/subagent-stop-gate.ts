@@ -4,10 +4,16 @@ import type { Runtime } from '../runtime/runtime.ts'
 import { layoutFor } from '../store/layout.ts'
 import { durableWrite } from '../store/durable-write.ts'
 import { readLedgerHead, readResumeBaseline } from './ledger-presence.ts'
-import { recordingGateClosingText } from './recording-assertions.ts'
+import { ledgerRecordingStored } from './transcript.ts'
 import type { StopVerdict } from './stop-gate.ts'
 
-export type SubagentStopEvent = { session_id: string; cwd: string; agent_id: string | null; agent_type: string }
+export type SubagentStopEvent = {
+  session_id: string
+  cwd: string
+  agent_id: string | null
+  agent_type: string
+  agent_transcript_path: unknown
+}
 
 const SUBAGENT_GATE_DIR_NAME = 'subagent-gate'
 
@@ -28,24 +34,15 @@ const writeMarker = (rt: Runtime, stateDir: string, sessionId: string, agentId: 
   durableWrite(target, '', { log: rt.log })
 }
 
-const R1_TEXT = 'Every cause, measurement or approach this agent established is on the record.'
-const R2_TEXT = 'Every approach tried and abandoned is recorded, with what made it fail.'
-const R3_TEXT = 'Every fault this agent observed in what it read is recorded, and nothing it merely imagines is.'
-const R4_TEXT = 'Every file this agent produced or changed is named.'
-const R5_TEXT = 'Where the work stopped is recorded, when it stopped short of its brief.'
-const R6_TEXT = 'Everything this agent could not determine is recorded, with what blocked it.'
-
-const SUBAGENT_ASSERTION_LINES = [R1_TEXT, R2_TEXT, R3_TEXT, R4_TEXT, R5_TEXT, R6_TEXT]
-
-const SUBAGENT_RECORDING_ACTION_TEXT =
-  'Where this agent holds a ledger tool, record it there before returning. Where it does not, put every one of ' +
-  "these in this agent's own return message, so the session that reads that return message can record it."
-
-const subagentBlockReason = (): string =>
-  "Logbook: this agent's work is about to leave the only context that holds it. A session picking up this " +
-  'work would need each of the following to hold.\n\n' +
-  SUBAGENT_ASSERTION_LINES.map((line) => `- ${line}`).join('\n') +
-  `\n\n${SUBAGENT_RECORDING_ACTION_TEXT} ${recordingGateClosingText()}`
+const SUBAGENT_BLOCK_REASON = [
+  'Logbook: this agent has not recorded a decision, risk, thread change or session entry in this run.',
+  'Before returning, record what this run found, so that a later session does not have to work it out again:',
+  '- each decision made, with its reason, using record_decision',
+  '- each risk found, using update_thread with risks_add',
+  '- what was found, what was changed, and what is still open, as one entry using log_session_event',
+  "Use the thread id from this agent's instructions. If none was given, list_threads shows the open threads.",
+  'If this run found nothing worth keeping, if this agent does not have the ledger tools, or if its instructions say not to write to the ledger, return as planned without writing.'
+].join('\n')
 
 export const subagentStopGateVerdict = (rt: Runtime, event: SubagentStopEvent): StopVerdict => {
   const layout = layoutFor(rt, event.cwd)
@@ -63,7 +60,9 @@ export const subagentStopGateVerdict = (rt: Runtime, event: SubagentStopEvent): 
   const head = readLedgerHead(rt, layout.value.projectRoot)
   if (head === null) return { kind: 'silent' }
 
+  if (ledgerRecordingStored(event.agent_transcript_path) !== false) return { kind: 'silent' }
+
   writeMarker(rt, layout.value.state, event.session_id, event.agent_id)
 
-  return { kind: 'block', reason: subagentBlockReason() }
+  return { kind: 'block', reason: SUBAGENT_BLOCK_REASON }
 }

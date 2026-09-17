@@ -137,14 +137,55 @@ export const stopEventFor = (
   prompt_id: promptId
 })
 
+export type AgentTranscriptEntry = Record<string, unknown>
+
+export const writeAgentTranscript = (repo: string, name: string, entries: readonly AgentTranscriptEntry[]): string => {
+  const target = join(repo, `${name}.jsonl`)
+  writeFileSync(target, entries.map((entry) => JSON.stringify(entry)).join('\n'))
+  return target
+}
+
+export const emptyAgentTranscript = (repo: string): string => writeAgentTranscript(repo, 'agent-without-ledger-calls', [])
+
+export const ledgerCallEntries = (
+  callId: string,
+  tool: string,
+  outcome: 'stored' | 'refused',
+  toolPrefix: string = 'mcp__plugin_logbook_ledger__'
+): readonly AgentTranscriptEntry[] => [
+  {
+    type: 'assistant',
+    message: {
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: callId, name: `${toolPrefix}${tool}`, input: {} }]
+    }
+  },
+  {
+    type: 'user',
+    message: {
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: callId,
+          content: [{ type: 'text', text: outcome === 'stored' ? '{"ok":true}' : 'field: thread_id' }],
+          ...(outcome === 'refused' ? { is_error: true } : {})
+        }
+      ]
+    }
+  }
+]
+
 export const subagentEventFor = (
   repo: string,
   sessionId: string,
   agentId: string | null,
-  agentType: string = 'Explore'
+  agentType: string = 'Explore',
+  agentTranscriptPath: string = emptyAgentTranscript(repo)
 ) => ({
   session_id: sessionId,
   cwd: repo,
   agent_id: agentId,
-  agent_type: agentType
+  agent_type: agentType,
+  agent_transcript_path: agentTranscriptPath
 })
