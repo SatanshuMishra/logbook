@@ -15,7 +15,8 @@ await runHook('subagent-stop', (event) => {
     session_id: record.session_id,
     cwd: record.cwd,
     agent_id: typeof record.agent_id === 'string' && record.agent_id.length > 0 ? record.agent_id : null,
-    agent_type: typeof record.agent_type === 'string' ? record.agent_type : ''
+    agent_type: typeof record.agent_type === 'string' ? record.agent_type : '',
+    agent_transcript_path: record.agent_transcript_path
   })
 
   if (verdict.kind === 'block') return { block: true, reason: verdict.reason }
