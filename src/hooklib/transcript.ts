@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import type { LedgerToolName } from '../server/tool-names.ts'
 
 type TranscriptEntry = Record<string, unknown>
 
@@ -121,8 +122,17 @@ export const findLastResumeBriefing = (transcriptPath: unknown): string | null =
   return lastBriefing
 }
 
-const LEDGER_RECORDING_TOOL_PATTERN =
-  /^mcp__(?:plugin_logbook_)?ledger__(?:open_thread|update_thread|close_thread|amend_criteria|park_thread|record_decision|log_session_event)$/
+const RECORDING_TOOL_NAMES: readonly LedgerToolName[] = [
+  'open_thread',
+  'update_thread',
+  'close_thread',
+  'amend_criteria',
+  'park_thread',
+  'record_decision',
+  'log_session_event'
+]
+
+const LEDGER_TOOL_PREFIX_PATTERN = /^mcp__(?:plugin_logbook_)?ledger__(.+)$/
 
 const contentPartsOf = (entry: TranscriptEntry): Record<string, unknown>[] => {
   const message = asRecord(entry.message)
@@ -135,7 +145,7 @@ const isRecordingCall = (part: Record<string, unknown>): boolean =>
   part.type === 'tool_use' &&
   typeof part.id === 'string' &&
   typeof part.name === 'string' &&
-  LEDGER_RECORDING_TOOL_PATTERN.test(part.name)
+  (RECORDING_TOOL_NAMES as readonly string[]).includes(LEDGER_TOOL_PREFIX_PATTERN.exec(part.name)?.[1] ?? '')
 
 export const ledgerRecordingStored = (transcriptPath: unknown): boolean | null => {
   if (typeof transcriptPath !== 'string' || transcriptPath.length === 0) return null
