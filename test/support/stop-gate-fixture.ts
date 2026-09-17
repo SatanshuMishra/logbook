@@ -145,16 +145,19 @@ export const writeAgentTranscript = (repo: string, name: string, entries: readon
   return target
 }
 
+export const emptyAgentTranscript = (repo: string): string => writeAgentTranscript(repo, 'agent-without-ledger-calls', [])
+
 export const ledgerCallEntries = (
   callId: string,
   tool: string,
-  outcome: 'stored' | 'refused'
+  outcome: 'stored' | 'refused',
+  toolPrefix: string = 'mcp__plugin_logbook_ledger__'
 ): readonly AgentTranscriptEntry[] => [
   {
     type: 'assistant',
     message: {
       role: 'assistant',
-      content: [{ type: 'tool_use', id: callId, name: `mcp__plugin_logbook_ledger__${tool}`, input: {} }]
+      content: [{ type: 'tool_use', id: callId, name: `${toolPrefix}${tool}`, input: {} }]
     }
   },
   {
@@ -178,7 +181,7 @@ export const subagentEventFor = (
   sessionId: string,
   agentId: string | null,
   agentType: string = 'Explore',
-  agentTranscriptPath: string = writeAgentTranscript(repo, 'agent-without-ledger-calls', [])
+  agentTranscriptPath: string = emptyAgentTranscript(repo)
 ) => ({
   session_id: sessionId,
   cwd: repo,

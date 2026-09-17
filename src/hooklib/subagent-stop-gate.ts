@@ -35,7 +35,7 @@ const writeMarker = (rt: Runtime, stateDir: string, sessionId: string, agentId: 
 }
 
 const SUBAGENT_BLOCK_REASON = [
-  'Logbook: this agent has not written anything to the Logbook ledger in this run.',
+  'Logbook: this agent has not recorded a decision, risk, thread change or session entry in this run.',
   'Before returning, record what this run found, so that a later session does not have to work it out again:',
   '- each decision made, with its reason, using record_decision',
   '- each risk found, using update_thread with risks_add',

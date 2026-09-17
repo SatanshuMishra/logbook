@@ -26,7 +26,11 @@ test('hook.subagent-gate-asks-plainly-for-decisions-risks-and-findings', async (
 
     assert.equal(verdict.kind, 'block')
     if (verdict.kind !== 'block') return
-    assert.ok(verdict.reason.startsWith('Logbook: this agent has not written anything to the Logbook ledger in this run.'))
+    assert.ok(
+      verdict.reason.startsWith(
+        'Logbook: this agent has not recorded a decision, risk, thread change or session entry in this run.'
+      )
+    )
     assert.ok(verdict.reason.includes('each decision made, with its reason, using record_decision'))
     assert.ok(verdict.reason.includes('each risk found, using update_thread with risks_add'))
     assert.ok(verdict.reason.includes('using log_session_event'))
@@ -82,6 +86,70 @@ test('hook.subagent-gate-asks-an-agent-whose-only-write-was-refused', async () =
     assert.equal(verdict.kind, 'block', 'a refused call stored nothing, so the record is still missing')
   })
 })
+
+test('hook.subagent-gate-asks-an-agent-whose-recording-call-was-refused-beside-a-stored-read', async () => {
+  await withFixture(async ({ rt, repo }) => {
+    commitOneThread(rt, repo, 'subagent-gate-refused-beside-read')
+    startSession(rt, repo, SESSION_ID)
+    const transcript = writeAgentTranscript(repo, 'agent-read-then-refused', [
+      ...ledgerCallEntries('toolu_list', 'list_threads', 'stored'),
+      ...ledgerCallEntries('toolu_decision', 'record_decision', 'refused')
+    ])
+
+    const verdict = subagentStopGateVerdict(rt, subagentEventFor(repo, SESSION_ID, 'agent-one', 'Explore', transcript))
+
+    assert.equal(verdict.kind, 'block', 'only a stored result on the recording call itself counts as a record')
+  })
+})
+
+test('hook.subagent-gate-counts-a-stored-record-under-the-project-scope-tool-prefix', async () => {
+  await withFixture(async ({ rt, repo }) => {
+    commitOneThread(rt, repo, 'subagent-gate-project-scope-prefix')
+    startSession(rt, repo, SESSION_ID)
+    const transcript = writeAgentTranscript(
+      repo,
+      'agent-project-scope',
+      ledgerCallEntries('toolu_decision', 'record_decision', 'stored', 'mcp__ledger__')
+    )
+
+    const verdict = subagentStopGateVerdict(rt, subagentEventFor(repo, SESSION_ID, 'agent-one', 'Explore', transcript))
+
+    assert.equal(verdict.kind, 'silent')
+  })
+})
+
+for (const [label, agentStored, expectedStatus] of [
+  ['is-silent-when-only-the-agent-recorded', true, 0],
+  ['blocks-when-only-the-parent-recorded', false, 2]
+] as const) {
+  test(`hook.subagent-stop-process-reads-the-agent-transcript-and-${label}`, async () => {
+    await withFixture(async ({ rt, repo }) => {
+      commitOneThread(rt, repo, 'subagent-stop-process-transcript-field')
+      startSession(rt, repo, SESSION_ID)
+      const pluginDataRoot = rt.env.CLAUDE_PLUGIN_DATA
+      assert.equal(typeof pluginDataRoot, 'string', 'the fixture runtime must carry a CLAUDE_PLUGIN_DATA path')
+      if (typeof pluginDataRoot !== 'string') return
+      const stored = ledgerCallEntries('toolu_decision', 'record_decision', 'stored')
+      const agentTranscript = writeAgentTranscript(repo, 'agent-own-transcript', agentStored ? stored : [])
+      const parentTranscript = writeAgentTranscript(repo, 'parent-session-transcript', agentStored ? [] : stored)
+
+      const result = runHookProcessWithEvent(
+        'subagent-stop',
+        {
+          session_id: SESSION_ID,
+          cwd: repo,
+          agent_id: 'agent-one',
+          agent_type: 'Explore',
+          transcript_path: parentTranscript,
+          agent_transcript_path: agentTranscript
+        },
+        { env: { CLAUDE_PLUGIN_DATA: pluginDataRoot } }
+      )
+
+      assert.equal(result.status, expectedStatus, `the hook must judge the agent by its own transcript: ${result.stderr}`)
+    })
+  })
+}
 
 test('hook.subagent-gate-asks-an-agent-that-only-read-the-ledger', async () => {
   await withFixture(async ({ rt, repo }) => {
