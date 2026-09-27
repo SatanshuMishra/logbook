@@ -133,65 +133,72 @@ const notStored = (input: Carried): string => {
 
 const RELEASE_ONLY_CALL = 'call park_thread with none of outcome, next_step and next_step_records'
 
+const carriedField = (input: Carried): string => {
+  if (input.outcome !== undefined) return 'outcome'
+  return input.next_step !== undefined ? 'next_step' : 'next_step_records'
+}
+
+const CARRIED = 'an outcome, next step or records list'
+
 const noWorkedThreadRefusal = (input: Carried): Refusal => ({
   ok: false,
-  field: 'outcome',
-  accepted: 'an outcome supplied while some thread is marked as being worked',
-  example: 'call resume_thread first, then send this same outcome to park_thread',
+  field: carriedField(input),
+  accepted: `${CARRIED} supplied while some thread is marked as being worked`,
+  example: 'call resume_thread first, then send the same park_thread call again',
   retryable: true,
   message: `no thread is currently marked as being worked, so nothing this call carries has anywhere to be written; ${notStored(input)}; remedy: call resume_thread on the thread this session worked and then call park_thread again, re-sending what was not stored, or ${RELEASE_ONLY_CALL} to confirm there is nothing to park.`
 })
 
 const notTheWorkedThreadRefusal = (input: Carried, pointerThreadId: string, suppliedThreadId: string): Refusal => ({
   ok: false,
-  field: 'outcome',
-  accepted: 'an outcome supplied together with the thread that is actually marked as being worked',
-  example: 'send the same outcome with thread_id set to the thread this message names',
+  field: carriedField(input),
+  accepted: `${CARRIED} supplied together with the thread that is actually marked as being worked`,
+  example: 'send the same park_thread call with thread_id set to the thread this message names',
   retryable: true,
   message: `thread_id ${suppliedThreadId} is not the thread currently marked as being worked (${pointerThreadId}), so nothing this call carries has anywhere to be written; ${notStored(input)}; the pointer was left untouched; remedy: call park_thread again with thread_id ${pointerThreadId}, re-sending what was not stored.`
 })
 
 const otherSessionRefusal = (input: Carried, pointerThreadId: string): Refusal => ({
   ok: false,
-  field: 'outcome',
-  accepted: 'an outcome supplied by the session that holds the record of what is being worked',
-  example: 'call resume_thread in this session, then send this same outcome to park_thread',
+  field: carriedField(input),
+  accepted: `${CARRIED} supplied by the session that holds the record of what is being worked`,
+  example: 'call resume_thread in this session, then send the same park_thread call again',
   retryable: true,
   message: `the record of what is being worked names thread ${pointerThreadId} and belongs to a different session, so nothing this call carries has anywhere to be written; ${notStored(input)}; the pointer was left untouched; remedy: call resume_thread in this session and then call park_thread again, re-sending what was not stored.`
 })
 
 const missingThreadRecordRefusal = (input: Carried, threadId: string): Refusal => ({
   ok: false,
-  field: 'outcome',
-  accepted: 'an outcome supplied for a thread whose stored record still exists',
-  example: 'call park_thread with outcome omitted to release the stale pointer, then record this text elsewhere',
+  field: carriedField(input),
+  accepted: `${CARRIED} supplied for a thread whose stored record still exists`,
+  example: `${RELEASE_ONLY_CALL} to release the stale pointer, then record what was not stored elsewhere`,
   retryable: false,
   message: `the thread marked as being worked (${threadId}) no longer has a stored record, so nothing this call carries has anywhere to be written; ${notStored(input)}; the pointer was left in place so this call can be retried; remedy: ${RELEASE_ONLY_CALL} to release the stale pointer, then record what was not stored on a thread that still exists.`
 })
 
 const terminalThreadRefusal = (input: Carried, threadId: string, status: Thread['status']): Refusal => ({
   ok: false,
-  field: 'outcome',
-  accepted: 'an outcome supplied for a thread that is still open',
-  example: 'call park_thread with outcome omitted to release the pointer, then record this text on a new thread',
+  field: carriedField(input),
+  accepted: `${CARRIED} supplied for a thread that is still open`,
+  example: `${RELEASE_ONLY_CALL} to release the pointer, then record what was not stored on a new thread`,
   retryable: false,
   message: `the thread marked as being worked (${threadId}) is already ${status}, which is terminal, so nothing this call carries can be written to it; ${notStored(input)}; the pointer was left in place so this call can be retried; remedy: ${RELEASE_ONLY_CALL} to release the pointer, then open a new thread that references this one and record what was not stored there.`
 })
 
 const corruptPointerRefusal = (input: Carried): Refusal => ({
   ok: false,
-  field: 'outcome',
-  accepted: 'an outcome supplied while the record of what is being worked parses cleanly',
-  example: 'call park_thread with outcome omitted to release the unreadable pointer, then resume the thread again',
+  field: carriedField(input),
+  accepted: `${CARRIED} supplied while the record of what is being worked parses cleanly`,
+  example: `${RELEASE_ONLY_CALL} to release the unreadable pointer, then resume the thread again`,
   retryable: true,
   message: `the record of what is being worked does not parse, so the thread this call belongs to cannot be resolved; ${notStored(input)}; the unreadable pointer was left in place so this call can be retried; remedy: ${RELEASE_ONLY_CALL} to release it, call resume_thread on the intended thread, then call park_thread again, re-sending what was not stored.`
 })
 
 const quarantinedPointerRefusal = (input: Carried, threadId: string): Refusal => ({
   ok: false,
-  field: 'outcome',
-  accepted: 'an outcome supplied for a thread whose stored record parses cleanly',
-  example: 'call park_thread with outcome omitted to release the pointer, then record this text elsewhere',
+  field: carriedField(input),
+  accepted: `${CARRIED} supplied for a thread whose stored record parses cleanly`,
+  example: `${RELEASE_ONLY_CALL} to release the pointer, then record what was not stored elsewhere`,
   retryable: false,
   message: `the thread currently marked as being worked (${threadId}) has a stored record that failed to parse and was quarantined, so nothing this call carries can be written to it; ${notStored(input)}; the pointer was left in place so this call can be retried; remedy: ${RELEASE_ONLY_CALL} to release the pointer, then record what was not stored on a thread whose record parses.`
 })

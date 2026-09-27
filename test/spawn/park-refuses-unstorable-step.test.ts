@@ -128,6 +128,8 @@ const STEP_NOT_STORED = /the next step and its records list were NOT stored and 
 const assertRefusedNamingTheStep = (label: string, result: CallToolResult): void => {
   assert.equal(result.isError, true, `${label} must be refused, got: ${JSON.stringify(result.content)}`)
   const text = firstTextOf(result)
+  assert.equal(text.split('\n')[0], 'field: next_step', `${label} must name the field the call carried, not an outcome it never sent:\n${text}`)
+  assert.doesNotMatch(text, /outcome omitted/, `${label} must not suggest a retry that omits only the outcome:\n${text}`)
   assert.match(text, STEP_NOT_STORED, `${label} must name the next step and its records list as not stored:\n${text}`)
 }
 
