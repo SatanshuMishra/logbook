@@ -310,7 +310,7 @@
     "site": "src/server/resource-render.ts:22",
     "value": 200,
     "basis": "derived",
-    "reason": "50 entries times this 200-grapheme limit is 10,000 graphemes of first-line text, under BRIEFING_MAX_CHARS of 12,000 (commit d83408ccd7af7836cc13abb57098df71c7f332f0).",
+    "reason": "50 entries times this 200-grapheme limit is 10,000 graphemes of first-line text in the full thread view at logbook://thread/{id}, which lists recent session entries one line each; the resume briefing no longer lists entries and has no size budget (commit d83408ccd7af7836cc13abb57098df71c7f332f0 set the value).",
     "mirrors": null,
     "mirror_relation": null
   },
@@ -319,7 +319,7 @@
     "site": "src/server/resource-render.ts:23",
     "value": 50,
     "basis": "derived",
-    "reason": "50 entries times the 200-grapheme SESSION_FIRST_LINE_MAX is 10,000 graphemes of first-line text, under BRIEFING_MAX_CHARS of 12,000 (commit d83408ccd7af7836cc13abb57098df71c7f332f0).",
+    "reason": "50 entries times the 200-grapheme SESSION_FIRST_LINE_MAX is 10,000 graphemes of first-line text in the full thread view at logbook://thread/{id}; the resume briefing no longer lists entries and has no size budget (commit d83408ccd7af7836cc13abb57098df71c7f332f0 set the value).",
     "mirrors": null,
     "mirror_relation": null
   },

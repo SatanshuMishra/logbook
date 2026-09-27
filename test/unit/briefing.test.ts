@@ -276,7 +276,7 @@ test('briefing.renders-exact-output-for-a-full-thread', async () => {
       `- artifact ${liveArtifactId}: the implementation plan -> docs/plans/u5.md`,
       `- out-of-scope ${noteId}: capping the next step`,
       '',
-      `**Session log:** 1 entries at logbook://sessions/${threadId}`,
+      `**Session log:** 2 entries at logbook://sessions/${threadId}`,
       '',
       OTHER_THREADS_LINE
     ].join('\n')
@@ -325,12 +325,15 @@ test('briefing.escapes-every-free-text-field', async () => {
   assert.equal(restLines.join('\n').includes('#'), false, rendered)
 })
 
-test('briefing.a-step-naming-no-records-says-so-and-an-empty-thread-lists-none', async () => {
+test('briefing.a-step-naming-no-records-says-so-and-an-empty-thread-says-a-definition-of-done-is-owed', async () => {
   const lines = (await briefingOf(baseThread())).split('\n')
   const needsAt = lines.indexOf('**What this step needs:**')
   const otherAt = lines.indexOf(OTHER_RECORDS_HEADING)
   assert.deepEqual(lines.slice(needsAt + 1, needsAt + 3), ['', 'This step names no records.'])
-  assert.deepEqual(lines.slice(otherAt + 1, otherAt + 3), ['', '- none'])
+  assert.deepEqual(lines.slice(otherAt + 1, otherAt + 3), [
+    '',
+    '- no open or done completion criterion is recorded; a definition of done is still owed'
+  ])
 })
 
 test('briefing.a-named-id-that-no-longer-resolves-is-named-as-unreadable', async () => {

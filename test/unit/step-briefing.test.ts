@@ -280,6 +280,11 @@ test('briefing.reports-records-it-could-not-read', async () => {
       needs.includes(`Named by this step but not readable now: ${missingId}`),
       `a named record that cannot be read must be named, not dropped:\n${needs}`
     )
+    assert.equal(
+      needs.includes('This step names no records.'),
+      false,
+      `a step whose named records all became unreadable must not claim it names none:\n${needs}`
+    )
     assert.ok(briefing.includes('**Unreadable records:**'), `the briefing must report unreadable records:\n${briefing}`)
     assert.ok(briefing.includes('- 2 linked decision records could not be read'), `the unreadable decisions must be counted:\n${briefing}`)
     assert.ok(briefing.includes(`- dangling: ${danglingId}`), `a dangling decision must be named:\n${briefing}`)
@@ -289,5 +294,56 @@ test('briefing.reports-records-it-could-not-read', async () => {
       `the unreadable session entries must be counted:\n${briefing}`
     )
     assert.equal(briefingOf(rt, threadId).includes('**Unreadable records:**'), false, 'a thread with nothing unreadable shows no such section')
+  })
+})
+
+test('briefing.lists-a-decision-linked-from-another-thread', async () => {
+  await withCriterionFixture(async (rt) => {
+    const source = await openThread(rt, 'linked-source', [{ text: 'the source is ruled on', check: 'a ruling exists', settledness: 'proposed' }])
+    const decisionId = await recordDecision(rt, source.threadId, {
+      title: 'Share the gateway budget across threads',
+      context: 'both threads call the gateway',
+      outcome: 'one shared budget'
+    })
+    const target = await openThread(rt, 'linked-target', [{ text: 'the target is ruled on', check: 'a ruling exists', settledness: 'proposed' }])
+    await callTool(rt, 'update_thread', {
+      thread_id: target.threadId,
+      key_decisions_add: [{ decision_id: decisionId, title: 'Share the gateway budget across threads', scope: 'gateway' }]
+    })
+
+    const lines = otherRecordLines(briefingOf(rt, target.threadId))
+    assert.ok(
+      lines.some((line) => line.startsWith(`- decision ${decisionId}:`)),
+      `a decision linked into this thread's spine from another thread must be listed:\n${lines.join('\n')}`
+    )
+  })
+})
+
+test('briefing.says-a-definition-of-done-is-owed-when-no-criterion-stands', async () => {
+  await withCriterionFixture(async (rt) => {
+    const { threadId } = await openThread(rt, 'owed', [{ text: 'the only criterion', check: 'it is checked', settledness: 'proposed' }])
+    const owed = '- no open or done completion criterion is recorded; a definition of done is still owed'
+    assert.equal(briefingOf(rt, threadId).includes(owed), false, 'a thread with a standing criterion owes nothing')
+
+    const store = storeOf(rt)
+    const thread = threadIn(store, threadId)
+    const struck = thread.completion_criteria.map((criterion) => ({ ...criterion, struck_by: '01ARZ3NDEKTSV4RRFFQ69G5FAV' }))
+    const committed = store.commit([{ kind: 'thread', record: { ...thread, completion_criteria: struck } }], 'test: strike every criterion')
+    if (!committed.ok) halt(`striking the criteria did not commit: ${committed.detail}`)
+
+    assert.ok(briefingOf(rt, threadId).includes(owed), 'a thread whose every criterion is struck must say a definition of done is still owed')
+  })
+})
+
+test('briefing.counts-every-readable-session-entry', async () => {
+  await withCriterionFixture(async (rt) => {
+    const { threadId } = await openThread(rt, 'counted', [{ text: 'the log is counted', check: 'the count matches', settledness: 'proposed' }])
+    await logEntry(rt, threadId, 'first finding')
+    await logEntry(rt, threadId, 'second finding')
+    await logEntry(rt, threadId, '')
+    assert.ok(
+      briefingOf(rt, threadId).includes(`**Session log:** 3 entries at logbook://sessions/${threadId}`),
+      'the count must match the log at its address, an empty entry included'
+    )
   })
 })

@@ -440,6 +440,10 @@ test('resume.decision-integrity-is-logged-and-the-handle-counts-what-it-could-no
 
     const resumed = await callResume(fx.spawned, fx.published, threadId, { full_briefing: true })
     assertOkResult('resume_thread (decision integrity, end to end)', resumed)
+    const fullBriefing = (resumed.structuredContent as { briefing: string }).briefing.split('\n')
+    assert.ok(fullBriefing.includes('**Unreadable records:**'), 'the full briefing must report the unreadable records')
+    assert.ok(fullBriefing.includes(`- dangling: ${danglingDecisionId}`), 'the full briefing must name the dangling decision')
+    assert.ok(fullBriefing.includes(`- quarantined: ${quarantinedDecisionId}`), 'the full briefing must name the quarantined decision')
     const logged = fx.spawned
       .stderr()
       .split('\n')
@@ -1209,6 +1213,12 @@ test('resume.an-unreadable-session-entry-is-left-out-of-the-count-and-reported-b
     assert.ok(
       briefing.split('\n').includes(`**Session log:** 1 entries at logbook://sessions/${threadId}`),
       `the briefing must count the one readable session entry and give the log's address, got:\n${briefing}`
+    )
+    assert.ok(
+      briefing
+        .split('\n')
+        .includes(`- 1 session log entry on this thread could not be read; see logbook://sessions/${threadId} for the complete record`),
+      `the full briefing must count the session entry that failed to parse, got:\n${briefing}`
     )
 
     const handle = await callResume(fx.spawned, fx.published, threadId)
