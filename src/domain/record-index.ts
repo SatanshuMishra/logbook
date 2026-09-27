@@ -172,7 +172,16 @@ export const pathsNamedIn = (text: string): string[] => {
 const governsByFileName = (record: IndexedRecord): boolean =>
   record.live && (record.kind === 'decision' || record.kind === 'risk')
 
-const namesPath = (record: IndexedRecord, path: string): boolean => record.fields.some((field) => field.includes(path))
+const escapeForPattern = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const PATH_CHARACTER = '[\\p{L}\\p{N}_./@+-]'
+const PATH_START = `(?:(?<!${PATH_CHARACTER})|(?<=(?:^|(?!${PATH_CHARACTER}).)\\./))`
+const PATH_END = '(?![\\p{L}\\p{N}_/@+-]|\\.[\\p{L}\\p{N}])'
+
+export const textNamesPath = (text: string, path: string): boolean =>
+  new RegExp(`${PATH_START}${escapeForPattern(path)}${PATH_END}`, 'u').test(text)
+
+const namesPath = (record: IndexedRecord, path: string): boolean => record.fields.some((field) => textNamesPath(field, path))
 
 export const matchByFileName = (
   index: readonly IndexedRecord[],

@@ -32,7 +32,7 @@ const debriefMessage = (): GetPromptResult => ({
       role: 'user',
       content: {
         type: 'text',
-        text: 'Record anything this session established that the ledger does not already hold, find the records the next action needs with search_ledger, then call park_thread with next_step and next_step_records, sending no summary of the session. Read the reply before moving on: park_thread refuses and stores nothing when the thread it would write to is gone, terminal, quarantined, or held by another session, and the next step then has to be sent again.'
+        text: 'Record anything this session established that the ledger does not already hold, find the records the next action needs with search_ledger, then call park_thread with next_step and next_step_records, sending no summary of the session. Read the reply before moving on: park_thread refuses and stores nothing when no thread is being worked or the thread it would write to is gone, terminal, quarantined, or held by another session, and the next step then has to be sent again.'
       }
     }
   ]

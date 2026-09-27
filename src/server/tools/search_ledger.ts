@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { ToolSpec } from '../register.ts'
-import { indexRecords, searchRecords, type SearchFilters } from '../../domain/record-index.ts'
+import { indexRecords, normaliseForSearch, searchRecords, type SearchFilters } from '../../domain/record-index.ts'
 import { renderSearch } from '../../render/briefing.ts'
 import { openProjectStore } from '../tool-support.ts'
 
@@ -51,13 +51,28 @@ export const searchLedgerTool: ToolSpec<SearchLedgerInput, SearchLedgerOutput> =
   name: 'search_ledger',
   title: 'Search ledger',
   description:
-    "Lists and searches this project's recorded decisions, risks, criteria, session entries, artifacts and out-of-scope notes across every thread, closed threads included, one line per record with its id. Use it before setting a next step, to find the records that step needs, and before recording something, to see whether it is already recorded. A decision is read in full at logbook://decision/{id}, and any record is shown in full when a next step names it in next_step_records. A text search matches exact characters only, so finding nothing proves nothing: try other words, or list by kind or thread.",
+    "Lists and searches this project's recorded decisions, risks, criteria, session entries, artifacts and out-of-scope notes across every thread, closed threads included, one line per record with its id. Use it before setting a next step, to find the records that step needs, and before recording something, to see whether it is already recorded. A decision is read in full at logbook://decision/{id}, and any record is shown in full when a next step names it in next_step_records. By default it lists live records only, leaving out superseded decisions, retired risks and artifacts, and struck criteria; set status to all to include them. A text search matches exact characters only, so finding nothing proves nothing: try other words, or list by kind or thread.",
   input: SearchLedgerInputSchema,
   output: SearchLedgerOutputSchema,
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   handler: async (rt, _ctx, input) => {
     const opened = openProjectStore(rt)
     if (!opened.ok) return { ok: false, refusal: opened.refusal }
+
+    if (input.text !== undefined && normaliseForSearch(input.text).length === 0) {
+      return {
+        ok: false,
+        refusal: {
+          ok: false,
+          field: 'text',
+          accepted: 'words to look for, holding at least one character that is not a space or line break',
+          example: 'timeout',
+          retryable: true,
+          message:
+            'text holds only spaces or line breaks, which would match every record; send words to look for, or leave text out to list every record the other filters allow.'
+        }
+      }
+    }
 
     const result = searchRecords(indexRecords(opened.value), filtersOf(input))
 

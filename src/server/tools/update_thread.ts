@@ -654,7 +654,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
         artifacts_added: newArtifacts.map((a) => a.id),
         artifacts_retired: retiredArtifactIds,
         blocked_by_set: blockageChanged,
-        ...(stepRecords === null ? {} : { step_records: renderStepRecords(stepRecords, committed.value.spine.next_step) })
+        ...(stepRecords === null ? {} : { step_records: renderStepRecords(store, stepRecords, committed.value.spine.next_step) })
       }
     }
   }
