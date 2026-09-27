@@ -495,7 +495,7 @@ const DECOY_DOCUMENT: readonly string[] = [
   '',
   '## 5. The recording assertions',
   '',
-  '### 5.1 Presented at `SubagentStop`',
+  '### 5.1 Presented at `Stop`',
   '',
   '| ID | Assertion |',
   '|---|---|',
