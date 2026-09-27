@@ -2,36 +2,26 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import * as ts from 'typescript'
-import {
-  renderBriefing,
-  renderBriefingWithPasses,
-  resumePayloadBytes,
-  BRIEFING_HEADING,
-  BRIEFING_MAX_CHARS,
-  RESUME_PAYLOAD_MAX_BYTES,
-  RESUME_PAYLOAD_TARGET_BYTES,
-  CLIP_SEARCH_AXIS_LOWER_BOUND,
-  CLIP_SEARCH_AXIS_UPPER_BOUND,
-  type DecisionIntegrity
-} from '../../src/render/briefing.ts'
-import { CLIP_MARKER } from '../../src/render/clip.ts'
-import { ThreadRecord, type Thread, type Criterion, type Risk, type KeyDecision, type OutOfScope } from '../../src/schema/thread.ts'
-import { SESSION_BODY_MAX } from '../../src/schema/caps.ts'
-import { SessionRecord, type SessionEntry } from '../../src/schema/session.ts'
+import { renderStepBriefing, BRIEFING_HEADING } from '../../src/render/briefing.ts'
+import { ThreadRecord, type Thread, type Criterion, type Risk } from '../../src/schema/thread.ts'
+import type { Decision } from '../../src/schema/decision.ts'
+import type { SessionEntry } from '../../src/schema/session.ts'
 import type { Pointer } from '../../src/domain/pointer.ts'
+import type { Runtime } from '../../src/runtime/runtime.ts'
+import { openStore, type Store } from '../../src/store/records.ts'
+import type { RecordChange } from '../../src/store/write-path.ts'
 import { testRuntime } from '../support/runtime.ts'
+import { withCriterionFixture } from '../support/criterion-fixture.ts'
 import { census } from '../support/census.ts'
 import type { Classified } from '../support/census.ts'
 import { REBUILD_ROOT, forEachDescendant, lineOf, loadSourceProgram, sourceFileFor } from '../support/source-census.ts'
-import { buildSweepFixture, type SweepShape } from '../support/briefing-sweep-fixture.ts'
-import { itemCountOverBudgetThread } from '../support/briefing-item-count-over-budget-fixture.ts'
 
 const rt = testRuntime()
 
-const FORMER_KEY_DECISION_TITLE_MAX = 200
-const FORMER_THREAD_SLUG_MAX = 64
-
-const EMPTY_INTEGRITY: DecisionIntegrity = { resolved: 0, dangling: [], quarantined: [] }
+const OTHER_RECORDS_HEADING =
+  '**Other records on this thread** (one line each; name one in a next step to see it in full, or read a decision at logbook://decision/{id}):'
+const OTHER_THREADS_LINE =
+  '**Other threads:** search_ledger lists and searches the records on every thread, closed ones included.'
 
 const baseThread = (overrides: Partial<Thread> = {}): Thread => ({
   id: rt.ulid(),
@@ -43,8 +33,9 @@ const baseThread = (overrides: Partial<Thread> = {}): Thread => ({
   spine: {
     active_goal: 'ship the thing',
     next_step: 'write the tests',
+    next_step_records: [],
     landed: '',
-    last_session: 'wrote the renderer',
+    last_session: '',
     open_risks: [],
     key_decisions: [],
     out_of_scope: []
@@ -53,6 +44,72 @@ const baseThread = (overrides: Partial<Thread> = {}): Thread => ({
   updated_at: rt.now(),
   ...overrides
 })
+
+const criterion = (overrides: Partial<Criterion> = {}): Criterion => ({
+  id: rt.ulid(),
+  ordinal: 1,
+  text: 'a criterion',
+  done: false,
+  kind: 'planned',
+  struck_by: null,
+  ...overrides
+})
+
+const risk = (overrides: Partial<Risk> = {}): Risk => ({
+  id: rt.ulid(),
+  scope: 'x',
+  text: 'a risk',
+  refs: [],
+  retired: false,
+  ...overrides
+})
+
+const decision = (threadId: string, overrides: Partial<Decision> = {}): Decision => ({
+  id: rt.ulid(),
+  thread_id: threadId,
+  title: 'a decision',
+  context: 'a context',
+  options: [],
+  outcome: 'an outcome',
+  commit: null,
+  supersedes: [],
+  created_at: rt.now(),
+  ...overrides
+})
+
+const entry = (threadId: string, body: string): SessionEntry => ({
+  id: rt.ulid(),
+  thread_id: threadId,
+  actor: 'claude',
+  body,
+  created_at: rt.now()
+})
+
+const pointerFor = (threadId: string): Pointer => ({ thread_id: threadId, written_at: rt.now(), session_id: 'briefing-session' })
+
+const storeHolding = (fixtureRt: Runtime, changes: RecordChange[]): Store => {
+  const opened = openStore(fixtureRt, fixtureRt.cwd)
+  if (!opened.ok) throw new Error(`briefing fixture: the store did not open: ${opened.message}`)
+  const committed = opened.value.commit(changes, 'test: seed the briefing fixture')
+  if (!committed.ok) throw new Error(`briefing fixture: the seed did not commit: ${committed.detail}`)
+  return opened.value
+}
+
+const briefingOf = async (
+  thread: Thread,
+  pointer: Pointer | null = null,
+  extra: RecordChange[] = []
+): Promise<string> => {
+  assert.equal(ThreadRecord.parse(thread).ok, true, 'the briefing fixture thread must itself be schema-admissible')
+  const rendered: string[] = []
+  await withCriterionFixture(async (fixtureRt) => {
+    const store = storeHolding(fixtureRt, [{ kind: 'thread', record: thread }, ...extra])
+    rendered.push(renderStepBriefing(store, thread, pointer))
+  })
+  const [briefing] = rendered
+  if (briefing === undefined) throw new Error('briefing fixture: nothing was rendered')
+  return briefing
+}
 
 const BLOCKED_WORD_PATTERN = /\bblocked\b/i
 
@@ -81,10 +138,9 @@ const collectBlockedCandidates = (sourceFile: ts.SourceFile): BlockedCandidate[]
 const classifyBlockedCandidate = (candidate: BlockedCandidate): Classified<BlockedCandidate>['verdict'] | 'unclassifiable' =>
   candidate.hasInterpolation ? 'allowed' : 'forbidden'
 
-test('briefing.blocked-renders-its-reason', () => {
-  const thread = baseThread({ blocked_by: 'waiting on the infra approval' })
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  assert.ok(rendered.split('\n').some((line) => line.includes('waiting on the infra approval')))
+test('briefing.blocked-renders-its-reason', async () => {
+  const rendered = await briefingOf(baseThread({ blocked_by: 'waiting on the infra approval' }))
+  assert.ok(rendered.split('\n').includes('**Blocked:** waiting on the infra approval'))
 
   const { program } = loadSourceProgram()
   const briefingPath = path.join(REBUILD_ROOT, 'src', 'render', 'briefing.ts')
@@ -97,1104 +153,222 @@ test('briefing.blocked-renders-its-reason', () => {
   assert.throws(() => census(synthetic, classifyBlockedCandidate))
 })
 
-test('briefing.blockage-none-when-not-blocked', () => {
-  const thread = baseThread({ blocked_by: null })
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
+test('briefing.blockage-none-when-not-blocked', async () => {
+  const rendered = await briefingOf(baseThread({ blocked_by: null }))
   assert.ok(rendered.split('\n').includes('**Blockage:** none'))
 })
 
-test('briefing.renders-exact-output-for-a-full-thread', () => {
+test('briefing.renders-exact-output-for-a-full-thread', async () => {
   const threadId = rt.ulid()
-  const artifactId = rt.ulid()
-  const riskId = rt.ulid()
-  const settledRiskId = rt.ulid()
-  const liveDecisionId = rt.ulid()
-  const settledDecisionId = rt.ulid()
-  const criterionA = {
-    id: rt.ulid(),
+  const doneCriterion = criterion({
     ordinal: 1,
     text: 'first criterion',
     done: true,
-    kind: 'planned' as const,
     check: 'npm test',
     result: '436 tests, 0 fail',
-    result_status: 'verified' as const,
-    struck_by: null
-  }
-  const criterionB = {
-    id: rt.ulid(),
-    ordinal: 2,
-    text: 'second criterion',
-    done: false,
-    kind: 'detour' as const,
-    struck_by: rt.ulid()
-  }
+    result_status: 'verified'
+  })
+  const struckCriterion = criterion({ ordinal: 2, text: 'second criterion', kind: 'detour', struck_by: rt.ulid() })
+  const liveRisk = risk({ text: 'the census may miss a site', criterion_id: doneCriterion.id })
+  const retiredRisk = risk({ text: 'a retired worry', retired: true })
+  const liveArtifactId = rt.ulid()
+  const noteId = rt.ulid()
+  const named = decision(threadId, {
+    title: 'Render the step first',
+    context: 'the briefing buried the step',
+    options: ['whole thread', 'step first'],
+    outcome: 'step first'
+  })
+  const superseded = decision(threadId, {
+    title: 'Split the renderer',
+    context: 'src/render/briefing.ts was large',
+    outcome: 'split it'
+  })
+  const matched = decision(threadId, {
+    title: 'Keep the renderer in one file',
+    context: 'src/render/briefing.ts holds every display',
+    outcome: 'one file'
+  })
+  const other = decision(threadId, {
+    title: 'Escape every stored value',
+    outcome: 'escape on display',
+    supersedes: [superseded.id]
+  })
+  const otherThread = baseThread({ slug: 'other-thread', title: 'Another thread', status: 'done' })
+  const foreign = decision(otherThread.id, { title: 'A ruling on another thread', context: 'src/render/briefing.ts elsewhere' })
   const thread = baseThread({
     id: threadId,
     title: 'Ship the renderer',
-    status: 'open',
-    blocked_by: null,
-    completion_criteria: [criterionA, criterionB],
-    artifacts: [{ id: artifactId, label: 'the implementation plan', pointer: 'docs/plans/u5.md', retired: false }],
+    completion_criteria: [doneCriterion, struckCriterion],
+    artifacts: [
+      { id: liveArtifactId, label: 'the implementation plan', pointer: 'docs/plans/u5.md', retired: false },
+      { id: rt.ulid(), label: 'a retired artifact', pointer: 'docs/old.md', retired: true }
+    ],
     spine: {
       active_goal: 'ship the renderer',
-      next_step: 'add tests',
-      landed: 'the renderer landed with its golden pinned',
-      last_session: 'wrote the first draft',
-      open_risks: [
-        {
-          id: riskId,
-          scope: 'renderer',
-          text: 'escaping might be incomplete',
-          refs: ['docs/specs/goal-model.md#L120'],
-          retired: false
-        },
-        {
-          id: settledRiskId,
-          scope: 'renderer',
-          text: 'a risk on a met goal',
-          refs: [],
-          criterion_id: criterionA.id,
-          retired: false
-        }
-      ],
-      key_decisions: [
-        { id: rt.ulid(), decision_id: liveDecisionId, title: 'use postgres', scope: 'storage' },
-        {
-          id: rt.ulid(),
-          decision_id: settledDecisionId,
-          title: 'the escape is applied at render time',
-          scope: 'storage',
-          criterion_id: criterionA.id
-        }
-      ],
-      out_of_scope: [{ id: rt.ulid(), text: 'does not cover the CLI' }]
+      next_step: 'apply the ruling in src/render/briefing.ts',
+      next_step_records: [named.id],
+      landed: 'landed the first half',
+      last_session: 'wrote the renderer',
+      open_risks: [liveRisk, retiredRisk],
+      key_decisions: [],
+      out_of_scope: [{ id: noteId, text: 'capping the next step' }]
     }
   })
 
-  assert.equal(ThreadRecord.parse(thread).ok, true, 'the exact-output fixture must itself be schema-admissible')
+  const rendered = await briefingOf(thread, pointerFor(threadId), [
+    { kind: 'thread', record: otherThread },
+    ...[named, superseded, matched, other, foreign].map((record): RecordChange => ({ kind: 'decision', record })),
+    { kind: 'session', record: entry(threadId, 'read the renderer') },
+    { kind: 'session', record: entry(threadId, '') },
+    { kind: 'session', record: entry(otherThread.id, 'an entry on another thread') }
+  ])
 
-  const pointer: Pointer = { thread_id: threadId, written_at: rt.now(), session_id: 'session-x' }
-
-  const integrity: DecisionIntegrity = { resolved: 2, dangling: [], quarantined: [] }
-  const rendered = renderBriefing(thread, integrity, pointer, null)
-
-  const expected = [
-    BRIEFING_HEADING,
-    '',
-    '**Thread:** Ship the renderer',
-    '**Status:** open',
-    '**Blockage:** none',
-    '**Currently being worked:** yes',
-    '',
-    'Artifacts carry the route this thread is following. The goals are what the work must satisfy: check what lands against them as it lands, not only at the end.',
-    '',
-    '**Artifacts:**',
-    '- the implementation plan: docs/plans/u5.md',
-    '',
-    '**Active goal:**',
-    '',
-    '> ship the renderer',
-    '',
-    '**Last session:**',
-    '',
-    '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead',
-    '> wrote the first draft',
-    '',
-    '**Landed:**',
-    '',
-    '> the renderer landed with its golden pinned',
-    '',
-    '**Next step:**',
-    '',
-    '> add tests',
-    '',
-    '**Open risks:**',
-    `- ${riskId} escaping might be incomplete`,
-    '  - ref: docs/specs/goal-model.md#L120',
-    '',
-    '**Key decisions:**',
-    `- use postgres (decision ${liveDecisionId})`,
-    '',
-    '**Out of scope:**',
-    '- does not cover the CLI',
-    '',
-    '**Completion criteria:**',
-    `- c1 [done] [proposed]: first criterion (id ${criterionA.id})`,
-    '  - check: npm test',
-    '  - result: 436 tests, 0 fail (verified)',
-    `- c2 [struck] [proposed]: second criterion (id ${criterionB.id})`,
-    '  - check: not recorded',
-    '',
-    '**Settled items (on goals already met or struck):**',
-    `- risk ${settledRiskId} a risk on a met goal`,
-    `- decision ${settledDecisionId} the escape is applied at render time`,
-    '',
-    '**Decisions:**',
-    '- resolved: 2'
-  ].join('\n')
-
-  assert.equal(rendered, expected)
+  assert.equal(
+    rendered,
+    [
+      BRIEFING_HEADING,
+      '',
+      '**Thread:** Ship the renderer',
+      '**Status:** open',
+      '**Blockage:** none',
+      '**Currently being worked:** yes',
+      '',
+      '**Goal:**',
+      '',
+      '> ship the renderer',
+      '',
+      '**Next step:**',
+      '',
+      '> apply the ruling in src/render/briefing.ts',
+      '',
+      '**What this step needs:**',
+      '',
+      'Records this step needs:',
+      '',
+      `Decision ${named.id} (thread briefing-fixture, open)`,
+      'Title: Render the step first',
+      'Context: the briefing buried the step',
+      'Options:',
+      '- whole thread',
+      '- step first',
+      'Outcome: step first',
+      '',
+      'Matched by file name, because this step names src/render/briefing.ts:',
+      '',
+      `Decision ${matched.id} (thread briefing-fixture, open)`,
+      'Title: Keep the renderer in one file',
+      'Context: src/render/briefing.ts holds every display',
+      'Options:',
+      'Outcome: one file',
+      '',
+      `Decision ${foreign.id} (thread other-thread, done)`,
+      'Title: A ruling on another thread',
+      'Context: src/render/briefing.ts elsewhere',
+      'Options:',
+      'Outcome: an outcome',
+      '',
+      OTHER_RECORDS_HEADING,
+      '',
+      `- decision ${other.id}: Escape every stored value`,
+      `- risk ${liveRisk.id}: the census may miss a site (bears on criterion ${doneCriterion.id})`,
+      `- criterion ${doneCriterion.id}: c1 [done] [proposed] first criterion`,
+      `- artifact ${liveArtifactId}: the implementation plan -> docs/plans/u5.md`,
+      `- out-of-scope ${noteId}: capping the next step`,
+      '',
+      `**Session log:** 1 entries at logbook://sessions/${threadId}`,
+      '',
+      OTHER_THREADS_LINE
+    ].join('\n')
+  )
 })
 
-test('briefing.omits-empty-list-sections-entirely', () => {
-  const thread = baseThread({ title: 'Empty Thread', status: 'done', blocked_by: 'still finishing docs' })
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  const expected = [
-    BRIEFING_HEADING,
-    '',
-    '**Thread:** Empty Thread',
-    '**Status:** done',
-    '**Blocked:** still finishing docs',
-    '**Currently being worked:** no',
-    '',
-    'Artifacts carry the route this thread is following. The goals are what the work must satisfy: check what lands against them as it lands, not only at the end.',
-    '',
-    '**Active goal:**',
-    '',
-    '> ship the thing',
-    '',
-    '**Last session:**',
-    '',
-    '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead',
-    '> wrote the renderer',
-    '',
-    '**Next step:**',
-    '',
-    '> write the tests',
-    '',
-    '**Completion criteria:**',
-    '- none recorded; a definition of done is still owed.',
-    '',
-    '**Decisions:**',
-    '- resolved: 0'
-  ].join('\n')
-  assert.equal(rendered, expected)
-  for (const heading of [
-    '**Related:**',
-    '**Artifacts:**',
-    '**Open risks:**',
-    '**Key decisions:**',
-    '**Out of scope:**',
-    '**Settled items (on goals already met or struck):**',
-    '**Not shown:**'
-  ]) {
-    assert.equal(rendered.includes(heading), false, `expected ${heading} to be omitted when its list is empty`)
-  }
-})
-
-test('briefing.renders-no-focus-line', () => {
+test('briefing.pointer-status-is-no-for-a-different-thread', async () => {
   const thread = baseThread()
-  const pointer: Pointer = { thread_id: thread.id, written_at: '2026-09-05T00:00:00.000Z', session_id: 'session-a' }
-
-  const briefing = renderBriefing(thread, EMPTY_INTEGRITY, pointer, null)
-
-  assert.equal(briefing.includes('**Focus:**'), false)
+  const elsewhere = await briefingOf(thread, pointerFor(rt.ulid()))
+  const unheld = await briefingOf(thread, null)
+  assert.ok(elsewhere.split('\n').includes('**Currently being worked:** no'))
+  assert.ok(unheld.split('\n').includes('**Currently being worked:** no'))
 })
 
-test('briefing.pointer-status-is-no-for-a-different-thread', () => {
-  const thread = baseThread()
-  const pointer: Pointer = { thread_id: rt.ulid(), written_at: rt.now(), session_id: 'someone-else' }
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, pointer, null)
-  assert.ok(rendered.split('\n').includes('**Currently being worked:** no'))
-})
-
-test('briefing.criterion-status-is-open-when-undone-and-unstruck', () => {
-  const criterion = { id: rt.ulid(), ordinal: 1, text: 'not started yet', done: false, kind: 'planned' as const, struck_by: null }
-  const thread = baseThread({ completion_criteria: [criterion] })
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  assert.ok(rendered.split('\n').includes(`- c1 [open] [proposed]: not started yet (id ${criterion.id})`))
-})
-
-test('briefing.renders-dangling-and-quarantined-decisions-in-order', () => {
-  const thread = baseThread()
-  const integrity: DecisionIntegrity = {
-    resolved: 0,
-    dangling: ['dangling-one', 'dangling-two'],
-    quarantined: ['quarantined-one']
-  }
-  const rendered = renderBriefing(thread, integrity, null, null)
-  const lines = rendered.split('\n')
-  const decisionsIndex = lines.indexOf('**Decisions:**')
-  assert.equal(lines[decisionsIndex + 1], '- resolved: 0')
-  assert.equal(lines[decisionsIndex + 2], '- dangling: dangling-one')
-  assert.equal(lines[decisionsIndex + 3], '- dangling: dangling-two')
-  assert.equal(lines[decisionsIndex + 4], '- quarantined: quarantined-one')
-})
-
-test('briefing.escapes-every-free-text-field', () => {
+test('briefing.escapes-every-free-text-field', async () => {
+  const threadId = rt.ulid()
+  const named = decision(threadId, {
+    title: '# decision heading',
+    context: '# context heading',
+    options: ['# option heading'],
+    outcome: '# outcome heading'
+  })
   const thread = baseThread({
+    id: threadId,
     title: '# heading attempt',
     blocked_by: '# blocked heading',
-    completion_criteria: [
-      { id: rt.ulid(), ordinal: 1, text: '# criterion heading', done: false, kind: 'planned', struck_by: null }
-    ],
+    completion_criteria: [criterion({ text: '# criterion heading', check: '# check heading' })],
+    artifacts: [{ id: rt.ulid(), label: '# artifact heading', pointer: '# pointer heading', retired: false }],
     spine: {
       active_goal: '# goal heading',
       next_step: '# next heading',
+      next_step_records: [named.id],
       landed: '',
-      last_session: '# session heading',
-      open_risks: [{ id: rt.ulid(), scope: 's', text: '# risk heading', refs: [], retired: false }],
-      key_decisions: [{ id: rt.ulid(), decision_id: rt.ulid(), title: '# decision heading', scope: 's' }],
+      last_session: '',
+      open_risks: [risk({ text: '# risk heading' })],
+      key_decisions: [],
       out_of_scope: [{ id: rt.ulid(), text: '# oos heading' }]
     }
   })
-  const integrity: DecisionIntegrity = {
-    resolved: 0,
-    dangling: ['# dangling heading'],
-    quarantined: ['# quarantined heading']
-  }
-  const rendered = renderBriefing(thread, integrity, null, null)
+  const rendered = await briefingOf(thread, null, [
+    { kind: 'decision', record: named },
+    { kind: 'decision', record: decision(threadId, { title: '# listed decision heading' }) }
+  ])
   const [firstLine, ...restLines] = rendered.split('\n')
   assert.equal(firstLine, BRIEFING_HEADING)
-  assert.equal(restLines.join('\n').includes('#'), false)
+  assert.equal(restLines.join('\n').includes('#'), false, rendered)
 })
 
-const criterion = (overrides: Partial<Criterion> = {}): Criterion => ({
-  id: rt.ulid(),
-  ordinal: 1,
-  text: 'a criterion',
-  done: false,
-  kind: 'planned',
-  struck_by: null,
-  ...overrides
+test('briefing.a-step-naming-no-records-says-so-and-an-empty-thread-lists-none', async () => {
+  const lines = (await briefingOf(baseThread())).split('\n')
+  const needsAt = lines.indexOf('**What this step needs:**')
+  const otherAt = lines.indexOf(OTHER_RECORDS_HEADING)
+  assert.deepEqual(lines.slice(needsAt + 1, needsAt + 3), ['', 'This step names no records.'])
+  assert.deepEqual(lines.slice(otherAt + 1, otherAt + 3), ['', '- none'])
 })
 
-const risk = (overrides: Partial<Risk> = {}): Risk => ({
-  id: rt.ulid(),
-  scope: 'x',
-  text: 'a risk',
-  refs: [],
-  retired: false,
-  ...overrides
-})
-
-const CRITERION_ROW_PATTERN = /^- c\d+ \[(open|done|struck)\] \[(confirmed|proposed|unsettled)\]: /
-
-const criterionRowCount = (rendered: string): number =>
-  rendered.split('\n').filter((line) => CRITERION_ROW_PATTERN.test(line)).length
-
-test('briefing.criterion-line-carries-its-settledness', () => {
-  const thread = baseThread({ completion_criteria: [criterion({ settledness: 'proposed', done: false })] })
-
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-
-  assert.match(
-    rendered,
-    /- c1 \[open\] \[proposed\]:/,
-    'settledness renders beside the status, on the criterion own line'
-  )
-})
-
-test('briefing.confirmed-criterion-renders-the-human-words', () => {
+test('briefing.a-named-id-that-no-longer-resolves-is-skipped', async () => {
+  const threadId = rt.ulid()
+  const named = decision(threadId, { title: 'the ruling that still exists', outcome: 'keep it' })
+  const vanished = rt.ulid()
   const thread = baseThread({
-    completion_criteria: [
-      criterion({ settledness: 'confirmed', settled_by: 'it has to block before the turn ends' })
-    ]
+    id: threadId,
+    spine: { ...baseThread().spine, next_step_records: [vanished, named.id] }
   })
-
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-
-  assert.ok(
-    rendered.includes('- settled by: it has to block before the turn ends'),
-    `a confirmed criterion shows whose words back it, got: ${rendered}`
-  )
+  const rendered = await briefingOf(thread, null, [{ kind: 'decision', record: named }])
+  assert.ok(rendered.includes(`Decision ${named.id} `), 'the id that resolves must still be shown in full')
+  assert.equal(rendered.includes(vanished), false, 'an id that no longer resolves must be skipped')
 })
 
-test('briefing.unconfirmed-criterion-shows-no-settled-by-line', () => {
-  const thread = baseThread({ completion_criteria: [criterion({ settledness: 'proposed', settled_by: null })] })
-
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-
-  assert.equal(rendered.includes('settled by:'), false, 'there is nobody to quote on a criterion nobody confirmed')
-})
-
-test('briefing.a-thread-with-no-criteria-says-the-definition-of-done-is-owed', () => {
-  const thread = baseThread({ completion_criteria: [] })
-
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-
-  assert.ok(
-    rendered.includes('**Completion criteria:**'),
-    'the section renders rather than being suppressed, so silence is never mistaken for a clipped section'
-  )
-  assert.ok(
-    rendered.includes('none recorded; a definition of done is still owed'),
-    `the empty case says so in words, got: ${rendered}`
-  )
-})
-
-test('briefing.a-thread-whose-criteria-are-all-struck-says-the-definition-of-done-is-owed', () => {
-  const struck = criterion({ ordinal: 1, text: 'retired by an amendment', struck_by: rt.ulid() })
-  const thread = baseThread({ completion_criteria: [struck] })
-
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-
-  assert.ok(
-    rendered.includes('a definition of done is still owed'),
-    `nothing un-struck survives, so close_thread refuses this thread; the briefing must say a definition of done is owed rather than reading as finished, got: ${rendered}`
-  )
-  assert.ok(
-    rendered.includes(struck.id),
-    'the struck criterion still renders; the owed line is added beside the struck history, never substituted for it'
-  )
-})
-
-test('briefing.a-thread-keeping-one-un-struck-criterion-is-never-told-a-definition-of-done-is-owed', () => {
-  const struck = criterion({ ordinal: 1, text: 'retired by an amendment', struck_by: rt.ulid() })
-  const live = criterion({ ordinal: 2, text: 'still the definition of done' })
-  const thread = baseThread({ completion_criteria: [struck, live] })
-
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-
-  assert.equal(
-    rendered.includes('a definition of done is still owed'),
-    false,
-    `one un-struck criterion is a definition of done, so close_thread can still pass on this thread and nothing is owed; a briefing that says otherwise sends the reader to amend criteria that are already there, got: ${rendered}`
-  )
-})
-
-test('briefing.live-risks-render-in-the-order-they-were-recorded', () => {
-  const first = criterion({ ordinal: 1, text: 'the first criterion' })
-  const other = criterion({ ordinal: 2, text: 'a later live criterion' })
-  const otherRisk = risk({ text: 'risk tied to a later criterion', criterion_id: other.id })
-  const firstRisk = risk({ text: 'risk tied to the first criterion', criterion_id: first.id })
-
-  const thread = baseThread({
-    completion_criteria: [first, other],
-    spine: {
-      active_goal: 'g',
-      next_step: 'n',
-      landed: '',
-      last_session: 'l',
-      open_risks: [otherRisk, firstRisk],
-      key_decisions: [],
-      out_of_scope: []
-    }
-  })
-
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  const lines = rendered.split('\n')
-  const openRisksIndex = lines.indexOf('**Open risks:**')
-  assert.notEqual(openRisksIndex, -1)
-  assert.deepEqual(
-    [lines[openRisksIndex + 1], lines[openRisksIndex + 2]],
-    [`- ${otherRisk.id} risk tied to a later criterion`, `- ${firstRisk.id} risk tied to the first criterion`],
-    'live risks render as one group, in the order they were recorded'
-  )
-})
-
-test('briefing.every-out-of-scope-item-renders-and-none-is-counted-away', () => {
-  const outOfScopeItems: OutOfScope[] = Array.from({ length: 12 }, (_, index) => ({
-    id: rt.ulid(),
-    text: `out of scope item ${index}`
-  }))
-  const thread = baseThread({
-    spine: {
-      active_goal: 'g',
-      next_step: 'n',
-      landed: '',
-      last_session: 'l',
-      open_risks: [],
-      key_decisions: [],
-      out_of_scope: outOfScopeItems
-    }
-  })
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  for (const item of outOfScopeItems) {
-    assert.ok(rendered.includes(item.text), `every out-of-scope item must render; ${item.text} did not`)
+test('briefing.a-record-named-twice-is-shown-once', async () => {
+  const anchored = criterion({ text: 'the anchored criterion', check: 'the anchored check' })
+  const base = baseThread({ completion_criteria: [anchored] })
+  const thread: Thread = {
+    ...base,
+    spine: { ...base.spine, next_step_records: [anchored.id, anchored.id], next_step_criterion_id: anchored.id }
   }
-  assert.equal(
-    rendered.includes('out-of-scope items not shown'),
-    false,
-    'no out-of-scope item may be counted away; the display-time cap that produced that count is deleted'
-  )
+  const rendered = await briefingOf(thread)
+  assert.equal(rendered.split(`Criterion ${anchored.id} `).length - 1, 1, 'a record named more than once must be shown once')
+  assert.equal(rendered.includes(`- criterion ${anchored.id}:`), false, 'a record shown in full must not be listed again')
 })
 
-test('briefing.every-dangling-and-quarantined-decision-id-renders-and-the-tail-counts-the-records-it-could-not-read', () => {
-  const thread = baseThread()
-  const integrity: DecisionIntegrity = {
-    resolved: 0,
-    dangling: Array.from({ length: 8 }, (_, index) => `dangling-${index}`),
-    quarantined: Array.from({ length: 4 }, (_, index) => `quarantined-${index}`)
-  }
-  const rendered = renderBriefing(thread, integrity, null, null)
-  const lines = rendered.split('\n')
-  assert.equal(
-    lines.filter((line) => line.startsWith('- dangling: ')).length,
-    8,
-    'every dangling decision id must render; the display-time cap that withheld them is deleted'
-  )
-  assert.equal(
-    lines.filter((line) => line.startsWith('- quarantined: ')).length,
-    4,
-    'every quarantined decision id must render'
-  )
-  assert.equal(
-    rendered.includes('dangling or quarantined decision ids not shown'),
-    false,
-    'no decision id may be counted away by a display cap'
-  )
-  assert.ok(
-    rendered.includes('- 12 linked decision records could not be read; their ids are listed under Decisions above'),
-    'the not-shown tail must count the decision records the store could not read'
-  )
-  assert.ok(
-    rendered.includes(`See logbook://thread/${thread.id} for the complete record.`),
-    'the not-shown tail must carry the address that resolves to the complete record'
-  )
-})
-
-test('briefing.a-risk-on-a-met-goal-renders-last-and-compact-under-the-settled-heading', () => {
-  const doneCriterion = criterion({ ordinal: 1, text: 'already finished', done: true })
-  const settledRisk = risk({ text: 'a risk on a finished criterion', criterion_id: doneCriterion.id })
-  const unanchoredRisk = risk({ text: 'a risk naming no criterion at all' })
-
-  const thread = baseThread({
-    completion_criteria: [doneCriterion],
-    spine: {
-      active_goal: 'g',
-      next_step: 'n',
-      landed: '',
-      last_session: 'l',
-      open_risks: [settledRisk, unanchoredRisk],
-      key_decisions: [],
-      out_of_scope: []
-    }
-  })
-
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  const lines = rendered.split('\n')
-
-  assert.ok(
-    lines.includes(`- ${unanchoredRisk.id} a risk naming no criterion at all`),
-    'an unanchored risk must render in full, in the live group'
-  )
-
-  const settledIndex = lines.indexOf('**Settled items (on goals already met or struck):**')
-  assert.notEqual(settledIndex, -1, 'a risk on a met goal must bring the settled heading with it')
-  assert.equal(
-    lines[settledIndex + 1],
-    `- risk ${settledRisk.id} a risk on a finished criterion`,
-    'the settled risk must render compactly, as its id and its text, under the settled heading'
-  )
-  assert.ok(
-    settledIndex > lines.indexOf('**Open risks:**'),
-    'the settled group must render after the live groups, never before them'
-  )
-  assert.equal(
-    rendered.includes('risks not shown'),
-    false,
-    'a risk on a met goal is rendered, never counted away'
-  )
-})
-
-const CRITERIA_FILLING_EVERY_SHOWN_SLOT = 40
-
-test('briefing.a-criterion-beyond-the-forty-that-the-deleted-cap-once-showed-renders-with-its-settled-risk', () => {
-  const openCriteria: Criterion[] = Array.from({ length: CRITERIA_FILLING_EVERY_SHOWN_SLOT }, (_, index) =>
-    criterion({ ordinal: index + 1, text: `open criterion ${index + 1}` })
-  )
-  const beyondTheOldCap = criterion({ ordinal: 41, text: 'finished after the old shown slots ran out', done: true })
-  const settledRisk = risk({ text: 'a risk on a criterion the old cap withheld', criterion_id: beyondTheOldCap.id })
-
-  const thread = baseThread({
-    completion_criteria: [...openCriteria, beyondTheOldCap],
-    spine: {
-      active_goal: 'g',
-      next_step: 'n',
-      landed: '',
-      last_session: 'l',
-      open_risks: [settledRisk],
-      key_decisions: [],
-      out_of_scope: []
-    }
-  })
-
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-
-  assert.ok(
-    rendered
-      .split('\n')
-      .some((line) => line.startsWith('- c41 [done] [proposed]: finished after the old shown slots ran out (id ')),
-    'the criterion at ordinal 41 must render; the display cap that withheld it is deleted'
-  )
-  assert.ok(
-    rendered.includes(`- risk ${settledRisk.id} a risk on a criterion the old cap withheld`),
-    'a risk on a met goal must render compactly under the settled heading, wherever that goal sits in the list'
-  )
-  assert.equal(
-    rendered.includes('completion criteria not shown'),
-    false,
-    'no criterion may be counted away by a display cap'
-  )
-})
-
-test('briefing.a-risk-naming-a-criterion-that-no-longer-resolves-is-treated-as-unanchored', () => {
-  const onlyCriterion = criterion({ ordinal: 1, text: 'the only criterion', done: true })
-  const wrongTagRisk = risk({ text: 'a risk naming an unknown criterion', criterion_id: rt.ulid() })
-
-  const thread = baseThread({
-    completion_criteria: [onlyCriterion],
-    spine: {
-      active_goal: 'g',
-      next_step: 'n',
-      landed: '',
-      last_session: 'l',
-      open_risks: [wrongTagRisk],
-      key_decisions: [],
-      out_of_scope: []
-    }
-  })
-
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  assert.ok(
-    rendered.includes(`- ${wrongTagRisk.id} a risk naming an unknown criterion`),
-    'a missing or wrong tag must never hide an item; it must render in full in the live lane'
-  )
-})
-
-test('briefing.every-unanchored-risk-renders-and-none-is-counted-away', () => {
-  const live = criterion({ ordinal: 1, text: 'the live criterion' })
-  const risks: Risk[] = Array.from({ length: 6 }, (_, index) => risk({ text: `unanchored risk number ${index}` }))
-  const thread = baseThread({
-    completion_criteria: [live],
-    spine: { active_goal: 'g', next_step: 'n', landed: '', last_session: 'l', open_risks: risks, key_decisions: [], out_of_scope: [] }
-  })
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  for (const item of risks) {
-    assert.ok(rendered.includes(item.text), `every risk must render; ${item.text} did not`)
-  }
-  assert.equal(
-    rendered.includes('risks not shown'),
-    false,
-    'no risk may be counted away; the two lane caps that withheld them are deleted'
-  )
-})
-
-test('briefing.omits-the-not-shown-tail-when-nothing-was-cut', () => {
-  const thread = baseThread({
-    completion_criteria: [criterion()],
-    spine: {
-      active_goal: 'g',
-      next_step: 'n',
-      landed: '',
-      last_session: 'l',
-      open_risks: [risk()],
-      key_decisions: [],
-      out_of_scope: []
-    }
-  })
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-  assert.equal(rendered.includes('**Not shown:**'), false)
-})
-
-test('briefing.every-completion-criterion-renders-and-none-is-counted-away', () => {
-  const retired: Criterion[] = Array.from({ length: 199 }, (_, index) =>
-    criterion({ ordinal: index + 1, text: 'retired', struck_by: rt.ulid() })
-  )
-  const survivor = criterion({ ordinal: 200, text: 'still open' })
-  const thread = baseThread({ completion_criteria: [...retired, survivor] })
-
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-
-  assert.equal(
-    criterionRowCount(rendered),
-    200,
-    'every retained criterion must render; the display cap that showed only forty is deleted'
-  )
-  assert.ok(rendered.includes(survivor.id), 'the open criterion at ordinal 200 must render')
-  assert.equal(
-    rendered.includes('completion criteria not shown'),
-    false,
-    'no criterion may be counted away by a display cap'
-  )
-})
-
-const CRITERION_TEXT_AT_RECORD_BYTE_CEILING = 14
-const KEY_DECISIONS_AT_RECORD_BYTE_CEILING = 5
-
-const decisionRecordSizedThread = (): Thread => {
-  const text = (n: number): string => 'x'.repeat(n)
-  const criteria: Criterion[] = Array.from({ length: 200 }, (_, index) => ({
-    id: rt.ulid(),
-    ordinal: index + 1,
-    text: text(CRITERION_TEXT_AT_RECORD_BYTE_CEILING),
-    done: false,
-    kind: 'planned',
-    struck_by: null
-  }))
-  const risks: Risk[] = Array.from({ length: 40 }, () => ({
-    id: rt.ulid(),
-    scope: 'x',
-    text: text(500),
-    refs: [],
-    retired: false
-  }))
-  const keyDecisions: KeyDecision[] = Array.from({ length: KEY_DECISIONS_AT_RECORD_BYTE_CEILING }, () => ({
-    id: rt.ulid(),
-    decision_id: rt.ulid(),
-    title: text(FORMER_KEY_DECISION_TITLE_MAX),
-    scope: 'x'
-  }))
-  const outOfScope: OutOfScope[] = Array.from({ length: 40 }, () => ({ id: rt.ulid(), text: text(300) }))
-  return {
-    id: rt.ulid(),
-    slug: 'a'.repeat(FORMER_THREAD_SLUG_MAX),
-    title: text(200),
-    status: 'open',
-    blocked_by: text(500),
-    completion_criteria: criteria,
-    spine: {
-      active_goal: text(500),
-      next_step: text(500),
-      landed: '',
-      last_session: text(500),
-      open_risks: risks,
-      key_decisions: keyDecisions,
-      out_of_scope: outOfScope
-    },
-    created_at: rt.now(),
-    updated_at: rt.now()
-  }
-}
-
-test('briefing.renders-every-item-of-a-record-byte-maximal-thread-and-reports-the-budget-breach', () => {
-  const thread = decisionRecordSizedThread()
-  const parsed = ThreadRecord.parse(thread)
-  assert.equal(parsed.ok, true, 'the constructed fixture must itself be schema-admissible')
-
-  const predecessor = baseThread({ title: 'x'.repeat(200), slug: 'a'.repeat(60) })
-  const integrity: DecisionIntegrity = {
-    resolved: 5,
-    dangling: Array.from({ length: 50 }, () => rt.ulid()),
-    quarantined: Array.from({ length: 50 }, () => rt.ulid())
-  }
-
-  const render = renderBriefingWithPasses(thread, integrity, null, predecessor)
-  const lines = render.briefing.split('\n')
-
-  assert.equal(
-    criterionRowCount(render.briefing),
-    thread.completion_criteria.length,
-    'every criterion of a record-byte-maximal thread renders; no display cap withholds one'
-  )
-  assert.equal(
-    lines.filter((line) => line.startsWith('  - check: ')).length,
-    thread.completion_criteria.length,
-    'every criterion renders its check line, recorded or not'
-  )
-  assert.equal(
-    lines.filter((line) => line.startsWith('- dangling: ')).length + lines.filter((line) => line.startsWith('- quarantined: ')).length,
-    integrity.dangling.length + integrity.quarantined.length,
-    'every dangling and quarantined decision id renders'
-  )
-  for (const marker of [
-    'risks not shown',
-    'key decisions not shown',
-    'out-of-scope items not shown',
-    'completion criteria not shown',
-    'dangling or quarantined decision ids not shown'
-  ]) {
-    assert.equal(render.briefing.includes(marker), false, `no item may be counted away by a display cap; found "${marker}"`)
-  }
-
-  assert.equal(
-    render.withinBudget,
-    false,
-    'a record-byte-maximal thread renders past the budget once every item must render, and the renderer must say so rather than hide an item to fit'
-  )
-  assert.ok(
-    render.briefing.length > BRIEFING_MAX_CHARS,
-    `the breach this render reports must be real, got ${render.briefing.length} characters against a cap of ${BRIEFING_MAX_CHARS}`
-  )
-  assert.ok(
-    resumePayloadBytes(render.briefing, thread.id, false) > RESUME_PAYLOAD_MAX_BYTES,
-    'the reported breach must also be real in bytes'
-  )
-})
-
-const ordinarySmallThread = (): Thread =>
-  baseThread({
-    title: 'Guard the briefing byte budget',
-    completion_criteria: [
-      criterion({ ordinal: 1, text: 'the renderer enforces the resume payload byte cap', done: true }),
-      criterion({ ordinal: 2, text: 'the frontier sweep finds no breaching record' }),
-      criterion({ ordinal: 3, text: 'the common path still converges in one pass' })
-    ],
-    spine: {
-      active_goal: 'make the briefing budget guard byte-denominated',
-      next_step: 'assert the ordinary path never enters the clip search',
-      landed: '',
-      last_session: 'replaced the single-shot shrink with a convergent search',
-      open_risks: [risk({ text: 'the character cap cannot bound multi-byte output' })],
-      key_decisions: [],
-      out_of_scope: [{ id: rt.ulid(), text: 'the pre-cutover ledger records stay frozen' }]
-    }
-  })
-
-test('briefing.an-ordinary-small-thread-renders-in-a-single-pass', () => {
-  const thread = ordinarySmallThread()
-  assert.equal(ThreadRecord.parse(thread).ok, true, 'the ordinary fixture must itself be schema-admissible')
-
-  const render = renderBriefingWithPasses(thread, EMPTY_INTEGRITY, null, null)
-
-  assert.equal(
-    render.passes,
-    1,
-    `an ordinary small thread must satisfy both caps on the unclipped attempt and never enter the clip search, got ${render.passes} renders`
-  )
-})
-
-const CLIP_SEARCH_RANGE_SIZE = CLIP_SEARCH_AXIS_UPPER_BOUND - CLIP_SEARCH_AXIS_LOWER_BOUND + 1
-const CLIP_SEARCH_PASS_CEILING = 1 + Math.ceil(Math.log2(CLIP_SEARCH_RANGE_SIZE))
-
-test('briefing.the-clip-search-converges-within-the-pass-ceiling', () => {
-  const thread = decisionRecordSizedThread()
-  const predecessor = baseThread({ title: 'x'.repeat(200), slug: 'a'.repeat(60) })
-  const integrity: DecisionIntegrity = {
-    resolved: 5,
-    dangling: Array.from({ length: 50 }, () => rt.ulid()),
-    quarantined: Array.from({ length: 50 }, () => rt.ulid())
-  }
-
-  const render = renderBriefingWithPasses(thread, integrity, null, predecessor)
-
-  assert.ok(
-    render.passes > 1,
-    'a record-byte-maximal thread must actually enter the clip search, or the ceiling below is unexercised'
-  )
-  assert.ok(
-    render.passes <= CLIP_SEARCH_PASS_CEILING,
-    `the clip search must converge within ${CLIP_SEARCH_PASS_CEILING} renders, got ${render.passes}`
-  )
-})
-
-const ASCII_FILL = 'x'
-
-const worstReachableAsciiBaseShape: SweepShape = {
-  fill: ASCII_FILL,
-  anchored: false,
-  criteriaCount: 1,
-  keyDecisionCount: 0,
-  criterionTextLength: 0,
-  bulkCount: 0
-}
-
-const ASCII_SESSION_ENTRY_COUNT = 3
-
-const ASCII_UTILISATION_FILL_CHARS_PER_GRAPHEME = ASCII_FILL.length
-const CLIP_SEARCH_UTILISATION_SLACK_CHARS = ASCII_UTILISATION_FILL_CHARS_PER_GRAPHEME
-
-const sessionEntryAt = (rt: ReturnType<typeof testRuntime>, threadId: string, body: string): SessionEntry => ({
-  id: rt.ulid(),
-  thread_id: threadId,
-  actor: 'worst-reachable-probe',
-  body,
-  created_at: rt.now()
-})
-
-const LAST_SESSION_HEADING = '**Last session:**'
-const NEWEST_SESSION_BLOCK_PREFIX = '> '
-
-const newestSessionBlockText = (rendered: string): number => {
-  const lines = rendered.split('\n')
-  const headingAt = lines.indexOf(LAST_SESSION_HEADING)
-  if (headingAt === -1) {
-    throw new Error(`expected the rendered briefing to carry the ${LAST_SESSION_HEADING} heading, found none`)
-  }
-  const line = lines.slice(headingAt + 1).find((candidate) => candidate.startsWith(NEWEST_SESSION_BLOCK_PREFIX))
-  if (line === undefined) {
-    throw new Error(
-      `expected the newest session entry to render as a block under ${LAST_SESSION_HEADING}, found no line beginning "${NEWEST_SESSION_BLOCK_PREFIX}"`
-    )
-  }
-  return line.length - NEWEST_SESSION_BLOCK_PREFIX.length
-}
-
-test('briefing.the-clip-search-lands-just-under-the-character-cap-on-the-worst-reachable-ascii-record', () => {
-  const { thread, predecessor } = buildSweepFixture(rt, worstReachableAsciiBaseShape)
-  assert.equal(
-    ThreadRecord.parse(thread).ok,
-    true,
-    'the worst-reachable ascii fixture must itself be schema-admissible, or it says nothing about records the store can hold'
-  )
-
-  const sessionEntries = Array.from({ length: ASCII_SESSION_ENTRY_COUNT }, () =>
-    sessionEntryAt(rt, thread.id, ASCII_FILL.repeat(SESSION_BODY_MAX))
-  )
-  for (const entry of sessionEntries) {
-    assert.equal(
-      SessionRecord.parse(entry).ok,
-      true,
-      'the worst-reachable ascii session entries must themselves be schema-admissible'
-    )
-  }
-
-  const hasPreviousSession = false
-  const render = renderBriefingWithPasses(thread, EMPTY_INTEGRITY, null, predecessor, hasPreviousSession, sessionEntries)
-
-  assert.ok(
-    render.passes > 1,
-    `this record must actually enter the clip search, or the utilisation floor below is measuring an unclipped render; got ${render.passes} renders`
-  )
-  assert.equal(
-    render.withinBudget,
-    true,
-    'the clip search must land this record inside both caps, or the utilisation floor below is bought by breaching the budget'
-  )
-
-  const shownEntry = sessionEntries[0]
-  if (shownEntry === undefined) {
-    throw new Error('the worst-reachable ascii fixture must carry at least one session entry, or there is no retained text to measure')
-  }
-  const retained = newestSessionBlockText(render.briefing)
-  assert.ok(
-    retained > CLIP_MARKER.length,
-    `the clipped newest session entry must keep some of its own text beside the marker, got ${retained}`
-  )
-  assert.ok(
-    render.briefing.endsWith('for the complete record.'),
-    'a clipped render must carry the address that resolves to the complete record'
-  )
-
-  const used = resumePayloadBytes(render.briefing, thread.id, hasPreviousSession)
-  const charUtilisation = render.briefing.length / BRIEFING_MAX_CHARS
-  const byteUtilisation = used / RESUME_PAYLOAD_TARGET_BYTES
-  assert.ok(
-    charUtilisation > byteUtilisation,
-    `the character cap must be the binding constraint on this fixture, or the char-slack assertion below is measuring a cap that does not bind; got ${(charUtilisation * 100).toFixed(1)}% of the ${BRIEFING_MAX_CHARS} char cap versus ${(byteUtilisation * 100).toFixed(1)}% of the ${RESUME_PAYLOAD_TARGET_BYTES} byte cap`
-  )
-  assert.ok(
-    render.briefing.length >= BRIEFING_MAX_CHARS - CLIP_SEARCH_UTILISATION_SLACK_CHARS,
-    `the clip search must land within ${CLIP_SEARCH_UTILISATION_SLACK_CHARS} chars of the ${BRIEFING_MAX_CHARS} char cap, which is one grapheme of the fill on the newest session entry, the only value the search still moves at the floor, so the next step up must exceed the cap; adding entries to this fixture must not widen this tolerance. It overshot and threw text away; got ${render.briefing.length} chars`
-  )
-  assert.ok(
-    used <= RESUME_PAYLOAD_MAX_BYTES,
-    `the render must not breach the ${RESUME_PAYLOAD_MAX_BYTES} byte cap even though the byte cap does not bind on this fixture; got ${used} bytes`
-  )
-})
-
-const MULTI_BYTE_UTILISATION_FILL = '漢'
-
-const worstReachableMultiByteBaseShape: SweepShape = {
-  fill: MULTI_BYTE_UTILISATION_FILL,
-  anchored: false,
-  criteriaCount: 1,
-  keyDecisionCount: 0,
-  criterionTextLength: 0,
-  bulkCount: 0
-}
-
-const MULTI_BYTE_UTILISATION_FILL_BYTES_PER_CHARACTER = Buffer.byteLength(MULTI_BYTE_UTILISATION_FILL, 'utf8')
-const MULTI_BYTE_SESSION_ENTRY_COUNT = 1
-const CLIP_SEARCH_UTILISATION_SLACK_BYTES = MULTI_BYTE_SESSION_ENTRY_COUNT * MULTI_BYTE_UTILISATION_FILL_BYTES_PER_CHARACTER
-
-test('briefing.the-clip-search-lands-just-under-the-byte-cap-on-the-worst-reachable-multi-byte-record', () => {
-  const { thread, predecessor } = buildSweepFixture(rt, worstReachableMultiByteBaseShape)
-  assert.equal(
-    ThreadRecord.parse(thread).ok,
-    true,
-    'the worst-reachable multi-byte fixture must itself be schema-admissible, or it says nothing about records the store can hold'
-  )
-
-  const sessionEntries = Array.from({ length: MULTI_BYTE_SESSION_ENTRY_COUNT }, () =>
-    sessionEntryAt(rt, thread.id, MULTI_BYTE_UTILISATION_FILL.repeat(SESSION_BODY_MAX))
-  )
-  for (const entry of sessionEntries) {
-    assert.equal(
-      SessionRecord.parse(entry).ok,
-      true,
-      'the worst-reachable multi-byte session entries must themselves be schema-admissible'
-    )
-  }
-
-  const hasPreviousSession = true
-  const render = renderBriefingWithPasses(thread, EMPTY_INTEGRITY, null, predecessor, hasPreviousSession, sessionEntries)
-
-  assert.ok(
-    render.passes > 1,
-    `this record must actually enter the clip search, or the utilisation floor below is measuring an unclipped render; got ${render.passes} renders`
-  )
-  assert.equal(
-    render.withinBudget,
-    true,
-    'the clip search must land this record inside both caps, or the utilisation floor below is bought by breaching the budget'
-  )
-
-  const shownEntry = sessionEntries[0]
-  if (shownEntry === undefined) {
-    throw new Error('the worst-reachable multi-byte fixture must carry at least one session entry, or there is no retained text to measure')
-  }
-  const retained = newestSessionBlockText(render.briefing)
-  assert.ok(
-    retained > CLIP_MARKER.length,
-    `the clipped session-entry text must keep some of its own text beside the marker, got ${retained}`
-  )
-  assert.ok(
-    render.briefing.endsWith('for the complete record.'),
-    'a clipped render must carry the address that resolves to the complete record'
-  )
-
-  const used = resumePayloadBytes(render.briefing, thread.id, hasPreviousSession)
-  const charUtilisation = render.briefing.length / BRIEFING_MAX_CHARS
-  const byteUtilisation = used / RESUME_PAYLOAD_TARGET_BYTES
-  assert.ok(
-    byteUtilisation > charUtilisation,
-    `the byte cap must be the binding constraint on this multi-byte fixture, or the byte-slack assertion below is measuring a cap that does not bind; got ${(byteUtilisation * 100).toFixed(1)}% of the ${RESUME_PAYLOAD_TARGET_BYTES} byte cap versus ${(charUtilisation * 100).toFixed(1)}% of the ${BRIEFING_MAX_CHARS} char cap`
-  )
-  assert.ok(
-    used >= RESUME_PAYLOAD_TARGET_BYTES - CLIP_SEARCH_UTILISATION_SLACK_BYTES,
-    `the clip search must land within ${CLIP_SEARCH_UTILISATION_SLACK_BYTES} bytes of the ${RESUME_PAYLOAD_TARGET_BYTES} byte cap, or it overshot and threw text away; got ${used} bytes`
-  )
-  assert.ok(
-    used <= RESUME_PAYLOAD_TARGET_BYTES,
-    `the render must not breach the ${RESUME_PAYLOAD_TARGET_BYTES} byte cap, got ${used} bytes`
-  )
-})
-
-test('briefing.within-budget-is-true-on-an-ordinary-thread-and-false-when-the-render-breaches-a-cap', () => {
-  const ordinary = renderBriefingWithPasses(ordinarySmallThread(), EMPTY_INTEGRITY, null, null)
-  assert.equal(
-    ordinary.withinBudget,
-    true,
-    `an ordinary small thread must report as within budget, got a render of ${ordinary.briefing.length} characters`
-  )
-  assert.ok(
-    ordinary.briefing.length <= BRIEFING_MAX_CHARS,
-    `the ordinary render must sit inside the character cap for that report to be true, got ${ordinary.briefing.length}`
-  )
-
-  const degenerate = itemCountOverBudgetThread(rt)
-  assert.equal(
-    ThreadRecord.parse(degenerate).ok,
-    true,
-    'the over-budget fixture must itself be schema-admissible, or the renderer would never be handed it'
-  )
-
-  const breaching = renderBriefingWithPasses(degenerate, EMPTY_INTEGRITY, null, null)
-  assert.ok(
-    breaching.briefing.length > BRIEFING_MAX_CHARS,
-    `the over-budget fixture must actually render past the ${BRIEFING_MAX_CHARS} character cap, got ${breaching.briefing.length}`
-  )
-  assert.equal(
-    breaching.withinBudget,
-    false,
-    `a render past the character cap must report as outside budget, got a render of ${breaching.briefing.length} characters reported as within budget`
-  )
-})
-
-const LANDED_TEXT = 'the landed block renders above the next step'
-
-const CONTINUATION_RULE =
-  'Artifacts carry the route this thread is following. The goals are what the work must satisfy: check what lands against them as it lands, not only at the end.'
-
-test('briefing.renders-landed-before-the-next-step', () => {
+test('briefing.a-named-record-on-another-thread-is-shown-in-full-and-never-listed', async () => {
+  const otherThread = baseThread({ slug: 'gateway-502-incident', title: 'the gateway incident', status: 'done' })
+  const ruling = decision(otherThread.id, { title: 'Cap the gateway timeout', outcome: 'at most 3000 ms' })
   const base = baseThread()
-  const thread = baseThread({ spine: { ...base.spine, landed: LANDED_TEXT } })
-  assert.equal(ThreadRecord.parse(thread).ok, true, 'the landed fixture must itself be schema-admissible')
-
-  const lines = renderBriefing(thread, EMPTY_INTEGRITY, null, null).split('\n')
-  const landedHeadingAt = lines.indexOf('**Landed:**')
-  const landedTextAt = lines.indexOf(`> ${LANDED_TEXT}`)
-  const nextStepAt = lines.indexOf('**Next step:**')
-
-  assert.ok(
-    landedHeadingAt > -1,
-    `the briefing must carry a landed block, or what has already landed is invisible to the next session; got ${JSON.stringify(lines)}`
-  )
-  assert.ok(
-    landedTextAt > landedHeadingAt,
-    `the stored landed text must render under the landed heading, got the heading at ${landedHeadingAt} and the text at ${landedTextAt}`
-  )
-  assert.ok(
-    nextStepAt > landedTextAt,
-    `the briefing must read state then action: landed before the next step, got landed at ${landedHeadingAt} and the next step at ${nextStepAt}`
-  )
-})
-
-test('briefing.renders-the-continuation-rule', () => {
-  const thread = baseThread()
-  assert.equal(ThreadRecord.parse(thread).ok, true, 'the continuation-rule fixture must itself be schema-admissible')
-
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-
-  assert.ok(
-    rendered.includes(CONTINUATION_RULE),
-    `the briefing must state verbatim how the artifacts and the goals are to be used; got ${JSON.stringify(rendered)}`
-  )
-})
-
-test('briefing.a-retired-artifact-renders-nowhere', () => {
-  const live = { id: rt.ulid(), label: 'the route being followed', pointer: 'docs/plans/live.md', retired: false }
-  const retired = { id: rt.ulid(), label: 'the route already abandoned', pointer: 'docs/plans/retired.md', retired: true }
-  const thread = baseThread({ artifacts: [live, retired] })
-  assert.equal(ThreadRecord.parse(thread).ok, true, 'the artifact retirement fixture must itself be schema-admissible')
-
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-
-  assert.ok(
-    rendered.split('\n').includes(`- ${live.label}: ${live.pointer}`),
-    `a live artifact must still render in full, or this test would pass against a renderer that drops every artifact; got ${JSON.stringify(rendered)}`
-  )
-  assert.equal(
-    rendered.includes(retired.label),
-    false,
-    `a retired artifact must not render its label, or the briefing keeps pointing at a route the thread has left; got ${JSON.stringify(rendered)}`
-  )
-  assert.equal(
-    rendered.includes(retired.pointer),
-    false,
-    `a retired artifact must not render its pointer; got ${JSON.stringify(rendered)}`
-  )
-})
-
-test('briefing.a-retired-risk-renders-nowhere', () => {
-  const base = baseThread()
-  const live = risk({ text: 'a risk the thread is still carrying' })
-  const retired = risk({ text: 'a risk that has since been retired', retired: true })
-  const thread = baseThread({ spine: { ...base.spine, open_risks: [live, retired] } })
-  assert.equal(ThreadRecord.parse(thread).ok, true, 'the risk retirement fixture must itself be schema-admissible')
-
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-
-  assert.ok(
-    rendered.split('\n').includes(`- ${live.id} ${live.text}`),
-    `a live risk must still render in full, or this test would pass against a renderer that drops every risk; got ${JSON.stringify(rendered)}`
-  )
-  assert.equal(
-    rendered.includes(retired.text),
-    false,
-    `a retired risk must not render its text, or a settled worry keeps costing the next session attention; got ${JSON.stringify(rendered)}`
-  )
-  assert.equal(
-    rendered.includes(retired.id),
-    false,
-    `a retired risk must not render its id; got ${JSON.stringify(rendered)}`
-  )
-})
-
-test('briefing.a-risk-whose-criterion-no-longer-exists-stays-in-view-when-the-next-step-names-a-goal', () => {
-  const focusGoal = criterion({ ordinal: 1, text: 'the queue drains under load' })
-  const otherGoal = criterion({ ordinal: 2, text: 'the cache stays warm' })
-  const thread = baseThread({
-    completion_criteria: [focusGoal, otherGoal],
-    spine: {
-      ...baseThread().spine,
-      next_step: 'drain the queue under load',
-      next_step_criterion_id: focusGoal.id,
-      open_risks: [
-        risk({ text: 'the risk on the goal in focus', criterion_id: focusGoal.id }),
-        risk({ text: 'the risk on the other open goal', criterion_id: otherGoal.id }),
-        risk({ text: 'the risk whose goal is gone', criterion_id: rt.ulid() })
-      ]
-    }
-  })
-
-  const rendered = renderBriefing(thread, EMPTY_INTEGRITY, null, null)
-
-  assert.ok(rendered.includes('the risk on the goal in focus'), rendered)
-  assert.ok(rendered.includes('the risk whose goal is gone'), `a risk anchored to a criterion the thread no longer holds bears on nothing narrower, so it stays in view:\n${rendered}`)
-  assert.ok(!rendered.includes('the risk on the other open goal'), rendered)
-  assert.ok(rendered.includes('- 1 more risk on other open goals'), rendered)
+  const thread: Thread = { ...base, spine: { ...base.spine, next_step_records: [ruling.id] } }
+  const rendered = await briefingOf(thread, null, [
+    { kind: 'thread', record: otherThread },
+    { kind: 'decision', record: ruling }
+  ])
+  assert.ok(rendered.includes(`Decision ${ruling.id} (thread gateway-502-incident, done)`), rendered)
+  assert.ok(rendered.includes('Outcome: at most 3000 ms'), rendered)
+  const otherAt = rendered.indexOf(OTHER_RECORDS_HEADING)
+  assert.equal(rendered.slice(otherAt).includes(ruling.id), false, 'a record on another thread is never listed')
 })

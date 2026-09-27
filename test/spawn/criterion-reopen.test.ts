@@ -53,7 +53,7 @@ const assertOkResult = (label: string, result: CallToolResult): void => {
 }
 
 const FIRST_CRITERION_TEXT = 'the reopen operation lands with its refusals'
-const SECOND_CRITERION_TEXT = 'the briefing keeps every other goal out of the narrowed view'
+const SECOND_CRITERION_TEXT = 'the other goal stays listed beside the reopened one'
 const EARLIER_RESULT = '436 tests, 0 fail, exit 0'
 
 type ReopenFixture = { threadId: string; criterionId: string; otherCriterionId: string; decisionId: string }
@@ -128,7 +128,10 @@ test('amend_criteria.reopens-a-done-criterion-keeping-its-id-and-its-earlier-res
     await markDone(fx, threadId, criterionId, EARLIER_RESULT)
 
     const doneBriefing = await briefingOf(fx, threadId)
-    assert.ok(doneBriefing.includes('[done]'), 'expected the criterion to render as done before the reopen')
+    assert.ok(
+      doneBriefing.includes(`- criterion ${criterionId}: c1 [done]`),
+      `expected the criterion to render as done before the reopen; briefing was:\n${doneBriefing}`
+    )
 
     const reopened = await callTool(fx, 'amend_criteria', {
       thread_id: threadId,
@@ -142,12 +145,22 @@ test('amend_criteria.reopens-a-done-criterion-keeping-its-id-and-its-earlier-res
     assert.equal(structured.operation, 'reopen')
     assert.equal(structured.criterion_id, criterionId, 'a reopen keeps the criterion id it was given')
 
+    const named = await callTool(fx, 'update_thread', {
+      thread_id: threadId,
+      next_step: 'check the reopened criterion against its earlier result',
+      next_step_records: [criterionId]
+    })
+    assertOkResult('update_thread next_step (criterion-reopen arrange)', named)
+
     const briefing = await briefingOf(fx, threadId)
-    assert.ok(briefing.includes(`(id ${criterionId})`), 'expected the reopened criterion to keep its id in the briefing')
-    assert.ok(briefing.includes('[reopened]'), 'expected the reopened criterion to render as reopened rather than done')
-    assert.ok(!briefing.includes('[done]'), 'expected no criterion on this thread to render as done after the reopen')
     assert.ok(
-      briefing.includes(`- result: ${EARLIER_RESULT} (verified)`),
+      briefing.includes(`Criterion ${criterionId} `),
+      `expected the reopened criterion to keep its id in the briefing; briefing was:\n${briefing}`
+    )
+    assert.ok(briefing.includes(', c1 reopened, '), 'expected the reopened criterion to render as reopened rather than done')
+    assert.ok(!briefing.includes('[done]') && !briefing.includes(' done, '), 'expected no criterion on this thread to render as done after the reopen')
+    assert.ok(
+      briefing.includes(`Result: ${EARLIER_RESULT} (verified)`),
       `expected the earlier result to stay readable beside the reopened criterion; briefing was:\n${briefing}`
     )
   })
@@ -194,9 +207,9 @@ test('amend_criteria.refuses-a-reopen-of-a-criterion-that-is-not-done', async ()
   })
 })
 
-test('amend_criteria.returns-a-risk-and-a-next-step-anchored-to-a-reopened-criterion-to-the-live-view', async () => {
+test('amend_criteria.a-reopened-criterion-a-stored-next-step-names-shows-in-full-beside-every-live-risk', async () => {
   await withFixture(async (fx) => {
-    const { threadId, criterionId, otherCriterionId, decisionId } = await openReopenFixture(fx, 'reopen-restores-lanes')
+    const { threadId, criterionId, otherCriterionId, decisionId } = await openReopenFixture(fx, 'reopen-keeps-risks-listed')
 
     const anchored = await callTool(fx, 'update_thread', {
       thread_id: threadId,
@@ -208,22 +221,22 @@ test('amend_criteria.returns-a-risk-and-a-next-step-anchored-to-a-reopened-crite
     assertOkResult('update_thread risks_add (criterion-reopen arrange)', anchored)
     storeNextStepCriterion(fx, threadId, criterionId)
 
-    const liveBefore = await briefingOf(fx, threadId)
-    assert.ok(liveBefore.includes('**Open risks:**'), 'expected the anchored risk to start under Open risks')
-    assert.ok(
-      liveBefore.includes('the reopen path is untested end to end'),
-      'expected the anchored risk to be live before the criterion is marked done'
-    )
+    const anchoredRiskLine = `: the reopen path is untested end to end (bears on criterion ${criterionId})`
+    const otherRiskLine = `: the other goal has its own hazard (bears on criterion ${otherCriterionId})`
+    const assertBothRisksListed = (briefing: string, moment: string): void => {
+      assert.ok(briefing.includes(anchoredRiskLine), `expected the anchored risk to be listed ${moment}; briefing was:\n${briefing}`)
+      assert.ok(briefing.includes(otherRiskLine), `expected the other goal's risk to be listed ${moment}; briefing was:\n${briefing}`)
+    }
+
+    const before = await briefingOf(fx, threadId)
+    assertBothRisksListed(before, 'before the criterion is marked done')
+    assert.ok(before.includes(`Criterion ${criterionId} `), 'expected the stored next step criterion to be shown in full')
 
     await markDone(fx, threadId, criterionId, EARLIER_RESULT)
 
-    const settled = await briefingOf(fx, threadId)
-    const settledHeadingIndex = settled.indexOf('**Settled items')
-    assert.notEqual(settledHeadingIndex, -1, 'expected marking the criterion done to open a settled lane')
-    assert.ok(
-      settled.indexOf('the reopen path is untested end to end') > settledHeadingIndex,
-      `expected the anchored risk to fall into the settled lane once its criterion is done; briefing was:\n${settled}`
-    )
+    const done = await briefingOf(fx, threadId)
+    assertBothRisksListed(done, 'once its criterion is done, because the briefing has no settled lane')
+    assert.equal(done.includes('**Settled items'), false, 'expected no settled lane in the briefing')
 
     const reopened = await callTool(fx, 'amend_criteria', {
       thread_id: threadId,
@@ -234,22 +247,10 @@ test('amend_criteria.returns-a-risk-and-a-next-step-anchored-to-a-reopened-crite
     assertOkResult('amend_criteria reopen', reopened)
 
     const after = await briefingOf(fx, threadId)
-    const openHeadingIndex = after.indexOf('**Open risks:**')
-    assert.notEqual(openHeadingIndex, -1, 'expected Open risks to return once the criterion is reopened')
-    const riskIndex = after.indexOf('the reopen path is untested end to end')
-    assert.notEqual(riskIndex, -1, 'expected the anchored risk to return to the briefing')
+    assertBothRisksListed(after, 'after the reopen, because the briefing narrows nothing by criterion')
     assert.ok(
-      riskIndex > openHeadingIndex,
-      `expected the anchored risk to render under Open risks after the reopen; briefing was:\n${after}`
-    )
-    const afterSettledIndex = after.indexOf('**Settled items')
-    assert.ok(
-      afterSettledIndex === -1 || riskIndex < afterSettledIndex,
-      `expected the anchored risk to sit before any settled lane after the reopen; briefing was:\n${after}`
-    )
-    assert.ok(
-      !after.includes('the other goal has its own hazard'),
-      `expected the briefing to narrow to the reopened criterion the next step names; briefing was:\n${after}`
+      after.includes(`Criterion ${criterionId} `) && after.includes(', c1 reopened, '),
+      `expected the stored next step criterion to be shown in full as reopened; briefing was:\n${after}`
     )
   })
 })

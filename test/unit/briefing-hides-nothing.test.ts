@@ -3,23 +3,20 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import * as ts from 'typescript'
-import { renderBriefing, renderBriefingWithPasses, RISK_TEXT_FLOOR, type DecisionIntegrity } from '../../src/render/briefing.ts'
-import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
+import { renderStepBriefing } from '../../src/render/briefing.ts'
+import { CLIP_MARKER } from '../../src/render/clip.ts'
 import { escapeStored } from '../../src/render/escape.ts'
 import { ThreadRecord, type Thread, type Criterion } from '../../src/schema/thread.ts'
-import type { SessionEntry } from '../../src/schema/session.ts'
-import * as caps from '../../src/schema/caps.ts'
+import type { Runtime } from '../../src/runtime/runtime.ts'
+import { openStore } from '../../src/store/records.ts'
 import { testRuntime } from '../support/runtime.ts'
+import { withCriterionFixture } from '../support/criterion-fixture.ts'
 import { census, type Classified } from '../support/census.ts'
 import { REBUILD_ROOT, forEachDescendant, lineOf, loadSourceProgram, relativeToRoot, sourceFileFor } from '../support/source-census.ts'
 
 const rt = testRuntime()
 
-const FORMER_THREAD_TITLE_MAX = 200
-const FORMER_CRITERION_TEXT_MAX = 500
-const FORMER_CRITERION_CHECK_MAX = 500
-
-const EMPTY_INTEGRITY: DecisionIntegrity = { resolved: 0, dangling: [], quarantined: [] }
+const LONGER_THAN_ANY_FORMER_CLIP = 1000
 
 type SliceSite = { file: string; line: number; expression: string; discardsElements: boolean }
 
@@ -258,200 +255,74 @@ const threadOf = (overrides: Partial<Thread> = {}): Thread => ({
   ...overrides
 })
 
-test('briefing.a-render-that-fits-its-budget-is-clipped-nowhere', () => {
-  const predecessor = threadOf({ title: ESCAPE_EXPANDING_CHAR.repeat(FORMER_THREAD_TITLE_MAX), status: 'done' })
+const stepBriefingIn = (fixtureRt: Runtime, thread: Thread): string => {
+  const opened = openStore(fixtureRt, fixtureRt.cwd)
+  if (!opened.ok) throw new Error(`briefing-hides-nothing fixture: the store did not open: ${opened.message}`)
+  const committed = opened.value.commit([{ kind: 'thread', record: thread }], 'test: seed the hides nothing fixture thread')
+  if (!committed.ok) throw new Error(`briefing-hides-nothing fixture: the thread did not commit: ${committed.detail}`)
+  return renderStepBriefing(opened.value, thread, null)
+}
+
+test('briefing.a-render-is-clipped-nowhere-however-far-the-escape-expands-its-text', async () => {
+  const expanding = ESCAPE_EXPANDING_CHAR.repeat(LONGER_THAN_ANY_FORMER_CLIP)
+  const criterion = criterionOf({ ordinal: 1, text: expanding, check: expanding, settledness: 'proposed' })
+  const riskId = rt.ulid()
+  const noteId = rt.ulid()
   const thread = threadOf({
-    predecessor_id: predecessor.id,
-    completion_criteria: [
-      criterionOf({
-        ordinal: 1,
-        text: ESCAPE_EXPANDING_CHAR.repeat(FORMER_CRITERION_TEXT_MAX),
-        check: ESCAPE_EXPANDING_CHAR.repeat(FORMER_CRITERION_CHECK_MAX)
-      })
-    ],
+    title: expanding,
+    blocked_by: expanding,
+    completion_criteria: [criterion],
     spine: {
-      active_goal: 'g',
-      next_step: 'n',
+      active_goal: expanding,
+      next_step: expanding,
       landed: '',
-      last_session: 'l',
-      open_risks: [
-        {
-          id: rt.ulid(),
-          scope: 's',
-          text: ESCAPE_EXPANDING_CHAR.repeat(RISK_TEXT_FLOOR),
-          refs: [],
-          retired: false
-        }
-      ],
+      last_session: '',
+      open_risks: [{ id: riskId, scope: 's', text: expanding, refs: [], retired: false }],
       key_decisions: [],
-      out_of_scope: []
+      out_of_scope: [{ id: noteId, text: expanding }]
     }
   })
   assert.equal(ThreadRecord.parse(thread).ok, true, 'the escape-expanding fixture must itself be schema-admissible')
 
-  const render = renderBriefingWithPasses(thread, EMPTY_INTEGRITY, null, predecessor)
+  await withCriterionFixture(async (fixtureRt) => {
+    const briefing = stepBriefingIn(fixtureRt, thread)
+    const escaped = escapeStored(expanding)
+    const lines = briefing.split('\n')
 
-  assert.equal(render.withinBudget, true, 'this fixture must fit its budget, or it says nothing about a render that fits')
-  const criterionText = thread.completion_criteria[0]?.text
-  const riskText = thread.spine.open_risks[0]?.text
-  if (criterionText === undefined || riskText === undefined) {
-    throw new Error('the escape-expanding fixture must carry one criterion and one risk, or there is no full render to check')
-  }
-  assert.ok(
-    render.briefing.includes(escapeStored(criterionText)),
-    'a briefing that fits its budget must render the whole criterion text, however far the escape expands it'
-  )
-  assert.ok(
-    render.briefing.includes(escapeStored(riskText)),
-    'a briefing that fits its budget must render the whole risk text, however far the escape expands it'
-  )
-  assert.ok(
-    render.briefing.includes(escapeStored(predecessor.title)),
-    'a briefing that fits its budget must render the whole predecessor title, which no fixed limit may shorten'
-  )
-  assert.equal(
-    render.briefing.includes(CLIP_MARKER),
-    false,
-    'a briefing that fits its budget must carry no clip marker'
-  )
-  assert.equal(
-    render.briefing.includes('**Not shown:**'),
-    false,
-    'a briefing that fits its budget must carry no not-shown block'
-  )
-  assert.equal(render.passes, 1, 'a briefing that fits its budget must never enter the clip search')
+    assert.ok(escaped.length > expanding.length, 'the fixture text must expand under the escape, or it proves nothing about the escaped length')
+    assert.ok(lines.includes(`**Thread:** ${escaped}`), 'the briefing must render the whole title')
+    assert.ok(lines.includes(`**Blocked:** ${escaped}`), 'the briefing must render the whole blockage')
+    assert.ok(lines.includes(`> ${escaped}`), 'the briefing must render the whole goal and next step')
+    assert.ok(lines.includes(`- risk ${riskId}: ${escaped} (bears on the whole thread)`), 'the briefing must list the whole risk text')
+    assert.ok(
+      lines.includes(`- criterion ${criterion.id}: c1 [open] [proposed] ${escaped}`),
+      'the briefing must list the whole criterion text'
+    )
+    assert.ok(lines.includes(`- out-of-scope ${noteId}: ${escaped}`), 'the briefing must list the whole out-of-scope text')
+    assert.equal(briefing.includes(CLIP_MARKER), false, 'the briefing must carry no clip marker')
+    assert.equal(briefing.includes('**Not shown:**'), false, 'the briefing must carry no not-shown block')
+  })
 })
 
-const FORMER_CRITERION_RESULT_MAX = 1000
-
-const SHORTENING_FIXTURE_SESSION_ENTRY_COUNT = 10
-const SHORTENING_FIXTURE_SESSION_BODY_LENGTH = caps.SESSION_BODY_MAX
-const SHORTENING_FIXTURE_CRITERION_RESULT_LENGTH = FORMER_CRITERION_RESULT_MAX
-
-const CRITERION_TEXT_PATTERN =
-  /^- c\d+ \[(?:open|done|struck)\] \[(?:confirmed|proposed|unsettled)\]: (.*) \(id [0-9A-HJKMNP-TV-Z]{26}\)$/
-const RISK_TEXT_PATTERN = /^- [0-9A-HJKMNP-TV-Z]{26} (.*)$/
-const SETTLED_RISK_TEXT_PATTERN = /^- risk [0-9A-HJKMNP-TV-Z]{26} (.*)$/
-const SETTLED_DECISION_TEXT_PATTERN = /^- decision [0-9A-HJKMNP-TV-Z]{26} (.*)$/
-const SUCCEEDS_TITLE_PATTERN = /^- succeeds: (.*) \([^)]*\)$/
-const CHECK_TEXT_PATTERN = /^ {2}- check: (.*)$/
-const RESULT_TEXT_PATTERN = /^ {2}- result: (.*) \([^)]*\)$/
-const BLOCKQUOTE_LINE_PATTERN = /^> (.*)$/
-
-const SHORTENABLE_VALUE_PATTERNS = [
-  CRITERION_TEXT_PATTERN,
-  RISK_TEXT_PATTERN,
-  SETTLED_RISK_TEXT_PATTERN,
-  SETTLED_DECISION_TEXT_PATTERN,
-  SUCCEEDS_TITLE_PATTERN,
-  CHECK_TEXT_PATTERN,
-  RESULT_TEXT_PATTERN,
-  BLOCKQUOTE_LINE_PATTERN
-]
-
-const storedValueOf = (line: string): string | null => {
-  for (const pattern of SHORTENABLE_VALUE_PATTERNS) {
-    const match = pattern.exec(line)
-    if (match !== null && match[1] !== undefined) return match[1]
-  }
-  return null
-}
-
-test('briefing.every-shortened-value-carries-the-marker-inside-its-own-limit', () => {
-  const metCriterion = criterionOf({
+test('briefing.a-criterion-marked-done-renders-its-result-and-the-status-of-that-result', async () => {
+  const criterion = criterionOf({
     ordinal: 1,
     text: 'the store defect is closed',
     done: true,
-    result: 'r'.repeat(SHORTENING_FIXTURE_CRITERION_RESULT_LENGTH),
-    result_status: 'verified'
+    check: 'npm test',
+    result: 'the reproduction could not be run in this environment',
+    result_status: 'unverified-reasoned'
   })
-  const thread = threadOf({ completion_criteria: [metCriterion] })
-  assert.equal(ThreadRecord.parse(thread).ok, true, 'the shortening fixture must itself be schema-admissible')
-
-  const entryIds = Array.from({ length: SHORTENING_FIXTURE_SESSION_ENTRY_COUNT }, () => rt.ulid()).sort()
-  const sessionEntries: SessionEntry[] = entryIds.map((id) => ({
-    id,
-    thread_id: thread.id,
-    actor: 'claude',
-    body: 'x'.repeat(SHORTENING_FIXTURE_SESSION_BODY_LENGTH),
-    created_at: rt.now()
-  }))
-
-  const render = renderBriefingWithPasses(thread, EMPTY_INTEGRITY, null, null, true, sessionEntries)
-  assert.ok(render.passes > 1, 'this fixture must enter the clip search, or nothing was shortened')
-  assert.equal(render.withinBudget, true, 'the clip search must land this fixture inside its budget')
-
-  const marked = render.briefing
-    .split('\n')
-    .filter((line) => line.includes(CLIP_MARKER))
-    .filter((line) => !line.startsWith('- some text on this briefing was shortened'))
-  assert.ok(marked.length > 0, 'the clip search must have shortened at least one value')
-
-  for (const line of marked) {
-    assert.equal(line.split(CLIP_MARKER).length - 1, 1, `the marker must appear once on a shortened line, got: ${line}`)
-    const value = storedValueOf(line)
-    assert.notEqual(value, null, `a line carrying the marker must be a value line this test can read: a criterion, risk, settled item, predecessor title, check, result, or any blockquote line, which is every shape a stored value reaches the page in. Got: ${line}`)
-    assert.ok((value as string).endsWith(CLIP_MARKER), `a shortened value must end with the marker, got: ${value as string}`)
-    assert.ok(
-      (value as string).length > CLIP_MARKER_GRAPHEMES,
-      `a shortened value must keep some of its own text beside the marker, got: ${value as string}`
-    )
-  }
-
-  assert.ok(
-    render.briefing.includes(
-      '- some text on this briefing was shortened to fit the size budget for one reply; every shortened value ends with ...[shortened]'
-    ),
-    'the not-shown block must say that text was shortened'
-  )
-  assert.ok(
-    render.briefing.includes(`ends with ${CLIP_MARKER}`),
-    'the not-shown bullet must name the same marker the shortened values carry'
-  )
-  assert.ok(
-    render.briefing.includes(`See logbook://thread/${thread.id} for the complete record.`),
-    'a shortened render must carry the address that resolves to the complete record'
-  )
-})
-
-test('briefing.artifacts-render-before-the-spine', () => {
-  const thread = threadOf({
-    artifacts: [{ id: rt.ulid(), label: 'the implementation plan', pointer: 'docs/plans/u5.md', retired: false }]
-  })
-  assert.equal(ThreadRecord.parse(thread).ok, true, 'the artifact fixture must itself be schema-admissible')
-
-  const lines = renderBriefing(thread, EMPTY_INTEGRITY, null, null).split('\n')
-  const artifactsAt = lines.indexOf('**Artifacts:**')
-  const activeGoalAt = lines.indexOf('**Active goal:**')
-
-  assert.notEqual(artifactsAt, -1, 'a thread carrying artifacts must render an artifacts section')
-  assert.equal(lines[artifactsAt + 1], '- the implementation plan: docs/plans/u5.md')
-  assert.ok(artifactsAt < activeGoalAt, 'the artifacts section must render before the spine')
-})
-
-test('briefing.a-criterion-marked-done-renders-its-result-and-the-status-of-that-result', () => {
-  const thread = threadOf({
-    completion_criteria: [
-      criterionOf({
-        ordinal: 1,
-        text: 'the store defect is closed',
-        done: true,
-        check: 'npm test',
-        result: 'the reproduction could not be run in this environment',
-        result_status: 'unverified-reasoned'
-      })
-    ]
-  })
+  const base = threadOf({ completion_criteria: [criterion] })
+  const thread: Thread = { ...base, spine: { ...base.spine, next_step_records: [criterion.id] } }
   assert.equal(ThreadRecord.parse(thread).ok, true, 'the result fixture must itself be schema-admissible')
 
-  const lines = renderBriefing(thread, EMPTY_INTEGRITY, null, null).split('\n')
-  assert.ok(lines.includes('  - check: npm test'))
-  assert.ok(lines.includes('  - result: the reproduction could not be run in this environment (unverified-reasoned)'))
-})
-
-test('briefing.a-criterion-with-no-check-or-result-renders-not-recorded-never-blank', () => {
-  const thread = threadOf({ completion_criteria: [criterionOf({ ordinal: 1, text: 'a goal', done: true })] })
-  const lines = renderBriefing(thread, EMPTY_INTEGRITY, null, null).split('\n')
-  assert.ok(lines.includes('  - check: not recorded'))
-  assert.ok(lines.includes('  - result: not recorded (not recorded)'))
+  await withCriterionFixture(async (fixtureRt) => {
+    const lines = stepBriefingIn(fixtureRt, thread).split('\n')
+    assert.ok(lines.includes('Check: npm test'), `the named criterion must render its check, got:\n${lines.join('\n')}`)
+    assert.ok(
+      lines.includes('Result: the reproduction could not be run in this environment (unverified-reasoned)'),
+      `the named criterion must render its result and the status of that result, got:\n${lines.join('\n')}`
+    )
+  })
 })

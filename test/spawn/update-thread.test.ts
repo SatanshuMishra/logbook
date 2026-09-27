@@ -762,19 +762,19 @@ const briefingFor = async (fx: Fixture, threadId: string): Promise<string> => {
   return (resumed.structuredContent as { briefing: string }).briefing
 }
 
-test('update_thread.a-stored-next-step-criterion-narrows-the-briefing-to-its-risks', async () => {
+test('update_thread.a-stored-next-step-criterion-shows-in-full-and-narrows-no-risk-away', async () => {
   await withFixture(async (fx) => {
     const opened = await openTwoGoalThreadWithRisks(fx, 'next-step-focus-thread')
-    storeNextStepCriterion(fx, opened.threadId, criterionAt(opened, 0))
+    const firstGoal = criterionAt(opened, 0)
+    storeNextStepCriterion(fx, opened.threadId, firstGoal)
 
     const briefing = await briefingFor(fx, opened.threadId)
-    assert.ok(briefing.includes(RISK_ON_FIRST_GOAL), `the briefing must show the risk on the goal the stored next step advances:\n${briefing}`)
-    assert.ok(briefing.includes(RISK_ON_WHOLE_THREAD), `the briefing must show the whole-thread risk:\n${briefing}`)
-    assert.ok(!briefing.includes(RISK_ON_SECOND_GOAL), `the briefing must not show a risk on another open goal:\n${briefing}`)
-    assert.ok(
-      briefing.includes(`- 1 more risk on other open goals; see logbook://thread/${opened.threadId} for the complete record`),
-      `the briefing must count the risk it did not show and say where to read it:\n${briefing}`
-    )
+    const needs = briefing.slice(briefing.indexOf('**What this step needs:**'), briefing.indexOf('**Other records on this thread**'))
+    assert.ok(needs.includes(`Criterion ${firstGoal} `), `the criterion the stored next step names must be shown in full:\n${briefing}`)
+    assert.ok(briefing.includes(RISK_ON_FIRST_GOAL), `the briefing must list the risk on the goal the stored next step advances:\n${briefing}`)
+    assert.ok(briefing.includes(RISK_ON_WHOLE_THREAD), `the briefing must list the whole-thread risk:\n${briefing}`)
+    assert.ok(briefing.includes(RISK_ON_SECOND_GOAL), `the briefing must list the risk on another open goal too:\n${briefing}`)
+    assert.ok(!briefing.includes('on other open goals'), `the briefing must count nothing as hidden:\n${briefing}`)
   })
 })
 

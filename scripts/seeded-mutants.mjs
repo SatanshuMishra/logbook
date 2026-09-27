@@ -15,24 +15,24 @@ export const MUTANTS = [
     caughtBy: 'test/unit/**/*.test.ts'
   },
   {
-    name: 'an-over-budget-render-reports-itself-as-fitting',
-    file: 'src/render/briefing.ts',
-    find: 'briefing.length <= BRIEFING_MAX_CHARS &&',
-    replace: 'briefing.length <= BRIEFING_MAX_CHARS ||',
+    name: 'a-superseded-decision-is-matched-by-file-name',
+    file: 'src/domain/record-index.ts',
+    find: "record.live && (record.kind === 'decision' || record.kind === 'risk')",
+    replace: "(record.live || record.kind === 'decision') && (record.kind === 'decision' || record.kind === 'risk')",
     caughtBy: 'test/unit/**/*.test.ts'
   },
   {
-    name: 'risk-text-clips-below-its-guaranteed-floor',
-    file: 'src/render/briefing.ts',
-    find: 'risk: Math.max(perItemClip, RISK_TEXT_FLOOR),',
-    replace: 'risk: Math.min(perItemClip, RISK_TEXT_FLOOR),',
+    name: 'resolving-record-ids-drops-the-first-found-record',
+    file: 'src/domain/record-index.ts',
+    find: 'found: distinct.flatMap((id) => {',
+    replace: 'found: distinct.slice(1).flatMap((id) => {',
     caughtBy: 'test/unit/**/*.test.ts'
   },
   {
-    name: 'the-first-live-risk-is-never-rendered',
+    name: 'the-first-other-record-on-the-thread-is-never-listed',
     file: 'src/render/briefing.ts',
-    find: 'const riskBlocks = risks.live.map((item) => renderRiskBlock(item, renderClip))',
-    replace: 'const riskBlocks = risks.live.slice(1).map((item) => renderRiskBlock(item, renderClip))',
+    find: 'otherRecords.map((record) => renderOtherRecordLine(record))',
+    replace: 'otherRecords.filter((_record, position) => position > 0).map((record) => renderOtherRecordLine(record))',
     caughtBy: 'test/unit/**/*.test.ts'
   }
 ]

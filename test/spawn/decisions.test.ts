@@ -299,7 +299,11 @@ test('decision.outcome-body-is-absent-from-both-briefing-surfaces', async () => 
       }
     })) as CallToolResult
     assertOkResult('record_decision (auto-link)', recorded)
-    const recordedStructured = recorded.structuredContent as { linked: boolean; link_skipped_reason: string | null }
+    const recordedStructured = recorded.structuredContent as {
+      decision_id: string
+      linked: boolean
+      link_skipped_reason: string | null
+    }
     assert.equal(recordedStructured.linked, true, 'a decision on an ordinary thread must be linked by the same call')
     assert.equal(recordedStructured.link_skipped_reason, null)
 
@@ -309,25 +313,17 @@ test('decision.outcome-body-is-absent-from-both-briefing-surfaces', async () => 
     })) as CallToolResult
     assertOkResult('resume_thread (briefing)', resumed)
     const briefing = (resumed.structuredContent as { briefing: string }).briefing
-    const lines = briefing.split('\n')
 
-    const keyDecisionsAt = lines.indexOf('**Key decisions:**')
-    const decisionsAt = lines.indexOf('**Decisions:**')
-    assert.notEqual(keyDecisionsAt, -1, 'the briefing must carry a Key decisions section')
-    assert.notEqual(decisionsAt, -1, 'the briefing must carry a Decisions section')
-    const keyDecisionLine = lines[keyDecisionsAt + 1]
     assert.ok(
-      keyDecisionLine !== undefined && keyDecisionLine.startsWith('- link decisions into the spine automatically (decision '),
-      `the Key decisions section must carry the decision title with no intervening update_thread call, got: ${String(keyDecisionLine)}`
-    )
-    assert.ok(
-      keyDecisionLine !== undefined && /\(decision [0-9A-HJKMNP-TV-Z]{26}\)$/.test(keyDecisionLine),
-      `the Key decisions section must carry the decision id beside the title, got: ${String(keyDecisionLine)}`
+      briefing
+        .split('\n')
+        .includes(`- decision ${recordedStructured.decision_id}: link decisions into the spine automatically`),
+      `the briefing must list a decision the next step does not name as one line carrying its id and title, got:\n${briefing}`
     )
     assert.equal(
       briefing.includes(DECISION_OUTCOME_SENTINEL),
       false,
-      'resume_thread must never inline a decision outcome body into the briefing it returns'
+      'resume_thread must never inline the outcome of a decision the next step does not name'
     )
 
     const resourceRead = await fx.spawned.client.readResource({ uri: `logbook://thread/${threadId}` })
