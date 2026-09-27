@@ -7,7 +7,7 @@ import { controlledEnv, freshPluginDataDir, freshTmpDir, runHookProcess } from '
 
 const RESUME_TOOL_USE_ID = 'toolu_stop_gate_block_reason_length'
 const FINAL_LINE = 'FINAL-LINE-MARKER-2f8a6c1e9d3b47a0a5c0e1f9d2b6c7a4'
-const BRIEFING_CHARS = 40000
+const BRIEFING_CHARS = 100000
 const FORMER_TRANSPORT_CLIP_GRAPHEMES = 14000
 const BRIEFING_SEPARATOR_CHARS = 1
 const FILLER_LINE_LENGTH = BRIEFING_CHARS - FINAL_LINE.length - BRIEFING_SEPARATOR_CHARS
