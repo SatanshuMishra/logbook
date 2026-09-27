@@ -128,15 +128,6 @@
       "status": "CAPTURED",
       "clientVersion": "2.1.241",
       "capturedFrom": "scratchpad/probe/run2/out/hooks-Stop.jsonl"
-    },
-    {
-      "file": "subagent-stop.json",
-      "event": "SubagentStop",
-      "type": "SubagentStopEvent",
-      "status": "CAPTURED",
-      "clientVersion": "2.1.260",
-      "capturedFrom": "/tmp/subagent-stop-capture.77163.json",
-      "note": "last_assistant_message was shortened from the original capture; capturedFrom is a machine-local temp path from an ad hoc capture, not a numbered probe run"
     }
   ]
 }

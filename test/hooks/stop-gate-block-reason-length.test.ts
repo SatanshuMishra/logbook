@@ -4,12 +4,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { controlledEnv, freshPluginDataDir, freshTmpDir, runHookProcess } from './hook-process.ts'
-import { BRIEFING_MAX_CHARS } from '../../src/render/briefing.ts'
 
 const RESUME_TOOL_USE_ID = 'toolu_stop_gate_block_reason_length'
 const FINAL_LINE = 'FINAL-LINE-MARKER-2f8a6c1e9d3b47a0a5c0e1f9d2b6c7a4'
+const BRIEFING_CHARS = 100000
+const FORMER_TRANSPORT_CLIP_GRAPHEMES = 14000
 const BRIEFING_SEPARATOR_CHARS = 1
-const FILLER_LINE_LENGTH = BRIEFING_MAX_CHARS - FINAL_LINE.length - BRIEFING_SEPARATOR_CHARS
+const FILLER_LINE_LENGTH = BRIEFING_CHARS - FINAL_LINE.length - BRIEFING_SEPARATOR_CHARS
 
 const assistantEntry = (content: Record<string, unknown>[]): Record<string, unknown> => ({
   type: 'assistant',
@@ -41,7 +42,11 @@ test('hook.stop-gate-block-message-carries-the-briefing-to-its-final-line', () =
   const transcriptDir = mkdtempSync(join(tmpdir(), 'logbook-stop-block-reason-transcript-'))
   try {
     const briefing = buildOversizedBriefing()
-    assert.ok(briefing.length > 10000, 'the fixture briefing must itself exceed the field clip so the test binds anything')
+    assert.equal(briefing.length, BRIEFING_CHARS)
+    assert.ok(
+      briefing.length > FORMER_TRANSPORT_CLIP_GRAPHEMES,
+      'the fixture briefing must itself exceed the former transport clip so the test binds anything'
+    )
 
     const transcriptPath = join(transcriptDir, 'transcript.jsonl')
     writeUnechoedResumeTranscript(transcriptPath, briefing)

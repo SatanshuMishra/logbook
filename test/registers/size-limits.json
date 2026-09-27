@@ -22,7 +22,7 @@
     "site": "hooks/lib/io.ts:7",
     "value": 14000,
     "basis": "chosen",
-    "reason": "14,000 is a chosen display ceiling, not a bound. The block reason is a 227-char prefix at src/hooklib/stop-gate.ts:51-54, and the briefing itself has no finite upper bound since session entries render one line each with no count cap (src/domain/session-log.ts:12-18). 14,000 clears the 12,000-char render target at src/render/briefing.ts:17 plus that prefix, which is what an ordinary thread produces. A briefing over 14,000 is still silently truncated at hooks/lib/io.ts:49. This ceiling is also the only bound on the thread listing hooks/user-prompt-submit.ts:20 emits straight through from renderThreadListing (src/cli/session-start.ts:31-40), which has no count cap or clip of its own.",
+    "reason": "14,000 is a chosen display ceiling, not a bound. It no longer applies to block messages, which runHook writes whole (hooks/lib/io.ts:67), or to the PreToolUse hook's additionalContext, which clipOutput leaves whole (hooks/lib/io.ts:35-46): Claude Code passes a block message whole and saves hook context over 10,000 characters to a file, showing the session its path and a preview, so the stop gate's verbatim-briefing message and the file trigger's records arrive uncut. It still clips every other string field a hook emits, including the additionalContext of hooks/session-start.ts:14 and hooks/user-prompt-submit.ts:20. This ceiling is the only bound on the thread listing hooks/user-prompt-submit.ts:20 emits straight through from renderThreadListing (src/cli/session-start.ts:31-40), which has no count cap or clip of its own.",
     "mirrors": null,
     "mirror_relation": null
   },

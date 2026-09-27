@@ -12,7 +12,6 @@ export const REQUIRED_FILES = [
   'hooks/session-end.ts',
   'hooks/session-start.ts',
   'hooks/stop.ts',
-  'hooks/subagent-stop.ts',
   'hooks/user-prompt-submit.ts',
   'skills/debrief/SKILL.md',
   'skills/file/SKILL.md',
@@ -51,8 +50,7 @@ export const REQUIRED_HOOK_EVENTS = [
   'PreToolUse',
   'PostToolUse',
   'SessionEnd',
-  'Stop',
-  'SubagentStop'
+  'Stop'
 ]
 
 export const EVENT_HOOK_FILES = {
@@ -61,8 +59,7 @@ export const EVENT_HOOK_FILES = {
   PreToolUse: 'pre-tool-use',
   PostToolUse: 'post-tool-use',
   SessionEnd: 'session-end',
-  Stop: 'stop',
-  SubagentStop: 'subagent-stop'
+  Stop: 'stop'
 }
 
 export const USER_CONFIG_CONSUMER_ROOTS = ['src', 'hooks', 'bin']

@@ -10,7 +10,6 @@ import type * as PreToolUseEntry from '../../hooks/pre-tool-use.ts'
 import type * as PostToolUseEntry from '../../hooks/post-tool-use.ts'
 import type * as SessionEndEntry from '../../hooks/session-end.ts'
 import type * as StopEntry from '../../hooks/stop.ts'
-import type * as SubagentStopEntry from '../../hooks/subagent-stop.ts'
 
 type HookEntryModules = {
   'session-start': typeof SessionStartEntry
@@ -19,7 +18,6 @@ type HookEntryModules = {
   'post-tool-use': typeof PostToolUseEntry
   'session-end': typeof SessionEndEntry
   stop: typeof StopEntry
-  'subagent-stop': typeof SubagentStopEntry
 }
 
 export type HookName = keyof HookEntryModules
@@ -30,8 +28,7 @@ export const EVENT_NAME_OF = {
   'pre-tool-use': 'PreToolUse',
   'post-tool-use': 'PostToolUse',
   'session-end': 'SessionEnd',
-  stop: 'Stop',
-  'subagent-stop': 'SubagentStop'
+  stop: 'Stop'
 } as const satisfies Record<HookName, string>
 
 export const HOOK_NAMES: readonly HookName[] = Object.keys(EVENT_NAME_OF) as readonly HookName[]

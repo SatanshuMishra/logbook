@@ -8,7 +8,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "^(Write|Edit|MultiEdit|NotebookEdit|Bash|mcp__(?:plugin_logbook_)?ledger__[A-Za-z][A-Za-z0-9_]*)$",
+        "matcher": "^(Read|Write|Edit|MultiEdit|NotebookEdit|Bash|mcp__(?:plugin_logbook_)?ledger__[A-Za-z][A-Za-z0-9_]*)$",
         "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.ts\"", "timeout": 10 }]
       }
     ],
@@ -23,9 +23,6 @@
     ],
     "Stop": [
       { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/stop.ts\"", "timeout": 15 }] }
-    ],
-    "SubagentStop": [
-      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/subagent-stop.ts\"", "timeout": 15 }] }
     ]
   }
 }

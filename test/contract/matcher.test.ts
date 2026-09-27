@@ -70,3 +70,16 @@ test('contract.hook-matcher-covers-tools.control.the-historical-unanchored-patte
   const anchored = new RegExp(readPreToolUseMatcherSource())
   assert.equal(anchored.test(substringOnly), false, 'expected the shipped anchored matcher to correctly refuse the same substring match')
 })
+
+const FILE_TOOLS = ['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit'] as const
+const OTHER_TOOLS = ['Glob', 'Grep', 'WebFetch', 'Agent'] as const
+
+test('contract.hook-matcher-fires-for-every-file-tool', () => {
+  const matcher = new RegExp(readPreToolUseMatcherSource())
+  for (const toolName of FILE_TOOLS) {
+    assert.ok(matcher.test(toolName), `expected the PreToolUse matcher to fire on ${toolName}, so the file trigger sees its first touch of a file`)
+  }
+  for (const toolName of OTHER_TOOLS) {
+    assert.equal(matcher.test(toolName), false, `expected the PreToolUse matcher not to fire on ${toolName}`)
+  }
+})
