@@ -6,7 +6,7 @@ import { durableWrite } from '../store/durable-write.ts'
 import { openStore } from '../store/records.ts'
 import { readPointer } from '../domain/pointer.ts'
 import { ledgerPathsChangedSince, readLedgerHead, readResumeBaseline } from './ledger-presence.ts'
-import { collectAssistantTexts, findLastResumeBriefing } from './transcript.ts'
+import { collectAssistantTexts, findLastResumeBriefing, isPickupTurn } from './transcript.ts'
 import { readRecordingGateState, writeRecordingGateState, type RecordingGateState, type ThreadFireState } from './recording-gate-state.ts'
 import { mismatchAssertionsReason, observationFromThread, untouchedAssertionsReason, type ThreadObservation } from './recording-assertions.ts'
 
@@ -184,22 +184,18 @@ const ledgerPresenceVerdict = (rt: Runtime, event: StopEvent, layout: StoreLayou
 
   const reference = fireState !== null ? fireState.head_at_last_fire : baselineHead
 
-  const fire = (reason: string): StopVerdict => {
+  const fire = (reasonFor: (threadId: string, observation: ThreadObservation | null) => string): StopVerdict => {
+    if (isPickupTurn(event.transcript_path, event.prompt_id)) return { kind: 'silent' }
+    const observation = observeThread(rt, layout.projectRoot, threadId)
     recordFire(rt, layout, gateState, event, threadId, head)
-    return { kind: 'block', reason }
+    return { kind: 'block', reason: reasonFor(threadId, observation) }
   }
 
-  if (head === reference) {
-    const observation = observeThread(rt, layout.projectRoot, threadId)
-    return fire(untouchedAssertionsReason(threadId, observation))
-  }
+  if (head === reference) return fire(untouchedAssertionsReason)
 
   const diff = ledgerPathsChangedSince(rt, layout.projectRoot, reference)
   if (!diff.ok) return { kind: 'silent' }
-  if (diff.paths.length === 0) {
-    const observation = observeThread(rt, layout.projectRoot, threadId)
-    return fire(untouchedAssertionsReason(threadId, observation))
-  }
+  if (diff.paths.length === 0) return fire(untouchedAssertionsReason)
 
   const touchesHeldThread = diff.paths.some(
     (changedPath) => changedPath === `threads/${threadId}.json` || changedPath.startsWith(`sessions/${threadId}/`)
@@ -209,8 +205,7 @@ const ledgerPresenceVerdict = (rt: Runtime, event: StopEvent, layout: StoreLayou
     return { kind: 'silent' }
   }
 
-  const observation = observeThread(rt, layout.projectRoot, threadId)
-  return fire(mismatchAssertionsReason(threadId, observation))
+  return fire(mismatchAssertionsReason)
 }
 
 export const stopGateVerdict = (rt: Runtime, event: StopEvent): StopVerdict => {
