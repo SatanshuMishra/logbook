@@ -78,7 +78,7 @@ const stepBriefingIn = (fixtureRt: Runtime, thread: Thread, pointer: Pointer | n
   if (!opened.ok) throw new Error(`briefing-handle fixture: the store did not open: ${opened.message}`)
   const committed = opened.value.commit([{ kind: 'thread', record: thread }], 'test: seed the handle fixture thread')
   if (!committed.ok) throw new Error(`briefing-handle fixture: the thread did not commit: ${committed.detail}`)
-  return renderStepBriefing(opened.value, thread, pointer)
+  return renderStepBriefing(opened.value, thread, pointer, { resolved: 0, dangling: [], quarantined: [] }, 0)
 }
 
 test('handle.carries-the-head-of-the-briefing-and-says-why-it-is-short', () => {

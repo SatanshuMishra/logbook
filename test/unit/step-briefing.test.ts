@@ -96,7 +96,7 @@ const seedSpine = (rt: Runtime, threadId: string, spineOf: (spine: Spine) => Spi
 
 const briefingOf = (rt: Runtime, threadId: string): string => {
   const store = storeOf(rt)
-  return renderStepBriefing(store, threadIn(store, threadId), null)
+  return renderStepBriefing(store, threadIn(store, threadId), null, { resolved: 0, dangling: [], quarantined: [] }, 0)
 }
 
 const between = (text: string, start: string, end: string): string => {
@@ -253,5 +253,41 @@ test('briefing.reads-a-stored-next-step-criterion-as-named', async () => {
       false,
       'a criterion shown in full must not be listed again'
     )
+  })
+})
+
+test('briefing.reports-records-it-could-not-read', async () => {
+  await withCriterionFixture(async (rt) => {
+    const { threadId } = await openThread(rt, 'unreadable', [
+      { text: 'the gateway retries are ruled on', check: 'the ruling names a count', settledness: 'proposed' }
+    ])
+    const missingId = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
+    const danglingId = '01ARZ3NDEKTSV4RRFFQ69G5FAW'
+    const quarantinedId = '01ARZ3NDEKTSV4RRFFQ69G5FAX'
+    seedSpine(rt, threadId, (spine) => ({ ...spine, next_step_records: [missingId] }))
+
+    const store = storeOf(rt)
+    const briefing = renderStepBriefing(
+      store,
+      threadIn(store, threadId),
+      null,
+      { resolved: 0, dangling: [danglingId], quarantined: [quarantinedId] },
+      2
+    )
+    const needs = stepNeedsSection(briefing)
+
+    assert.ok(
+      needs.includes(`Named by this step but not readable now: ${missingId}`),
+      `a named record that cannot be read must be named, not dropped:\n${needs}`
+    )
+    assert.ok(briefing.includes('**Unreadable records:**'), `the briefing must report unreadable records:\n${briefing}`)
+    assert.ok(briefing.includes('- 2 linked decision records could not be read'), `the unreadable decisions must be counted:\n${briefing}`)
+    assert.ok(briefing.includes(`- dangling: ${danglingId}`), `a dangling decision must be named:\n${briefing}`)
+    assert.ok(briefing.includes(`- quarantined: ${quarantinedId}`), `a quarantined decision must be named:\n${briefing}`)
+    assert.ok(
+      briefing.includes('- 2 session log entries on this thread could not be read'),
+      `the unreadable session entries must be counted:\n${briefing}`
+    )
+    assert.equal(briefingOf(rt, threadId).includes('**Unreadable records:**'), false, 'a thread with nothing unreadable shows no such section')
   })
 })

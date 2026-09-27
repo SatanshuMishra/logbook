@@ -49,7 +49,7 @@ const stepBriefingIn = (fixtureRt: Runtime, thread: Thread): string => {
   if (!opened.ok) throw new Error(`briefing-styling-cost fixture: the store did not open: ${opened.message}`)
   const committed = opened.value.commit([{ kind: 'thread', record: thread }], 'test: seed the styling cost fixture thread')
   if (!committed.ok) throw new Error(`briefing-styling-cost fixture: the thread did not commit: ${committed.detail}`)
-  return renderStepBriefing(opened.value, thread, null)
+  return renderStepBriefing(opened.value, thread, null, { resolved: 0, dangling: [], quarantined: [] }, 0)
 }
 
 const boldMarkerCount = (rendered: string): number => {

@@ -130,7 +130,7 @@ const stepBriefingNaming = (rt: Runtime, thread: Thread): string => {
   if (!opened.ok) return halt(`the store did not open: ${opened.message}`)
   const committed = opened.value.commit([{ kind: 'thread', record: named }], 'test: seed the settledness reader fixture')
   if (!committed.ok) return halt(`the fixture thread did not commit: ${committed.detail}`)
-  return renderStepBriefing(opened.value, named, null)
+  return renderStepBriefing(opened.value, named, null, { resolved: 0, dangling: [], quarantined: [] }, 0)
 }
 
 const SURFACES: readonly Surface[] = [

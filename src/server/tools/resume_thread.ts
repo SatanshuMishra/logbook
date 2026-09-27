@@ -88,7 +88,7 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
     const rendersFull = input.full_briefing === true || !readBriefed(rt, layout.value).includes(thread.id)
 
     const briefing = rendersFull
-      ? renderStepBriefing(store, thread, writtenPointer)
+      ? renderStepBriefing(store, thread, writtenPointer, decisionIntegrity, unreadableSessionEntryCount)
       : renderHandle(thread, decisionIntegrity, writtenPointer, unreadableSessionEntryCount)
 
     if (rendersFull) recordBriefed(rt, layout.value, thread.id)

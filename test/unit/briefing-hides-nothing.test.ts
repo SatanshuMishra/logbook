@@ -260,7 +260,7 @@ const stepBriefingIn = (fixtureRt: Runtime, thread: Thread): string => {
   if (!opened.ok) throw new Error(`briefing-hides-nothing fixture: the store did not open: ${opened.message}`)
   const committed = opened.value.commit([{ kind: 'thread', record: thread }], 'test: seed the hides nothing fixture thread')
   if (!committed.ok) throw new Error(`briefing-hides-nothing fixture: the thread did not commit: ${committed.detail}`)
-  return renderStepBriefing(opened.value, thread, null)
+  return renderStepBriefing(opened.value, thread, null, { resolved: 0, dangling: [], quarantined: [] }, 0)
 }
 
 test('briefing.a-render-is-clipped-nowhere-however-far-the-escape-expands-its-text', async () => {

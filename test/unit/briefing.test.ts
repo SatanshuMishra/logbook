@@ -104,7 +104,7 @@ const briefingOf = async (
   const rendered: string[] = []
   await withCriterionFixture(async (fixtureRt) => {
     const store = storeHolding(fixtureRt, [{ kind: 'thread', record: thread }, ...extra])
-    rendered.push(renderStepBriefing(store, thread, pointer))
+    rendered.push(renderStepBriefing(store, thread, pointer, { resolved: 0, dangling: [], quarantined: [] }, 0))
   })
   const [briefing] = rendered
   if (briefing === undefined) throw new Error('briefing fixture: nothing was rendered')
@@ -333,7 +333,7 @@ test('briefing.a-step-naming-no-records-says-so-and-an-empty-thread-lists-none',
   assert.deepEqual(lines.slice(otherAt + 1, otherAt + 3), ['', '- none'])
 })
 
-test('briefing.a-named-id-that-no-longer-resolves-is-skipped', async () => {
+test('briefing.a-named-id-that-no-longer-resolves-is-named-as-unreadable', async () => {
   const threadId = rt.ulid()
   const named = decision(threadId, { title: 'the ruling that still exists', outcome: 'keep it' })
   const vanished = rt.ulid()
@@ -343,7 +343,10 @@ test('briefing.a-named-id-that-no-longer-resolves-is-skipped', async () => {
   })
   const rendered = await briefingOf(thread, null, [{ kind: 'decision', record: named }])
   assert.ok(rendered.includes(`Decision ${named.id} `), 'the id that resolves must still be shown in full')
-  assert.equal(rendered.includes(vanished), false, 'an id that no longer resolves must be skipped')
+  assert.ok(
+    rendered.includes(`Named by this step but not readable now: ${vanished}`),
+    'an id that no longer resolves must be named as unreadable, never dropped without a word'
+  )
 })
 
 test('briefing.a-record-named-twice-is-shown-once', async () => {

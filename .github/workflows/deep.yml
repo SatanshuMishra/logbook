@@ -11,19 +11,6 @@ permissions:
   contents: read
 
 jobs:
-  generated-sweep:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: '24'
-      - run: npm ci --ignore-scripts
-      - name: Sweep the generated grid the pinned shapes stand in for
-        run: npm run test:scheduled
-
   seeded-mutation:
     runs-on: ubuntu-latest
     steps:

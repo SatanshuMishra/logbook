@@ -264,9 +264,36 @@ const stepRecordIds = (thread: Thread): string[] => {
 const renderOtherRecordLine = (record: IndexedRecord): string =>
   `- ${escapeStored(record.kind)} ${escapeStored(record.id)}: ${renderRecordHeadline(record)}`
 
-export const renderStepBriefing = (store: Store, thread: Thread, pointer: Pointer | null): string => {
+const UNREADABLE_RECORDS_HEADING = '**Unreadable records:**'
+
+const renderDanglingLine = (decisionId: string): string => `- dangling: ${escapeStored(decisionId)}`
+const renderQuarantinedLine = (decisionId: string): string => `- quarantined: ${escapeStored(decisionId)}`
+
+const renderUnreadableNamedLine = (ids: readonly string[]): string =>
+  `Named by this step but not readable now: ${ids.map((id) => escapeStored(id)).join(', ')}`
+
+export const renderStepBriefing = (
+  store: Store,
+  thread: Thread,
+  pointer: Pointer | null,
+  decisionIntegrity: DecisionIntegrity,
+  unreadableSessionEntryCount: number
+): string => {
   const index = indexRecords(store)
-  const named = resolveRecordIds(index, stepRecordIds(thread)).found
+  const resolved = resolveRecordIds(index, stepRecordIds(thread))
+  const named = resolved.found
+  const unreadableNamedLines = resolved.missing.length === 0 ? [] : ['', renderUnreadableNamedLine(resolved.missing)]
+  const unreadableLines = [
+    ...[decisionIntegrity.dangling.length + decisionIntegrity.quarantined.length]
+      .filter((count) => count > 0)
+      .map(renderUnreadableDecisionsHandleLine),
+    ...decisionIntegrity.dangling.map(renderDanglingLine),
+    ...decisionIntegrity.quarantined.map(renderQuarantinedLine),
+    ...[unreadableSessionEntryCount]
+      .filter((count) => count > 0)
+      .map((count) => renderUnreadableSessionEntriesLine(count, thread.id))
+  ]
+  const unreadableSection = unreadableLines.length === 0 ? [] : ['', UNREADABLE_RECORDS_HEADING, '', ...unreadableLines]
   const namedIds = new Set(named.map((record) => record.id))
   const matched = matchByFileName(index, thread.spine.next_step, namedIds)
   const shownIds = new Set([...namedIds, ...matched.map((match) => match.record.id)])
@@ -297,10 +324,12 @@ export const renderStepBriefing = (store: Store, thread: Thread, pointer: Pointe
     '**What this step needs:**',
     '',
     renderRecordsInFull(named, matched),
+    ...unreadableNamedLines,
     '',
     OTHER_RECORDS_HEADING,
     '',
     ...otherRecordLines,
+    ...unreadableSection,
     '',
     `**Session log:** ${entryCount} entries at logbook://sessions/${escapeStored(thread.id)}`,
     '',
