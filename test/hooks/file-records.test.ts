@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import type { ToolReply } from '../../src/server/register.ts'
@@ -10,7 +11,7 @@ import { indexRecords, type IndexedRecord } from '../../src/domain/record-index.
 import { renderRecordFull } from '../../src/render/briefing.ts'
 import { renderThreadListing } from '../../src/cli/session-start.ts'
 import { STUB_TOOL_CTX, withCriterionFixture } from '../support/criterion-fixture.ts'
-import { controlledEnv, freshTmpDir, runHookProcessWithEvent, type HookName } from './hook-process.ts'
+import { controlledEnv, entryFor, freshTmpDir, runHookProcessWithEvent, type HookName } from './hook-process.ts'
 
 type Structured = Record<string, unknown>
 
@@ -103,15 +104,23 @@ const seedTimeoutRuling = (rt: Runtime): Promise<void> => seedClosedThread(rt, [
 
 type HookOutput = { status: number | null; stderr: string; additionalContext: string | null }
 
-const runHookFor = (rt: Runtime, hookName: HookName, event: Structured): HookOutput => {
-  const result = runHookProcessWithEvent(hookName, event, { env: controlledEnv({ CLAUDE_PLUGIN_DATA: pluginDataOf(rt) }) })
+const runHookFor = (rt: Runtime, hookName: HookName, event: Structured, env: Record<string, string> = {}): HookOutput => {
+  const result = runHookProcessWithEvent(hookName, event, { env: controlledEnv({ CLAUDE_PLUGIN_DATA: pluginDataOf(rt), ...env }) })
   const parsed: unknown = result.stdout.length === 0 ? {} : JSON.parse(result.stdout)
   const output = (parsed as { hookSpecificOutput?: { additionalContext?: unknown } }).hookSpecificOutput
   const context = output?.additionalContext
   return { status: result.status, stderr: result.stderr, additionalContext: typeof context === 'string' ? context : null }
 }
 
-type Touch = { sessionId: string; toolName?: string; file: string; cwd?: string; filePath?: string; agentId?: string }
+type Touch = {
+  sessionId: string
+  toolName?: string
+  file: string
+  cwd?: string
+  filePath?: string
+  agentId?: string
+  projectDir?: string
+}
 
 const touchFile = (rt: Runtime, touch: Touch): HookOutput => {
   const cwd = touch.cwd ?? projectOf(rt)
@@ -125,7 +134,7 @@ const touchFile = (rt: Runtime, touch: Touch): HookOutput => {
     tool_name: toolName,
     tool_input: toolInput,
     ...(touch.agentId === undefined ? {} : { agent_id: touch.agentId })
-  })
+  }, touch.projectDir === undefined ? {} : { CLAUDE_PROJECT_DIR: touch.projectDir })
   assert.equal(output.status, 0, `expected the PreToolUse hook to exit 0, stderr: ${output.stderr}`)
   return output
 }
@@ -256,5 +265,113 @@ test('file-records.many-records-reach-the-session-whole', async () => {
     assert.ok(prompted.additionalContext !== null, 'expected the UserPromptSubmit hook to add the thread listing')
     assert.equal(prompted.additionalContext.length, TRANSPORT_CLIP_GRAPHEMES)
     assert.ok(listing.startsWith(prompted.additionalContext), 'expected the listing to be clipped from its start')
+  })
+})
+
+const PARALLEL_FILES = ['src/f1.ts', 'src/f2.ts', 'src/f3.ts', 'src/f4.ts', 'src/f5.ts', 'src/f6.ts']
+
+const readConcurrently = (rt: Runtime, sessionId: string, files: readonly string[]): Promise<(string | null)[]> =>
+  Promise.all(
+    files.map(
+      (file) =>
+        new Promise<string | null>((resolve, reject) => {
+          const child = spawn(process.execPath, [entryFor('pre-tool-use')], {
+            env: controlledEnv({ CLAUDE_PLUGIN_DATA: pluginDataOf(rt) })
+          })
+          const chunks: Buffer[] = []
+          child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk))
+          child.on('error', reject)
+          child.on('close', () => {
+            const raw = Buffer.concat(chunks).toString('utf8')
+            const parsed = (raw.length === 0 ? {} : JSON.parse(raw)) as { hookSpecificOutput?: { additionalContext?: unknown } }
+            const context = parsed.hookSpecificOutput?.additionalContext
+            resolve(typeof context === 'string' ? context : null)
+          })
+          child.stdin.end(
+            JSON.stringify({
+              session_id: sessionId,
+              cwd: projectOf(rt),
+              hook_event_name: 'PreToolUse',
+              tool_name: 'Read',
+              tool_input: { file_path: path.join(projectOf(rt), ...file.split('/')) }
+            })
+          )
+        })
+    )
+  )
+
+test('file-records.parallel-first-touches-are-each-shown-once', async () => {
+  await withCriterionFixture(async (rt) => {
+    await seedClosedThread(
+      rt,
+      PARALLEL_FILES.map((file) => ({ title: `Rule on ${file}`, context: `${file} carries a ruling`, outcome: `keep ${file} as it is` }))
+    )
+    for (const file of PARALLEL_FILES) writeFileSync(path.join(projectOf(rt), ...file.split('/')), 'export const value = 1\n')
+    const shown = await readConcurrently(rt, 'parallel-reads', PARALLEL_FILES)
+    shown.forEach((context, index) =>
+      assert.ok(context !== null && context.includes(`keep ${PARALLEL_FILES[index]} as it is`), `the first read of ${PARALLEL_FILES[index]} must show its ruling`)
+    )
+    for (const file of PARALLEL_FILES) {
+      assertAddsNothing(touchFile(rt, { sessionId: 'parallel-reads', toolName: 'Edit', file }), `the edit of ${file} after its parallel first read`)
+    }
+  })
+})
+
+const storeRecordsDirectories = (pluginData: string): string[] =>
+  readdirSync(pluginData)
+    .map((entry) => path.join(pluginData, entry, 'records'))
+    .filter((candidate) => existsSync(candidate))
+
+test('file-records.a-failed-lookup-does-not-use-up-the-showing', { skip: process.getuid?.() === 0 }, async () => {
+  await withCriterionFixture(async (rt) => {
+    await seedTimeoutRuling(rt)
+    const records = storeRecordsDirectories(pluginDataOf(rt))
+    assert.ok(records.length > 0, 'the fixture must have a store records directory')
+    try {
+      for (const directory of records) chmodSync(directory, 0o000)
+      assertAddsNothing(touchFile(rt, { sessionId: 'failed-lookup', file: GOVERNED_FILE }), 'the read while the store cannot be read')
+    } finally {
+      for (const directory of records) chmodSync(directory, 0o755)
+    }
+    assertCarriesTheRuling(touchFile(rt, { sessionId: 'failed-lookup', file: GOVERNED_FILE }), 'the read after the store recovers')
+  })
+})
+
+test('file-records.a-session-in-a-subdirectory-still-finds-the-project', async () => {
+  await withCriterionFixture(async (rt) => {
+    await seedTimeoutRuling(rt)
+    const subdirectory = path.join(projectOf(rt), 'src')
+    assertCarriesTheRuling(
+      touchFile(rt, { sessionId: 'from-a-subdirectory', file: GOVERNED_FILE, cwd: subdirectory, filePath: path.join(projectOf(rt), ...GOVERNED_FILE.split('/')), projectDir: projectOf(rt) }),
+      'the read after the session moved into src/'
+    )
+  })
+})
+
+const NEW_DIRECTORY_FILE = 'src/net/retry.ts'
+const RETRY_OUTCOME = 'retry the gateway at most twice before surfacing the failure'
+
+test('file-records.a-new-file-in-a-new-directory-through-a-symbolic-link-matches', async () => {
+  await withCriterionFixture(async (rt) => {
+    await seedClosedThread(rt, [{ title: 'Bound the gateway retries', context: `the retry policy will live in ${NEW_DIRECTORY_FILE}`, outcome: RETRY_OUTCOME }])
+    const linkHome = freshTmpDir('logbook-file-records-new-dir-')
+    try {
+      const link = path.join(linkHome, 'project-link')
+      symlinkSync(projectOf(rt), link)
+      const output = touchFile(rt, { sessionId: 'new-directory', toolName: 'Write', file: NEW_DIRECTORY_FILE, cwd: link })
+      assert.ok(output.additionalContext !== null && output.additionalContext.includes(RETRY_OUTCOME), 'writing a new file in a new directory through a link must show its ruling')
+    } finally {
+      rmSync(linkHome, { recursive: true, force: true })
+    }
+  })
+})
+
+test('file-records.a-longer-path-that-contains-the-file-name-is-not-matched', async () => {
+  await withCriterionFixture(async (rt) => {
+    await seedClosedThread(rt, [
+      { title: 'Rule on the typed config', context: 'the typed settings live in src/config.tsx', outcome: 'keep the typed config' },
+      { title: 'Rule on the library config', context: 'the library copy lives in lib/src/config.ts', outcome: 'keep the library config' }
+    ])
+    assertAddsNothing(touchFile(rt, { sessionId: 'longer-paths', file: GOVERNED_FILE }), 'reading src/config.ts when only longer paths are ruled on')
   })
 })

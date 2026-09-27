@@ -9,6 +9,7 @@ import {
   matchByFileName,
   resolveRecordIds,
   searchRecords,
+  textNamesPath,
   type IndexedRecord
 } from '../../src/domain/record-index.ts'
 import {
@@ -302,4 +303,13 @@ test('record-index.renders-criteria-with-settledness-and-risks-with-their-anchor
     )
     assert.ok(renderRecordFull(wholeThreadRisk).includes('Bears on: the whole thread'), renderRecordFull(wholeThreadRisk))
   })
+})
+
+test('record-index.file-name-match-respects-path-boundaries', () => {
+  const path = 'src/app.ts'
+  const names = ['see src/app.ts.', '(src/app.ts)', '`src/app.ts`', './src/app.ts', 'keep src/app.ts at or below 3000']
+  const others = ['src/app.tsx', 'lib/src/app.ts', 'src/app.ts.bak', '../src/app.ts', 'xsrc/app.ts']
+  for (const text of names) assert.equal(textNamesPath(text, path), true, `${JSON.stringify(text)} names ${path}`)
+  for (const text of others) assert.equal(textNamesPath(text, path), false, `${JSON.stringify(text)} names another file, not ${path}`)
+  assert.equal(textNamesPath('see a+b/c(1).ts here', 'a+b/c(1).ts'), true, 'characters a pattern would treat specially are matched literally')
 })

@@ -50,7 +50,10 @@ const writeFlushed = (stream: NodeJS.WritableStream, text: string): Promise<void
     stream.write(text, () => resolve())
   })
 
-export const runHook: (name: string, handler: (event: unknown) => HookVerdict) => Promise<never> = async (
+export const runHook: (
+  name: string,
+  handler: (event: unknown) => HookVerdict | Promise<HookVerdict>
+) => Promise<never> = async (
   name,
   handler
 ) => {
@@ -62,7 +65,7 @@ export const runHook: (name: string, handler: (event: unknown) => HookVerdict) =
   try {
     const raw = await readStdin()
     const event = parseEvent(raw)
-    const verdict = handler(event)
+    const verdict = await handler(event)
     if (verdict.block) {
       await writeFlushed(process.stderr, `${verdict.reason}\n`)
       process.exit(2)

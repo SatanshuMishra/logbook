@@ -1,29 +1,32 @@
-import { readFileSync, realpathSync } from 'node:fs'
+import { closeSync, mkdirSync, openSync, readdirSync, rmSync, unlinkSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
 import { createStateDirectory, layoutFor } from '../store/layout.ts'
-import { durableWrite } from '../store/durable-write.ts'
 import { openStore } from '../store/records.ts'
-import { indexRecords, type IndexedRecord } from '../domain/record-index.ts'
+import { indexRecords, textNamesPath, type IndexedRecord } from '../domain/record-index.ts'
 import { renderRecordFull } from '../render/briefing.ts'
 import { escapeStored } from '../render/escape.ts'
+import { canonicaliseExistingPrefix } from './guard.ts'
 
-const FILE_RECORDS_FILE_NAME = 'file-records.json'
+const FILE_RECORDS_DIRECTORY = 'file-records'
 const FILE_TOOLS: ReadonlySet<string> = new Set(['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 const MAIN_VIEWER = 'main'
+const PROJECT_DIR_ENV_KEY = 'CLAUDE_PROJECT_DIR'
 
-type ShownPaths = Record<string, string[]>
-type FileRecordsState = { session_id: string; shown: ShownPaths }
 type FileTouch = { sessionId: string; cwd: string; filePath: string; viewer: string }
+type Claim = { marker: string }
 
 const nonEmptyString = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null)
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
+const isFileTool = (event: unknown): boolean =>
+  isPlainObject(event) && typeof event.tool_name === 'string' && FILE_TOOLS.has(event.tool_name)
+
 const parseFileTouch = (raw: unknown): FileTouch | null => {
-  if (!isPlainObject(raw)) return null
-  if (typeof raw.tool_name !== 'string' || !FILE_TOOLS.has(raw.tool_name)) return null
+  if (!isPlainObject(raw) || !isFileTool(raw)) return null
   const input = isPlainObject(raw.tool_input) ? raw.tool_input : {}
   const sessionId = nonEmptyString(raw.session_id)
   const cwd = nonEmptyString(raw.cwd)
@@ -33,13 +36,9 @@ const parseFileTouch = (raw: unknown): FileTouch | null => {
   return { sessionId, cwd, filePath, viewer }
 }
 
-const canonicalFilePath = (cwd: string, filePath: string): string => {
-  const absolute = path.resolve(cwd, filePath)
-  try {
-    return path.join(realpathSync.native(path.dirname(absolute)), path.basename(absolute))
-  } catch {
-    return absolute
-  }
+const canonical = (target: string): string => {
+  const resolved = canonicaliseExistingPrefix(target)
+  return resolved.ok ? resolved.path : target
 }
 
 const projectRelativePath = (projectRoot: string, absolute: string): string | null => {
@@ -49,34 +48,56 @@ const projectRelativePath = (projectRoot: string, absolute: string): string | nu
   return relative.split(path.sep).join('/')
 }
 
-const statePathFor = (stateDir: string): string => path.join(stateDir, FILE_RECORDS_FILE_NAME)
+const digest = (text: string): string => createHash('sha256').update(text).digest('hex').slice(0, 32)
 
-const isShownPaths = (value: unknown): value is ShownPaths =>
-  isPlainObject(value) &&
-  Object.values(value).every((paths) => Array.isArray(paths) && paths.every((entry) => typeof entry === 'string'))
+const sessionDirectory = (stateDir: string, sessionId: string): string =>
+  path.join(stateDir, FILE_RECORDS_DIRECTORY, digest(sessionId))
 
-const readState = (stateDir: string): FileRecordsState | null => {
-  let raw: string
+const makeDirectory = (directory: string): boolean => {
   try {
-    raw = readFileSync(statePathFor(stateDir), 'utf8')
+    mkdirSync(directory)
+    return true
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
     throw error
   }
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return null
+}
+
+const openSessionDirectory = (stateDir: string, sessionId: string): string => {
+  const root = path.join(stateDir, FILE_RECORDS_DIRECTORY)
+  const own = sessionDirectory(stateDir, sessionId)
+  mkdirSync(root, { recursive: true })
+  if (makeDirectory(own)) {
+    readdirSync(root)
+      .filter((entry) => entry !== path.basename(own))
+      .forEach((entry) => rmSync(path.join(root, entry), { recursive: true, force: true }))
   }
-  if (!isPlainObject(parsed) || typeof parsed.session_id !== 'string' || !isShownPaths(parsed.shown)) return null
-  return { session_id: parsed.session_id, shown: parsed.shown }
+  return own
+}
+
+const claim = (directory: string, viewer: string, relative: string): Claim | null => {
+  const marker = path.join(directory, digest(`${viewer}\n${relative}`))
+  try {
+    closeSync(openSync(marker, 'wx'))
+    return { marker }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return null
+    throw error
+  }
+}
+
+const release = (held: Claim): void => {
+  try {
+    unlinkSync(held.marker)
+  } catch {
+    return
+  }
 }
 
 const governsFile = (record: IndexedRecord, relative: string): boolean =>
   record.live &&
   (record.kind === 'decision' || record.kind === 'risk') &&
-  record.fields.some((field) => field.includes(relative))
+  record.fields.some((field) => textNamesPath(field, relative))
 
 const renderFileRecords = (relative: string, records: readonly IndexedRecord[]): string => {
   const naming = records.length === 1 ? '1 recorded record names' : `${records.length} recorded records name`
@@ -84,32 +105,44 @@ const renderFileRecords = (relative: string, records: readonly IndexedRecord[]):
   return [header, ...records.map(renderRecordFull)].join('\n\n')
 }
 
-const firstTouchRecords = (rt: Runtime, touch: FileTouch): string | null => {
-  const layout = layoutFor(rt, touch.cwd)
-  if (!layout.ok) return null
-  const relative = projectRelativePath(layout.value.projectRoot, canonicalFilePath(touch.cwd, touch.filePath))
-  if (relative === null) return null
-
-  const previous = readState(layout.value.state)
-  const shown = previous !== null && previous.session_id === touch.sessionId ? previous.shown : {}
-  const viewerPaths = shown[touch.viewer] ?? []
-  if (viewerPaths.includes(relative)) return null
-
-  const next: FileRecordsState = { session_id: touch.sessionId, shown: { ...shown, [touch.viewer]: [...viewerPaths, relative] } }
-  createStateDirectory(layout.value)
-  durableWrite(statePathFor(layout.value.state), JSON.stringify(next), { log: rt.log })
-
-  const opened = openStore(rt, touch.cwd)
-  if (!opened.ok) return null
+const recordsNaming = (rt: Runtime, projectDir: string, relative: string): string | null => {
+  const opened = openStore(rt, projectDir)
+  if (!opened.ok) throw new Error(`the store did not open: ${opened.message}`)
   const records = indexRecords(opened.value).filter((record) => governsFile(record, relative))
   return records.length === 0 ? null : renderFileRecords(relative, records)
+}
+
+const firstTouchRecords = (rt: Runtime, touch: FileTouch): string | null => {
+  const projectDir = nonEmptyString(rt.env[PROJECT_DIR_ENV_KEY]) ?? touch.cwd
+  const layout = layoutFor(rt, projectDir)
+  if (!layout.ok) return null
+  const relative = projectRelativePath(
+    canonical(layout.value.projectRoot),
+    canonical(path.resolve(touch.cwd, touch.filePath))
+  )
+  if (relative === null) return null
+
+  createStateDirectory(layout.value)
+  const held = claim(openSessionDirectory(layout.value.state, touch.sessionId), touch.viewer, relative)
+  if (held === null) return null
+  try {
+    return recordsNaming(rt, projectDir, relative)
+  } catch (error) {
+    release(held)
+    throw error
+  }
 }
 
 export const fileRecordsContext = (rt: Runtime, event: unknown): string | null => {
   try {
     const touch = parseFileTouch(event)
     return touch === null ? null : firstTouchRecords(rt, touch)
-  } catch {
+  } catch (error) {
+    rt.log({
+      level: 'warn',
+      event: 'file-records.failed',
+      message: error instanceof Error ? error.message : String(error)
+    })
     return null
   }
 }

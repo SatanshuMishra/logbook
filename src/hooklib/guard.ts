@@ -30,7 +30,7 @@ const PATH_TOKEN_PATTERN = /[^\s"'`]*\/[^\s"'`]*/g
 
 type Canon = { ok: true; path: string } | { ok: false }
 
-const canonicaliseExistingPrefix = (target: string): Canon => {
+export const canonicaliseExistingPrefix = (target: string): Canon => {
   let current = target
   for (;;) {
     try {
