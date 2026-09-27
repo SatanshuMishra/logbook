@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
@@ -22,6 +23,9 @@ const LEDGER_REF = 'refs/logbook/ledger'
 const SCAFFOLD_LOCATOR = 'dirname "$0"'
 const BUNDLE_FILE = 'fixture.bundle'
 const BRIEFING_GRADER = path.join(EVALS_ROOT, 'nothing-applies', 'graders', 'no-unrelated-ruling-in-the-briefing.md')
+const NAMES_NO_RECORDS_GRADER = path.join(EVALS_ROOT, 'nothing-applies', 'graders', 'briefing-names-no-records.md')
+const NO_SUMMARY_GRADER = path.join(EVALS_ROOT, 'handoff', 'graders', 'parked-without-a-summary.md')
+const BUILDER = path.join(EVALS_ROOT, 'build-fixtures.ts')
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -89,6 +93,11 @@ test('proof-suite.eight-proof-cases-each-load-a-bundle-beside-their-scaffold', (
       ? readdirSync(path.join(caseDir, 'graders')).filter((name) => name.endsWith('.md'))
       : []
     assert.ok(graders.length > 0, `evals/${caseName}: no graders/*.md`)
+    const caseYaml: unknown = parseYaml(readFileSync(path.join(caseDir, 'case.yaml'), 'utf8'))
+    assert.ok(
+      isPlainObject(caseYaml) && isPlainObject(caseYaml.context) && caseYaml.context.scaffold_script === 'scaffold.sh',
+      `evals/${caseName}/case.yaml does not run scaffold.sh through context.scaffold_script`
+    )
     const scaffoldPath = path.join(caseDir, 'scaffold.sh')
     assert.ok(existsSync(scaffoldPath), `evals/${caseName}: scaffold.sh is missing`)
     const scaffold = readFileSync(scaffoldPath, 'utf8')
@@ -121,4 +130,37 @@ test('proof-suite.eight-proof-cases-each-load-a-bundle-beside-their-scaffold', (
     !unrelatedRuling.test(asTraceHoldsIt(clean)),
     'the grader flags a ruling shown only under "Other records on this thread" with escaped \\n sequences'
   )
+})
+
+test('proof-suite.the-handoff-case-fails-a-park-that-carries-a-summary', () => {
+  assert.ok(existsSync(NO_SUMMARY_GRADER), `${NO_SUMMARY_GRADER} is missing`)
+  const grader = frontmatterOf(NO_SUMMARY_GRADER)
+  assert.equal(grader.type, 'tool_used')
+  assert.equal(grader.tool, 'mcp__plugin_logbook_ledger__park_thread')
+  assert.equal(grader.max, 0, 'a park carrying an outcome or landed must fail the case')
+  const carriesSummary = new RegExp(String(grader.input_match))
+  assert.ok(carriesSummary.test(JSON.stringify({ outcome: 'Set the timeout and added the region', next_step: 'x', next_step_records: [] })))
+  assert.ok(carriesSummary.test(JSON.stringify({ landed: 'the timeout', next_step: 'x', next_step_records: [] })))
+  assert.ok(!carriesSummary.test(JSON.stringify({ next_step: 'In src/config.ts, add the outcome flag', next_step_records: [] })))
+})
+
+test('proof-suite.the-control-finds-the-no-records-line-only-in-the-briefing', () => {
+  const grader = frontmatterOf(NAMES_NO_RECORDS_GRADER)
+  assert.equal(grader.flags, 's', `${NAMES_NO_RECORDS_GRADER}: flags must be s`)
+  const inTheBriefing = new RegExp(String(grader.pattern), String(grader.flags))
+  const briefing = briefingWith(['This step names no records.'], [CRITERION_LINE])
+  assert.ok(inTheBriefing.test(briefing), 'the grader misses the line in the briefing with real line breaks')
+  assert.ok(inTheBriefing.test(asTraceHoldsIt(briefing)), 'the grader misses the line in the briefing with escaped \\n sequences')
+  const toolReply = JSON.stringify({ step_records: 'This step names no records.' })
+  assert.ok(!inTheBriefing.test(toolReply), 'the grader counts a tool reply that is not the briefing')
+})
+
+test('proof-suite.the-fixture-builder-regenerates-a-bundle-by-case-name', () => {
+  const out = mkdtempSync(path.join(tmpdir(), 'logbook-proof-builder-'))
+  try {
+    execFileSync(process.execPath, [BUILDER, 'helper', out], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    assert.ok(bundleHeads(path.join(out, BUNDLE_FILE)).includes(LEDGER_REF), `the rebuilt bundle does not list ${LEDGER_REF}`)
+  } finally {
+    rmSync(out, { recursive: true, force: true })
+  }
 })

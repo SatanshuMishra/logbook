@@ -237,6 +237,9 @@ const openDocsRefresh = async () => {
 }
 
 switch (scenario) {
+  case 'helper':
+  case 'helper-read-only':
+  case 'no-thread-edit':
   case 'step-change-names-file':
     await closedIncident('names-file')
     await openFlakyCheckout()
