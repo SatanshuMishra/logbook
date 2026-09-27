@@ -110,69 +110,90 @@ const sessionBodyCapRefusal = (observed: number): Refusal => ({
   message: `outcome exceeds its cap of ${caps.SESSION_BODY_MAX} characters after escaping; observed ${observed}; remedy: shorten the outcome and retry.`
 })
 
-const noWorkedThreadRefusal = (): Refusal => ({
+type Carried = Pick<ParkThreadInput, 'outcome' | 'next_step' | 'next_step_records'>
+
+const carriesSomethingToStore = (input: Carried): boolean =>
+  input.outcome !== undefined || input.next_step !== undefined || input.next_step_records !== undefined
+
+const carriedNames = (input: Carried): string[] => [
+  ...(input.outcome !== undefined ? ['the outcome'] : []),
+  ...(input.next_step !== undefined ? ['the next step'] : []),
+  ...(input.next_step_records !== undefined
+    ? [input.next_step !== undefined ? 'its records list' : 'the records list']
+    : [])
+]
+
+const listedNames = (names: readonly string[]): string =>
+  names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+
+const notStored = (input: Carried): string => {
+  const names = carriedNames(input)
+  return `${listedNames(names)} ${names.length === 1 ? 'was' : 'were'} NOT stored and must be re-sent`
+}
+
+const RELEASE_ONLY_CALL = 'call park_thread with none of outcome, next_step and next_step_records'
+
+const noWorkedThreadRefusal = (input: Carried): Refusal => ({
   ok: false,
   field: 'outcome',
   accepted: 'an outcome supplied while some thread is marked as being worked',
   example: 'call resume_thread first, then send this same outcome to park_thread',
   retryable: true,
-  message:
-    'no thread is currently marked as being worked, so this outcome has nowhere to be written; the supplied text was NOT stored and must be re-sent; remedy: call resume_thread on the thread this session worked and then call park_thread again with the same outcome, or call park_thread with outcome omitted to confirm there is nothing to park.'
+  message: `no thread is currently marked as being worked, so nothing this call carries has anywhere to be written; ${notStored(input)}; remedy: call resume_thread on the thread this session worked and then call park_thread again, re-sending what was not stored, or ${RELEASE_ONLY_CALL} to confirm there is nothing to park.`
 })
 
-const notTheWorkedThreadRefusal = (pointerThreadId: string, suppliedThreadId: string): Refusal => ({
+const notTheWorkedThreadRefusal = (input: Carried, pointerThreadId: string, suppliedThreadId: string): Refusal => ({
   ok: false,
   field: 'outcome',
   accepted: 'an outcome supplied together with the thread that is actually marked as being worked',
   example: 'send the same outcome with thread_id set to the thread this message names',
   retryable: true,
-  message: `thread_id ${suppliedThreadId} is not the thread currently marked as being worked (${pointerThreadId}), so this outcome has nowhere to be written; the supplied text was NOT stored and must be re-sent; the pointer was left untouched; remedy: call park_thread again with thread_id ${pointerThreadId} and the same outcome.`
+  message: `thread_id ${suppliedThreadId} is not the thread currently marked as being worked (${pointerThreadId}), so nothing this call carries has anywhere to be written; ${notStored(input)}; the pointer was left untouched; remedy: call park_thread again with thread_id ${pointerThreadId}, re-sending what was not stored.`
 })
 
-const otherSessionRefusal = (pointerThreadId: string): Refusal => ({
+const otherSessionRefusal = (input: Carried, pointerThreadId: string): Refusal => ({
   ok: false,
   field: 'outcome',
   accepted: 'an outcome supplied by the session that holds the record of what is being worked',
   example: 'call resume_thread in this session, then send this same outcome to park_thread',
   retryable: true,
-  message: `the record of what is being worked names thread ${pointerThreadId} and belongs to a different session, so this outcome has nowhere to be written; the supplied text was NOT stored and must be re-sent; the pointer was left untouched; remedy: call resume_thread in this session and then call park_thread again with the same outcome.`
+  message: `the record of what is being worked names thread ${pointerThreadId} and belongs to a different session, so nothing this call carries has anywhere to be written; ${notStored(input)}; the pointer was left untouched; remedy: call resume_thread in this session and then call park_thread again, re-sending what was not stored.`
 })
 
-const missingThreadRecordRefusal = (threadId: string): Refusal => ({
+const missingThreadRecordRefusal = (input: Carried, threadId: string): Refusal => ({
   ok: false,
   field: 'outcome',
   accepted: 'an outcome supplied for a thread whose stored record still exists',
   example: 'call park_thread with outcome omitted to release the stale pointer, then record this text elsewhere',
   retryable: false,
-  message: `the thread marked as being worked (${threadId}) no longer has a stored record, so this outcome has nowhere to be written; the supplied text was NOT stored and must be re-sent; the pointer was left in place so this call can be retried; remedy: call park_thread with outcome omitted to release the stale pointer, then record this text on a thread that still exists.`
+  message: `the thread marked as being worked (${threadId}) no longer has a stored record, so nothing this call carries has anywhere to be written; ${notStored(input)}; the pointer was left in place so this call can be retried; remedy: ${RELEASE_ONLY_CALL} to release the stale pointer, then record what was not stored on a thread that still exists.`
 })
 
-const terminalThreadRefusal = (threadId: string, status: Thread['status']): Refusal => ({
+const terminalThreadRefusal = (input: Carried, threadId: string, status: Thread['status']): Refusal => ({
   ok: false,
   field: 'outcome',
   accepted: 'an outcome supplied for a thread that is still open',
   example: 'call park_thread with outcome omitted to release the pointer, then record this text on a new thread',
   retryable: false,
-  message: `the thread marked as being worked (${threadId}) is already ${status}, which is terminal, so this outcome cannot be written to it; the supplied text was NOT stored and must be re-sent; the pointer was left in place so this call can be retried; remedy: call park_thread with outcome omitted to release the pointer, then open a new thread that references this one and record this text there.`
+  message: `the thread marked as being worked (${threadId}) is already ${status}, which is terminal, so nothing this call carries can be written to it; ${notStored(input)}; the pointer was left in place so this call can be retried; remedy: ${RELEASE_ONLY_CALL} to release the pointer, then open a new thread that references this one and record what was not stored there.`
 })
 
-const corruptPointerRefusal = (): Refusal => ({
+const corruptPointerRefusal = (input: Carried): Refusal => ({
   ok: false,
   field: 'outcome',
   accepted: 'an outcome supplied while the record of what is being worked parses cleanly',
   example: 'call park_thread with outcome omitted to release the unreadable pointer, then resume the thread again',
   retryable: true,
-  message:
-    'the record of what is being worked does not parse, so the thread this outcome belongs to cannot be resolved; the supplied text was NOT stored and must be re-sent; the unreadable pointer was left in place so this call can be retried; remedy: call park_thread with outcome omitted to release it, call resume_thread on the intended thread, then call park_thread again with the same outcome.'
+  message: `the record of what is being worked does not parse, so the thread this call belongs to cannot be resolved; ${notStored(input)}; the unreadable pointer was left in place so this call can be retried; remedy: ${RELEASE_ONLY_CALL} to release it, call resume_thread on the intended thread, then call park_thread again, re-sending what was not stored.`
 })
 
-const quarantinedPointerRefusal = (threadId: string): Refusal => ({
+const quarantinedPointerRefusal = (input: Carried, threadId: string): Refusal => ({
   ok: false,
   field: 'outcome',
   accepted: 'an outcome supplied for a thread whose stored record parses cleanly',
   example: 'call park_thread with outcome omitted to release the pointer, then record this text elsewhere',
   retryable: false,
-  message: `the thread currently marked as being worked (${threadId}) has a stored record that failed to parse and was quarantined, so this outcome cannot be written to it; the supplied text was NOT stored and must be re-sent; the pointer was left in place so this call can be retried; remedy: call park_thread with outcome omitted to release the pointer, then record this text on a thread whose record parses.`
+  message: `the thread currently marked as being worked (${threadId}) has a stored record that failed to parse and was quarantined, so nothing this call carries can be written to it; ${notStored(input)}; the pointer was left in place so this call can be retried; remedy: ${RELEASE_ONLY_CALL} to release the pointer, then record what was not stored on a thread whose record parses.`
 })
 
 const emptyStatusReply = (status: 'not-the-worked-thread' | 'nothing-to-park'): ToolReply<ParkThreadOutput> => ({
@@ -217,8 +238,8 @@ const parkResolvedThread = (
   const slot = store.readThread(threadId)
 
   if (slot === null) {
-    if (input.outcome !== undefined) {
-      return { ok: false, refusal: missingThreadRecordRefusal(threadId) }
+    if (carriesSomethingToStore(input)) {
+      return { ok: false, refusal: missingThreadRecordRefusal(input, threadId) }
     }
     const released = releasePointerIfOwned(rt, layout, threadId)
     return releasedStatusReply(
@@ -229,8 +250,8 @@ const parkResolvedThread = (
   }
 
   if (slot.quarantined) {
-    if (input.outcome !== undefined) {
-      return { ok: false, refusal: quarantinedPointerRefusal(threadId) }
+    if (carriesSomethingToStore(input)) {
+      return { ok: false, refusal: quarantinedPointerRefusal(input, threadId) }
     }
     const released = releasePointerIfOwned(rt, layout, threadId)
     return releasedStatusReply(
@@ -243,8 +264,8 @@ const parkResolvedThread = (
   const thread = slot.record
 
   if (thread.status !== 'open') {
-    if (input.outcome !== undefined) {
-      return { ok: false, refusal: terminalThreadRefusal(threadId, thread.status) }
+    if (carriesSomethingToStore(input)) {
+      return { ok: false, refusal: terminalThreadRefusal(input, threadId, thread.status) }
     }
     const released = releasePointerIfOwned(rt, layout, threadId)
     return releasedStatusReply(
@@ -341,8 +362,8 @@ export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
     const pointerRead = readPointer(rt, layout.value)
 
     if (pointerRead.kind === 'corrupt') {
-      if (input.outcome !== undefined) {
-        return { ok: false, refusal: corruptPointerRefusal() }
+      if (carriesSomethingToStore(input)) {
+        return { ok: false, refusal: corruptPointerRefusal(input) }
       }
       releasePointer(rt, layout.value)
       return releasedStatusReply(
@@ -353,8 +374,8 @@ export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
     }
 
     if (pointerRead.kind === 'absent') {
-      if (input.outcome !== undefined) {
-        return { ok: false, refusal: noWorkedThreadRefusal() }
+      if (carriesSomethingToStore(input)) {
+        return { ok: false, refusal: noWorkedThreadRefusal(input) }
       }
       return emptyStatusReply('nothing-to-park')
     }
@@ -363,8 +384,8 @@ export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
 
     if (input.thread_id !== undefined) {
       if (pointer.thread_id !== input.thread_id) {
-        if (input.outcome !== undefined) {
-          return { ok: false, refusal: notTheWorkedThreadRefusal(pointer.thread_id, input.thread_id) }
+        if (carriesSomethingToStore(input)) {
+          return { ok: false, refusal: notTheWorkedThreadRefusal(input, pointer.thread_id, input.thread_id) }
         }
         return emptyStatusReply('not-the-worked-thread')
       }
@@ -372,8 +393,8 @@ export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
     }
 
     if (pointer.session_id !== rt.sessionId) {
-      if (input.outcome !== undefined) {
-        return { ok: false, refusal: otherSessionRefusal(pointer.thread_id) }
+      if (carriesSomethingToStore(input)) {
+        return { ok: false, refusal: otherSessionRefusal(input, pointer.thread_id) }
       }
       return emptyStatusReply('not-the-worked-thread')
     }
