@@ -37,6 +37,7 @@ export type Store = {
   readThreads: () => Slot<Thread>[]
   readResumable: () => ResumableRead
   readDecision: (id: Ulid) => Slot<Decision> | null
+  readDecisions: () => Slot<Decision>[]
   readSessionEntry: (threadId: Ulid, entryId: Ulid) => Slot<SessionEntry> | null
   readSessionEntries: (threadId: Ulid) => Slot<SessionEntry>[]
   probeDecisions: (ids: readonly Ulid[]) => DecisionProbe
@@ -326,6 +327,7 @@ export const openStore = (rt: Runtime, projectRoot: string | null): Ok<Store> | 
     readThreads: () => readAllRecordFiles<Thread>(path.join(storeLayout.records, 'threads'), ThreadRecord),
     readResumable: () => readResumable(rt, storeLayout, currentRef),
     readDecision: (id) => readRecordFile<Decision>(decisionPath(storeLayout, id), DecisionRecord),
+    readDecisions: () => readAllRecordFiles<Decision>(decisionsDir(storeLayout), DecisionRecord),
     readSessionEntry: (threadId, entryId) =>
       readRecordFile<SessionEntry>(sessionEntryPath(storeLayout, threadId, entryId), SessionRecord),
     readSessionEntries: (threadId) =>

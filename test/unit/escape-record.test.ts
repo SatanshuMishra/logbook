@@ -39,6 +39,7 @@ const hostileThread: Thread = {
     active_goal: hostile('active_goal'),
     next_step: hostile('next_step'),
     next_step_criterion_id: hostile('next_step_criterion_id'),
+    next_step_records: [hostile('next_step_records')],
     landed: hostile('landed'),
     last_session: hostile('last_session'),
     open_risks: [

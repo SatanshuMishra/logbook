@@ -7,6 +7,7 @@ export type SpineContribution = {
   active_goal?: string
   next_step?: string
   next_step_criterion_id?: Ulid
+  next_step_records?: Ulid[]
   landed?: string
   last_session?: string
   open_risks?: Risk[]
@@ -122,6 +123,12 @@ const nextStepAnchorField = (stored: Spine, contribution: SpineContribution): Pi
   return anchor === undefined ? {} : { next_step_criterion_id: anchor }
 }
 
+const nextStepRecordsField = (stored: Spine, contribution: SpineContribution): Pick<Spine, 'next_step_records'> => {
+  const records =
+    contribution.next_step === undefined ? stored.next_step_records : [...(contribution.next_step_records ?? [])]
+  return records === undefined ? {} : { next_step_records: records }
+}
+
 const escapeRisk = (risk: Risk): Risk => ({
   ...risk,
   scope: escapeStored(risk.scope),
@@ -144,6 +151,7 @@ const mergeSpine = (stored: Spine, contribution: SpineContribution): Spine => ({
   active_goal: contribution.active_goal !== undefined ? escapeStored(contribution.active_goal) : stored.active_goal,
   next_step: contribution.next_step !== undefined ? escapeStored(contribution.next_step) : stored.next_step,
   ...nextStepAnchorField(stored, contribution),
+  ...nextStepRecordsField(stored, contribution),
   landed: contribution.landed !== undefined ? escapeStored(contribution.landed) : stored.landed,
   last_session: contribution.last_session !== undefined ? escapeStored(contribution.last_session) : stored.last_session,
   open_risks:
