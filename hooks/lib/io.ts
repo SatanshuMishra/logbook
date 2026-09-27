@@ -32,6 +32,24 @@ const clipDeep = (value: unknown): unknown => {
   return value
 }
 
+const isPreToolUseContext = (value: unknown): value is { additionalContext: string } =>
+  typeof value === 'object' &&
+  value !== null &&
+  (value as Record<string, unknown>).hookEventName === 'PreToolUse' &&
+  typeof (value as Record<string, unknown>).additionalContext === 'string'
+
+const clipOutput = (json: object): unknown => {
+  const output = (json as { hookSpecificOutput?: unknown }).hookSpecificOutput
+  if (!isPreToolUseContext(output)) return clipDeep(json)
+  const clipped = clipDeep({ ...json, hookSpecificOutput: { ...output, additionalContext: '' } }) as Record<string, object>
+  return { ...clipped, hookSpecificOutput: { ...clipped.hookSpecificOutput, additionalContext: output.additionalContext } }
+}
+
+const writeFlushed = (stream: NodeJS.WritableStream, text: string): Promise<void> =>
+  new Promise((resolve) => {
+    stream.write(text, () => resolve())
+  })
+
 export const runHook: (name: string, handler: (event: unknown) => HookVerdict) => Promise<never> = async (
   name,
   handler
@@ -46,10 +64,10 @@ export const runHook: (name: string, handler: (event: unknown) => HookVerdict) =
     const event = parseEvent(raw)
     const verdict = handler(event)
     if (verdict.block) {
-      process.stderr.write(`${clipGraphemes(verdict.reason, MAX_FIELD_GRAPHEMES)}\n`)
+      await writeFlushed(process.stderr, `${verdict.reason}\n`)
       process.exit(2)
     }
-    process.stdout.write(JSON.stringify(clipDeep(verdict.json)))
+    await writeFlushed(process.stdout, JSON.stringify(clipOutput(verdict.json)))
     process.exit(0)
   } catch (error) {
     const message = error instanceof Error ? (error.stack ?? error.message) : String(error)
