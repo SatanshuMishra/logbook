@@ -19,6 +19,7 @@ const EXPECTED_TOOL_NAMES = [
   'record_decision',
   'resolve_conflict',
   'resume_thread',
+  'search_ledger',
   'sync_ledger',
   'update_thread'
 ]

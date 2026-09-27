@@ -1437,6 +1437,18 @@ const buildDriver = (tool: ToolSpec<never, never>, world: CensusWorld): CensusDr
     }
   }
 
+  if (tool.name === 'search_ledger') {
+    return {
+      name: tool.name,
+      decisionsDir: world.anaDecisionsDir,
+      handler,
+      buildVariants: async () => [
+        { rt: world.anaRt, input: {} },
+        { rt: world.anaRt, input: { text: 'census', kind: 'decision', status: 'all' } }
+      ]
+    }
+  }
+
   if (tool.name === 'resolve_conflict') {
     return {
       name: tool.name,

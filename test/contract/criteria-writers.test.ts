@@ -107,7 +107,11 @@ const FREE_TEXT_LEAF_DISPOSITIONS: Readonly<Record<string, LeafDisposition>> = {
   'update_thread::artifacts_retire[]': 'allowed',
   'resolve_conflict::resolutions[].path': 'allowed',
   'resolve_conflict::resolutions[].content': 'allowed',
-  'list_threads::cursor': 'allowed'
+  'list_threads::cursor': 'allowed',
+  'search_ledger::text': 'allowed',
+  'search_ledger::kind': 'allowed',
+  'search_ledger::thread': 'allowed',
+  'search_ledger::status': 'allowed'
 }
 
 export const classifyCriteriaTextProperty = (

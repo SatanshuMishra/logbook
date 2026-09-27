@@ -10,7 +10,8 @@ export const LEDGER_TOOL_NAMES = [
   'log_session_event',
   'sync_ledger',
   'resolve_conflict',
-  'list_threads'
+  'list_threads',
+  'search_ledger'
 ] as const
 
 export type LedgerToolName = (typeof LEDGER_TOOL_NAMES)[number]

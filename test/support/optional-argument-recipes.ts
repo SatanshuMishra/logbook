@@ -14,6 +14,7 @@ import { resumeThreadTool } from '../../src/server/tools/resume_thread.ts'
 import { parkThreadTool } from '../../src/server/tools/park_thread.ts'
 import { recordDecisionTool } from '../../src/server/tools/record_decision.ts'
 import { listThreadsTool } from '../../src/server/tools/list_threads.ts'
+import { searchLedgerTool } from '../../src/server/tools/search_ledger.ts'
 import { resolveConflictTool } from '../../src/server/tools/resolve_conflict.ts'
 import { writeConflictState } from '../../src/merge/conflict-state.ts'
 import { layoutFor } from '../../src/store/layout.ts'
@@ -903,6 +904,75 @@ const listThreadsLimitRecipe = (): Promise<RecipeResult> =>
     (structured) => ({ next_cursor: structured.next_cursor })
   )
 
+const SEARCH_MISS_PHRASE = 'finding nothing proves nothing'
+
+const searchMissProvesNothing = (structured: Record<string, unknown>): boolean =>
+  mustBeString(structured.results, 'the search_ledger results').includes(SEARCH_MISS_PHRASE)
+
+const searchLeftRecordsOut = (structured: Record<string, unknown>): boolean => structured.matched !== structured.searched
+
+const searchLedgerTextRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'search_ledger.text',
+    searchLedgerTool,
+    (rt) => openFixtureThread(rt, 'search-ledger-text'),
+    () => ({}),
+    () => ({ text: 'search-ledger-text criterion' }),
+    (structured) => ({ miss_proves_nothing: searchMissProvesNothing(structured) })
+  )
+
+const searchLedgerKindRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'search_ledger.kind',
+    searchLedgerTool,
+    async (rt) => {
+      const ctx = await openFixtureThread(rt, 'search-ledger-kind')
+      await recordFixtureDecision(rt, ctx.threadId, 'a search-ledger-kind probe decision')
+      return ctx
+    },
+    () => ({}),
+    () => ({ kind: 'decision' }),
+    (structured) => ({ records_left_out: searchLeftRecordsOut(structured) })
+  )
+
+const searchLedgerThreadRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'search_ledger.thread',
+    searchLedgerTool,
+    async (rt) => {
+      const first = await openFixtureThread(rt, 'search-ledger-thread-one')
+      await openFixtureThread(rt, 'search-ledger-thread-two')
+      return first
+    },
+    () => ({}),
+    (ctx) => ({ thread: ctx.threadId }),
+    (structured) => ({ records_left_out: searchLeftRecordsOut(structured) })
+  )
+
+const searchLedgerStatusRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'search_ledger.status',
+    searchLedgerTool,
+    async (rt) => {
+      const ctx = await openFixtureThread(rt, 'search-ledger-status')
+      const priorDecisionId = await recordFixtureDecision(rt, ctx.threadId, 'a search-ledger-status prior decision')
+      const successor = await recordDecisionTool.handler(
+        rt,
+        STUB_TOOL_CTX,
+        decisionArgs(ctx.threadId, 'a search-ledger-status successor decision', {
+          supersedes: [priorDecisionId]
+        }) as Parameters<typeof recordDecisionTool.handler>[2]
+      )
+      if (!successor.ok) throw new Error('optional-argument-recipes: expected the search_ledger.status successor decision to be recorded')
+      return ctx
+    },
+    () => ({}),
+    () => ({ status: 'all' }),
+    (structured) => ({
+      superseded_listed: mustBeString(structured.results, 'the search_ledger results').includes('superseded by')
+    })
+  )
+
 const resumeThreadFullBriefingRecipe = (): Promise<RecipeResult> =>
   runOptionalArgRecipe(
     'resume_thread.full_briefing',
@@ -983,6 +1053,10 @@ export const RECIPES: ReadonlyMap<string, () => Promise<RecipeResult>> = new Map
   ['record_decision.supersedes', recordDecisionSupersedesRecipe],
   ['list_threads.cursor', listThreadsCursorRecipe],
   ['list_threads.limit', listThreadsLimitRecipe],
+  ['search_ledger.text', searchLedgerTextRecipe],
+  ['search_ledger.kind', searchLedgerKindRecipe],
+  ['search_ledger.thread', searchLedgerThreadRecipe],
+  ['search_ledger.status', searchLedgerStatusRecipe],
   ['resume_thread.full_briefing', resumeThreadFullBriefingRecipe],
   ['resolve_conflict.resolutions[].record', resolveConflictRecordRecipe],
   ['resolve_conflict.resolutions[].content', resolveConflictContentRecipe]
@@ -1075,5 +1149,12 @@ export const TEST_2_CASES: Test2Case[] = [
     setup: async () => ({}),
     minimalArgs: () => ({}),
     attributable: (structured) => ({ next_cursor: structured.next_cursor })
+  },
+  {
+    tool: 'search_ledger',
+    handler: searchLedgerTool,
+    setup: async (rt) => openFixtureThread(rt, 'test-2 search_ledger'),
+    minimalArgs: () => ({}),
+    attributable: (structured) => ({ miss_proves_nothing: searchMissProvesNothing(structured) })
   }
 ]

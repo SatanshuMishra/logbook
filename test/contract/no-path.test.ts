@@ -25,6 +25,7 @@ import { amendCriteriaTool } from '../../src/server/tools/amend_criteria.ts'
 import { resumeThreadTool } from '../../src/server/tools/resume_thread.ts'
 import { parkThreadTool } from '../../src/server/tools/park_thread.ts'
 import { listThreadsTool } from '../../src/server/tools/list_threads.ts'
+import { searchLedgerTool } from '../../src/server/tools/search_ledger.ts'
 import { recordDecisionTool, invalidDecisionRefusal } from '../../src/server/tools/record_decision.ts'
 import { logSessionEventTool, invalidSessionEntryRefusal } from '../../src/server/tools/log_session_event.ts'
 import { syncLedgerTool } from '../../src/server/tools/sync_ledger.ts'
@@ -106,6 +107,7 @@ const BIND_BRANCH_HANDLER_PRODUCER: ProducerId = 'server/tools/bind_branch.ts#bi
 const CLOSE_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/close_thread.ts#closeThreadTool.handler'
 const LIST_THREADS_HANDLER_PRODUCER: ProducerId = 'server/tools/list_threads.ts#listThreadsTool.handler'
 const OPEN_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/open_thread.ts#openThreadTool.handler'
+const SEARCH_LEDGER_HANDLER_PRODUCER: ProducerId = 'server/tools/search_ledger.ts#searchLedgerTool.handler'
 const PARK_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/park_thread.ts#parkThreadTool.handler'
 const RESUME_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/resume_thread.ts#resumeThreadTool.handler'
 const UPDATE_THREAD_HANDLER_PRODUCER: ProducerId = 'server/tools/update_thread.ts#updateThreadTool.handler'
@@ -216,6 +218,10 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     const openProjectStoreFailure = openProjectStore(openProjectStoreFailureRt)
     if (openProjectStoreFailure.ok) throw new Error('expected openProjectStore to refuse when CLAUDE_PLUGIN_DATA is unset')
     refusals.push({ producer: OPEN_PROJECT_STORE_PRODUCER, refusal: openProjectStoreFailure.refusal })
+
+    const searchLedgerUnlocated = await searchLedgerTool.handler(openProjectStoreFailureRt, STUB_TOOL_CTX, {})
+    if (searchLedgerUnlocated.ok) throw new Error('expected searchLedgerTool to refuse when CLAUDE_PLUGIN_DATA is unset')
+    refusals.push({ producer: SEARCH_LEDGER_HANDLER_PRODUCER, refusal: searchLedgerUnlocated.refusal })
 
     const resumeUnknownThread = await resumeThreadTool.handler(rt, STUB_TOOL_CTX, { thread_id: rt.ulid() })
     if (resumeUnknownThread.ok) throw new Error('expected resumeThreadTool to refuse an unknown thread id')

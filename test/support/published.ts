@@ -185,6 +185,11 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
     { phrase: 'pass `cursor` from a previous reply to read the next page', providers: ['list_threads.cursor'] },
     { phrase: `\`limit\` to change the page size from its default of ${DEFAULT_PAGE_SIZE}`, providers: ['list_threads.limit'] },
     { phrase: 'A thread that is blocked shows what it is blocked on', providers: ['update_thread.blocked_by'] }
+  ],
+  search_ledger: [
+    { phrase: 'across every thread, closed threads included, one line per record with its id', providers: [] },
+    { phrase: 'A text search matches exact characters only', providers: ['search_ledger.text'] },
+    { phrase: 'or list by kind or thread', providers: ['search_ledger.kind', 'search_ledger.thread'] }
   ]
 }
 
@@ -284,6 +289,11 @@ export const ARGUMENT_GAPS: readonly ArgumentGap[] = [
     address: 'update_thread.artifacts_retire',
     reason:
       'the same enumeration that omits artifacts_add also omits its removal counterpart; "add or retire risks" names risks only, never an artifact'
+  },
+  {
+    address: 'search_ledger.status',
+    reason:
+      'the description promises records across every thread, closed threads included, and never says that superseded decisions, retired risks and artifacts, and struck criteria are left out unless status asks for all of them'
   },
   {
     address: 'open_thread.artifacts',
