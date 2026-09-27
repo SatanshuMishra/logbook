@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: step-change-no-file
+tags: [proof]
+runs: 5
+context:
+  scaffold_script: scaffold.sh
