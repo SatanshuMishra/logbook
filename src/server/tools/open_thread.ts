@@ -276,7 +276,7 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
           check: c.check ?? null,
           settledness: criterionSettledness(c)
         })),
-        step_records: renderStepRecords(stepRecords.value, committed.value.spine.next_step)
+        step_records: renderStepRecords(store, stepRecords.value, committed.value.spine.next_step)
       }
     }
   }

@@ -341,7 +341,7 @@ const parkResolvedThread = (
       session_entry_ids: [sessionEntry.id],
       spine_fields_updated: spineFieldsUpdated,
       pointer_released: released === 'released',
-      ...(stepRecords === null ? {} : { step_records: renderStepRecords(stepRecords, validated.value.spine.next_step) })
+      ...(stepRecords === null ? {} : { step_records: renderStepRecords(store, stepRecords, validated.value.spine.next_step) })
     }
   }
 }
