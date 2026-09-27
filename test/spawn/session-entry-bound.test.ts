@@ -55,6 +55,7 @@ const openFixtureThread = async (rt: Runtime, slug: string): Promise<string> => 
     slug,
     active_goal: 'exercise the session entry bound fixture',
     next_step: 'exercise the session entry bound fixture',
+    next_step_records: [],
     completion_criteria: [
       { text: 'the bound is enforced', check: 'the test asserts it', settledness: 'proposed' }
     ]

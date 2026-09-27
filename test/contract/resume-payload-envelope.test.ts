@@ -74,6 +74,7 @@ const openOrdinaryThread = async (rt: Runtime, slug: string): Promise<string> =>
     slug,
     active_goal: 'guard the resume payload byte budget',
     next_step: 'exercise the resume payload envelope fixture',
+    next_step_records: [],
     completion_criteria: [
       { text: 'the predicted payload size bounds the serialised reply', check: 'the envelope test asserts it', settledness: 'proposed' }
     ]

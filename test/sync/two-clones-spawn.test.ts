@@ -200,6 +200,7 @@ const openThreadFor = async (teammate: SpawnedTeammate, slug: string): Promise<s
     slug,
     active_goal: 'exercise the two-clones spawn fixture',
     next_step: 'exercise the two-clones spawn fixture',
+    next_step_records: [],
     completion_criteria: [
       { text: 'a criterion for the spawn offline-merge scenario', check: 'the offline-merge scenario check', settledness: 'proposed' }
     ]
@@ -350,7 +351,7 @@ test('sync.two-clones-changing-different-fields-of-one-thread-conflict-on-that-t
       ana,
       ben,
       'two-clones-different-fields-thread',
-      { next_step: 'ben next step' },
+      { next_step: 'ben next step', next_step_records: [] },
       { active_goal: 'ana goal' }
     )
     const text = refusalTextOf('sync_ledger (ana, after both changed one thread)', anaSync)

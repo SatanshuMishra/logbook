@@ -33,6 +33,7 @@ const openLineBreakThread = async (spawned: SpawnedServer, slug: string): Promis
       slug,
       active_goal: 'exercise the session entry line break fixture',
       next_step: 'exercise the session entry line break fixture',
+      next_step_records: [],
       completion_criteria: [
         {
           text: 'a session entry line break fixture criterion',

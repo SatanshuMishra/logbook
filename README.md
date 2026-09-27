@@ -37,7 +37,7 @@ These are non-goals — things deliberately not built, each with its reason. The
 | Not a goal | Why |
 |---|---|
 | **Two sessions on one project at the same time** | Deliberate. Logbook is single-session-per-project by design. That is a limit, stated here rather than left for you to discover |
-| A search, vector or embedding layer | Less accurate than the plain record set at this scale, it fails the simplicity constraint, and it was measured to reduce how much an agent used material it had already been handed |
+| A ranking, vector or embedding layer | Less accurate than the plain record set at this scale, it fails the simplicity constraint, and it was measured to reduce how much an agent used material it had already been handed |
 | A multi-level index over the records | Measured worse than the flat one it would replace |
 | Event sourcing, or projections over the ledger | Hard in ways that are well documented, and it fails the simplicity constraint outright |
 | Automatic capture of file edits, diffs, tool calls or test runs | Duplicates what git already holds; records actions rather than reasons, so it cannot supply the why; and it widens what leaves your machine |
@@ -84,7 +84,7 @@ What the repository does not state: neither `.claude-plugin/plugin.json:1-9` nor
 
 At the repository root: `package.json`, `tsconfig.json`, `.npmrc`, `.mcp.json` (declares the MCP server under the server key `ledger`, `.mcp.json:3`, pointing at `bin/logbook-server.ts`, `.mcp.json:5`), `inspector.config.json`.
 
-The MCP server registers twelve tools, listed in one place: `src/server/tools/index.ts:15-28` (`open_thread`, `update_thread`, `close_thread`, `amend_criteria`, `bind_branch`, `resume_thread`, `park_thread`, `record_decision`, `log_session_event`, `sync_ledger`, `resolve_conflict`, `list_threads`).
+The MCP server registers thirteen tools, listed in one place: `src/server/tools/index.ts:17-31` (`open_thread`, `update_thread`, `close_thread`, `amend_criteria`, `bind_branch`, `resume_thread`, `park_thread`, `record_decision`, `log_session_event`, `sync_ledger`, `resolve_conflict`, `list_threads`, `search_ledger`).
 
 ## How the ledger is stored
 

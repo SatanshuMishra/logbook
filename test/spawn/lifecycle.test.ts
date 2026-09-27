@@ -499,6 +499,7 @@ test('amend_criteria.retention-cap-matches-stored-shape', async () => {
         slug: 'retention-cap-thread',
         active_goal: 'exercise the retention cap fixture',
         next_step: 'exercise the retention cap fixture',
+        next_step_records: [],
         completion_criteria: criteria
       }
     })) as CallToolResult
@@ -713,6 +714,7 @@ test('update_thread.refuses-marking-a-struck-criterion-done', async () => {
         slug: 'struck-criteria-thread',
         active_goal: 'exercise the struck-criteria fixture',
         next_step: 'exercise the struck-criteria fixture',
+        next_step_records: [],
         completion_criteria: [
           { text: 'first criterion', check: 'the first check', settledness: 'proposed' },
           { text: 'second criterion', check: 'the second check', settledness: 'proposed' }

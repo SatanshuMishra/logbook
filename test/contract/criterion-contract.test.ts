@@ -21,6 +21,7 @@ const openFixtureThread = async (
     slug,
     active_goal: 'ship the criterion contract fixture',
     next_step: 'exercise the criterion under test',
+    next_step_records: [],
     completion_criteria: criteria.map((entry) => ({ ...entry, settledness: 'proposed' as const }))
   })
   if (!opened.ok) throw new Error(`criterion fixture: open_thread refused: ${opened.refusal.message}`)
@@ -57,6 +58,7 @@ test('criterion.open-thread-refuses-a-criterion-carrying-no-settledness', () => 
     slug: 'no-settledness-thread',
     active_goal: 'ship the criterion contract fixture',
     next_step: 'exercise the criterion under test',
+    next_step_records: [],
     completion_criteria: [{ text: 'the health check ships', check: 'npm test exits 0' }]
   })
   assert.equal(refusal.ok, false)

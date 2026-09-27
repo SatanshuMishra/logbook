@@ -41,6 +41,7 @@ export type Spine = {
   active_goal: string
   next_step: string
   next_step_criterion_id?: Ulid | undefined
+  next_step_records?: Ulid[] | undefined
   landed: string
   last_session: string
   open_risks: Risk[]
@@ -194,6 +195,11 @@ const SpineSchema = z.object({
   active_goal: content(z.string().describe('the thread goal currently being worked')),
   next_step: content(z.string().describe('the next concrete step in this thread')),
   next_step_criterion_id: optionalUlidField('the completion criterion the next step advances, absent when the next step names none'),
+  next_step_records: z
+    .array(ulidField('one record the next step needs'))
+    .optional()
+    .describe('the records the next step needs, named when the step was set')
+    .meta({ class: 'structural' }),
   landed: content(z.string().describe('what this thread has landed and verified so far, as the previous session left it')),
   last_session: content(z.string().describe('a summary of the most recent session')),
   open_risks: z.array(RiskSchema).describe('risks still open on this thread').meta({ class: 'structural' }),

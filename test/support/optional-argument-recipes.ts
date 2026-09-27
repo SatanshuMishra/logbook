@@ -14,6 +14,7 @@ import { resumeThreadTool } from '../../src/server/tools/resume_thread.ts'
 import { parkThreadTool } from '../../src/server/tools/park_thread.ts'
 import { recordDecisionTool } from '../../src/server/tools/record_decision.ts'
 import { listThreadsTool } from '../../src/server/tools/list_threads.ts'
+import { searchLedgerTool } from '../../src/server/tools/search_ledger.ts'
 import { resolveConflictTool } from '../../src/server/tools/resolve_conflict.ts'
 import { writeConflictState } from '../../src/merge/conflict-state.ts'
 import { layoutFor } from '../../src/store/layout.ts'
@@ -202,6 +203,7 @@ const openFixtureThread = async (rt: Runtime, label: string, criteriaCount = 1):
     slug: `${label.replace(/[^a-z0-9]+/gi, '-')}-fixture-thread`,
     active_goal: `exercise the ${label} fixture`,
     next_step: `exercise the ${label} fixture`,
+    next_step_records: [],
     completion_criteria: Array.from({ length: criteriaCount }, (_, index) => ({
       text: `${label} criterion ${index + 1}`,
       check: `${label} check ${index + 1}`,
@@ -239,6 +241,7 @@ const successorThreadArgs = (): Record<string, unknown> => ({
   slug: 'successor-fixture-thread',
   active_goal: 'exercise the successor fixture',
   next_step: 'exercise the successor fixture',
+  next_step_records: [],
   completion_criteria: [{ text: 'a successor criterion', check: 'a successor check', settledness: 'proposed' }]
 })
 
@@ -274,7 +277,8 @@ const openThreadNoCriteriaArgs = (): Record<string, unknown> => ({
   title: 'completion criteria optionality fixture thread',
   slug: 'completion-criteria-optionality-fixture-thread',
   active_goal: 'exercise the completion-criteria optionality fixture',
-  next_step: 'exercise the completion-criteria optionality fixture'
+  next_step: 'exercise the completion-criteria optionality fixture',
+  next_step_records: []
 })
 
 const openThreadCompletionCriteriaRecipe = (): Promise<RecipeResult> =>
@@ -309,6 +313,7 @@ const openThreadCriterionCheckRecipe = (): Promise<RecipeResult> =>
       slug: 'criterion-check-optionality-fixture-thread',
       active_goal: 'exercise the criterion-check optionality fixture',
       next_step: 'exercise the criterion-check optionality fixture',
+      next_step_records: [],
       completion_criteria: [{ text: 'what counts as acceptable latency is not decided', settledness: 'unsettled' }]
     }),
     () => ({
@@ -316,6 +321,7 @@ const openThreadCriterionCheckRecipe = (): Promise<RecipeResult> =>
       slug: 'criterion-check-optionality-fixture-thread',
       active_goal: 'exercise the criterion-check optionality fixture',
       next_step: 'exercise the criterion-check optionality fixture',
+      next_step_records: [],
       completion_criteria: [
         {
           text: 'what counts as acceptable latency is not decided',
@@ -340,6 +346,7 @@ const openThreadCriterionSettledByRecipe = (): Promise<RecipeResult> =>
       slug: 'criterion-settled-by-optionality-fixture-thread',
       active_goal: 'exercise the criterion settled_by optionality fixture',
       next_step: 'exercise the criterion settled_by optionality fixture',
+      next_step_records: [],
       completion_criteria: [{ text: 'the suite is green', check: 'npm test exits 0', settledness: 'proposed' }]
     }),
     () => ({
@@ -347,6 +354,7 @@ const openThreadCriterionSettledByRecipe = (): Promise<RecipeResult> =>
       slug: 'criterion-settled-by-optionality-fixture-thread',
       active_goal: 'exercise the criterion settled_by optionality fixture',
       next_step: 'exercise the criterion settled_by optionality fixture',
+      next_step_records: [],
       completion_criteria: [
         {
           text: 'the gate fires',
@@ -455,7 +463,7 @@ const SIMPLE_UPDATE_FIELDS: SimpleUpdateFieldSpec[] = [
   },
   {
     field: 'next_step',
-    sentinelExtra: () => ({ next_step: 'sentinel next step text' }),
+    sentinelExtra: () => ({ next_step: 'sentinel next step text', next_step_records: [] }),
     extract: (structured, rt, ctx) => {
       const value = readThreadRecord(rt, ctx.threadId)?.spine.next_step ?? ''
       return {
@@ -554,19 +562,20 @@ const updateThreadRisksAddRefsRecipe = (): Promise<RecipeResult> =>
     (structured, rt, ctx: UpdateThreadFixtureCtx) => ({ refs: findAddedRisk(rt, ctx.threadId, structured)?.refs ?? [] })
   )
 
-const updateThreadNextStepCriterionIdRecipe = (): Promise<RecipeResult> =>
+const updateThreadNextStepRecordsRecipe = (): Promise<RecipeResult> =>
   runOptionalArgRecipe(
-    'update_thread.next_step_criterion_id',
+    'update_thread.next_step_records',
     updateThreadTool,
     openUpdateThreadFixture,
-    (ctx: UpdateThreadFixtureCtx) => ({ thread_id: ctx.threadId, next_step: 'next step criterion probe text' }),
+    (ctx: UpdateThreadFixtureCtx) => ({ thread_id: ctx.threadId, next_step: 'next step records probe text' }),
     (ctx: UpdateThreadFixtureCtx) => ({
       thread_id: ctx.threadId,
-      next_step: 'next step criterion probe text',
-      next_step_criterion_id: mustGet(ctx.criterionIds, 0, 'the first fixture criterion id')
+      next_step: 'next step records probe text',
+      next_step_records: [ctx.decisionId]
     }),
-    (_structured, rt, ctx: UpdateThreadFixtureCtx) => ({
-      next_step_criterion_id: readThreadRecord(rt, ctx.threadId)?.spine.next_step_criterion_id ?? null
+    (structured, rt, ctx: UpdateThreadFixtureCtx) => ({
+      next_step_records: readThreadRecord(rt, ctx.threadId)?.spine.next_step_records ?? [],
+      step_records: structured.step_records ?? null
     })
   )
 
@@ -726,27 +735,28 @@ const openParkThreadCrossSessionFixture = async (rt: Runtime): Promise<ParkThrea
   return { threadId }
 }
 
-type ParkThreadCriterionFixtureCtx = ParkThreadFixtureCtx & { criterionIds: string[] }
+type ParkThreadRecordsFixtureCtx = ParkThreadFixtureCtx & { criterionIds: string[] }
 
-const openParkThreadCriterionFixture = async (rt: Runtime): Promise<ParkThreadCriterionFixtureCtx> => {
-  const { threadId, criterionIds } = await openFixtureThread(rt, 'park-thread-criterion')
+const openParkThreadRecordsFixture = async (rt: Runtime): Promise<ParkThreadRecordsFixtureCtx> => {
+  const { threadId, criterionIds } = await openFixtureThread(rt, 'park-thread-records')
   const resumed = await resumeThreadTool.handler(rt, STUB_TOOL_CTX, { thread_id: threadId })
-  if (!resumed.ok) throw new Error('optional-argument-recipes: expected the park_thread criterion fixture pointer to be set')
+  if (!resumed.ok) throw new Error('optional-argument-recipes: expected the park_thread records fixture pointer to be set')
   return { threadId, criterionIds }
 }
 
-const parkThreadNextStepCriterionIdRecipe = (): Promise<RecipeResult> =>
+const parkThreadNextStepRecordsRecipe = (): Promise<RecipeResult> =>
   runOptionalArgRecipe(
-    'park_thread.next_step_criterion_id',
+    'park_thread.next_step_records',
     parkThreadTool,
-    openParkThreadCriterionFixture,
-    () => ({ next_step: 'park next step criterion probe text' }),
-    (ctx: ParkThreadCriterionFixtureCtx) => ({
-      next_step: 'park next step criterion probe text',
-      next_step_criterion_id: mustGet(ctx.criterionIds, 0, 'the park_thread fixture criterion id')
+    openParkThreadRecordsFixture,
+    () => ({ next_step: 'park next step records probe text' }),
+    (ctx: ParkThreadRecordsFixtureCtx) => ({
+      next_step: 'park next step records probe text',
+      next_step_records: [mustGet(ctx.criterionIds, 0, 'the park_thread fixture criterion id')]
     }),
-    (_structured, rt, ctx: ParkThreadCriterionFixtureCtx) => ({
-      next_step_criterion_id: readThreadRecord(rt, ctx.threadId)?.spine.next_step_criterion_id ?? null
+    (structured, rt, ctx: ParkThreadRecordsFixtureCtx) => ({
+      next_step_records: readThreadRecord(rt, ctx.threadId)?.spine.next_step_records ?? [],
+      step_records: structured.step_records ?? null
     })
   )
 
@@ -780,7 +790,7 @@ const PARK_FIELDS: ParkFieldSpec[] = [
   {
     field: 'next_step',
     setup: openParkThreadFixture,
-    sentinelArgs: () => ({ next_step: 'sentinel park next step text' }),
+    sentinelArgs: () => ({ next_step: 'sentinel park next step text', next_step_records: [] }),
     extract: (structured, rt, ctx) => {
       const value = readThreadRecord(rt, ctx.threadId)?.spine.next_step ?? ''
       return {
@@ -788,15 +798,6 @@ const PARK_FIELDS: ParkFieldSpec[] = [
         next_step: value === 'exercise the park-thread fixture' ? '' : value
       }
     }
-  },
-  {
-    field: 'landed',
-    setup: openParkThreadFixture,
-    sentinelArgs: () => ({ landed: 'sentinel park landed text' }),
-    extract: (structured, rt, ctx) => ({
-      spine_fields_updated: structured.spine_fields_updated,
-      landed: readThreadRecord(rt, ctx.threadId)?.spine.landed ?? ''
-    })
   }
 ]
 
@@ -903,6 +904,75 @@ const listThreadsLimitRecipe = (): Promise<RecipeResult> =>
     (structured) => ({ next_cursor: structured.next_cursor })
   )
 
+const SEARCH_MISS_PHRASE = 'finding nothing proves nothing'
+
+const searchMissProvesNothing = (structured: Record<string, unknown>): boolean =>
+  mustBeString(structured.results, 'the search_ledger results').includes(SEARCH_MISS_PHRASE)
+
+const searchLeftRecordsOut = (structured: Record<string, unknown>): boolean => structured.matched !== structured.searched
+
+const searchLedgerTextRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'search_ledger.text',
+    searchLedgerTool,
+    (rt) => openFixtureThread(rt, 'search-ledger-text'),
+    () => ({}),
+    () => ({ text: 'search-ledger-text criterion' }),
+    (structured) => ({ miss_proves_nothing: searchMissProvesNothing(structured) })
+  )
+
+const searchLedgerKindRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'search_ledger.kind',
+    searchLedgerTool,
+    async (rt) => {
+      const ctx = await openFixtureThread(rt, 'search-ledger-kind')
+      await recordFixtureDecision(rt, ctx.threadId, 'a search-ledger-kind probe decision')
+      return ctx
+    },
+    () => ({}),
+    () => ({ kind: 'decision' }),
+    (structured) => ({ records_left_out: searchLeftRecordsOut(structured) })
+  )
+
+const searchLedgerThreadRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'search_ledger.thread',
+    searchLedgerTool,
+    async (rt) => {
+      const first = await openFixtureThread(rt, 'search-ledger-thread-one')
+      await openFixtureThread(rt, 'search-ledger-thread-two')
+      return first
+    },
+    () => ({}),
+    (ctx) => ({ thread: ctx.threadId }),
+    (structured) => ({ records_left_out: searchLeftRecordsOut(structured) })
+  )
+
+const searchLedgerStatusRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'search_ledger.status',
+    searchLedgerTool,
+    async (rt) => {
+      const ctx = await openFixtureThread(rt, 'search-ledger-status')
+      const priorDecisionId = await recordFixtureDecision(rt, ctx.threadId, 'a search-ledger-status prior decision')
+      const successor = await recordDecisionTool.handler(
+        rt,
+        STUB_TOOL_CTX,
+        decisionArgs(ctx.threadId, 'a search-ledger-status successor decision', {
+          supersedes: [priorDecisionId]
+        }) as Parameters<typeof recordDecisionTool.handler>[2]
+      )
+      if (!successor.ok) throw new Error('optional-argument-recipes: expected the search_ledger.status successor decision to be recorded')
+      return ctx
+    },
+    () => ({}),
+    () => ({ status: 'all' }),
+    (structured) => ({
+      superseded_listed: mustBeString(structured.results, 'the search_ledger results').includes('superseded by')
+    })
+  )
+
 const resumeThreadFullBriefingRecipe = (): Promise<RecipeResult> =>
   runOptionalArgRecipe(
     'resume_thread.full_briefing',
@@ -969,7 +1039,7 @@ export const RECIPES: ReadonlyMap<string, () => Promise<RecipeResult>> = new Map
   ...simpleUpdateThreadRecipes,
   ['update_thread.risks_add[].refs', updateThreadRisksAddRefsRecipe],
   ['update_thread.criteria_settled[].settled_by', updateThreadCriteriaSettledSettledByRecipe],
-  ['update_thread.next_step_criterion_id', updateThreadNextStepCriterionIdRecipe],
+  ['update_thread.next_step_records', updateThreadNextStepRecordsRecipe],
   ['amend_criteria.criterion_id', amendCriteriaCriterionIdRecipe],
   ['amend_criteria.text', amendCriteriaTextRecipe],
   ['amend_criteria.kind', amendCriteriaKindRecipe],
@@ -978,11 +1048,15 @@ export const RECIPES: ReadonlyMap<string, () => Promise<RecipeResult>> = new Map
   ['amend_criteria.settled_by', amendCriteriaSettledByRecipe],
   ['amend_criteria.position', amendCriteriaPositionRecipe],
   ...parkThreadRecipes,
-  ['park_thread.next_step_criterion_id', parkThreadNextStepCriterionIdRecipe],
+  ['park_thread.next_step_records', parkThreadNextStepRecordsRecipe],
   ...recordDecisionSimpleRecipes,
   ['record_decision.supersedes', recordDecisionSupersedesRecipe],
   ['list_threads.cursor', listThreadsCursorRecipe],
   ['list_threads.limit', listThreadsLimitRecipe],
+  ['search_ledger.text', searchLedgerTextRecipe],
+  ['search_ledger.kind', searchLedgerKindRecipe],
+  ['search_ledger.thread', searchLedgerThreadRecipe],
+  ['search_ledger.status', searchLedgerStatusRecipe],
   ['resume_thread.full_briefing', resumeThreadFullBriefingRecipe],
   ['resolve_conflict.resolutions[].record', resolveConflictRecordRecipe],
   ['resolve_conflict.resolutions[].content', resolveConflictContentRecipe]
@@ -1005,7 +1079,8 @@ export const TEST_2_CASES: Test2Case[] = [
       title: 'test-2 open_thread fixture thread',
       slug: 'test-2-open-thread-fixture-thread',
       active_goal: 'exercise the test-2 open_thread fixture',
-      next_step: 'exercise the test-2 open_thread fixture'
+      next_step: 'exercise the test-2 open_thread fixture',
+      next_step_records: []
     }),
     attributable: () => ({})
   },
@@ -1025,7 +1100,8 @@ export const TEST_2_CASES: Test2Case[] = [
       out_of_scope_added: structured.out_of_scope_added,
       artifacts_added: structured.artifacts_added,
       artifacts_retired: structured.artifacts_retired,
-      blocked_by_set: structured.blocked_by_set
+      blocked_by_set: structured.blocked_by_set,
+      step_records: structured.step_records
     })
   },
   {
@@ -1059,7 +1135,8 @@ export const TEST_2_CASES: Test2Case[] = [
     attributable: (structured) => ({
       parked_thread_ids: structured.parked_thread_ids,
       session_entry_ids: structured.session_entry_ids,
-      spine_fields_updated: structured.spine_fields_updated
+      spine_fields_updated: structured.spine_fields_updated,
+      step_records: structured.step_records
     })
   },
   {
@@ -1075,5 +1152,12 @@ export const TEST_2_CASES: Test2Case[] = [
     setup: async () => ({}),
     minimalArgs: () => ({}),
     attributable: (structured) => ({ next_cursor: structured.next_cursor })
+  },
+  {
+    tool: 'search_ledger',
+    handler: searchLedgerTool,
+    setup: async (rt) => openFixtureThread(rt, 'test-2 search_ledger'),
+    minimalArgs: () => ({}),
+    attributable: (structured) => ({ miss_proves_nothing: searchMissProvesNothing(structured) })
   }
 ]

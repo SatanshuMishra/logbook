@@ -10,6 +10,13 @@ import { escapeStored } from '../../render/escape.ts'
 import { ArtifactAddSchema, commitThread, loadThreadForReference, mintArtifacts, openProjectStore } from '../tool-support.ts'
 import { layoutFor } from '../../store/layout.ts'
 import { recordBriefed } from '../../domain/briefed.ts'
+import {
+  NEXT_STEP_RECORDS_DESCRIPTION,
+  NEXT_STEP_RECORD_ID_DESCRIPTION,
+  STEP_RECORDS_OUTPUT_DESCRIPTION,
+  renderStepRecords,
+  resolveStepRecords
+} from '../../domain/spine.ts'
 
 const CriterionCreateSchema = z
   .strictObject({
@@ -59,6 +66,9 @@ const OpenThreadInputSchema = z.strictObject({
     .describe(
       'the next action someone would take, stated as one decision about what to do next, naming the file and the place in it where the action involves one'
     ),
+  next_step_records: z
+    .array(z.string().regex(ULID_PATTERN).describe(NEXT_STEP_RECORD_ID_DESCRIPTION))
+    .describe(NEXT_STEP_RECORDS_DESCRIPTION),
   completion_criteria: z
     .array(CriterionCreateSchema)
     .max(caps.CRITERIA_MAX_ELEMENTS)
@@ -90,7 +100,8 @@ const OpenThreadOutputSchema = z.object({
           .describe('who stands behind this criterion as stored: confirmed by the human, proposed by you, or unsettled because done is not known yet')
       })
     )
-    .describe('the criteria minted for this thread, in display order')
+    .describe('the criteria minted for this thread, in display order'),
+  step_records: z.string().optional().describe(STEP_RECORDS_OUTPUT_DESCRIPTION)
 })
 
 type OpenThreadInput = z.infer<typeof OpenThreadInputSchema>
@@ -151,7 +162,7 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
   name: 'open_thread',
   title: 'Open thread',
   description:
-    `Creates a new thread of work and returns its id. A thread needs a one-line title, a short slug that is unique in this project, what the work is, and what happens next. Completion criteria are optional at this moment; when supplied, every criterion records who stands behind it: confirmed when the human said so, proposed when derived, or unsettled when done is not yet known. A confirmed or proposed criterion also carries its own check, the re-runnable thing that decides whether it is true, and a criterion missing what its settledness requires is refused. A confirmed criterion also carries settled_by, the human's own words quoted verbatim, and a settled_by given on any other settledness is refused. Criteria are supplied as objects and the server assigns each one a stable id and its display ordinal, so [{"text": "the merge test passes in both push orders", "check": "npm test exits 0", "settledness": "proposed"}] is a complete value. The slug is lowercase letters, digits and hyphens, for example merge-and-sync.`,
+    `Creates a new thread of work and returns its id. A thread needs a one-line title, a short slug that is unique in this project, what the work is, and what happens next. Setting next_step requires next_step_records: the records the step needs, found with search_ledger across every thread; the reply returns them in full. Completion criteria are optional at this moment; when supplied, every criterion records who stands behind it: confirmed when the human said so, proposed when derived, or unsettled when done is not yet known. A confirmed or proposed criterion also carries its own check, the re-runnable thing that decides whether it is true, and a criterion missing what its settledness requires is refused. A confirmed criterion also carries settled_by, the human's own words quoted verbatim, and a settled_by given on any other settledness is refused. Criteria are supplied as objects and the server assigns each one a stable id and its display ordinal, so [{"text": "the merge test passes in both push orders", "check": "npm test exits 0", "settledness": "proposed"}] is a complete value. The slug is lowercase letters, digits and hyphens, for example merge-and-sync.`,
   input: OpenThreadInputSchema,
   output: OpenThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -202,6 +213,9 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
       if (!predecessor.ok) return { ok: false, refusal: predecessor.refusal }
     }
 
+    const stepRecords = resolveStepRecords(store, input.next_step_records)
+    if (!stepRecords.ok) return { ok: false, refusal: stepRecords }
+
     const now = rt.now()
     const completionCriteria: Criterion[] = escapedCriteria.map((entry, index) => ({
       id: rt.ulid(),
@@ -231,6 +245,7 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
       spine: {
         active_goal: escapedActiveGoal,
         next_step: escapedNextStep,
+        next_step_records: [...input.next_step_records],
         landed: '',
         last_session: '',
         open_risks: [],
@@ -260,7 +275,8 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
           text: c.text,
           check: c.check ?? null,
           settledness: criterionSettledness(c)
-        }))
+        })),
+        step_records: renderStepRecords(store, stepRecords.value, committed.value.spine.next_step)
       }
     }
   }

@@ -1,13 +1,15 @@
 import type { Ok, Refusal } from '../schema/declare.ts'
-import type { Criterion, KeyDecision, OutOfScope, Risk, Spine, Ulid } from '../schema/thread.ts'
+import type { KeyDecision, OutOfScope, Risk, Spine, Ulid } from '../schema/thread.ts'
+import type { Store } from '../store/records.ts'
 import * as caps from '../schema/caps.ts'
 import { escapeStored } from '../render/escape.ts'
+import { renderRecordsInFull } from '../render/briefing.ts'
+import { indexRecords, matchByFileName, resolveRecordIds, type IndexedRecord } from './record-index.ts'
 
 export type SpineContribution = {
   active_goal?: string
   next_step?: string
-  next_step_criterion_id?: Ulid
-  landed?: string
+  next_step_records?: Ulid[]
   last_session?: string
   open_risks?: Risk[]
   key_decisions?: KeyDecision[]
@@ -95,31 +97,84 @@ const checkCollectionField = (field: CollectionField, stored: Spine, contributio
   return checkCollectionCount('out_of_scope', stored.out_of_scope.length, contributed.length)
 }
 
-const nextStepCriterionRefusal = (criterionId: Ulid, reason: string): Refusal => ({
+export const NEXT_STEP_RECORDS_DESCRIPTION =
+  'the ids of every record the next_step needs: decisions, risks, criteria, session entries, artifacts or out-of-scope notes, from this thread or any other, closed threads included. Required whenever next_step is sent. Find them with search_ledger before setting the step, and send [] only when the step needs none. The reply returns each named record in full, plus any live decision or risk whose text names a file the step names.'
+
+export const NEXT_STEP_RECORD_ID_DESCRIPTION = 'the id of one record the next_step needs'
+
+export const STEP_RECORDS_OUTPUT_DESCRIPTION =
+  'when next_step was set: the records the step names, in full, and any record matched by file name'
+
+const STEP_RECORDS_EXAMPLE = '["01ARZ3NDEKTSV4RRFFQ69G5FAV"]'
+
+const recordsWithoutStepRefusal = (): Refusal => ({
   ok: false,
-  field: 'next_step_criterion_id',
-  accepted: 'the id of a completion criterion on this thread that is neither done nor struck, sent together with next_step',
-  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+  field: 'next_step_records',
+  accepted: 'next_step_records together with next_step in the same call',
+  example: STEP_RECORDS_EXAMPLE,
   retryable: true,
-  message: `next_step_criterion_id ${criterionId} ${reason}; remedy: send it together with next_step and name a criterion that is still open, or omit it.`
+  message:
+    'next_step_records was sent without next_step. The list is stored with the step it serves; send next_step in the same call, or leave next_step_records out.'
 })
 
-export const checkNextStepCriterion = (criteria: readonly Criterion[], contribution: SpineContribution): Refusal | null => {
-  const criterionId = contribution.next_step_criterion_id
-  if (criterionId === undefined) return null
-  if (contribution.next_step === undefined) {
-    return nextStepCriterionRefusal(criterionId, 'was sent without next_step, and it only names the criterion a next_step sent in the same call advances')
-  }
-  const criterion = criteria.find((candidate) => candidate.id === criterionId)
-  if (criterion === undefined) return nextStepCriterionRefusal(criterionId, 'names no completion criterion on this thread')
-  if (criterion.struck_by !== null) return nextStepCriterionRefusal(criterionId, 'names a criterion that has been struck')
-  if (criterion.done) return nextStepCriterionRefusal(criterionId, 'names a criterion that is done or that this call marks done')
-  return null
+const stepWithoutRecordsRefusal = (): Refusal => ({
+  ok: false,
+  field: 'next_step_records',
+  accepted: 'a list of record ids sent together with next_step, or [] when the step needs no record',
+  example: STEP_RECORDS_EXAMPLE,
+  retryable: true,
+  message:
+    'next_step was sent without next_step_records. List the records this step needs, found with search_ledger (decisions, risks, criteria and session entries on any thread, closed ones included), or send [] if it needs none.'
+})
+
+const unknownStepRecordsRefusal = (missing: readonly string[]): Refusal => ({
+  ok: false,
+  field: 'next_step_records',
+  accepted: 'ids of records stored in this project',
+  example: STEP_RECORDS_EXAMPLE,
+  retryable: true,
+  message: `next_step_records names ids that match no stored record: ${missing.join(', ')}. search_ledger lists the stored records, on every thread, closed ones included.`
+})
+
+type SentStep = { next_step?: string | undefined; next_step_records?: readonly string[] | undefined }
+
+const pairingRefusal = (sent: SentStep): Refusal | null => {
+  if (sent.next_step === undefined) return sent.next_step_records === undefined ? null : recordsWithoutStepRefusal()
+  return sent.next_step_records === undefined ? stepWithoutRecordsRefusal() : null
 }
 
-const nextStepAnchorField = (stored: Spine, contribution: SpineContribution): Pick<Spine, 'next_step_criterion_id'> => {
-  const anchor = contribution.next_step === undefined ? stored.next_step_criterion_id : contribution.next_step_criterion_id
-  return anchor === undefined ? {} : { next_step_criterion_id: anchor }
+export type StepRecords = { index: readonly IndexedRecord[]; named: readonly IndexedRecord[] }
+
+export const resolveStepRecords = (store: Store, ids: readonly string[]): Ok<StepRecords> | Refusal => {
+  const index = indexRecords(store)
+  const { found, missing } = resolveRecordIds(index, ids)
+  return missing.length > 0 ? unknownStepRecordsRefusal(missing) : { ok: true, value: { index, named: found } }
+}
+
+export const checkStepRecords = (store: Store, sent: SentStep): Ok<StepRecords | null> | Refusal => {
+  const refused = pairingRefusal(sent)
+  if (refused !== null) return refused
+  return sent.next_step_records === undefined ? { ok: true, value: null } : resolveStepRecords(store, sent.next_step_records)
+}
+
+export const renderStepRecords = (store: Store, records: StepRecords, storedNextStep: string): string => {
+  const index = indexRecords(store)
+  const named = resolveRecordIds(
+    index,
+    records.named.map((record) => record.id)
+  ).found
+  return renderRecordsInFull(named, matchByFileName(index, storedNextStep, new Set(named.map((record) => record.id))))
+}
+
+const nextStepAnchorField = (stored: Spine, contribution: SpineContribution): Pick<Spine, 'next_step_criterion_id'> =>
+  contribution.next_step !== undefined || stored.next_step_criterion_id === undefined
+    ? {}
+    : { next_step_criterion_id: stored.next_step_criterion_id }
+
+const nextStepRecordsField = (stored: Spine, contribution: SpineContribution): Pick<Spine, 'next_step_records'> => {
+  const records =
+    contribution.next_step === undefined ? stored.next_step_records : [...(contribution.next_step_records ?? [])]
+  return records === undefined ? {} : { next_step_records: records }
 }
 
 const escapeRisk = (risk: Risk): Risk => ({
@@ -144,7 +199,8 @@ const mergeSpine = (stored: Spine, contribution: SpineContribution): Spine => ({
   active_goal: contribution.active_goal !== undefined ? escapeStored(contribution.active_goal) : stored.active_goal,
   next_step: contribution.next_step !== undefined ? escapeStored(contribution.next_step) : stored.next_step,
   ...nextStepAnchorField(stored, contribution),
-  landed: contribution.landed !== undefined ? escapeStored(contribution.landed) : stored.landed,
+  ...nextStepRecordsField(stored, contribution),
+  landed: stored.landed,
   last_session: contribution.last_session !== undefined ? escapeStored(contribution.last_session) : stored.last_session,
   open_risks:
     contribution.open_risks !== undefined

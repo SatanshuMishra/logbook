@@ -76,6 +76,10 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
     {
       phrase: 'every criterion records who stands behind it',
       providers: ['open_thread.completion_criteria']
+    },
+    {
+      phrase: 'Setting next_step requires next_step_records',
+      providers: ['open_thread.next_step', 'open_thread.next_step_records']
     }
   ],
   update_thread: [
@@ -98,8 +102,8 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
     },
     { phrase: 'add or retire risks', providers: ['update_thread.risks_add', 'update_thread.risks_retire'] },
     {
-      phrase: 'can name the completion criterion it advances through next_step_criterion_id',
-      providers: ['update_thread.next_step_criterion_id']
+      phrase: 'Setting next_step requires next_step_records',
+      providers: ['update_thread.next_step', 'update_thread.next_step_records']
     }
   ],
   close_thread: [
@@ -142,18 +146,18 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
   ],
   park_thread: [
     {
-      phrase: 'refreshes the next_step and landed fields',
-      providers: ['park_thread.next_step', 'park_thread.landed']
+      phrase: 'sets the next step and the records it needs',
+      providers: ['park_thread.next_step', 'park_thread.next_step_records']
     },
     {
       phrase: 'The last_session field is no longer accepted here; it is derived from the session log.',
       providers: []
     },
-    { phrase: 'Send the outcome as text', providers: ['park_thread.outcome'] },
+    { phrase: 'The outcome is optional', providers: ['park_thread.outcome'] },
     { phrase: 'the thread id is optional', providers: ['park_thread.thread_id'] },
     {
-      phrase: 'can name the completion criterion it advances through next_step_criterion_id',
-      providers: ['park_thread.next_step_criterion_id']
+      phrase: 'Setting next_step requires next_step_records',
+      providers: ['park_thread.next_step', 'park_thread.next_step_records']
     }
   ],
   record_decision: [
@@ -185,6 +189,12 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
     { phrase: 'pass `cursor` from a previous reply to read the next page', providers: ['list_threads.cursor'] },
     { phrase: `\`limit\` to change the page size from its default of ${DEFAULT_PAGE_SIZE}`, providers: ['list_threads.limit'] },
     { phrase: 'A thread that is blocked shows what it is blocked on', providers: ['update_thread.blocked_by'] }
+  ],
+  search_ledger: [
+    { phrase: 'across every thread, closed threads included, one line per record with its id', providers: [] },
+    { phrase: 'A text search matches exact characters only', providers: ['search_ledger.text'] },
+    { phrase: 'or list by kind or thread', providers: ['search_ledger.kind', 'search_ledger.thread'] },
+    { phrase: 'set status to all to include them', providers: ['search_ledger.status'] }
   ]
 }
 

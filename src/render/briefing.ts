@@ -1,13 +1,13 @@
 import type { Thread, Criterion, Risk, KeyDecision, OutOfScope, Artifact } from '../schema/thread.ts'
 import { criterionReopenedBy, criterionSettledness, nextStepAnchor, riskAnchor } from '../schema/thread.ts'
 import type { SessionEntry } from '../schema/session.ts'
+import type { Decision } from '../schema/decision.ts'
 import type { Pointer } from '../domain/pointer.ts'
+import type { IndexedRecord, searchRecords } from '../domain/record-index.ts'
 import { previousSessionEntries } from '../domain/session-log.ts'
 import { escapeStored, escapeStoredBlock, firstNonEmptyStoredLine } from './escape.ts'
 import { CLIP_MARKER_GRAPHEMES, clipWithMarker, clipWithMarkerFloor } from './clip.ts'
-import {
-  SESSION_BODY_MAX
-} from '../schema/caps.ts'
+import { SESSION_BODY_MAX } from '../schema/caps.ts'
 
 const FORMER_RISK_TEXT_MAX = 500
 const FORMER_CRITERION_SETTLED_BY_MAX = 500
@@ -678,3 +678,150 @@ export const renderBriefing = (
     sessionEntries,
     unreadableSessionEntryCount
   ).briefing
+
+const STEP_NAMES_NO_RECORDS = 'This step names no records.'
+
+const RECORDS_THIS_STEP_NEEDS = 'Records this step needs:'
+
+const SEARCH_MISS_PROVES_NOTHING =
+  'A text search finds only records containing those exact characters; a record that says the same thing in other words is not returned, so finding nothing proves nothing. Search again with other words, or list by kind or thread to see everything.'
+
+const renderRecordPlace = (record: IndexedRecord): string =>
+  `thread ${escapeStored(record.threadSlug)}, ${escapeStored(record.threadStatus)}`
+
+const renderSupersedingIds = (record: IndexedRecord): string =>
+  record.supersededBy.map((id) => escapeStored(id)).join(', ')
+
+const renderSupersededClause = (record: IndexedRecord): string =>
+  record.supersededBy.length === 0 ? '' : `, superseded by ${renderSupersedingIds(record)}`
+
+const renderSupersededSuffix = (record: IndexedRecord): string =>
+  record.supersededBy.length === 0 ? '' : ` (superseded by ${renderSupersedingIds(record)})`
+
+const renderRiskBearsOn = (risk: Risk): string => {
+  const anchor = riskAnchor(risk)
+  return anchor === null ? 'Bears on: the whole thread' : `Bears on: criterion ${escapeStored(anchor)}`
+}
+
+const renderRiskBearsOnHeadline = (risk: Risk): string => {
+  const anchor = riskAnchor(risk)
+  return anchor === null ? '(bears on the whole thread)' : `(bears on criterion ${escapeStored(anchor)})`
+}
+
+const renderDecisionFull = (record: IndexedRecord, decision: Decision): string =>
+  [
+    `Decision ${escapeStored(record.id)} (${renderRecordPlace(record)})${renderSupersededClause(record)}`,
+    `Title: ${escapeStored(decision.title)}`,
+    `Context: ${escapeStored(decision.context)}`,
+    'Options:',
+    ...decision.options.map((option) => `- ${escapeStored(option)}`),
+    `Outcome: ${escapeStored(decision.outcome)}`
+  ].join('\n')
+
+const renderRiskFull = (record: IndexedRecord, risk: Risk): string =>
+  [
+    `Risk ${escapeStored(record.id)} (${renderRecordPlace(record)}), ${risk.retired ? 'retired' : 'live'}: ${escapeStored(risk.text)}`,
+    `Scope: ${escapeStored(risk.scope)}`,
+    renderRiskBearsOn(risk),
+    ...(risk.refs.length === 0 ? [] : [`Refs: ${risk.refs.map((ref) => escapeStored(ref)).join(', ')}`])
+  ].join('\n')
+
+const renderCriterionFull = (record: IndexedRecord, criterion: Criterion): string =>
+  [
+    `Criterion ${escapeStored(record.id)} (${renderRecordPlace(record)}), c${criterion.ordinal} ${criterionStatus(criterion)}, ${settlednessLabel(criterion)}: ${escapeStored(criterion.text)}`,
+    ...(typeof criterion.check === 'string' ? [`Check: ${escapeStored(criterion.check)}`] : []),
+    ...((criterion.done || criterionReopenedBy(criterion) !== null) && typeof criterion.result === 'string'
+      ? [`Result: ${escapeStored(criterion.result)} (${renderResultStatus(criterion)})`]
+      : []),
+    ...(criterionSettledness(criterion) === 'confirmed' && typeof criterion.settled_by === 'string'
+      ? [`Settled by: ${escapeStored(criterion.settled_by)}`]
+      : [])
+  ].join('\n')
+
+const renderEntryFull = (record: IndexedRecord, entry: SessionEntry): string =>
+  [
+    `Session entry ${escapeStored(record.id)} (${renderRecordPlace(record)}, by ${escapeStored(entry.actor, 'paren-wrapped')})`,
+    escapeStoredBlock(entry.body)
+  ].join('\n')
+
+const renderArtifactFull = (record: IndexedRecord, artifact: Artifact): string =>
+  `Artifact ${escapeStored(record.id)} (${renderRecordPlace(record)})${artifact.retired ? ', retired' : ''}: ${escapeStored(artifact.label)} -> ${escapeStored(artifact.pointer)}`
+
+const renderOutOfScopeFull = (record: IndexedRecord, note: OutOfScope): string =>
+  `Out of scope ${escapeStored(record.id)} (${renderRecordPlace(record)}): ${escapeStored(note.text)}`
+
+const unrecognisedRecordKind = (record: never): Error =>
+  new Error(
+    `a record renderer received a record kind it does not recognise: ${escapeStored(String((record as { kind: unknown }).kind))}.`
+  )
+
+export const renderRecordFull = (record: IndexedRecord): string => {
+  switch (record.kind) {
+    case 'decision':
+      return renderDecisionFull(record, record.decision)
+    case 'risk':
+      return renderRiskFull(record, record.risk)
+    case 'criterion':
+      return renderCriterionFull(record, record.criterion)
+    case 'entry':
+      return renderEntryFull(record, record.entry)
+    case 'artifact':
+      return renderArtifactFull(record, record.artifact)
+    case 'out-of-scope':
+      return renderOutOfScopeFull(record, record.note)
+    default:
+      throw unrecognisedRecordKind(record)
+  }
+}
+
+const renderHeadlineText = (text: string): string => escapeStored(firstNonEmptyStoredLine(text))
+
+const renderCriterionHeadline = (criterion: Criterion): string =>
+  `c${criterion.ordinal} [${criterionStatus(criterion)}] [${settlednessLabel(criterion)}] ${renderHeadlineText(criterion.text)}`
+
+export const renderRecordHeadline = (record: IndexedRecord): string => {
+  switch (record.kind) {
+    case 'decision':
+      return renderHeadlineText(record.decision.title)
+    case 'risk':
+      return `${renderHeadlineText(record.risk.text)} ${renderRiskBearsOnHeadline(record.risk)}`
+    case 'criterion':
+      return renderCriterionHeadline(record.criterion)
+    case 'entry':
+      return renderHeadlineText(record.entry.body)
+    case 'artifact':
+      return `${renderHeadlineText(record.artifact.label)} -> ${escapeStored(record.artifact.pointer)}`
+    case 'out-of-scope':
+      return renderHeadlineText(record.note.text)
+    default:
+      throw unrecognisedRecordKind(record)
+  }
+}
+
+export const renderRecordsInFull = (
+  named: readonly IndexedRecord[],
+  matched: readonly { path: string; record: IndexedRecord }[]
+): string => {
+  const namedSection =
+    named.length === 0
+      ? STEP_NAMES_NO_RECORDS
+      : [RECORDS_THIS_STEP_NEEDS, ...named.map((record) => renderRecordFull(record))].join('\n\n')
+  const matchedPaths = [...new Set(matched.map((match) => match.path))]
+  const matchedSections = matchedPaths.map((matchedPath) =>
+    [
+      `Matched by file name, because this step names ${escapeStored(matchedPath)}:`,
+      ...matched.filter((match) => match.path === matchedPath).map((match) => renderRecordFull(match.record))
+    ].join('\n\n')
+  )
+  return [namedSection, ...matchedSections].join('\n\n')
+}
+
+const renderSearchLine = (record: IndexedRecord): string =>
+  `- ${escapeStored(record.kind)} ${escapeStored(record.id)} [${escapeStored(record.threadSlug)}, ${escapeStored(record.threadStatus)}] ${renderRecordHeadline(record)}${renderSupersededSuffix(record)}`
+
+export const renderSearch = (result: ReturnType<typeof searchRecords>): string =>
+  [
+    `${result.records.length} of ${result.searched} records match, across ${result.threads} threads, closed threads included.`,
+    ...result.records.map((record) => renderSearchLine(record)),
+    ...(result.missProvesNothing ? [SEARCH_MISS_PROVES_NOTHING] : [])
+  ].join('\n')

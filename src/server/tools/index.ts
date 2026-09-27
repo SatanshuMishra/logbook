@@ -12,6 +12,7 @@ import { logSessionEventTool } from './log_session_event.ts'
 import { syncLedgerTool } from './sync_ledger.ts'
 import { resolveConflictTool } from './resolve_conflict.ts'
 import { listThreadsTool } from './list_threads.ts'
+import { searchLedgerTool } from './search_ledger.ts'
 
 const SPEC_BY_NAME = {
   open_thread: openThreadTool,
@@ -25,7 +26,8 @@ const SPEC_BY_NAME = {
   log_session_event: logSessionEventTool,
   sync_ledger: syncLedgerTool,
   resolve_conflict: resolveConflictTool,
-  list_threads: listThreadsTool
+  list_threads: listThreadsTool,
+  search_ledger: searchLedgerTool
 } satisfies Record<LedgerToolName, { name: string }>
 
 export const TOOL_SPECS: ToolSpec<never, never>[] = LEDGER_TOOL_NAMES.map(

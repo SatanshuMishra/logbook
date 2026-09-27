@@ -53,6 +53,7 @@ const FREE_TEXT_LEAF_DISPOSITIONS: Readonly<Record<string, LeafDisposition>> = {
   'open_thread::predecessor_id': 'allowed',
   'open_thread::active_goal': 'allowed',
   'open_thread::next_step': 'allowed',
+  'open_thread::next_step_records[]': 'allowed',
   'open_thread::completion_criteria[].text': 'sensitive',
   'open_thread::completion_criteria[].check': 'allowed',
   'open_thread::completion_criteria[].settledness': 'allowed',
@@ -71,8 +72,7 @@ const FREE_TEXT_LEAF_DISPOSITIONS: Readonly<Record<string, LeafDisposition>> = {
   'park_thread::thread_id': 'allowed',
   'park_thread::outcome': 'allowed',
   'park_thread::next_step': 'allowed',
-  'park_thread::next_step_criterion_id': 'allowed',
-  'park_thread::landed': 'allowed',
+  'park_thread::next_step_records[]': 'allowed',
   'record_decision::thread_id': 'allowed',
   'record_decision::criterion_id': 'allowed',
   'record_decision::supersedes[]': 'allowed',
@@ -90,7 +90,7 @@ const FREE_TEXT_LEAF_DISPOSITIONS: Readonly<Record<string, LeafDisposition>> = {
   'update_thread::criteria_settled[].settled_by': 'allowed',
   'update_thread::active_goal': 'allowed',
   'update_thread::next_step': 'allowed',
-  'update_thread::next_step_criterion_id': 'allowed',
+  'update_thread::next_step_records[]': 'allowed',
   'update_thread::last_session': 'allowed',
   'update_thread::blocked_by': 'allowed',
   'update_thread::risks_add[].text': 'allowed',
@@ -107,7 +107,11 @@ const FREE_TEXT_LEAF_DISPOSITIONS: Readonly<Record<string, LeafDisposition>> = {
   'update_thread::artifacts_retire[]': 'allowed',
   'resolve_conflict::resolutions[].path': 'allowed',
   'resolve_conflict::resolutions[].content': 'allowed',
-  'list_threads::cursor': 'allowed'
+  'list_threads::cursor': 'allowed',
+  'search_ledger::text': 'allowed',
+  'search_ledger::kind': 'allowed',
+  'search_ledger::thread': 'allowed',
+  'search_ledger::status': 'allowed'
 }
 
 export const classifyCriteriaTextProperty = (

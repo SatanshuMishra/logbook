@@ -110,6 +110,7 @@ const openMinimalThread = async (fx: Fixture, slug: string, criteria: Record<str
     slug,
     active_goal: `exercise the ${slug} fixture`,
     next_step: `exercise the ${slug} fixture`,
+    next_step_records: [],
     completion_criteria: criteria
   })
   assert.equal(opened.isError, undefined, `caps-relaxed fixture: open_thread refused the ${slug} fixture: ${firstTextOf(opened)}`)
@@ -218,6 +219,7 @@ test('caps-relaxed.criterion-settled-by-at-former-cap-plus-one-is-accepted-verba
       slug: 'open-thread-settled-by-relaxed-thread',
       active_goal: 'exercise the open_thread settled_by relaxation',
       next_step: 'exercise the open_thread settled_by relaxation',
+      next_step_records: [],
       completion_criteria: [
         {
           text: 'the gate blocks before the turn ends',
@@ -405,7 +407,7 @@ test('caps-relaxed.a-criterion-result-past-the-former-thread-record-byte-cap-is-
     assert.ok(criterion !== undefined, 'caps-relaxed fixture: the criterion vanished from the stored thread')
     assert.equal(criterion.result, RESULT_PAYLOAD, 'the stored result must equal the sent payload exactly, character for character')
 
-    const followUp = await callUpdateThread(fx, { thread_id: threadId, next_step: 'continue after the large result' })
+    const followUp = await callUpdateThread(fx, { thread_id: threadId, next_step: 'continue after the large result', next_step_records: [] })
     assert.equal(
       followUp.isError,
       undefined,
@@ -457,7 +459,8 @@ test('caps-relaxed.open-thread-header-fields-past-their-former-caps-are-accepted
       title: TITLE_PAYLOAD,
       slug: 'header-fields-past-former-caps',
       active_goal: ACTIVE_GOAL_PAYLOAD,
-      next_step: NEXT_STEP_PAYLOAD
+      next_step: NEXT_STEP_PAYLOAD,
+      next_step_records: []
     })
     assert.equal(
       opened.isError,
@@ -486,6 +489,7 @@ test('caps-relaxed.update-thread-header-fields-past-their-former-caps-are-accept
       thread_id: threadId,
       active_goal: ACTIVE_GOAL_PAYLOAD,
       next_step: NEXT_STEP_PAYLOAD,
+      next_step_records: [],
       last_session: LAST_SESSION_PAYLOAD,
       blocked_by: BLOCKED_BY_PAYLOAD
     })
@@ -503,10 +507,9 @@ test('caps-relaxed.update-thread-header-fields-past-their-former-caps-are-accept
   })
 })
 
-test('caps-relaxed.park-thread-next-step-and-landed-past-their-former-caps-are-accepted-verbatim', async () => {
+test('caps-relaxed.park-thread-next-step-past-its-former-cap-is-accepted-verbatim', async () => {
   await withFixture(async (fx) => {
     const NEXT_STEP_PAYLOAD = buildVerbatimPayload(FORMER_HEADER_TEXT_MAX + 100, 'This is the long parked next step payload.')
-    const LANDED_PAYLOAD = buildVerbatimPayload(FORMER_HEADER_TEXT_MAX + 100, 'This is the long landed payload.')
 
     const { threadId } = await openMinimalThread(fx, 'park-header-fields-past-former-caps')
     const resumed = (await fx.spawned.client.callTool({
@@ -521,17 +524,16 @@ test('caps-relaxed.park-thread-next-step-and-landed-past-their-former-caps-are-a
 
     const parked = (await fx.spawned.client.callTool({
       name: 'park_thread',
-      arguments: { thread_id: threadId, next_step: NEXT_STEP_PAYLOAD, landed: LANDED_PAYLOAD }
+      arguments: { thread_id: threadId, next_step: NEXT_STEP_PAYLOAD, next_step_records: [] }
     })) as CallToolResult
     assert.equal(
       parked.isError,
       undefined,
-      `park_thread must accept next_step and landed past their former caps, got: ${parked.isError === true ? firstTextOf(parked) : 'no error'}`
+      `park_thread must accept next_step past its former cap, got: ${parked.isError === true ? firstTextOf(parked) : 'no error'}`
     )
 
     const stored = readThreadRecord(fx, threadId)
     assert.equal(stored.spine.next_step, NEXT_STEP_PAYLOAD, 'the stored next step must equal the sent payload exactly')
-    assert.equal(stored.spine.landed, LANDED_PAYLOAD, 'the stored landed value must equal the sent payload exactly')
   })
 })
 
