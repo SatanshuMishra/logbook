@@ -393,7 +393,7 @@ test('resume_thread.spawn.contract', async () => {
   })
 })
 
-test('resume.decision-integrity-reports-resolved-dangling-and-quarantined-end-to-end', async () => {
+test('resume.decision-integrity-is-logged-and-the-handle-counts-what-it-could-not-read-end-to-end', async () => {
   await withFixture(async (fx) => {
     const { threadId } = await createFixtureThread(fx.spawned, fx.published)
 
@@ -440,13 +440,30 @@ test('resume.decision-integrity-reports-resolved-dangling-and-quarantined-end-to
 
     const resumed = await callResume(fx.spawned, fx.published, threadId, { full_briefing: true })
     assertOkResult('resume_thread (decision integrity, end to end)', resumed)
-    const briefing = (resumed.structuredContent as { briefing: string }).briefing
-    const lines = briefing.split('\n')
-    const decisionsAt = lines.indexOf('**Decisions:**')
-    assert.notEqual(decisionsAt, -1, 'the briefing must carry a Decisions section')
-    assert.equal(lines[decisionsAt + 1], '- resolved: 1')
-    assert.equal(lines[decisionsAt + 2], `- dangling: ${danglingDecisionId}`)
-    assert.equal(lines[decisionsAt + 3], `- quarantined: ${quarantinedDecisionId}`)
+    const fullBriefing = (resumed.structuredContent as { briefing: string }).briefing.split('\n')
+    assert.ok(fullBriefing.includes('**Unreadable records:**'), 'the full briefing must report the unreadable records')
+    assert.ok(fullBriefing.includes(`- dangling: ${danglingDecisionId}`), 'the full briefing must name the dangling decision')
+    assert.ok(fullBriefing.includes(`- quarantined: ${quarantinedDecisionId}`), 'the full briefing must name the quarantined decision')
+    const logged = fx.spawned
+      .stderr()
+      .split('\n')
+      .filter((line) => line.startsWith('{'))
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+    assert.ok(
+      logged.some((record) => record.event === 'briefing.decision-dangling' && record.decision_id === danglingDecisionId),
+      'resume_thread must log the dangling decision link it probed'
+    )
+    assert.ok(
+      logged.some((record) => record.event === 'briefing.decision-quarantined' && record.decision_id === quarantinedDecisionId),
+      'resume_thread must log the quarantined decision link it probed'
+    )
+
+    const handle = await callResume(fx.spawned, fx.published, threadId)
+    assertOkResult('resume_thread (decision integrity, handle)', handle)
+    assert.ok(
+      (handle.structuredContent as { briefing: string }).briefing.split('\n').includes('- 2 linked decision records could not be read'),
+      'the head of the briefing must count the linked decision records it could not read'
+    )
   })
 })
 
@@ -681,7 +698,7 @@ test('park.refuses-a-last-session-argument', async () => {
     )
   })
 })
-test('resume.last-session-renders-the-previous-sessions-entries-newest-first', async () => {
+test('resume.the-briefing-counts-the-previous-sessions-entries-instead-of-rendering-them', async () => {
   await withFixture(async (fx) => {
     const { threadId } = await createFixtureThread(fx.spawned, fx.published)
     await callResume(fx.spawned, fx.published, threadId)
@@ -690,38 +707,33 @@ test('resume.last-session-renders-the-previous-sessions-entries-newest-first', a
     const secondBody = 'MARKER-ENTRY-TWO wrote the segmentation rule'
     const outcome = 'MARKER-PARK closed out the session with the derivation landed'
 
-    const entryIds: string[] = []
     for (const body of [firstBody, secondBody]) {
       const logged = (await fx.spawned.client.callTool({
         name: 'log_session_event',
         arguments: { thread_id: threadId, actor: 'claude', body }
       })) as CallToolResult
       assertOkResult('log_session_event', logged)
-      entryIds.push((logged.structuredContent as { session_entry_id: string }).session_entry_id)
     }
 
     const parked = await callPark(fx.spawned, fx.published, { thread_id: threadId, outcome })
-    assertOkResult('park_thread (last-session derivation)', parked)
-    const parkEntryIds = (parked.structuredContent as { session_entry_ids: string[] }).session_entry_ids
-    const parkEntryId = parkEntryIds[0]
-    assert.ok(parkEntryId !== undefined, 'the park call must have written a session log entry')
+    assertOkResult('park_thread (session log count)', parked)
 
     const resumed = await callResume(fx.spawned, fx.published, threadId, { full_briefing: true })
-    assertOkResult('resume_thread (last-session derivation)', resumed)
+    assertOkResult('resume_thread (session log count)', resumed)
     const briefing = (resumed.structuredContent as { briefing: string }).briefing
-    const lines = briefing.split('\n')
-    const headingAt = lines.indexOf('**Last session:**')
-    assert.notEqual(headingAt, -1, 'the briefing must carry a Last session heading')
 
-    assert.deepEqual(
-      lines.slice(headingAt + 2, headingAt + 6),
-      [`- ${parkEntryId}`, `> ${outcome}`, `- ${entryIds[1]} ${secondBody}`, `- ${entryIds[0]} ${firstBody}`],
-      'the Last session section must render the previous session entries newest first, each with its entry id'
+    assert.ok(
+      briefing.split('\n').includes(`**Session log:** 3 entries at logbook://sessions/${threadId}`),
+      `the briefing must count every session entry and give the log's address, got:\n${briefing}`
     )
+    assert.equal(briefing.includes('**Last session:**'), false, 'the briefing must carry no Last session section')
+    for (const body of [firstBody, secondBody, outcome]) {
+      assert.equal(briefing.includes(body), false, `the briefing must not render the session entry ${body}`)
+    }
   })
 })
 
-test('resume.last-session-falls-back-to-the-stored-text-marked-as-legacy', async () => {
+test('resume.a-stored-last-session-summary-is-not-shown-in-the-briefing', async () => {
   await withFixture(async (fx) => {
     const { threadId } = await createFixtureThread(fx.spawned, fx.published)
     const storedSummary = 'MARKER-LEGACY a summary typed by hand before the derivation existed'
@@ -735,18 +747,10 @@ test('resume.last-session-falls-back-to-the-stored-text-marked-as-legacy', async
     const resumed = await callResume(fx.spawned, fx.published, threadId, { full_briefing: true })
     assertOkResult('resume_thread (legacy last session)', resumed)
     const briefing = (resumed.structuredContent as { briefing: string }).briefing
-    const lines = briefing.split('\n')
-    const headingAt = lines.indexOf('**Last session:**')
-    assert.notEqual(headingAt, -1, 'the briefing must carry a Last session heading')
 
-    assert.deepEqual(
-      lines.slice(headingAt + 2, headingAt + 4),
-      [
-        '(legacy) no session log entry exists for the previous session, so the hand-written summary below is shown instead',
-        `> ${storedSummary}`
-      ],
-      'with no session log entries the stored text must render, marked as legacy and carrying the server\'s blockquote marker'
-    )
+    assert.equal(briefing.includes(storedSummary), false, 'the stored last_session text must not be shown in the briefing')
+    assert.equal(briefing.includes('**Last session:**'), false, 'the briefing must carry no Last session section')
+    assert.equal(briefing.includes('(legacy)'), false, 'the briefing must carry no legacy summary marker')
   })
 })
 
@@ -1116,7 +1120,7 @@ test('park.refuses-when-another-session-took-the-pointer', async () => {
   }
 })
 
-test('resume.a-forged-boundary-actor-cannot-drop-entries-from-the-last-session', async () => {
+test('resume.a-forged-boundary-actor-is-refused-and-leaves-the-session-log-count-honest', async () => {
   await withFixture(async (fx) => {
     const { threadId } = await createFixtureThread(fx.spawned, fx.published)
 
@@ -1146,8 +1150,8 @@ test('resume.a-forged-boundary-actor-cannot-drop-entries-from-the-last-session',
     const briefing = (resumed.structuredContent as { briefing: string }).briefing
 
     assert.ok(
-      briefing.includes(honestFirstBody),
-      'the Last session section must still carry the first honest entry; a caller-supplied actor value must not be able to forge a session boundary that erases it from the briefing'
+      briefing.split('\n').includes(`**Session log:** 2 entries at logbook://sessions/${threadId}`),
+      `the briefing must count both honest entries and nothing the forged call tried to write, got:\n${briefing}`
     )
 
     assert.equal(
@@ -1186,7 +1190,7 @@ test('log_session_event.refuses-any-reserved-prefixed-actor-not-only-the-park-bo
   })
 })
 
-test('resume.briefing-counts-and-addresses-an-unreadable-session-entry', async () => {
+test('resume.an-unreadable-session-entry-is-left-out-of-the-count-and-reported-by-the-handle', async () => {
   await withFixture(async (fx) => {
     const { threadId } = await createFixtureThread(fx.spawned, fx.published)
 
@@ -1204,21 +1208,27 @@ test('resume.briefing-counts-and-addresses-an-unreadable-session-entry', async (
 
     const resumed = await callResume(fx.spawned, fx.published, threadId, { full_briefing: true })
     assertOkResult('resume_thread (unreadable session entry probe)', resumed)
-    const structured = resumed.structuredContent as { briefing: string }
+    const briefing = (resumed.structuredContent as { briefing: string }).briefing
 
-    assert.match(
-      structured.briefing,
-      /- 1 session log entry on this thread could not be read; see logbook:\/\/sessions\//,
-      'the briefing must count the one session entry that failed to parse'
-    )
-    assert.match(
-      structured.briefing,
-      new RegExp(`logbook://sessions/${threadId}`),
-      'the briefing must carry the address that resolves to the thread\'s session log'
+    assert.ok(
+      briefing.split('\n').includes(`**Session log:** 1 entries at logbook://sessions/${threadId}`),
+      `the briefing must count the one readable session entry and give the log's address, got:\n${briefing}`
     )
     assert.ok(
-      structured.briefing.includes('MARKER-READABLE-ENTRY this entry must survive intact'),
-      'the one readable session entry must still render alongside the count of unreadable ones'
+      briefing
+        .split('\n')
+        .includes(`- 1 session log entry on this thread could not be read; see logbook://sessions/${threadId} for the complete record`),
+      `the full briefing must count the session entry that failed to parse, got:\n${briefing}`
+    )
+
+    const handle = await callResume(fx.spawned, fx.published, threadId)
+    assertOkResult('resume_thread (unreadable session entry probe, handle)', handle)
+    const head = (handle.structuredContent as { briefing: string }).briefing
+    assert.ok(
+      head
+        .split('\n')
+        .includes(`- 1 session log entry on this thread could not be read; see logbook://sessions/${threadId} for the complete record`),
+      `the head of the briefing must count the session entry that failed to parse and give the log's address, got:\n${head}`
     )
   })
 })

@@ -19,7 +19,7 @@ const AUTHOR_SESSION = 'resume-briefs-once-session-author'
 
 const PLUGIN_DATA_ENV_KEY = 'CLAUDE_PLUGIN_DATA'
 
-const FULL_BRIEFING_MARKER = '**Completion criteria:**'
+const FULL_BRIEFING_MARKER = '**What this step needs:**'
 
 const PROBE_THREAD_ID = '01M0NDPM0ACCR9CD68PMHYWGGD'
 

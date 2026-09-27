@@ -10,6 +10,8 @@ import { resumeThreadTool } from '../../src/server/tools/resume_thread.ts'
 import { openStore } from '../../src/store/records.ts'
 import type { RecordChange } from '../../src/store/write-path.ts'
 import { selectRosterThreads, toRosterRow } from '../../src/render/roster.ts'
+import { renderThreadDetail } from '../../src/server/resource-render.ts'
+import { resolvePredecessor } from '../../src/server/tool-support.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { rawGit } from '../support/git-fixture.ts'
 
@@ -34,7 +36,7 @@ const withLineageFixture = async (fn: (rt: Runtime) => Promise<void>): Promise<v
   }
 }
 
-test('lineage.briefing-renders-the-predecessor-it-was-opened-with', async () => {
+test('lineage.the-thread-view-renders-the-predecessor-it-was-opened-with-and-the-briefing-names-no-related-thread', async () => {
   await withLineageFixture(async (rt) => {
     const first = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
       title: 'The thread that came first',
@@ -66,8 +68,22 @@ test('lineage.briefing-renders-the-predecessor-it-was-opened-with', async () => 
     assert.equal(resumed.ok, true)
     if (!resumed.ok) throw new Error('expected the successor thread to resume')
 
-    const lines = resumed.structured.briefing.split('\n')
-    const relatedIndex = lines.indexOf('**Related:**')
+    assert.equal(resumed.structured.briefing.includes('**Related:**'), false, 'the step briefing carries no related-thread line')
+    assert.equal(resumed.structured.briefing.includes('succeeds:'), false, 'the step briefing carries no related-thread line')
+
+    const opened = openStore(rt, rt.cwd)
+    if (!opened.ok) throw new Error('expected the lineage fixture store to open')
+    const slot = opened.value.readThread(second.structured.thread_id)
+    if (slot === null || slot.quarantined) throw new Error('expected the successor thread to be readable')
+    const detail = renderThreadDetail(
+      slot.record,
+      { resolved: 0, dangling: [], quarantined: [] },
+      null,
+      resolvePredecessor(rt, opened.value, slot.record),
+      { bound: [], unreadable: 0, unread: false }
+    )
+    const lines = detail.split('\n')
+    const relatedIndex = lines.indexOf('Related:')
     assert.notEqual(relatedIndex, -1)
     assert.equal(lines[relatedIndex + 1], '- succeeds: The thread that came first (came-first)')
   })

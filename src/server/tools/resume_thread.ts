@@ -4,15 +4,9 @@ import { ULID_PATTERN } from '../../schema/ids.ts'
 import { ULID_LENGTH } from '../../schema/ulid-length.ts'
 import { layoutFor } from '../../store/layout.ts'
 import { readPointer, writePointer, type Pointer } from '../../domain/pointer.ts'
-import {
-  fitsResumePayload,
-  renderBriefingWithPasses,
-  renderHandle,
-  resumePayloadBytes,
-  type DecisionIntegrity
-} from '../../render/briefing.ts'
+import { renderHandle, renderStepBriefing, type DecisionIntegrity } from '../../render/briefing.ts'
 import { readBriefed, recordBriefed } from '../../domain/briefed.ts'
-import { openProjectStore, loadThread, resolvePredecessor } from '../tool-support.ts'
+import { openProjectStore, loadThread } from '../tool-support.ts'
 
 const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
 
@@ -89,42 +83,15 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
       quarantined: probe.quarantined
     }
 
-    const hasPreviousSession = previousSession !== null
     const sessionEntrySlots = store.readSessionEntries(thread.id)
-    const sessionEntries = sessionEntrySlots.flatMap((slot) => (slot.quarantined ? [] : [slot.record]))
     const unreadableSessionEntryCount = sessionEntrySlots.filter((slot) => slot.quarantined).length
     const rendersFull = input.full_briefing === true || !readBriefed(rt, layout.value).includes(thread.id)
 
-    const fullRender = rendersFull
-      ? renderBriefingWithPasses(
-          thread,
-          decisionIntegrity,
-          writtenPointer,
-          resolvePredecessor(rt, store, thread),
-          hasPreviousSession,
-          sessionEntries,
-          unreadableSessionEntryCount
-        )
-      : null
-
-    const briefing =
-      fullRender === null
-        ? renderHandle(thread, decisionIntegrity, writtenPointer, unreadableSessionEntryCount)
-        : fullRender.briefing
-
-    const withinBudget =
-      fullRender === null ? fitsResumePayload(briefing, thread.id, hasPreviousSession) : fullRender.withinBudget
+    const briefing = rendersFull
+      ? renderStepBriefing(store, thread, writtenPointer, decisionIntegrity, unreadableSessionEntryCount)
+      : renderHandle(thread, decisionIntegrity, writtenPointer, unreadableSessionEntryCount)
 
     if (rendersFull) recordBriefed(rt, layout.value, thread.id)
-
-    if (!withinBudget) {
-      rt.log({
-        level: 'error',
-        event: 'briefing.budget-exceeded',
-        chars: briefing.length,
-        bytes: resumePayloadBytes(briefing, thread.id, hasPreviousSession)
-      })
-    }
 
     return {
       ok: true,

@@ -1,12 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { renderBriefing, type DecisionIntegrity } from '../../src/render/briefing.ts'
+import { renderStepBriefing } from '../../src/render/briefing.ts'
 import { ThreadRecord, type Thread, type Criterion } from '../../src/schema/thread.ts'
+import type { Runtime } from '../../src/runtime/runtime.ts'
+import { openStore } from '../../src/store/records.ts'
 import { testRuntime } from '../support/runtime.ts'
+import { withCriterionFixture } from '../support/criterion-fixture.ts'
 
 const rt = testRuntime()
-
-const EMPTY_INTEGRITY: DecisionIntegrity = { resolved: 0, dangling: [], quarantined: [] }
 
 const SHARED_TITLE = 'Styling Cost Fixture'
 const SHARED_SLUG = 'styling-cost-fixture'
@@ -43,6 +44,14 @@ const threadWithCriteriaCount = (count: number): Thread => ({
   updated_at: rt.now()
 })
 
+const stepBriefingIn = (fixtureRt: Runtime, thread: Thread): string => {
+  const opened = openStore(fixtureRt, fixtureRt.cwd)
+  if (!opened.ok) throw new Error(`briefing-styling-cost fixture: the store did not open: ${opened.message}`)
+  const committed = opened.value.commit([{ kind: 'thread', record: thread }], 'test: seed the styling cost fixture thread')
+  if (!committed.ok) throw new Error(`briefing-styling-cost fixture: the thread did not commit: ${committed.detail}`)
+  return renderStepBriefing(opened.value, thread, null, { resolved: 0, dangling: [], quarantined: [] }, 0)
+}
+
 const boldMarkerCount = (rendered: string): number => {
   const matches = rendered.match(/\*\*/g)
   return matches === null ? 0 : matches.length
@@ -51,26 +60,32 @@ const boldMarkerCount = (rendered: string): number => {
 const SMALL_CRITERIA_COUNT = 5
 const LARGE_CRITERIA_COUNT = 40
 
-test('briefing.styling-cost-is-a-function-of-sections-not-of-record-count', () => {
+test('briefing.styling-cost-is-a-function-of-sections-not-of-record-count', async () => {
   const smallThread = threadWithCriteriaCount(SMALL_CRITERIA_COUNT)
   const largeThread = threadWithCriteriaCount(LARGE_CRITERIA_COUNT)
 
   assert.equal(ThreadRecord.parse(smallThread).ok, true, 'the 5-criterion fixture must itself be schema-admissible')
   assert.equal(ThreadRecord.parse(largeThread).ok, true, 'the 40-criterion fixture must itself be schema-admissible')
 
-  const smallRendered = renderBriefing(smallThread, EMPTY_INTEGRITY, null, null)
-  const largeRendered = renderBriefing(largeThread, EMPTY_INTEGRITY, null, null)
+  await withCriterionFixture(async (fixtureRt) => {
+    const smallRendered = stepBriefingIn(fixtureRt, smallThread)
+    const largeRendered = stepBriefingIn(fixtureRt, largeThread)
 
-  const smallBoldCount = boldMarkerCount(smallRendered)
-  const largeBoldCount = boldMarkerCount(largeRendered)
+    const smallBoldCount = boldMarkerCount(smallRendered)
+    const largeBoldCount = boldMarkerCount(largeRendered)
 
-  assert.ok(
-    smallBoldCount > 0,
-    `expected the rendered briefing to carry at least one "**" bold marker, got ${smallBoldCount}`
-  )
-  assert.equal(
-    largeBoldCount,
-    smallBoldCount,
-    `expected the bold-marker count to stay identical from ${SMALL_CRITERIA_COUNT} to ${LARGE_CRITERIA_COUNT} completion criteria, got ${smallBoldCount} at ${SMALL_CRITERIA_COUNT} and ${largeBoldCount} at ${LARGE_CRITERIA_COUNT}`
-  )
+    assert.ok(
+      smallBoldCount > 0,
+      `expected the rendered briefing to carry at least one "**" bold marker, got ${smallBoldCount}`
+    )
+    assert.ok(
+      largeRendered.split('\n').filter((line) => line.startsWith('- criterion ')).length === LARGE_CRITERIA_COUNT,
+      `expected every one of the ${LARGE_CRITERIA_COUNT} criteria to be listed, or the comparison below measures nothing`
+    )
+    assert.equal(
+      largeBoldCount,
+      smallBoldCount,
+      `expected the bold-marker count to stay identical from ${SMALL_CRITERIA_COUNT} to ${LARGE_CRITERIA_COUNT} completion criteria, got ${smallBoldCount} at ${SMALL_CRITERIA_COUNT} and ${largeBoldCount} at ${LARGE_CRITERIA_COUNT}`
+    )
+  })
 })

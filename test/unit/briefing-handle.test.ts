@@ -1,14 +1,18 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  renderBriefing,
   renderHandle,
+  renderStepBriefing,
   BRIEFING_HEAD_ONLY_LINE,
   type DecisionIntegrity
 } from '../../src/render/briefing.ts'
+import { CLIP_MARKER } from '../../src/render/clip.ts'
 import type { Thread, Criterion } from '../../src/schema/thread.ts'
 import type { Pointer } from '../../src/domain/pointer.ts'
+import type { Runtime } from '../../src/runtime/runtime.ts'
+import { openStore } from '../../src/store/records.ts'
 import { testRuntime } from '../support/runtime.ts'
+import { withCriterionFixture } from '../support/criterion-fixture.ts'
 
 const rt = testRuntime()
 
@@ -60,16 +64,22 @@ const pointerFor = (thread: Thread): Pointer => ({
 })
 
 const BELOW_THE_HEAD = [
-  '**Artifacts:**',
-  '**Active goal:**',
-  '**Last session:**',
-  '**Landed:**',
-  '**Open risks:**',
-  '**Key decisions:**',
-  '**Out of scope:**',
-  '**Completion criteria:**',
-  '**Decisions:**'
+  '**Goal:**',
+  '**What this step needs:**',
+  '**Other records on this thread**',
+  '**Session log:**',
+  '**Other threads:**'
 ]
+
+const LONGER_THAN_THE_HANDLE_CLIP = 600
+
+const stepBriefingIn = (fixtureRt: Runtime, thread: Thread, pointer: Pointer | null): string => {
+  const opened = openStore(fixtureRt, fixtureRt.cwd)
+  if (!opened.ok) throw new Error(`briefing-handle fixture: the store did not open: ${opened.message}`)
+  const committed = opened.value.commit([{ kind: 'thread', record: thread }], 'test: seed the handle fixture thread')
+  if (!committed.ok) throw new Error(`briefing-handle fixture: the thread did not commit: ${committed.detail}`)
+  return renderStepBriefing(opened.value, thread, pointer, { resolved: 0, dangling: [], quarantined: [] }, 0)
+}
 
 test('handle.carries-the-head-of-the-briefing-and-says-why-it-is-short', () => {
   const thread = handleFixture()
@@ -87,28 +97,50 @@ test('handle.carries-the-head-of-the-briefing-and-says-why-it-is-short', () => {
   assert.ok(handle.includes(`See logbook://thread/${thread.id} for the complete record.`))
 })
 
-test('handle.omits-every-section-the-full-briefing-carries-below-the-head', () => {
-  const thread = handleFixture()
-  const pointer = pointerFor(thread)
-  const full = renderBriefing(thread, CLEAN_INTEGRITY, pointer, null)
-  const handle = renderHandle(thread, CLEAN_INTEGRITY, pointer, 0)
+test('handle.omits-every-section-the-full-briefing-carries-below-the-head', async () => {
+  await withCriterionFixture(async (fixtureRt) => {
+    const thread = handleFixture()
+    const pointer = pointerFor(thread)
+    const full = stepBriefingIn(fixtureRt, thread, pointer)
+    const handle = renderHandle(thread, CLEAN_INTEGRITY, pointer, 0)
 
-  for (const heading of BELOW_THE_HEAD) {
-    assert.ok(full.includes(heading), `the fixture must produce ${heading} or its omission proves nothing`)
-    assert.equal(handle.includes(heading), false, `expected the handle to omit ${heading}`)
-  }
+    for (const heading of BELOW_THE_HEAD) {
+      assert.ok(full.includes(heading), `the fixture must produce ${heading} or its omission proves nothing`)
+      assert.equal(handle.includes(heading), false, `expected the handle to omit ${heading}`)
+    }
+  })
 })
 
-test('handle.is-a-fraction-of-the-full-briefing-on-the-same-thread', () => {
-  const thread = handleFixture()
-  const pointer = pointerFor(thread)
-  const full = renderBriefing(thread, CLEAN_INTEGRITY, pointer, null)
-  const handle = renderHandle(thread, CLEAN_INTEGRITY, pointer, 0)
+test('handle.is-a-fraction-of-the-full-briefing-on-the-same-thread', async () => {
+  await withCriterionFixture(async (fixtureRt) => {
+    const thread = handleFixture()
+    const pointer = pointerFor(thread)
+    const full = stepBriefingIn(fixtureRt, thread, pointer)
+    const handle = renderHandle(thread, CLEAN_INTEGRITY, pointer, 0)
 
-  assert.ok(
-    handle.length * 2 < full.length,
-    `expected the handle to be less than half the full briefing: ${handle.length} against ${full.length}`
-  )
+    assert.ok(
+      handle.length * 2 < full.length,
+      `expected the handle to be less than half the full briefing: ${handle.length} against ${full.length}`
+    )
+  })
+})
+
+test('handle.keeps-its-clip-of-the-title-and-blockage-while-the-full-briefing-shows-them-whole', async () => {
+  await withCriterionFixture(async (fixtureRt) => {
+    const title = `a long thread title ${'t'.repeat(LONGER_THAN_THE_HANDLE_CLIP)} and its final words`
+    const blockedBy = `a long blockage ${'b'.repeat(LONGER_THAN_THE_HANDLE_CLIP)} and its final words`
+    const thread = handleFixture({ title, blocked_by: blockedBy })
+    const pointer = pointerFor(thread)
+    const handle = renderHandle(thread, CLEAN_INTEGRITY, pointer, 0)
+    const full = stepBriefingIn(fixtureRt, thread, pointer)
+
+    assert.equal(handle.includes(title), false, 'the handle must keep clipping a long title')
+    assert.equal(handle.includes(blockedBy), false, 'the handle must keep clipping a long blockage')
+    assert.ok(handle.includes(CLIP_MARKER), 'the handle must mark the value it clipped')
+    assert.ok(full.split('\n').includes(`**Thread:** ${title}`), 'the full briefing must show the whole title')
+    assert.ok(full.split('\n').includes(`**Blocked:** ${blockedBy}`), 'the full briefing must show the whole blockage')
+    assert.equal(full.includes(CLIP_MARKER), false, 'the full briefing must cut no text')
+  })
 })
 
 test('handle.reports-the-records-it-could-not-read', () => {
