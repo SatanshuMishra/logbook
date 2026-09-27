@@ -144,6 +144,7 @@ const openThread = async (
     slug,
     active_goal: `carry the ${slug} work`,
     next_step: `pick up the ${slug} work`,
+    next_step_records: [],
     completion_criteria: [{ text: `the ${slug} work is finished`, check: `read the ${slug} result`, settledness: 'proposed' }]
   })
   const criteria = structured.completion_criteria as { id: string }[]

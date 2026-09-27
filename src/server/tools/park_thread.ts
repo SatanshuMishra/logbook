@@ -13,7 +13,16 @@ import type { StoreLayout } from '../../store/layout.ts'
 import { layoutFor } from '../../store/layout.ts'
 import { readPointer, releasePointer, releasePointerIfOwned } from '../../domain/pointer.ts'
 import { withDetail } from '../../store/detail.ts'
-import { checkNextStepCriterion, contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
+import {
+  NEXT_STEP_RECORDS_DESCRIPTION,
+  NEXT_STEP_RECORD_ID_DESCRIPTION,
+  STEP_RECORDS_OUTPUT_DESCRIPTION,
+  checkStepRecords,
+  contributeToSpine,
+  renderStepRecords,
+  type SpineContribution,
+  type StepRecords
+} from '../../domain/spine.ts'
 import type { Runtime } from '../../runtime/runtime.ts'
 import { openProjectStore } from '../tool-support.ts'
 
@@ -26,7 +35,7 @@ const ParkThreadInputSchema = z.strictObject({
     .max(caps.SESSION_BODY_MAX)
     .optional()
     .describe(
-      'what happened in this session, written to the session log as-is; omit it and the thread is still parked and the closing session log entry is still written, just carrying no outcome text'
+      'anything about this session that the session log does not already hold, written to the session log as-is; omit it and the thread is still parked and the closing session log entry is still written, just carrying no outcome text'
     ),
   thread_id: ulidField(
     'the id of the thread being worked; omit it and the machine resolves it from what is currently marked as being worked'
@@ -35,15 +44,10 @@ const ParkThreadInputSchema = z.strictObject({
     .string()
     .optional()
     .describe('replaces the spine next_step field when supplied, stated as one decision about what to do next; omit to leave it unchanged'),
-  next_step_criterion_id: ulidField(
-    'the completion criterion that the next_step sent in this same call advances, which must be neither done nor struck; the briefing then shows the risks on that criterion and the whole-thread risks and counts the rest; a next_step sent without it names no criterion'
-  ).optional(),
-  landed: z
-    .string()
+  next_step_records: z
+    .array(ulidField(NEXT_STEP_RECORD_ID_DESCRIPTION))
     .optional()
-    .describe(
-      'what this thread has landed and verified, replacing the stored value when supplied; omit to leave it unchanged'
-    )
+    .describe(NEXT_STEP_RECORDS_DESCRIPTION)
 })
 
 const ParkThreadOutputSchema = z.object({
@@ -64,11 +68,12 @@ const ParkThreadOutputSchema = z.object({
     .array(z.string())
     .describe('the id of the session log entry this call wrote, empty when none was written'),
   spine_fields_updated: z
-    .array(z.enum(['next_step', 'landed']))
+    .array(z.enum(['next_step']))
     .describe('which spine fields this call changed'),
   pointer_released: z
     .boolean()
-    .describe('whether the record of what is being worked was released by this call')
+    .describe('whether the record of what is being worked was released by this call'),
+  step_records: z.string().optional().describe(STEP_RECORDS_OUTPUT_DESCRIPTION)
 })
 
 type ParkThreadInput = z.infer<typeof ParkThreadInputSchema>
@@ -206,7 +211,8 @@ const parkResolvedThread = (
   store: Store,
   layout: StoreLayout,
   threadId: string,
-  input: ParkThreadInput
+  input: ParkThreadInput,
+  stepRecords: StepRecords | null
 ): ToolReply<ParkThreadOutput> => {
   const slot = store.readThread(threadId)
 
@@ -255,17 +261,9 @@ const parkResolvedThread = (
 
   const spineContribution: SpineContribution = {
     ...(input.next_step !== undefined ? { next_step: input.next_step } : {}),
-    ...(input.next_step_criterion_id !== undefined ? { next_step_criterion_id: input.next_step_criterion_id } : {}),
-    ...(input.landed !== undefined ? { landed: input.landed } : {})
+    ...(input.next_step_records !== undefined ? { next_step_records: input.next_step_records } : {})
   }
-  const nextStepCriterionRefused = checkNextStepCriterion(thread.completion_criteria, spineContribution)
-  if (nextStepCriterionRefused !== null) {
-    return { ok: false, refusal: nextStepCriterionRefused }
-  }
-  const spineFieldsUpdated: ('next_step' | 'landed')[] = [
-    ...(input.next_step !== undefined ? (['next_step'] as const) : []),
-    ...(input.landed !== undefined ? (['landed'] as const) : [])
-  ]
+  const spineFieldsUpdated: 'next_step'[] = input.next_step !== undefined ? ['next_step'] : []
 
   const contributed = contributeToSpine(thread.spine, spineContribution)
   if (!contributed.ok) {
@@ -314,7 +312,8 @@ const parkResolvedThread = (
       parked_thread_ids: [thread.id],
       session_entry_ids: [sessionEntry.id],
       spine_fields_updated: spineFieldsUpdated,
-      pointer_released: released === 'released'
+      pointer_released: released === 'released',
+      ...(stepRecords === null ? {} : { step_records: renderStepRecords(stepRecords, validated.value.spine.next_step) })
     }
   }
 }
@@ -323,7 +322,7 @@ export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
   name: 'park_thread',
   title: 'Park thread',
   description:
-    'Ends work on the thread being worked right now, in a single call: it writes the session log entry, refreshes the next_step and landed fields, and releases the record of what is being worked. The last_session field is no longer accepted here; it is derived from the session log. Send the outcome as text plus the next step; the thread id is optional because the machine already knows which thread is being worked. Omit the outcome and the thread is still parked and the session log entry that closes this session is still written, just carrying no outcome text. The next_step can name the completion criterion it advances through next_step_criterion_id, and the briefing then shows only the risks on that criterion and the whole-thread risks. The thread stays open, parking is not closing, and a parked thread appears in the next roster.',
+    'Ends work on the thread being worked right now, in a single call: it writes the session log entry, sets the next step and the records it needs, and releases the record of what is being worked. The last_session field is no longer accepted here; it is derived from the session log. Send the next step with next_step_records; the thread id is optional because the machine already knows which thread is being worked. The outcome is optional and carries only what the session log does not already hold; omit it and the thread is still parked and the session log entry that closes this session is still written, just carrying no outcome text. Setting next_step requires next_step_records: the records the step needs, found with search_ledger across every thread; the reply returns them in full. The thread stays open, parking is not closing, and a parked thread appears in the next roster.',
   input: ParkThreadInputSchema,
   output: ParkThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -334,6 +333,10 @@ export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
 
     const layout = layoutFor(rt, rt.cwd)
     if (!layout.ok) return { ok: false, refusal: layout }
+
+    const checkedStepRecords = checkStepRecords(store, input)
+    if (!checkedStepRecords.ok) return { ok: false, refusal: checkedStepRecords }
+    const stepRecords = checkedStepRecords.value
 
     const pointerRead = readPointer(rt, layout.value)
 
@@ -365,7 +368,7 @@ export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
         }
         return emptyStatusReply('not-the-worked-thread')
       }
-      return parkResolvedThread(rt, store, layout.value, pointer.thread_id, input)
+      return parkResolvedThread(rt, store, layout.value, pointer.thread_id, input, stepRecords)
     }
 
     if (pointer.session_id !== rt.sessionId) {
@@ -374,6 +377,6 @@ export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
       }
       return emptyStatusReply('not-the-worked-thread')
     }
-    return parkResolvedThread(rt, store, layout.value, pointer.thread_id, input)
+    return parkResolvedThread(rt, store, layout.value, pointer.thread_id, input, stepRecords)
   }
 }

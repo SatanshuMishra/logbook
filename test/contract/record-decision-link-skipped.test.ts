@@ -23,6 +23,7 @@ test('record-decision.records-the-decision-and-reports-the-skipped-link-when-the
       slug: 'link-skipped-thread',
       active_goal: 'show a decision is kept when its spine link cannot be written',
       next_step: 'record one more decision',
+      next_step_records: [],
       completion_criteria: [{ text: 'the decision is kept', check: 'read it back', settledness: 'proposed' as const }]
     })
     if (!opened.ok) throw new Error(`link-skipped fixture: open_thread refused: ${opened.refusal.message}`)

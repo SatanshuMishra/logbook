@@ -84,7 +84,7 @@ const readThreadRecord = (fx: Fixture, threadId: string): Thread => {
 
 test('open_thread.refuses-a-thread-with-no-active-goal', async () => {
   await withFixture(async (fx) => {
-    const reply = await callOpenThread(fx, { title: 'a thread', slug: 'no-goal', next_step: 'read the spec' })
+    const reply = await callOpenThread(fx, { title: 'a thread', slug: 'no-goal', next_step: 'read the spec', next_step_records: [] })
 
     assert.equal(reply.isError, true, 'a thread that does not say what the work is cannot be opened')
   })
@@ -96,7 +96,8 @@ test('open_thread.refuses-a-whitespace-only-next-step', async () => {
       title: 'a thread',
       slug: 'blank-next-step',
       active_goal: 'ship the recording model',
-      next_step: '   '
+      next_step: '   ',
+      next_step_records: []
     })
 
     assert.equal(reply.isError, true, 'a next step made only of spaces states nothing and is refused')
@@ -110,13 +111,15 @@ test('open_thread.accepts-a-thread-carrying-no-criteria', async () => {
       slug: 'empty-criteria',
       active_goal: 'ship the recording model',
       next_step: 'read the spec',
+      next_step_records: [],
       completion_criteria: []
     })
     const withAbsent = await callOpenThread(fx, {
       title: 'a thread',
       slug: 'absent-criteria',
       active_goal: 'ship the recording model',
-      next_step: 'read the spec'
+      next_step: 'read the spec',
+      next_step_records: []
     })
 
     assert.equal(withEmpty.isError, undefined, 'an empty criteria array opens a thread')
@@ -130,7 +133,8 @@ test('open_thread.writes-the-goal-and-the-next-step-into-the-spine', async () =>
       title: 'a thread',
       slug: 'spine-populated',
       active_goal: 'ship the recording model',
-      next_step: 'read the spec'
+      next_step: 'read the spec',
+      next_step_records: []
     })
 
     const structured = reply.structuredContent as { thread_id: string }
@@ -148,6 +152,7 @@ test('open_thread.refuses-a-criterion-with-no-settledness', async () => {
       slug: 'no-settledness',
       active_goal: 'ship the recording model',
       next_step: 'read the spec',
+      next_step_records: [],
       completion_criteria: [{ text: 'the suite is green', check: 'npm test exits 0' }]
     })
 
@@ -162,6 +167,7 @@ test('open_thread.refuses-a-proposed-criterion-with-no-check', async () => {
       slug: 'proposed-no-check',
       active_goal: 'ship the recording model',
       next_step: 'read the spec',
+      next_step_records: [],
       completion_criteria: [{ text: 'the suite is green', settledness: 'proposed' }]
     })
 
@@ -176,6 +182,7 @@ test('open_thread.accepts-an-unsettled-criterion-with-no-check', async () => {
       slug: 'unsettled-no-check',
       active_goal: 'ship the recording model',
       next_step: 'read the spec',
+      next_step_records: [],
       completion_criteria: [{ text: 'what counts as acceptable latency is not decided', settledness: 'unsettled' }]
     })
 
@@ -190,6 +197,7 @@ test('open_thread.refuses-a-confirmed-criterion-with-no-quote', async () => {
       slug: 'confirmed-no-quote',
       active_goal: 'ship the recording model',
       next_step: 'read the spec',
+      next_step_records: [],
       completion_criteria: [{ text: 'the suite is green', check: 'npm test exits 0', settledness: 'confirmed' }]
     })
 
@@ -204,6 +212,7 @@ test('open_thread.refuses-a-quote-on-a-criterion-nobody-confirmed', async () => 
       slug: 'proposed-with-quote',
       active_goal: 'ship the recording model',
       next_step: 'read the spec',
+      next_step_records: [],
       completion_criteria: [
         { text: 'the suite is green', check: 'npm test exits 0', settledness: 'proposed', settled_by: 'they said so' }
       ]
@@ -220,6 +229,7 @@ test('open_thread.accepts-all-three-settledness-values', async () => {
       slug: 'all-three-values',
       active_goal: 'ship the recording model',
       next_step: 'read the spec',
+      next_step_records: [],
       completion_criteria: [
         { text: 'the suite is green', check: 'npm test exits 0', settledness: 'proposed' },
         { text: 'the gate fires', check: 'the stop-gate tests pass', settledness: 'confirmed', settled_by: 'it has to block' },
@@ -238,6 +248,7 @@ test('open_thread.reply-carries-the-text-of-every-criterion-it-stored', async ()
       slug: 'reply-carries-text',
       active_goal: 'ship the recording model',
       next_step: 'read the spec',
+      next_step_records: [],
       completion_criteria: [
         { text: GREEN_SUITE_CRITERION, check: 'npm test exits 0', settledness: 'proposed' },
         { text: LATENCY_CRITERION, settledness: 'unsettled' }
@@ -258,6 +269,7 @@ test('open_thread.reply-carries-the-settledness-each-criterion-was-stored-with',
       slug: 'reply-carries-settledness',
       active_goal: 'ship the recording model',
       next_step: 'read the spec',
+      next_step_records: [],
       completion_criteria: [
         { text: GREEN_SUITE_CRITERION, check: 'npm test exits 0', settledness: 'proposed' },
         { text: LATENCY_CRITERION, settledness: 'unsettled' }
@@ -284,6 +296,7 @@ test('open_thread.reply-names-the-action-and-where-the-answer-is-recorded', asyn
       slug: 'reply-names-the-action',
       active_goal: 'ship the recording model',
       next_step: 'read the spec',
+      next_step_records: [],
       completion_criteria: [{ text: GREEN_SUITE_CRITERION, check: 'npm test exits 0', settledness: 'proposed' }]
     })
 
@@ -301,7 +314,8 @@ test('open_thread.reply-with-no-criteria-says-a-definition-of-done-is-still-owed
       title: 'a thread',
       slug: 'reply-with-no-criteria',
       active_goal: 'ship the recording model',
-      next_step: 'read the spec'
+      next_step: 'read the spec',
+      next_step_records: []
     })
 
     const text = firstTextOf(reply)
@@ -324,6 +338,7 @@ test('open_thread.reports-an-absent-check-as-null-rather-than-an-empty-string', 
       slug: 'absent-check-is-null',
       active_goal: 'ship the recording model',
       next_step: 'read the spec',
+      next_step_records: [],
       completion_criteria: [{ text: LATENCY_CRITERION, settledness: 'unsettled' }]
     })
 
@@ -359,7 +374,8 @@ test('open_thread.a-slug-past-the-os-argument-limit-is-committed-and-its-thread-
       title: 'a thread',
       slug: SLUG_PAST_THE_OS_ARGUMENT_LIMIT,
       active_goal: 'ship the recording model',
-      next_step: 'read the spec'
+      next_step: 'read the spec',
+      next_step_records: []
     })
     assert.equal(
       opened.isError,
@@ -374,7 +390,7 @@ test('open_thread.a-slug-past-the-os-argument-limit-is-committed-and-its-thread-
     const threadId = (opened.structuredContent as { thread_id: string }).thread_id
     const updated = (await fx.spawned.client.callTool({
       name: 'update_thread',
-      arguments: { thread_id: threadId, next_step: 'read the plan' }
+      arguments: { thread_id: threadId, next_step: 'read the plan', next_step_records: [] }
     })) as CallToolResult
     assert.equal(
       updated.isError,

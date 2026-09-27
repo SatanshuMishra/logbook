@@ -86,10 +86,10 @@ const bootstrapRepo = (): string => {
   return repo
 }
 
-const NEXT_STEP_CRITERION_FIELD = 'next_step_criterion_id'
+const NEXT_STEP_RECORDS_FIELD = 'next_step_records'
 
-const parkFixtureValueFor = (field: string, criterionId: string): string =>
-  field === NEXT_STEP_CRITERION_FIELD ? criterionId : `debrief fixture value for ${field}`
+const parkFixtureValueFor = (field: string, criterionId: string): string | string[] =>
+  field === NEXT_STEP_RECORDS_FIELD ? [criterionId] : `debrief fixture value for ${field}`
 
 const callOk = async (spawned: SpawnedServer, name: string, args: Record<string, unknown>): Promise<CallToolResult> => {
   const result = (await spawned.client.callTool({ name, arguments: args })) as CallToolResult
@@ -131,6 +131,7 @@ test('debrief.returns-a-non-empty-spine-update', async () => {
       slug: 'debrief-spine-update-fixture',
       active_goal: 'exercise the debrief spine-update fixture',
       next_step: 'exercise the debrief spine-update fixture',
+      next_step_records: [],
       completion_criteria: [
         {
           text: 'prove the documented debrief sequence refreshes the running summary',

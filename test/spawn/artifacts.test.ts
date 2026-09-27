@@ -55,6 +55,7 @@ const openFixtureThread = async (rt: Runtime, slug: string): Promise<string> => 
     slug,
     active_goal: 'exercise the artifact list fixture',
     next_step: 'exercise the artifact list fixture',
+    next_step_records: [],
     completion_criteria: [{ text: 'the artifact list is writable and tombstoned', check: 'the test asserts it', settledness: 'proposed' }]
   })
   if (!opened.ok) {

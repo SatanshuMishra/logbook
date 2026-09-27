@@ -66,6 +66,7 @@ const openThread = async (fx: Fixture, slug: string): Promise<string> => {
       slug,
       active_goal: 'exercise the blocked-by fixture',
       next_step: 'exercise the blocked-by fixture',
+      next_step_records: [],
       completion_criteria: [{ text: 'the blockage renders', check: 'the roster prints it', settledness: 'proposed' }]
     }
   })) as CallToolResult

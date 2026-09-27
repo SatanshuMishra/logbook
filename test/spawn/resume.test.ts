@@ -631,7 +631,8 @@ test('park.refreshes-the-spine', async () => {
     const parked = await callPark(fx.spawned, fx.published, {
       thread_id: threadId,
       outcome: suppliedOutcome,
-      next_step: suppliedNextStep
+      next_step: suppliedNextStep,
+      next_step_records: []
     })
     assertOkResult('park_thread (refreshes-the-spine)', parked)
     const structured = parked.structuredContent as { spine_fields_updated: string[] }
@@ -675,8 +676,8 @@ test('park.refuses-a-last-session-argument', async () => {
     const updated = outputProperties.spine_fields_updated as { items?: { enum?: unknown } }
     assert.deepEqual(
       updated.items?.enum,
-      ['next_step', 'landed'],
-      'park_thread must publish next_step and landed as the only spine fields its reply can report'
+      ['next_step'],
+      'park_thread must publish next_step as the only spine field its reply can report'
     )
   })
 })

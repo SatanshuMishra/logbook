@@ -41,6 +41,7 @@ test('lineage.briefing-renders-the-predecessor-it-was-opened-with', async () => 
       slug: 'came-first',
       active_goal: 'exercise the lineage fixture',
       next_step: 'exercise the lineage fixture',
+      next_step_records: [],
       completion_criteria: [{ text: 'the first criterion', check: 'the lineage fixture check', settledness: 'proposed' }]
     })
     assert.equal(first.ok, true)
@@ -51,6 +52,7 @@ test('lineage.briefing-renders-the-predecessor-it-was-opened-with', async () => 
       slug: 'succeeds-it',
       active_goal: 'exercise the lineage fixture',
       next_step: 'exercise the lineage fixture',
+      next_step_records: [],
       completion_criteria: [{ text: 'the second criterion', check: 'the lineage fixture check', settledness: 'proposed' }],
       predecessor_id: first.structured.thread_id
     })
@@ -78,6 +80,7 @@ test('lineage.unresolvable-predecessor-is-refused-at-write-time', async () => {
       slug: 'dangling-predecessor',
       active_goal: 'exercise the lineage fixture',
       next_step: 'exercise the lineage fixture',
+      next_step_records: [],
       completion_criteria: [{ text: 'the only criterion', check: 'the lineage fixture check', settledness: 'proposed' }],
       predecessor_id: rt.ulid()
     })

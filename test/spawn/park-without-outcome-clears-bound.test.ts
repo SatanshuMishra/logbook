@@ -57,6 +57,7 @@ const openFixtureThread = async (rt: Runtime, slug: string): Promise<string> => 
     slug,
     active_goal: 'exercise the bare-park remedy against a real bound',
     next_step: 'exercise the bare-park remedy against a real bound',
+    next_step_records: [],
     completion_criteria: [
       { text: 'a bare park clears the guard', check: 'the test asserts it', settledness: 'proposed' }
     ]

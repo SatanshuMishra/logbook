@@ -327,17 +327,18 @@ type DriveContext = { threadId: string; outcome: string; criterionId: string; de
 
 const CALL_ARGS_BY_TOOL: Record<string, (ctx: DriveContext) => Record<string, unknown>> = {
   list_threads: () => ({}),
+  search_ledger: () => ({ text: 'exercise the documented hand-off' }),
   resume_thread: (ctx) => ({ thread_id: ctx.threadId }),
   park_thread: (ctx) => ({
-    outcome: ctx.outcome,
     next_step: 'exercise the documented hand-off',
-    next_step_criterion_id: ctx.criterionId
+    next_step_records: [ctx.criterionId]
   }),
   open_thread: () => ({
     title: 'skills contract fixture file-skill throwaway thread',
     slug: 'skills-contract-fixture-file-skill',
     active_goal: 'exercise the documented file skill sequence',
     next_step: 'exercise the documented file skill sequence',
+    next_step_records: [],
     completion_criteria: [
       {
         text: 'exercise the documented file skill sequence',
@@ -559,30 +560,20 @@ test('skill.preflight-presents-and-stops', () => {
   assert.equal(firstWordOf(lastStep), 'Stop', 'expected the final step to be nothing but stopping')
 })
 
-test('skill.debrief-passes-both-hand-off-fields', () => {
-  const debrief = readSkillFile(DEBRIEF_SKILL_PATH).content
-
-  assert.ok(
-    debrief.includes('park_thread.landed'),
-    'expected the debrief sequence to pass park_thread.landed'
-  )
-  assert.ok(
-    debrief.includes('park_thread.next_step'),
-    'expected the debrief sequence to pass park_thread.next_step'
-  )
-})
-
 test('skill.debrief-records-risks-against-their-anchors-before-parking', () => {
   const steps = parseSkill(readSkillFile(DEBRIEF_SKILL_PATH)).steps
 
-  const liveRisksIndex = steps.findIndex((step) => step.includes('logbook://thread/'))
-  assert.notEqual(liveRisksIndex, -1, 'expected a step reading the live risks from the thread record')
+  const foundRisksIndex = steps.findIndex((step) => firstWordOf(step) === 'Gather' && step.includes('risks this session found'))
+  assert.notEqual(foundRisksIndex, -1, 'expected a step gathering the risks this session found')
+  assert.ok(
+    (steps[foundRisksIndex] as string).includes('a completion criterion the briefing shows as open'),
+    'expected each found risk to be paired with a completion criterion the briefing shows as open'
+  )
 
   const riskCallIndex = steps.findIndex(
     (step) => stepContainsSpan(step, 'update_thread.risks_add') && stepContainsSpan(step, 'update_thread.risks_retire')
   )
   assert.notEqual(riskCallIndex, -1, 'expected one update_thread step that both adds and retires risks')
-  assert.ok(liveRisksIndex < riskCallIndex, 'expected the live risks to be read before any risk is added or retired')
   assert.ok(
     (steps[riskCallIndex] as string).includes('criterion_id'),
     'expected every added risk to carry the criterion_id that anchors it'
@@ -591,22 +582,22 @@ test('skill.debrief-records-risks-against-their-anchors-before-parking', () => {
   const alreadyPresentIndex = steps.findIndex((step) => stepContainsSpan(step, 'update_thread.risks_already_present'))
   assert.ok(alreadyPresentIndex > riskCallIndex, 'expected the risks already present to be printed after the update_thread call')
 
-  const parkIndex = steps.findIndex((step) => stepContainsSpan(step, 'park_thread.next_step_criterion_id'))
-  assert.ok(parkIndex > riskCallIndex, 'expected park_thread to pass the criterion the next step advances, after the risks are recorded')
+  const parkIndex = steps.findIndex((step) => stepContainsSpan(step, 'park_thread.next_step_records'))
+  assert.ok(parkIndex > riskCallIndex, 'expected park_thread to pass the records the next step needs, after the risks are recorded')
 })
 
-test('skill.debrief-chooses-criteria-from-the-thread-record-and-keeps-found-risks-through-a-refusal', () => {
+test('skill.debrief-chooses-criteria-from-the-briefing-and-keeps-found-risks-through-a-refusal', () => {
   const steps = parseSkill(readSkillFile(DEBRIEF_SKILL_PATH)).steps
 
-  const recordIndex = steps.findIndex((step) => step.includes('logbook://thread/'))
-  assert.notEqual(recordIndex, -1, 'expected a step reading the thread record')
-  const criterionChoices = steps
-    .map((step, index) => ({ step, index }))
-    .filter(({ step, index }) => index !== recordIndex && firstWordOf(step) === 'Gather' && step.includes('completion criterion'))
-  assert.ok(criterionChoices.length >= 2, 'expected the next action and the found risks each to be paired with a completion criterion')
-  for (const { step, index } of criterionChoices) {
-    assert.ok(index > recordIndex, `expected the thread record to be read before this criterion is chosen: ${step}`)
-    assert.ok(step.includes('that record shows as open'), `expected the criterion to be chosen from those the record shows as open: ${step}`)
+  const criterionChoices = steps.filter(
+    (step) => firstWordOf(step) === 'Gather' && (step.includes('a completion criterion') || step.includes('a criterion '))
+  )
+  assert.ok(criterionChoices.length >= 2, 'expected the found risks and the risks on done criteria each to be paired with a criterion')
+  for (const step of criterionChoices) {
+    assert.ok(
+      step.includes('the briefing shows as open') || step.includes('the briefing shows as done'),
+      `expected the criterion to be chosen from those the briefing shows as open or done: ${step}`
+    )
   }
 
   const riskCallIndex = steps.findIndex((step) => stepContainsSpan(step, 'update_thread.risks_add'))
@@ -618,15 +609,20 @@ test('skill.debrief-chooses-criteria-from-the-thread-record-and-keeps-found-risk
   )
 
   const refusalIndex = steps.findIndex((step) => firstWordOf(step) === 'Print' && step.includes('refusal text `update_thread` returns'))
-  const parkIndex = steps.findIndex((step) => stepContainsSpan(step, 'park_thread.outcome'))
-  assert.ok(
-    riskCallIndex < refusalIndex && refusalIndex < parkIndex,
-    'expected a refused update_thread to be printed with the found risks before the thread is parked'
-  )
+  assert.ok(riskCallIndex < refusalIndex, 'expected a refused update_thread to be printed after the call')
   assert.ok((steps[refusalIndex] as string).includes('found risks'), 'expected the found risks to be printed with the update_thread refusal')
+
+  const parkIndex = steps.findIndex((step) => firstWordOf(step) === 'Call' && extractCallToolName(step) === 'park_thread')
+  const logIndex = steps.findIndex(
+    (step, index) =>
+      index > refusalIndex &&
+      firstWordOf(step) === 'Call' &&
+      extractCallToolName(step) === 'log_session_event' &&
+      step.includes('any refusal text printed in step 11 and the risks printed with it')
+  )
   assert.ok(
-    (steps[parkIndex] as string).includes('refusal') && (steps[parkIndex] as string).includes('risks printed with it'),
-    'expected the park outcome to carry an update_thread refusal and the risks printed with it, since the refusal text holds no risk text'
+    logIndex !== -1 && logIndex < parkIndex,
+    'expected a log_session_event step, before the park, to carry an update_thread refusal and the risks printed with it, since the park carries no outcome'
   )
 })
 
@@ -634,11 +630,11 @@ test('skill.debrief-reopens-a-criterion-a-found-risk-shows-incomplete', () => {
   const steps = parseSkill(readSkillFile(DEBRIEF_SKILL_PATH)).steps
 
   const doneRisksIndex = steps.findIndex(
-    (step) => firstWordOf(step) === 'Gather' && step.includes('record shows as done')
+    (step) => firstWordOf(step) === 'Gather' && step.includes('briefing shows as done')
   )
-  assert.notEqual(doneRisksIndex, -1, 'expected a step gathering the found risks that bear on a criterion the record shows as done')
+  assert.notEqual(doneRisksIndex, -1, 'expected a step gathering the found risks that bear on a criterion the briefing shows as done')
 
-  const decisionIndex = steps.findIndex((step) => stepContainsSpan(step, 'record_decision'))
+  const decisionIndex = steps.findIndex((step) => stepContainsSpan(step, 'record_decision') && step.includes('the reopening'))
   assert.notEqual(decisionIndex, -1, 'expected a step recording the decision that justifies the reopen')
   assert.ok(doneRisksIndex < decisionIndex, 'expected those risks to be gathered before the decision is recorded')
 
@@ -661,6 +657,34 @@ test('skill.debrief-reopens-a-criterion-a-found-risk-shows-incomplete', () => {
   assert.ok(
     reopenIndex < riskCallIndex,
     'expected the criterion to be reopened before update_thread records the risk against it'
+  )
+})
+
+test('skills.debrief-hands-off-without-summary-or-landed', () => {
+  const debrief = readSkillFile(DEBRIEF_SKILL_PATH).content
+
+  assert.ok(debrief.includes('`search_ledger`'), 'expected the debrief sequence to search the ledger for the records the next action needs')
+  assert.ok(
+    debrief.includes('`park_thread.next_step_records`'),
+    'expected the debrief sequence to pass the records the next step needs to park_thread'
+  )
+  assert.equal(debrief.includes('park_thread.landed'), false, 'expected the debrief sequence to send no landed to park_thread')
+  assert.equal(debrief.includes('park_thread.outcome'), false, 'expected the debrief sequence to send no outcome to park_thread')
+})
+
+test('skills.file-searches-before-opening-a-thread', () => {
+  const steps = parseSkill(readSkillFile(FILE_SKILL_PATH)).steps
+  const callsTo = (tool: string): number =>
+    steps.findIndex((step) => firstWordOf(step) === 'Call' && extractCallToolName(step) === tool)
+
+  const searchIndex = callsTo('search_ledger')
+  const openIndex = callsTo('open_thread')
+  assert.notEqual(searchIndex, -1, 'expected the file sequence to call search_ledger')
+  assert.notEqual(openIndex, -1, 'expected the file sequence to call open_thread')
+  assert.ok(searchIndex < openIndex, 'expected the file sequence to search the ledger before it opens the thread')
+  assert.ok(
+    stepContainsSpan(steps[openIndex] as string, 'open_thread.next_step_records'),
+    'expected the open_thread step to pass the records the next step needs'
   )
 })
 
@@ -711,6 +735,7 @@ test('skill.cannot-strand', async () => {
         slug: 'skills-contract-fixture',
         active_goal: 'exercise the skills contract fixture',
         next_step: 'exercise the skills contract fixture',
+        next_step_records: [],
         completion_criteria: [
           {
             text: 'prove the documented preflight and debrief sequence cannot strand a pointer',

@@ -7,11 +7,13 @@ import { fileURLToPath } from 'node:url'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { rawGit } from '../support/git-fixture.ts'
 import { spawnServer, type SpawnedServer } from '../support/spawn-client.ts'
+import { testRuntime } from '../support/runtime.ts'
+import { openStore } from '../../src/store/records.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const ENTRY = join(PROJECT_ROOT, 'bin', 'logbook-server.ts')
 
-type Fixture = { spawned: SpawnedServer; repo: string }
+type Fixture = { spawned: SpawnedServer; repo: string; pluginData: string }
 
 const runSetupStep = (repo: string, args: string[]): void => {
   const result = rawGit(repo, args)
@@ -38,7 +40,7 @@ const withFixture = async (fn: (fx: Fixture) => Promise<void>): Promise<void> =>
   mkdirSync(pluginData)
   const spawned = await spawnServer({ projectRoot: repo, entry: ENTRY, env: { CLAUDE_PLUGIN_DATA: pluginData } })
   try {
-    await fn({ spawned, repo })
+    await fn({ spawned, repo, pluginData })
   } finally {
     await spawned.close()
     rmSync(repo, { recursive: true, force: true })
@@ -65,6 +67,7 @@ const openReopenFixture = async (fx: Fixture, slug: string): Promise<ReopenFixtu
     slug,
     active_goal: 'exercise the criterion-reopen fixture',
     next_step: 'exercise the criterion-reopen fixture',
+    next_step_records: [],
     completion_criteria: [
       { text: FIRST_CRITERION_TEXT, check: 'npm test exits 0', settledness: 'proposed' },
       { text: SECOND_CRITERION_TEXT, check: 'npm test exits 0', settledness: 'proposed' }
@@ -99,6 +102,18 @@ const markDone = async (fx: Fixture, threadId: string, criterionId: string, resu
     criteria_done: [{ criterion_id: criterionId, result, result_status: 'verified' }]
   })
   assertOkResult('update_thread criteria_done (criterion-reopen arrange)', marked)
+}
+
+const storeNextStepCriterion = (fx: Fixture, threadId: string, criterionId: string): void => {
+  const opened = openStore(testRuntime({ env: { CLAUDE_PLUGIN_DATA: fx.pluginData }, cwd: fx.repo }), fx.repo)
+  if (!opened.ok) throw new Error(`criterion-reopen fixture: could not open the store: ${opened.message}`)
+  const slot = opened.value.readThread(threadId)
+  if (slot === null || slot.quarantined) throw new Error(`criterion-reopen fixture: thread ${threadId} could not be read`)
+  const committed = opened.value.commit(
+    [{ kind: 'thread', record: { ...slot.record, spine: { ...slot.record.spine, next_step_criterion_id: criterionId } } }],
+    'seed a next step criterion written before next_step_records existed'
+  )
+  if (!committed.ok) throw new Error(`criterion-reopen fixture: could not seed the next step criterion: ${committed.detail}`)
 }
 
 const briefingOf = async (fx: Fixture, threadId: string): Promise<string> => {
@@ -185,14 +200,13 @@ test('amend_criteria.returns-a-risk-and-a-next-step-anchored-to-a-reopened-crite
 
     const anchored = await callTool(fx, 'update_thread', {
       thread_id: threadId,
-      next_step: 'land the reopen operation with its refusals',
-      next_step_criterion_id: criterionId,
       risks_add: [
         { text: 'the reopen path is untested end to end', scope: 'amend_criteria', criterion_id: criterionId },
         { text: 'the other goal has its own hazard', scope: 'briefing', criterion_id: otherCriterionId }
       ]
     })
     assertOkResult('update_thread risks_add (criterion-reopen arrange)', anchored)
+    storeNextStepCriterion(fx, threadId, criterionId)
 
     const liveBefore = await briefingOf(fx, threadId)
     assert.ok(liveBefore.includes('**Open risks:**'), 'expected the anchored risk to start under Open risks')

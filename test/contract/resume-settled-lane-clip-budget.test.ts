@@ -80,6 +80,7 @@ test('resume_thread.a-settled-risk-shortens-no-further-than-its-share-of-the-rea
       slug: 'settled-lane-clip-budget',
       active_goal: 'guard the settled lane clip budget',
       next_step: 'exercise the settled lane clip budget fixture',
+      next_step_records: [],
       completion_criteria: [
         { text: filler(40), check: filler(40), settledness: 'proposed' },
         { text: filler(40), check: filler(40), settledness: 'proposed' }
@@ -109,6 +110,7 @@ test('resume_thread.a-settled-risk-shortens-no-further-than-its-share-of-the-rea
       criteria_done: [{ criterion_id: settledCriterionId, result: filler(20), result_status: 'verified' }],
       active_goal: filler(SPINE_FIELD_LENGTH),
       next_step: filler(SPINE_FIELD_LENGTH),
+      next_step_records: [],
       risks_add: [
         { text: settledRiskText, scope: 'settled lane fixture', refs: [settledRiskRef], criterion_id: settledCriterionId },
         ...openRiskTexts.map((text) => ({

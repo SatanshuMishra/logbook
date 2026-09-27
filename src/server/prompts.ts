@@ -26,13 +26,13 @@ const preflightMessage = (thread: string | undefined): GetPromptResult => ({
 })
 
 const debriefMessage = (): GetPromptResult => ({
-  description: "Gather this session's outcome and record it before parking the thread.",
+  description: "Hand this session's thread off, recording only what the ledger does not already hold.",
   messages: [
     {
       role: 'user',
       content: {
         type: 'text',
-        text: 'Ask me what this session accomplished, what changed, and what the next step is, then call park_thread with that outcome. Read the reply before moving on: park_thread refuses and stores nothing when the thread it would write to is gone, terminal, quarantined, or held by another session, and the outcome text has to be re-sent.'
+        text: 'Record anything this session established that the ledger does not already hold, find the records the next action needs with search_ledger, then call park_thread with next_step and next_step_records, sending no summary of the session. Read the reply before moving on: park_thread refuses and stores nothing when the thread it would write to is gone, terminal, quarantined, or held by another session, and the next step then has to be sent again.'
       }
     }
   ]
@@ -58,7 +58,7 @@ export const registerPrompts = (server: McpServer, rt: Runtime): void => {
     'debrief',
     {
       title: 'Debrief',
-      description: "Gather this session's outcome and record it before parking the thread."
+      description: "Hand this session's thread off, recording only what the ledger does not already hold."
     },
     () => debriefMessage()
   )

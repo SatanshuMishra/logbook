@@ -58,7 +58,8 @@ const openFixtureThread = async (fx: Fixture, slug: string): Promise<string> => 
       title: `amend-criteria fixture thread ${slug}`,
       slug,
       active_goal: 'exercise the amend-criteria fixture',
-      next_step: 'exercise the amend-criteria fixture'
+      next_step: 'exercise the amend-criteria fixture',
+      next_step_records: []
     }
   })) as CallToolResult
   assertOkResult('open_thread (amend-criteria fixture arrange)', opened)
@@ -98,6 +99,7 @@ const openAmendableFixture = async (fx: Fixture, slug: string): Promise<Amendabl
       slug,
       active_goal: 'exercise the amend-criteria fixture',
       next_step: 'exercise the amend-criteria fixture',
+      next_step_records: [],
       completion_criteria: [
         { text: STANDING_CRITERION_TEXT, check: 'npm test exits 0', settledness: 'proposed' }
       ]

@@ -65,6 +65,7 @@ const openThread = async (spawned: SpawnedServer, slug: string, title: string): 
       slug,
       active_goal: 'exercise the completions fixture',
       next_step: 'exercise the completions fixture',
+      next_step_records: [],
       completion_criteria: [{ text: 'a completions fixture criterion', check: 'the completions fixture check', settledness: 'proposed' }]
     }
   })) as CallToolResult

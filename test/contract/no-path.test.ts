@@ -38,7 +38,7 @@ import { LEDGER_REF, casUpdateRef } from '../../src/store/ref.ts'
 import { ensureSingleStore } from '../../src/store/single-store.ts'
 import { withDetail } from '../../src/store/detail.ts'
 import { insertCriterion, reopenCriterion, rewriteCriterion, strikeCriterion } from '../../src/domain/criteria.ts'
-import { checkNextStepCriterion, contributeToSpine } from '../../src/domain/spine.ts'
+import { checkStepRecords, contributeToSpine, resolveStepRecords } from '../../src/domain/spine.ts'
 import { transition } from '../../src/domain/lifecycle.ts'
 import { rawGit, withRepo, withRepoNoIdentity } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
@@ -76,7 +76,8 @@ const REWRITE_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#rewriteCriter
 const STRIKE_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#strikeCriterion'
 const REOPEN_CRITERION_PRODUCER: ProducerId = 'domain/criteria.ts#reopenCriterion'
 const CONTRIBUTE_TO_SPINE_PRODUCER: ProducerId = 'domain/spine.ts#contributeToSpine'
-const CHECK_NEXT_STEP_CRITERION_PRODUCER: ProducerId = 'domain/spine.ts#checkNextStepCriterion'
+const CHECK_STEP_RECORDS_PRODUCER: ProducerId = 'domain/spine.ts#checkStepRecords'
+const RESOLVE_STEP_RECORDS_PRODUCER: ProducerId = 'domain/spine.ts#resolveStepRecords'
 const TRANSITION_PRODUCER: ProducerId = 'domain/lifecycle.ts#transition'
 const OPEN_THREAD_DUPLICATE_SLUG_PRODUCER: ProducerId = 'server/tools/open_thread.ts#duplicateSlugRefusal'
 const UPDATE_THREAD_UNKNOWN_CRITERION_PRODUCER: ProducerId = 'server/tools/update_thread.ts#unknownCriterionRefusal'
@@ -197,6 +198,7 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
       slug: 'census-tool-fixture',
       active_goal: 'ship the census tool fixture',
       next_step: 'exercise the census tool fixture',
+      next_step_records: [],
       completion_criteria: [{ text: 'a census criterion', check: 'the census check', settledness: 'proposed' }]
     })
     if (!firstOpen.ok) throw new Error('expected openThreadTool to open the census tool fixture thread')
@@ -205,6 +207,18 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     const openedStore = openProjectStore(rt)
     if (!openedStore.ok) throw new Error('expected openProjectStore to open the census tool fixture store')
     const store = openedStore.value
+
+    const recordsWithoutStep = checkStepRecords(store, { next_step_records: [] })
+    if (recordsWithoutStep.ok) throw new Error('expected checkStepRecords to refuse a records list sent without a next step')
+    refusals.push({ producer: CHECK_STEP_RECORDS_PRODUCER, refusal: recordsWithoutStep })
+
+    const stepWithoutRecords = checkStepRecords(store, { next_step: 'a census next step' })
+    if (stepWithoutRecords.ok) throw new Error('expected checkStepRecords to refuse a next step sent without its records')
+    refusals.push({ producer: CHECK_STEP_RECORDS_PRODUCER, refusal: stepWithoutRecords })
+
+    const unknownStepRecord = resolveStepRecords(store, [rt.ulid()])
+    if (unknownStepRecord.ok) throw new Error('expected resolveStepRecords to refuse an id that matches no stored record')
+    refusals.push({ producer: RESOLVE_STEP_RECORDS_PRODUCER, refusal: unknownStepRecord })
 
     const unknownThreadLoad = loadThread(store, 'thread_id', rt.ulid())
     if (unknownThreadLoad.ok) throw new Error('expected loadThread to refuse against an unknown thread id')
@@ -240,6 +254,7 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
       slug: 'census-tool-fixture',
       active_goal: 'ship the census tool fixture',
       next_step: 'exercise the census tool fixture',
+      next_step_records: [],
       completion_criteria: [{ text: 'a census criterion', check: 'the census check', settledness: 'proposed' }]
     })
     if (duplicateOpen.ok) throw new Error('expected openThreadTool to refuse a duplicate slug')
@@ -567,6 +582,7 @@ const buildResolveConflictFixture = async (): Promise<ResolveConflictFixture> =>
     slug: 'census-resolve-fixture',
     active_goal: 'ship the resolve-conflict fixture',
     next_step: 'exercise the resolve-conflict fixture',
+    next_step_records: [],
     completion_criteria: [{ text: 'a census criterion', check: 'the census check', settledness: 'proposed' }]
   })
   if (!openedThread.ok) throw new Error('expected openThreadTool to open the resolve-conflict fixture thread')
@@ -1062,14 +1078,6 @@ const collectRealRefusals = async (): Promise<TaggedRefusal[]> => {
   })
   if (spineResult.ok) throw new Error('expected contributeToSpine to refuse key decisions past their element cap')
   refusals.push({ producer: CONTRIBUTE_TO_SPINE_PRODUCER, refusal: spineResult })
-
-  const nextStepCriterionResult = checkNextStepCriterion(domainThread.completion_criteria, {
-    next_step_criterion_id: domainRt.ulid()
-  })
-  if (nextStepCriterionResult === null) {
-    throw new Error('expected checkNextStepCriterion to refuse a criterion sent without a next step')
-  }
-  refusals.push({ producer: CHECK_NEXT_STEP_CRITERION_PRODUCER, refusal: nextStepCriterionResult })
 
   const transitionResult = transition(domainRt, domainThread, 'abandoned', '')
   if (transitionResult.ok) throw new Error('expected transition to refuse an abandon with no reason')

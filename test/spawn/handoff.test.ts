@@ -8,6 +8,7 @@ import type { ToolContext } from '../../src/server/register.ts'
 import { openThreadTool } from '../../src/server/tools/open_thread.ts'
 import { resumeThreadTool } from '../../src/server/tools/resume_thread.ts'
 import { parkThreadTool } from '../../src/server/tools/park_thread.ts'
+import { commitThread, openProjectStore } from '../../src/server/tool-support.ts'
 import { readThreadRecord } from '../support/optional-argument-recipes.ts'
 import { rawGit } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
@@ -50,86 +51,89 @@ const withHarness = async (sessionId: string, fn: (harness: Harness) => Promise<
   }
 }
 
-const openFixtureThread = async (rt: Runtime, slug: string): Promise<string> => {
+type FixtureThread = { threadId: string; criterionId: string }
+
+const openFixtureThread = async (rt: Runtime, slug: string): Promise<FixtureThread> => {
   const opened = await openThreadTool.handler(rt, STUB_TOOL_CTX, {
     title: `${slug} fixture thread`,
     slug,
     active_goal: 'exercise the hand-off fixture',
     next_step: 'exercise the hand-off fixture',
+    next_step_records: [],
     completion_criteria: [{ text: 'the hand-off fields round-trip', check: 'the test asserts it', settledness: 'proposed' }]
   })
   if (!opened.ok) {
     throw new Error(`expected open_thread to create the fixture thread, it refused: ${opened.refusal.message}`)
   }
-  return opened.structured.thread_id
+  const criterionId = opened.structured.completion_criteria[0]?.id
+  if (criterionId === undefined) throw new Error('expected open_thread to mint the fixture criterion')
+  return { threadId: opened.structured.thread_id, criterionId }
 }
 
-test('handoff.park-stores-landed-alongside-next-step', async () => {
+const storeLanded = (rt: Runtime, threadId: string, landed: string): void => {
+  const opened = openProjectStore(rt)
+  if (!opened.ok) throw new Error(`expected the hand-off fixture store to open: ${opened.refusal.message}`)
+  const stored = readThreadRecord(rt, threadId)
+  if (stored === null) throw new Error('expected the hand-off fixture thread to have a stored record')
+  const committed = commitThread(opened.value, { ...stored, spine: { ...stored.spine, landed } }, 'seed a landed value')
+  if (!committed.ok) throw new Error(`expected the landed seed to commit: ${committed.refusal.message}`)
+}
+
+test('handoff.park-stores-the-next-step-records-with-the-next-step', async () => {
   await withHarness('handoff-session-one', async ({ rt }) => {
-    const threadId = await openFixtureThread(rt, 'handoff-park-landed')
+    const { threadId, criterionId } = await openFixtureThread(rt, 'handoff-park-records')
     const resumed = await resumeThreadTool.handler(rt, STUB_TOOL_CTX, { thread_id: threadId })
     assert.equal(resumed.ok, true, 'expected resume_thread to mark the fixture thread as being worked')
 
-    const parkArgs: Record<string, unknown> = {
-      outcome: 'shipped the schema unit',
-      landed: 'spine.landed exists and parses; nothing reads it yet',
-      next_step: 'wire artifacts into mergeThreadTraced'
-    }
-    const result = await parkThreadTool.handler(
-      rt,
-      STUB_TOOL_CTX,
-      parkArgs as Parameters<typeof parkThreadTool.handler>[2]
-    )
+    const result = await parkThreadTool.handler(rt, STUB_TOOL_CTX, {
+      next_step: 'wire artifacts into mergeThreadTraced',
+      next_step_records: [criterionId]
+    })
 
-    assert.equal(result.ok, true, 'expected park_thread to accept a call carrying landed alongside next_step')
+    assert.equal(result.ok, true, 'expected park_thread to accept a next step sent with its records')
     if (!result.ok) throw new Error('expected the park to succeed')
     assert.deepEqual(
-      [...result.structured.spine_fields_updated].sort(),
-      ['landed', 'next_step'],
-      'expected park_thread to report both landed and next_step as updated spine fields'
+      result.structured.spine_fields_updated,
+      ['next_step'],
+      'expected park_thread to report next_step as the only spine field it can update'
     )
+    assert.ok(
+      result.structured.step_records?.includes(criterionId) === true,
+      `expected the park reply to return the named criterion in full, got ${JSON.stringify(result.structured.step_records)}`
+    )
+
+    const stored = readThreadRecord(rt, threadId)
+    assert.ok(stored !== null, 'expected the parked thread to still have a stored record')
+    if (stored === null) throw new Error('expected a stored thread record')
+    assert.deepEqual(
+      stored.spine.next_step_records,
+      [criterionId],
+      'expected the stored spine to hold the records list sent with the next step'
+    )
+  })
+})
+
+test('handoff.park-leaves-a-stored-landed-value-alone', async () => {
+  await withHarness('handoff-session-two', async ({ rt }) => {
+    const { threadId } = await openFixtureThread(rt, 'handoff-park-landed-preserved')
+    storeLanded(rt, threadId, 'the first landing')
+    const resumed = await resumeThreadTool.handler(rt, STUB_TOOL_CTX, { thread_id: threadId })
+    assert.equal(resumed.ok, true, 'expected resume_thread to succeed')
+
+    const parked = await parkThreadTool.handler(rt, STUB_TOOL_CTX, {
+      outcome: 'second',
+      next_step: 'do the next thing',
+      next_step_records: []
+    })
+    assert.equal(parked.ok, true, 'expected the park_thread call to succeed')
 
     const stored = readThreadRecord(rt, threadId)
     assert.ok(stored !== null, 'expected the parked thread to still have a stored record')
     if (stored === null) throw new Error('expected a stored thread record')
     assert.equal(
       stored.spine.landed,
-      'spine.landed exists and parses; nothing reads it yet',
-      'expected the stored spine.landed to hold the text supplied to park_thread'
-    )
-  })
-})
-
-test('handoff.park-without-landed-leaves-the-stored-value-alone', async () => {
-  await withHarness('handoff-session-two', async ({ rt }) => {
-    const threadId = await openFixtureThread(rt, 'handoff-park-landed-preserved')
-    const firstResume = await resumeThreadTool.handler(rt, STUB_TOOL_CTX, { thread_id: threadId })
-    assert.equal(firstResume.ok, true, 'expected the first resume_thread call to succeed')
-
-    const firstParkArgs: Record<string, unknown> = { outcome: 'first', landed: 'the first landing' }
-    const firstPark = await parkThreadTool.handler(
-      rt,
-      STUB_TOOL_CTX,
-      firstParkArgs as Parameters<typeof parkThreadTool.handler>[2]
-    )
-    assert.equal(firstPark.ok, true, 'expected the first park_thread call to succeed')
-
-    const secondResume = await resumeThreadTool.handler(rt, STUB_TOOL_CTX, { thread_id: threadId })
-    assert.equal(secondResume.ok, true, 'expected the second resume_thread call to succeed')
-
-    const secondPark = await parkThreadTool.handler(rt, STUB_TOOL_CTX, {
-      outcome: 'second',
-      next_step: 'do the next thing'
-    })
-    assert.equal(secondPark.ok, true, 'expected the second park_thread call to succeed')
-
-    const stored = readThreadRecord(rt, threadId)
-    assert.ok(stored !== null, 'expected the twice-parked thread to still have a stored record')
-    if (stored === null) throw new Error('expected a stored thread record')
-    assert.equal(
-      stored.spine.landed,
       'the first landing',
-      'expected the second park, which omitted landed, to leave the value the first park stored untouched'
+      'expected a park, which no longer writes landed, to leave the stored landed value untouched'
     )
   })
 })

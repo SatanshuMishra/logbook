@@ -126,22 +126,23 @@ test('prompt.no-tool-handler-references-a-prompt-by-name', () => {
 })
 
 const PREFLIGHT_PROMPT_NAME = 'preflight'
+const DEBRIEF_PROMPT_NAME = 'debrief'
 
-const preflightText = async (thread: string): Promise<string> => {
+const promptText = async (name: string, args: Record<string, string>): Promise<string> => {
   const server = new McpServer({ name: 'logbook-prompt-render-probe', version: '0.0.0' })
   registerPrompts(server, testRuntime())
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   const client = new Client({ name: 'logbook-prompt-render-probe-client', version: '0.0.0' })
   try {
     await Promise.all([client.connect(clientTransport), server.server.connect(serverTransport)])
-    const result = await client.getPrompt({ name: PREFLIGHT_PROMPT_NAME, arguments: { thread } })
+    const result = await client.getPrompt({ name, arguments: args })
     const message = result.messages[0]
     if (message === undefined) {
-      return assert.fail(`expected the ${PREFLIGHT_PROMPT_NAME} prompt to return a message, got ${JSON.stringify(result)}`)
+      return assert.fail(`expected the ${name} prompt to return a message, got ${JSON.stringify(result)}`)
     }
     const content = message.content
     if (content.type !== 'text') {
-      return assert.fail(`expected the ${PREFLIGHT_PROMPT_NAME} prompt message to carry text, got ${content.type}`)
+      return assert.fail(`expected the ${name} prompt message to carry text, got ${content.type}`)
     }
     return content.text
   } finally {
@@ -149,6 +150,16 @@ const preflightText = async (thread: string): Promise<string> => {
     await server.close()
   }
 }
+
+const preflightText = (thread: string): Promise<string> => promptText(PREFLIGHT_PROMPT_NAME, { thread })
+
+test('prompt.debrief-asks-for-no-summary', async () => {
+  const text = await promptText(DEBRIEF_PROMPT_NAME, {})
+  assert.ok(text.includes('search_ledger'), `the debrief prompt must send the session to search_ledger for the next action's records, but it read: ${text}`)
+  assert.ok(text.includes('next_step_records'), `the debrief prompt must ask for the records the next step needs, but it read: ${text}`)
+  assert.equal(text.includes('accomplished'), false, `the debrief prompt must not ask what the session accomplished, but it read: ${text}`)
+  assert.equal(text.includes('with that outcome'), false, `the debrief prompt must not ask to park with a summary outcome, but it read: ${text}`)
+})
 
 test('prompt.a-double-quote-inside-the-thread-argument-cannot-forge-a-legitimate-quoted-thread', async () => {
   const legitimateThread = '01ARZ3NDEKTSV4RRFFQ69G5FAV'

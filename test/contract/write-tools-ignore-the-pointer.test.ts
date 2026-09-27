@@ -60,6 +60,7 @@ const OPEN_THREAD_ARGS = {
   slug: 's4-fixture-thread',
   active_goal: 'exercise the s4 fixture',
   next_step: 'exercise the s4 fixture',
+  next_step_records: [],
   completion_criteria: [{ text: 's4 fixture criterion', check: 's4 fixture check', settledness: 'proposed' }]
 }
 
@@ -226,6 +227,7 @@ const recipeResolveConflict: Recipe = async (scenario) => {
       slug: `s4-resolve-conflict-${scenario}`,
       active_goal: 'exercise the s4 resolve-conflict fixture',
       next_step: 'exercise the s4 resolve-conflict fixture',
+      next_step_records: [],
       completion_criteria: [{ text: 's4 resolve fixture criterion', check: 's4 resolve fixture check', settledness: 'proposed' }]
     })
     assertOk('open_thread (resolve prep)', opened)

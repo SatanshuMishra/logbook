@@ -288,6 +288,7 @@ const openAndConvergeThread = async (ana: SpawnedTeammate, ben: SpawnedTeammate,
     slug,
     active_goal: 'exercise the resolve-conflict fixture',
     next_step: 'exercise the resolve-conflict fixture',
+    next_step_records: [],
     completion_criteria: [{ text: 'a criterion for the resolve fixture', check: 'the resolve fixture check', settledness: 'proposed' }]
   })
   assertOkResult('open_thread', opened)
@@ -373,7 +374,7 @@ test('resolve.stores-the-composed-record-and-both-clones-hold-it', async () => {
         thread_id: threadId,
         active_goal: 'ben goal',
         next_step: 'ben step',
-        next_step_criterion_id: criterionId,
+        next_step_records: [criterionId],
         last_session: 'ben session'
       })
     )
@@ -458,6 +459,7 @@ test('resolve.settles-a-conflict-between-ledgers-that-share-no-history', async (
       slug: 'resolve-unrelated-histories',
       active_goal: 'ana goal',
       next_step: 'exercise the resolve-conflict fixture',
+      next_step_records: [],
       completion_criteria: [{ text: 'a criterion for the resolve fixture', check: 'the resolve fixture check', settledness: 'proposed' }]
     })
     assertOkResult('open_thread (ana)', opened)
@@ -519,27 +521,27 @@ for (const failure of SHAPE_FAILURES) {
   })
 }
 
-test('resolve.stores-a-next-step-paired-with-the-other-sides-criterion-as-given', async () => {
+test('resolve.stores-a-next-step-paired-with-the-other-sides-records-as-given', async () => {
   await withTwoSpawnedTeammates(async (ana, ben) => {
     const threadId = await openAndConvergeThread(ana, ben, 'resolve-no-content-rules-thread')
     const criterionId = readThreadOf(ana, threadId).completion_criteria[0]?.id
     assert.ok(criterionId !== undefined, 'resolve: the fixture thread minted no criterion')
 
     assertOkResult(
-      'update_thread (ben names the criterion his next step advances)',
-      await callTool(ben, 'update_thread', { thread_id: threadId, next_step: 'ben next step', next_step_criterion_id: criterionId })
+      'update_thread (ben names the criterion his next step needs)',
+      await callTool(ben, 'update_thread', { thread_id: threadId, next_step: 'ben next step', next_step_records: [criterionId] })
     )
     assertOkResult('sync_ledger (ben pushes)', await callTool(ben, 'sync_ledger', {}))
-    assertOkResult('update_thread (ana replaces the next step)', await callTool(ana, 'update_thread', { thread_id: threadId, next_step: 'ana next step' }))
+    assertOkResult('update_thread (ana replaces the next step)', await callTool(ana, 'update_thread', { thread_id: threadId, next_step: 'ana next step', next_step_records: [] }))
     await syncAndExpectConflictOn(ana, threadId, "ana's sync")
 
     const anasThread = readThreadOf(ana, threadId)
-    const composed: Thread = { ...anasThread, spine: { ...anasThread.spine, next_step: 'ana next step', next_step_criterion_id: criterionId } }
+    const composed: Thread = { ...anasThread, spine: { ...anasThread.spine, next_step: 'ana next step', next_step_records: [criterionId] } }
     assertOkResult(
-      'resolve_conflict (ana pairs her next step with the criterion ben named)',
+      'resolve_conflict (ana pairs her next step with the records ben named)',
       await callTool(ana, 'resolve_conflict', { resolutions: [{ path: threadPathOf(threadId), record: composed }] })
     )
-    assert.deepEqual(readThreadOf(ana, threadId), composed, 'Logbook stores the composed record without judging which criterion a next step advances')
+    assert.deepEqual(readThreadOf(ana, threadId), composed, 'Logbook stores the composed record without judging which records a next step needs')
   })
 })
 

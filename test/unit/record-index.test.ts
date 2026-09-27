@@ -64,6 +64,7 @@ const openThread = async (rt: Runtime, slug: string, criterion: Structured): Pro
     slug,
     active_goal: `keep the ${slug} work honest`,
     next_step: 'read the gateway module',
+    next_step_records: [],
     completion_criteria: [criterion]
   })
   return { threadId: textOf(opened, 'thread_id'), criterionId: onlyIdOf(opened, 'completion_criteria') }

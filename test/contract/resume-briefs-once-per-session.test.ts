@@ -64,6 +64,7 @@ const openOrdinaryThread = async (rt: Runtime, slug: string): Promise<string> =>
     slug,
     active_goal: 'brief a session once per thread',
     next_step: 'resume the fixture thread twice',
+    next_step_records: [],
     completion_criteria: [
       {
         text: 'the second resume in one session returns the head of the briefing',

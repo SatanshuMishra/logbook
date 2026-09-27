@@ -6,7 +6,15 @@ import type { Artifact, KeyDecision, Risk, Settledness, Spine, Thread } from '..
 import { criterionSettledness } from '../../schema/thread.ts'
 import * as caps from '../../schema/caps.ts'
 import { escapeStored } from '../../render/escape.ts'
-import { checkNextStepCriterion, contributeToSpine, type SpineContribution } from '../../domain/spine.ts'
+import {
+  NEXT_STEP_RECORDS_DESCRIPTION,
+  NEXT_STEP_RECORD_ID_DESCRIPTION,
+  STEP_RECORDS_OUTPUT_DESCRIPTION,
+  checkStepRecords,
+  contributeToSpine,
+  renderStepRecords,
+  type SpineContribution
+} from '../../domain/spine.ts'
 import { liveRiskIdsByIdentity, riskIdentity } from '../../domain/risk-identity.ts'
 import { ArtifactAddSchema, commitThread, loadThread, mintArtifacts, openProjectStore } from '../tool-support.ts'
 
@@ -103,9 +111,10 @@ const UpdateThreadInputSchema = z.strictObject({
     .string()
     .optional()
     .describe('replaces the spine next_step field when supplied, stated as one decision about what to do next; omit to leave it unchanged'),
-  next_step_criterion_id: ulidField(
-    'the completion criterion that the next_step sent in this same call advances, which must be neither done nor struck; the briefing then shows the risks on that criterion and the whole-thread risks and counts the rest; a next_step sent without it names no criterion'
-  ).optional(),
+  next_step_records: z
+    .array(ulidField(NEXT_STEP_RECORD_ID_DESCRIPTION))
+    .optional()
+    .describe(NEXT_STEP_RECORDS_DESCRIPTION),
   last_session: z
     .string()
     .optional()
@@ -175,7 +184,8 @@ const UpdateThreadOutputSchema = z.object({
   out_of_scope_added: z.array(z.string()).describe('ids minted for out-of-scope statements this call added'),
   artifacts_added: z.array(z.string()).describe('ids minted for artifacts this call added'),
   artifacts_retired: z.array(z.string()).describe('ids of artifacts this call marked removed'),
-  blocked_by_set: z.boolean().describe('whether this call changed what the thread is blocked on, by either setting or clearing it')
+  blocked_by_set: z.boolean().describe('whether this call changed what the thread is blocked on, by either setting or clearing it'),
+  step_records: z.string().optional().describe(STEP_RECORDS_OUTPUT_DESCRIPTION)
 })
 
 type UpdateThreadInput = z.infer<typeof UpdateThreadInputSchema>
@@ -329,7 +339,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
   name: 'update_thread',
   title: 'Update thread',
   description:
-    'Records mid-session progress on one thread: mark criteria done, refresh any of the six running-summary fields, set or clear what the thread is blocked on, and add or retire risks. Every argument is optional and only what is supplied is written, so a call carrying just criteria_done: [{"criterion_id": "<criterion ulid>", "result": "<what the check returned>", "result_status": "verified"}] changes nothing else. Marking a criterion done records what was observed and whether the check was actually run, and it is refused without both. Risks are retired by id rather than by resubmitting the whole list, so a thread with fourteen risks costs one id to change one of them. The criteria_settled argument records who stands behind a criterion, so an answer the human gave lands on the criterion it was about, and a confirmed one carries their own words while any other settledness carries none. A next_step can name the completion criterion it advances through next_step_criterion_id, and the briefing then shows only the risks on that criterion and the whole-thread risks. The reply reports what changed, not what the record now holds.',
+    'Records mid-session progress on one thread: mark criteria done, refresh any of the six running-summary fields, set or clear what the thread is blocked on, and add or retire risks. Every argument is optional and only what is supplied is written, so a call carrying just criteria_done: [{"criterion_id": "<criterion ulid>", "result": "<what the check returned>", "result_status": "verified"}] changes nothing else. Marking a criterion done records what was observed and whether the check was actually run, and it is refused without both. Risks are retired by id rather than by resubmitting the whole list, so a thread with fourteen risks costs one id to change one of them. The criteria_settled argument records who stands behind a criterion, so an answer the human gave lands on the criterion it was about, and a confirmed one carries their own words while any other settledness carries none. Setting next_step requires next_step_records: the records the step needs, found with search_ledger across every thread; the reply returns them in full. The reply reports what changed, not what the record now holds.',
   input: UpdateThreadInputSchema,
   output: UpdateThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -548,16 +558,11 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     const spineContribution: SpineContribution = {
       ...(input.active_goal !== undefined ? { active_goal: input.active_goal } : {}),
       ...(input.next_step !== undefined ? { next_step: input.next_step } : {}),
-      ...(input.next_step_criterion_id !== undefined ? { next_step_criterion_id: input.next_step_criterion_id } : {}),
+      ...(input.next_step_records !== undefined ? { next_step_records: input.next_step_records } : {}),
       ...(input.last_session !== undefined ? { last_session: input.last_session } : {}),
       ...(newRisks.length > 0 ? { open_risks: newRisks } : {}),
       ...(newKeyDecisions.length > 0 ? { key_decisions: newKeyDecisions } : {}),
       ...(newOutOfScope.length > 0 ? { out_of_scope: newOutOfScope } : {})
-    }
-
-    const nextStepCriterionRefused = checkNextStepCriterion(nextCriteria, spineContribution)
-    if (nextStepCriterionRefused !== null) {
-      return { ok: false, refusal: nextStepCriterionRefused }
     }
 
     const spineFieldsUpdated: ('active_goal' | 'next_step' | 'last_session')[] = [
@@ -572,6 +577,12 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
     }
     const escapedBlockedBy = input.blocked_by === undefined ? undefined : escapeStored(input.blocked_by)
     const blockageChanged = blockedBySupplied || blockedByCleared
+
+    const checkedStepRecords = checkStepRecords(store, input)
+    if (!checkedStepRecords.ok) {
+      return { ok: false, refusal: checkedStepRecords }
+    }
+    const stepRecords = checkedStepRecords.value
 
     const nothingChanged =
       markedDone.length === 0 &&
@@ -642,7 +653,8 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
         out_of_scope_added: newOutOfScope.map((o) => o.id),
         artifacts_added: newArtifacts.map((a) => a.id),
         artifacts_retired: retiredArtifactIds,
-        blocked_by_set: blockageChanged
+        blocked_by_set: blockageChanged,
+        ...(stepRecords === null ? {} : { step_records: renderStepRecords(stepRecords, committed.value.spine.next_step) })
       }
     }
   }

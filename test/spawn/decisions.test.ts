@@ -218,6 +218,7 @@ const openThreadWithCriteria = async (
       slug,
       active_goal: 'exercise the decisions spawn fixture',
       next_step: 'exercise the decisions spawn fixture',
+      next_step_records: [],
       completion_criteria: criteria.map((text) => ({ text, check: 'the spawn fixture check', settledness: 'proposed' }))
     }
   })) as CallToolResult
@@ -694,6 +695,7 @@ test('decision.supersede-retains', async () => {
       slug: 'supersede-fixture-thread',
       active_goal: 'exercise the supersede fixture',
       next_step: 'exercise the supersede fixture',
+      next_step_records: [],
       completion_criteria: [{ text: 'a criterion for the supersede fixture', check: 'the supersede fixture check', settledness: 'proposed' }]
     })
     assert.equal(opened.ok, true)
@@ -767,6 +769,7 @@ test('decision.supersedes-must-resolve', async () => {
       slug: 'supersedes-resolution-fixture-thread',
       active_goal: 'exercise the supersedes resolution fixture',
       next_step: 'exercise the supersedes resolution fixture',
+      next_step_records: [],
       completion_criteria: [
         {
           text: 'a criterion for the supersedes resolution fixture',
@@ -874,6 +877,7 @@ test('decision.records-project-head', async () => {
         slug: 'project-head-fixture-thread',
         active_goal: 'exercise the project-head fixture',
         next_step: 'exercise the project-head fixture',
+        next_step_records: [],
         completion_criteria: [
           { text: 'a criterion for the project head fixture', check: 'the project head fixture check', settledness: 'proposed' }
         ]
@@ -1049,6 +1053,7 @@ test('concurrent.distinct-ids', async () => {
       slug: 'concurrency-fixture-thread',
       active_goal: 'exercise the concurrency fixture',
       next_step: 'exercise the concurrency fixture',
+      next_step_records: [],
       completion_criteria: [
         { text: 'a criterion for the concurrency fixture', check: 'the concurrency fixture check', settledness: 'proposed' }
       ]
@@ -1245,6 +1250,7 @@ const mintThread = async (rt: Runtime, criteria: string[]): Promise<{ threadId: 
     slug: `census-fixture-thread-${randomUUID()}`,
     active_goal: 'exercise the census fixture',
     next_step: 'exercise the census fixture',
+    next_step_records: [],
     completion_criteria: criteria.map((text) => ({ text, check: 'the census fixture check', settledness: 'proposed' }))
   })
   if (!reply.ok) {
@@ -1270,6 +1276,7 @@ const buildDriver = (tool: ToolSpec<never, never>, world: CensusWorld): CensusDr
             slug: `census-open-thread-probe-${randomUUID()}`,
             active_goal: 'exercise the open_thread census probe',
             next_step: 'exercise the open_thread census probe',
+            next_step_records: [],
             completion_criteria: [
               {
                 text: 'a criterion minted purely for the open_thread census probe',
@@ -1657,6 +1664,7 @@ test('decision.is-immutable', async () => {
       slug: 'census-seed-thread',
       active_goal: 'exercise the census seed fixture',
       next_step: 'exercise the census seed fixture',
+      next_step_records: [],
       completion_criteria: [
         { text: 'first seed criterion', check: 'the first seed check', settledness: 'proposed' },
         { text: 'second seed criterion', check: 'the second seed check', settledness: 'proposed' },

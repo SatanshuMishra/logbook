@@ -177,6 +177,11 @@ const renderDetailDanglingLine = (decisionId: string): string => `dangling: ${es
 const renderDetailRelatedLine = (predecessor: Thread): string =>
   `- succeeds: ${escapeStored(predecessor.title)} (${escapeStored(predecessor.slug)})`
 
+const renderDetailNextStepRecords = (records: readonly string[] | undefined): string =>
+  records === undefined || records.length === 0
+    ? 'Next step records: none'
+    : `Next step records: ${records.map((id) => escapeStored(id)).join(', ')}`
+
 const renderDetailBlockage = (blockedBy: string | null): string =>
   blockedBy === null ? 'Blockage: none' : `Blocked: ${escapeStored(blockedBy)}`
 
@@ -223,6 +228,7 @@ export const renderThreadDetail = (
     `Active goal: ${escapeStored(thread.spine.active_goal)}`,
     `Landed: ${escapeStored(thread.spine.landed)}`,
     `Next step: ${escapeStored(thread.spine.next_step)}`,
+    renderDetailNextStepRecords(thread.spine.next_step_records),
     `Next step criterion: ${nextStepAnchorId === null ? 'none' : escapeStored(nextStepAnchorId)}`,
     `Last session: ${escapeStored(thread.spine.last_session)}`,
     ...lastSessionNoteLines,

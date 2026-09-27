@@ -36,6 +36,7 @@ const seedThreadWithRisksAndCriteria = async (spawned: SpawnedServer): Promise<T
       slug: 'thread-detail-fixture-thread',
       active_goal: 'exercise the thread-detail fixture',
       next_step: 'exercise the thread-detail fixture',
+      next_step_records: [],
       completion_criteria: [
         { text: 'the first thread detail criterion', check: 'the first thread detail check', settledness: 'proposed' },
         { text: 'the second thread detail criterion', check: 'the second thread detail check', settledness: 'proposed' }
@@ -526,6 +527,7 @@ test('resource.list-carries-no-thread-title-prose', async () => {
         slug: 'title-prose-fixture-thread',
         active_goal: 'exercise the title-prose fixture',
         next_step: 'exercise the title-prose fixture',
+        next_step_records: [],
         completion_criteria: [{ text: 'a title prose fixture criterion', check: 'the title prose fixture check', settledness: 'proposed' }]
       }
     })) as CallToolResult
