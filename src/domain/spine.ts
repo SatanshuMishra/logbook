@@ -157,11 +157,14 @@ export const checkStepRecords = (store: Store, sent: SentStep): Ok<StepRecords |
   return sent.next_step_records === undefined ? { ok: true, value: null } : resolveStepRecords(store, sent.next_step_records)
 }
 
-export const renderStepRecords = (records: StepRecords, storedNextStep: string): string =>
-  renderRecordsInFull(
-    records.named,
-    matchByFileName(records.index, storedNextStep, new Set(records.named.map((record) => record.id)))
-  )
+export const renderStepRecords = (store: Store, records: StepRecords, storedNextStep: string): string => {
+  const index = indexRecords(store)
+  const named = resolveRecordIds(
+    index,
+    records.named.map((record) => record.id)
+  ).found
+  return renderRecordsInFull(named, matchByFileName(index, storedNextStep, new Set(named.map((record) => record.id))))
+}
 
 const nextStepAnchorField = (stored: Spine, contribution: SpineContribution): Pick<Spine, 'next_step_criterion_id'> =>
   contribution.next_step !== undefined || stored.next_step_criterion_id === undefined

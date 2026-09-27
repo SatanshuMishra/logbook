@@ -346,3 +346,10 @@ test('search_ledger.live-status-leaves-out-superseded-decisions', async () => {
     assert.equal(all.matched, live.matched + 1)
   })
 })
+
+test('search_ledger.whitespace-only-text-is-refused', async () => {
+  await withSpawnFixture(async (fx) => {
+    const result = (await fx.spawned.client.callTool({ name: TOOL, arguments: { text: ' \n\t ' } })) as CallToolResult
+    assertRefusalNamesField('search_ledger with a text of only spaces and line breaks', 'text', result)
+  })
+})

@@ -275,3 +275,60 @@ test('step-records.park-refuses-landed', async () => {
     assert.equal(storedThreads(fx), threadsBefore, 'a refused park_thread must change no stored thread')
   })
 })
+
+test('step-records.reply-reflects-changes-made-in-the-same-call', async () => {
+  await withFixture(async (fx) => {
+    const { threadId, criterionId } = await openThread(fx, 'same-call')
+    const added = assertOk(
+      'update_thread (add a risk naming src/config.ts)',
+      await callTool(fx, 'update_thread', {
+        thread_id: threadId,
+        risks_add: [{ text: 'raising the timeout in src/config.ts past 3000 breaks checkout', scope: 'timeouts', criterion_id: null }]
+      })
+    )
+    const [riskId] = added.risks_added as string[]
+    if (riskId === undefined) throw new Error('step-records fixture: no risk was added')
+
+    const retired = assertOk(
+      'update_thread (retire the risk and set a step naming its file)',
+      await callTool(fx, 'update_thread', {
+        thread_id: threadId,
+        risks_retire: [riskId],
+        next_step: 'In src/config.ts, raise the timeout',
+        next_step_records: []
+      })
+    )
+    assert.equal(
+      String(retired.step_records).includes(riskId),
+      false,
+      `a risk retired by the same call must not come back as a file-name match:\n${String(retired.step_records)}`
+    )
+
+    const fresh = assertOk(
+      'update_thread (add a risk and set a step naming its file)',
+      await callTool(fx, 'update_thread', {
+        thread_id: threadId,
+        risks_add: [{ text: 'src/limits.ts caps the retry count at 3', scope: 'retries', criterion_id: null }],
+        next_step: 'In src/limits.ts, raise the retry cap',
+        next_step_records: []
+      })
+    )
+    assert.match(
+      String(fresh.step_records),
+      /src\/limits\.ts caps the retry count at 3/,
+      'a risk added by the same call must be matched by the file name the new step names'
+    )
+
+    const done = assertOk(
+      'update_thread (mark a criterion done and name it in the step)',
+      await callTool(fx, 'update_thread', {
+        thread_id: threadId,
+        criteria_done: [{ criterion_id: criterionId, result: 'the check was run and passed', result_status: 'verified' }],
+        next_step: 'Confirm the finished criterion with the human',
+        next_step_records: [criterionId]
+      })
+    )
+    assert.match(String(done.step_records), / done, /, 'a criterion marked done by the same call must be shown as done')
+    assert.match(String(done.step_records), /Result: the check was run and passed/, 'its result must be shown')
+  })
+})

@@ -5,10 +5,10 @@ git repository so a whole team shares one record.
 Resuming is one call and parking is one call. resume_thread reconciles, marks the thread as
 being worked, and returns the finished briefing. park_thread writes the session log, sets the
 next step and the records it needs, and releases the thread. Neither needs a preparatory call.
-park_thread refuses instead of parking when the thread it would write to is gone, terminal,
-quarantined, or held by another session; the refusal names what was not stored, which has to be
-re-sent. A park_thread call with no outcome, next step or records only releases the record of
-what is being worked.
+park_thread refuses instead of parking when no thread is being worked or the thread it would write
+to is gone, terminal, quarantined, or held by another session; the refusal names what was not
+stored, which has to be re-sent. A park_thread call carrying no outcome, next step or records is
+never refused.
 
 Any agent holding a thread id records against it, a subagent included, and recording at the
 subagent boundary is preferred to carrying the material back. The split is by content: a

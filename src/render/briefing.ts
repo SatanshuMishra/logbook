@@ -35,6 +35,7 @@ const OTHER_RECORDS_HEADING =
   '**Other records on this thread** (one line each; name one in a next step to see it in full, or read a decision at logbook://decision/{id}):'
 
 const NO_OTHER_RECORDS_LINE = '- none'
+const DEFINITION_OF_DONE_OWED_LINE = '- no open or done completion criterion is recorded; a definition of done is still owed'
 
 const OTHER_THREADS_LINE =
   '**Other threads:** search_ledger lists and searches the records on every thread, closed ones included.'
@@ -238,14 +239,21 @@ export const renderRecordHeadline = (record: IndexedRecord): string => {
   }
 }
 
+const renderUnreadableNamedLine = (ids: readonly string[]): string =>
+  `Named by this step but not readable now: ${ids.map((id) => escapeStored(id)).join(', ')}`
+
 export const renderRecordsInFull = (
   named: readonly IndexedRecord[],
-  matched: readonly { path: string; record: IndexedRecord }[]
+  matched: readonly { path: string; record: IndexedRecord }[],
+  unreadableIds: readonly string[] = []
 ): string => {
   const namedSection =
-    named.length === 0
-      ? STEP_NAMES_NO_RECORDS
-      : [RECORDS_THIS_STEP_NEEDS, ...named.map((record) => renderRecordFull(record))].join('\n\n')
+    named.length > 0
+      ? [RECORDS_THIS_STEP_NEEDS, ...named.map((record) => renderRecordFull(record))].join('\n\n')
+      : unreadableIds.length > 0
+        ? renderUnreadableNamedLine(unreadableIds)
+        : STEP_NAMES_NO_RECORDS
+  const unreadableSection = named.length > 0 && unreadableIds.length > 0 ? [renderUnreadableNamedLine(unreadableIds)] : []
   const matchedPaths = [...new Set(matched.map((match) => match.path))]
   const matchedSections = matchedPaths.map((matchedPath) =>
     [
@@ -253,7 +261,7 @@ export const renderRecordsInFull = (
       ...matched.filter((match) => match.path === matchedPath).map((match) => renderRecordFull(match.record))
     ].join('\n\n')
   )
-  return [namedSection, ...matchedSections].join('\n\n')
+  return [namedSection, ...matchedSections, ...unreadableSection].join('\n\n')
 }
 
 const stepRecordIds = (thread: Thread): string[] => {
@@ -269,9 +277,6 @@ const UNREADABLE_RECORDS_HEADING = '**Unreadable records:**'
 const renderDanglingLine = (decisionId: string): string => `- dangling: ${escapeStored(decisionId)}`
 const renderQuarantinedLine = (decisionId: string): string => `- quarantined: ${escapeStored(decisionId)}`
 
-const renderUnreadableNamedLine = (ids: readonly string[]): string =>
-  `Named by this step but not readable now: ${ids.map((id) => escapeStored(id)).join(', ')}`
-
 export const renderStepBriefing = (
   store: Store,
   thread: Thread,
@@ -282,7 +287,6 @@ export const renderStepBriefing = (
   const index = indexRecords(store)
   const resolved = resolveRecordIds(index, stepRecordIds(thread))
   const named = resolved.found
-  const unreadableNamedLines = resolved.missing.length === 0 ? [] : ['', renderUnreadableNamedLine(resolved.missing)]
   const unreadableLines = [
     ...[decisionIntegrity.dangling.length + decisionIntegrity.quarantined.length]
       .filter((count) => count > 0)
@@ -297,13 +301,22 @@ export const renderStepBriefing = (
   const namedIds = new Set(named.map((record) => record.id))
   const matched = matchByFileName(index, thread.spine.next_step, namedIds)
   const shownIds = new Set([...namedIds, ...matched.map((match) => match.record.id)])
-  const threadRecords = index.filter((record) => record.threadId === thread.id)
-  const otherRecords = threadRecords.filter(
-    (record) => record.live && record.kind !== 'entry' && !shownIds.has(record.id)
+  const linkedDecisionIds = new Set(thread.spine.key_decisions.map((link) => link.decision_id))
+  const otherRecords = index.filter(
+    (record) =>
+      record.live &&
+      record.kind !== 'entry' &&
+      !shownIds.has(record.id) &&
+      (record.threadId === thread.id || (record.kind === 'decision' && linkedDecisionIds.has(record.id)))
   )
-  const otherRecordLines =
-    otherRecords.length === 0 ? [NO_OTHER_RECORDS_LINE] : otherRecords.map((record) => renderOtherRecordLine(record))
-  const entryCount = threadRecords.filter((record) => record.kind === 'entry').length
+  const definitionOfDoneOwed = thread.completion_criteria.every((criterion) => criterion.struck_by !== null)
+  const otherRecordLines = [
+    ...(otherRecords.length === 0 && !definitionOfDoneOwed
+      ? [NO_OTHER_RECORDS_LINE]
+      : otherRecords.map((record) => renderOtherRecordLine(record))),
+    ...(definitionOfDoneOwed ? [DEFINITION_OF_DONE_OWED_LINE] : [])
+  ]
+  const entryCount = store.readSessionEntries(thread.id).filter((slot) => !slot.quarantined).length
 
   return [
     BRIEFING_HEADING,
@@ -323,8 +336,7 @@ export const renderStepBriefing = (
     '',
     '**What this step needs:**',
     '',
-    renderRecordsInFull(named, matched),
-    ...unreadableNamedLines,
+    renderRecordsInFull(named, matched, resolved.missing),
     '',
     OTHER_RECORDS_HEADING,
     '',
