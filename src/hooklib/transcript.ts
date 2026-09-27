@@ -157,3 +157,28 @@ export const ledgerRecordingStored = (transcriptPath: unknown): boolean | null =
     (part) => part.type === 'tool_result' && recordingCallIds.has(part.tool_use_id) && part.is_error !== true
   )
 }
+
+const readEntriesOrNull = (transcriptPath: string): TranscriptEntry[] | null => {
+  try {
+    return readEntriesIfPresent(transcriptPath)
+  } catch {
+    return null
+  }
+}
+
+const isResumeCall = (part: Record<string, unknown>): boolean =>
+  part.type === 'tool_use' &&
+  typeof part.id === 'string' &&
+  typeof part.name === 'string' &&
+  RESUME_TOOL_NAME_PATTERN.test(part.name)
+
+export const isPickupTurn = (transcriptPath: unknown, promptId: string | null): boolean => {
+  if (typeof transcriptPath !== 'string' || transcriptPath.length === 0 || promptId === null) return false
+  const entries = readEntriesOrNull(transcriptPath)
+  if (entries === null) return false
+  const resumeCallIds = new Set(entries.flatMap(contentPartsOf).filter(isResumeCall).map((part) => part.id))
+  return entries
+    .filter((entry) => entry.promptId === promptId)
+    .flatMap(contentPartsOf)
+    .some((part) => part.type === 'tool_result' && resumeCallIds.has(part.tool_use_id) && part.is_error !== true)
+}
