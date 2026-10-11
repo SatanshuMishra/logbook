@@ -110,7 +110,7 @@ const UpdateThreadInputSchema = z.strictObject({
   next_step: z
     .string()
     .optional()
-    .describe('replaces the spine next_step field when supplied, stated as one decision about what to do next; omit to leave it unchanged'),
+    .describe('replaces the spine next_step field when supplied, stated as one decision about what to do next: an action someone could begin without re-deriving anything, naming the file and the place in it, an action, not a goal or a phase name; omit to leave it unchanged'),
   next_step_records: z
     .array(ulidField(NEXT_STEP_RECORD_ID_DESCRIPTION))
     .optional()
@@ -339,7 +339,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
   name: 'update_thread',
   title: 'Update thread',
   description:
-    'Records mid-session progress on one thread: mark criteria done, refresh any of the six running-summary fields, set or clear what the thread is blocked on, and add or retire risks. Every argument is optional and only what is supplied is written, so a call carrying just criteria_done: [{"criterion_id": "<criterion ulid>", "result": "<what the check returned>", "result_status": "verified"}] changes nothing else. Marking a criterion done records what was observed and whether the check was actually run, and it is refused without both. Risks are retired by id rather than by resubmitting the whole list, so a thread with fourteen risks costs one id to change one of them. The criteria_settled argument records who stands behind a criterion, so an answer the human gave lands on the criterion it was about, and a confirmed one carries their own words while any other settledness carries none. Setting next_step requires next_step_records: the records the step needs, found with search_ledger across every thread; the reply returns them in full. The reply reports what changed, not what the record now holds.',
+    'Records mid-session progress on one thread: mark criteria done, refresh any of the six running-summary fields, set or clear what the thread is blocked on, and add or retire risks. Every argument is optional and only what is supplied is written, so a call carrying just criteria_done: [{"criterion_id": "<criterion ulid>", "result": "<what the check returned>", "result_status": "verified"}] changes nothing else. Marking a criterion done records what was observed and whether the check was actually run, and it is refused without both. Risks are retired by id rather than by resubmitting the whole list, so a thread with fourteen risks costs one id to change one of them. The criteria_settled argument records who stands behind a criterion, so an answer the human gave lands on the criterion it was about, and a confirmed one carries their own words while any other settledness carries none. Setting next_step requires next_step_records: the records the step needs, found with search_ledger across every thread; the reply returns them in full. Keep the definition of done true to what is now known. The reply reports what changed, not what the record now holds.',
   input: UpdateThreadInputSchema,
   output: UpdateThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },

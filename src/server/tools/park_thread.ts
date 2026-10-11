@@ -43,7 +43,7 @@ const ParkThreadInputSchema = z.strictObject({
   next_step: z
     .string()
     .optional()
-    .describe('replaces the spine next_step field when supplied, stated as one decision about what to do next; omit to leave it unchanged'),
+    .describe('replaces the spine next_step field when supplied, stated as one decision about what to do next: an action someone could begin without re-deriving anything, naming the file and the place in it, an action, not a goal or a phase name; omit to leave it unchanged'),
   next_step_records: z
     .array(ulidField(NEXT_STEP_RECORD_ID_DESCRIPTION))
     .optional()

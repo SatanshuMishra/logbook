@@ -64,7 +64,7 @@ const OpenThreadInputSchema = z.strictObject({
     .string()
     .regex(/\S/)
     .describe(
-      'the next action someone would take, stated as one decision about what to do next, naming the file and the place in it where the action involves one'
+      'the next action someone would take, stated as one decision about what to do next: an action someone could begin without re-deriving anything, naming the file and the place in it where the action involves one, an action, not a goal or a phase name'
     ),
   next_step_records: z
     .array(z.string().regex(ULID_PATTERN).describe(NEXT_STEP_RECORD_ID_DESCRIPTION))
