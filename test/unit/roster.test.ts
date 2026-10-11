@@ -10,7 +10,7 @@ import {
   type RosterPage
 } from '../../src/render/roster.ts'
 import { escapeStored, MARKDOWN_LEADING_CHARS, TABLE_CELL_ESCAPED_CHARS } from '../../src/render/escape.ts'
-import { CLIP_MARKER, clipWithMarker } from '../../src/render/clip.ts'
+import { CLIP_MARKER } from '../../src/render/clip.ts'
 import type { Thread } from '../../src/schema/thread.ts'
 import { testRuntime } from '../support/runtime.ts'
 import { census } from '../support/census.ts'
@@ -56,6 +56,7 @@ const cellsOf = (line: string): string[] => line.split('|').slice(1, -1).map((ce
 const HEADER_LINE_PATTERN = /^\|\s*#\s*\|/
 const FIRST_DATA_LINE_PATTERN = /^\|\s*1\s*\|/
 
+const PIPE_REFERENCE = '&#124;'
 const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 const graphemeCount = (text: string): number => Array.from(GRAPHEME_SEGMENTER.segment(text)).length
 
@@ -317,14 +318,9 @@ test('roster.render-escapes-every-stored-free-text-field', () => {
 
   assert.equal(/(^|\n)#{1,6}\s/.test(rendered), false)
 
-  const expectedThreadNameCell = escapeStored(`${escapeStored(row.slug)} - ${escapeStored(row.title)}`, 'table-cell')
-  assert.ok(rendered.includes(`| ${expectedThreadNameCell} |`))
-
-  const expectedBlockedByCell = escapeStored(
-    clipWithMarker(escapeStored(row.blocked_by ?? ''), ROSTER_BLOCKED_BY_CLIP_GRAPHEMES),
-    'table-cell'
-  )
-  assert.ok(rendered.includes(`| ${expectedBlockedByCell} |`))
+  assert.ok(rendered.includes('| escape-fixture - # heading title second line |'), rendered)
+  assert.ok(rendered.includes('| # heading blockage second line |'), rendered)
+  assert.equal(rendered.includes('\nsecond line'), false, rendered)
 })
 
 test('roster.render-omits-next-step-from-the-rendered-text', () => {
@@ -399,8 +395,8 @@ test('roster.render-pipe-in-any-free-text-field-does-not-fracture-the-table-row'
 })
 
 test('roster.render-clipped-blockage-reason-with-a-pipe-near-the-clip-boundary-keeps-the-pipe-token-whole', () => {
-  const carrierBeforePipe = 'x'.repeat(44)
-  const carrierAfterPipe = 'x'.repeat(25)
+  const carrierBeforePipe = 'x'.repeat(40)
+  const carrierAfterPipe = 'x'.repeat(30)
   const longReasonWithPipe = `${carrierBeforePipe}|${carrierAfterPipe}`
   assert.ok(
     longReasonWithPipe.length > ROSTER_BLOCKED_BY_CLIP_GRAPHEMES,
@@ -415,10 +411,17 @@ test('roster.render-clipped-blockage-reason-with-a-pipe-near-the-clip-boundary-k
     headerCells.length,
     `every data row must carry one cell per header column: ${JSON.stringify(dataCells)} against ${JSON.stringify(headerCells)}`
   )
-  assert.ok(dataCells[blockedByIndex]?.includes(CLIP_MARKER))
+  const blockedBy = dataCells[blockedByIndex] ?? ''
+  assert.ok(blockedBy.endsWith(CLIP_MARKER), blockedBy)
+  const clippedText = blockedBy.slice(0, -CLIP_MARKER.length)
   assert.ok(
-    dataCells[blockedByIndex]?.includes('U+007C'),
-    'the clipped pipe must survive as a whole U+007C token, not a truncated fragment'
+    clippedText.includes(PIPE_REFERENCE),
+    `the pipe inside the clipped window must survive as a whole ${PIPE_REFERENCE}, got ${JSON.stringify(blockedBy)}`
+  )
+  assert.equal(
+    clippedText.split(PIPE_REFERENCE).join('').includes('&'),
+    false,
+    `no fragment of a character reference may sit before the clip marker, got ${JSON.stringify(blockedBy)}`
   )
 })
 
@@ -444,7 +447,7 @@ test('roster.render-clip-marker-survives-the-outer-table-cell-escape-pass-byte-f
   )
 })
 
-test('roster.render-pipe-expansion-after-the-clip-overruns-the-blockage-budget-by-design', () => {
+test('roster.render-pipe-references-keep-the-blockage-budget', () => {
   const carrierWithPipes = 'a|b|c|d|e|f|g|h|'
   const carrierTail = 'z'.repeat(60)
   const longReasonWithPipes = `${carrierWithPipes}${carrierTail}`
@@ -460,16 +463,21 @@ test('roster.render-pipe-expansion-after-the-clip-overruns-the-blockage-budget-b
     `every data row must carry one cell per header column: ${JSON.stringify(dataCells)} against ${JSON.stringify(headerCells)}`
   )
   const blockedBySegment = dataCells[blockedByIndex] as string
-  const survivingPipeTokens = (blockedBySegment.match(/U\+007C/g) ?? []).length
-  assert.equal(
-    survivingPipeTokens,
-    pipeCount,
-    'every pipe ahead of the clip boundary must land inside the clipped window for this case to measure the overrun'
+  assert.ok(blockedBySegment.endsWith(CLIP_MARKER), blockedBySegment)
+  assert.ok(
+    graphemeCount(blockedBySegment) <= ROSTER_BLOCKED_BY_CLIP_GRAPHEMES,
+    `the display runs before the clip, so the Blocked By cell keeps its ${ROSTER_BLOCKED_BY_CLIP_GRAPHEMES}-grapheme budget, got ${graphemeCount(blockedBySegment)}: ${JSON.stringify(blockedBySegment)}`
+  )
+  const clippedText = blockedBySegment.slice(0, -CLIP_MARKER.length)
+  const wholeReferences = clippedText.split(PIPE_REFERENCE).length - 1
+  assert.ok(
+    wholeReferences > 0 && wholeReferences < pipeCount,
+    `the clip keeps some pipes and leaves the rest out, each as a whole ${PIPE_REFERENCE}, got ${JSON.stringify(blockedBySegment)}`
   )
   assert.equal(
-    graphemeCount(blockedBySegment),
-    ROSTER_BLOCKED_BY_CLIP_GRAPHEMES + 5 * survivingPipeTokens,
-    'the clip sizes the text to the 60-grapheme budget before the outer pass turns each 1-grapheme pipe into the 6-grapheme U+007C token, so the finished segment runs 5 graphemes over budget per surviving pipe by design'
+    clippedText.split(PIPE_REFERENCE).join('').includes('&'),
+    false,
+    `every pipe reference is kept or left out whole, got ${JSON.stringify(blockedBySegment)}`
   )
 })
 

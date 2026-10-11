@@ -1,4 +1,4 @@
-import { escapeStored, escapeStoredBlock } from '../render/escape.ts'
+import { displayStored, displayStoredBlock, escapeStored, storedSpansLines } from '../render/escape.ts'
 import { clipWithMarker } from '../render/clip.ts'
 import type { Binding } from '../schema/binding.ts'
 import type { Decision } from '../schema/decision.ts'
@@ -33,14 +33,24 @@ const renderSupersedesLine = (supersedes: readonly string[]): string =>
     ? 'Supersedes: none'
     : ['Supersedes:', supersedes.map((id) => escapeStored(id)).join(', ')].join(' ')
 
+const renderDecisionContextField = (context: string): string =>
+  storedSpansLines(context)
+    ? `Context:\n${displayStoredBlock(context)}\n`
+    : `Context: ${displayStored(context, 'prose', 'mid-line')}`
+
+const renderDecisionOutcomeField = (outcome: string): string =>
+  storedSpansLines(outcome)
+    ? `Outcome:\n${displayStoredBlock(outcome)}\n`
+    : `Outcome: ${displayStored(outcome, 'prose', 'mid-line')}`
+
 export const renderDecisionResource = (decision: Decision): string =>
   [
-    `Decision: ${escapeStored(decision.title)}`,
+    `Decision: ${displayStored(decision.title, 'prose', 'mid-line')}`,
     `Thread: ${escapeStored(decision.thread_id)}`,
-    `Context: ${escapeStored(decision.context)}`,
+    renderDecisionContextField(decision.context),
     'Options:',
-    ...decision.options.map((option) => `- ${escapeStored(option)}`),
-    `Outcome: ${escapeStored(decision.outcome)}`,
+    ...decision.options.map((option) => `- ${displayStored(option)}`),
+    renderDecisionOutcomeField(decision.outcome),
     renderCommitLine(decision.commit),
     renderSupersedesLine(decision.supersedes),
     `Recorded: ${escapeStored(decision.created_at)}`
@@ -50,10 +60,10 @@ export const renderSessionEntryResource = (entry: SessionEntry): string =>
   [
     `Session entry: ${escapeStored(entry.id)}`,
     `Thread: ${escapeStored(entry.thread_id)}`,
-    `Actor: ${escapeStored(entry.actor)}`,
+    `Actor: ${displayStored(entry.actor, 'prose', 'mid-line')}`,
     `Recorded: ${escapeStored(entry.created_at)}`,
     '',
-    escapeStoredBlock(entry.body, Number.POSITIVE_INFINITY)
+    displayStoredBlock(entry.body, Number.POSITIVE_INFINITY)
   ].join('\n')
 
 const renderDetailQuarantinedLine = (id: string): string => `quarantined: ${escapeStored(id)}`
@@ -62,12 +72,12 @@ const firstStoredLine = (body: string): string => body.split(STORED_LINE_BREAK)[
 
 const renderSessionsEntryLine = (entry: SessionEntry, includeFirstLine: boolean): string =>
   includeFirstLine
-    ? `- ${escapeStored(entry.id)} [${escapeStored(entry.created_at)}] ${clipWithMarker(escapeStored(firstStoredLine(entry.body)), SESSION_FIRST_LINE_MAX)}`
+    ? `- ${escapeStored(entry.id)} [${escapeStored(entry.created_at)}] ${clipWithMarker(displayStored(firstStoredLine(entry.body), 'prose', 'mid-line'), SESSION_FIRST_LINE_MAX)}`
     : `- ${escapeStored(entry.id)} [${escapeStored(entry.created_at)}]`
 
 const firstLineWasClipped = (entry: SessionEntry): boolean => {
-  const escaped = escapeStored(firstStoredLine(entry.body))
-  return clipWithMarker(escaped, SESSION_FIRST_LINE_MAX) !== escaped
+  const displayed = displayStored(firstStoredLine(entry.body), 'prose', 'mid-line')
+  return clipWithMarker(displayed, SESSION_FIRST_LINE_MAX) !== displayed
 }
 
 const renderSessionsDroppedFirstLinesNote = (count: number, threadId: string): string =>
@@ -107,12 +117,12 @@ const detailCriterionStatus = (criterion: Criterion): string => {
 }
 
 const renderDetailCriterionCheckLine = (criterion: Criterion): string =>
-  `  check: ${typeof criterion.check === 'string' ? escapeStored(criterion.check) : NOT_RECORDED}`
+  `  check: ${typeof criterion.check === 'string' ? displayStored(criterion.check, 'prose', 'mid-line') : NOT_RECORDED}`
 
 const renderDetailCriterionResultLine = (criterion: Criterion): string => {
   if (typeof criterion.result !== 'string') return `  result: ${NOT_RECORDED}`
   const status = typeof criterion.result_status === 'string' ? escapeStored(criterion.result_status) : NOT_RECORDED
-  return `  result: ${escapeStored(criterion.result)} (${status})`
+  return `  result: ${displayStored(criterion.result, 'prose', 'mid-line')} (${status})`
 }
 
 const detailSettlednessLabel = (criterion: Criterion): string => {
@@ -135,12 +145,12 @@ const detailSettlednessLabel = (criterion: Criterion): string => {
 
 const renderDetailSettledByLine = (criterion: Criterion): string =>
   typeof criterion.settled_by === 'string'
-    ? `  settled by: ${escapeStored(criterion.settled_by)}`
+    ? `  settled by: ${displayStored(criterion.settled_by, 'prose', 'mid-line')}`
     : `  settled by: ${NOT_RECORDED}`
 
 const renderDetailCriterionLine = (criterion: Criterion): string =>
   [
-    `c${criterion.ordinal} [${detailCriterionStatus(criterion)}] [${detailSettlednessLabel(criterion)}] ${escapeStored(criterion.id)}: ${escapeStored(criterion.text)}`,
+    `c${criterion.ordinal} [${detailCriterionStatus(criterion)}] [${detailSettlednessLabel(criterion)}] ${escapeStored(criterion.id)}: ${displayStored(criterion.text, 'prose', 'mid-line')}`,
     renderDetailCriterionCheckLine(criterion),
     ...[criterion].filter((entry) => entry.done).map((entry) => renderDetailCriterionResultLine(entry)),
     ...[criterion]
@@ -149,7 +159,7 @@ const renderDetailCriterionLine = (criterion: Criterion): string =>
   ].join('\n')
 
 const renderDetailArtifactLine = (artifact: Artifact): string =>
-  `- ${escapeStored(artifact.id)} ${escapeStored(artifact.label)} -> ${escapeStored(artifact.pointer)}`
+  `- ${escapeStored(artifact.id)} ${displayStored(artifact.label, 'prose', 'mid-line')} -> ${displayStored(artifact.pointer, 'prose', 'mid-line')}`
 
 const renderDetailBindingLine = (binding: Binding): string =>
   `- ${escapeStored(binding.id)} ${escapeStored(binding.branch)}`
@@ -161,21 +171,21 @@ const renderDetailRiskAnchor = (risk: Risk): string => {
 
 const renderDetailRiskLine = (risk: Risk): string =>
   risk.scope === ''
-    ? `- ${escapeStored(risk.id)} ${renderDetailRiskAnchor(risk)} ${escapeStored(risk.text)}`
-    : `- ${escapeStored(risk.id)} ${renderDetailRiskAnchor(risk)} [${escapeStored(risk.scope, 'bracket-wrapped')}] ${escapeStored(risk.text)}`
+    ? `- ${escapeStored(risk.id)} ${renderDetailRiskAnchor(risk)} ${displayStored(risk.text, 'prose', 'mid-line')}`
+    : `- ${escapeStored(risk.id)} ${renderDetailRiskAnchor(risk)} [${displayStored(risk.scope, 'bracket-wrapped', 'mid-line')}] ${displayStored(risk.text, 'prose', 'mid-line')}`
 
 const renderDetailKeyDecisionLine = (keyDecision: KeyDecision): string =>
   keyDecision.scope === ''
-    ? `- ${escapeStored(keyDecision.id)} -> ${escapeStored(keyDecision.decision_id)} ${escapeStored(keyDecision.title)}`
-    : `- ${escapeStored(keyDecision.id)} -> ${escapeStored(keyDecision.decision_id)} [${escapeStored(keyDecision.scope, 'bracket-wrapped')}] ${escapeStored(keyDecision.title)}`
+    ? `- ${escapeStored(keyDecision.id)} -> ${escapeStored(keyDecision.decision_id)} ${displayStored(keyDecision.title, 'prose', 'mid-line')}`
+    : `- ${escapeStored(keyDecision.id)} -> ${escapeStored(keyDecision.decision_id)} [${displayStored(keyDecision.scope, 'bracket-wrapped', 'mid-line')}] ${displayStored(keyDecision.title, 'prose', 'mid-line')}`
 
 const renderDetailOutOfScopeLine = (outOfScope: OutOfScope): string =>
-  `- ${escapeStored(outOfScope.id)} ${escapeStored(outOfScope.text)}`
+  `- ${escapeStored(outOfScope.id)} ${displayStored(outOfScope.text, 'prose', 'mid-line')}`
 
 const renderDetailDanglingLine = (decisionId: string): string => `dangling: ${escapeStored(decisionId)}`
 
 const renderDetailRelatedLine = (predecessor: Thread): string =>
-  `- succeeds: ${escapeStored(predecessor.title)} (${escapeStored(predecessor.slug)})`
+  `- succeeds: ${displayStored(predecessor.title, 'prose', 'mid-line')} (${escapeStored(predecessor.slug)})`
 
 const renderDetailNextStepRecords = (records: readonly string[] | undefined): string =>
   records === undefined || records.length === 0
@@ -183,7 +193,7 @@ const renderDetailNextStepRecords = (records: readonly string[] | undefined): st
     : `Next step records: ${records.map((id) => escapeStored(id)).join(', ')}`
 
 const renderDetailBlockage = (blockedBy: string | null): string =>
-  blockedBy === null ? 'Blockage: none' : `Blocked: ${escapeStored(blockedBy)}`
+  blockedBy === null ? 'Blockage: none' : `Blocked: ${displayStored(blockedBy, 'prose', 'mid-line')}`
 
 const renderDetailPointerStatus = (pointer: Pointer | null, threadId: string): string =>
   pointer !== null && pointer.thread_id === threadId ? 'Currently being worked: yes' : 'Currently being worked: no'
@@ -219,18 +229,18 @@ export const renderThreadDetail = (
     .map(() => renderDetailLastSessionNote(thread.id))
 
   return [
-    `Thread: ${escapeStored(thread.title)}`,
+    `Thread: ${displayStored(thread.title, 'prose', 'mid-line')}`,
     `Id: ${escapeStored(thread.id)}`,
     `Slug: ${escapeStored(thread.slug)}`,
     `Status: ${escapeStored(thread.status)}`,
     renderDetailBlockage(thread.blocked_by),
     renderDetailPointerStatus(pointer, thread.id),
-    `Active goal: ${escapeStored(thread.spine.active_goal)}`,
-    `Landed: ${escapeStored(thread.spine.landed)}`,
-    `Next step: ${escapeStored(thread.spine.next_step)}`,
+    `Active goal: ${displayStored(thread.spine.active_goal, 'prose', 'mid-line')}`,
+    `Landed: ${displayStored(thread.spine.landed, 'prose', 'mid-line')}`,
+    `Next step: ${displayStored(thread.spine.next_step, 'prose', 'mid-line')}`,
     renderDetailNextStepRecords(thread.spine.next_step_records),
     `Next step criterion: ${nextStepAnchorId === null ? 'none' : escapeStored(nextStepAnchorId)}`,
-    `Last session: ${escapeStored(thread.spine.last_session)}`,
+    `Last session: ${displayStored(thread.spine.last_session, 'prose', 'mid-line')}`,
     ...lastSessionNoteLines,
     'Artifacts:',
     ...artifactLines,

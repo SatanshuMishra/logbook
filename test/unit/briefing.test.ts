@@ -322,7 +322,11 @@ test('briefing.escapes-every-free-text-field', async () => {
   ])
   const [firstLine, ...restLines] = rendered.split('\n')
   assert.equal(firstLine, BRIEFING_HEADING)
-  assert.equal(restLines.join('\n').includes('#'), false, rendered)
+  assert.deepEqual(
+    restLines.filter((line) => /^(?: {0,3}> ?)* {0,3}#{1,6}( |$)/.test(line)),
+    [],
+    rendered
+  )
 })
 
 test('briefing.a-step-naming-no-records-says-so-and-an-empty-thread-says-a-definition-of-done-is-owed', async () => {

@@ -32,8 +32,9 @@ const ESCAPE_MODULE_SPECIFIERS = [
   '../../render/clip.ts'
 ]
 const ESCAPE_FUNCTION = 'escapeStored'
-const BLOCK_ESCAPE_FUNCTION = 'escapeStoredBlock'
-const ESCAPE_FUNCTIONS = new Set([ESCAPE_FUNCTION, BLOCK_ESCAPE_FUNCTION])
+const DISPLAY_FUNCTION = 'displayStored'
+const DISPLAY_BLOCK_FUNCTION = 'displayStoredBlock'
+const ESCAPE_FUNCTIONS = new Set([ESCAPE_FUNCTION, DISPLAY_FUNCTION, DISPLAY_BLOCK_FUNCTION])
 const CLIP_FUNCTION = 'clipGraphemes'
 const MARKER_CLIP_FUNCTION = 'clipWithMarker'
 const MARKER_CLIP_FLOOR_FUNCTION = 'clipWithMarkerFloor'
@@ -54,7 +55,8 @@ const contextFor = (checker: ts.TypeChecker, sourceFile: ts.SourceFile): Ctx => 
   sourceFile,
   escapeSymbols: findNamedImportSymbols(checker, sourceFile, ESCAPE_MODULE_SPECIFIERS, [
     ESCAPE_FUNCTION,
-    BLOCK_ESCAPE_FUNCTION,
+    DISPLAY_FUNCTION,
+    DISPLAY_BLOCK_FUNCTION,
     CLIP_FUNCTION,
     MARKER_CLIP_FUNCTION,
     MARKER_CLIP_FLOOR_FUNCTION

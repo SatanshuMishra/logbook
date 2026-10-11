@@ -3,7 +3,7 @@ import { layoutFor } from '../store/layout.ts'
 import { openStore } from '../store/records.ts'
 import type { Thread } from '../store/records.ts'
 import { readPointer } from '../domain/pointer.ts'
-import { escapeStored } from '../render/escape.ts'
+import { displayStored, escapeStored } from '../render/escape.ts'
 import { clipWithMarker } from '../render/clip.ts'
 import { readResumeBaseline, recordSessionBaseline } from '../hooklib/ledger-presence.ts'
 
@@ -25,8 +25,8 @@ export const parseSessionStartEvent = (raw: unknown): SessionStartEvent | null =
 const NO_RESUMABLE_THREADS = 'Logbook: no resumable threads.'
 
 const renderThreadLine = (thread: Thread): string =>
-  `- ${escapeStored(thread.slug)}: ${escapeStored(thread.title)} -- next: ` +
-  `${escapeStored(thread.spine.next_step)} (id ${escapeStored(thread.id)})`
+  `- ${displayStored(thread.slug, 'prose', 'mid-line')}: ${displayStored(thread.title, 'prose', 'mid-line')} -- next: ` +
+  `${displayStored(thread.spine.next_step, 'prose', 'mid-line')} (id ${escapeStored(thread.id)})`
 
 export const renderThreadListing = (rt: Runtime, projectRoot: string | null): string => {
   const opened = openStore(rt, projectRoot)

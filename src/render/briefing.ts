@@ -11,7 +11,7 @@ import {
   type IndexedRecord,
   type searchRecords
 } from '../domain/record-index.ts'
-import { escapeStored, escapeStoredBlock, firstNonEmptyStoredLine } from './escape.ts'
+import { displayStored, displayStoredBlock, escapeStored, firstNonEmptyStoredLine, storedSpansLines } from './escape.ts'
 import { clipWithMarker } from './clip.ts'
 
 const FORMER_HEADER_FIELD_WRITE_MAX = 500
@@ -40,7 +40,7 @@ const DEFINITION_OF_DONE_OWED_LINE = '- no open or done completion criterion is 
 const OTHER_THREADS_LINE =
   '**Other threads:** search_ledger lists and searches the records on every thread, closed ones included.'
 
-const clip = (text: string, max: number): string => clipWithMarker(escapeStored(text), max)
+const clip = (text: string, max: number): string => clipWithMarker(displayStored(text, 'prose', 'mid-line'), max)
 
 const criterionStatus = (criterion: Criterion): string => {
   if (criterion.struck_by !== null) return 'struck'
@@ -78,7 +78,7 @@ const renderBlockage = (blockedBy: string | null): string =>
   blockedBy === null ? '**Blockage:** none' : `**Blocked:** ${clip(blockedBy, HEADER_FIELD_ESCAPED_GRAPHEME_MAX)}`
 
 const renderWholeBlockage = (blockedBy: string | null): string =>
-  blockedBy === null ? '**Blockage:** none' : `**Blocked:** ${escapeStored(blockedBy)}`
+  blockedBy === null ? '**Blockage:** none' : `**Blocked:** ${displayStored(blockedBy, 'prose', 'mid-line')}`
 
 const renderPointerStatus = (pointer: Pointer | null, threadId: string): string =>
   pointer !== null && pointer.thread_id === threadId ? '**Currently being worked:** yes' : '**Currently being worked:** no'
@@ -112,7 +112,7 @@ export const renderHandle = (
     ...nextStepLines.slice(0, 1).map(() => ''),
     ...nextStepLines.slice(0, 1).map(() => '**Next step:**'),
     ...nextStepLines.slice(0, 1).map(() => ''),
-    ...nextStepLines.map((value) => escapeStoredBlock(value)),
+    ...nextStepLines.map((value) => displayStoredBlock(value)),
     '',
     '**Not shown:**',
     ...notShownBulletLines,
@@ -149,47 +149,101 @@ const renderRiskBearsOnHeadline = (risk: Risk): string => {
   return anchor === null ? '(bears on the whole thread)' : `(bears on criterion ${escapeStored(anchor)})`
 }
 
+const renderContextField = (context: string): string =>
+  storedSpansLines(context)
+    ? `Context:\n${displayStoredBlock(context)}\n`
+    : `Context: ${displayStored(context, 'prose', 'mid-line')}`
+
+const renderOutcomeField = (outcome: string): string =>
+  storedSpansLines(outcome)
+    ? `Outcome:\n${displayStoredBlock(outcome)}`
+    : `Outcome: ${displayStored(outcome, 'prose', 'mid-line')}`
+
 const renderDecisionFull = (record: IndexedRecord, decision: Decision): string =>
   [
     `Decision ${escapeStored(record.id)} (${renderRecordPlace(record)})${renderSupersededClause(record)}`,
-    `Title: ${escapeStored(decision.title)}`,
-    `Context: ${escapeStored(decision.context)}`,
+    `Title: ${displayStored(decision.title, 'prose', 'mid-line')}`,
+    renderContextField(decision.context),
     'Options:',
-    ...decision.options.map((option) => `- ${escapeStored(option)}`),
-    `Outcome: ${escapeStored(decision.outcome)}`
+    ...decision.options.map((option) => `- ${displayStored(option)}`),
+    renderOutcomeField(decision.outcome)
   ].join('\n')
+
+const riskHeading = (record: IndexedRecord, risk: Risk): string =>
+  `Risk ${escapeStored(record.id)} (${renderRecordPlace(record)}), ${risk.retired ? 'retired' : 'live'}`
+
+const renderRiskTextField = (record: IndexedRecord, risk: Risk): string =>
+  storedSpansLines(risk.text)
+    ? `${riskHeading(record, risk)}:\n${displayStoredBlock(risk.text)}\n`
+    : `${riskHeading(record, risk)}: ${displayStored(risk.text, 'prose', 'mid-line')}`
 
 const renderRiskFull = (record: IndexedRecord, risk: Risk): string =>
   [
-    `Risk ${escapeStored(record.id)} (${renderRecordPlace(record)}), ${risk.retired ? 'retired' : 'live'}: ${escapeStored(risk.text)}`,
-    `Scope: ${escapeStored(risk.scope)}`,
+    renderRiskTextField(record, risk),
+    `Scope: ${displayStored(risk.scope, 'prose', 'mid-line')}`,
     renderRiskBearsOn(risk),
-    ...(risk.refs.length === 0 ? [] : [`Refs: ${risk.refs.map((ref) => escapeStored(ref)).join(', ')}`])
+    ...(risk.refs.length === 0
+      ? []
+      : [`Refs: ${risk.refs.map((ref) => displayStored(ref, 'prose', 'mid-line')).join(', ')}`])
   ].join('\n')
 
-const renderCriterionFull = (record: IndexedRecord, criterion: Criterion): string =>
-  [
-    `Criterion ${escapeStored(record.id)} (${renderRecordPlace(record)}), c${criterion.ordinal} ${criterionStatus(criterion)}, ${settlednessLabel(criterion)}: ${escapeStored(criterion.text)}`,
-    ...(typeof criterion.check === 'string' ? [`Check: ${escapeStored(criterion.check)}`] : []),
-    ...((criterion.done || criterionReopenedBy(criterion) !== null) && typeof criterion.result === 'string'
-      ? [`Result: ${escapeStored(criterion.result)} (${renderResultStatus(criterion)})`]
-      : []),
-    ...(criterionSettledness(criterion) === 'confirmed' && typeof criterion.settled_by === 'string'
-      ? [`Settled by: ${escapeStored(criterion.settled_by)}`]
-      : [])
+const criterionHeading = (record: IndexedRecord, criterion: Criterion): string =>
+  `Criterion ${escapeStored(record.id)} (${renderRecordPlace(record)}), c${criterion.ordinal} ${criterionStatus(criterion)}, ${settlednessLabel(criterion)}`
+
+const renderCriterionTextField = (record: IndexedRecord, criterion: Criterion, followed: boolean): string =>
+  storedSpansLines(criterion.text)
+    ? `${criterionHeading(record, criterion)}:\n${displayStoredBlock(criterion.text)}${followed ? '\n' : ''}`
+    : `${criterionHeading(record, criterion)}: ${displayStored(criterion.text, 'prose', 'mid-line')}`
+
+const renderCheckField = (check: string, followed: boolean): string =>
+  storedSpansLines(check)
+    ? `Check:\n${displayStoredBlock(check)}${followed ? '\n' : ''}`
+    : `Check: ${displayStored(check, 'prose', 'mid-line')}`
+
+const renderResultField = (result: string, criterion: Criterion, followed: boolean): string =>
+  storedSpansLines(result)
+    ? `Result (${renderResultStatus(criterion)}):\n${displayStoredBlock(result)}${followed ? '\n' : ''}`
+    : `Result: ${displayStored(result, 'prose', 'mid-line')} (${renderResultStatus(criterion)})`
+
+const renderSettledByField = (settledBy: string): string =>
+  storedSpansLines(settledBy)
+    ? `Settled by:\n${displayStoredBlock(settledBy)}`
+    : `Settled by: ${displayStored(settledBy, 'prose', 'mid-line')}`
+
+const renderCriterionFull = (record: IndexedRecord, criterion: Criterion): string => {
+  const checks = typeof criterion.check === 'string' ? [criterion.check] : []
+  const results =
+    (criterion.done || criterionReopenedBy(criterion) !== null) && typeof criterion.result === 'string'
+      ? [criterion.result]
+      : []
+  const settledBys =
+    criterionSettledness(criterion) === 'confirmed' && typeof criterion.settled_by === 'string'
+      ? [criterion.settled_by]
+      : []
+  return [
+    renderCriterionTextField(record, criterion, checks.length + results.length + settledBys.length > 0),
+    ...checks.map((check) => renderCheckField(check, results.length + settledBys.length > 0)),
+    ...results.map((result) => renderResultField(result, criterion, settledBys.length > 0)),
+    ...settledBys.map((settledBy) => renderSettledByField(settledBy))
   ].join('\n')
+}
 
 const renderEntryFull = (record: IndexedRecord, entry: SessionEntry): string =>
   [
-    `Session entry ${escapeStored(record.id)} (${renderRecordPlace(record)}, by ${escapeStored(entry.actor, 'paren-wrapped')})`,
-    escapeStoredBlock(entry.body)
+    `Session entry ${escapeStored(record.id)} (${renderRecordPlace(record)}, by ${displayStored(entry.actor, 'paren-wrapped', 'mid-line')})`,
+    displayStoredBlock(entry.body)
   ].join('\n')
 
 const renderArtifactFull = (record: IndexedRecord, artifact: Artifact): string =>
-  `Artifact ${escapeStored(record.id)} (${renderRecordPlace(record)})${artifact.retired ? ', retired' : ''}: ${escapeStored(artifact.label)} -> ${escapeStored(artifact.pointer)}`
+  `Artifact ${escapeStored(record.id)} (${renderRecordPlace(record)})${artifact.retired ? ', retired' : ''}: ${displayStored(artifact.label, 'prose', 'mid-line')} -> ${displayStored(artifact.pointer, 'prose', 'mid-line')}`
+
+const outOfScopeHeading = (record: IndexedRecord): string =>
+  `Out of scope ${escapeStored(record.id)} (${renderRecordPlace(record)})`
 
 const renderOutOfScopeFull = (record: IndexedRecord, note: OutOfScope): string =>
-  `Out of scope ${escapeStored(record.id)} (${renderRecordPlace(record)}): ${escapeStored(note.text)}`
+  storedSpansLines(note.text)
+    ? `${outOfScopeHeading(record)}:\n${displayStoredBlock(note.text)}`
+    : `${outOfScopeHeading(record)}: ${displayStored(note.text, 'prose', 'mid-line')}`
 
 const unrecognisedRecordKind = (record: never): Error =>
   new Error(
@@ -215,7 +269,7 @@ export const renderRecordFull = (record: IndexedRecord): string => {
   }
 }
 
-const renderHeadlineText = (text: string): string => escapeStored(firstNonEmptyStoredLine(text))
+const renderHeadlineText = (text: string): string => displayStored(firstNonEmptyStoredLine(text), 'prose', 'mid-line')
 
 const renderCriterionHeadline = (criterion: Criterion): string =>
   `c${criterion.ordinal} [${criterionStatus(criterion)}] [${settlednessLabel(criterion)}] ${renderHeadlineText(criterion.text)}`
@@ -231,7 +285,7 @@ export const renderRecordHeadline = (record: IndexedRecord): string => {
     case 'entry':
       return renderHeadlineText(record.entry.body)
     case 'artifact':
-      return `${renderHeadlineText(record.artifact.label)} -> ${escapeStored(record.artifact.pointer)}`
+      return `${renderHeadlineText(record.artifact.label)} -> ${displayStored(record.artifact.pointer, 'prose', 'mid-line')}`
     case 'out-of-scope':
       return renderHeadlineText(record.note.text)
     default:
@@ -321,18 +375,18 @@ export const renderStepBriefing = (
   return [
     BRIEFING_HEADING,
     '',
-    `**Thread:** ${escapeStored(thread.title)}`,
+    `**Thread:** ${displayStored(thread.title, 'prose', 'mid-line')}`,
     `**Status:** ${escapeStored(thread.status)}`,
     renderWholeBlockage(thread.blocked_by),
     renderPointerStatus(pointer, thread.id),
     '',
     '**Goal:**',
     '',
-    escapeStoredBlock(thread.spine.active_goal),
+    displayStoredBlock(thread.spine.active_goal),
     '',
     '**Next step:**',
     '',
-    escapeStoredBlock(thread.spine.next_step),
+    displayStoredBlock(thread.spine.next_step),
     '',
     '**What this step needs:**',
     '',

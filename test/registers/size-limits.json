@@ -100,7 +100,7 @@
   },
   {
     "name": "MAX_CODE_POINT",
-    "site": "src/render/escape.ts:144",
+    "site": "src/render/escape.ts:132",
     "value": 1114111,
     "basis": "unrecorded",
     "reason": null,
@@ -109,7 +109,7 @@
   },
   {
     "name": "SURROGATE_LOW",
-    "site": "src/render/escape.ts:145",
+    "site": "src/render/escape.ts:133",
     "value": 55296,
     "basis": "unrecorded",
     "reason": null,
@@ -118,7 +118,7 @@
   },
   {
     "name": "SURROGATE_HIGH",
-    "site": "src/render/escape.ts:146",
+    "site": "src/render/escape.ts:134",
     "value": 57343,
     "basis": "unrecorded",
     "reason": null,

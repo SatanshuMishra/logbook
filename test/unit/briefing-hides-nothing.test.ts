@@ -5,7 +5,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import * as ts from 'typescript'
 import { renderStepBriefing } from '../../src/render/briefing.ts'
 import { CLIP_MARKER } from '../../src/render/clip.ts'
-import { escapeStored } from '../../src/render/escape.ts'
+import { displayStored, displayStoredBlock } from '../../src/render/escape.ts'
 import { ThreadRecord, type Thread, type Criterion } from '../../src/schema/thread.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import { openStore } from '../../src/store/records.ts'
@@ -286,19 +286,21 @@ test('briefing.a-render-is-clipped-nowhere-however-far-the-escape-expands-its-te
 
   await withCriterionFixture(async (fixtureRt) => {
     const briefing = stepBriefingIn(fixtureRt, thread)
-    const escaped = escapeStored(expanding)
+    const midLine = displayStored(expanding, 'prose', 'mid-line')
+    const quoted = displayStoredBlock(expanding)
     const lines = briefing.split('\n')
 
-    assert.ok(escaped.length > expanding.length, 'the fixture text must expand under the escape, or it proves nothing about the escaped length')
-    assert.ok(lines.includes(`**Thread:** ${escaped}`), 'the briefing must render the whole title')
-    assert.ok(lines.includes(`**Blocked:** ${escaped}`), 'the briefing must render the whole blockage')
-    assert.ok(lines.includes(`> ${escaped}`), 'the briefing must render the whole goal and next step')
-    assert.ok(lines.includes(`- risk ${riskId}: ${escaped} (bears on the whole thread)`), 'the briefing must list the whole risk text')
+    assert.ok(quoted.length > `> ${expanding}`.length, 'the fixture text must expand under the display escape, or it proves nothing about the displayed length')
+    assert.ok(midLine.length >= expanding.length, 'the mid-line display must keep every character of the fixture text')
+    assert.ok(lines.includes(`**Thread:** ${midLine}`), 'the briefing must render the whole title')
+    assert.ok(lines.includes(`**Blocked:** ${midLine}`), 'the briefing must render the whole blockage')
+    assert.ok(lines.includes(quoted), 'the briefing must render the whole goal and next step')
+    assert.ok(lines.includes(`- risk ${riskId}: ${midLine} (bears on the whole thread)`), 'the briefing must list the whole risk text')
     assert.ok(
-      lines.includes(`- criterion ${criterion.id}: c1 [open] [proposed] ${escaped}`),
+      lines.includes(`- criterion ${criterion.id}: c1 [open] [proposed] ${midLine}`),
       'the briefing must list the whole criterion text'
     )
-    assert.ok(lines.includes(`- out-of-scope ${noteId}: ${escaped}`), 'the briefing must list the whole out-of-scope text')
+    assert.ok(lines.includes(`- out-of-scope ${noteId}: ${midLine}`), 'the briefing must list the whole out-of-scope text')
     assert.equal(briefing.includes(CLIP_MARKER), false, 'the briefing must carry no clip marker')
     assert.equal(briefing.includes('**Not shown:**'), false, 'the briefing must carry no not-shown block')
   })

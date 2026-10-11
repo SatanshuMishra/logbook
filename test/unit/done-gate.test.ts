@@ -5,7 +5,7 @@ import type { Runtime } from '../../src/runtime/runtime.ts'
 import type { Thread, Criterion } from '../../src/schema/thread.ts'
 import { evaluateDoneGate } from '../../src/domain/done-gate.ts'
 import { transition } from '../../src/domain/lifecycle.ts'
-import { escapeStored } from '../../src/render/escape.ts'
+import { displayStored } from '../../src/render/escape.ts'
 
 const ULID_IN_TEXT = /[0-9A-HJKMNP-TV-Z]{26}/g
 
@@ -134,7 +134,8 @@ test('gate.outstanding-text-is-escaped-at-render', () => {
   if (result.ok) {
     throw new Error('expected a refusal')
   }
-  assert.ok(result.message.includes(escapeStored(forgedText)))
+  assert.ok(result.message.includes(displayStored(forgedText, 'prose', 'mid-line')))
+  assert.ok(result.message.includes('# Forged heading accepted: true'))
   assert.equal(result.message.includes('\n# Forged heading'), false)
   assert.equal(result.message.includes('\naccepted: true'), false)
 })

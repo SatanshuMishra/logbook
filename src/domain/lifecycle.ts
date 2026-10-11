@@ -2,11 +2,13 @@ import type { Runtime } from '../runtime/runtime.ts'
 import type { Thread, Criterion } from '../schema/thread.ts'
 import type { Ok, Refusal } from '../schema/declare.ts'
 import * as caps from '../schema/caps.ts'
-import { escapeStored } from '../render/escape.ts'
+import { displayStored, escapeStored } from '../render/escape.ts'
 import { evaluateDoneGate, type GateFailure } from './done-gate.ts'
 
 const renderOutstanding = (outstanding: readonly Criterion[]): string =>
-  outstanding.map((criterion) => `${escapeStored(criterion.id)}: ${escapeStored(criterion.text)}`).join('; ')
+  outstanding
+    .map((criterion) => `${escapeStored(criterion.id)}: ${displayStored(criterion.text, 'prose', 'mid-line')}`)
+    .join('; ')
 
 const refuseAbandon = (): Refusal => ({
   ok: false,
