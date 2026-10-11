@@ -6,7 +6,7 @@ import { criterionSettledness } from '../../schema/thread.ts'
 import { SLUG_PATTERN, ULID_PATTERN } from '../../schema/ids.ts'
 import { ULID_LENGTH } from '../../schema/ulid-length.ts'
 import * as caps from '../../schema/caps.ts'
-import { escapeStored } from '../../render/escape.ts'
+import { displayStored, escapeStored } from '../../render/escape.ts'
 import { ArtifactAddSchema, commitThread, loadThreadForReference, mintArtifacts, openProjectStore } from '../tool-support.ts'
 import { layoutFor } from '../../store/layout.ts'
 import { recordBriefed } from '../../domain/briefed.ts'
@@ -113,7 +113,7 @@ const RELAY_INSTRUCTION =
 const DEFINITION_OF_DONE_OWED = 'no completion criteria were recorded, so a definition of done is still owed.'
 
 const criterionLine = (criterion: Criterion): string =>
-  `${criterion.ordinal}. ${criterion.text} [${criterionSettledness(criterion)}]`
+  `${criterion.ordinal}. ${displayStored(criterion.text)} [${criterionSettledness(criterion)}]`
 
 const openedThreadText = (thread: Thread): string => {
   const opened = `opened thread ${thread.slug} (${thread.id}).`

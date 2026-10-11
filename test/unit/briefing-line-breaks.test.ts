@@ -1,14 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { renderStepBriefing, BRIEFING_HEADING } from '../../src/render/briefing.ts'
-import { escapeStoredBlock, toEscaped } from '../../src/render/escape.ts'
+import { displayStoredBlock, escapeStored, toEscaped } from '../../src/render/escape.ts'
 import type { Thread } from '../../src/schema/thread.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import { openStore } from '../../src/store/records.ts'
 import { withCriterionFixture } from '../support/criterion-fixture.ts'
 
 const STORED_LINE_BREAK = toEscaped('\n')
-const ESCAPED_HEADING_MARKER = toEscaped('#')
+const ESCAPED_HEADING_MARKER = '\\#'
 const MARKDOWN_HEADING_LINE = /^[ \t]*#/
 const BLANK_LINE = ''
 const NO_TOKEN_OCCURRENCES = 0
@@ -156,10 +156,10 @@ for (const field of SPINE_BLOCK_FIELDS) {
   })
 }
 
-test('escape.escapeStoredBlock-cannot-be-forged-into-authoring-its-own-blockquote-marker', () => {
+test('escape.displayStoredBlock-cannot-be-forged-into-authoring-its-own-blockquote-marker', () => {
   assert.equal(
-    escapeStoredBlock('> forged quote'),
-    '> U+003E forged quote',
+    displayStoredBlock(escapeStored('> forged quote')),
+    '> \\> forged quote',
     "a stored value spelling its own leading '>' must render as the server's blockquote marker followed by the value's own '>' escaped, not as two indistinguishable blockquote markers"
   )
 })

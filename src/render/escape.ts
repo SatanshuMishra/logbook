@@ -126,18 +126,6 @@ export const firstStoredLine = (text: string): string => text.split(STORED_LINE_
 export const firstNonEmptyStoredLine = (text: string): string =>
   text.split(STORED_LINE_BREAK).find((line) => line.length > 0) ?? ''
 
-export const escapeStoredBlock = (text: string, max: number = Number.POSITIVE_INFINITY): string =>
-  clipWithMarker(
-    text
-      .split(STORED_LINE_BREAK)
-      .map((line) => escapeStored(line))
-      .join('\n'),
-    max
-  )
-    .split('\n')
-    .map((line) => (line.length === 0 ? '>' : `> ${line}`))
-    .join('\n')
-
 const ESCAPE_PREFIX = 'U+'
 const ESCAPE_DIGITS = /^[0-9A-F]+$/
 const ESCAPE_WIDTHS = [4, 5, 6] as const
@@ -179,17 +167,45 @@ export const unescapeStored = (text: string): string => {
   return out.join('')
 }
 
+const CHARACTER_REFERENCES: ReadonlyMap<string, string> = new Map([
+  ['<', '&lt;'],
+  ['>', '&gt;'],
+  ['"', '&quot;'],
+  ["'", '&apos;'],
+  [')', '&#41;'],
+  [']', '&#93;'],
+  ['|', '&#124;']
+])
+const EMITTED_REFERENCES: readonly string[] = [...CHARACTER_REFERENCES.values()]
+const REFERENCE_START = '&'
+const BACKSLASH = '\\'
+const BACKSLASH_ESCAPABLE = /^[\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7E]$/
+const DISPLAY_LINE_BREAK = /\r\n|\r|\n/
+const LEADING_SPACES = /^ */
+
+const isBackslashEscapeAt = (graphemes: readonly string[], index: number): boolean =>
+  graphemes[index] === BACKSLASH && BACKSLASH_ESCAPABLE.test(graphemes[index + 1] ?? '')
+
+const referenceAt = (graphemes: readonly string[], index: number): string | undefined =>
+  graphemes[index] === REFERENCE_START
+    ? EMITTED_REFERENCES.find(
+        (reference) => graphemes.slice(index, index + reference.length).join('') === reference
+      )
+    : undefined
+
+const escapeUnitEndAt = (graphemes: readonly string[], index: number): number => {
+  const decoded =
+    graphemes[index] === 'U' && graphemes[index + 1] === '+' ? decodedEscapeAt(graphemes, index) : null
+  if (decoded !== null) return index + ESCAPE_PREFIX.length + decoded.width
+  if (isBackslashEscapeAt(graphemes, index)) return index + 2
+  return index + (referenceAt(graphemes, index)?.length ?? 1)
+}
+
 const escapeTokenSafeBoundary = (graphemes: readonly string[], max: number): number => {
   if (max >= graphemes.length) return graphemes.length
   let index = 0
   while (index < max) {
-    const decoded =
-      graphemes[index] === 'U' && graphemes[index + 1] === '+' ? decodedEscapeAt(graphemes, index) : null
-    if (decoded === null) {
-      index += 1
-      continue
-    }
-    const end = index + ESCAPE_PREFIX.length + decoded.width
+    const end = escapeUnitEndAt(graphemes, index)
     if (end > max) return index === 0 ? end : index
     index = end
   }
@@ -205,13 +221,7 @@ const escapeTokenSafeFloorBoundary = (graphemes: readonly string[], min: number)
   if (min >= graphemes.length) return graphemes.length
   let index = 0
   while (index < min) {
-    const decoded =
-      graphemes[index] === 'U' && graphemes[index + 1] === '+' ? decodedEscapeAt(graphemes, index) : null
-    if (decoded === null) {
-      index += 1
-      continue
-    }
-    const end = index + ESCAPE_PREFIX.length + decoded.width
+    const end = escapeUnitEndAt(graphemes, index)
     if (end > min) return end
     index = end
   }
@@ -222,3 +232,101 @@ export const clipGraphemesFloor = (text: string, min: number): string => {
   const graphemes = Array.from(GRAPHEME_SEGMENTER.segment(text), (entry) => entry.segment)
   return graphemes.slice(0, escapeTokenSafeFloorBoundary(graphemes, min)).join('')
 }
+
+const isDecodedLineBreak = (char: string): boolean => char === '\n' || char === '\r'
+
+const charAfterToken = (chars: readonly string[], index: number): string => {
+  const next = chars[index] === 'U' && chars[index + 1] === '+' ? decodedEscapeAt(chars, index) : null
+  if (next !== null && isEscapable(next.char)) return next.char
+  return chars[index] ?? ''
+}
+
+const storageWrotePositionalToken = (
+  chars: readonly string[],
+  start: number,
+  end: number,
+  char: string,
+  line: string
+): boolean => {
+  const after = ORDERED_LIST_PUNCTUATION.has(char) ? charAfterToken(chars, end) : ''
+  const written = chars.slice(start, end).join('')
+  return escapeStored(`${line}${char}${after}`) === escapeStored(`${line}${written}${after}`)
+}
+
+const decodeStored = (stored: string): string => {
+  const chars = Array.from(stored)
+  const decoded: string[] = []
+  let lineStart = 0
+  let index = 0
+  while (index < chars.length) {
+    const token = chars[index] === 'U' && chars[index + 1] === '+' ? decodedEscapeAt(chars, index) : null
+    const end = token === null ? index + 1 : index + ESCAPE_PREFIX.length + token.width
+    const decodes =
+      token !== null &&
+      (isEscapable(token.char) ||
+        storageWrotePositionalToken(chars, index, end, token.char, decoded.slice(lineStart).join('')))
+    const char = decodes ? token.char : (chars[index] as string)
+    decoded.push(char)
+    if (isDecodedLineBreak(char)) lineStart = decoded.length
+    index = decodes ? end : index + 1
+  }
+  return decoded.join('')
+}
+
+const lineStartMarkerIndex = (chars: readonly string[]): number | null => {
+  let start = 0
+  while (chars[start] === ORDINARY_SPACE) start += 1
+  if (MARKDOWN_LEADING_CHARS.has(chars[start] ?? '')) return start
+  const markerEnd = orderedListMarkerEnd(chars, start)
+  return markerEnd === null ? null : markerEnd - 1
+}
+
+const displayLine = (line: string, surface: EscapeSurface, atLineStart: boolean): string => {
+  const surfaceEscapedChars = SURFACE_ESCAPED_CHARS[surface]
+  const chars = Array.from(line)
+  const backslashed = atLineStart ? lineStartMarkerIndex(chars) : null
+  const out: string[] = []
+  let backslashRun = 0
+  for (let index = 0; index < chars.length; index += 1) {
+    const char = chars[index] as string
+    const reference =
+      ALWAYS_ESCAPED_CHARS.has(char) || surfaceEscapedChars.has(char) ? CHARACTER_REFERENCES.get(char) : undefined
+    if (reference !== undefined) out.push(BACKSLASH.repeat(backslashRun), reference)
+    else if (index === backslashed) out.push(BACKSLASH, char)
+    else out.push(escapeChar(char))
+    backslashRun = char === BACKSLASH ? backslashRun + 1 : 0
+  }
+  return out.join('')
+}
+
+const guardIndentation = (displayed: string): string => {
+  const spaces = LEADING_SPACES.exec(displayed)?.[0].length ?? 0
+  if (spaces < MARKDOWN_INDENT_THRESHOLD || spaces === displayed.length) return displayed
+  return `${displayed.slice(0, MARKDOWN_INDENT_THRESHOLD - 1)}${toEscaped(ORDINARY_SPACE)}${displayed.slice(MARKDOWN_INDENT_THRESHOLD)}`
+}
+
+export const displayStored = (
+  stored: string,
+  surface: EscapeSurface = 'prose',
+  position: 'line-start' | 'mid-line' = 'line-start'
+): string => {
+  const shown = decodeStored(stored)
+    .split(DISPLAY_LINE_BREAK)
+    .map((line, index) => displayLine(line, surface, index > 0 || position === 'line-start'))
+    .join(ORDINARY_SPACE)
+  return position === 'line-start' ? guardIndentation(shown) : shown
+}
+
+export const displayStoredBlock = (stored: string, max: number = Number.POSITIVE_INFINITY): string =>
+  clipWithMarker(
+    decodeStored(stored)
+      .split(DISPLAY_LINE_BREAK)
+      .map((line) => guardIndentation(displayLine(line, 'prose', true)))
+      .join('\n'),
+    max
+  )
+    .split('\n')
+    .map((line) => (line.length === 0 ? '>' : `> ${line}`))
+    .join('\n')
+
+export const storedSpansLines = (stored: string): boolean => DISPLAY_LINE_BREAK.test(decodeStored(stored))

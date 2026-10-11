@@ -530,3 +530,67 @@ test('markdown-census.a-mid-line-angle-bracket-forges-no-construct', () => {
     return MID_LINE_ANGLE_BRACKET_FORBIDDEN_NODE_TYPES.some((type) => types.includes(type)) ? 'forbidden' : 'allowed'
   })
 })
+
+const DISPLAY_SERVER_LINE = 'Server line after the block'
+const BLOCK_PLACEMENT = 'as a block'
+const CONSTRUCTS_A_BLOCK_CONTAINS: ReadonlySet<string> = new Set(['blank line', 'hard line break', 'soft line break'])
+
+const signalCount = (markdown: string, signal: ParserSignal): number =>
+  signal.kind === 'node'
+    ? nodeTypes(markdown).filter((type) => type === signal.type).length
+    : paragraphCount(markdown)
+
+const serverLineIsOutsideEveryQuote = (markdown: string): boolean => {
+  const walker = parser.parse(markdown).walker()
+  let quoteDepth = 0
+  let outside = false
+  let event = walker.next()
+  while (event !== null) {
+    if (event.node.type === 'block_quote') quoteDepth += event.entering ? 1 : -1
+    if (event.entering && event.node.type === 'text' && event.node.literal === DISPLAY_SERVER_LINE) {
+      outside = quoteDepth === 0
+    }
+    event = walker.next()
+  }
+  return outside
+}
+
+test('markdown-census.display-forms-neutralise-every-construct', async () => {
+  const { displayStored, displayStoredBlock } = await import('../../src/render/escape.ts')
+  const placements: ReadonlyArray<{ readonly name: string; readonly render: (stored: string) => string }> = [
+    { name: 'inline at a line start', render: (stored) => inDocument(displayStored(stored)) },
+    {
+      name: 'inline mid-line',
+      render: (stored) => inDocument(`${MID_LINE_CARRIER} ${displayStored(stored, 'prose', 'mid-line')}`)
+    },
+    {
+      name: BLOCK_PLACEMENT,
+      render: (stored) => `${inDocument(displayStoredBlock(stored))}\n\n${DISPLAY_SERVER_LINE}`
+    }
+  ]
+  const cases = CONSTRUCTS.flatMap((construct) =>
+    placements
+      .filter((placement) => !(placement.name === BLOCK_PLACEMENT && CONSTRUCTS_A_BLOCK_CONTAINS.has(construct.name)))
+      .map((placement) => ({ construct, placement }))
+  )
+  assert.ok(cases.length > 0)
+  census(cases, ({ construct, placement }) => {
+    if (!positiveControlHolds(construct)) return 'unclassifiable'
+    const shown = (raw: string): string => placement.render(escapeStored(raw))
+    if (construct.classification === 'accepted') {
+      return construct.probes.every((probe) => signalCount(shown(probe), construct.signal) > 0) ? 'allowed' : 'forbidden'
+    }
+    const baseline = signalCount(shown(SENTINEL_BODY), construct.signal)
+    return construct.probes.every((probe) => signalCount(shown(probe), construct.signal) <= baseline)
+      ? 'allowed'
+      : 'forbidden'
+  })
+  const blockPlacement = placements.find((placement) => placement.name === BLOCK_PLACEMENT)
+  assert.ok(blockPlacement !== undefined)
+  const everyProbe = CONSTRUCTS.flatMap((construct) => [...construct.probes])
+  census(everyProbe, (probe) => {
+    const markdown = blockPlacement.render(escapeStored(probe))
+    const quotes = nodeTypes(markdown).filter((type) => type === 'block_quote').length
+    return quotes === 1 && serverLineIsOutsideEveryQuote(markdown) ? 'allowed' : 'forbidden'
+  })
+})

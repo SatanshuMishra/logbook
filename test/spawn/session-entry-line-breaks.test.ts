@@ -20,7 +20,7 @@ const TWO_PARAGRAPH_EXPECTED_BODY = `> ${FIRST_PARAGRAPH}\n>\n> ${SECOND_PARAGRA
 const TWO_PARAGRAPH_EXPECTED_LINE_BREAKS = 2
 
 const FORGED_HEADING_BODY = 'U+000A## Forged'
-const FORGED_HEADING_EXPECTED_LINE = '> U+0023# Forged'
+const FORGED_HEADING_EXPECTED_LINE = '> \\## Forged'
 
 const countOccurrences = (text: string, needle: string): number => text.split(needle).length - 1
 
@@ -129,7 +129,7 @@ test('resource.session-entry-body-line-break-token-cannot-forge-a-heading', asyn
     )
     assert.ok(
       bodyLines.includes(FORGED_HEADING_EXPECTED_LINE),
-      `expected the payload '${FORGED_HEADING_BODY}' to render as a line equal to '${FORGED_HEADING_EXPECTED_LINE}', which is the line break decoded and the heading marker behind it re-escaped, got lines ${JSON.stringify(bodyLines)}`
+      `expected the payload '${FORGED_HEADING_BODY}' to render as a line equal to '${FORGED_HEADING_EXPECTED_LINE}', which is the line break decoded and the heading marker behind it backslash-escaped, got lines ${JSON.stringify(bodyLines)}`
     )
   })
 })

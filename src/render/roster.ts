@@ -1,5 +1,5 @@
 import type { Thread, Ulid, Iso8601 } from '../schema/thread.ts'
-import { escapeStored } from './escape.ts'
+import { displayStored, escapeStored } from './escape.ts'
 import { clipWithMarker } from './clip.ts'
 import { ISO_PATTERN } from '../schema/ids.ts'
 
@@ -88,12 +88,12 @@ const ROSTER_BLOCKED_BY_REASON_NOT_RECORDED = 'reason not recorded'
 
 const renderBlockedByCell = (blockedBy: string | null): string => {
   if (blockedBy === null) return ''
-  const rendered = escapeStored(clipWithMarker(escapeStored(blockedBy), ROSTER_BLOCKED_BY_CLIP_GRAPHEMES), 'table-cell')
+  const rendered = clipWithMarker(displayStored(blockedBy, 'table-cell', 'mid-line'), ROSTER_BLOCKED_BY_CLIP_GRAPHEMES)
   return rendered.trim() === '' ? ROSTER_BLOCKED_BY_REASON_NOT_RECORDED : rendered
 }
 
 const renderThreadNameCell = (row: RosterRow): string =>
-  escapeStored(`${escapeStored(row.slug)} - ${escapeStored(row.title)}`, 'table-cell')
+  `${displayStored(row.slug, 'table-cell', 'mid-line')} - ${displayStored(row.title, 'table-cell', 'mid-line')}`
 
 const renderRosterRow = (row: RosterRow, index: number, hasBlockage: boolean): string => {
   const cells = [
