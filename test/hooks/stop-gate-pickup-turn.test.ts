@@ -242,7 +242,7 @@ test('hook.stop-gate-treats-an-unreadable-transcript-as-no-pickup', async () => 
     assert.equal(
       stopGateVerdict(rt, pickupStop(repo, transcriptPath, NEXT_PROMPT)).kind,
       'block',
-      'a stop whose prompt id is not the pickup turn is judged as today, and it latches the verbatim check for this session'
+      'a stop whose prompt id is not the pickup turn is judged as today'
     )
 
     assert.equal(

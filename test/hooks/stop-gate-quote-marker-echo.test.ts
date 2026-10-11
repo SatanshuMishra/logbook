@@ -19,6 +19,8 @@ const withPluginData = <T>(fn: (pluginData: string) => T): T => {
 }
 
 const RESUME_TOOL_USE_ID = 'toolu_stop_gate_quote_marker'
+const PICKUP_PROMPT_ID = 'prompt-stop-gate-quote-marker'
+const THREAD_ID = '01M4KKVS4E22W2MS6CFAMZA4H9'
 
 const BRIEFING = [
   '# Your Preflight Briefing',
@@ -64,6 +66,7 @@ const assistantEntry = (content: Record<string, unknown>[]): Record<string, unkn
 
 const toolResultEntry = (toolUseId: string, resultText: string): Record<string, unknown> => ({
   type: 'user',
+  promptId: PICKUP_PROMPT_ID,
   message: {
     role: 'user',
     content: [{ type: 'tool_result', tool_use_id: toolUseId, content: resultText }]
@@ -71,12 +74,17 @@ const toolResultEntry = (toolUseId: string, resultText: string): Record<string, 
 })
 
 const toolUseEntry = (toolUseId: string): Record<string, unknown> =>
-  assistantEntry([{ type: 'tool_use', id: toolUseId, name: 'mcp__ledger__resume_thread', input: {} }])
+  assistantEntry([
+    { type: 'tool_use', id: toolUseId, name: 'mcp__ledger__resume_thread', input: { thread_id: THREAD_ID, pickup: true } }
+  ])
+
+const pickupReply = (briefing: string): string =>
+  JSON.stringify({ thread_id: THREAD_ID, briefing, previous_session: null, pickup: true })
 
 const writeTranscriptWithEchoedText = (transcriptPath: string, briefing: string, echoedText: string): void => {
   const lines = [
     toolUseEntry(RESUME_TOOL_USE_ID),
-    toolResultEntry(RESUME_TOOL_USE_ID, JSON.stringify({ briefing })),
+    toolResultEntry(RESUME_TOOL_USE_ID, pickupReply(briefing)),
     assistantEntry([{ type: 'text', text: echoedText }])
   ]
   writeFileSync(transcriptPath, `${lines.map((entry) => JSON.stringify(entry)).join('\n')}\n`)
@@ -101,7 +109,7 @@ const runOneCase = (
           cwd: repo,
           transcript_path: transcriptPath,
           stop_hook_active: false,
-          prompt_id: null
+          prompt_id: PICKUP_PROMPT_ID
         })
         assert.equal(verdict.kind, expectedKind, message)
         return verdict

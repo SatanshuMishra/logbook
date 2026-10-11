@@ -1,42 +1,11 @@
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
-import { createStateDirectory, layoutFor, type StoreLayout } from '../store/layout.ts'
-import { durableWrite } from '../store/durable-write.ts'
+import { layoutFor, type StoreLayout } from '../store/layout.ts'
 import { openStore } from '../store/records.ts'
 import { readPointer } from '../domain/pointer.ts'
 import { ledgerPathsChangedSince, readLedgerHead, readResumeBaseline } from './ledger-presence.ts'
-import { collectAssistantTexts, findLastResumeBriefing, isPickupTurn } from './transcript.ts'
+import { assistantTextsAfter, isPickupTurn, readTurnResumeResults, type TurnResumeResult } from './transcript.ts'
 import { readRecordingGateState, writeRecordingGateState, type RecordingGateState, type ThreadFireState } from './recording-gate-state.ts'
 import { mismatchAssertionsReason, observationFromThread, untouchedAssertionsReason, type ThreadObservation } from './recording-assertions.ts'
-
-const GATE_FILE_NAME = 'stop-gate.json'
-
-type GateState = { session_id: string }
-
-const gatePathFor = (stateDir: string): string => path.join(stateDir, GATE_FILE_NAME)
-
-const readGate = (stateDir: string): GateState | null => {
-  let raw: string
-  try {
-    raw = readFileSync(gatePathFor(stateDir), 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
-  }
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>
-    return typeof parsed.session_id === 'string' && parsed.session_id.length > 0
-      ? { session_id: parsed.session_id }
-      : null
-  } catch {
-    return null
-  }
-}
-
-const writeGate = (rt: Runtime, stateDir: string, sessionId: string): void => {
-  durableWrite(gatePathFor(stateDir), JSON.stringify({ session_id: sessionId }), { log: rt.log })
-}
 
 export type StopVerdict = { kind: 'silent' } | { kind: 'block'; reason: string }
 
@@ -63,24 +32,43 @@ const stripLeadingBlockquoteMarker = (line: string): string => {
 const normaliseBlockquoteMarkers = (text: string): string =>
   text.split('\n').map(stripLeadingBlockquoteMarker).join('\n')
 
-const verbatimEchoVerdict = (rt: Runtime, event: StopEvent, layout: StoreLayout): StopVerdict => {
-  const gate = readGate(layout.state)
-  if (gate !== null && gate.session_id === event.session_id) return { kind: 'silent' }
+type OwedBriefing = { position: number; briefing: string }
 
-  const pledge = findLastResumeBriefing(event.transcript_path)
-  if (pledge === null) return { kind: 'silent' }
+const pickupBriefingOf = (result: TurnResumeResult): OwedBriefing | null => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(result.text)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+  const reply = parsed as Record<string, unknown>
+  if (reply.pickup !== true || typeof reply.briefing !== 'string') return null
+  return { position: result.position, briefing: reply.briefing }
+}
+
+const owedBriefingFor = (event: StopEvent): OwedBriefing | null =>
+  readTurnResumeResults(event.transcript_path, event.prompt_id)
+    .map(pickupBriefingOf)
+    .filter((owed): owed is OwedBriefing => owed !== null)
+    .at(-1) ?? null
+
+const printedIn = (texts: readonly string[], briefing: string): boolean => {
+  const normalisedBriefing = normaliseBlockquoteMarkers(briefing)
+  return texts.some((text) => normaliseBlockquoteMarkers(text).includes(normalisedBriefing))
+}
+
+const verbatimEchoVerdict = (event: StopEvent): StopVerdict => {
   if (event.stop_hook_active) return { kind: 'silent' }
 
-  const texts = collectAssistantTexts(event.transcript_path)
-  const normalisedPledge = normaliseBlockquoteMarkers(pledge)
-  const echoed = texts.some((text) => normaliseBlockquoteMarkers(text).includes(normalisedPledge))
+  const owed = owedBriefingFor(event)
+  if (owed === null) return { kind: 'silent' }
 
-  createStateDirectory(layout)
-  writeGate(rt, layout.state, event.session_id)
+  const textsAfterReply = assistantTextsAfter(event.transcript_path, owed.position)
+  if (textsAfterReply === null) return { kind: 'silent' }
+  if (printedIn(textsAfterReply, owed.briefing)) return { kind: 'silent' }
 
-  if (echoed) return { kind: 'silent' }
-
-  return { kind: 'block', reason: verbatimReason(pledge) }
+  return { kind: 'block', reason: verbatimReason(owed.briefing) }
 }
 
 const STAND_DOWN_MINIMUM_FIRES = 2
@@ -212,7 +200,7 @@ export const stopGateVerdict = (rt: Runtime, event: StopEvent): StopVerdict => {
   const layout = layoutFor(rt, event.cwd)
   if (!layout.ok) return { kind: 'silent' }
 
-  const verbatim = verbatimEchoVerdict(rt, event, layout.value)
+  const verbatim = verbatimEchoVerdict(event)
   if (verbatim.kind === 'block') return verbatim
 
   return ledgerPresenceVerdict(rt, event, layout.value)

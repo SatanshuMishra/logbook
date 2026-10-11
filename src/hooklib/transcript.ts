@@ -26,8 +26,6 @@ const readEntriesIfPresent = (transcriptPath: string): TranscriptEntry[] | null 
   return entries
 }
 
-const readEntries = (transcriptPath: string): TranscriptEntry[] => readEntriesIfPresent(transcriptPath) ?? []
-
 const asRecord = (value: unknown): Record<string, unknown> | null =>
   typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null
 
@@ -50,76 +48,7 @@ const isAssistantEntry = (entry: TranscriptEntry): boolean => {
   return entry.type === 'assistant' || message.role === 'assistant'
 }
 
-export const collectAssistantTexts = (transcriptPath: unknown): string[] => {
-  if (typeof transcriptPath !== 'string' || transcriptPath.length === 0) return []
-  const texts: string[] = []
-  for (const entry of readEntries(transcriptPath)) {
-    if (!isAssistantEntry(entry)) continue
-    const message = asRecord(entry.message)
-    if (message === null) continue
-    texts.push(...textsFromContent(message.content))
-  }
-  return texts
-}
-
 const RESUME_TOOL_NAME_PATTERN = /^mcp__(?:plugin_logbook_)?ledger__resume_thread$/
-
-const toolUseIn = (entry: TranscriptEntry): { id: string; name: string } | null => {
-  const message = asRecord(entry.message)
-  const content = message === null ? undefined : message.content
-  if (!Array.isArray(content)) return null
-  for (const part of content) {
-    const record = asRecord(part)
-    if (record !== null && record.type === 'tool_use' && typeof record.name === 'string' && typeof record.id === 'string') {
-      return { id: record.id, name: record.name }
-    }
-  }
-  return null
-}
-
-const toolResultTextFor = (entry: TranscriptEntry, toolUseId: string): string | null => {
-  const message = asRecord(entry.message)
-  const content = message === null ? undefined : message.content
-  if (!Array.isArray(content)) return null
-  for (const part of content) {
-    const record = asRecord(part)
-    if (record === null || record.type !== 'tool_result' || record.tool_use_id !== toolUseId) continue
-    if (typeof record.content === 'string') return record.content
-    const nested = textsFromContent(record.content)
-    if (nested.length > 0) return nested.join('')
-  }
-  return null
-}
-
-const extractBriefing = (resultText: string): string | null => {
-  try {
-    const parsed = JSON.parse(resultText)
-    const record = asRecord(parsed)
-    return record !== null && typeof record.briefing === 'string' ? record.briefing : null
-  } catch {
-    return null
-  }
-}
-
-export const findLastResumeBriefing = (transcriptPath: unknown): string | null => {
-  if (typeof transcriptPath !== 'string' || transcriptPath.length === 0) return null
-  let pendingToolUseId: string | null = null
-  let lastBriefing: string | null = null
-  for (const entry of readEntries(transcriptPath)) {
-    const toolUse = toolUseIn(entry)
-    if (toolUse !== null && RESUME_TOOL_NAME_PATTERN.test(toolUse.name)) {
-      pendingToolUseId = toolUse.id
-      continue
-    }
-    if (pendingToolUseId === null) continue
-    const resultText = toolResultTextFor(entry, pendingToolUseId)
-    if (resultText === null) continue
-    const briefing = extractBriefing(resultText)
-    if (briefing !== null) lastBriefing = briefing
-    pendingToolUseId = null
-  }
-  return lastBriefing
-}
 
 const contentPartsOf = (entry: TranscriptEntry): Record<string, unknown>[] => {
   const message = asRecord(entry.message)
@@ -142,13 +71,37 @@ const isResumeCall = (part: Record<string, unknown>): boolean =>
   typeof part.name === 'string' &&
   RESUME_TOOL_NAME_PATTERN.test(part.name)
 
-export const isPickupTurn = (transcriptPath: unknown, promptId: string | null): boolean => {
-  if (typeof transcriptPath !== 'string' || transcriptPath.length === 0 || promptId === null) return false
+const isTranscriptPath = (transcriptPath: unknown): transcriptPath is string =>
+  typeof transcriptPath === 'string' && transcriptPath.length > 0
+
+const resultTextOf = (part: Record<string, unknown>): string =>
+  typeof part.content === 'string' ? part.content : textsFromContent(part.content).join('')
+
+export type TurnResumeResult = { position: number; text: string }
+
+export const readTurnResumeResults = (transcriptPath: unknown, promptId: string | null): TurnResumeResult[] => {
+  if (!isTranscriptPath(transcriptPath) || promptId === null) return []
   const entries = readEntriesOrNull(transcriptPath)
-  if (entries === null) return false
+  if (entries === null) return []
   const resumeCallIds = new Set(entries.flatMap(contentPartsOf).filter(isResumeCall).map((part) => part.id))
+  return entries.flatMap((entry, position) =>
+    entry.promptId === promptId
+      ? contentPartsOf(entry)
+          .filter((part) => part.type === 'tool_result' && resumeCallIds.has(part.tool_use_id) && part.is_error !== true)
+          .map((part) => ({ position, text: resultTextOf(part) }))
+      : []
+  )
+}
+
+export const isPickupTurn = (transcriptPath: unknown, promptId: string | null): boolean =>
+  readTurnResumeResults(transcriptPath, promptId).length > 0
+
+export const assistantTextsAfter = (transcriptPath: unknown, position: number): string[] | null => {
+  if (!isTranscriptPath(transcriptPath)) return null
+  const entries = readEntriesOrNull(transcriptPath)
+  if (entries === null) return null
   return entries
-    .filter((entry) => entry.promptId === promptId)
-    .flatMap(contentPartsOf)
-    .some((part) => part.type === 'tool_result' && resumeCallIds.has(part.tool_use_id) && part.is_error !== true)
+    .slice(position + 1)
+    .filter(isAssistantEntry)
+    .flatMap((entry) => textsFromContent(asRecord(entry.message)?.content))
 }

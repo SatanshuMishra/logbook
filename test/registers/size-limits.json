@@ -46,7 +46,7 @@
   },
   {
     "name": "STAND_DOWN_MINIMUM_FIRES",
-    "site": "src/hooklib/stop-gate.ts:86",
+    "site": "src/hooklib/stop-gate.ts:74",
     "value": 2,
     "basis": "unrecorded",
     "reason": null,

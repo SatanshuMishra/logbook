@@ -12,6 +12,7 @@ import { withRepo } from '../support/git-fixture.ts'
 const rt = testRuntime()
 
 const RESUME_TOOL_USE_ID = 'toolu_stop_gate_owes_the_handle'
+const PICKUP_PROMPT_ID = 'prompt-stop-gate-owes-the-handle'
 
 const handleThread = (): Thread => ({
   id: rt.ulid(),
@@ -40,11 +41,17 @@ const assistantEntry = (content: Record<string, unknown>[]): Record<string, unkn
 
 const toolResultEntry = (toolUseId: string, resultText: string): Record<string, unknown> => ({
   type: 'user',
+  promptId: PICKUP_PROMPT_ID,
   message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUseId, content: resultText }] }
 })
 
-const toolUseEntry = (toolUseId: string): Record<string, unknown> =>
-  assistantEntry([{ type: 'tool_use', id: toolUseId, name: 'mcp__ledger__resume_thread', input: {} }])
+const toolUseEntry = (toolUseId: string, threadId: string): Record<string, unknown> =>
+  assistantEntry([
+    { type: 'tool_use', id: toolUseId, name: 'mcp__ledger__resume_thread', input: { thread_id: threadId, pickup: true } }
+  ])
+
+const pickupReply = (threadId: string, briefing: string): string =>
+  JSON.stringify({ thread_id: threadId, briefing, previous_session: null, pickup: true })
 
 const writeTranscript = (transcriptPath: string, entries: Record<string, unknown>[]): void => {
   writeFileSync(transcriptPath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`)
@@ -75,11 +82,12 @@ test('hook.stop-gate-owes-the-head-of-a-briefing-exactly-as-it-owes-the-whole-on
     withPluginData((pluginData) => {
       withTranscript((transcriptPath) => {
         const runtime = testRuntime({ env: { HOME: process.env.HOME, CLAUDE_PLUGIN_DATA: pluginData }, cwd: repo })
-        const handle = renderHandle(handleThread(), { resolved: 0, dangling: [], quarantined: [] }, null, 0)
+        const thread = handleThread()
+        const handle = renderHandle(thread, { resolved: 0, dangling: [], quarantined: [] }, null, 0)
 
         writeTranscript(transcriptPath, [
-          toolUseEntry(RESUME_TOOL_USE_ID),
-          toolResultEntry(RESUME_TOOL_USE_ID, JSON.stringify({ briefing: handle }))
+          toolUseEntry(RESUME_TOOL_USE_ID, thread.id),
+          toolResultEntry(RESUME_TOOL_USE_ID, pickupReply(thread.id, handle))
         ])
 
         const unpaid = stopGateVerdict(runtime, {
@@ -87,7 +95,7 @@ test('hook.stop-gate-owes-the-head-of-a-briefing-exactly-as-it-owes-the-whole-on
           cwd: repo,
           transcript_path: transcriptPath,
           stop_hook_active: false,
-          prompt_id: null
+          prompt_id: PICKUP_PROMPT_ID
         })
         assert.equal(unpaid.kind, 'block', 'a head returned by resume_thread and never echoed must block the turn')
         assert.ok(
@@ -96,8 +104,8 @@ test('hook.stop-gate-owes-the-head-of-a-briefing-exactly-as-it-owes-the-whole-on
         )
 
         writeTranscript(transcriptPath, [
-          toolUseEntry(RESUME_TOOL_USE_ID),
-          toolResultEntry(RESUME_TOOL_USE_ID, JSON.stringify({ briefing: handle })),
+          toolUseEntry(RESUME_TOOL_USE_ID, thread.id),
+          toolResultEntry(RESUME_TOOL_USE_ID, pickupReply(thread.id, handle)),
           assistantEntry([{ type: 'text', text: handle }])
         ])
 
@@ -106,7 +114,7 @@ test('hook.stop-gate-owes-the-head-of-a-briefing-exactly-as-it-owes-the-whole-on
           cwd: repo,
           transcript_path: transcriptPath,
           stop_hook_active: false,
-          prompt_id: null
+          prompt_id: PICKUP_PROMPT_ID
         })
         assert.equal(paid.kind, 'silent', 'a head echoed verbatim must pay the debt exactly as a whole briefing does')
       })
