@@ -1,9 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { census, type Classified } from '../support/census.ts'
-import { TREE_ROOT, runHookProcess, readFixture, controlledEnv, freshPluginDataDir, freshTmpDir } from './hook-process.ts'
+import { TREE_ROOT } from './hook-process.ts'
 
 const NUDGE_PHRASE = ['approaching the ', 'compaction threshold'].join('')
 
@@ -22,8 +22,6 @@ const LEDGER_NUDGE_ENV_PREFIX = 'LEDGER_NUDGE'
 
 const PLUGIN_MANIFEST_MARKER = path.join('.claude-plugin', 'plugin.json')
 const PLUGIN_MANIFEST_MAX_ASCENT = 10
-
-const OVERSIZED_TRANSCRIPT_BYTES = 2000000
 
 type TokenHit = { file: string; token: string }
 
@@ -88,34 +86,4 @@ test('hook.compaction-nudge-absent', () => {
     [],
     `hook.compaction-nudge-absent: ${pluginManifestPath} declares a userConfig key mentioning "nudge"`
   )
-})
-
-test('hook.compaction-nudge-absent.post-tool-use-emits-no-additional-context', () => {
-  const home = freshTmpDir('logbook-nudge-home-')
-  const { home: dataHome, root: data } = freshPluginDataDir('logbook-nudge-data-')
-  try {
-    const transcriptPath = path.join(home, 'transcript.jsonl')
-    writeFileSync(transcriptPath, Buffer.alloc(OVERSIZED_TRANSCRIPT_BYTES, '0'))
-
-    const fixture = readFixture('post-tool-use.json') as object
-    const event = { ...fixture, transcript_path: transcriptPath }
-
-    const result = runHookProcess('post-tool-use', JSON.stringify(event), {
-      env: controlledEnv({ HOME: home, CLAUDE_PLUGIN_DATA: data })
-    })
-
-    assert.equal(result.status, 0, `hook.compaction-nudge-absent: post-tool-use exited nonzero: ${result.stderr}`)
-
-    const parsed: unknown = JSON.parse(result.stdout)
-    assert.deepEqual(
-      parsed,
-      {},
-      'the PostToolUse hook emitted output for an oversized transcript; the compaction nudge has been reintroduced'
-    )
-    assert.equal('hookSpecificOutput' in (parsed as object), false)
-    assert.equal(result.stdout.includes(NUDGE_PHRASE), false)
-  } finally {
-    rmSync(home, { recursive: true, force: true })
-    rmSync(dataHome, { recursive: true, force: true })
-  }
 })

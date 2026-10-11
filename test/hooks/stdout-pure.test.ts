@@ -6,7 +6,6 @@ const REPRESENTATIVE_FIXTURE_OF: Readonly<Record<HookName, string>> = {
   'session-start': 'session-start.startup.json',
   'user-prompt-submit': 'user-prompt-submit.json',
   'pre-tool-use': 'pre-tool-use.json',
-  'post-tool-use': 'post-tool-use.json',
   'session-end': 'session-end.other.json',
   stop: 'stop.json'
 }
