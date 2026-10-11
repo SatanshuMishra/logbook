@@ -12,6 +12,6 @@ description: Use at the start of work to open a new thread.
 5. Wait for the human to name which of those criteria they stand behind and in whose words.
 6. Call `update_thread` with `update_thread.criteria_settled` carrying that answer.
 7. Call `log_session_event` with `log_session_event.body` set to what happened in this session before the thread existed.
-8. Call `resume_thread` with `resume_thread.thread_id` set to the id the opened thread returned.
+8. Call `resume_thread` with `resume_thread.thread_id` set to the id the opened thread returned and `resume_thread.pickup` set to true.
 9. Print the returned `resume_thread.briefing` verbatim.
 10. Stop.

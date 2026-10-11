@@ -142,6 +142,10 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
     {
       phrase: 'pass full_briefing to ask for the whole text back',
       providers: ['resume_thread.full_briefing']
+    },
+    {
+      phrase: 'Set pickup only when the human asked in this turn to pick the thread up',
+      providers: ['resume_thread.pickup']
     }
   ],
   park_thread: [

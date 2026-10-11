@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import { controlledEnv, freshPluginDataDir, freshTmpDir, runHookProcess } from './hook-process.ts'
 
 const RESUME_TOOL_USE_ID = 'toolu_stop_gate_block_reason_length'
+const PICKUP_PROMPT_ID = 'prompt-stop-gate-block-reason-length'
+const THREAD_ID = '01M4KKVS4E22W2MS6CFAMZA4H9'
 const FINAL_LINE = 'FINAL-LINE-MARKER-2f8a6c1e9d3b47a0a5c0e1f9d2b6c7a4'
 const BRIEFING_CHARS = 100000
 const FORMER_TRANSPORT_CLIP_GRAPHEMES = 14000
@@ -19,6 +21,7 @@ const assistantEntry = (content: Record<string, unknown>[]): Record<string, unkn
 
 const toolResultEntry = (toolUseId: string, resultText: string): Record<string, unknown> => ({
   type: 'user',
+  promptId: PICKUP_PROMPT_ID,
   message: {
     role: 'user',
     content: [{ type: 'tool_result', tool_use_id: toolUseId, content: resultText }]
@@ -29,8 +32,18 @@ const buildOversizedBriefing = (): string => `${'a'.repeat(FILLER_LINE_LENGTH)}\
 
 const writeUnechoedResumeTranscript = (transcriptPath: string, briefing: string): void => {
   const lines = [
-    assistantEntry([{ type: 'tool_use', id: RESUME_TOOL_USE_ID, name: 'mcp__ledger__resume_thread', input: {} }]),
-    toolResultEntry(RESUME_TOOL_USE_ID, JSON.stringify({ briefing }))
+    assistantEntry([
+      {
+        type: 'tool_use',
+        id: RESUME_TOOL_USE_ID,
+        name: 'mcp__ledger__resume_thread',
+        input: { thread_id: THREAD_ID, pickup: true }
+      }
+    ]),
+    toolResultEntry(
+      RESUME_TOOL_USE_ID,
+      JSON.stringify({ thread_id: THREAD_ID, briefing, previous_session: null, pickup: true })
+    )
   ]
   writeFileSync(transcriptPath, `${lines.map((entry) => JSON.stringify(entry)).join('\n')}\n`)
 }
@@ -56,7 +69,7 @@ test('hook.stop-gate-block-message-carries-the-briefing-to-its-final-line', () =
       cwd,
       transcript_path: transcriptPath,
       stop_hook_active: false,
-      prompt_id: null
+      prompt_id: PICKUP_PROMPT_ID
     }
 
     const result = runHookProcess('stop', JSON.stringify(event), {

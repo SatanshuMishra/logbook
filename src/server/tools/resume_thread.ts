@@ -19,6 +19,12 @@ const ResumeThreadInputSchema = z.strictObject({
     .optional()
     .describe(
       'render the whole briefing even when this session has already been briefed on this thread; the first resume of a thread in a session returns the whole briefing and later ones return its head, and this asks for the whole text back, for a session whose context no longer holds it'
+    ),
+  pickup: z
+    .boolean()
+    .optional()
+    .describe(
+      'true only when the human asked, in this turn, to pick this thread up, as the preflight and file skills and the preflight prompt do; the reply then says pickup: true, the briefing is owed to the human word for word, and a Stop hook holds the turn until it is printed. Leave it out when resuming for your own use, such as reading the briefing again or taking the thread back to record or park; nothing is then owed.'
     )
 })
 
@@ -32,7 +38,13 @@ const ResumeThreadOutputSchema = z.object({
   briefing: z.string().describe('the finished briefing text for this thread, ready to be shown as it stands'),
   previous_session: PreviousSessionSchema.nullable().describe(
     'the thread a previous session left marked as being worked, or null when this session already held the pointer or nothing was marked'
-  )
+  ),
+  pickup: z
+    .literal(true)
+    .optional()
+    .describe(
+      'present only when the call set pickup, meaning this briefing is owed to the human word for word in this turn'
+    )
 })
 
 type ResumeThreadInput = z.infer<typeof ResumeThreadInputSchema>
@@ -42,7 +54,7 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
   name: 'resume_thread',
   title: 'Resume thread',
   description:
-    `Picks up one thread and returns its finished briefing in a single call: it marks the thread as the one being worked on this machine and renders what the previous session left. Takes one thread id, a ${ULID_LENGTH}-character ULID such as 01M0NDPM0ACCR9CD68PMHYWGGD, which comes from list_threads or the roster resource. Calling it twice on the same thread is not an error and leaves the same single record of what is being worked. The first resume of a thread in a session returns the whole briefing and every later resume of it returns the head of that briefing, which names what it leaves out; pass full_briefing to ask for the whole text back. Either way the text it returns is finished and meant to be shown as it stands.`,
+    `Picks up one thread and returns its finished briefing in a single call: it marks the thread as the one being worked on this machine and renders what the previous session left. Takes one thread id, a ${ULID_LENGTH}-character ULID such as 01M0NDPM0ACCR9CD68PMHYWGGD, which comes from list_threads or the roster resource. Calling it twice on the same thread is not an error and leaves the same single record of what is being worked. The first resume of a thread in a session returns the whole briefing and every later resume of it returns the head of that briefing, which names what it leaves out; pass full_briefing to ask for the whole text back. Either way the text it returns is finished and meant to be shown as it stands. Set pickup only when the human asked in this turn to pick the thread up: the briefing is then owed to the human word for word, and a resume made for your own use owes nothing.`,
   input: ResumeThreadInputSchema,
   output: ResumeThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -99,7 +111,8 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
       structured: {
         thread_id: thread.id,
         briefing,
-        previous_session: previousSession
+        previous_session: previousSession,
+        ...(input.pickup === true ? { pickup: true as const } : {})
       }
     }
   }

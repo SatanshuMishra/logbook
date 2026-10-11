@@ -7,7 +7,7 @@ import { escapeStored } from '../render/escape.ts'
 import { completeThreadIdentifiers } from './completions.ts'
 
 const PREFLIGHT_DEFAULT_TEXT =
-  'Call list_threads (or read logbook://roster), present the roster, and wait for me to choose which thread to resume. Once I choose, call resume_thread with that thread id and show me the returned briefing verbatim.'
+  'Call list_threads (or read logbook://roster), present the roster, and wait for me to choose which thread to resume. Once I choose, call resume_thread with that thread id and pickup set to true, and show me the returned briefing verbatim.'
 
 const preflightMessage = (thread: string | undefined): GetPromptResult => ({
   description: 'Present the resumable roster and let the human choose a thread before resuming it.',
@@ -19,7 +19,7 @@ const preflightMessage = (thread: string | undefined): GetPromptResult => ({
         text:
           thread === undefined
             ? PREFLIGHT_DEFAULT_TEXT
-            : `Call resume_thread for "${escapeStored(thread, 'double-quoted')}" and show me the returned briefing verbatim.`
+            : `Call resume_thread for "${escapeStored(thread, 'double-quoted')}" with pickup set to true and show me the returned briefing verbatim.`
       }
     }
   ]

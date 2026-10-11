@@ -992,6 +992,18 @@ const resumeThreadFullBriefingRecipe = (): Promise<RecipeResult> =>
     })
   )
 
+const resumeThreadPickupRecipe = (): Promise<RecipeResult> =>
+  runOptionalArgRecipe(
+    'resume_thread.pickup',
+    resumeThreadTool,
+    (rt) => openFixtureThread(rt, 'resume-thread-pickup'),
+    (ctx) => ({ thread_id: ctx.threadId }),
+    (ctx) => ({ thread_id: ctx.threadId, pickup: true }),
+    (structured) => ({
+      pickup_marked: structured.pickup === true
+    })
+  )
+
 const ABSENT_COMMIT = '0'.repeat(40)
 
 const recordConflictOn = async (rt: Runtime, conflictedPath: (threadId: string) => string): Promise<string> => {
@@ -1058,6 +1070,7 @@ export const RECIPES: ReadonlyMap<string, () => Promise<RecipeResult>> = new Map
   ['search_ledger.thread', searchLedgerThreadRecipe],
   ['search_ledger.status', searchLedgerStatusRecipe],
   ['resume_thread.full_briefing', resumeThreadFullBriefingRecipe],
+  ['resume_thread.pickup', resumeThreadPickupRecipe],
   ['resolve_conflict.resolutions[].record', resolveConflictRecordRecipe],
   ['resolve_conflict.resolutions[].content', resolveConflictContentRecipe]
 ])
