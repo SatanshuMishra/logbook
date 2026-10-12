@@ -20,7 +20,8 @@ import {
 import { writePointer } from '../../src/domain/pointer.ts'
 import { recordBriefed } from '../../src/domain/briefed.ts'
 import { readLedgerHead, recordSessionBaseline } from '../../src/hooklib/ledger-presence.ts'
-import { COMPACT_BRIEFING_HEADING } from '../../src/render/compact-briefing.ts'
+import { COMPACT_BRIEFING_HEADING, renderCompactBriefing, type CompactBriefingInput } from '../../src/render/compact-briefing.ts'
+import { criterionRecord, decisionRecord, placeOf, riskRecord } from '../../src/domain/record-index.ts'
 import { HOOK_CONTEXT_MAX_CODE_UNITS } from '../../src/render/clip.ts'
 import { renderCrashReport, renderThreadListing, runSessionStart } from '../../src/cli/session-start.ts'
 import { rawGit } from '../support/git-fixture.ts'
@@ -535,5 +536,243 @@ test('compact-briefing.a-session-in-a-subdirectory-gets-its-thread-back', () => 
     assert.ok(compact.includes(held.thread.id), 'the held thread must come back')
     const other = runSessionStart(rt, { session_id: OTHER_SESSION, source: 'startup', cwd: subdirectory }).additionalContext
     assert.ok(other.includes(`marks thread ${held.thread.id} as being`), other.slice(0, 300))
+  })
+})
+
+const CUT_MARKER = '...[shortened]'
+
+const cutKinds = [
+  { kind: 'criterion', one: 'criterion', many: 'criteria' },
+  { kind: 'decision', one: 'decision', many: 'decisions' },
+  { kind: 'risk', one: 'risk', many: 'risks' }
+] as const
+
+const escapedForPattern = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+test('compact-briefing.a-cut-headline-is-counted-in-the-last-line', () => {
+  withFixture((fx) => {
+    const held = seedHeld(fx, {
+      ...ordinaryShape,
+      goal: 'a short goal',
+      nextStep: 'apply the ruling',
+      criteria: Array.from({ length: 3 }, (_unused, index) => repeated(`criterion ${index} bounds every retry path; `, 3500)),
+      decisions: Array.from({ length: 3 }, (_unused, index) => ({
+        title: repeated(`ruling ${index} on the retry budget; `, 3500),
+        outcome: 'keep it'
+      })),
+      risks: Array.from({ length: 3 }, (_unused, index) => repeated(`risk ${index} may stall the gateway; `, 3500)),
+      namedDecisions: 0,
+      namedCriteria: 0,
+      entries: [],
+      namedEntries: 0
+    })
+    holdThread(fx, held.thread.id, HOLDING_SESSION)
+    const context = compactContext(fx)
+    assert.ok(context.length <= HOOK_CONTEXT_MAX_CODE_UNITS, `${context.length} code units`)
+    const lines = context.split('\n')
+    const last = lines[lines.length - 1] ?? ''
+    const addressOf = (kind: string): string =>
+      kind === 'decision' ? 'logbook://decision/<id> or search_ledger' : `logbook://thread/${held.thread.id} or search_ledger`
+    const cutCounts = cutKinds.map(({ kind }) => lines.filter((line) => line.startsWith(`- ${kind} `) && line.endsWith(CUT_MARKER)).length)
+    assert.ok(
+      cutCounts.reduce((sum, count) => sum + count, 0) > 0,
+      `nine headlines of 3,500 characters cannot all be shown whole within the cap:\n${context}`
+    )
+    cutKinds.forEach(({ kind, one, many }, index) => {
+      const count = cutCounts[index] ?? 0
+      const noun = count === 1 ? one : many
+      if (count === 0) {
+        assert.equal(last.includes(`${many} with the headline cut short`) || last.includes(`${one} with the headline cut short`), false, last)
+        return
+      }
+      assert.match(
+        last,
+        new RegExp(`(^|[ ;:])${count} ${noun} with the headline cut short[^;]*\\(${escapedForPattern(addressOf(kind))}\\)`),
+        `${count} ${kind} lines carry the marker, so the last line must count them: ${last}`
+      )
+    })
+  })
+})
+
+test('compact-briefing.a-headline-that-fits-is-shown-whole', () => {
+  withFixture((fx) => {
+    const criterionText = `${'the retry suite covers jitter and backoff '.repeat(9).trim()} and ends here`
+    const held = seedHeld(fx, {
+      ...ordinaryShape,
+      goal: 'a short goal',
+      nextStep: 'apply the ruling',
+      criteria: [criterionText],
+      decisions: [],
+      risks: [],
+      entries: [repeated('x', 11000)],
+      namedEntries: 1,
+      namedDecisions: 0,
+      namedCriteria: 0
+    })
+    holdThread(fx, held.thread.id, HOLDING_SESSION)
+    const context = compactContext(fx)
+    assert.ok(context.length <= HOOK_CONTEXT_MAX_CODE_UNITS, `${context.length} code units`)
+    assert.ok(context.length < HOOK_CONTEXT_MAX_CODE_UNITS / 2, `the briefing has room to spare: ${context.length} code units`)
+    assert.ok(context.includes(criterionText), `the ${criterionText.length}-character criterion fits and must be shown whole:\n${context}`)
+    const lines = context.split('\n')
+    const last = lines[lines.length - 1] ?? ''
+    assert.equal(/criteri/.test(last), false, `no criterion was shortened or left out: ${last}`)
+  })
+})
+
+test('compact-briefing.a-step-record-shown-as-a-cut-line-is-counted-once', () => {
+  withFixture((fx) => {
+    const held = seedHeld(fx, {
+      ...ordinaryShape,
+      goal: 'a short goal',
+      nextStep: 'apply the ruling',
+      criteria: [],
+      decisions: [],
+      risks: [],
+      entries: Array.from({ length: 3 }, (_unused, index) => repeated(`entry ${index} measured the gateway latency; `, 11000)),
+      namedEntries: 3,
+      namedDecisions: 0,
+      namedCriteria: 0
+    })
+    holdThread(fx, held.thread.id, HOLDING_SESSION)
+    const context = compactContext(fx)
+    assert.ok(context.length <= HOOK_CONTEXT_MAX_CODE_UNITS, `${context.length} code units`)
+    const lines = context.split('\n')
+    const last = lines[lines.length - 1] ?? ''
+    const entryLines = lines.filter((line) => line.startsWith('- entry '))
+    assert.equal(entryLines.length, 3, `every named session entry is shown as its line:\n${context}`)
+    assert.ok(
+      entryLines.every((line) => line.endsWith(CUT_MARKER)),
+      `no 11,000-character session entry fits whole:\n${context}`
+    )
+    assert.ok(
+      last.includes(`3 session entries shortened to a headline (logbook://sessions/${held.thread.id} or search_ledger)`),
+      `each named session entry is counted once, as shortened to a headline: ${last}`
+    )
+    assert.equal(/session entr(y|ies) with the headline cut short/.test(last), false, `a record not shown in full is not counted twice: ${last}`)
+  })
+})
+
+test('compact-briefing.a-headline-shown-whole-never-hides-a-later-record', () => {
+  withFixture((fx) => {
+    const headline = `${'keep the jitter cap below the upstream deadline '.repeat(8).trim()} and stop there`
+    const held = buildHeldThread(fx.rt, {
+      ...ordinaryShape,
+      goal: 'a short goal',
+      nextStep: 'apply the ruling',
+      criteria: Array.from({ length: 3 }, (_unused, index) => repeated(`criterion ${index} bounds every retry path; `, 3500)),
+      decisions: [
+        { title: headline, outcome: repeated('the measured latency supports the cap; ', 11000) },
+        ...Array.from({ length: 3 }, (_unused, index) => ({
+          title: repeated(`ruling ${index} on the retry budget; `, 3500),
+          outcome: 'keep it'
+        }))
+      ],
+      risks: Array.from({ length: 3 }, (_unused, index) => repeated(`risk ${index} may stall the gateway; `, 3500)),
+      entries: [],
+      namedEntries: 0,
+      namedDecisions: 1,
+      namedCriteria: 0
+    })
+    const missing = fx.rt.ulid()
+    const thread: Thread = {
+      ...held.thread,
+      spine: { ...held.thread.spine, next_step_records: [...(held.thread.spine.next_step_records ?? []), missing] }
+    }
+    commitInOneStep(fx, heldChanges({ ...held, thread }))
+    holdThread(fx, held.thread.id, HOLDING_SESSION)
+    const context = compactContext(fx)
+    assert.ok(context.length <= HOOK_CONTEXT_MAX_CODE_UNITS, `${context.length} code units`)
+    assert.ok(context.includes(headline), `the named decision's ${headline.length}-character headline fits and must be shown whole:\n${context}`)
+    const ids = [
+      ...held.decisions.map((record) => record.id),
+      ...held.thread.completion_criteria.map((record) => record.id),
+      ...held.thread.spine.open_risks.map((record) => record.id)
+    ]
+    assert.deepEqual(
+      ids.filter((id) => !context.includes(id)),
+      [],
+      `a headline shown whole must not push out a record that fits as a line cut to 200 code units:\n${context}`
+    )
+    assert.ok(context.includes(`Named by this step but not readable now: ${missing}`), `the unreadable id must still be named:\n${context}`)
+  })
+})
+
+const budgetsFrom = (low: number, high: number, step: number): number[] =>
+  Array.from({ length: Math.floor((high - low) / step) + 1 }, (_unused, index) => low + index * step)
+
+test('compact-briefing.stays-within-its-budget-whatever-the-last-line-counts', () => {
+  withFixture((fx) => {
+    const held = buildHeldThread(fx.rt, {
+      ...ordinaryShape,
+      goal: 'a short goal',
+      nextStep: 'apply the ruling',
+      criteria: Array.from({ length: 6 }, (_unused, index) => repeated(`criterion ${index} bounds every retry path; `, 400)),
+      decisions: Array.from({ length: 6 }, (_unused, index) => ({ title: repeated(`ruling ${index} on the retry budget; `, 400), outcome: 'keep it' })),
+      risks: Array.from({ length: 6 }, (_unused, index) => repeated(`risk ${index} may stall the gateway; `, 400)),
+      entries: [],
+      namedEntries: 0,
+      namedDecisions: 0,
+      namedCriteria: 0
+    })
+    const place = placeOf(held.thread)
+    const input: CompactBriefingInput = {
+      thread: held.thread,
+      stepRecords: [],
+      unreadableStepIds: Array.from({ length: 3 }, () => fx.rt.ulid()),
+      openCriteria: held.thread.completion_criteria.map((record) => criterionRecord(place, record)),
+      decisions: held.decisions.map((record) => decisionRecord(place, record, [])),
+      risks: held.thread.spine.open_risks.map((record) => riskRecord(place, record)),
+      entryCount: 0
+    }
+    const lastLines = budgetsFrom(2000, HOOK_CONTEXT_MAX_CODE_UNITS, 11).map((budget) => {
+      const briefing = renderCompactBriefing(input, budget)
+      assert.ok(briefing.length <= budget, `a budget of ${budget} code units got a briefing of ${briefing.length}`)
+      const lines = briefing.split('\n')
+      return lines[lines.length - 1] ?? ''
+    })
+    assert.ok(
+      lastLines.some((last) => ['criteria', 'decisions', 'risks'].every((many) => last.includes(`${many} with the headline cut short`))),
+      'some budget must give a last line that counts cut headlines for criteria, decisions and risks together'
+    )
+  })
+})
+
+test('compact-briefing.cut-lines-are-widened-in-body-order', () => {
+  withFixture((fx) => {
+    const firstText = repeated('criterion 0 bounds every retry path; ', 3500)
+    const secondText = repeated('criterion 1 bounds every retry path; ', 3000)
+    const held = buildHeldThread(fx.rt, {
+      ...ordinaryShape,
+      goal: 'a short goal',
+      nextStep: 'apply the ruling',
+      criteria: [firstText, secondText],
+      decisions: [],
+      risks: [],
+      entries: [],
+      namedEntries: 0,
+      namedDecisions: 0,
+      namedCriteria: 0
+    })
+    const place = placeOf(held.thread)
+    const input: CompactBriefingInput = {
+      thread: held.thread,
+      stepRecords: [],
+      unreadableStepIds: [],
+      openCriteria: held.thread.completion_criteria.map((record) => criterionRecord(place, record)),
+      decisions: [],
+      risks: [],
+      entryCount: 0
+    }
+    const whole = renderCompactBriefing(input, Number.POSITIVE_INFINITY)
+    const shown = budgetsFrom(3000, whole.length - 1, 13).map((budget) => {
+      const briefing = renderCompactBriefing(input, budget)
+      assert.ok(briefing.length <= budget, `a budget of ${budget} code units got a briefing of ${briefing.length}`)
+      return { first: briefing.includes(firstText), second: briefing.includes(secondText) }
+    })
+    assert.ok(
+      shown.some(({ first, second }) => first && !second),
+      'where the unused room fits only one of the two cut lines, the earlier one must be shown whole'
+    )
   })
 })
