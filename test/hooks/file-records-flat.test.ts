@@ -428,3 +428,97 @@ test('hook.file-records.a-rewritten-ledger-leaves-no-stale-record-in-the-cache',
     })
   }
 })
+
+test('hook.file-records.cached-context-matches-the-uncached-context-whatever-the-git-settings', async () => {
+  const placements = ['the repository root', 'a subdirectory'] as const
+  const settings: readonly (readonly [string, string])[][] = [
+    [],
+    [['diff.relative', 'true']],
+    [
+      ['diff.relative', 'true'],
+      ['diff.renames', 'copies'],
+      ['diff.noprefix', 'true'],
+      ['color.ui', 'always'],
+      ['core.quotePath', 'false']
+    ]
+  ]
+  for (const placement of placements) {
+    for (const setting of settings) {
+      const root = mkdtempSync(path.join(tmpdir(), 'logbook-file-records-settings-'))
+      try {
+        const repo = path.join(root, 'repo')
+        const home = path.join(root, 'home')
+        const pluginData = path.join(root, 'plugin-data')
+        const project = placement === 'a subdirectory' ? path.join(repo, 'pkg') : repo
+        mkdirSync(project, { recursive: true })
+        mkdirSync(home)
+        mkdirSync(pluginData)
+        writeFileSync(path.join(home, '.gitconfig'), '')
+        runSetupStep(repo, ['init', '--initial-branch=main'])
+        runSetupStep(repo, ['config', 'user.name', 'Logbook File Records Settings Fixture'])
+        runSetupStep(repo, ['config', 'user.email', 'file-records-settings@logbook.test'])
+        writeFileSync(path.join(project, 'README.md'), 'logbook file-records settings fixture\n')
+        runSetupStep(repo, ['add', '.'])
+        runSetupStep(repo, ['commit', '-m', 'fixture: initial commit'])
+        setting.forEach(([key, value]) => runSetupStep(repo, ['config', key, value]))
+        const rt = testRuntime({ env: { HOME: home, CLAUDE_PLUGIN_DATA: pluginData, CLAUDE_PROJECT_DIR: project }, cwd: project })
+        const call = async (name: string, input: Structured): Promise<Structured> => {
+          const spec = TOOL_SPECS.find((candidate) => candidate.name === name) ?? halt(`no tool is named ${name}`)
+          const reply: ToolReply<Structured> = await spec.handler(rt, STUB_TOOL_CTX, spec.input.parse(input) as never)
+          return reply.ok ? reply.structured : halt(`${name} refused: ${JSON.stringify(reply)}`)
+        }
+        const touch = (sessionId: string): string | null =>
+          fileRecordsContext(rt, {
+            session_id: sessionId,
+            cwd: project,
+            hook_event_name: 'PreToolUse',
+            tool_name: 'Read',
+            tool_input: { file_path: path.join(project, NAMED_FILE) }
+          })
+        const uncached = (): string | null => {
+          const opened = openStore(rt, project)
+          return opened.ok ? renderRecordsNaming(indexRecords(opened.value), NAMED_FILE) : halt(`openStore refused: ${opened.message}`)
+        }
+        const label = `${placement} with ${setting.length === 0 ? 'no settings' : setting.map(([key, value]) => `${key}=${value}`).join(', ')}`
+        const threadId = textOf(
+          await call('open_thread', {
+            title: 'the gateway timeout thread',
+            slug: 'gateway-timeout',
+            active_goal: 'keep the gateway timeout honest',
+            next_step: 'read the gateway module',
+            next_step_records: []
+          }),
+          'thread_id'
+        )
+        const first = textOf(
+          await call('record_decision', {
+            thread_id: threadId,
+            title: `Raise the timeout in ${NAMED_FILE}`,
+            context: `callers asked to raise the timeout in ${NAMED_FILE}`,
+            options: ['raise it', 'leave it'],
+            outcome: 'raise it to 8000'
+          }),
+          'decision_id'
+        )
+        assert.ok(touch('settings-touch-one')?.includes(first), `${label}: the first touch names the first ruling`)
+        const second = textOf(
+          await call('record_decision', {
+            thread_id: threadId,
+            title: `Lower the timeout in ${NAMED_FILE}`,
+            context: 'the upstream deadline forbids raising it',
+            options: ['lower it', 'raise it'],
+            outcome: 'lower it to 3000',
+            supersedes: [first]
+          }),
+          'decision_id'
+        )
+        const cached = touch('settings-touch-two')
+        assert.equal(cached, uncached(), `${label}: the cached context must equal the whole-ledger context`)
+        assert.ok(cached?.includes(second), `${label}: the superseding ruling must be shown`)
+        assert.equal(cached?.includes(first), false, `${label}: the superseded ruling must drop out`)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    }
+  }
+})

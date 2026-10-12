@@ -40,7 +40,7 @@
     "site": "src/render/compact-briefing.ts:9",
     "value": 200,
     "basis": "chosen",
-    "reason": "When the compact briefing does not fit HOOK_CONTEXT_MAX_CODE_UNITS (src/render/clip.ts:42), every id-and-headline line is clipped with the marker to 200 code units, its kind and id kept whole, so one long record never hides the records after it and about forty step records still fit beside the fixed parts. Each of the title, goal and next step keeps at least the smaller of its own length and this width before the step records' lines take their room, so a shortened field still shows its start and the clip marker. 200 code units hold an id and a readable headline while costing at most 600 code units of step lines, about three records.",
+    "reason": "When the compact briefing does not fit HOOK_CONTEXT_MAX_CODE_UNITS (src/render/clip.ts:42), this width lays out every id-and-headline line of the briefing: each is clipped with the marker to 200 code units, its kind and id kept whole, so about forty step records still fit beside the fixed parts. A line is then shown whole only with room that layout leaves unused, earlier lines first, so one long record still never hides the records after it; a criterion, decision or risk line left clipped is counted in the last line. Each of the title, goal and next step keeps at least the smaller of its own length and this width before the step records' lines take their room, so a shortened field still shows its start and the clip marker. 200 code units hold an id and a readable headline while costing at most 600 code units of step lines, about three records.",
     "mirrors": null,
     "mirror_relation": null
   },

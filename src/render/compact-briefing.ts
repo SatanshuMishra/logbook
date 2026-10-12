@@ -20,7 +20,7 @@ export type CompactBriefingInput = {
 
 type FieldName = 'the title and blockage' | 'the goal' | 'the next step'
 
-type Count = { shortened: number; leftOut: number }
+type Count = { shortened: number; cut: number; leftOut: number }
 
 type Tally = {
   records: ReadonlyMap<RecordKind, Count>
@@ -29,12 +29,16 @@ type Tally = {
 }
 
 type Entry =
-  | { type: 'record'; record: IndexedRecord; full: boolean; line: string; keepAfter: number }
+  | { type: 'record'; record: IndexedRecord; full: boolean; line: string; whole: string; keepAfter: number }
   | { type: 'unreadable'; ids: readonly string[] }
+
+type RecordEntry = Extract<Entry, { type: 'record' }>
 
 type Section = { heading: string; empty: string; entries: readonly Entry[] }
 
 type PieceType = 'heading' | 'full' | 'line'
+
+type CutLine = { at: number; whole: string; extra: number; record: IndexedRecord; counted: boolean }
 
 type Fill = {
   pieces: readonly string[]
@@ -42,6 +46,7 @@ type Fill = {
   remaining: number
   headlinesOnly: boolean
   tally: Tally
+  cuts: readonly CutLine[]
 }
 
 type Placing = { fill: Fill; headed: boolean }
@@ -57,6 +62,8 @@ const DECISION_ADDRESS = 'logbook://decision/<id>'
 const SEARCH_TOOL = 'search_ledger'
 
 const KIND_ORDER: readonly RecordKind[] = ['decision', 'risk', 'criterion', 'artifact', 'out-of-scope', 'entry']
+
+const LINE_ONLY_KINDS: ReadonlySet<RecordKind> = new Set(['criterion', 'decision', 'risk'])
 
 const KIND_NOUNS: Readonly<Record<RecordKind, { one: string; many: string }>> = {
   decision: { one: 'decision', many: 'decisions' },
@@ -87,6 +94,7 @@ const listed = (names: readonly string[]): string =>
 const countPhrase = (kind: RecordKind, count: Count): string =>
   [
     ...(count.shortened > 0 ? [`${count.shortened} ${nounFor(kind, count.shortened)} shortened to a headline`] : []),
+    ...(count.cut > 0 ? [`${count.cut} ${nounFor(kind, count.cut)} with the headline cut short`] : []),
     ...(count.leftOut > 0 ? [`${count.leftOut} ${nounFor(kind, count.leftOut)} left out`] : [])
   ].join(' and ')
 
@@ -110,7 +118,7 @@ const omissionLine = (tally: Tally, threadId: string): string | null =>
     ...fieldParts(tally.fields, threadId),
     ...kindParts(threadId, (kind) => {
       const count = tally.records.get(kind)
-      return count === undefined || count.shortened + count.leftOut === 0 ? null : countPhrase(kind, count)
+      return count === undefined || count.shortened + count.cut + count.leftOut === 0 ? null : countPhrase(kind, count)
     }),
     ...unreadableParts(tally.unreadable)
   ])
@@ -121,13 +129,16 @@ const longest = (texts: readonly string[]): string =>
 const worstOmissionLine = (input: CompactBriefingInput): string => {
   const total =
     input.stepRecords.length + input.openCriteria.length + input.decisions.length + input.risks.length + input.unreadableStepIds.length
+  const worstCount = (kind: RecordKind, count: number): Count => ({
+    shortened: count,
+    cut: LINE_ONLY_KINDS.has(kind) ? count : 0,
+    leftOut: count
+  })
   return (
     omissionText([
       ...fieldParts(FIELD_NAMES, input.thread.id),
       ...kindParts(input.thread.id, (kind) =>
-        total === 0
-          ? null
-          : longest([countPhrase(kind, { shortened: total, leftOut: total }), countPhrase(kind, { shortened: 1, leftOut: 1 })])
+        total === 0 ? null : longest([countPhrase(kind, worstCount(kind, total)), countPhrase(kind, worstCount(kind, 1))])
       ),
       ...unreadableParts(total)
     ]) ?? ''
@@ -135,10 +146,11 @@ const worstOmissionLine = (input: CompactBriefingInput): string => {
 }
 
 const withRecordCount = (tally: Tally, kind: RecordKind, change: Partial<Count>): Tally => {
-  const current = tally.records.get(kind) ?? { shortened: 0, leftOut: 0 }
+  const current = tally.records.get(kind) ?? { shortened: 0, cut: 0, leftOut: 0 }
   const records = new Map(tally.records)
   records.set(kind, {
     shortened: current.shortened + (change.shortened ?? 0),
+    cut: current.cut + (change.cut ?? 0),
     leftOut: current.leftOut + (change.leftOut ?? 0)
   })
   return { ...tally, records }
@@ -191,6 +203,17 @@ const push = (fill: Fill, piece: string, type: PieceType): Fill => ({
   remaining: fill.remaining - piece.length
 })
 
+const withCut = (fill: Fill, entry: RecordEntry, line: string, whole: string): Fill =>
+  whole === line
+    ? fill
+    : {
+        ...fill,
+        cuts: [
+          ...fill.cuts,
+          { at: fill.pieces.length - 1, whole, extra: whole.length - line.length, record: entry.record, counted: !entry.full }
+        ]
+      }
+
 const placeEntry = (fill: Fill, entry: Entry, heading: string | null): Fill => {
   const headingPiece = heading === null ? '' : `${SECTION_BREAK}${heading}`
   const afterHeading = heading === null ? fill.last : 'heading'
@@ -204,11 +227,12 @@ const placeEntry = (fill: Fill, entry: Entry, heading: string | null): Fill => {
     const piece = `${SECTION_BREAK}${renderRecordFull(entry.record)}`
     if (headingPiece.length + piece.length + entry.keepAfter <= fill.remaining) return push(withHeading(fill), piece, 'full')
   }
-  const line = `${lineSeparator(afterHeading)}${entry.line}`
+  const separator = lineSeparator(afterHeading)
+  const line = `${separator}${entry.line}`
   if (headingPiece.length + line.length > fill.remaining) {
     return { ...fill, headlinesOnly: true, tally: leaveOut(fill.tally, entry) }
   }
-  const placed = push(withHeading({ ...fill, headlinesOnly: true }), line, 'line')
+  const placed = withCut(push(withHeading({ ...fill, headlinesOnly: true }), line, 'line'), entry, line, `${separator}${entry.whole}`)
   return entry.full ? { ...placed, tally: withRecordCount(placed.tally, entry.record.kind, { shortened: 1 }) } : placed
 }
 
@@ -236,6 +260,7 @@ const stepEntries = (input: CompactBriefingInput, width: number): Entry[] => {
         record,
         full: true,
         line: lines[index] ?? '',
+        whole: headlineLine(record, Number.POSITIVE_INFINITY),
         keepAfter: linesRoomAfterFull(lines.slice(index + 1)) + unreadable
       })
     ),
@@ -244,7 +269,16 @@ const stepEntries = (input: CompactBriefingInput, width: number): Entry[] => {
 }
 
 const headlineEntries = (records: readonly IndexedRecord[], width: number): Entry[] =>
-  records.map((record): Entry => ({ type: 'record', record, full: false, line: headlineLine(record, width), keepAfter: 0 }))
+  records.map(
+    (record): Entry => ({
+      type: 'record',
+      record,
+      full: false,
+      line: headlineLine(record, width),
+      whole: headlineLine(record, Number.POSITIVE_INFINITY),
+      keepAfter: 0
+    })
+  )
 
 const sectionsOf = (input: CompactBriefingInput, width: number): Section[] => [
   {
@@ -275,8 +309,26 @@ const fillBody = (input: CompactBriefingInput, width: number, remaining: number,
     last: null,
     remaining,
     headlinesOnly: false,
-    tally
+    tally,
+    cuts: []
   })
+
+const widenCutLines = (fill: Fill): Fill =>
+  fill.cuts.reduce<Fill>(
+    (widened, cut) =>
+      cut.extra <= widened.remaining
+        ? {
+            ...widened,
+            pieces: widened.pieces.map((piece, index) => (index === cut.at ? cut.whole : piece)),
+            remaining: widened.remaining - cut.extra
+          }
+        : {
+            ...widened,
+            cuts: [...widened.cuts, cut],
+            tally: cut.counted ? withRecordCount(widened.tally, cut.record.kind, { cut: 1 }) : widened.tally
+          },
+    { ...fill, cuts: [] }
+  )
 
 const headerFixed = (thread: Thread): string =>
   [COMPACT_BRIEFING_HEADING, '', `Thread: ${escapeStored(thread.id)}`, `Status: ${escapeStored(thread.status)}`].join(LINE_BREAK)
@@ -357,6 +409,8 @@ export const renderCompactBriefing = (input: CompactBriefingInput, budget: numbe
   const clipped = fields.map((field, index) => clipCodeUnitsWithMarker(field, allotted[index] ?? 0))
   const shortenedFields = FIELD_NAMES.filter((_name, index) => clipped[index] !== fields[index])
   const fieldsLength = clipped.reduce((sum, field) => sum + field.length, 0)
-  const body = fillBody(input, HEADLINE_LINE_MAX_CODE_UNITS, budget - fixed - fieldsLength, { ...EMPTY_TALLY, fields: shortenedFields })
+  const body = widenCutLines(
+    fillBody(input, HEADLINE_LINE_MAX_CODE_UNITS, budget - fixed - fieldsLength, { ...EMPTY_TALLY, fields: shortenedFields })
+  )
   return assemble(input, clipped, body.pieces, body.tally)
 }
