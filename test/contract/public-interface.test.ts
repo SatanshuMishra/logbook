@@ -19,7 +19,8 @@ const SECTION_HEADING = '## Public interface'
 const REGISTER_REL_PATH = 'test/registers/public-interface.json'
 const MAJOR_VERSION_RULE =
   'Renaming or removing a tool, removing an input or output property, or adding a required input is a major version'
-const BASH_IF_RULE = 'Bash(*logbook*)'
+const BASH_GUARD_BINDING = 'for every `Read`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit` and `Bash` call'
+const RETIRED_BASH_IF_RULES = ['Bash(*logbook*)', 'Bash(*CLAUDE_PLUGIN_DATA*)']
 const RETIRED_HOOK_EVENT = 'PostToolUse'
 const OPTION_REASONS_PROPERTY = 'option_reasons'
 
@@ -160,10 +161,12 @@ test('contract.public-interface.readme-documents-the-contract', () => {
   assert.ok(section.includes(REGISTER_REL_PATH), `the ${SECTION_HEADING} section does not name ${REGISTER_REL_PATH}`)
   assert.ok(section.includes(MAJOR_VERSION_RULE), `the ${SECTION_HEADING} section does not state "${MAJOR_VERSION_RULE}"`)
 
-  for (const phrase of [COMPACT_BRIEFING_HEADING, OPTION_REASONS_PROPERTY, BASH_IF_RULE]) {
+  for (const phrase of [COMPACT_BRIEFING_HEADING, OPTION_REASONS_PROPERTY, BASH_GUARD_BINDING]) {
     assert.ok(readme.includes(phrase), `README.md does not mention ${phrase}`)
   }
-  assert.equal(readme.includes(RETIRED_HOOK_EVENT), false, `README.md still mentions ${RETIRED_HOOK_EVENT}`)
+  for (const retired of [RETIRED_HOOK_EVENT, ...RETIRED_BASH_IF_RULES]) {
+    assert.equal(readme.includes(retired), false, `README.md still mentions ${retired}`)
+  }
 })
 
 test('contract.public-interface.version-is-fifteen', () => {
