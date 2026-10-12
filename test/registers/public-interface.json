@@ -1,5 +1,5 @@
 {
-  "major": 15,
+  "series": "0.15",
   "tools": {
     "open_thread": {
       "input": {

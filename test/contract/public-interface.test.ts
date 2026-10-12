@@ -12,13 +12,26 @@ const PACKAGE_PATH = fileURLToPath(new URL('../../package.json', import.meta.url
 const PACKAGE_LOCK_PATH = fileURLToPath(new URL('../../package-lock.json', import.meta.url))
 const PLUGIN_MANIFEST_PATH = fileURLToPath(new URL('../../.claude-plugin/plugin.json', import.meta.url))
 
-const RELEASE_VERSION = '15.0.0'
-const RELEASE_MAJOR = 15
+const RELEASE_VERSION = '0.15.0'
+const RELEASE_SERIES = '0.15'
 const WIRE_PREFIXES = ['mcp__ledger__', 'mcp__plugin_logbook_ledger__'] as const
 const SECTION_HEADING = '## Public interface'
 const REGISTER_REL_PATH = 'test/registers/public-interface.json'
-const MAJOR_VERSION_RULE =
-  'Renaming or removing a tool, removing an input or output property, or adding a required input is a major version'
+const VERSIONING_STATEMENTS = [
+  'beside the release series that published them',
+  'While logbook is below 1.0.0, renaming or removing a tool, removing an input or output property, or adding a required input is a new minor version, and any other change is a new patch version',
+  'numbering returns below 1.0.0 with 0.15.0, which follows 14.0.0'
+]
+const UPGRADE_STATEMENTS = [
+  '`claude plugin marketplace update logbook` followed by `claude plugin update logbook@logbook`',
+  'bring the clone to this release first',
+  'Run the update from inside each project that installs logbook at project or local scope',
+  'If updating leaves 14.0.0 installed',
+  '`claude plugin uninstall logbook@logbook --keep-data` then `claude plugin install logbook@logbook`',
+  'adding the same `--scope project` or `--scope local` to both',
+  "uninstalling the last install deletes the plugin's data directory"
+]
+const RETIRED_RELEASE = /(?<![0-9.])15\.0\.0(?![0-9])/
 const BASH_GUARD_BINDING = 'for every `Read`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit` and `Bash` call'
 const RETIRED_BASH_IF_RULES = ['Bash(*logbook*)', 'Bash(*CLAUDE_PLUGIN_DATA*)']
 const RETIRED_HOOK_EVENT = 'PostToolUse'
@@ -27,7 +40,7 @@ const OPTION_REASONS_PROPERTY = 'option_reasons'
 type Requirement = 'required' | 'optional'
 type ToolContract = { input: Readonly<Record<string, Requirement>>; output: readonly string[] }
 type ToolContracts = Readonly<Record<string, ToolContract>>
-type InterfaceRegister = { major: number; tools: ToolContracts }
+type InterfaceRegister = { series: string; tools: ToolContracts }
 type ListedSchema = { properties?: Record<string, unknown> | undefined; required?: string[] | undefined }
 type ListedTool = { name: string; inputSchema: ListedSchema; outputSchema?: ListedSchema | undefined }
 
@@ -54,10 +67,10 @@ const parseToolContract = (name: string, raw: unknown): ToolContract => {
 const readRegister = (): InterfaceRegister => {
   const raw: unknown = JSON.parse(readFileSync(REGISTER_PATH, 'utf8'))
   assert.ok(isRecord(raw), `${REGISTER_REL_PATH} is not an object`)
-  assert.equal(typeof raw.major, 'number', `${REGISTER_REL_PATH} records no major version`)
+  assert.equal(typeof raw.series, 'string', `${REGISTER_REL_PATH} records no release series`)
   assert.ok(isRecord(raw.tools), `${REGISTER_REL_PATH} has no tools object`)
   return {
-    major: raw.major as number,
+    series: raw.series as string,
     tools: Object.fromEntries(Object.entries(raw.tools).map(([name, contract]) => [name, parseToolContract(name, contract)]))
   }
 }
@@ -159,7 +172,13 @@ test('contract.public-interface.readme-documents-the-contract', () => {
   assert.deepEqual(unnamed, [], `the ${SECTION_HEADING} section does not name:\n${unnamed.join('\n')}`)
 
   assert.ok(section.includes(REGISTER_REL_PATH), `the ${SECTION_HEADING} section does not name ${REGISTER_REL_PATH}`)
-  assert.ok(section.includes(MAJOR_VERSION_RULE), `the ${SECTION_HEADING} section does not state "${MAJOR_VERSION_RULE}"`)
+  for (const statement of VERSIONING_STATEMENTS) {
+    assert.ok(section.includes(statement), `the ${SECTION_HEADING} section does not state "${statement}"`)
+  }
+  for (const statement of UPGRADE_STATEMENTS) {
+    assert.ok(readme.includes(statement), `README.md does not state "${statement}"`)
+  }
+  assert.equal(RETIRED_RELEASE.test(readme), false, 'README.md still names the release 15.0.0')
 
   for (const phrase of [COMPACT_BRIEFING_HEADING, OPTION_REASONS_PROPERTY, BASH_GUARD_BINDING]) {
     assert.ok(readme.includes(phrase), `README.md does not mention ${phrase}`)
@@ -192,5 +211,6 @@ test('contract.public-interface.version-is-fifteen', () => {
       '.claude-plugin/plugin.json': RELEASE_VERSION
     }
   )
-  assert.equal(readRegister().major, RELEASE_MAJOR, `${REGISTER_REL_PATH} must record major ${RELEASE_MAJOR}`)
+  assert.equal(readRegister().series, RELEASE_SERIES, `${REGISTER_REL_PATH} must record the release series ${RELEASE_SERIES}`)
+  assert.equal(readJson(REGISTER_PATH).major, undefined, `${REGISTER_REL_PATH} still records a major version`)
 })
