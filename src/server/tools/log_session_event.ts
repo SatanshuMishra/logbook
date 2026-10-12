@@ -89,7 +89,7 @@ export const logSessionEventTool: ToolSpec<LogSessionEventInput, LogSessionEvent
   name: 'log_session_event',
   title: 'Log session event',
   description:
-    `Appends one entry to a thread's session log, which is the running narrative of what actually happened. Takes the thread id, who is speaking as a short string such as claude or a person's handle, and the entry body as Markdown text up to ${caps.SESSION_BODY_MAX} characters. Entries are append-only and are never merged with each other, so two people logging at the same time both keep their entries. Every entry is readable on demand at logbook://session/{thread_id}/{entry_id}, and the next resume_thread briefing counts this thread's entries and gives their address; an entry is shown in that briefing in full only when the next step names it in next_step_records.`,
+    `Appends one entry to a thread's session log, which is the running narrative of what actually happened. Takes the thread id, who is speaking as a short string such as claude or a person's handle, and the entry body as Markdown text up to ${caps.SESSION_BODY_MAX} characters. Entries are append-only and are never merged with each other, so two people logging at the same time both keep their entries. Every entry is readable on demand at logbook://session/{thread_id}/{entry_id}, and the next resume_thread briefing counts this thread's entries and gives their address; an entry is shown in that briefing in full only when the next step names it in next_step_records. Record here anything a subagent returned that it could not record itself.`,
   input: LogSessionEventInputSchema,
   output: LogSessionEventOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
