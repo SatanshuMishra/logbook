@@ -19,7 +19,7 @@ import {
   type RecordKind,
   type ThreadPlace
 } from '../domain/record-index.ts'
-import { ledgerPathsChangedSince, readLedgerHead } from './ledger-presence.ts'
+import { isAncestorOfLedger, ledgerPathsChangedSince, readLedgerHead } from './ledger-presence.ts'
 
 const CACHE_FILE_NAME = 'hook-record-index.json'
 const CACHE_FORMAT = 'logbook-hook-record-index-1'
@@ -308,6 +308,7 @@ const openForUpdate = (rt: Runtime, layout: StoreLayout): Store => {
 const updatedBody = (rt: Runtime, layout: StoreLayout, cached: CacheBody | null, head: string | null): CacheBody => {
   const store = openForUpdate(rt, layout)
   if (cached === null || cached.commit === null || head === null) return settleLiveness(store, rebuild(store, head))
+  if (!isAncestorOfLedger(rt, layout.projectRoot, cached.commit)) return settleLiveness(store, rebuild(store, head))
   const diff = ledgerPathsChangedSince(rt, layout.projectRoot, cached.commit)
   if (!diff.ok) return settleLiveness(store, rebuild(store, head))
   const changes = diff.paths.flatMap((ledgerPath) => {

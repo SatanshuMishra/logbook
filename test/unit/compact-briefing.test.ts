@@ -442,3 +442,98 @@ test('compact-briefing.stored-text-cannot-forge-structure', () => {
     assert.equal(context.includes('<system-reminder>'), false, `no raw <system-reminder> tag may appear, got:\n${context}`)
   })
 })
+
+const stepRecordIdsOf = (held: HeldThread): string[] => held.thread.spine.next_step_records ?? []
+
+test('compact-briefing.step-record-ids-survive-a-record-too-long-to-show', () => {
+  withFixture((fx) => {
+    const held = seedHeld(fx, {
+      ...ordinaryShape,
+      goal: 'a short goal',
+      nextStep: 'apply the ruling',
+      entries: [repeated('x', 11000)],
+      namedEntries: 1,
+      namedDecisions: 1,
+      namedCriteria: 0
+    })
+    holdThread(fx, held.thread.id, HOLDING_SESSION)
+    const context = compactContext(fx)
+    assert.ok(context.startsWith(COMPACT_BRIEFING_HEADING), context.slice(0, 80))
+    assert.ok(context.length <= HOOK_CONTEXT_MAX_CODE_UNITS, `${context.length} code units`)
+    stepRecordIdsOf(held).forEach((id) => assert.ok(context.includes(id), `step record ${id} must appear`))
+    held.thread.completion_criteria.forEach((criterion) =>
+      assert.ok(context.includes(criterion.id), `open criterion ${criterion.id} fits and must appear`)
+    )
+  })
+})
+
+test('compact-briefing.step-record-ids-survive-a-long-goal-and-next-step', () => {
+  ;[
+    { goal: repeated('goal text ', 6000), nextStep: repeated('next step text ', 6000) },
+    { goal: repeated('goal text ', 20000), nextStep: 'apply the ruling' }
+  ].forEach((fields) => {
+    withFixture((fx) => {
+      const held = seedHeld(fx, { ...ordinaryShape, ...fields, namedDecisions: 1, namedCriteria: 1, namedEntries: 1 })
+      holdThread(fx, held.thread.id, HOLDING_SESSION)
+      const context = compactContext(fx)
+      assert.ok(context.length <= HOOK_CONTEXT_MAX_CODE_UNITS, `${context.length} code units`)
+      stepRecordIdsOf(held).forEach((id) => assert.ok(context.includes(id), `step record ${id} must appear`))
+    })
+  })
+})
+
+test('compact-briefing.step-records-beyond-the-budget-are-shown-in-order-and-counted', () => {
+  withFixture((fx) => {
+    const named = 60
+    const goal = repeated('goal text ', 20000)
+    const nextStep = repeated('next step text ', 20000)
+    const held = seedHeld(fx, {
+      ...ordinaryShape,
+      goal,
+      nextStep,
+      decisions: Array.from({ length: named }, (_unused, index) => ({
+        title: `${repeated('keep the retry rule ', 300)} ${index}`,
+        outcome: 'keep it'
+      })),
+      namedDecisions: named,
+      namedCriteria: 0,
+      entries: [],
+      namedEntries: 0
+    })
+    holdThread(fx, held.thread.id, HOLDING_SESSION)
+    const context = compactContext(fx)
+    assert.ok(context.length <= HOOK_CONTEXT_MAX_CODE_UNITS, `${context.length} code units`)
+    const ids = stepRecordIdsOf(held)
+    const shown = ids.filter((id) => context.includes(id))
+    assert.ok(shown.length > 0, 'room for the step records must be kept before the goal and next step are shared out')
+    assert.ok(shown.length < ids.length, `${named} step records of two hundred code units each cannot all fit`)
+    assert.deepEqual(shown, ids.slice(0, shown.length), 'the step records shown must be the first ones, in order')
+    const lines = context.split('\n')
+    const last = lines[lines.length - 1] ?? ''
+    assert.ok(last.startsWith('Not shown in full') && last.includes('decisions left out'), last)
+    assert.ok(context.includes(goal.slice(0, 100)), 'the goal must keep its start')
+    assert.ok(context.includes(nextStep.slice(0, 100)), 'the next step must keep its start')
+    ;[
+      { prefix: '- criterion ', heading: 'Open criteria:' },
+      { prefix: '- risk ', heading: 'Live risks on this thread:' }
+    ].forEach(({ prefix, heading }) => {
+      const first = lines.findIndex((line) => line.startsWith(prefix))
+      if (first >= 0) assert.ok(lines.slice(0, first).includes(heading), `a ${prefix.trim()} line must come under ${heading}`)
+    })
+  })
+})
+
+test('compact-briefing.a-session-in-a-subdirectory-gets-its-thread-back', () => {
+  withFixture((fx) => {
+    const held = seedHeld(fx)
+    holdThread(fx, held.thread.id, HOLDING_SESSION)
+    const subdirectory = path.join(fx.repo, 'src', 'retry')
+    mkdirSync(subdirectory, { recursive: true })
+    const rt = testRuntime({ env: { ...fx.rt.env, CLAUDE_PROJECT_DIR: fx.repo }, cwd: fx.repo })
+    const compact = runSessionStart(rt, { session_id: HOLDING_SESSION, source: 'compact', cwd: subdirectory }).additionalContext
+    assert.ok(compact.startsWith(COMPACT_BRIEFING_HEADING), compact.slice(0, 80))
+    assert.ok(compact.includes(held.thread.id), 'the held thread must come back')
+    const other = runSessionStart(rt, { session_id: OTHER_SESSION, source: 'startup', cwd: subdirectory }).additionalContext
+    assert.ok(other.includes(`marks thread ${held.thread.id} as being`), other.slice(0, 300))
+  })
+})

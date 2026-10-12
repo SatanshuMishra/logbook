@@ -6,6 +6,8 @@ import { clipCodeUnitsWithMarker, HOOK_CONTEXT_MAX_CODE_UNITS } from './clip.ts'
 
 export const COMPACT_BRIEFING_HEADING = '# Logbook: the thread this session holds'
 
+export const HEADLINE_LINE_MAX_CODE_UNITS = 200
+
 export type CompactBriefingInput = {
   thread: Thread
   stepRecords: readonly IndexedRecord[]
@@ -27,7 +29,7 @@ type Tally = {
 }
 
 type Entry =
-  | { type: 'record'; record: IndexedRecord; full: boolean }
+  | { type: 'record'; record: IndexedRecord; full: boolean; line: string; keepAfter: number }
   | { type: 'unreadable'; ids: readonly string[] }
 
 type Section = { heading: string; empty: string; entries: readonly Entry[] }
@@ -39,12 +41,16 @@ type Fill = {
   last: PieceType | null
   remaining: number
   headlinesOnly: boolean
-  stopped: boolean
   tally: Tally
 }
 
+type Placing = { fill: Fill; headed: boolean }
+
+type Run = { used: number; open: boolean }
+
 const SECTION_BREAK = '\n\n'
 const LINE_BREAK = '\n'
+const STEP_RECORDS_HEADING = 'Records this step needs:'
 const GOAL_LABEL = `${SECTION_BREAK}Goal:${SECTION_BREAK}`
 const NEXT_STEP_LABEL = `${SECTION_BREAK}Next step:${SECTION_BREAK}`
 const DECISION_ADDRESS = 'logbook://decision/<id>'
@@ -143,11 +149,38 @@ const leaveOut = (tally: Tally, entry: Entry): Tally =>
     ? { ...tally, unreadable: tally.unreadable + entry.ids.length }
     : withRecordCount(tally, entry.record.kind, { leftOut: 1 })
 
-const headlineLine = (record: IndexedRecord): string =>
-  `- ${escapeStored(record.kind)} ${escapeStored(record.id)}: ${renderRecordHeadline(record)}`
+const headlineLine = (record: IndexedRecord, width: number): string => {
+  const start = `- ${escapeStored(record.kind)} ${escapeStored(record.id)}: `
+  return `${start}${clipCodeUnitsWithMarker(renderRecordHeadline(record), Math.max(0, width - start.length))}`
+}
 
-const unreadableLine = (ids: readonly string[]): string =>
-  `Named by this step but not readable now: ${ids.map((id) => escapeStored(id)).join(', ')}`
+const unreadablePiece = (ids: readonly string[]): string =>
+  `${SECTION_BREAK}Named by this step but not readable now: ${ids.map((id) => escapeStored(id)).join(', ')}`
+
+const stepRecordLines = (input: CompactBriefingInput, width: number): string[] =>
+  input.stepRecords.map((record) => headlineLine(record, width))
+
+const unreadableRoom = (input: CompactBriefingInput): number =>
+  input.unreadableStepIds.length === 0 ? 0 : unreadablePiece(input.unreadableStepIds).length
+
+const linesRoomAfterFull = (lines: readonly string[]): number =>
+  lines.length === 0
+    ? 0
+    : SECTION_BREAK.length - LINE_BREAK.length + lines.reduce((sum, line) => sum + LINE_BREAK.length + line.length, 0)
+
+const stepRunCosts = (input: CompactBriefingInput, width: number): number[] => {
+  const costs = [
+    ...stepRecordLines(input, width).map((line) => LINE_BREAK.length + line.length),
+    ...(input.unreadableStepIds.length === 0 ? [] : [unreadableRoom(input)])
+  ]
+  return costs.map((cost, index) => (index === 0 ? SECTION_BREAK.length + STEP_RECORDS_HEADING.length + cost : cost))
+}
+
+const reservedRun = (costs: readonly number[], room: number): number =>
+  costs.reduce<Run>(
+    (run, cost) => (run.open && run.used + cost <= room ? { used: run.used + cost, open: true } : { used: run.used, open: false }),
+    { used: 0, open: true }
+  ).used
 
 const lineSeparator = (last: PieceType | null): string => (last === 'heading' || last === 'line' ? LINE_BREAK : SECTION_BREAK)
 
@@ -159,22 +192,21 @@ const push = (fill: Fill, piece: string, type: PieceType): Fill => ({
 })
 
 const placeEntry = (fill: Fill, entry: Entry, heading: string | null): Fill => {
-  if (fill.stopped) return { ...fill, tally: leaveOut(fill.tally, entry) }
   const headingPiece = heading === null ? '' : `${SECTION_BREAK}${heading}`
   const afterHeading = heading === null ? fill.last : 'heading'
   const withHeading = (base: Fill): Fill => (heading === null ? base : push(base, headingPiece, 'heading'))
   if (entry.type === 'unreadable') {
-    const piece = `${SECTION_BREAK}${unreadableLine(entry.ids)}`
+    const piece = unreadablePiece(entry.ids)
     if (headingPiece.length + piece.length <= fill.remaining) return push(withHeading(fill), piece, 'full')
-    return { ...fill, stopped: true, tally: leaveOut(fill.tally, entry) }
+    return { ...fill, tally: leaveOut(fill.tally, entry) }
   }
   if (entry.full && !fill.headlinesOnly) {
     const piece = `${SECTION_BREAK}${renderRecordFull(entry.record)}`
-    if (headingPiece.length + piece.length <= fill.remaining) return push(withHeading(fill), piece, 'full')
+    if (headingPiece.length + piece.length + entry.keepAfter <= fill.remaining) return push(withHeading(fill), piece, 'full')
   }
-  const line = `${lineSeparator(afterHeading)}${headlineLine(entry.record)}`
+  const line = `${lineSeparator(afterHeading)}${entry.line}`
   if (headingPiece.length + line.length > fill.remaining) {
-    return { ...fill, stopped: true, headlinesOnly: true, tally: leaveOut(fill.tally, entry) }
+    return { ...fill, headlinesOnly: true, tally: leaveOut(fill.tally, entry) }
   }
   const placed = push(withHeading({ ...fill, headlinesOnly: true }), line, 'line')
   return entry.full ? { ...placed, tally: withRecordCount(placed.tally, entry.record.kind, { shortened: 1 }) } : placed
@@ -182,49 +214,67 @@ const placeEntry = (fill: Fill, entry: Entry, heading: string | null): Fill => {
 
 const placeSection = (fill: Fill, section: Section): Fill => {
   if (section.entries.length === 0) {
-    if (fill.stopped) return fill
     const piece = `${SECTION_BREAK}${section.empty}`
-    return piece.length <= fill.remaining ? push(fill, piece, 'full') : { ...fill, stopped: true }
+    return piece.length <= fill.remaining ? push(fill, piece, 'full') : fill
   }
-  return section.entries.reduce(
-    (current, entry, index) => placeEntry(current, entry, index === 0 ? section.heading : null),
-    fill
-  )
+  return section.entries.reduce<Placing>(
+    (placing, entry) => {
+      const placed = placeEntry(placing.fill, entry, placing.headed ? null : section.heading)
+      return { fill: placed, headed: placing.headed || placed.pieces.length > placing.fill.pieces.length }
+    },
+    { fill, headed: false }
+  ).fill
 }
 
-const sectionsOf = (input: CompactBriefingInput): Section[] => [
+const stepEntries = (input: CompactBriefingInput, width: number): Entry[] => {
+  const lines = stepRecordLines(input, width)
+  const unreadable = unreadableRoom(input)
+  return [
+    ...input.stepRecords.map(
+      (record, index): Entry => ({
+        type: 'record',
+        record,
+        full: true,
+        line: lines[index] ?? '',
+        keepAfter: linesRoomAfterFull(lines.slice(index + 1)) + unreadable
+      })
+    ),
+    ...(input.unreadableStepIds.length > 0 ? [{ type: 'unreadable', ids: input.unreadableStepIds } as const] : [])
+  ]
+}
+
+const headlineEntries = (records: readonly IndexedRecord[], width: number): Entry[] =>
+  records.map((record): Entry => ({ type: 'record', record, full: false, line: headlineLine(record, width), keepAfter: 0 }))
+
+const sectionsOf = (input: CompactBriefingInput, width: number): Section[] => [
   {
-    heading: 'Records this step needs:',
+    heading: STEP_RECORDS_HEADING,
     empty: 'This step names no records.',
-    entries: [
-      ...input.stepRecords.map((record): Entry => ({ type: 'record', record, full: true })),
-      ...(input.unreadableStepIds.length > 0 ? [{ type: 'unreadable', ids: input.unreadableStepIds } as const] : [])
-    ]
+    entries: stepEntries(input, width)
   },
   {
     heading: 'Open criteria:',
     empty: 'Open criteria: none.',
-    entries: input.openCriteria.map((record): Entry => ({ type: 'record', record, full: false }))
+    entries: headlineEntries(input.openCriteria, width)
   },
   {
     heading: 'Live decisions on this thread, newest first:',
     empty: 'Live decisions on this thread: none.',
-    entries: input.decisions.map((record): Entry => ({ type: 'record', record, full: false }))
+    entries: headlineEntries(input.decisions, width)
   },
   {
     heading: 'Live risks on this thread:',
     empty: 'Live risks on this thread: none.',
-    entries: input.risks.map((record): Entry => ({ type: 'record', record, full: false }))
+    entries: headlineEntries(input.risks, width)
   }
 ]
 
-const fillBody = (input: CompactBriefingInput, remaining: number, tally: Tally): Fill =>
-  sectionsOf(input).reduce(placeSection, {
+const fillBody = (input: CompactBriefingInput, width: number, remaining: number, tally: Tally): Fill =>
+  sectionsOf(input, width).reduce(placeSection, {
     pieces: [],
     last: null,
     remaining,
     headlinesOnly: false,
-    stopped: false,
     tally
   })
 
@@ -246,7 +296,7 @@ const readMore = (input: CompactBriefingInput): string =>
     `- ${SEARCH_TOOL}: every other record, on every thread, closed ones included`
   ].join(LINE_BREAK)
 
-const waterFill = (lengths: readonly number[], total: number): number[] => {
+export const waterFill = (lengths: readonly number[], total: number): number[] => {
   const order = lengths.map((length, index) => ({ length, index })).sort((left, right) => left.length - right.length)
   const allotted = lengths.map(() => 0)
   let left = Math.max(0, total)
@@ -287,19 +337,26 @@ export const renderCompactBriefing = (input: CompactBriefingInput, budget: numbe
     displayStoredBlock(input.thread.spine.active_goal),
     displayStoredBlock(input.thread.spine.next_step)
   ]
-  const whole = assemble(input, fields, fillBody(input, Number.POSITIVE_INFINITY, EMPTY_TALLY).pieces, EMPTY_TALLY)
+  const whole = assemble(
+    input,
+    fields,
+    fillBody(input, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, EMPTY_TALLY).pieces,
+    EMPTY_TALLY
+  )
   if (whole.length <= budget) return whole
 
   const reserve = LINE_BREAK.length + worstOmissionLine(input).length
   const fixed =
     headerFixed(input.thread).length + LINE_BREAK.length + GOAL_LABEL.length + NEXT_STEP_LABEL.length + readMore(input).length + reserve
+  const floors = fields.reduce((sum, field) => sum + Math.min(field.length, HEADLINE_LINE_MAX_CODE_UNITS), 0)
+  const stepRoom = reservedRun(stepRunCosts(input, HEADLINE_LINE_MAX_CODE_UNITS), budget - fixed - floors)
   const allotted = waterFill(
     fields.map((field) => field.length),
-    budget - fixed
+    budget - fixed - stepRoom
   )
   const clipped = fields.map((field, index) => clipCodeUnitsWithMarker(field, allotted[index] ?? 0))
   const shortenedFields = FIELD_NAMES.filter((_name, index) => clipped[index] !== fields[index])
   const fieldsLength = clipped.reduce((sum, field) => sum + field.length, 0)
-  const body = fillBody(input, budget - fixed - fieldsLength, { ...EMPTY_TALLY, fields: shortenedFields })
+  const body = fillBody(input, HEADLINE_LINE_MAX_CODE_UNITS, budget - fixed - fieldsLength, { ...EMPTY_TALLY, fields: shortenedFields })
   return assemble(input, clipped, body.pieces, body.tally)
 }

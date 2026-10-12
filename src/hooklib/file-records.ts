@@ -19,6 +19,8 @@ type Claim = { marker: string }
 
 const nonEmptyString = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null)
 
+export const projectRootFor = (rt: Runtime, cwd: string): string => nonEmptyString(rt.env[PROJECT_DIR_ENV_KEY]) ?? cwd
+
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
@@ -114,8 +116,7 @@ const recordsNaming = (rt: Runtime, layout: StoreLayout, relative: string): stri
   renderRecordsNaming(loadHookRecordIndex(rt, layout).governing, relative)
 
 const firstTouchRecords = (rt: Runtime, touch: FileTouch): string | null => {
-  const projectDir = nonEmptyString(rt.env[PROJECT_DIR_ENV_KEY]) ?? touch.cwd
-  const layout = layoutFor(rt, projectDir)
+  const layout = layoutFor(rt, projectRootFor(rt, touch.cwd))
   if (!layout.ok) return null
   const relative = projectRelativePath(
     canonical(layout.value.projectRoot),
