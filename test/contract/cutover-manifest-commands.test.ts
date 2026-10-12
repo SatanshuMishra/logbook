@@ -96,29 +96,25 @@ const extractHookCommand = (
   if (!Array.isArray(bindings)) {
     throw new Error(`cutover.manifest-commands: hooks.${event} is not an array in hooks.json`)
   }
-  const handlers = bindings.flatMap((binding: unknown, index: number): unknown[] => {
-    if (!isRecord(binding)) {
-      throw new Error(`cutover.manifest-commands: hooks.${event}[${index}] is not an object`)
-    }
-    const hooksArray = binding.hooks
-    if (!Array.isArray(hooksArray)) {
-      throw new Error(`cutover.manifest-commands: hooks.${event}[${index}].hooks is not an array in hooks.json`)
-    }
-    return hooksArray
-  })
-  assert.ok(handlers.length > 0, `hooks.${event} has no handlers`)
-  const commands = handlers.map((handler: unknown, index: number): string => {
-    if (!isRecord(handler) || typeof handler.command !== 'string') {
-      throw new Error(`cutover.manifest-commands: hooks.${event} handler ${index} has no string "command" field`)
-    }
-    return handler.command
-  })
-  const command = commands[0] as string
-  assert.deepStrictEqual(
-    commands,
-    commands.map(() => command),
-    `hooks.${event} handlers do not all run one command: ${JSON.stringify(commands)}`
+  assert.strictEqual(bindings.length, 1, `hooks.${event} binding array has length ${bindings.length}, expected exactly 1`)
+  const binding: unknown = bindings[0]
+  if (!isRecord(binding)) {
+    throw new Error(`cutover.manifest-commands: hooks.${event}[0] is not an object`)
+  }
+  const hooksArray = binding.hooks
+  if (!Array.isArray(hooksArray)) {
+    throw new Error(`cutover.manifest-commands: hooks.${event}[0].hooks is not an array in hooks.json`)
+  }
+  assert.strictEqual(
+    hooksArray.length,
+    1,
+    `hooks.${event}[0].hooks array has length ${hooksArray.length}, expected exactly 1`
   )
+  const commandEntry: unknown = hooksArray[0]
+  if (!isRecord(commandEntry) || typeof commandEntry.command !== 'string') {
+    throw new Error(`cutover.manifest-commands: hooks.${event}[0].hooks[0] has no string "command" field`)
+  }
+  const command = commandEntry.command
   const matched = HOOKS_JSON_COMMAND_PATTERN.exec(command)
   const capturedPath = matched?.[1]
   const absoluteTarget = capturedPath === undefined ? null : path.join(repoRoot, capturedPath)
