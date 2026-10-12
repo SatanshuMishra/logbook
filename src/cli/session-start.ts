@@ -7,8 +7,9 @@ import { criterionRecord, placeOf, type IndexedRecord } from '../domain/record-i
 import { displayStored, escapeStored } from '../render/escape.ts'
 import { clipWithMarker, HOOK_CONTEXT_MAX_CODE_UNITS, markerClipGraphemesWithin } from '../render/clip.ts'
 import { stepRecordIds } from '../render/briefing.ts'
-import { renderCompactBriefing } from '../render/compact-briefing.ts'
+import { renderCompactBriefing, waterFill } from '../render/compact-briefing.ts'
 import { selectRosterThreads } from '../render/roster.ts'
+import { projectRootFor } from '../hooklib/file-records.ts'
 import { readResumeBaseline, recordSessionBaseline } from '../hooklib/ledger-presence.ts'
 import { loadHookRecordIndex, readIndexedRecord } from '../hooklib/record-index-cache.ts'
 
@@ -35,23 +36,25 @@ const renderThreadLine = (thread: Thread): string =>
   `- ${displayStored(thread.slug, 'prose', 'mid-line')}: ${displayStored(thread.title, 'prose', 'mid-line')} -- next: ` +
   `${displayStored(thread.spine.next_step, 'prose', 'mid-line')} (id ${escapeStored(thread.id)})`
 
-type LineBudgets = { title: number; nextStep: number }
+type LineBudgets = { slug: number; title: number; nextStep: number }
 
 const lineBudgets = (thread: Thread, max: number): LineBudgets => {
+  const slug = displayStored(thread.slug, 'prose', 'mid-line')
   const title = displayStored(thread.title, 'prose', 'mid-line')
   const nextStep = displayStored(thread.spine.next_step, 'prose', 'mid-line')
-  const room = Math.max(0, max - (renderThreadLine(thread).length - title.length - nextStep.length))
-  const titleRoom = Math.max(Math.floor(room / 2), room - nextStep.length)
+  const room = Math.max(0, max - (renderThreadLine(thread).length - slug.length - title.length - nextStep.length))
+  const [slugRoom = 0, titleRoom = 0, nextStepRoom = 0] = waterFill([slug.length, title.length, nextStep.length], room)
   return {
+    slug: markerClipGraphemesWithin(slug, slugRoom),
     title: markerClipGraphemesWithin(title, titleRoom),
-    nextStep: markerClipGraphemesWithin(nextStep, room - Math.min(title.length, titleRoom))
+    nextStep: markerClipGraphemesWithin(nextStep, nextStepRoom)
   }
 }
 
 const clippedThreadLine = (thread: Thread, max: number): string => {
   const budgets = lineBudgets(thread, max)
   return (
-    `- ${displayStored(thread.slug, 'prose', 'mid-line')}: ` +
+    `- ${clipWithMarker(displayStored(thread.slug, 'prose', 'mid-line'), budgets.slug)}: ` +
     `${clipWithMarker(displayStored(thread.title, 'prose', 'mid-line'), budgets.title)} -- next: ` +
     `${clipWithMarker(displayStored(thread.spine.next_step, 'prose', 'mid-line'), budgets.nextStep)} (id ${escapeStored(thread.id)})`
   )
@@ -151,12 +154,12 @@ const newestFirst = (left: IndexedRecord, right: IndexedRecord): number => {
   return left.id < right.id ? 1 : -1
 }
 
-const heldThreadBriefing = (rt: Runtime, event: SessionStartEvent): string | null => {
-  const layout = layoutFor(rt, event.cwd)
+const heldThreadBriefing = (rt: Runtime, event: SessionStartEvent, projectRoot: string): string | null => {
+  const layout = layoutFor(rt, projectRoot)
   if (!layout.ok) return null
   const pointer = readPointer(rt, layout.value)
   if (pointer.kind !== 'pointer' || pointer.value.session_id !== event.session_id) return null
-  const opened = openStore(rt, event.cwd)
+  const opened = openStore(rt, projectRoot)
   if (!opened.ok) return null
   const slot = opened.value.readThread(pointer.value.thread_id)
   if (slot === null || slot.quarantined) return null
@@ -188,9 +191,9 @@ const heldThreadBriefing = (rt: Runtime, event: SessionStartEvent): string | nul
   )
 }
 
-const compactBriefingFor = (rt: Runtime, event: SessionStartEvent): string | null => {
+const compactBriefingFor = (rt: Runtime, event: SessionStartEvent, projectRoot: string): string | null => {
   try {
-    return heldThreadBriefing(rt, event)
+    return heldThreadBriefing(rt, event, projectRoot)
   } catch (error) {
     rt.log({
       level: 'warn',
@@ -205,11 +208,12 @@ export type SessionStartReply = { additionalContext: string }
 
 export const runSessionStart = (rt: Runtime, event: SessionStartEvent): SessionStartReply => {
   recordSessionBaselineIfNew(rt, event)
-  const compact = event.source === COMPACT_SOURCE ? compactBriefingFor(rt, event) : null
+  const projectRoot = projectRootFor(rt, event.cwd)
+  const compact = event.source === COMPACT_SOURCE ? compactBriefingFor(rt, event, projectRoot) : null
   if (compact !== null) return { additionalContext: compact }
-  const crashReport = renderCrashReport(rt, event.cwd, event.session_id)
+  const crashReport = renderCrashReport(rt, projectRoot, event.session_id)
   const listingBudget = HOOK_CONTEXT_MAX_CODE_UNITS - (crashReport === null ? 0 : crashReport.length + SECTION_SEPARATOR.length)
-  const listing = renderThreadListing(rt, event.cwd, Math.max(0, listingBudget))
+  const listing = renderThreadListing(rt, projectRoot, Math.max(0, listingBudget))
   const sections = crashReport === null ? [listing] : [crashReport, listing]
   return { additionalContext: sections.join(SECTION_SEPARATOR) }
 }

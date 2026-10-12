@@ -360,3 +360,24 @@ test('hook.session-start-does-not-reset-the-baseline-of-a-session-already-baseli
     })
   })
 })
+
+test('session-start.an-over-long-slug-is-clipped-within-the-cap', () => {
+  withRepo((repo) => {
+    withPluginData((pluginData) => {
+      const rt = runtimeWithHome(pluginData)
+      const [seeded] = seedThreads(rt, repo, 1, () => ({
+        slug: `slug-${'s'.repeat(OVER_LONG_TITLE_CHARS)}`,
+        title: 'a short title',
+        nextStep: 'write the next test'
+      }))
+      if (seeded === undefined) throw new Error('expected a seeded thread')
+      const listing = renderThreadListing(rt, repo)
+      assert.ok(listing.length <= HOOK_CONTEXT_MAX_CODE_UNITS, `the listing is ${listing.length} code units`)
+      assert.ok(listing.includes(seeded.record.id), 'the clipped line must still carry the thread id')
+      assert.ok(listing.includes(CLIP_MARKER), 'the clipped line must carry the clip marker')
+      assert.equal(threadLinesOf(listing).length, 1, 'the one thread must be listed, never dropped')
+      const reply = runSessionStart(rt, { session_id: 'session-start-long-slug', source: 'startup', cwd: repo })
+      assert.ok(reply.additionalContext.length <= HOOK_CONTEXT_MAX_CODE_UNITS, `the reply is ${reply.additionalContext.length} code units`)
+    })
+  })
+})

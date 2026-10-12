@@ -371,3 +371,60 @@ test('hook.file-records.first-touch-time-stays-flat', async () => {
     }
   })
 })
+
+test('hook.file-records.a-rewritten-ledger-leaves-no-stale-record-in-the-cache', async () => {
+  for (const parentage of ['child', 'orphan'] as const) {
+    await withFixture(async (fx) => {
+      const opened = await callTool(fx, 'open_thread', {
+        title: 'the retry thread',
+        slug: 'retry-policy',
+        active_goal: 'keep retries bounded',
+        next_step: 'read the retry module',
+        next_step_records: []
+      })
+      const threadId = textOf(opened, 'thread_id')
+      for (const otherFile of ['lib/flat/one.ts', 'lib/flat/two.ts', 'lib/flat/three.ts']) {
+        await callTool(fx, 'record_decision', {
+          thread_id: threadId,
+          title: `Keep the timeout policy in ${otherFile} as it is`,
+          context: 'the upstream deadline is fixed at three seconds for every caller',
+          options: ['keep the timeout policy as it is', 'change the timeout policy'],
+          outcome: 'keep it, because the deadline is fixed'
+        })
+      }
+      const ruling = textOf(
+        await callTool(fx, 'record_decision', {
+          thread_id: threadId,
+          title: `Keep the retry policy in ${NAMED_FILE} as it is`,
+          context: 'the upstream deadline is fixed at three seconds for every caller',
+          options: ['keep the retry policy as it is', 'change the retry policy'],
+          outcome: 'keep it, because the deadline is fixed'
+        }),
+        'decision_id'
+      )
+      assert.ok((firstTouch(fx, `session-before-${parentage}`, NAMED_FILE) ?? '').includes(ruling), 'the ruling governs the file before the rewrite')
+      const before = gitOk(fx, ['rev-parse', LEDGER_REF])
+      const rulingJson = JSON.parse(gitOk(fx, ['show', `${before}:decisions/${ruling}.json`])) as Record<string, unknown>
+      const sibling = '01KZZZZZZZZZZZZZZZZZZZZZZZ'
+      const indexFile = path.join(fx.scratch, `rewrite-index-${parentage}`)
+      gitOk(fx, ['read-tree', before], { indexFile })
+      gitOk(fx, ['update-index', '--force-remove', `decisions/${ruling}.json`], { indexFile })
+      const blob = gitOk(fx, ['hash-object', '-w', '--stdin'], {
+        stdin: JSON.stringify({ ...rulingJson, id: sibling, title: 'Keep the retry policy in lib/flat/other.ts as it is' })
+      })
+      gitOk(fx, ['update-index', '--add', '--cacheinfo', `100644,${blob},decisions/${sibling}.json`], { indexFile })
+      const tree = gitOk(fx, ['write-tree'], { indexFile })
+      const rewritten = gitOk(fx, ['commit-tree', tree, ...(parentage === 'child' ? ['-p', before] : []), '-m', 'rewrite the ledger without the ruling'])
+      gitOk(fx, ['update-ref', LEDGER_REF, rewritten, before])
+      const touched = readsForFirstTouch(fx, `session-after-${parentage}`, NAMED_FILE)
+      assert.equal(touched.context, uncachedContext(fx, NAMED_FILE), `the ${parentage} rewrite must leave the cached context equal to the uncached one`)
+      assert.ok(touched.context === null || !touched.context.includes(ruling), `the ${parentage} rewrite must drop the removed ruling`)
+      const changedPaths = 2
+      if (parentage === 'child') {
+        assert.ok(touched.reads <= changedPaths, `the child rewrite must re-read only the ${changedPaths} paths it changed, and read ${touched.reads}`)
+      } else {
+        assert.ok(touched.reads > changedPaths, `the orphan rewrite must rebuild the cache from the whole store, and read only ${touched.reads}`)
+      }
+    })
+  }
+})

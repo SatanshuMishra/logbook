@@ -4,6 +4,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ToolContext } from '../../src/server/register.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
+import { git } from '../../src/store/git.ts'
 import { writePointer } from '../../src/domain/pointer.ts'
 import { stopGateVerdict } from '../../src/hooklib/stop-gate.ts'
 import { logSessionEventTool } from '../../src/server/tools/log_session_event.ts'
@@ -367,5 +368,42 @@ test('hook.stop-gate-still-blocks-when-the-worktree-holds-a-file-named-for-the-b
         `the changed ledger paths must still be read despite the name collision, got: ${verdict.reason}`
       )
     }
+  })
+})
+
+test('hook.stop-gate-clears-when-a-rewrite-moves-a-held-thread-entry-away', async () => {
+  await withFixture(async ({ rt, repo }) => {
+    const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
+    const otherId = commitOneThread(rt, repo, 'stop-gate-presence-other')
+    commitSessionEntry(rt, repo, threadId, 'a session entry filed under the held thread before the resume')
+    startSession(rt, repo, SESSION_ID)
+    await resumeAs(rt, SESSION_ID, threadId)
+
+    assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind, 'block')
+
+    const ledgerGit = (args: string[], opts: { stdin?: string; indexFile?: string } = {}): string => {
+      const result = git(rt, repo, args, opts)
+      if (!result.ok) throw new Error(`git ${args.join(' ')}: ${result.stderr}`)
+      return result.stdout.trim()
+    }
+    const before = ledgerGit(['rev-parse', LEDGER_REF])
+    const heldEntry = ledgerGit(['ls-tree', '-r', '--name-only', before, '--', `sessions/${threadId}/`]).split('\n')[0] ?? ''
+    assert.ok(heldEntry.length > 0, 'the held thread must have a session entry to move')
+    const movedEntry = `sessions/${otherId}/${heldEntry.split('/').pop() ?? ''}`
+    const blob = ledgerGit(['rev-parse', `${before}:${heldEntry}`])
+    const indexFile = join(repo, '.git', 'stop-gate-rewrite-index')
+    ledgerGit(['read-tree', before], { indexFile })
+    ledgerGit(['update-index', '--force-remove', heldEntry], { indexFile })
+    ledgerGit(['update-index', '--add', '--cacheinfo', `100644,${blob},${movedEntry}`], { indexFile })
+    const tree = ledgerGit(['write-tree'], { indexFile })
+    const rewritten = ledgerGit(['commit-tree', tree, '-p', before, '-m', 'move the held thread entry to another thread'])
+    ledgerGit(['update-ref', LEDGER_REF, rewritten, before])
+
+    const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
+    assert.equal(
+      verdict.kind,
+      'silent',
+      'a rewrite that removes a held thread entry touches the held thread, as a plain removal of that entry already does'
+    )
   })
 })

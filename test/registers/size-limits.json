@@ -36,8 +36,17 @@
     "mirror_relation": "at-most"
   },
   {
+    "name": "HEADLINE_LINE_MAX_CODE_UNITS",
+    "site": "src/render/compact-briefing.ts:9",
+    "value": 200,
+    "basis": "chosen",
+    "reason": "When the compact briefing does not fit HOOK_CONTEXT_MAX_CODE_UNITS (src/render/clip.ts:42), every id-and-headline line is clipped with the marker to 200 code units, its kind and id kept whole, so one long record never hides the records after it and about forty step records still fit beside the fixed parts. Each of the title, goal and next step keeps at least the smaller of its own length and this width before the step records' lines take their room, so a shortened field still shows its start and the clip marker. 200 code units hold an id and a readable headline while costing at most 600 code units of step lines, about three records.",
+    "mirrors": null,
+    "mirror_relation": null
+  },
+  {
     "name": "LISTED_THREADS_MAX",
-    "site": "src/cli/session-start.ts:17",
+    "site": "src/cli/session-start.ts:18",
     "value": 20,
     "basis": "chosen",
     "reason": "The thread listing that SessionStart and the UserPromptSubmit resume reply carry names at most twenty threads, most recently updated first in the order list_threads uses, then one line counting the rest and naming list_threads and logbook://roster. Twenty covers an ordinary project's open work inside HOOK_CONTEXT_MAX_CODE_UNITS (src/render/clip.ts:42); fewer are listed when twenty lines do not fit.",
