@@ -10,6 +10,7 @@ import { openStore } from '../../src/store/records.ts'
 import { indexRecords, type IndexedRecord } from '../../src/domain/record-index.ts'
 import { renderRecordFull } from '../../src/render/briefing.ts'
 import { renderThreadListing } from '../../src/cli/session-start.ts'
+import { HOOK_CONTEXT_MAX_CODE_UNITS } from '../../src/render/clip.ts'
 import { STUB_TOOL_CTX, withCriterionFixture } from '../support/criterion-fixture.ts'
 import { controlledEnv, entryFor, freshTmpDir, runHookProcessWithEvent, type HookName } from './hook-process.ts'
 
@@ -26,7 +27,6 @@ const MANY_RECORDS_MIN_CHARS = 30000
 const LISTED_THREADS = 3
 const NEXT_STEP_FILLER = 'retune the gateway retry budget '
 const NEXT_STEP_FILLER_REPEATS = 200
-const TRANSPORT_CLIP_GRAPHEMES = 14000
 
 const halt = (detail: string): never => {
   throw new Error(`file-records fixture: ${detail}`)
@@ -252,9 +252,15 @@ test('file-records.many-records-reach-the-session-whole', async () => {
       `expected the context to end with the last decision's final line; it ends: ${output.additionalContext.slice(-120)}`
     )
 
+  })
+})
+
+test('hook.user-prompt-submit-carries-the-bounded-listing', async () => {
+  await withCriterionFixture(async (rt) => {
     await openListedThreads(rt)
+    const unbounded = renderThreadListing(rt, projectOf(rt), Number.POSITIVE_INFINITY)
+    assert.ok(unbounded.length > HOOK_CONTEXT_MAX_CODE_UNITS, 'expected the whole thread listing to exceed the hook context limit')
     const listing = renderThreadListing(rt, projectOf(rt))
-    assert.ok(listing.length > TRANSPORT_CLIP_GRAPHEMES, 'expected the thread listing to exceed the transport clip')
     const prompted = runHookFor(rt, 'user-prompt-submit', {
       session_id: 'many-records',
       cwd: projectOf(rt),
@@ -263,8 +269,9 @@ test('file-records.many-records-reach-the-session-whole', async () => {
     })
     assert.equal(prompted.status, 0, `expected the UserPromptSubmit hook to exit 0, stderr: ${prompted.stderr}`)
     assert.ok(prompted.additionalContext !== null, 'expected the UserPromptSubmit hook to add the thread listing')
-    assert.equal(prompted.additionalContext.length, TRANSPORT_CLIP_GRAPHEMES)
-    assert.ok(listing.startsWith(prompted.additionalContext), 'expected the listing to be clipped from its start')
+    assert.equal(prompted.additionalContext, listing, 'expected the reply to carry the bounded listing whole')
+    assert.ok(prompted.additionalContext.length <= HOOK_CONTEXT_MAX_CODE_UNITS, `the reply is ${prompted.additionalContext.length} code units`)
+    assert.match(prompted.additionalContext, /\n\d+ more open threads?: list_threads or logbook:\/\/roster$/)
   })
 })
 

@@ -88,7 +88,7 @@ test('briefing.resume-returns-the-whole-step-briefing', async () => {
             thread_id: opened,
             title: 'Spread every retry',
             context: 'retries from every caller landed on the gateway in the same millisecond',
-            options: [],
+            options: ['retry at once', 'spread every retry'],
             outcome
           })
         ),

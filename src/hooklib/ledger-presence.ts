@@ -35,14 +35,17 @@ export const ledgerPathsChangedSince = (rt: Runtime, projectRoot: string, baseli
     rt.log({ level: 'warn', event: 'stop-gate.ledger-baseline-not-an-object-id', detail })
     return { ok: false, detail }
   }
-  const result = git(rt, projectRoot, ['diff', '--name-only', '--end-of-options', baselineHead, LEDGER_REF, '--'])
+  const result = git(rt, projectRoot, ['diff-tree', '-r', '--name-only', '--no-renames', '-z', '--end-of-options', baselineHead, LEDGER_REF, '--'])
   if (!result.ok) {
     const detail = result.stderr.trim()
     rt.log({ level: 'warn', event: 'stop-gate.ledger-diff-unreadable', code: result.code, detail })
     return { ok: false, detail }
   }
-  return { ok: true, paths: result.stdout.split('\n').map((line) => line.trim()).filter((line) => line.length > 0) }
+  return { ok: true, paths: result.stdout.split('\0').filter((entry) => entry.length > 0) }
 }
+
+export const isAncestorOfLedger = (rt: Runtime, projectRoot: string, commit: string): boolean =>
+  SHA_PATTERN.test(commit) && git(rt, projectRoot, ['merge-base', '--is-ancestor', '--end-of-options', commit, LEDGER_REF]).ok
 
 export const readResumeBaseline = (layout: StoreLayout): ResumeBaseline | null => {
   const target = baselinePathFor(layout.state)

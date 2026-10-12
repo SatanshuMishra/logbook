@@ -267,7 +267,10 @@ test('record_decision.spawn.contract', async () => {
     const threadId = await createFixtureThread(fx.spawned, fx.published)
     const schema = schemaFor(fx.published, 'record_decision')
     const outputSchema = outputSchemaFor(fx.outputSchemas, 'record_decision')
-    const { valid } = generateSchemaCases('record_decision', schema, { thread_id: threadId })
+    const { valid } = generateSchemaCases('record_decision', schema, {
+      thread_id: threadId,
+      options: ['the synthesised option', 'the other synthesised option']
+    })
     const result = (await fx.spawned.client.callTool({ name: 'record_decision', arguments: valid })) as CallToolResult
     assertOkResult('record_decision', result)
     assertConformsToOutputSchema('record_decision', outputSchema, result.structuredContent)
@@ -275,10 +278,46 @@ test('record_decision.spawn.contract', async () => {
   })
 })
 
+const SUBSTANDARD_DECISION_CASES: readonly { field: string; arguments: Record<string, unknown> }[] = [
+  { field: 'context', arguments: { context: '' } },
+  { field: 'context', arguments: { context: ' \n ' } },
+  { field: 'outcome', arguments: { outcome: '' } },
+  { field: 'outcome', arguments: { outcome: '   ' } },
+  { field: 'options', arguments: { options: [] } },
+  { field: 'options', arguments: { options: ['the only option'] } },
+  { field: 'options', arguments: { options: ['a real option', '  '] } },
+  { field: 'option_reasons', arguments: { option_reasons: [] } },
+  { field: 'option_reasons', arguments: { option_reasons: ['a reason for the first option'] } },
+  { field: 'option_reasons', arguments: { option_reasons: ['a reason for the first option', '\n'] } }
+]
+
 test('record_decision.rejects-invalid', async () => {
   await withSpawnFixture(async (fx) => {
     const threadId = await createFixtureThread(fx.spawned, fx.published)
-    await runRejectsInvalid(fx, 'record_decision', ['maxLength', 'minItems'], { thread_id: threadId })
+    const standardBase = {
+      thread_id: threadId,
+      title: 'a decision held to the standard',
+      context: 'the fixture needs a decision that meets the standard',
+      options: ['meet the standard', 'fall short of it'],
+      outcome: 'meet the standard, because the record must say why'
+    }
+    await runRejectsInvalid(fx, 'record_decision', ['maxLength', 'minItems'], {
+      thread_id: threadId,
+      options: standardBase.options
+    })
+    for (const substandard of SUBSTANDARD_DECISION_CASES) {
+      const result = (await fx.spawned.client.callTool({
+        name: 'record_decision',
+        arguments: { ...standardBase, ...substandard.arguments }
+      })) as CallToolResult
+      const label = JSON.stringify(substandard.arguments)
+      assert.equal(result.isError, true, `record_decision must refuse ${label}`)
+      const text = firstTextOf(result)
+      assert.equal(text.split('\n')[0], `field: ${substandard.field}`, `the refusal of ${label} must name ${substandard.field}`)
+      assert.match(text, /^accepted: /m, `the refusal of ${label} is missing the accepted part`)
+      assert.match(text, /^example: /m, `the refusal of ${label} is missing the example part`)
+      assert.match(text, /^retryable: true/m, `the refusal of ${label} must be retryable`)
+    }
   })
 })
 
@@ -719,7 +758,7 @@ test('decision.supersede-retains', async () => {
       thread_id: threadId,
       title: 'decision B: the reversal',
       context: 'the situation after deciding to reverse',
-      options: ['reverse decision A'],
+      options: ['reverse decision A', 'keep decision A'],
       outcome: 'decision B reversed decision A',
       supersedes: [decisionAId]
     })
@@ -782,7 +821,7 @@ test('decision.supersedes-must-resolve', async () => {
       thread_id: threadId,
       title: 'the prior decision this fixture supersedes',
       context: 'the situation before deciding',
-      options: ['keep the original approach'],
+      options: ['keep the original approach', 'switch approach'],
       outcome: 'the prior decision kept the original approach'
     })
     assert.equal(withoutSupersedes.ok, true, 'omitting supersedes must still record a decision')
@@ -800,7 +839,7 @@ test('decision.supersedes-must-resolve', async () => {
       thread_id: threadId,
       title: 'a decision naming a supersedes id that resolves to nothing',
       context: 'the situation after deciding to reverse a decision that was never recorded',
-      options: ['reverse a decision that does not exist'],
+      options: ['reverse a decision that does not exist', 'leave it standing'],
       outcome: 'this decision must not be recorded at all',
       supersedes: [priorDecisionId, unresolvableDecisionId]
     })
@@ -832,7 +871,7 @@ test('decision.supersedes-must-resolve', async () => {
       thread_id: threadId,
       title: 'a decision naming a supersedes id that resolves',
       context: 'the situation after deciding to reverse the prior decision',
-      options: ['reverse the prior decision'],
+      options: ['reverse the prior decision', 'keep the prior decision'],
       outcome: 'this decision reversed the prior decision',
       supersedes: [priorDecisionId]
     })
@@ -884,8 +923,8 @@ test('decision.records-project-head', async () => {
       return await callTool(recordDecisionTool.handler, rt, {
         thread_id: threadId,
         title: 'project head fixture decision',
-        context: '',
-        options: [],
+        context: 'project head fixture context',
+        options: ['project head fixture option', 'project head fixture other option'],
         outcome: 'project head fixture outcome'
       })
     } finally {
@@ -963,8 +1002,8 @@ const isContentionRefusal = (refusal) => refusal.retryable === true && refusal.f
 const attemptRecord = () => recordDecisionTool.handler(rt, {}, {
   thread_id: threadId,
   title: 'concurrent census probe decision',
-  context: '',
-  options: [],
+  context: 'concurrent census probe context',
+  options: ['concurrent census probe option', 'concurrent census probe other option'],
   outcome: 'concurrent census probe outcome'
 })
 
@@ -1397,8 +1436,8 @@ const buildDriver = (tool: ToolSpec<never, never>, world: CensusWorld): CensusDr
           input: {
             thread_id: world.t0Id,
             title: 'census probe decision without supersedes',
-            context: '',
-            options: [],
+            context: 'census probe context without supersedes',
+            options: ['census probe option', 'census probe other option'],
             outcome: 'census probe outcome without supersedes'
           }
         },
@@ -1407,8 +1446,8 @@ const buildDriver = (tool: ToolSpec<never, never>, world: CensusWorld): CensusDr
           input: {
             thread_id: world.t0Id,
             title: 'census probe decision superseding the seed decision',
-            context: '',
-            options: [],
+            context: 'census probe context superseding the seed decision',
+            options: ['census probe option', 'census probe other option'],
             outcome: 'census probe outcome superseding the seed decision',
             supersedes: [world.decisionId]
           }
@@ -1677,8 +1716,8 @@ test('decision.is-immutable', async () => {
     const seedDecision = await callTool(recordDecisionTool.handler, anaToolRt, {
       thread_id: t0Id,
       title: 'census seed decision',
-      context: '',
-      options: [],
+      context: 'census seed context',
+      options: ['census seed option', 'census seed other option'],
       outcome: 'census seed outcome'
     })
     assert.equal(seedDecision.ok, true)

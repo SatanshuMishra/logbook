@@ -1,9 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ToolContext } from '../../src/server/register.ts'
 import { LEDGER_REF } from '../../src/store/ref.ts'
+import { git } from '../../src/store/git.ts'
 import { writePointer } from '../../src/domain/pointer.ts'
 import { stopGateVerdict } from '../../src/hooklib/stop-gate.ts'
 import { logSessionEventTool } from '../../src/server/tools/log_session_event.ts'
@@ -13,10 +15,12 @@ import {
   commitSessionEntry,
   commitToThread,
   resumeAs,
+  setupFixtureRepo,
   startSession,
   stopEventFor,
   withFixture
 } from '../support/stop-gate-fixture.ts'
+import { testRuntime } from '../support/runtime.ts'
 
 const STUB_TOOL_CTX = {} as unknown as ToolContext
 
@@ -368,4 +372,78 @@ test('hook.stop-gate-still-blocks-when-the-worktree-holds-a-file-named-for-the-b
       )
     }
   })
+})
+
+test('hook.stop-gate-clears-when-a-rewrite-moves-a-held-thread-entry-away', async () => {
+  await withFixture(async ({ rt, repo }) => {
+    const threadId = commitOneThread(rt, repo, 'stop-gate-presence-seed')
+    const otherId = commitOneThread(rt, repo, 'stop-gate-presence-other')
+    commitSessionEntry(rt, repo, threadId, 'a session entry filed under the held thread before the resume')
+    startSession(rt, repo, SESSION_ID)
+    await resumeAs(rt, SESSION_ID, threadId)
+
+    assert.equal(stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false)).kind, 'block')
+
+    const ledgerGit = (args: string[], opts: { stdin?: string; indexFile?: string } = {}): string => {
+      const result = git(rt, repo, args, opts)
+      if (!result.ok) throw new Error(`git ${args.join(' ')}: ${result.stderr}`)
+      return result.stdout.trim()
+    }
+    const before = ledgerGit(['rev-parse', LEDGER_REF])
+    const heldEntry = ledgerGit(['ls-tree', '-r', '--name-only', before, '--', `sessions/${threadId}/`]).split('\n')[0] ?? ''
+    assert.ok(heldEntry.length > 0, 'the held thread must have a session entry to move')
+    const movedEntry = `sessions/${otherId}/${heldEntry.split('/').pop() ?? ''}`
+    const blob = ledgerGit(['rev-parse', `${before}:${heldEntry}`])
+    const indexFile = join(repo, '.git', 'stop-gate-rewrite-index')
+    ledgerGit(['read-tree', before], { indexFile })
+    ledgerGit(['update-index', '--force-remove', heldEntry], { indexFile })
+    ledgerGit(['update-index', '--add', '--cacheinfo', `100644,${blob},${movedEntry}`], { indexFile })
+    const tree = ledgerGit(['write-tree'], { indexFile })
+    const rewritten = ledgerGit(['commit-tree', tree, '-p', before, '-m', 'move the held thread entry to another thread'])
+    ledgerGit(['update-ref', LEDGER_REF, rewritten, before])
+
+    const verdict = stopGateVerdict(rt, stopEventFor(repo, SESSION_ID, false))
+    assert.equal(
+      verdict.kind,
+      'silent',
+      'a rewrite that removes a held thread entry touches the held thread, as a plain removal of that entry already does'
+    )
+  })
+})
+
+test('hook.stop-gate-clears-when-the-held-thread-reaches-the-ledger-whatever-the-git-settings', async () => {
+  const placements = ['the repository root', 'a subdirectory'] as const
+  const settings: readonly (readonly [string, string])[][] = [[], [['diff.relative', 'true']]]
+  for (const placement of placements) {
+    for (const setting of settings) {
+      const root = mkdtempSync(join(tmpdir(), 'logbook-stop-gate-settings-'))
+      try {
+        const repo = join(root, 'repo')
+        const home = join(root, 'home')
+        const pluginData = join(root, 'plugin-data')
+        mkdirSync(repo)
+        mkdirSync(home)
+        mkdirSync(pluginData)
+        writeFileSync(join(home, '.gitconfig'), '')
+        setupFixtureRepo(repo)
+        setting.forEach(([key, value]) => assert.equal(rawGit(repo, ['config', key, value]).status, 0))
+        const project = placement === 'a subdirectory' ? join(repo, 'pkg') : repo
+        mkdirSync(project, { recursive: true })
+        const rt = testRuntime({ env: { HOME: home, CLAUDE_PLUGIN_DATA: pluginData, CLAUDE_PROJECT_DIR: project }, cwd: project })
+        const label = `${placement} with ${setting.length === 0 ? 'no settings' : setting.map(([key, value]) => `${key}=${value}`).join(', ')}`
+        const threadId = commitOneThread(rt, project, 'stop-gate-settings-seed')
+        startSession(rt, project, SESSION_ID)
+        await resumeAs(rt, SESSION_ID, threadId)
+        assert.equal(stopGateVerdict(rt, stopEventFor(project, SESSION_ID, false)).kind, 'block', `${label}: nothing reached the ledger yet`)
+        commitToThread(rt, project, threadId, 'stop-gate-settings-recorded')
+        assert.equal(
+          stopGateVerdict(rt, stopEventFor(project, SESSION_ID, false)).kind,
+          'silent',
+          `${label}: the stop gate must clear once the held thread has reached the ledger`
+        )
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    }
+  }
 })

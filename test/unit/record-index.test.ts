@@ -72,7 +72,10 @@ const openThread = async (rt: Runtime, slug: string, criterion: Structured): Pro
 }
 
 const recordDecision = async (rt: Runtime, threadId: string, fields: Structured): Promise<string> =>
-  textOf(await callTool(rt, 'record_decision', { thread_id: threadId, options: [], ...fields }), 'decision_id')
+  textOf(
+    await callTool(rt, 'record_decision', { thread_id: threadId, options: ['act on it', 'leave it as it is'], ...fields }),
+    'decision_id'
+  )
 
 const addRisk = async (rt: Runtime, threadId: string, risk: Structured): Promise<string> =>
   onlyIdOf(await callTool(rt, 'update_thread', { thread_id: threadId, risks_add: [risk] }), 'risks_added')

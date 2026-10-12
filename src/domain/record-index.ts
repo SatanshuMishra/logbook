@@ -24,17 +24,17 @@ export type IndexedRecord =
   | (IndexedBase & { kind: 'artifact'; artifact: Artifact })
   | (IndexedBase & { kind: 'out-of-scope'; note: OutOfScope })
 
-type ThreadPlace = Pick<IndexedBase, 'threadId' | 'threadSlug' | 'threadStatus'>
+export type ThreadPlace = Pick<IndexedBase, 'threadId' | 'threadSlug' | 'threadStatus'>
 
-const placeOf = (thread: Thread): ThreadPlace => ({
+export const placeOf = (thread: Thread): ThreadPlace => ({
   threadId: thread.id,
   threadSlug: thread.slug,
   threadStatus: thread.status
 })
 
-const readable = <T>(slots: readonly Slot<T>[]): T[] => slots.flatMap((slot) => (slot.quarantined ? [] : [slot.record]))
+export const readable = <T>(slots: readonly Slot<T>[]): T[] => slots.flatMap((slot) => (slot.quarantined ? [] : [slot.record]))
 
-const byId = (left: { id: string }, right: { id: string }): number => {
+export const byId = (left: { id: string }, right: { id: string }): number => {
   if (left.id < right.id) return -1
   return left.id > right.id ? 1 : 0
 }
@@ -42,7 +42,7 @@ const byId = (left: { id: string }, right: { id: string }): number => {
 const unescapedFields = (values: readonly (string | null | undefined)[]): string[] =>
   values.flatMap((value) => (typeof value === 'string' ? [unescapeStored(value)] : []))
 
-const riskRecord = (place: ThreadPlace, risk: Risk): IndexedRecord => ({
+export const riskRecord = (place: ThreadPlace, risk: Risk): IndexedRecord => ({
   kind: 'risk',
   id: risk.id,
   ...place,
@@ -52,7 +52,7 @@ const riskRecord = (place: ThreadPlace, risk: Risk): IndexedRecord => ({
   risk
 })
 
-const criterionRecord = (place: ThreadPlace, criterion: Criterion): IndexedRecord => ({
+export const criterionRecord = (place: ThreadPlace, criterion: Criterion): IndexedRecord => ({
   kind: 'criterion',
   id: criterion.id,
   ...place,
@@ -62,7 +62,7 @@ const criterionRecord = (place: ThreadPlace, criterion: Criterion): IndexedRecor
   criterion
 })
 
-const artifactRecord = (place: ThreadPlace, artifact: Artifact): IndexedRecord => ({
+export const artifactRecord = (place: ThreadPlace, artifact: Artifact): IndexedRecord => ({
   kind: 'artifact',
   id: artifact.id,
   ...place,
@@ -72,7 +72,7 @@ const artifactRecord = (place: ThreadPlace, artifact: Artifact): IndexedRecord =
   artifact
 })
 
-const noteRecord = (place: ThreadPlace, note: OutOfScope): IndexedRecord => ({
+export const noteRecord = (place: ThreadPlace, note: OutOfScope): IndexedRecord => ({
   kind: 'out-of-scope',
   id: note.id,
   ...place,
@@ -82,49 +82,73 @@ const noteRecord = (place: ThreadPlace, note: OutOfScope): IndexedRecord => ({
   note
 })
 
+export const entryRecord = (place: ThreadPlace, entry: SessionEntry): IndexedRecord | null => {
+  const body = unescapeStored(entry.body)
+  if (body.length === 0) return null
+  return {
+    kind: 'entry',
+    id: entry.id,
+    ...place,
+    live: true,
+    supersededBy: [],
+    fields: [body],
+    entry
+  }
+}
+
 const entryRecords = (store: Store, place: ThreadPlace): IndexedRecord[] =>
   readable(store.readSessionEntries(place.threadId)).flatMap((entry) => {
-    const body = unescapeStored(entry.body)
-    if (body.length === 0) return []
-    const record: IndexedRecord = {
-      kind: 'entry',
-      id: entry.id,
-      ...place,
-      live: true,
-      supersededBy: [],
-      fields: [body],
-      entry
-    }
-    return [record]
+    const record = entryRecord(place, entry)
+    return record === null ? [] : [record]
   })
 
-const threadRecords = (store: Store, thread: Thread): IndexedRecord[] => {
+export const threadFileRecords = (thread: Thread): IndexedRecord[] => {
   const place = placeOf(thread)
   return [
     ...thread.spine.open_risks.map((risk) => riskRecord(place, risk)),
     ...thread.completion_criteria.map((criterion) => criterionRecord(place, criterion)),
     ...(thread.artifacts ?? []).map((artifact) => artifactRecord(place, artifact)),
-    ...thread.spine.out_of_scope.map((note) => noteRecord(place, note)),
-    ...entryRecords(store, place)
+    ...thread.spine.out_of_scope.map((note) => noteRecord(place, note))
   ]
 }
 
-const decisionRecords = (decisions: readonly Decision[], threadsById: ReadonlyMap<string, Thread>): IndexedRecord[] =>
-  decisions.flatMap((decision) => {
+const threadRecords = (store: Store, thread: Thread): IndexedRecord[] => [
+  ...threadFileRecords(thread),
+  ...entryRecords(store, placeOf(thread))
+]
+
+export const supersedersOf = (decisions: readonly Pick<Decision, 'id' | 'supersedes'>[]): ReadonlyMap<string, string[]> =>
+  [...decisions].sort(byId).reduce((superseders, other) => {
+    new Set(other.supersedes).forEach((supersededId) => {
+      superseders.set(supersededId, [...(superseders.get(supersededId) ?? []), other.id])
+    })
+    return superseders
+  }, new Map<string, string[]>())
+
+export const decisionRecord = (place: ThreadPlace, decision: Decision, supersededBy: readonly string[]): IndexedRecord => ({
+  kind: 'decision',
+  id: decision.id,
+  ...place,
+  live: supersededBy.length === 0,
+  supersededBy: [...supersededBy],
+  fields: unescapedFields([
+    decision.title,
+    decision.context,
+    ...decision.options,
+    ...(decision.option_reasons ?? []),
+    decision.outcome
+  ]),
+  decision
+})
+
+const decisionRecords = (decisions: readonly Decision[], threadsById: ReadonlyMap<string, Thread>): IndexedRecord[] => {
+  const superseders = supersedersOf(decisions)
+  return decisions.flatMap((decision) => {
     const thread = threadsById.get(decision.thread_id)
     if (thread === undefined) return []
-    const supersededBy = decisions.filter((other) => other.supersedes.includes(decision.id)).map((other) => other.id)
-    const record: IndexedRecord = {
-      kind: 'decision',
-      id: decision.id,
-      ...placeOf(thread),
-      live: supersededBy.length === 0,
-      supersededBy,
-      fields: unescapedFields([decision.title, decision.context, ...decision.options, decision.outcome]),
-      decision
-    }
-    return [record]
+    return [decisionRecord(placeOf(thread), decision, superseders.get(decision.id) ?? [])]
   })
+}
 
 export const indexRecords = (store: Store): IndexedRecord[] => {
   const threads = readable(store.readThreads())

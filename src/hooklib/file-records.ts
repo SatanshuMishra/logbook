@@ -2,12 +2,12 @@ import { closeSync, mkdirSync, openSync, readdirSync, rmSync, unlinkSync } from 
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
-import { createStateDirectory, layoutFor } from '../store/layout.ts'
-import { openStore } from '../store/records.ts'
-import { indexRecords, textNamesPath, type IndexedRecord } from '../domain/record-index.ts'
+import { createStateDirectory, layoutFor, type StoreLayout } from '../store/layout.ts'
+import { textNamesPath, type IndexedRecord } from '../domain/record-index.ts'
 import { renderRecordFull } from '../render/briefing.ts'
 import { escapeStored } from '../render/escape.ts'
 import { canonicaliseExistingPrefix } from './guard.ts'
+import { loadHookRecordIndex } from './record-index-cache.ts'
 
 const FILE_RECORDS_DIRECTORY = 'file-records'
 const FILE_TOOLS: ReadonlySet<string> = new Set(['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
@@ -18,6 +18,8 @@ type FileTouch = { sessionId: string; cwd: string; filePath: string; viewer: str
 type Claim = { marker: string }
 
 const nonEmptyString = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null)
+
+export const projectRootFor = (rt: Runtime, cwd: string): string => nonEmptyString(rt.env[PROJECT_DIR_ENV_KEY]) ?? cwd
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -97,7 +99,7 @@ const release = (held: Claim): void => {
 const governsFile = (record: IndexedRecord, relative: string): boolean =>
   record.live &&
   (record.kind === 'decision' || record.kind === 'risk') &&
-  record.fields.some((field) => textNamesPath(field, relative))
+  record.fields.some((field) => field.includes(relative) && textNamesPath(field, relative))
 
 const renderFileRecords = (relative: string, records: readonly IndexedRecord[]): string => {
   const naming = records.length === 1 ? '1 recorded record names' : `${records.length} recorded records name`
@@ -105,16 +107,16 @@ const renderFileRecords = (relative: string, records: readonly IndexedRecord[]):
   return [header, ...records.map(renderRecordFull)].join('\n\n')
 }
 
-const recordsNaming = (rt: Runtime, projectDir: string, relative: string): string | null => {
-  const opened = openStore(rt, projectDir)
-  if (!opened.ok) throw new Error(`the store did not open: ${opened.message}`)
-  const records = indexRecords(opened.value).filter((record) => governsFile(record, relative))
+export const renderRecordsNaming = (index: readonly IndexedRecord[], relative: string): string | null => {
+  const records = index.filter((record) => governsFile(record, relative))
   return records.length === 0 ? null : renderFileRecords(relative, records)
 }
 
+const recordsNaming = (rt: Runtime, layout: StoreLayout, relative: string): string | null =>
+  renderRecordsNaming(loadHookRecordIndex(rt, layout).governing, relative)
+
 const firstTouchRecords = (rt: Runtime, touch: FileTouch): string | null => {
-  const projectDir = nonEmptyString(rt.env[PROJECT_DIR_ENV_KEY]) ?? touch.cwd
-  const layout = layoutFor(rt, projectDir)
+  const layout = layoutFor(rt, projectRootFor(rt, touch.cwd))
   if (!layout.ok) return null
   const relative = projectRelativePath(
     canonical(layout.value.projectRoot),
@@ -126,7 +128,7 @@ const firstTouchRecords = (rt: Runtime, touch: FileTouch): string | null => {
   const held = claim(openSessionDirectory(layout.value.state, touch.sessionId), touch.viewer, relative)
   if (held === null) return null
   try {
-    return recordsNaming(rt, projectDir, relative)
+    return recordsNaming(rt, layout.value, relative)
   } catch (error) {
     release(held)
     throw error

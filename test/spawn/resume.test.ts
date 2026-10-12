@@ -403,7 +403,7 @@ test('resume.decision-integrity-is-logged-and-the-handle-counts-what-it-could-no
         thread_id: threadId,
         title: 'a resolvable decision for the resume integrity probe',
         context: 'the probe needs one decision that resolves cleanly through resume_thread',
-        options: ['record it plainly'],
+        options: ['record it plainly', 'leave it unrecorded'],
         outcome: 'record it plainly'
       }
     })) as CallToolResult
