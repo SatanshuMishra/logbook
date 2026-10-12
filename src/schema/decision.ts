@@ -13,6 +13,7 @@ export type Decision = {
   title: string
   context: string
   options: string[]
+  option_reasons?: string[] | undefined
   outcome: string
   commit: string | null
   supersedes: Ulid[]
@@ -30,6 +31,12 @@ const DecisionShape = z.object({
     .array(content(z.string().describe('one option that was considered')))
     .max(caps.DECISION_OPTIONS_MAX_ELEMENTS)
     .describe('the options considered')
+    .meta({ class: 'content' }),
+  option_reasons: z
+    .array(content(z.string().describe('why the option at the same position was or was not chosen')))
+    .max(caps.DECISION_OPTIONS_MAX_ELEMENTS)
+    .optional()
+    .describe('one reason per option, in the order of options, absent when none was recorded')
     .meta({ class: 'content' }),
   outcome: content(z.string().describe('the chosen outcome and its rationale')),
   commit: z

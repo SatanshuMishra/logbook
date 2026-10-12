@@ -79,6 +79,7 @@ const FREE_TEXT_LEAF_DISPOSITIONS: Readonly<Record<string, LeafDisposition>> = {
   'record_decision::title': 'allowed',
   'record_decision::context': 'allowed',
   'record_decision::options[]': 'allowed',
+  'record_decision::option_reasons[]': 'allowed',
   'record_decision::outcome': 'allowed',
   'record_decision::scope': 'allowed',
   'update_thread::thread_id': 'allowed',

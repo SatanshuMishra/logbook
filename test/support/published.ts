@@ -176,7 +176,17 @@ export const PUBLISHED_CLAIMS: Readonly<Record<string, readonly PublishedClaim[]
         'record_decision.outcome'
       ]
     },
-    { phrase: 'names the old one in supersedes', providers: ['record_decision.supersedes'] }
+    { phrase: 'names the old one in supersedes', providers: ['record_decision.supersedes'] },
+    {
+      phrase:
+        'A decision needs a context and an outcome that are not blank and at least two options; option_reasons may give one reason per option, in the same order, saying why it was or was not chosen',
+      providers: [
+        'record_decision.context',
+        'record_decision.options',
+        'record_decision.option_reasons',
+        'record_decision.outcome'
+      ]
+    }
   ],
   log_session_event: [
     {

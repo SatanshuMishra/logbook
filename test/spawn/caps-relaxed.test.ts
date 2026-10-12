@@ -559,7 +559,7 @@ test('caps-relaxed.criterion-text-and-check-past-their-former-caps-are-accepted-
       thread_id: threadId,
       title: 'amend the long criteria',
       context: 'the fixture needs a decision to amend criteria against',
-      options: ['amend them'],
+      options: ['amend them', 'leave them as they are'],
       outcome: 'amend them'
     })
     assert.equal(
@@ -645,7 +645,7 @@ test('caps-relaxed.key-decision-title-and-scope-past-their-former-caps-are-accep
       thread_id: threadId,
       title: 'a decision with a long scope',
       context: 'the fixture records a decision whose scope is past its former cap',
-      options: ['record it'],
+      options: ['record it', 'leave it unrecorded'],
       outcome: 'record it',
       scope: RECORDED_SCOPE_PAYLOAD
     })

@@ -221,7 +221,7 @@ const decisionArgs = (threadId: string, label: string, extra: Record<string, unk
   thread_id: threadId,
   title: `${label} title`,
   context: `${label} context`,
-  options: [`${label} option`],
+  options: [`${label} option`, `${label} other option`],
   outcome: `${label} outcome`,
   ...extra
 })
@@ -830,6 +830,15 @@ const RECORD_DECISION_SIMPLE_FIELDS: RecordDecisionFieldSpec[] = [
     extract: (structured, rt, ctx) => ({
       criterion_id:
         keyDecisionFor(rt, ctx, mustBeString(structured.decision_id, 'the recorded decision id'))?.criterion_id ?? null
+    })
+  },
+  {
+    field: 'option_reasons',
+    sentinelExtra: () => ({ option_reasons: ['sentinel reason for the option', 'sentinel reason for the other option'] }),
+    extract: (structured, rt) => ({
+      option_reasons: (
+        readDecisionRecord(rt, mustBeString(structured.decision_id, 'the recorded decision id'))?.option_reasons ?? []
+      ).join(',')
     })
   }
 ]

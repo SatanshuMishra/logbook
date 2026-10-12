@@ -38,3 +38,32 @@ export const clipWithMarkerFloor = (text: string, min: number): string => {
     budget <= 0 ? clipGraphemesFloor(CLIP_MARKER, Math.max(0, min)) : `${clipGraphemesFloor(text, budget)}${CLIP_MARKER}`
   return graphemeCount(candidate) >= total ? text : candidate
 }
+
+export const HOOK_CONTEXT_MAX_CODE_UNITS = 10000
+
+const graphemesWithin = (text: string, maxCodeUnits: number): number => {
+  let codeUnits = 0
+  let graphemes = 0
+  for (const { segment } of GRAPHEME_SEGMENTER.segment(text)) {
+    if (codeUnits + segment.length > maxCodeUnits) break
+    codeUnits += segment.length
+    graphemes += 1
+  }
+  return graphemes
+}
+
+export const markerClipGraphemesWithin = (text: string, maxCodeUnits: number): number => {
+  const total = graphemeCount(text)
+  if (text.length <= maxCodeUnits) return total
+  if (maxCodeUnits <= CLIP_MARKER.length) return Math.max(0, Math.min(maxCodeUnits, total - 1))
+  return Math.min(graphemesWithin(text, maxCodeUnits - CLIP_MARKER.length) + CLIP_MARKER_GRAPHEMES, total - 1)
+}
+
+export const clipCodeUnitsWithMarker = (text: string, max: number): string => {
+  if (!isClipBudget(max)) {
+    throw new Error(
+      `clipCodeUnitsWithMarker received a max of ${String(max)}, which is not a clip budget; pass a non-negative finite code-unit count, or Number.POSITIVE_INFINITY to clip nothing.`
+    )
+  }
+  return Number.isFinite(max) ? clipWithMarker(text, markerClipGraphemesWithin(text, max)) : text
+}

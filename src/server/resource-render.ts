@@ -1,4 +1,4 @@
-import { displayStored, displayStoredBlock, escapeStored, storedSpansLines } from '../render/escape.ts'
+import { displayStored, displayStoredBlock, escapeStored } from '../render/escape.ts'
 import { clipWithMarker } from '../render/clip.ts'
 import type { Binding } from '../schema/binding.ts'
 import type { Decision } from '../schema/decision.ts'
@@ -6,7 +6,7 @@ import type { SessionEntry } from '../schema/session.ts'
 import type { Artifact, Criterion, KeyDecision, OutOfScope, Risk, Thread } from '../schema/thread.ts'
 import { criterionSettledness, nextStepAnchor, riskAnchor } from '../schema/thread.ts'
 import type { Pointer } from '../domain/pointer.ts'
-import type { DecisionIntegrity } from '../render/briefing.ts'
+import { renderDecisionDocument, type DecisionIntegrity } from '../render/briefing.ts'
 
 export type BindingIntegrity = { bound: Binding[]; unreadable: number; unread: boolean }
 
@@ -25,36 +25,7 @@ const SESSION_FIRST_LINE_CLIPPED_NOTE =
   'some entry first lines were shortened to fit this listing; read the entry in full for the rest'
 const BINDINGS_UNREAD_NOTE = 'bindings could not be read; none is claimed either way'
 
-const renderCommitLine = (commit: string | null): string =>
-  typeof commit !== 'string' ? 'Commit: unknown' : 'Commit: ' + escapeStored(commit)
-
-const renderSupersedesLine = (supersedes: readonly string[]): string =>
-  supersedes.length === 0
-    ? 'Supersedes: none'
-    : ['Supersedes:', supersedes.map((id) => escapeStored(id)).join(', ')].join(' ')
-
-const renderDecisionContextField = (context: string): string =>
-  storedSpansLines(context)
-    ? `Context:\n${displayStoredBlock(context)}\n`
-    : `Context: ${displayStored(context, 'prose', 'mid-line')}`
-
-const renderDecisionOutcomeField = (outcome: string): string =>
-  storedSpansLines(outcome)
-    ? `Outcome:\n${displayStoredBlock(outcome)}\n`
-    : `Outcome: ${displayStored(outcome, 'prose', 'mid-line')}`
-
-export const renderDecisionResource = (decision: Decision): string =>
-  [
-    `Decision: ${displayStored(decision.title, 'prose', 'mid-line')}`,
-    `Thread: ${escapeStored(decision.thread_id)}`,
-    renderDecisionContextField(decision.context),
-    'Options:',
-    ...decision.options.map((option) => `- ${displayStored(option)}`),
-    renderDecisionOutcomeField(decision.outcome),
-    renderCommitLine(decision.commit),
-    renderSupersedesLine(decision.supersedes),
-    `Recorded: ${escapeStored(decision.created_at)}`
-  ].join('\n')
+export const renderDecisionResource = (decision: Decision): string => renderDecisionDocument(decision)
 
 export const renderSessionEntryResource = (entry: SessionEntry): string =>
   [

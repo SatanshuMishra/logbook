@@ -159,14 +159,49 @@ const renderOutcomeField = (outcome: string): string =>
     ? `Outcome:\n${displayStoredBlock(outcome)}`
     : `Outcome: ${displayStored(outcome, 'prose', 'mid-line')}`
 
+const renderDecisionOptionLine = (option: string, reason: string | undefined): string =>
+  reason === undefined
+    ? `- ${displayStored(option)}`
+    : `- ${displayStored(option)}: ${displayStored(reason, 'prose', 'mid-line')}`
+
+export const renderDecisionOptionLines = (decision: Decision): string =>
+  [
+    'Options:',
+    ...decision.options.map((option, index) => renderDecisionOptionLine(option, decision.option_reasons?.[index]))
+  ].join('\n')
+
 const renderDecisionFull = (record: IndexedRecord, decision: Decision): string =>
   [
     `Decision ${escapeStored(record.id)} (${renderRecordPlace(record)})${renderSupersededClause(record)}`,
     `Title: ${displayStored(decision.title, 'prose', 'mid-line')}`,
     renderContextField(decision.context),
-    'Options:',
-    ...decision.options.map((option) => `- ${displayStored(option)}`),
+    renderDecisionOptionLines(decision),
     renderOutcomeField(decision.outcome)
+  ].join('\n')
+
+const renderDocumentOutcomeField = (outcome: string): string =>
+  storedSpansLines(outcome)
+    ? `Outcome:\n${displayStoredBlock(outcome)}\n`
+    : `Outcome: ${displayStored(outcome, 'prose', 'mid-line')}`
+
+const renderDocumentCommitLine = (commit: string | null): string =>
+  typeof commit !== 'string' ? 'Commit: unknown' : 'Commit: ' + escapeStored(commit)
+
+const renderDocumentSupersedesLine = (supersedes: readonly string[]): string =>
+  supersedes.length === 0
+    ? 'Supersedes: none'
+    : ['Supersedes:', supersedes.map((id) => escapeStored(id)).join(', ')].join(' ')
+
+export const renderDecisionDocument = (decision: Decision): string =>
+  [
+    `Decision: ${displayStored(decision.title, 'prose', 'mid-line')}`,
+    `Thread: ${escapeStored(decision.thread_id)}`,
+    renderContextField(decision.context),
+    renderDecisionOptionLines(decision),
+    renderDocumentOutcomeField(decision.outcome),
+    renderDocumentCommitLine(decision.commit),
+    renderDocumentSupersedesLine(decision.supersedes),
+    `Recorded: ${escapeStored(decision.created_at)}`
   ].join('\n')
 
 const riskHeading = (record: IndexedRecord, risk: Risk): string =>
@@ -318,7 +353,7 @@ export const renderRecordsInFull = (
   return [namedSection, ...matchedSections, ...unreadableSection].join('\n\n')
 }
 
-const stepRecordIds = (thread: Thread): string[] => {
+export const stepRecordIds = (thread: Thread): string[] => {
   const criterionId = nextStepAnchor(thread.spine)
   return [...(thread.spine.next_step_records ?? []), ...(criterionId === null ? [] : [criterionId])]
 }

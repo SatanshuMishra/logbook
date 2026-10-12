@@ -119,6 +119,13 @@ const RECORD_DECISION_UNKNOWN_CRITERION_PRODUCER: ProducerId = 'server/tools/rec
 const RECORD_DECISION_UNRESOLVED_SUPERSEDES_PRODUCER: ProducerId =
   'server/tools/record_decision.ts#unresolvedSupersedesRefusal'
 const RECORD_DECISION_HANDLER_PRODUCER: ProducerId = 'server/tools/record_decision.ts#recordDecisionTool.handler'
+const RECORD_DECISION_BLANK_FIELD_PRODUCER: ProducerId = 'server/tools/record_decision.ts#blankFieldRefusal'
+const RECORD_DECISION_TOO_FEW_OPTIONS_PRODUCER: ProducerId = 'server/tools/record_decision.ts#tooFewOptionsRefusal'
+const RECORD_DECISION_BLANK_OPTION_PRODUCER: ProducerId = 'server/tools/record_decision.ts#blankOptionRefusal'
+const RECORD_DECISION_OPTION_REASONS_LENGTH_PRODUCER: ProducerId =
+  'server/tools/record_decision.ts#optionReasonsLengthRefusal'
+const RECORD_DECISION_BLANK_OPTION_REASON_PRODUCER: ProducerId =
+  'server/tools/record_decision.ts#blankOptionReasonRefusal'
 
 const LOG_SESSION_EVENT_ACTOR_CAP_PRODUCER: ProducerId = 'server/tools/log_session_event.ts#actorCapRefusal'
 const LOG_SESSION_EVENT_RESERVED_ACTOR_PREFIX_PRODUCER: ProducerId =
@@ -322,7 +329,7 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
       thread_id: threadId,
       title: 'a census title',
       context: 'a census context',
-      options: ['a census option'],
+      options: ['a census option', 'another census option'],
       outcome: 'a census outcome',
       criterion_id: rt.ulid()
     })
@@ -332,11 +339,37 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
     refusals.push({ producer: RECORD_DECISION_UNKNOWN_CRITERION_PRODUCER, refusal: unknownDecisionCriterion.refusal })
     refusals.push({ producer: RECORD_DECISION_HANDLER_PRODUCER, refusal: unknownDecisionCriterion.refusal })
 
+    const substandardDecisions: { producer: ProducerId; overrides: Record<string, unknown> }[] = [
+      { producer: RECORD_DECISION_BLANK_FIELD_PRODUCER, overrides: { context: '  ' } },
+      { producer: RECORD_DECISION_BLANK_FIELD_PRODUCER, overrides: { outcome: '' } },
+      { producer: RECORD_DECISION_TOO_FEW_OPTIONS_PRODUCER, overrides: { options: ['a census option'] } },
+      { producer: RECORD_DECISION_BLANK_OPTION_PRODUCER, overrides: { options: ['a census option', ' '] } },
+      { producer: RECORD_DECISION_OPTION_REASONS_LENGTH_PRODUCER, overrides: { option_reasons: ['a census reason'] } },
+      {
+        producer: RECORD_DECISION_BLANK_OPTION_REASON_PRODUCER,
+        overrides: { option_reasons: ['a census reason', '\n'] }
+      }
+    ]
+    for (const substandard of substandardDecisions) {
+      const refusedDecision = await recordDecisionTool.handler(rt, STUB_TOOL_CTX, {
+        thread_id: threadId,
+        title: 'a census title',
+        context: 'a census context',
+        options: ['a census option', 'another census option'],
+        outcome: 'a census outcome',
+        ...substandard.overrides
+      })
+      if (refusedDecision.ok) {
+        throw new Error(`expected recordDecisionTool to refuse ${JSON.stringify(substandard.overrides)}`)
+      }
+      refusals.push({ producer: substandard.producer, refusal: refusedDecision.refusal })
+    }
+
     const unresolvedSupersedes = await recordDecisionTool.handler(rt, STUB_TOOL_CTX, {
       thread_id: threadId,
       title: 'a census title',
       context: 'a census context',
-      options: ['a census option'],
+      options: ['a census option', 'another census option'],
       outcome: 'a census outcome',
       supersedes: [rt.ulid()]
     })
@@ -444,7 +477,7 @@ const collectToolRefusals = async (): Promise<TaggedRefusal[]> => {
       thread_id: threadId,
       title: 'a census title',
       context: 'a census context',
-      options: ['a census option'],
+      options: ['a census option', 'another census option'],
       outcome: 'a census outcome'
     })
     if (recordDecisionCommitFailure.ok) {

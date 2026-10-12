@@ -15,7 +15,7 @@ import { layoutFor, type StoreLayout } from '../../src/store/layout.ts'
 import { openStore, type RecordChange } from '../../src/store/records.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import { escapeStored, toEscaped } from '../../src/render/escape.ts'
-import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES } from '../../src/render/clip.ts'
+import { CLIP_MARKER, CLIP_MARKER_GRAPHEMES, HOOK_CONTEXT_MAX_CODE_UNITS } from '../../src/render/clip.ts'
 import { BRIEFING_HEADING } from '../../src/render/briefing.ts'
 import { renderThreadListing } from '../../src/cli/session-start.ts'
 import { UNRECOGNIZED_KEY_NAME_MAX } from '../../src/schema/caps.ts'
@@ -1765,20 +1765,29 @@ test('render.clip-is-grapheme-safe', async () => {
       nextStep: EMOJI_NEXT_STEP,
       count: EMOJI_SEEDED_THREADS
     })
-    const unclipped = renderThreadListing(fixtureRuntime(fixture), fixture.repo)
+    const unbounded = renderThreadListing(fixtureRuntime(fixture), fixture.repo, Number.POSITIVE_INFINITY)
     const emitted = sessionStartRosterOf(fixture)
     assert.ok(
-      graphemesOf(unclipped).length > graphemesOf(emitted).length,
-      'the seeded listing was not long enough to force the session-start clip, so this surface would prove nothing'
+      unbounded.length > HOOK_CONTEXT_MAX_CODE_UNITS,
+      'the seeded listing was not long enough to force the session-start bound, so this surface would prove nothing'
     )
     assert.ok(
-      emitted.endsWith(CLIP_MARKER),
-      'the emitted session-start context was clipped and carries no clip marker'
+      emitted.length <= HOOK_CONTEXT_MAX_CODE_UNITS,
+      `the emitted session-start context is ${emitted.length} code units, over ${HOOK_CONTEXT_MAX_CODE_UNITS}`
     )
+    const emittedLines = linesOf(emitted)
+    const lastLine = emittedLines[emittedLines.length - 1] ?? ''
     assert.ok(
-      unclipped.startsWith(emitted.slice(0, -CLIP_MARKER.length)),
-      'the emitted session-start context, with its clip marker removed, is not a prefix of the listing it was clipped from'
+      /^\d+ more open threads?: list_threads or logbook:\/\/roster$/.test(lastLine) ||
+        (lastLine.startsWith('- ') && lastLine.includes(CLIP_MARKER)),
+      `the bounded listing must end with its count line or a clipped thread line, got: ${lastLine.slice(0, 200)}`
     )
+    const unboundedLines = new Set(linesOf(unbounded))
+    const wholeThreadLines = emittedLines.filter((line) => line.startsWith('- ') && !line.includes(CLIP_MARKER))
+    assert.ok(wholeThreadLines.length > 0, 'the bounded listing must list at least one whole thread line')
+    for (const line of wholeThreadLines) {
+      assert.ok(unboundedLines.has(line), 'every listed thread line must be whole, with every emoji it carries intact')
+    }
     assertUtf8Clean('session-start additionalContext', emitted)
   } finally {
     disposeFixture(fixture)

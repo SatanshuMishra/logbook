@@ -22,18 +22,27 @@
     "site": "hooks/lib/io.ts:7",
     "value": 14000,
     "basis": "chosen",
-    "reason": "14,000 is a chosen display ceiling, not a bound. It no longer applies to block messages, which runHook writes whole (hooks/lib/io.ts:67), or to the PreToolUse hook's additionalContext, which clipOutput leaves whole (hooks/lib/io.ts:35-46): Claude Code passes a block message whole and saves hook context over 10,000 characters to a file, showing the session its path and a preview, so the stop gate's verbatim-briefing message and the file trigger's records arrive uncut. It still clips every other string field a hook emits, including the additionalContext of hooks/session-start.ts:14 and hooks/user-prompt-submit.ts:20. This ceiling is the only bound on the thread listing hooks/user-prompt-submit.ts:20 emits straight through from renderThreadListing (src/cli/session-start.ts:31-40), which has no count cap or clip of its own.",
+    "reason": "14,000 is a chosen display ceiling, not a bound. It no longer applies to block messages, which runHook writes whole (hooks/lib/io.ts:67), or to the PreToolUse hook's additionalContext, which clipOutput leaves whole (hooks/lib/io.ts:35-46): Claude Code passes a block message whole and saves hook context over 10,000 characters to a file, showing the session its path and a preview, so the stop gate's verbatim-briefing message and the file trigger's records arrive uncut. It still clips every other string field a hook emits, including the additionalContext of hooks/session-start.ts:14 and hooks/user-prompt-submit.ts:20, which src/cli/session-start.ts already bounds at HOOK_CONTEXT_MAX_CODE_UNITS (src/render/clip.ts:42) code units, so this clip never shortens them.",
     "mirrors": null,
     "mirror_relation": null
   },
   {
-    "name": "BANNER_MAX_GRAPHEMES",
-    "site": "src/cli/session-start.ts:12",
+    "name": "HOOK_CONTEXT_MAX_CODE_UNITS",
+    "site": "src/render/clip.ts:42",
     "value": 10000,
     "basis": "derived",
-    "reason": "Declared at src/cli/session-start.ts:12 rather than imported because src/ must not depend on hooks/; the equality with the hook transport was deliberately broken when the transport rose to 14000 to fit an ordinary briefing's block message, and the invariant that actually matters is preserved and strengthened, namely that the banner clips itself first through clipWithMarker so the transport truncation is a no-op and never removes the marker (docs/plans/2026-08-28-continuity-goal-model/U7-capture.md:633).",
+    "reason": "Claude Code caps the additionalContext a hook adds at 10,000 characters; past that it saves the text to a file, shows a 2,000-character preview and does not ask the model to read the rest. Measuring JavaScript string length, UTF-16 code units, keeps the compact briefing (src/render/compact-briefing.ts) and the thread listing (renderThreadListing in src/cli/session-start.ts) under that cap however it counts, because code units bound code points and graphemes. It is the one home of that limit, and it sits at or under the hook transport clip so the transport never cuts either surface.",
     "mirrors": "hooks/lib/io.ts:7",
     "mirror_relation": "at-most"
+  },
+  {
+    "name": "LISTED_THREADS_MAX",
+    "site": "src/cli/session-start.ts:17",
+    "value": 20,
+    "basis": "chosen",
+    "reason": "The thread listing that SessionStart and the UserPromptSubmit resume reply carry names at most twenty threads, most recently updated first in the order list_threads uses, then one line counting the rest and naming list_threads and logbook://roster. Twenty covers an ordinary project's open work inside HOOK_CONTEXT_MAX_CODE_UNITS (src/render/clip.ts:42); fewer are listed when twenty lines do not fit.",
+    "mirrors": null,
+    "mirror_relation": null
   },
   {
     "name": "REF_ABSENT_EXIT_CODE",
