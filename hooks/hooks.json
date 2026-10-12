@@ -12,12 +12,6 @@
         "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.ts\"", "timeout": 10 }]
       }
     ],
-    "PostToolUse": [
-      {
-        "matcher": "^Bash$",
-        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/post-tool-use.ts\"", "timeout": 15 }]
-      }
-    ],
     "SessionEnd": [
       { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.ts\"", "timeout": 15 }] }
     ],

@@ -114,14 +114,6 @@
       "capturedFrom": "scratchpad/probe/run2/out/hooks-PreToolUse.jsonl"
     },
     {
-      "file": "post-tool-use.json",
-      "event": "PostToolUse",
-      "type": "PostToolUseEvent",
-      "status": "CAPTURED",
-      "clientVersion": "2.1.241",
-      "capturedFrom": "scratchpad/probe/run2/out/hooks-PostToolUse.jsonl"
-    },
-    {
       "file": "stop.json",
       "event": "Stop",
       "type": "StopEvent",

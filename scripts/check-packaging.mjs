@@ -7,7 +7,6 @@ export const REQUIRED_FILES = [
   'bin/logbook-server.ts',
   'hooks/hooks.json',
   'hooks/lib/io.ts',
-  'hooks/post-tool-use.ts',
   'hooks/pre-tool-use.ts',
   'hooks/session-end.ts',
   'hooks/session-start.ts',
@@ -48,7 +47,6 @@ export const REQUIRED_HOOK_EVENTS = [
   'SessionStart',
   'UserPromptSubmit',
   'PreToolUse',
-  'PostToolUse',
   'SessionEnd',
   'Stop'
 ]
@@ -57,7 +55,6 @@ export const EVENT_HOOK_FILES = {
   SessionStart: 'session-start',
   UserPromptSubmit: 'user-prompt-submit',
   PreToolUse: 'pre-tool-use',
-  PostToolUse: 'post-tool-use',
   SessionEnd: 'session-end',
   Stop: 'stop'
 }

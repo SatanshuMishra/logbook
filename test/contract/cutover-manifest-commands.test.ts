@@ -16,13 +16,12 @@ const EXPECTED_EVENTS = [
   'SessionStart',
   'UserPromptSubmit',
   'PreToolUse',
-  'PostToolUse',
   'SessionEnd',
   'Stop'
 ] as const
 type HookEventName = (typeof EXPECTED_EVENTS)[number]
 
-const EXPECTED_POPULATION_SIZE = 7
+const EXPECTED_POPULATION_SIZE = 6
 
 const HOOKS_JSON_COMMAND_PATTERN = /^node "\$\{CLAUDE_PLUGIN_ROOT\}(\/[A-Za-z0-9._\/-]+)"$/
 const MCP_ARG_PATTERN = /^\$\{CLAUDE_PLUGIN_ROOT\}(\/[A-Za-z0-9._\/-]+)$/
@@ -31,7 +30,6 @@ const FIXTURE_FILE_FOR_EVENT: Record<HookEventName, string> = {
   SessionStart: 'session-start.startup.json',
   UserPromptSubmit: 'user-prompt-submit.json',
   PreToolUse: 'pre-tool-use.json',
-  PostToolUse: 'post-tool-use.json',
   SessionEnd: 'session-end.other.json',
   Stop: 'stop.json'
 }

@@ -7,7 +7,6 @@ import { fileURLToPath } from 'node:url'
 import type * as SessionStartEntry from '../../hooks/session-start.ts'
 import type * as UserPromptSubmitEntry from '../../hooks/user-prompt-submit.ts'
 import type * as PreToolUseEntry from '../../hooks/pre-tool-use.ts'
-import type * as PostToolUseEntry from '../../hooks/post-tool-use.ts'
 import type * as SessionEndEntry from '../../hooks/session-end.ts'
 import type * as StopEntry from '../../hooks/stop.ts'
 
@@ -15,7 +14,6 @@ type HookEntryModules = {
   'session-start': typeof SessionStartEntry
   'user-prompt-submit': typeof UserPromptSubmitEntry
   'pre-tool-use': typeof PreToolUseEntry
-  'post-tool-use': typeof PostToolUseEntry
   'session-end': typeof SessionEndEntry
   stop: typeof StopEntry
 }
@@ -26,7 +24,6 @@ export const EVENT_NAME_OF = {
   'session-start': 'SessionStart',
   'user-prompt-submit': 'UserPromptSubmit',
   'pre-tool-use': 'PreToolUse',
-  'post-tool-use': 'PostToolUse',
   'session-end': 'SessionEnd',
   stop: 'Stop'
 } as const satisfies Record<HookName, string>
