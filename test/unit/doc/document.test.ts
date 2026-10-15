@@ -268,6 +268,52 @@ test('document.splits-off-the-update-note', async () => {
   assert.equal(parsed.noteLine, 38)
 })
 
+test('document.reads-only-item-numbers-it-can-count-past', async () => {
+  const { parseDocument } = await import('../../../src/doc/document.ts')
+  const parsed = parseDocument(
+    buildDocument({
+      bodies: { decisions: ['- D9007199254740990 last', '- D9007199254740991 over', '- D99999999999999999999 big'] }
+    })
+  )
+  assert.deepEqual(
+    parsed.items.filter((item) => item.section === 'Decisions in force'),
+    [
+      {
+        id: 'D9007199254740990',
+        letter: 'D',
+        number: 9007199254740990,
+        box: null,
+        text: 'last',
+        section: 'Decisions in force',
+        line: 24
+      }
+    ]
+  )
+  assert.deepEqual(parsed.badLines, [
+    { line: 25, text: '- D9007199254740991 over', section: 'Decisions in force' },
+    { line: 26, text: '- D99999999999999999999 big', section: 'Decisions in force' }
+  ])
+})
+
+test('document.reads-next-ids-per-letter', async () => {
+  const { parseDocument } = await import('../../../src/doc/document.ts')
+  const nextIdsLines = [
+    'Next ids: c3 D99999999999999999999 R4 S5',
+    'Next ids: c3 R4 S5',
+    'Next ids: c3 D2 D7 R4 S5',
+    'Next ids: c3 Dx R4 S5'
+  ]
+  for (const nextIdsLine of nextIdsLines) {
+    const parsed = parseDocument(
+      buildDocument({
+        header: [TITLE_LINE, 'Status: active', `Updated: ${OLD_TIME}`, nextIdsLine],
+        bodies: { decisions: ['- D1 Keep the session cookie', '- D4 Use Postgres'] }
+      })
+    )
+    assert.deepEqual(parsed.nextIds, { c: 3, D: 5, R: 4, S: 5 }, nextIdsLine)
+  }
+})
+
 test('document.normalise-removes-the-update-note', async () => {
   const { normaliseDocument } = await import('../../../src/doc/document.ts')
   const version = buildDocument({ note: ['Moved the risk.', 'Removed: R9 because it passed'] })
@@ -375,6 +421,35 @@ test('document.normalise-inserts-missing-header-lines', async () => {
   )
 })
 
+test('document.normalise-keeps-the-version-ending', async () => {
+  const { normaliseDocument } = await import('../../../src/doc/document.ts')
+  const header = [TITLE_LINE, 'Status: active', `Updated: ${OLD_TIME}`, 'Next ids: c1 D1 R1 S1']
+  const acceptedHeader = [TITLE_LINE, 'Status: active', `Updated: ${ACCEPT_TIME}`, 'Next ids: c2 D2 R2 S2']
+  const options = { acceptedAt: ACCEPT_TIME, previousNextIds: { c: 2, D: 2, R: 2, S: 2 } }
+  const differingLines = (left: readonly string[], right: readonly string[]): number[] =>
+    left.flatMap((line, index) => (line === right[index] ? [] : [index + 1]))
+
+  const blankEnding = `${buildDocument({ header })}\n\n`
+  assert.ok(blankEnding.endsWith('- Spec: docs/specs/login.md\n\n\n'), blankEnding)
+  const blankResult = normaliseDocument(blankEnding, options)
+  const blankBefore = blankEnding.split('\n')
+  const blankAfter = blankResult.split('\n')
+  assert.equal(blankAfter.length, blankBefore.length)
+  assert.deepEqual(differingLines(blankAfter, blankBefore), [3, 4])
+  assert.ok(blankResult.endsWith('- Spec: docs/specs/login.md\n\n\n'), blankResult)
+  assert.equal(blankResult, `${buildDocument({ header: acceptedHeader })}\n\n`)
+
+  const noBreak = buildDocument({ header }).slice(0, -1)
+  assert.ok(noBreak.endsWith('- Spec: docs/specs/login.md'), noBreak)
+  const noBreakResult = normaliseDocument(noBreak, options)
+  assert.ok(noBreakResult.endsWith('- Spec: docs/specs/login.md\n'), noBreakResult)
+  const noBreakBefore = noBreak.split('\n')
+  const noBreakAfter = noBreakResult.slice(0, -1).split('\n')
+  assert.equal(noBreakAfter.length, noBreakBefore.length)
+  assert.deepEqual(differingLines(noBreakAfter, noBreakBefore), [3, 4])
+  assert.equal(noBreakResult, buildDocument({ header: acceptedHeader }))
+})
+
 test('document.commit-message-takes-the-note-summary', async () => {
   const { commitMessage } = await import('../../../src/doc/document.ts')
   const oldText = buildDocument()
@@ -418,4 +493,65 @@ test('document.commit-message-treats-a-blank-note-as-absent', async () => {
     note: ['', '   ', '']
   })
   assert.equal(commitMessage('fix-login', oldText, newText), 'update fix-login: changed Where things stand')
+})
+
+test('document.commit-message-names-the-title-and-status', async () => {
+  const { commitMessage } = await import('../../../src/doc/document.ts')
+  const oldText = buildDocument({
+    header: [TITLE_LINE, 'Status: active', `Updated: ${OLD_TIME}`, 'Next ids: c2 D2 R2 S2'],
+    bodies: { nextStep: ['Point the form at the new endpoint.'] }
+  })
+  const newText = buildDocument({
+    header: ['# fix-login: Fix the sign-in page', 'Status: parked', `Updated: ${OLD_TIME}`, 'Next ids: c2 D2 R2 S2'],
+    bodies: { nextStep: ['Run the build.'] }
+  })
+  assert.equal(commitMessage('fix-login', oldText, newText), 'update fix-login: changed the title, Status, Next step')
+})
+
+test('document.commit-message-names-the-lines-above-goal', async () => {
+  const { commitMessage } = await import('../../../src/doc/document.ts')
+  const oldText = buildDocument()
+  const withOwner = buildDocument({
+    header: [TITLE_LINE, 'Status: active', `Updated: ${OLD_TIME}`, 'Next ids: c2 D2 R2 S2', 'Owner: sam']
+  })
+  const withSecondStatus = buildDocument({
+    header: [TITLE_LINE, 'Status: active', `Updated: ${OLD_TIME}`, 'Next ids: c2 D2 R2 S2', 'Status: parked']
+  })
+  assert.equal(commitMessage('fix-login', oldText, withOwner), 'update fix-login: changed the lines above Goal')
+  assert.equal(commitMessage('fix-login', oldText, withSecondStatus), 'update fix-login: changed the lines above Goal')
+})
+
+test('document.commit-message-names-a-section-whose-heading-changed', async () => {
+  const { commitMessage } = await import('../../../src/doc/document.ts')
+  const oldText = buildDocument()
+  const newText = oldText.replace('## Goal\n', '## Goal \n')
+  assert.ok(newText.includes('\n## Goal \n'), newText)
+  assert.equal(commitMessage('fix-login', oldText, newText), 'update fix-login: changed Goal')
+})
+
+test('document.commit-message-says-only-blank-lines', async () => {
+  const { commitMessage } = await import('../../../src/doc/document.ts')
+  const oldText = buildDocument()
+  const newText = oldText.replace(
+    '## Goal\n\nLet people sign in again.\n\n## Done when',
+    '## Goal\nLet people sign in again.\n## Done when'
+  )
+  assert.notEqual(newText, oldText)
+  assert.equal(commitMessage('fix-login', oldText, newText), 'update fix-login: changed only blank lines')
+})
+
+test('document.commit-message-says-nothing-but-the-header-lines', async () => {
+  const { commitMessage } = await import('../../../src/doc/document.ts')
+  const oldText = buildDocument()
+  assert.ok(oldText.endsWith('- Spec: docs/specs/login.md\n'), oldText)
+  const withoutFinalBreak = oldText.slice(0, -1)
+  const withEmptyNote = `${oldText}\n## This update\n`
+  assert.equal(
+    commitMessage('fix-login', oldText, withoutFinalBreak),
+    'update fix-login: changed nothing but the Updated and Next ids lines'
+  )
+  assert.equal(
+    commitMessage('fix-login', oldText, withEmptyNote),
+    'update fix-login: changed nothing but the Updated and Next ids lines'
+  )
 })
