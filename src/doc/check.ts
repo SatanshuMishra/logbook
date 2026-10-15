@@ -4,6 +4,7 @@ import {
   NOTE_HEADING,
   SECTION_NAMES,
   highestIds,
+  letterNamed,
   parseDocument,
   type Item,
   type Letter,
@@ -255,7 +256,7 @@ const sectionViolations = (parsed: ParsedDocument): Violation[] => {
 const badLineViolation =
   (free: NextIds) =>
   (bad: { line: number; text: string; section: string }): Violation => {
-    const letter = letterOfSection(bad.section);
+    const letter = letterNamed(bad.text) ?? letterOfSection(bad.section);
     const fix =
       letter === undefined
         ? 'remove the leading "- "'
