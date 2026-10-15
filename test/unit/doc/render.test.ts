@@ -333,6 +333,55 @@ test('render.edit-refuses-an-unknown-id', async () => {
   assert.equal(text, documentText(options))
 })
 
+test('render.new-document-escapes-heading-and-marker-lines', async () => {
+  const { newDocument } = await import('../../../src/doc/render.ts')
+  const { checkStructure } = await import('../../../src/doc/check.ts')
+  const { parseDocument } = await import('../../../src/doc/document.ts')
+  const text = newDocument({
+    slug: 'fix-login',
+    title: 'Fix the login page',
+    goal: '## Notes from the owner',
+    nextStep: '  =======\n',
+    criteria: ['<<<<<<< HEAD'],
+    details: ['>>>>>>> theirs'],
+    now: OPENED_AT
+  })
+  const lines = text.split('\n')
+  assert.ok(lines.includes('\\## Notes from the owner'), text)
+  assert.ok(lines.includes('\\======='), text)
+  assert.ok(lines.includes('- [ ] c1 <<<<<<< HEAD'), text)
+  assert.ok(lines.includes('- >>>>>>> theirs'), text)
+  assert.deepEqual(checkStructure(text, SLUG), [])
+  assert.equal(parseDocument(text).sections.length, 8)
+  assert.ok(!lines.some((line) => line === '=======' || line.startsWith('<<<<<<<') || line.startsWith('>>>>>>>')), text)
+})
+
+test('render.edit-replace-escapes-heading-and-marker-lines', async () => {
+  const { replaceSection } = await import('../../../src/doc/render.ts')
+  const { checkStructure } = await import('../../../src/doc/check.ts')
+  const result = replaceSection(documentText(), 'Next step', ['Run  the\nbuild.', '## Notes', '||||||| base', '======='])
+  assert.ok(result.ok, JSON.stringify(result))
+  assert.equal(
+    result.text,
+    documentText({ bodies: { nextStep: ['Run the build.', '\\## Notes', '\\||||||| base', '\\======='] } })
+  )
+  assert.deepEqual(checkStructure(result.text, SLUG), [])
+})
+
+test('render.edit-refuses-an-item-when-its-letter-is-used-up', async () => {
+  const { addItem } = await import('../../../src/doc/render.ts')
+  const options = {
+    nextIds: 'c2 D9007199254740991 R2 S2',
+    bodies: { decisions: ['- D9007199254740990 Keep the session cookie'] }
+  }
+  const text = documentText(options)
+  const result = addItem(text, 'D', 'Use Postgres')
+  assert.equal(result.ok, false)
+  assert.ok(!result.ok)
+  assert.match(result.message, /the D ids of this thread are used up/)
+  assert.equal(text, documentText(options))
+})
+
 test('render.user-line-for-each-status', async () => {
   const { userLine } = await import('../../../src/doc/render.ts')
   const statuses = ['active', 'blocked: x', 'waiting: y', 'parked', 'done', 'abandoned: z']

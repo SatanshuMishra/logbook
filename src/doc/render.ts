@@ -1,9 +1,11 @@
 import {
   LETTER_SECTION,
+  MAX_ITEM_NUMBER,
   SECTION_NAMES,
   formatNextIds,
   highestIds,
   parseDocument,
+  readsAsStructure,
   type Letter,
   type NextIds,
   type ParsedDocument,
@@ -42,6 +44,8 @@ const SENTENCE_PATTERN = /^.*?[.!?](?=\s|$)/
 const FINAL_MARK_PATTERN = /[.!?]$/
 
 export const oneLine = (text: string): string => text.replace(WHITESPACE_RUN_PATTERN, ' ').trim()
+
+const escapedLine = (line: string): string => (readsAsStructure(line) ? `\\${line}` : line)
 
 const splitText = (text: string): string[] => {
   const lines = text.split('\n')
@@ -132,7 +136,7 @@ const sectionBodyLines = (name: string, body: readonly string[]): string[] => [
   ...(body.length === 0 ? [] : [''])
 ]
 
-const bodyOf = (text: string): string[] => (text === '' ? [] : [text])
+const bodyOf = (text: string): string[] => (text === '' ? [] : [escapedLine(text)])
 
 export const newDocument = (input: NewDocumentInput): string => {
   const criteria = input.criteria.map(oneLine)
@@ -173,7 +177,7 @@ export const replaceSection = (text: string, section: string, bodyLines: readonl
     return { ok: false, id: section, message: `the document has no section "## ${section}"` }
   }
   const lines = splitText(text)
-  const body = framedBody(withoutBlankEnds(bodyLines.map(oneLine)), headingFollows(lines, target))
+  const body = framedBody(withoutBlankEnds(bodyLines.map(oneLine)).map(escapedLine), headingFollows(lines, target))
   return accepted(joinLike(withBody(lines, target, body), text), null, null)
 }
 
@@ -181,6 +185,9 @@ export const addItem = (text: string, letter: Letter, itemText: string): EditRes
   const parsed = parseDocument(text)
   const ids = freeIds(text, parsed)
   const id = `${letter}${ids[letter]}`
+  if (ids[letter] > MAX_ITEM_NUMBER) {
+    return { ok: false, id, message: `the ${letter} ids of this thread are used up` }
+  }
   const home = LETTER_SECTION[letter]
   const target = sectionNamed(parsed, home)
   if (target === undefined) {
