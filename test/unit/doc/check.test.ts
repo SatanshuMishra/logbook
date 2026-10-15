@@ -433,6 +433,58 @@ test("check.structure-says-when-a-letter-is-used-up", async () => {
   }
 });
 
+test("check.structure-takes-the-letter-of-a-bad-line-from-its-text", async () => {
+  const { checkStructure } = await import("../../../src/doc/check.ts");
+  const text = buildDocument({
+    header: headerWith({ nextIds: "Next ids: c2 D9007199254740991 R2 S2" }),
+    bodies: {
+      decisions: [
+        "- D9007199254740990 Keep the session cookie",
+        "- R99999999999999999999 The build may time out",
+        "- use Postgres",
+        "- S3-compatible storage is the target",
+      ],
+      risks: ["- D9007199254740991 Use Postgres"],
+    },
+  });
+  const violations = checkStructure(text, SLUG);
+  assert.deepEqual(
+    violations.map((entry) => entry.line),
+    [25, 26, 27, 31],
+  );
+  const [riskLine, ...usedUpLines] = violations;
+  assert.ok(riskLine?.message.includes('"- R<n> <text>"'), riskLine?.message);
+  assert.ok(!riskLine?.message.includes("used up"), riskLine?.message);
+  for (const entry of usedUpLines) {
+    assert.ok(
+      entry.message.includes("the D ids of this thread are used up"),
+      entry.message,
+    );
+    assert.ok(entry.message.includes("delete the line"), entry.message);
+    assert.ok(!entry.message.includes("or higher"), entry.message);
+    assert.ok(
+      !entry.message.includes("the number on the Next ids line"),
+      entry.message,
+    );
+  }
+});
+
+test("check.structure-refuses-a-marker-written-alone", async () => {
+  const { checkStructure } = await import("../../../src/doc/check.ts");
+  const text = buildDocument({
+    bodies: { whereThingsStand: ["<<<<<<<", "|||||||", ">>>>>>>"] },
+  });
+  const violations = checkStructure(text, SLUG);
+  assert.deepEqual(
+    violations.map((entry) => entry.line),
+    [16, 17, 18],
+  );
+  for (const entry of violations) {
+    assert.ok(entry.message.includes("resolve the conflict"), entry.message);
+    assert.ok(entry.message.includes("delete this marker line"), entry.message);
+  }
+});
+
 test("check.update-accepts-an-unchanged-version", async () => {
   const { checkUpdate } = await import("../../../src/doc/check.ts");
   assert.deepEqual(checkUpdate(buildDocument(), buildDocument()), []);

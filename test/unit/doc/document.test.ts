@@ -248,6 +248,16 @@ test('document.reports-conflict-marker-lines', async () => {
   ])
 })
 
+test('document.reads-a-marker-written-alone-as-a-conflict-line', async () => {
+  const { parseDocument } = await import('../../../src/doc/document.ts')
+  const parsed = parseDocument(buildDocument({ bodies: { whereThingsStand: ['<<<<<<<', '|||||||', '>>>>>>>'] } }))
+  assert.deepEqual(parsed.conflictLines, [
+    { line: 16, text: '<<<<<<<' },
+    { line: 17, text: '|||||||' },
+    { line: 18, text: '>>>>>>>' }
+  ])
+})
+
 test('document.splits-off-the-update-note', async () => {
   const { parseDocument } = await import('../../../src/doc/document.ts')
   const parsed = parseDocument(buildDocument({ note: ['Moved the risk.', 'Removed: R1 because it passed'] }))
