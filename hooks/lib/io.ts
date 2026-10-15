@@ -1,10 +1,12 @@
-import { clipGraphemes } from '../../src/render/escape.ts'
 import { nodeFloorFailure } from '../../src/runtime/node-floor.ts'
+import { productionRuntime, type Runtime } from '../../src/runtime/runtime.ts'
+import { findRepository, startDirectory, type RepoPaths } from '../../src/thread/paths.ts'
 
-export type HookVerdict = { block: false; json: object } | { block: true; reason: string }
+export type HookInput = { event: Record<string, unknown>; sessionId: string; paths: RepoPaths; rt: Runtime }
+
+export type HookOutput = Record<string, unknown>
 
 const MAX_STDIN_BYTES = 32 * 1024 * 1024
-const MAX_FIELD_GRAPHEMES = 14000
 
 const readStdin = async (): Promise<string> => {
   const chunks: Buffer[] = []
@@ -23,26 +25,20 @@ const parseEvent = (raw: string): unknown => {
   return trimmed.length === 0 ? {} : JSON.parse(trimmed)
 }
 
-const clipDeep = (value: unknown): unknown => {
-  if (typeof value === 'string') return clipGraphemes(value, MAX_FIELD_GRAPHEMES)
-  if (Array.isArray(value)) return value.map(clipDeep)
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, clipDeep(entry)]))
-  }
-  return value
-}
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
 
-const isPreToolUseContext = (value: unknown): value is { additionalContext: string } =>
-  typeof value === 'object' &&
-  value !== null &&
-  (value as Record<string, unknown>).hookEventName === 'PreToolUse' &&
-  typeof (value as Record<string, unknown>).additionalContext === 'string'
+const nonEmptyString = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null)
 
-const clipOutput = (json: object): unknown => {
-  const output = (json as { hookSpecificOutput?: unknown }).hookSpecificOutput
-  if (!isPreToolUseContext(output)) return clipDeep(json)
-  const clipped = clipDeep({ ...json, hookSpecificOutput: { ...output, additionalContext: '' } }) as Record<string, object>
-  return { ...clipped, hookSpecificOutput: { ...clipped.hookSpecificOutput, additionalContext: output.additionalContext } }
+const hookInputFor = (parsed: unknown): HookInput | null => {
+  if (!isRecord(parsed)) return null
+  const sessionId = nonEmptyString(parsed.session_id)
+  const cwd = nonEmptyString(parsed.cwd)
+  if (sessionId === null || cwd === null) return null
+  const rt = productionRuntime()
+  const found = findRepository(rt, startDirectory(rt, cwd))
+  if (!found.ok) return null
+  return { event: parsed, sessionId, paths: found.value, rt }
 }
 
 const writeFlushed = (stream: NodeJS.WritableStream, text: string): Promise<void> =>
@@ -50,31 +46,24 @@ const writeFlushed = (stream: NodeJS.WritableStream, text: string): Promise<void
     stream.write(text, () => resolve())
   })
 
+const failureMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
 export const runHook: (
   name: string,
-  handler: (event: unknown) => HookVerdict | Promise<HookVerdict>
-) => Promise<never> = async (
-  name,
-  handler
-) => {
+  handler: (input: HookInput) => HookOutput | Promise<HookOutput>
+) => Promise<never> = async (name, handler) => {
   const floorFailure = nodeFloorFailure(process.versions.node)
   if (floorFailure !== null) {
     process.stderr.write(`${floorFailure}\n`)
     process.exit(1)
   }
   try {
-    const raw = await readStdin()
-    const event = parseEvent(raw)
-    const verdict = await handler(event)
-    if (verdict.block) {
-      await writeFlushed(process.stderr, `${verdict.reason}\n`)
-      process.exit(2)
-    }
-    await writeFlushed(process.stdout, JSON.stringify(clipOutput(verdict.json)))
+    const input = hookInputFor(parseEvent(await readStdin()))
+    const output = input === null ? {} : await handler(input)
+    await writeFlushed(process.stdout, JSON.stringify(output))
     process.exit(0)
   } catch (error) {
-    const message = error instanceof Error ? (error.stack ?? error.message) : String(error)
-    process.stderr.write(`${name} crashed: ${message}\n`)
+    await writeFlushed(process.stderr, `${name} failed: ${failureMessage(error)}\n`)
     process.exit(1)
   }
 }
