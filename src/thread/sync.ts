@@ -98,7 +98,7 @@ const fetchThreads = async (rt: Runtime, paths: RepoPaths, timeoutMs: number): P
   return { ok: false, error: failureOf('fetch from origin', run) }
 }
 
-const missingObjects = (rt: Runtime, paths: RepoPaths, tips: readonly string[]): Step<string[]> => {
+export const missingObjects = (rt: Runtime, paths: RepoPaths, tips: readonly string[]): Step<string[]> => {
   if (tips.length === 0) return { ok: true, value: [] }
   const run = gitRun(rt, paths.root, ['rev-list', '--objects', '--missing=print', ...tips])
   if (run.code !== 0) return { ok: false, error: failureOf('rev-list', run) }

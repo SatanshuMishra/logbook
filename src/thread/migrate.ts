@@ -46,7 +46,7 @@ const MISSING_DECISION = 'decision record missing'
 const OUT_OF_SCOPE_PREFIX = 'Out of scope: '
 const NOT_MIGRATED: MigrationResult = { migrated: false, slugs: [], skipped: [] }
 const MISSING_OBJECT_MARK = '?'
-const REFETCH_COMMAND = `git fetch --refetch --no-filter --no-write-fetch-head origin ${LEDGER_REF}`
+export const REFETCH_COMMAND =`git fetch --refetch --no-filter --no-write-fetch-head origin ${LEDGER_REF}`
 
 const anyList = z.array(z.unknown()).catch([])
 
