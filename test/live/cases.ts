@@ -202,26 +202,26 @@ export const STALE_LINE_CASES: readonly StaleLineCase[] = [
 ]
 
 export const LONG_SEQUENCE_CASE: LongSequenceCase = {
-  name: 'eight-turn library build',
-  thread: 'text-utils',
-  title: 'Text utilities',
-  goal: 'Build a small text utility library textutils.mjs with tests',
-  nextStep: 'Start with capitalize.',
+  name: 'eight-turn converter build',
+  thread: 'unit-convert',
+  title: 'Unit converter',
+  goal: 'Build a small unit conversion module convert.mjs with checks',
+  nextStep: 'Start with celsiusToFahrenheit.',
   criteria: [
-    'textutils.mjs exports capitalize, slugify, truncate and wordCount',
-    'test.mjs covers each function and passes under node',
-    'README.md documents each function',
-    'CHANGELOG.md has an entry for version 0.1.0'
+    'convert.mjs exports celsiusToFahrenheit, kmToMiles, kgToPounds and parseQuantity',
+    'check.mjs checks each function and passes under node',
+    'USAGE.md shows one example for each function',
+    'package.json names the module unit-convert at version 1.0.0'
   ],
   turns: [
-    "Create textutils.mjs exporting capitalize(s), which upper-cases the first letter, and test.mjs asserting capitalize('hello') is 'Hello' with node:assert. Run node test.mjs and commit with git.",
-    'Add slugify(s) to textutils.mjs: lower-case, spaces become hyphens, other punctuation is dropped. Add a test, run node test.mjs and commit.',
-    'We considered truncating by characters or by words. Decide on characters and record that decision. Then add truncate(s, n), which appends ... when it cuts, with a test. Run the tests and commit.',
-    'Add wordCount(s) with a test. Note the risk that wordCount treats hyphenated words as one word. Run the tests and commit.',
-    'Write README.md documenting the four functions with one example each. Commit.',
-    "Make slugify collapse repeated hyphens and add a test that 'a  b' becomes 'a-b'. Also make wordCount split on hyphens and update its test, so the hyphen risk no longer applies. Run the tests and commit.",
-    'Add CHANGELOG.md with a 0.1.0 entry listing the four functions. Commit.',
-    'Add package.json with name text-utils, version 0.1.0 and type module. Run node test.mjs and commit.'
+    'Create convert.mjs exporting celsiusToFahrenheit(c), and check.mjs asserting celsiusToFahrenheit(100) is 212 with node:assert. Run node check.mjs and commit with git.',
+    'Add kmToMiles(km) to convert.mjs using 0.621371 miles per kilometre, with a check that kmToMiles(10) is close to 6.21371. Run node check.mjs and commit.',
+    'We weighed rounding results to two decimals against returning full precision. Choose two decimals and record that decision. Round both functions that way, update the checks, run them and commit.',
+    'Add kgToPounds(kg) using 2.20462 pounds per kilogram, with a check. Note the risk that a negative weight is converted without complaint. Run node check.mjs and commit.',
+    "Add parseQuantity(text), which turns a string such as '12 km' into { value: 12, unit: 'km' }, with a check. Run node check.mjs and commit.",
+    'Make kgToPounds throw a RangeError for a negative weight and add a check for it, so the negative-weight risk no longer applies. Run node check.mjs and commit.',
+    'Write USAGE.md with one example for each of the four functions. Commit.',
+    'Add package.json with name unit-convert, version 1.0.0 and type module. Run node check.mjs and commit.'
   ]
 }
 

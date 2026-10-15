@@ -53,3 +53,24 @@ test('skills.name-no-removed-tool', () => {
     }
   }
 })
+
+test('skills.debrief-states-the-update-rules', async () => {
+  const { UPDATE_RULES } = await import('../../src/doc/rules.ts')
+  const text = readSkill('debrief')
+
+  assert.equal(UPDATE_RULES.length, 14)
+  const ruleLines = text
+    .split('\n')
+    .filter((line) => line.startsWith('   - '))
+    .map((line) => line.slice('   - '.length))
+  const positions = UPDATE_RULES.map((rule) => ruleLines.indexOf(rule))
+  for (const [index, rule] of UPDATE_RULES.entries()) {
+    assert.ok((positions[index] ?? -1) >= 0, `skills/debrief/SKILL.md holds the rule on its own line: ${rule}`)
+  }
+  assert.deepEqual(
+    positions,
+    [...positions].sort((left, right) => left - right),
+    'skills/debrief/SKILL.md holds the rules in the order UPDATE_RULES holds them'
+  )
+  assert.ok(!text.includes('finished work as one line'), 'skills/debrief/SKILL.md holds "finished work as one line"')
+})

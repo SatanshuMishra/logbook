@@ -12,7 +12,7 @@ Each thread has one state document. It describes the present, not a history, in 
 |---|---|
 | `## Goal` | What the thread is for |
 | `## Done when` | The criteria that make it done, each a checkbox item |
-| `## Where things stand` | What is true now, with finished work reduced to one line naming where its proof is |
+| `## Where things stand` | Where the work is now; a finished step leaves it, and its proof goes on the criterion it ticks |
 | `## Next step` | The very next thing to do, and where |
 | `## Decisions in force` | Decisions that still constrain the work |
 | `## Open risks` | Risks that still bear on the work |

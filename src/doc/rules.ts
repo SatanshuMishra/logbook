@@ -7,7 +7,10 @@ export type UpdateReason =
 
 export const UPDATE_RULES: readonly string[] = [
   'Describe the present only.',
-  'Finished work becomes one line naming where its proof is.',
+  'Where things stand says only where the work is now: a finished step leaves it, and its proof goes on the criterion it ticks as evidence.',
+  'As the document grows, finished-step detail in Where things stand gives way first, then decisions and risks that no longer constrain future work.',
+  'Where the details live names each file or document once with what it holds, never the steps or commits that changed it.',
+  'State each fact in one place only, in as few words as hold it.',
   'No timeline and no clock times.',
   'Tick a criterion only with "evidence: <what proves it>".',
   'Strike a criterion only with [~] and "struck: <reason>".',
