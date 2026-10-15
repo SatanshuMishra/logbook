@@ -69,7 +69,9 @@ const NEXT_IDS_PREFIX = 'Next ids:'
 const LIST_PREFIX = '- '
 const TITLE_PATTERN = /^# ([^\s:]+): (.*)$/
 const REASONED_STATUS_PATTERN = /^(blocked|waiting|abandoned)(?::(.*))?$/
-const ITEM_PATTERN = /^- (?:\[( |x|~)\] )?([cDRS])([1-9][0-9]*) (.*)$/
+const ITEM_HEAD = String.raw`^- (?:\[( |x|~)\] )?([cDRS])`
+const ITEM_PATTERN = new RegExp(`${ITEM_HEAD}([1-9][0-9]*) (.*)$`)
+const NAMED_LETTER_PATTERN = new RegExp(`${ITEM_HEAD}[0-9]+(?: |$)`)
 const NEXT_ID_TOKEN_PATTERN = /^([cDRS])(0|[1-9][0-9]*)$/
 const CONFLICT_MARKERS: readonly string[] = ['<<<<<<<', '|||||||', '>>>>>>>']
 const CONFLICT_SEPARATOR = '======='
@@ -114,7 +116,10 @@ const statusKindOf = (word: string | undefined): StatusKind | undefined =>
 
 const letterOf = (value: string | undefined): Letter | undefined => LETTERS.find((letter) => letter === value)
 
-const boxOf = (value: string | undefined): ' ' | 'x' | '~' | null => BOXES.find((box) => box === value) ?? null
+export const letterNamed = (text: string): Letter | null =>
+  letterOf(NAMED_LETTER_PATTERN.exec(text)?.[2]) ?? null
+
+const boxOf =(value: string | undefined): ' ' | 'x' | '~' | null => BOXES.find((box) => box === value) ?? null
 
 const parseStatus = (value: string): Status => {
   const raw = value.trim()

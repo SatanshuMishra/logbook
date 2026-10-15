@@ -368,6 +368,32 @@ test('render.edit-replace-escapes-heading-and-marker-lines', async () => {
   assert.deepEqual(checkStructure(result.text, SLUG), [])
 })
 
+test('render.escapes-a-marker-written-alone', async () => {
+  const { newDocument, replaceSection } = await import('../../../src/doc/render.ts')
+  const { checkStructure } = await import('../../../src/doc/check.ts')
+  const created = newDocument({
+    slug: 'fix-login',
+    title: 'Fix the login page',
+    goal: '<<<<<<<',
+    nextStep: '>>>>>>>',
+    criteria: [],
+    details: [],
+    now: OPENED_AT
+  })
+  const createdLines = created.split('\n')
+  assert.ok(createdLines.includes('\\<<<<<<<'), created)
+  assert.ok(createdLines.includes('\\>>>>>>>'), created)
+  assert.ok(!createdLines.includes('<<<<<<<') && !createdLines.includes('>>>>>>>'), created)
+  assert.deepEqual(checkStructure(created, SLUG), [])
+  const replaced = replaceSection(documentText(), 'Where things stand', ['|||||||', '>>>>>>>', 'plain'])
+  assert.ok(replaced.ok, JSON.stringify(replaced))
+  assert.equal(
+    replaced.text,
+    documentText({ bodies: { whereThingsStand: ['\\|||||||', '\\>>>>>>>', 'plain'] } })
+  )
+  assert.deepEqual(checkStructure(replaced.text, SLUG), [])
+})
+
 test('render.edit-refuses-an-item-when-its-letter-is-used-up', async () => {
   const { addItem } = await import('../../../src/doc/render.ts')
   const options = {
