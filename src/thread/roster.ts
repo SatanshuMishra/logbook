@@ -1,11 +1,13 @@
 import { parseDocument, type ParsedDocument, type StatusKind } from '../doc/document.ts'
-import { firstSentence, rosterLine } from '../doc/render.ts'
+import { firstSentence, oneLine, rosterLine } from '../doc/render.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Ok, Refusal } from '../schema/declare.ts'
 import { withDetail } from '../store/detail.ts'
 import { git } from '../store/git.ts'
+import { ARCHIVE_REF, REFETCH_COMMAND } from './migrate.ts'
 import { workingCopyPath, type RepoPaths } from './paths.ts'
 import { THREADS_REF, listSlugs, readDocument, threadsTip } from './store.ts'
+import { missingObjects } from './sync.ts'
 
 export type RosterThread = { slug: string; title: string; status: string; nextStep: string; path: string; line: string }
 
@@ -19,7 +21,6 @@ type Listed = { thread: RosterThread; closed: boolean; time: number }
 
 type HistoryCommit = { commit: string; date: string; subject: string }
 
-const ARCHIVE_REF = 'refs/logbook/archive/ledger'
 const DOCUMENT_SUFFIX = '.md'
 const UNREADABLE = 'unreadable'
 const NEXT_STEP_SECTION = 'Next step'
@@ -180,18 +181,46 @@ const checkText = (text: string): Refusal | null => {
   return text.includes('\0') ? badText('text holds a NUL character, which git cannot take as an argument') : null
 }
 
-const searchFailure = (step: string, code: number, stderr: string): Refusal =>
-  withDetail(
-    {
-      ok: false,
-      field: THREADS_REF,
-      accepted: 'a repository whose object store git can read',
-      example: 'git fsck',
-      retryable: false,
-      message: `git ${step} failed while searching the history of ${THREADS_REF} (exit ${code}); nothing was searched`
-    },
-    stderr.trim()
-  )
+const searchFailure = (rt: Runtime, paths: RepoPaths, step: string, code: number, stderr: string): Refusal => {
+  const error = oneLine(stderr)
+  const head = `git ${step} failed while searching the history of ${THREADS_REF} (exit ${code}): ${error === '' ? 'git wrote no error output' : error}`
+  const lacking = (ref: string): string | undefined => {
+    const listed = missingObjects(rt, paths, [ref])
+    return listed.ok ? listed.value[0] : undefined
+  }
+  const lackingThreads = lacking(THREADS_REF)
+  const lackingArchive = lackingThreads === undefined ? lacking(ARCHIVE_REF) : undefined
+  const lacksMessage = (ref: string, first: string, remedy: string): string =>
+    `${head}; this clone lacks objects of ${ref}, as a partial clone can (the first missing is ${first}); nothing was searched; ${remedy}, and search again`
+  const refusal: Refusal =
+    lackingThreads !== undefined
+      ? {
+          ok: false,
+          field: THREADS_REF,
+          accepted: `a ${THREADS_REF} whose objects this clone holds`,
+          example: 'sync_ledger',
+          retryable: true,
+          message: lacksMessage(THREADS_REF, lackingThreads, 'run sync_ledger, which fetches them')
+        }
+      : lackingArchive !== undefined
+        ? {
+            ok: false,
+            field: ARCHIVE_REF,
+            accepted: `a ${ARCHIVE_REF} whose objects this clone holds`,
+            example: REFETCH_COMMAND,
+            retryable: true,
+            message: lacksMessage(ARCHIVE_REF, lackingArchive, `run \`${REFETCH_COMMAND}\``)
+          }
+        : {
+            ok: false,
+            field: THREADS_REF,
+            accepted: 'a repository whose object store git can read',
+            example: 'git fsck',
+            retryable: false,
+            message: `${head}; nothing was searched`
+          }
+  return withDetail(refusal, stderr.trim())
+}
 
 const refExists = (rt: Runtime, paths: RepoPaths, ref: string): boolean =>
   git(rt, paths.root, ['rev-parse', '--verify', '--quiet', ref]).ok
@@ -206,7 +235,7 @@ const changedFiles = (rt: Runtime, paths: RepoPaths, commit: string): Ok<string[
   const result = git(rt, paths.root, ['diff-tree', '-z', '--root', '--no-commit-id', '--name-only', '-r', commit])
   return result.ok
     ? { ok: true, value: result.stdout.split('\0').filter((name) => name.length > 0) }
-    : searchFailure('diff-tree', result.code, result.stderr)
+    : searchFailure(rt, paths, 'diff-tree', result.code, result.stderr)
 }
 
 const linesHolding = (rt: Runtime, paths: RepoPaths, revision: string, needle: string): string[] => {
@@ -239,7 +268,7 @@ export const searchHistory = (rt: Runtime, paths: RepoPaths, text: string): Ok<S
   const refs = [THREADS_REF, ARCHIVE_REF].filter((ref) => refExists(rt, paths, ref))
   if (refs.length === 0) return { ok: true, value: [] }
   const log = git(rt, paths.root, ['log', '-i', `-S${text}`, '--format=%H%x09%cI%x09%s', ...refs, '--'])
-  if (!log.ok) return searchFailure('log', log.code, log.stderr)
+  if (!log.ok) return searchFailure(rt, paths, 'log', log.code, log.stderr)
   const needle = text.toLowerCase()
   const perCommit = parseHistory(log.stdout).map((found) => matchesIn(rt, paths, found, needle))
   const failed = perCommit.find((result): result is Refusal => !result.ok)

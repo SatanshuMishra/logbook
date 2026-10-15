@@ -467,9 +467,149 @@ test('search.refuses-at-once-when-history-objects-are-missing', async () => {
     const result = searchHistory(rt, found.value, 'retry rule')
     assert.equal(result.ok, false)
     assert.equal(result.ok ? null : result.field, THREADS)
-    assert.equal(result.ok ? null : result.retryable, false)
+    assert.equal(result.ok ? null : result.retryable, true)
+    assert.equal(result.ok ? null : result.example, 'sync_ledger')
+    const message = result.ok ? '' : result.message
+    assert.ok(message.startsWith(`git log failed while searching the history of ${THREADS} (exit 128): `), message)
+    assert.ok(message.includes('could not fetch'), message)
+    assert.match(message, /the first missing is [0-9a-f]{40}\)/)
+    assert.ok(!message.includes('\n'), message)
+    assert.ok(message.endsWith('run sync_ledger, which fetches them, and search again'), message)
     assert.equal(existsSync(log) ? readFileSync(log, 'utf8') : '', '')
   } finally {
     rmSync(work, { recursive: true, force: true })
   }
+})
+
+const REFETCH = 'git fetch --refetch --no-filter --no-write-fetch-head origin refs/logbook/ledger'
+
+test('search.points-at-the-ledger-refetch-when-only-the-archive-lacks-objects', async () => {
+  const { searchHistory } = await import('../../src/thread/roster.ts')
+  const work = mkdtempSync(join(tmpdir(), 'logbook-thread-roster-archive-'))
+  try {
+    const origin = join(work, 'origin.git')
+    const clone = join(work, 'clone')
+    const recorder = join(work, 'recorder.sh')
+    const log = join(work, 'recorder.log')
+    const home = join(work, 'home')
+    mkdirSync(home)
+    const initial = spawnSync('git', ['init', '--bare', '--initial-branch=main', origin], { env: GIT_ENV, encoding: 'utf8' })
+    assert.equal(initial.status, 0, initial.stderr)
+    for (const args of [
+      ['config', 'uploadpack.allowFilter', 'true'],
+      ['config', 'uploadpack.allowAnySHA1InWant', 'true']
+    ]) {
+      const set = rawGit(origin, args)
+      assert.equal(set.status, 0, set.stderr)
+    }
+    const start = baseTime()
+    const decision = (outcome: string): string => `${JSON.stringify({ id: ulid(), title: 'How flaky calls are handled', outcome }, null, 2)}\n`
+    importCommits(origin, [
+      threadCommit(start, { slug: 'fix-login', status: 'active', nextStep: 'Write the login fix.' }),
+      {
+        ref: 'refs/logbook/ledger',
+        at: start + 60,
+        message: 'record decision',
+        files: { 'decision.json': decision('Adopt the retry rule for flaky calls.') }
+      },
+      {
+        ref: 'refs/logbook/ledger',
+        at: start + 120,
+        message: 'record decision again',
+        files: { 'decision.json': decision('Keep calls as they are.') }
+      }
+    ])
+    const cloned = spawnSync('git', ['clone', '-q', '--filter=blob:none', `file://${origin}`, clone], {
+      env: GIT_ENV,
+      encoding: 'utf8'
+    })
+    assert.equal(cloned.status, 0, cloned.stderr)
+    const threads = rawGit(clone, ['fetch', '--no-tags', '--refetch', '--no-filter', 'origin', `+${THREADS}:${THREADS}`])
+    assert.equal(threads.status, 0, threads.stderr)
+    const ledger = rawGit(clone, ['fetch', '--no-tags', 'origin', '+refs/logbook/ledger:refs/logbook/ledger'])
+    assert.equal(ledger.status, 0, ledger.stderr)
+    const read = rawGit(clone, ['cat-file', '-p', 'refs/logbook/ledger:decision.json'])
+    assert.equal(read.status, 0, read.stderr)
+    const archived = rawGit(clone, ['update-ref', ARCHIVE, 'refs/logbook/ledger'])
+    assert.equal(archived.status, 0, archived.stderr)
+    writeFileSync(recorder, `#!/bin/sh\necho started >> '${log}'\nexit 1\n`)
+    chmodSync(recorder, 0o755)
+    const wired = rawGit(clone, ['config', 'remote.origin.uploadpack', recorder])
+    assert.equal(wired.status, 0, wired.stderr)
+    const rt = testRuntime({ cwd: clone, env: { PATH: process.env.PATH, HOME: home } })
+    const found = findRepository(rt, clone)
+    assert.ok(found.ok, found.ok ? '' : found.message)
+    const result = searchHistory(rt, found.value, 'retry rule')
+    assert.equal(result.ok, false)
+    assert.equal(result.ok ? null : result.field, ARCHIVE)
+    assert.equal(result.ok ? null : result.retryable, true)
+    assert.equal(result.ok ? null : result.example, REFETCH)
+    const message = result.ok ? '' : result.message
+    assert.ok(message.startsWith(`git log failed while searching the history of ${THREADS} (exit 128): `), message)
+    assert.ok(message.includes('could not fetch'), message)
+    assert.match(message, /the first missing is [0-9a-f]{40}\)/)
+    assert.ok(!message.includes('\n'), message)
+    assert.ok(message.endsWith(`run \`${REFETCH}\`, and search again`), message)
+    assert.equal(existsSync(log) ? readFileSync(log, 'utf8') : '', '')
+  } finally {
+    rmSync(work, { recursive: true, force: true })
+  }
+})
+
+const withThreadsRepo = <T>(env: (work: string) => Record<string, string | undefined>, fn: (context: RosterContext) => T): T =>
+  withRepo((repo) => {
+    const work = mkdtempSync(join(tmpdir(), 'logbook-thread-roster-git-'))
+    try {
+      importCommits(repo, [threadCommit(baseTime(), { slug: 'fix-login', status: 'active', nextStep: 'Write the login fix.' })])
+      const rt = testRuntime({ cwd: repo, env: { HOME: work, ...env(work) } })
+      const found = findRepository(rt, repo)
+      assert.ok(found.ok, found.ok ? '' : found.message)
+      return fn({ repo, rt, paths: found.value })
+    } finally {
+      rmSync(work, { recursive: true, force: true })
+    }
+  })
+
+test('search.says-when-git-writes-no-error', async () => {
+  const { searchHistory } = await import('../../src/thread/roster.ts')
+  const located = spawnSync('/bin/sh', ['-c', 'command -v git'], { env: GIT_ENV, encoding: 'utf8' })
+  assert.equal(located.status, 0, located.stderr)
+  const realGit = located.stdout.trim()
+  withThreadsRepo(
+    (work) => {
+      const bin = join(work, 'bin')
+      mkdirSync(bin)
+      const script = join(bin, 'git')
+      writeFileSync(script, `#!/bin/sh\nfor arg in "$@"; do\n  if [ "$arg" = log ]; then exit 128; fi\ndone\nexec '${realGit}' "$@"\n`)
+      chmodSync(script, 0o755)
+      return { PATH: `${bin}:${process.env.PATH}` }
+    },
+    ({ rt, paths }) => {
+      const result = searchHistory(rt, paths, 'retry rule')
+      assert.equal(result.ok, false)
+      assert.equal(result.ok ? null : result.field, THREADS)
+      assert.equal(result.ok ? null : result.retryable, false)
+      assert.equal(
+        result.ok ? null : result.message,
+        `git log failed while searching the history of ${THREADS} (exit 128): git wrote no error output; nothing was searched`
+      )
+    }
+  )
+})
+
+test('search.names-the-runners-message-for-a-text-too-long-to-pass', async () => {
+  const { searchHistory } = await import('../../src/thread/roster.ts')
+  withThreadsRepo(
+    () => ({ PATH: process.env.PATH }),
+    ({ rt, paths }) => {
+      const result = searchHistory(rt, paths, 'a'.repeat(2_000_000))
+      assert.equal(result.ok, false)
+      assert.equal(result.ok ? null : result.field, THREADS)
+      assert.equal(result.ok ? null : result.retryable, false)
+      assert.equal(
+        result.ok ? null : result.message,
+        `git log failed while searching the history of ${THREADS} (exit -1): spawnSync git E2BIG; nothing was searched`
+      )
+    }
+  )
 })
