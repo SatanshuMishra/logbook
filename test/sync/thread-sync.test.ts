@@ -31,6 +31,7 @@ const STAND = 'The form renders but submitting it fails.'
 const NEXT_STEP = 'Fix the submit handler.'
 const HANGING_SERVER = 'node -e "process.stdin.resume()"'
 const MARKER_LINE = /^(<<<<<<<|=======|>>>>>>>)/
+const RETRY_STAND = 'Keep the retry rule when the submit fails.'
 
 type DocParts = {
   slug?: string
@@ -190,6 +191,58 @@ const exitOf = (child: ChildProcess): Promise<number | null> =>
     child.once('exit', (code) => resolve(code))
     child.once('error', () => resolve(null))
   })
+
+const shellQuote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`
+
+const writeScript = (folder: string, name: string, lines: string[]): string => {
+  const script = join(folder, name)
+  writeFileSync(script, `${lines.join('\n')}\n`)
+  chmodSync(script, 0o755)
+  return script
+}
+
+const recorderScript = (folder: string, log: string): string =>
+  writeScript(folder, 'record-upload-pack.sh', ['#!/bin/sh', `echo started >> ${shellQuote(log)}`, 'exit 1'])
+
+const serveOnceScript = (folder: string, marker: string): string =>
+  writeScript(folder, 'serve-once-upload-pack.sh', [
+    '#!/bin/sh',
+    `if [ -e ${shellQuote(marker)} ]; then`,
+    '  exit 1',
+    'fi',
+    `echo started > ${shellQuote(marker)}`,
+    'git upload-pack "$@"'
+  ])
+
+const recordedStarts = (log: string): string => (existsSync(log) ? readFileSync(log, 'utf8') : '')
+
+const missingLines = (repo: string): string[] =>
+  mustGit(repo, ['rev-list', '--objects', '--missing=print', THREADS])
+    .split('\n')
+    .filter((line) => line.startsWith('?'))
+
+type PartialWorld = World & { partial: Clone; first: string }
+
+const withPartialClone = async (filter: string, fn: (world: PartialWorld) => Promise<void>): Promise<void> =>
+  withWorld(async (world) => {
+    const first = commitThread(world.a, 'fix-login', threadDoc({ updated: timeAt(0), stand: RETRY_STAND }))
+    commitThread(world.a, 'fix-login', threadDoc({ updated: timeAt(5) }))
+    pushThreads(world.a)
+    mustGit(world.origin, ['config', 'uploadpack.allowFilter', 'true'])
+    mustGit(world.scratch, ['clone', '--quiet', `--filter=${filter}`, `file://${world.origin}`, 'partial'])
+    const partial = clientFor(world.scratch, join(world.scratch, 'partial'), 'partial', B_START)
+    await fn({ ...world, partial, first })
+  })
+
+const clockRecorder = (rt: Runtime): { rt: Runtime; given: () => readonly string[] } => {
+  let given: readonly string[] = []
+  const now = (): string => {
+    const value = rt.now()
+    given = [...given, value]
+    return value
+  }
+  return { rt: { ...rt, now }, given: () => given }
+}
 
 const nextStepChange = (text: string) => ({
   ok: true as const,
@@ -411,7 +464,10 @@ test('sync.merges-unaccepted-working-copy-edits', async () => {
     pushThreads(a)
     const result = await syncThreads(b.rt, b.paths)
     assert.deepEqual(result, { fetched: true, merged: true, conflicts: [], pushed: false, error: null })
-    assert.equal(readFileSync(copy, 'utf8'), threadDoc({ updated: timeAt(5), stand: standFromB, nextStep: stepFromA }))
+    assert.equal(
+      withoutUpdated(readFileSync(copy, 'utf8')),
+      withoutUpdated(threadDoc({ updated: timeAt(5), stand: standFromB, nextStep: stepFromA }))
+    )
   })
 })
 
@@ -497,5 +553,108 @@ test('sync.reports-a-rejected-push', async () => {
     assert.match(result.error ?? '', /rejected/)
     assert.equal(tipOf(a.repo), ahead)
     assert.equal(tipOf(origin), originBefore)
+  })
+})
+
+test('sync.pushes-when-origin-has-no-threads-in-a-translated-locale', async () => {
+  const { syncThreads } = await import('../../src/thread/sync.ts')
+  await withWorld(async ({ a, origin }) => {
+    const tip = commitThread(a, 'fix-login', threadDoc({ updated: timeAt(0) }))
+    assert.equal(rawGit(origin, ['rev-parse', '--verify', '--quiet', THREADS]).status, 1)
+    const german = testRuntime({
+      cwd: a.repo,
+      env: { ...a.rt.env, LANG: 'de_DE.UTF-8', LC_ALL: 'de_DE.UTF-8', LANGUAGE: 'de' },
+      sessionId: a.rt.sessionId,
+      start: A_START,
+      stepMs: STEP_MS
+    })
+    const result = await syncThreads(german, a.paths)
+    assert.equal(result.fetched, true)
+    assert.equal(result.pushed, true)
+    assert.equal(result.error, null)
+    assert.equal(tipOf(origin), tip)
+  })
+})
+
+test('sync.merges-an-unaccepted-status-edit', async () => {
+  const { syncThreads } = await import('../../src/thread/sync.ts')
+  await withWorld(async ({ a, b }) => {
+    const stored = threadDoc({ updated: timeAt(30) })
+    commitThread(a, 'fix-login', stored)
+    pushThreads(a)
+    pullThreads(b)
+    const copy = copyPathOf(b, 'fix-login')
+    writeCopy(copy, stored.replace('Status: active', 'Status: parked'))
+    const stepFromA = 'Run the login tests on staging.'
+    commitThread(a, 'fix-login', threadDoc({ updated: timeAt(60), nextStep: stepFromA }))
+    pushThreads(a)
+    const clock = clockRecorder(b.rt)
+    const result = await syncThreads(clock.rt, b.paths)
+    assert.deepEqual(result.conflicts, [])
+    assert.equal(result.error, null)
+    const text = readFileSync(copy, 'utf8')
+    const lines = text.split('\n')
+    assert.ok(lines.includes('Status: parked'), text)
+    assert.ok(lines.includes(stepFromA), text)
+    assert.deepEqual(markerLines(text), [])
+    const updated = /^Updated: (.*)$/m.exec(text)
+    assert.ok(updated !== null, text)
+    assert.ok(clock.given().includes(updated[1] ?? ''), `Updated ${updated[1]} is not a time B's runtime gave the sync`)
+    assert.ok(lines.includes('Next ids: c3 D2 R2 S1'), text)
+  })
+})
+
+test('sync.fetches-the-objects-a-partial-clone-lacks', async () => {
+  const { syncThreads } = await import('../../src/thread/sync.ts')
+  const { searchHistory } = await import('../../src/thread/roster.ts')
+  await withPartialClone('blob:none', async ({ scratch, partial, first }) => {
+    const result = await syncThreads(partial.rt, partial.paths)
+    assert.equal(result.error, null)
+    assert.deepEqual(missingLines(partial.repo), [])
+    const log = join(scratch, 'upload-pack-starts.log')
+    mustGit(partial.repo, ['config', 'remote.origin.uploadpack', shellQuote(recorderScript(scratch, log))])
+    const found = searchHistory(partial.rt, partial.paths, 'retry rule')
+    assert.ok(found.ok, JSON.stringify(found))
+    const inFirst = found.value.find((match) => match.commit === first)
+    assert.ok(inFirst !== undefined, JSON.stringify(found.value))
+    assert.equal(inFirst.file, 'fix-login.md')
+    assert.deepEqual(inFirst.lines, [RETRY_STAND])
+    assert.equal(recordedStarts(log), '')
+  })
+})
+
+test('sync.fetches-the-trees-a-tree-filtered-clone-lacks', async () => {
+  const { syncThreads } = await import('../../src/thread/sync.ts')
+  const { searchHistory } = await import('../../src/thread/roster.ts')
+  await withPartialClone('tree:0', async ({ scratch, partial, first }) => {
+    const result = await syncThreads(partial.rt, partial.paths)
+    assert.equal(result.error, null)
+    assert.deepEqual(missingLines(partial.repo), [])
+    const log = join(scratch, 'upload-pack-starts.log')
+    mustGit(partial.repo, ['config', 'remote.origin.uploadpack', shellQuote(recorderScript(scratch, log))])
+    const found = searchHistory(partial.rt, partial.paths, 'retry rule')
+    assert.ok(found.ok, JSON.stringify(found))
+    const inFirst = found.value.find((match) => match.commit === first)
+    assert.ok(inFirst !== undefined, JSON.stringify(found.value))
+    assert.equal(inFirst.file, 'fix-login.md')
+    assert.deepEqual(inFirst.lines, [RETRY_STAND])
+    assert.equal(recordedStarts(log), '')
+  })
+})
+
+test('sync.reports-a-failed-fetch-of-missing-objects', async () => {
+  const { syncThreads } = await import('../../src/thread/sync.ts')
+  await withPartialClone('blob:none', async ({ scratch, partial }) => {
+    const marker = join(scratch, 'upload-pack-served')
+    mustGit(partial.repo, ['config', 'remote.origin.uploadpack', shellQuote(serveOnceScript(scratch, marker))])
+    const result = await syncThreads(partial.rt, partial.paths)
+    assert.equal(result.fetched, true)
+    assert.equal(result.merged, false)
+    assert.equal(result.pushed, false)
+    assert.ok(
+      (result.error ?? '').startsWith('fetch missing objects from origin failed:'),
+      `unexpected error: ${result.error}`
+    )
+    assert.equal(rawGit(partial.repo, ['rev-parse', '--verify', '--quiet', THREADS]).status, 1)
   })
 })
