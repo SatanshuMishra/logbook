@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ulid } from 'ulid'
@@ -134,6 +134,49 @@ type FindRepository = (
   rt: Runtime,
   dir: string
 ) => { ok: true; value: RepoPaths } | { ok: false; message: string }
+
+type PartialCloneContext = MigrateContext & { writer: string; log: string }
+
+const REFETCH_COMMAND = 'git fetch --refetch --no-filter --no-write-fetch-head origin refs/logbook/ledger'
+
+const shellQuote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`
+
+const recordedStarts = (log: string): string => (existsSync(log) ? readFileSync(log, 'utf8') : '')
+
+const missingFrom = (repo: string, ref: string): string[] =>
+  mustGit(repo, ['rev-list', '--objects', '--no-walk', '--missing=print', ref])
+    .split('\n')
+    .filter((line) => line.startsWith('?'))
+    .map((line) => line.slice(1))
+
+const withPartialLedgerClone = <T>(
+  filter: string,
+  fn: (context: PartialCloneContext) => T,
+  findRepository: FindRepository
+): T =>
+  withRepo((writer) =>
+    withTempDir('logbook-migrate-partial', (dir) => {
+      buildLedger(writer, ledgerOf([oldThread()]))
+      const origin = join(dir, 'origin.git')
+      mustGit(dir, ['init', '--bare', '--initial-branch=main', 'origin.git'])
+      mustGit(origin, ['config', 'uploadpack.allowFilter', 'true'])
+      mustGit(writer, ['push', origin, 'main', 'refs/logbook/ledger:refs/logbook/ledger'])
+      mustGit(dir, ['clone', `--filter=${filter}`, `file://${origin}`, 'clone'])
+      const repo = join(dir, 'clone')
+      mustGit(repo, ['fetch', 'origin', '+refs/logbook/ledger:refs/logbook/ledger'])
+      const log = join(dir, 'upload-pack-starts.log')
+      const recorder = join(dir, 'record-upload-pack.sh')
+      writeFileSync(recorder, `#!/bin/sh\necho started >> ${shellQuote(log)}\nexit 1\n`)
+      chmodSync(recorder, 0o755)
+      mustGit(repo, ['config', 'remote.origin.uploadpack', shellQuote(recorder)])
+      return withTempDir('logbook-migrate-home', (home) => {
+        const rt = testRuntime({ cwd: repo, env: { PATH: process.env.PATH, HOME: home } })
+        const found = findRepository(rt, repo)
+        assert.ok(found.ok, found.ok ? '' : found.message)
+        return fn({ repo, rt, paths: found.value, writer, log })
+      })
+    })
+  )
 
 const loadModules = async () => {
   const migrate = await import('../../src/thread/migrate.ts')
@@ -501,4 +544,47 @@ test('migrate.ignores-a-threads-ref-on-origin', async () => {
       assert.deepEqual(namesOnThreads(repo), ['aliases.json', 'fix-login.md'])
     }, findRepository)
   })
+})
+
+test('migrate.refuses-a-ledger-whose-objects-are-missing', async () => {
+  const { migrateIfNeeded, findRepository } = await loadModules()
+  withPartialLedgerClone(
+    'blob:none',
+    ({ repo, rt, paths, writer, log }) => {
+      const threadPath = mustGit(writer, ['ls-tree', '-r', '--name-only', 'refs/logbook/ledger', '--', 'threads']).trim()
+      const threadBlob = mustGit(writer, ['rev-parse', `refs/logbook/ledger:${threadPath}`]).trim()
+      assert.deepEqual(missingFrom(repo, 'refs/logbook/ledger'), [threadBlob])
+      const result = migrateIfNeeded(rt, paths)
+      assert.equal(result.ok, false)
+      assert.ok(!result.ok)
+      assert.equal(result.field, 'refs/logbook/ledger')
+      assert.ok(result.message.includes(REFETCH_COMMAND), `the refusal must name the refetch command: ${result.message}`)
+      assert.ok(result.message.includes(threadBlob), `the refusal must name the missing object: ${result.message}`)
+      assert.equal(refOf(repo, 'refs/logbook/threads'), null)
+      assert.equal(refOf(repo, 'refs/logbook/archive/ledger'), null)
+      assert.equal(recordedStarts(log), '', 'the migration must not start the origin upload-pack')
+    },
+    findRepository
+  )
+})
+
+test('migrate.refuses-a-ledger-whose-trees-are-missing', async () => {
+  const { migrateIfNeeded, findRepository } = await loadModules()
+  withPartialLedgerClone(
+    'tree:0',
+    ({ repo, rt, paths, writer, log }) => {
+      const rootTree = mustGit(writer, ['rev-parse', 'refs/logbook/ledger^{tree}']).trim()
+      assert.deepEqual(missingFrom(repo, 'refs/logbook/ledger'), [rootTree])
+      const result = migrateIfNeeded(rt, paths)
+      assert.equal(result.ok, false)
+      assert.ok(!result.ok)
+      assert.equal(result.field, 'refs/logbook/ledger')
+      assert.ok(result.message.includes(REFETCH_COMMAND), `the refusal must name the refetch command: ${result.message}`)
+      assert.ok(result.message.includes(rootTree), `the refusal must name the missing object: ${result.message}`)
+      assert.equal(refOf(repo, 'refs/logbook/threads'), null)
+      assert.equal(refOf(repo, 'refs/logbook/archive/ledger'), null)
+      assert.equal(recordedStarts(log), '', 'the migration must not start the origin upload-pack')
+    },
+    findRepository
+  )
 })
