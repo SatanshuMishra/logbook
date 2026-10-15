@@ -1,119 +1,167 @@
+import { existsSync, rmSync } from 'node:fs'
 import { z } from 'zod'
+import { formatViolation, type Violation } from '../../doc/check.ts'
+import { parseDocument } from '../../doc/document.ts'
+import { tidyRequest } from '../../doc/rules.ts'
+import type { Runtime } from '../../runtime/runtime.ts'
+import type { Ok, Refusal } from '../../schema/declare.ts'
+import { git } from '../../store/git.ts'
+import { activityLine, buildActivity } from '../../thread/activity.ts'
+import { actingSession, readHold, takeHold, type Hold } from '../../thread/holds.ts'
+import { listMarkers } from '../../thread/inflight.ts'
+import { migrateIfNeeded } from '../../thread/migrate.ts'
+import { convertedPath, findRepository, startDirectory, workingCopyPath, type RepoPaths } from '../../thread/paths.ts'
+import { reconcileThread } from '../../thread/reconcile.ts'
+import { readDocument, resolveThreadId } from '../../thread/store.ts'
+import { syncThreads } from '../../thread/sync.ts'
 import type { ToolSpec } from '../register.ts'
-import { ULID_PATTERN } from '../../schema/ids.ts'
-import { ULID_LENGTH } from '../../schema/ulid-length.ts'
-import { layoutFor } from '../../store/layout.ts'
-import { readPointer, writePointer, type Pointer } from '../../domain/pointer.ts'
-import { renderHandle, renderStepBriefing, type DecisionIntegrity } from '../../render/briefing.ts'
-import { readBriefed, recordBriefed } from '../../domain/briefed.ts'
-import { openProjectStore, loadThread } from '../tool-support.ts'
 
-const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
+const TOOL_NAME = 'resume_thread'
+const ACTIVITY_HEADING = 'Activity since the last update:'
+const RUNNING_HEADING = 'Was running when the session ended:'
+const REFUSED_HEADING = 'The working copy has edits logbook refused:'
+const SYNC_FAILED_PREFIX = 'Sync with origin failed: '
+const CONFLICT_LINE =
+  'Conflicts from the last sync are marked in the document; resolve them by editing the working copy.'
 
-const ResumeThreadInputSchema = z.strictObject({
-  thread_id: ulidField(
-    `the id of the thread to resume, a ${ULID_LENGTH}-character ULID such as 01M0NDPM0ACCR9CD68PMHYWGGD, from list_threads or the roster resource`
-  ),
-  full_briefing: z
-    .boolean()
-    .optional()
-    .describe(
-      'render the whole briefing even when this session has already been briefed on this thread; the first resume of a thread in a session returns the whole briefing and later ones return its head, and this asks for the whole text back, for a session whose context no longer holds it'
-    ),
-  pickup: z
-    .boolean()
-    .optional()
-    .describe(
-      'true only when the human asked, in this turn, to pick this thread up, as the preflight and file skills and the preflight prompt do; the reply then says pickup: true, the briefing is owed to the human word for word, and a Stop hook holds the turn until it is printed. Leave it out when resuming for your own use, such as reading the briefing again or taking the thread back to record or park; nothing is then owed.'
-    )
-})
-
-const PreviousSessionSchema = z.object({
-  thread_id: z.string().describe('the id of the thread a previous session left marked as being worked'),
-  written_at: z.string().describe('when the previous session marked that thread as being worked')
-})
+const ResumeThreadInputSchema = z
+  .strictObject({
+    thread_id: z
+      .string()
+      .describe(
+        "the thread's slug, such as fix-login, or an old thread id listed in aliases.json; call list_threads to see each slug"
+      ),
+    full_briefing: z
+      .boolean()
+      .optional()
+      .describe('accepted for callers that send it and ignored: every resume returns the whole document')
+  })
+  .describe('the thread to resume, named by its slug or an old thread id')
 
 const ResumeThreadOutputSchema = z.object({
-  thread_id: z.string().describe('the id of the thread that was resumed'),
-  briefing: z.string().describe('the finished briefing text for this thread, ready to be shown as it stands'),
-  previous_session: PreviousSessionSchema.nullable().describe(
-    'the thread a previous session left marked as being worked, or null when this session already held the pointer or nothing was marked'
-  ),
-  pickup: z
-    .literal(true)
-    .optional()
+  thread_id: z.string().describe('the slug of the thread that was resumed'),
+  briefing: z.string().describe("the thread's stored state document, now in context; do not print it"),
+  path: z.string().describe("the working copy of the thread's state document, the file to edit with the Edit tool"),
+  recovery: z
+    .array(z.string())
     .describe(
-      'present only when the call set pickup, meaning this briefing is owed to the human word for word in this turn'
+      'lines about what happened since the last accepted update: earlier activity, tools that were still running, refused edits of the working copy, a failed sync, conflicts and a request to tidy a converted document; empty when there is nothing to report'
     )
 })
 
 type ResumeThreadInput = z.infer<typeof ResumeThreadInputSchema>
 type ResumeThreadOutput = z.infer<typeof ResumeThreadOutputSchema>
 
+type Recovery = {
+  hold: Hold | null
+  session: string
+  violations: readonly Violation[]
+  syncError: string | null
+  documentText: string
+  converted: boolean
+}
+
+const noWorkingDirectory = (): Refusal => ({
+  ok: false,
+  field: 'cwd',
+  accepted: 'a readable working directory inside a git repository, or CLAUDE_PROJECT_DIR naming one',
+  example: '/home/me/projects/my-app',
+  retryable: false,
+  message: 'logbook could not read its working directory and CLAUDE_PROJECT_DIR is not set, so it cannot find the repository'
+})
+
+const unknownThread = (threadId: string): Refusal => ({
+  ok: false,
+  field: 'thread_id',
+  accepted: 'the slug of a thread, or an old thread id listed in aliases.json',
+  example: 'fix-login',
+  retryable: true,
+  message: `no thread is named ${JSON.stringify(threadId)}; call list_threads to see each thread's slug`
+})
+
+const locate = (rt: Runtime): Ok<RepoPaths> | Refusal => {
+  const dir = startDirectory(rt, rt.cwd ?? '')
+  return dir === '' ? noWorkingDirectory() : findRepository(rt, dir)
+}
+
+const hasOrigin = (rt: Runtime, paths: RepoPaths): boolean => {
+  const origin = git(rt, paths.root, ['config', '--get', 'remote.origin.url'])
+  return origin.ok && origin.stdout.trim() !== ''
+}
+
+const syncError = async (rt: Runtime, paths: RepoPaths): Promise<string | null> =>
+  hasOrigin(rt, paths) ? (await syncThreads(rt, paths)).error : null
+
+const group = (heading: string, lines: readonly string[]): string[] => (lines.length === 0 ? [] : [heading, ...lines])
+
+const activityLines = (hold: Hold | null, file: string): string[] =>
+  hold === null
+    ? []
+    : buildActivity({ transcripts: hold.transcripts, since: hold.folded_at, workingCopyPath: file }).lines
+
+const runningLines = (paths: RepoPaths, slug: string, session: string): string[] =>
+  listMarkers(paths, slug)
+    .filter((marker) => marker.session !== session)
+    .map((marker) => activityLine(marker.tool, marker.summary))
+
+const recoveryLines = (paths: RepoPaths, slug: string, file: string, recovery: Recovery): string[] => [
+  ...group(ACTIVITY_HEADING, activityLines(recovery.hold, file)),
+  ...group(RUNNING_HEADING, runningLines(paths, slug, recovery.session)),
+  ...group(REFUSED_HEADING, recovery.violations.map(formatViolation)),
+  ...(recovery.syncError === null ? [] : [`${SYNC_FAILED_PREFIX}${recovery.syncError}`]),
+  ...(parseDocument(recovery.documentText).conflictLines.length > 0 ? [CONFLICT_LINE] : []),
+  ...(recovery.converted ? tidyRequest({ path: file, documentText: recovery.documentText }).split('\n') : [])
+]
+
+const replyText = (slug: string, file: string, documentText: string, recovery: readonly string[]): string =>
+  [
+    `Resumed thread ${slug}. Working copy: ${file}. The document below is now in your context; do not print it.`,
+    '',
+    documentText.replace(/\n+$/, ''),
+    ...(recovery.length === 0 ? [] : ['', ...recovery])
+  ].join('\n')
+
 export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> = {
-  name: 'resume_thread',
+  name: TOOL_NAME,
   title: 'Resume thread',
   description:
-    `Picks up one thread and returns its finished briefing in a single call: it marks the thread as the one being worked on this machine and renders what the previous session left. Takes one thread id, a ${ULID_LENGTH}-character ULID such as 01M0NDPM0ACCR9CD68PMHYWGGD, which comes from list_threads or the roster resource. Calling it twice on the same thread is not an error and leaves the same single record of what is being worked. The first resume of a thread in a session returns the whole briefing and every later resume of it returns the head of that briefing, which names what it leaves out; pass full_briefing to ask for the whole text back. Either way the text it returns is finished and meant to be shown as it stands. Set pickup only when the human asked in this turn to pick the thread up: the briefing is then owed to the human word for word, and a resume made for your own use owes nothing.`,
+    "Picks up a thread and makes this session its holder. It brings in the thread's changes from origin when the repository has one, commits a pending valid edit of the working copy, and returns the thread's state document, which is then in your context; do not print it. The reply names the working copy, the file to edit with the Edit tool whenever logbook asks for an update, and lists what happened since the last accepted update: the earlier session's activity, tools still running when it ended, edits of the working copy logbook refused, a failed sync, conflicts left by a sync, and a request to tidy a document converted from the old ledger. Name the thread by its slug, or by an old thread id listed in aliases.json; call list_threads to see each slug. full_briefing is accepted and changes nothing.",
   input: ResumeThreadInputSchema,
   output: ResumeThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   handler: async (rt, _ctx, input) => {
-    const opened = openProjectStore(rt)
-    if (!opened.ok) return { ok: false, refusal: opened.refusal }
-    const store = opened.value
-
-    const loaded = loadThread(store, 'thread_id', input.thread_id)
-    if (!loaded.ok) return { ok: false, refusal: loaded.refusal }
-    const thread = loaded.value
-
-    const layout = layoutFor(rt, rt.cwd)
-    if (!layout.ok) return { ok: false, refusal: layout }
-
-    const priorPointerRead = readPointer(rt, layout.value)
-    const previousSession =
-      priorPointerRead.kind === 'pointer' && priorPointerRead.value.session_id !== rt.sessionId
-        ? { thread_id: priorPointerRead.value.thread_id, written_at: priorPointerRead.value.written_at }
-        : null
-
-    const writtenPointer: Pointer = { thread_id: thread.id, written_at: rt.now(), session_id: rt.sessionId }
-    writePointer(rt, layout.value, writtenPointer)
-
-    const decisionIds = thread.spine.key_decisions.map((keyDecision) => keyDecision.decision_id)
-    const probe = store.probeDecisions(decisionIds)
-
-    for (const decisionId of probe.dangling) {
-      rt.log({ level: 'error', event: 'briefing.decision-dangling', decision_id: decisionId })
-    }
-    for (const decisionId of probe.quarantined) {
-      rt.log({ level: 'error', event: 'briefing.decision-quarantined', decision_id: decisionId })
-    }
-
-    const decisionIntegrity: DecisionIntegrity = {
-      resolved: probe.resolved,
-      dangling: probe.dangling,
-      quarantined: probe.quarantined
-    }
-
-    const sessionEntrySlots = store.readSessionEntries(thread.id)
-    const unreadableSessionEntryCount = sessionEntrySlots.filter((slot) => slot.quarantined).length
-    const rendersFull = input.full_briefing === true || !readBriefed(rt, layout.value).includes(thread.id)
-
-    const briefing = rendersFull
-      ? renderStepBriefing(store, thread, writtenPointer, decisionIntegrity, unreadableSessionEntryCount)
-      : renderHandle(thread, decisionIntegrity, writtenPointer, unreadableSessionEntryCount)
-
-    if (rendersFull) recordBriefed(rt, layout.value, thread.id)
-
+    const paths = locate(rt)
+    if (!paths.ok) return { ok: false, refusal: paths }
+    const migrated = migrateIfNeeded(rt, paths.value)
+    if (!migrated.ok) return { ok: false, refusal: migrated }
+    const synced = await syncError(rt, paths.value)
+    const slug = resolveThreadId(rt, paths.value, input.thread_id)
+    if (!slug.ok) return { ok: false, refusal: slug }
+    const file = workingCopyPath(paths.value, slug.value)
+    if (!file.ok) return { ok: false, refusal: file }
+    const reconciled = reconcileThread(rt, paths.value, slug.value)
+    if (!('kind' in reconciled)) return { ok: false, refusal: reconciled }
+    if (reconciled.kind === 'accepted') reconciled.push?.unref()
+    const stored = readDocument(rt, paths.value, slug.value)
+    if (stored === null) return { ok: false, refusal: unknownThread(input.thread_id) }
+    const session = actingSession(paths.value, rt.sessionId)
+    const hold = readHold(paths.value, slug.value)
+    takeHold(rt, paths.value, slug.value, session, null)
+    const mark = convertedPath(paths.value, slug.value)
+    const converted = mark.ok && existsSync(mark.value)
+    const recovery = recoveryLines(paths.value, slug.value, file.value, {
+      hold,
+      session,
+      violations: reconciled.kind === 'refused' ? reconciled.violations : [],
+      syncError: synced,
+      documentText: stored.text,
+      converted
+    })
+    if (mark.ok && converted) rmSync(mark.value, { force: true })
     return {
       ok: true,
-      text: '',
-      structured: {
-        thread_id: thread.id,
-        briefing,
-        previous_session: previousSession,
-        ...(input.pickup === true ? { pickup: true as const } : {})
-      }
+      text: replyText(slug.value, file.value, stored.text, recovery),
+      structured: { thread_id: slug.value, briefing: stored.text, path: file.value, recovery }
     }
   }
 }
