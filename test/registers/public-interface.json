@@ -1,131 +1,30 @@
 {
-  "series": "0.15",
+  "series": "0.16",
   "tools": {
     "open_thread": {
       "input": {
-        "title": "required",
         "slug": "required",
-        "predecessor_id": "optional",
-        "active_goal": "required",
+        "title": "required",
+        "goal": "required",
         "next_step": "required",
-        "next_step_records": "required",
-        "completion_criteria": "optional",
-        "artifacts": "optional"
+        "criteria": "optional",
+        "details": "optional"
       },
       "output": [
         "thread_id",
-        "slug",
-        "status",
-        "completion_criteria",
-        "step_records"
-      ]
-    },
-    "update_thread": {
-      "input": {
-        "thread_id": "required",
-        "criteria_done": "optional",
-        "criteria_settled": "optional",
-        "active_goal": "optional",
-        "next_step": "optional",
-        "next_step_records": "optional",
-        "last_session": "optional",
-        "blocked_by": "optional",
-        "blocked_by_clear": "optional",
-        "risks_add": "optional",
-        "risks_retire": "optional",
-        "key_decisions_add": "optional",
-        "out_of_scope_add": "optional",
-        "artifacts_add": "optional",
-        "artifacts_retire": "optional"
-      },
-      "output": [
-        "thread_id",
-        "criteria_marked_done",
-        "criteria_newly_settled",
-        "spine_fields_updated",
-        "risks_added",
-        "risks_already_present",
-        "risks_retired",
-        "key_decisions_added",
-        "out_of_scope_added",
-        "artifacts_added",
-        "artifacts_retired",
-        "blocked_by_set",
-        "step_records"
-      ]
-    },
-    "close_thread": {
-      "input": {
-        "thread_id": "required",
-        "outcome": "required",
-        "detail": "required"
-      },
-      "output": [
-        "thread_id",
-        "status",
-        "session_entry_id",
-        "result_status_split",
-        "settledness_split"
-      ]
-    },
-    "amend_criteria": {
-      "input": {
-        "thread_id": "required",
-        "operation": "required",
-        "decision_id": "required",
-        "criterion_id": "optional",
-        "text": "optional",
-        "kind": "optional",
-        "check": "optional",
-        "settledness": "optional",
-        "settled_by": "optional",
-        "position": "optional"
-      },
-      "output": [
-        "thread_id",
-        "operation",
-        "criterion_id"
-      ]
-    },
-    "bind_branch": {
-      "input": {
-        "thread_id": "required",
-        "branch": "required"
-      },
-      "output": [
-        "thread_id",
-        "branch",
-        "binding_id",
-        "created"
+        "path"
       ]
     },
     "resume_thread": {
       "input": {
         "thread_id": "required",
-        "full_briefing": "optional",
-        "pickup": "optional"
+        "full_briefing": "optional"
       },
       "output": [
         "thread_id",
         "briefing",
-        "previous_session",
-        "pickup"
-      ]
-    },
-    "park_thread": {
-      "input": {
-        "outcome": "optional",
-        "thread_id": "optional",
-        "next_step": "optional",
-        "next_step_records": "optional"
-      },
-      "output": [
-        "status",
-        "parked_thread_ids",
-        "session_entry_ids",
-        "spine_fields_updated",
-        "pointer_released",
-        "step_records"
+        "path",
+        "recovery"
       ]
     },
     "record_decision": {
@@ -136,73 +35,76 @@
         "options": "required",
         "option_reasons": "optional",
         "outcome": "required",
-        "scope": "optional",
-        "criterion_id": "optional",
         "supersedes": "optional"
       },
       "output": [
-        "decision_id",
         "thread_id",
-        "commit",
-        "scope",
-        "linked",
-        "link_skipped_reason"
+        "decision_id",
+        "removed"
       ]
     },
-    "log_session_event": {
+    "update_thread": {
       "input": {
         "thread_id": "required",
-        "actor": "required",
-        "body": "required"
+        "next_step": "optional",
+        "next_step_records": "optional",
+        "criteria_done": "optional",
+        "risks_add": "optional",
+        "risks_retire": "optional"
       },
       "output": [
         "thread_id",
-        "session_entry_id"
+        "summary",
+        "added_risk_ids"
+      ]
+    },
+    "park_thread": {
+      "input": {
+        "thread_id": "optional",
+        "outcome": "optional",
+        "next_step": "optional",
+        "next_step_records": "optional"
+      },
+      "output": [
+        "parked_thread_ids"
+      ]
+    },
+    "close_thread": {
+      "input": {
+        "thread_id": "required",
+        "outcome": "required",
+        "detail": "required"
+      },
+      "output": [
+        "thread_id",
+        "status"
+      ]
+    },
+    "list_threads": {
+      "input": {
+        "include_closed": "optional"
+      },
+      "output": [
+        "threads",
+        "closed_count"
+      ]
+    },
+    "search_ledger": {
+      "input": {
+        "text": "required"
+      },
+      "output": [
+        "matches"
       ]
     },
     "sync_ledger": {
       "input": {},
       "output": [
-        "action",
-        "ref",
-        "local_sha",
-        "remote_sha"
-      ]
-    },
-    "resolve_conflict": {
-      "input": {
-        "resolutions": "required"
-      },
-      "output": [
-        "resolved",
-        "ref",
-        "commit"
-      ]
-    },
-    "list_threads": {
-      "input": {
-        "cursor": "optional",
-        "limit": "optional"
-      },
-      "output": [
-        "threads",
-        "next_cursor",
-        "total",
-        "roster"
-      ]
-    },
-    "search_ledger": {
-      "input": {
-        "text": "optional",
-        "kind": "optional",
-        "thread": "optional",
-        "status": "optional"
-      },
-      "output": [
-        "results",
-        "matched",
-        "searched",
-        "threads"
+        "fetched",
+        "merged",
+        "conflicts",
+        "pushed",
+        "error"
       ]
     }
   }

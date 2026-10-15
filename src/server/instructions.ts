@@ -1,31 +1,25 @@
-export const INSTRUCTIONS = `Logbook remembers a project across sessions. It records what was being worked on, what was
-decided and why, and what the next step is, and it stores that history in the project's own
-git repository so a whole team shares one record.
+export const INSTRUCTIONS = `Logbook keeps the state of a piece of work across sessions, compactions and /clear, in the
+project's own git repository.
 
-Resuming is one call and parking is one call. resume_thread reconciles, marks the thread as
-being worked, and returns the finished briefing. park_thread writes the session log, sets the
-next step and the records it needs, and releases the thread. Neither needs a preparatory call.
-park_thread refuses instead of parking when no thread is being worked or the thread it would write
-to is gone, terminal, quarantined, or held by another session; the refusal names what was not
-stored, which has to be re-sent. A park_thread call carrying no outcome, next step or records is
-never refused.
+Each thread has one state document: a markdown file with the sections Goal, Done when, Where
+things stand, Next step, Decisions in force, Open risks, Settled, do not reopen and Where the
+details live.
 
-Any agent holding a thread id records against it, a subagent included, and recording at the
-subagent boundary is preferred to carrying the material back. The split is by content: a
-subagent records what it established, and a selection between live options is recorded by
-whoever selected.
+The working copy of a thread's state document lives at ~/.logbook/<repository key>/<slug>.md,
+and logbook's own hook lets you Read and Edit it without a permission prompt. Keep the document
+true by editing that file with the Edit tool when logbook asks. Logbook checks each edit and
+commits every accepted edit to refs/logbook/threads, so the history of the document is the log
+of the thread. The document is put in your context for you to work from: do not print it.
 
-Identifiers are ULIDs: 26 characters, Crockford base32, for example
-01M0NDPM0ACCR9CD68PMHYWGGD. Do not compose one. Take a thread id from list_threads or from the
-logbook://roster resource, and a decision id from the tool result that created it.
+open_thread starts a new thread from a slug, a title, a goal and a next step, with optional criteria and details, and makes this session its holder.
+resume_thread picks up a thread by its slug or an old thread id, makes this session its holder and puts its state document in your context.
+record_decision adds a decision in force to the document and keeps its context, its options with their reasons and its outcome in the commit.
+update_thread sets the next step and the items it needs, ticks criteria with their evidence, and adds or retires risks, in one commit.
+park_thread sets a thread's status to parked and releases this session's hold on it, so a later session can pick it up.
+close_thread closes a thread as done, which is refused while a criterion is still open, or as abandoned with the reason.
+list_threads lists the threads of this repository with the status and next step of each.
+search_ledger searches every version of every state document, and the archived old ledger, for a text.
+sync_ledger fetches the threads of origin, merges them with this repository's threads and pushes the result.
 
-Setting a next step (open_thread, update_thread, park_thread) requires next_step_records: the
-ids of the records that step needs, found with search_ledger across every thread, closed ones
-included. The reply returns them in full, with any decision or risk whose text names a file the
-step names.
-
-Reads are also available without a tool call. logbook://index lists every readable address.
-
-A refusal from this server is structured and worth reading. It names the field that was wrong,
-what that field accepts, a valid example, and whether a retry can succeed. Read it and correct
-the argument rather than retrying the same call.`
+A refusal names the field that was wrong and what that field accepts. Correct the argument
+rather than retrying the same call.`

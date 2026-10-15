@@ -6,8 +6,6 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { Runtime } from '../runtime/runtime.ts'
 import { INSTRUCTIONS } from './instructions.ts'
 import { ALL_TOOLS, registerTool } from './register.ts'
-import { registerResources } from './resources.ts'
-import { registerPrompts } from './prompts.ts'
 
 const SERVER_NAME = 'logbook'
 const PACKAGE_JSON_SEARCH_DEPTH = 10
@@ -49,8 +47,6 @@ export const main = async (rt: Runtime): Promise<void> => {
   for (const tool of ALL_TOOLS) {
     registerTool(server, rt, tool)
   }
-  registerResources(server, rt)
-  registerPrompts(server, rt)
   const transport = new StdioServerTransport()
   await server.connect(transport)
 }
