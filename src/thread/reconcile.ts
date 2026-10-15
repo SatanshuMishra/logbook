@@ -89,7 +89,7 @@ export const violationsRefusal = (file: string, violations: Violation[]): Refusa
 })
 
 const isThreadMoved = <T>(result: Ok<T> | Refusal | ThreadMoved): result is ThreadMoved =>
-  !result.ok && 'cause' in result
+  !result.ok && 'cause' in result && result.cause === 'thread-moved'
 
 const onceMore = <T>(slug: string, attempt: () => Ok<T> | Refusal | ThreadMoved): Ok<T> | Refusal => {
   const first = attempt()

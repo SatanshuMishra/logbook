@@ -544,3 +544,47 @@ test('reconcile.rejected-push-changes-nothing', async () => {
     assert.equal(tipOf(origin), originOnly)
   })
 })
+
+const leaveStaleLock = (repo: string): void => {
+  const commonDir = mustGit(repo, ['rev-parse', '--path-format=absolute', '--git-common-dir']).trim()
+  mkdirSync(join(commonDir, 'refs', 'logbook'), { recursive: true })
+  writeFileSync(join(commonDir, 'refs', 'logbook', 'threads.lock'), '')
+}
+
+test('reconcile.returns-a-failed-ref-update-as-it-is', async () => {
+  const { reconcileThread } = await import('../../src/thread/reconcile.ts')
+  withThread((context) => {
+    const before = tipOf(context.repo)
+    const storedBefore = storedText(context.repo)
+    writeWorkingCopy(context, VALID_EDIT)
+    leaveStaleLock(context.repo)
+    const result = reconcileThread(context.rt, context.paths, 'fix-login')
+    if ('kind' in result) assert.fail(`expected a refusal, got ${JSON.stringify(result)}`)
+    assert.equal(result.ok, false)
+    assert.equal(result.retryable, false)
+    assert.ok(result.message.startsWith('git update-ref failed for refs/logbook/threads'), result.message)
+    assert.ok(result.message.includes('threads.lock'), result.message)
+    assert.equal(tipOf(context.repo), before)
+    assert.equal(storedText(context.repo), storedBefore)
+    assert.equal(readWorkingCopy(context), VALID_EDIT)
+  })
+})
+
+test('reconcile.tool-change-returns-a-failed-ref-update-as-it-is', async () => {
+  const { applyToolChange } = await import('../../src/thread/reconcile.ts')
+  withThread((context) => {
+    const before = tipOf(context.repo)
+    const storedBefore = storedText(context.repo)
+    leaveStaleLock(context.repo)
+    const result = applyToolChange(context.rt, context.paths, 'fix-login', {
+      tool: 'update_thread',
+      change: nextStepChange
+    })
+    if (result.ok) assert.fail(`expected a refusal, got ${JSON.stringify(result)}`)
+    assert.equal(result.retryable, false)
+    assert.ok(result.message.startsWith('git update-ref failed for refs/logbook/threads'), result.message)
+    assert.ok(result.message.includes('threads.lock'), result.message)
+    assert.equal(tipOf(context.repo), before)
+    assert.equal(storedText(context.repo), storedBefore)
+  })
+})
