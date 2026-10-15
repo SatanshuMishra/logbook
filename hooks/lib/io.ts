@@ -1,10 +1,22 @@
+import type {
+  EmptyHookOutput,
+  PostToolUseHookOutput,
+  PreToolUseHookOutput,
+  SessionStartHookOutput,
+  StopHookOutput
+} from '../../src/hook/output.ts'
 import { nodeFloorFailure } from '../../src/runtime/node-floor.ts'
 import { productionRuntime, type Runtime } from '../../src/runtime/runtime.ts'
 import { findRepository, startDirectory, type RepoPaths } from '../../src/thread/paths.ts'
 
 export type HookInput = { event: Record<string, unknown>; sessionId: string; paths: RepoPaths; rt: Runtime }
 
-export type HookOutput = Record<string, unknown>
+export type HookOutput =
+  | EmptyHookOutput
+  | StopHookOutput
+  | PostToolUseHookOutput
+  | SessionStartHookOutput
+  | PreToolUseHookOutput
 
 const MAX_STDIN_BYTES = 32 * 1024 * 1024
 

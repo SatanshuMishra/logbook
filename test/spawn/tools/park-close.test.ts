@@ -165,6 +165,8 @@ const statusLine = (repo: string): string | undefined => storedLines(repo).find(
 const messageLines = (repo: string): string[] =>
   mustGit(repo, ['log', '-1', '--format=%B', THREADS_REF]).replace(/\n+$/, '').split('\n')
 
+const subjectOf = (repo: string): string => mustGit(repo, ['log', '-1', '--format=%s', THREADS_REF]).replace(/\n+$/, '')
+
 const holderOf = (paths: RepoPaths): string | null => {
   const hold = readHold(paths, 'fix-login')
   assert.ok(hold !== null, 'the thread must still have a hold file')
@@ -203,6 +205,24 @@ test('park_thread.spawn.contract', async () => {
     assert.ok(message.includes('The submit handler now posts the form.'), `the commit must hold the outcome, got:\n${message.join('\n')}`)
     assert.equal(holderOf(fixture.paths), null)
     assert.deepEqual(reply.structuredContent, { parked_thread_ids: ['fix-login'] })
+  })
+})
+
+test('park_thread.commit-message-keeps-the-outcome-below-a-blank-line', async () => {
+  await import('../../../src/server/tools/park_thread.ts')
+  await withThread({ status: 'active', criteria: [OPEN_C1, OPEN_C2] }, 's1', heldBy('s1'), async (fixture) => {
+    const reply = await callTool(fixture, 'park_thread', {
+      next_step: 'Run the build.',
+      outcome: 'The submit handler now posts the form.'
+    })
+
+    assertSucceeded(reply)
+    assert.deepEqual(messageLines(fixture.repo), [
+      'park_thread fix-login: parked',
+      '',
+      'The submit handler now posts the form.'
+    ])
+    assert.equal(subjectOf(fixture.repo), 'park_thread fix-login: parked')
   })
 })
 
@@ -290,6 +310,21 @@ test('close_thread.spawn.contract', async () => {
     assert.equal(message[0], 'close_thread fix-login: done')
     assert.ok(message.includes('The login page works again.'), `the commit must hold the detail, got:\n${message.join('\n')}`)
     assert.equal(holderOf(fixture.paths), null)
+  })
+})
+
+test('close_thread.commit-message-keeps-the-detail-below-a-blank-line', async () => {
+  await import('../../../src/server/tools/close_thread.ts')
+  await withThread({ status: 'active', criteria: [TICKED_C1, STRUCK_C2] }, 's1', heldBy('s1'), async (fixture) => {
+    const reply = await callTool(fixture, 'close_thread', {
+      thread_id: 'fix-login',
+      outcome: 'done',
+      detail: 'The login page works again.'
+    })
+
+    assertSucceeded(reply)
+    assert.deepEqual(messageLines(fixture.repo), ['close_thread fix-login: done', '', 'The login page works again.'])
+    assert.equal(subjectOf(fixture.repo), 'close_thread fix-login: done')
   })
 })
 

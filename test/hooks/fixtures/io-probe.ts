@@ -8,8 +8,5 @@ const contextFor = (event: Record<string, unknown>, root: string): string => {
 
 await runHook('io-probe', ({ event, paths }) => {
   if (typeof event.throw === 'string') throw new Error(event.throw)
-  return {
-    hookSpecificOutput: { hookEventName: 'Probe', additionalContext: contextFor(event, paths.root) },
-    probe: 'ran'
-  }
+  return { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: contextFor(event, paths.root) } }
 })

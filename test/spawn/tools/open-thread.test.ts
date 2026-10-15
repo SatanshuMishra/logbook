@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -102,6 +102,13 @@ const workingCopiesNamed = (home: string, name: string): string[] => {
   const root = join(home, '.logbook')
   if (!existsSync(root)) return []
   return readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((entry) => basename(entry) === name)
+}
+
+const lockThreadsRef = (repo: string): void => {
+  const commonDir = mustGit(repo, ['rev-parse', '--path-format=absolute', '--git-common-dir']).trim()
+  const folder = join(commonDir, 'refs', 'logbook')
+  mkdirSync(folder, { recursive: true })
+  writeFileSync(join(folder, 'threads.lock'), '')
 }
 
 test('open_thread.spawn.contract', async () => {
@@ -209,5 +216,25 @@ test('open_thread.refuses-a-blank-criterion', async () => {
 
     assert.equal(refusal.field, 'criteria.1')
     assert.equal(refExists(fixture.repo), false, 'a refused call must create no ref')
+  })
+})
+
+test('open_thread.returns-gits-error-when-the-ref-cannot-be-updated', async () => {
+  await import('../../../src/server/tools/open_thread.ts')
+  await withServer(async (fixture) => {
+    lockThreadsRef(fixture.repo)
+
+    const refusal = refusalLines(await openThread(fixture, fixLoginArgs({})))
+
+    assert.equal(refusal.field, 'refs/logbook/threads')
+    assert.ok(
+      refusal.text.includes('git update-ref failed for refs/logbook/threads'),
+      `the refusal must say git could not update the ref:\n${refusal.text}`
+    )
+    assert.ok(refusal.text.includes('threads.lock'), `the refusal must hold git's error output:\n${refusal.text}`)
+    assert.ok(!refusal.text.includes('already exists'), `the refusal must not say the slug is taken:\n${refusal.text}`)
+    assert.equal(refExists(fixture.repo), false, 'a failed commit must leave refs/logbook/threads absent')
+    assert.deepEqual(workingCopiesNamed(fixture.home, 'fix-login.md'), [])
+    assert.equal(existsSync(holdFile(fixture.repo, 'fix-login')), false, 'a failed commit must take no hold')
   })
 })

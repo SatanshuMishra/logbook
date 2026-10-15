@@ -1,11 +1,12 @@
 import { lstatSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
+import type { EmptyHookOutput, PreToolUseHookOutput } from './output.ts'
 import { THREAD_SLUG_PATTERN } from '../thread/paths.ts'
 
 export type PermissionEvent = { tool_name: string; tool_input: Record<string, unknown> }
 
-export type PermissionOutput = Record<string, unknown>
+export type PermissionOutput = EmptyHookOutput | PreToolUseHookOutput
 
 export const WORKING_COPY_KEY_PATTERN = /^[a-z0-9-]{0,40}-[0-9a-f]{12}$/
 

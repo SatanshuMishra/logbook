@@ -9,10 +9,11 @@ import { migrateIfNeeded } from '../thread/migrate.ts'
 import { checkSessionId, workingCopyPath, type RepoPaths } from '../thread/paths.ts'
 import { sessionStartRoster } from '../thread/roster.ts'
 import { readDocument } from '../thread/store.ts'
+import type { EmptyHookOutput, SessionStartHookOutput } from './output.ts'
 
 export type SessionStartInput = { event: Record<string, unknown>; sessionId: string; paths: RepoPaths; rt: Runtime }
 
-export type SessionStartOutput = Record<string, unknown>
+export type SessionStartOutput = EmptyHookOutput | SessionStartHookOutput
 
 type ListPart = { heading: string; lines: readonly string[]; replacement: (count: number) => string }
 

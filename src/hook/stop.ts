@@ -5,10 +5,11 @@ import { buildActivity, type Activity } from '../thread/activity.ts'
 import { addTranscript, heldBy, readHold } from '../thread/holds.ts'
 import { workingCopyPath, type RepoPaths } from '../thread/paths.ts'
 import { readDocument } from '../thread/store.ts'
+import type { EmptyHookOutput, StopHookOutput } from './output.ts'
 
 export type StopInput = { event: Record<string, unknown>; sessionId: string; paths: RepoPaths; rt: Runtime }
 
-export type StopOutput = Record<string, unknown>
+export type StopOutput = EmptyHookOutput | StopHookOutput
 
 const HOOK_EVENT = 'Stop'
 const WAITING_KINDS: ReadonlySet<string> = new Set(['blocked', 'waiting'])

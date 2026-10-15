@@ -11,7 +11,7 @@ import { actingSession, foldHold, takeHold } from '../../thread/holds.ts'
 import { migrateIfNeeded } from '../../thread/migrate.ts'
 import { findRepository, startDirectory, workingCopyPath, type RepoPaths } from '../../thread/paths.ts'
 import { startPush } from '../../thread/reconcile.ts'
-import { commitDocuments, readDocument } from '../../thread/store.ts'
+import { commitDocuments, readDocument, type ThreadMoved } from '../../thread/store.ts'
 import type { ToolSpec } from '../register.ts'
 
 const TOOL_NAME = 'open_thread'
@@ -80,6 +80,12 @@ const slugTaken = (slug: string): Refusal => ({
   message: `thread ${slug} already exists, so nothing was written; call resume_thread with thread_id ${slug} to pick it up, or open a new thread under another slug`
 })
 
+const isThreadMoved = (failure: Refusal | ThreadMoved): failure is ThreadMoved =>
+  'cause' in failure && failure.cause === 'thread-moved'
+
+const commitRefusal = (slug: string, failure: Refusal | ThreadMoved): Refusal =>
+  isThreadMoved(failure) ? slugTaken(slug) : failure
+
 const locate = (rt: Runtime): Ok<RepoPaths> | Refusal => {
   const dir = startDirectory(rt, rt.cwd ?? '')
   return dir === '' ? noWorkingDirectory() : findRepository(rt, dir)
@@ -122,7 +128,7 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
       changes: [{ slug: input.slug, text, expectedBlob: null }],
       message: `${TOOL_NAME} ${input.slug}: opened`
     })
-    if (!committed.ok) return { ok: false, refusal: 'cause' in committed ? slugTaken(input.slug) : committed }
+    if (!committed.ok) return { ok: false, refusal: commitRefusal(input.slug, committed) }
     writeWorkingCopy(rt, file.value, text)
     takeHold(rt, paths.value, input.slug, actingSession(paths.value, rt.sessionId), null)
     foldHold(rt, paths.value, input.slug, now)

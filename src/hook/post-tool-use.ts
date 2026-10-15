@@ -11,10 +11,11 @@ import { workingCopyPath, type RepoPaths } from '../thread/paths.ts'
 import { reconcileThread, type ReconcileResult } from '../thread/reconcile.ts'
 import { listSlugs, readDocument } from '../thread/store.ts'
 import { isMilestone } from './milestone.ts'
+import type { EmptyHookOutput, PostToolUseHookOutput } from './output.ts'
 
 export type PostToolUseInput = { event: Record<string, unknown>; sessionId: string; paths: RepoPaths; rt: Runtime }
 
-export type PostToolUseOutput = Record<string, unknown>
+export type PostToolUseOutput = EmptyHookOutput | PostToolUseHookOutput
 
 type ToolCall = { name: string; input: Record<string, unknown> }
 
