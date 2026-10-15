@@ -1,18 +1,12 @@
 ---
 name: preflight
-description: Use at the start of work to pick up an existing thread.
+description: Use at the start of work to pick up an existing thread and continue it from its state document.
 ---
 
 ## Sequence
 
-1. Gather the identifier the human names at invocation, an id, a slug, or a title, treating a bare number as no identifier since no roster has been printed yet and row order shifts with activity.
-2. Call `list_threads` given a named identifier, paging with `list_threads.cursor` set to `list_threads.next_cursor` for as long as `list_threads.next_cursor` stays non-null and a match has not yet turned up.
-3. Gather the resolution order as four checks, the first hit winning: an exact id match against the full ULID, then an exact case-insensitive match against the slug, then an exact case-insensitive match against the title, then a single case-insensitive substring match against the slug or the title.
-4. Print the identifier that was typed and, for an ambiguous case, its matching candidate threads, naming zero matches or two-or-more candidates at the substring check plainly, absent a single resolved match.
-5. Call `list_threads` absent a single resolved match.
-6. Present the returned `list_threads.roster` verbatim, with nothing added, absent a single resolved match.
-7. Wait for the human to choose one thread from that roster, absent a single resolved match.
-8. Call `resume_thread` with `resume_thread.thread_id` set to the resolved or chosen thread id and `resume_thread.pickup` set to true.
-9. Print that this session records as it goes, calling `log_session_event` as each meaningful piece of work is established rather than holding everything until hand-off.
-10. Print the returned `resume_thread.briefing` verbatim.
-11. Stop.
+1. Call `resume_thread` with `thread_id` set to the slug the user named at invocation.
+2. When the user named no slug, call `list_threads` first, choose from its roster the thread the work belongs to, asking the user to pick one from that roster when nothing they said settles it, and then call `resume_thread` with that thread's slug.
+3. The reply puts the thread's state document into your context, so never print the document or any part of it.
+4. Tell the user in one sentence which thread you resumed and its next step.
+5. Continue the work from that next step.
