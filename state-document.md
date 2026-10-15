@@ -1,6 +1,6 @@
 # state-document: Replace logbook's record store and briefing with one state document per thread
 Status: active
-Updated: 2026-10-15T19:18:59.811Z
+Updated: 2026-10-15T19:20:39.631Z
 Next ids: c4 D29 R1 S1
 
 ## Goal
@@ -15,11 +15,11 @@ Spec and build the state-document design in docs/design/2026-10-14-state-documen
 
 ## Where things stand
 
-Converted from the old ledger.
+SatanshuMishra/logbook#290, #291 and #292 are merged. Logbook 0.16.0 is installed at user scope and at .windful-ocean project scope and runs in this session. This repository's 17 threads are converted, and this thread resumes by its old id. The live proofs have not run on main. The 7.7 test render.new-document-escapes-heading-and-marker-lines in test/unit/doc/render.test.ts does not pin which section its escaped lines land in. The conversion copied 0.15.0's stored character codes, such as U+000A for a line break, as literal text into 35 lines of 8 converted documents, this one included.
 
 ## Next step
 
-Owner reviews SatanshuMishra/logbook#290, #291 and #292 in stack order. Open follow-ups: re-run the failed test (24.x) job on #290 to confirm the timing test hook.file-records.first-touch-time-stays-flat is a runner flake; tighten render.new-document-escapes-heading-and-marker-lines in test/unit/doc/render.test.ts to compare the whole new document (A1); run npm run prove at the #292 head to re-prove 7.45-7.49 and 7.52 for criteria c2 and c3.
+Run npm run prove on main in a scratch clone to re-prove 7.45-7.49 and 7.52 for c2 and c3. The owner has not yet said whether Claude tidies this converted document and opens a follow-up to decode the character codes in the converter.
 
 ## Decisions in force
 
