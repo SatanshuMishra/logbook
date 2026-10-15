@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ulid } from 'ulid'
@@ -407,4 +407,69 @@ test('search.refuses-a-blank-text', async () => {
       assert.equal(result.ok ? null : result.field, 'text')
     }
   })
+})
+
+test('roster.lists-same-second-threads-in-commit-order', async () => {
+  const { listRoster } = await import('../../src/thread/roster.ts')
+  withRoster(({ repo, rt, paths }) => {
+    const at = baseTime()
+    importCommits(repo, [
+      threadCommit(at, { slug: 'alpha', status: 'active', nextStep: 'Write the login fix.' }),
+      threadCommit(at, { slug: 'zeta', status: 'active', nextStep: 'Write the login fix.' })
+    ])
+    const roster = listRoster(rt, paths, { includeClosed: false })
+    assert.deepEqual(
+      roster.threads.map((thread) => thread.slug),
+      ['zeta', 'alpha']
+    )
+  })
+})
+
+test('search.refuses-at-once-when-history-objects-are-missing', async () => {
+  const { searchHistory } = await import('../../src/thread/roster.ts')
+  const work = mkdtempSync(join(tmpdir(), 'logbook-thread-roster-partial-'))
+  try {
+    const origin = join(work, 'origin.git')
+    const clone = join(work, 'clone')
+    const recorder = join(work, 'recorder.sh')
+    const log = join(work, 'recorder.log')
+    const home = join(work, 'home')
+    mkdirSync(home)
+    const initial = spawnSync('git', ['init', '--bare', '--initial-branch=main', origin], { env: GIT_ENV, encoding: 'utf8' })
+    assert.equal(initial.status, 0, initial.stderr)
+    for (const args of [
+      ['config', 'uploadpack.allowFilter', 'true'],
+      ['config', 'uploadpack.allowAnySHA1InWant', 'true']
+    ]) {
+      const set = rawGit(origin, args)
+      assert.equal(set.status, 0, set.stderr)
+    }
+    const start = baseTime()
+    const base: DocumentInput = { slug: 'fix-login', status: 'active', nextStep: 'Write the login fix.' }
+    importCommits(origin, [
+      threadCommit(start, { ...base, decisions: ['- D1 Retry rule: retry each call once.'] }),
+      threadCommit(start + 60, { ...base, nextStep: 'Run the suite.' }, 'update fix-login: changed Next step')
+    ])
+    const cloned = spawnSync('git', ['clone', '-q', '--filter=blob:none', `file://${origin}`, clone], {
+      env: GIT_ENV,
+      encoding: 'utf8'
+    })
+    assert.equal(cloned.status, 0, cloned.stderr)
+    const fetched = rawGit(clone, ['fetch', '--no-tags', 'origin', `+${THREADS}:${THREADS}`])
+    assert.equal(fetched.status, 0, fetched.stderr)
+    writeFileSync(recorder, `#!/bin/sh\necho started >> '${log}'\nexit 1\n`)
+    chmodSync(recorder, 0o755)
+    const wired = rawGit(clone, ['config', 'remote.origin.uploadpack', recorder])
+    assert.equal(wired.status, 0, wired.stderr)
+    const rt = testRuntime({ cwd: clone, env: { PATH: process.env.PATH, HOME: home } })
+    const found = findRepository(rt, clone)
+    assert.ok(found.ok, found.ok ? '' : found.message)
+    const result = searchHistory(rt, found.value, 'retry rule')
+    assert.equal(result.ok, false)
+    assert.equal(result.ok ? null : result.field, THREADS)
+    assert.equal(result.ok ? null : result.retryable, false)
+    assert.equal(existsSync(log) ? readFileSync(log, 'utf8') : '', '')
+  } finally {
+    rmSync(work, { recursive: true, force: true })
+  }
 })
