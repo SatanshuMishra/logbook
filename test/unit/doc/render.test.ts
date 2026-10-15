@@ -380,10 +380,38 @@ test('render.escapes-a-marker-written-alone', async () => {
     details: [],
     now: OPENED_AT
   })
-  const createdLines = created.split('\n')
-  assert.ok(createdLines.includes('\\<<<<<<<'), created)
-  assert.ok(createdLines.includes('\\>>>>>>>'), created)
-  assert.ok(!createdLines.includes('<<<<<<<') && !createdLines.includes('>>>>>>>'), created)
+  assert.equal(
+    created,
+    [
+      '# fix-login: Fix the login page',
+      'Status: active',
+      `Updated: ${OPENED_AT}`,
+      'Next ids: c1 D1 R1 S1',
+      '',
+      '## Goal',
+      '',
+      '\\<<<<<<<',
+      '',
+      '## Done when',
+      '',
+      '## Where things stand',
+      '',
+      'Not started.',
+      '',
+      '## Next step',
+      '',
+      '\\>>>>>>>',
+      '',
+      '## Decisions in force',
+      '',
+      '## Open risks',
+      '',
+      '## Settled, do not reopen',
+      '',
+      '## Where the details live',
+      ''
+    ].join('\n')
+  )
   assert.deepEqual(checkStructure(created, SLUG), [])
   const replaced = replaceSection(documentText(), 'Where things stand', ['|||||||', '>>>>>>>', 'plain'])
   assert.ok(replaced.ok, JSON.stringify(replaced))
