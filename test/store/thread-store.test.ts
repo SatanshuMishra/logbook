@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ulid } from 'ulid'
@@ -636,5 +636,181 @@ test('store.ignores-alias-entries-that-are-not-valid', async () => {
       assert.ok(!result.ok)
       assert.equal(result.field, 'thread_id')
     }
+  })
+})
+
+const realGitPath = (): string => {
+  const found = (process.env.PATH ?? '')
+    .split(':')
+    .map((dir) => join(dir, 'git'))
+    .find((candidate) => existsSync(candidate))
+  assert.ok(found !== undefined)
+  return found
+}
+
+const fakeGitFolder = (scratch: string, versionLine: string): string => {
+  const folder = join(scratch, 'fake-bin')
+  mkdirSync(folder)
+  const script = join(folder, 'git')
+  writeFileSync(
+    script,
+    `#!/bin/sh\nfor arg in "$@"; do\n  if [ "$arg" = version ]; then\n    echo '${versionLine}'\n    exit 0\n  fi\ndone\nexec ${realGitPath()} "$@"\n`
+  )
+  chmodSync(script, 0o755)
+  return folder
+}
+
+const makePartialClone = (scratch: string): string => {
+  const source = join(scratch, 'source')
+  initRepository(source)
+  const origin = join(scratch, 'origin.git')
+  mustGit(scratch, ['clone', '--bare', source, origin])
+  mustGit(origin, ['config', 'uploadpack.allowFilter', 'true'])
+  const clone = join(scratch, 'clone')
+  mustGit(scratch, ['clone', '--filter=blob:none', `file://${origin}`, clone])
+  return clone
+}
+
+test('store.commit-retries-a-move-git-reports-in-another-language', async () => {
+  const { findRepository } = await import('../../src/thread/paths.ts')
+  const { commitDocuments, readDocument } = await import('../../src/thread/store.ts')
+  withTempDir('logbook-thread-reftable', (scratch) => {
+    const repo = join(scratch, 'repo')
+    mkdirSync(repo)
+    mustGit(repo, ['init', '--initial-branch=main', '--ref-format=reftable'])
+    mustGit(repo, ['config', 'user.name', 'Thread Store Tester'])
+    mustGit(repo, ['config', 'user.email', 'tester@logbook.test'])
+    const home = join(scratch, 'home')
+    mkdirSync(home)
+    const rt = runtimeWith(repo, { HOME: home, LANG: 'de_DE.UTF-8', LC_ALL: 'de_DE.UTF-8', LANGUAGE: 'de' })
+    const found = findRepository(rt, repo)
+    assert.ok(found.ok)
+    const paths = found.value
+    assert.ok(commitDocuments(rt, paths, { changes: [{ slug: 'fix-login', text: 'one\n', expectedBlob: null }], message: 'one' }).ok)
+    const read = readDocument(rt, paths, 'fix-login')
+    assert.ok(read !== null)
+    const startTip = tipOf(repo)
+    const other: { commit: string | null } = { commit: null }
+    const result = commitDocuments(rt, paths, {
+      changes: [{ slug: 'fix-login', text: 'two\n', expectedBlob: read.blob }],
+      message: 'two',
+      beforeCas: () => {
+        if (other.commit !== null) return
+        const otherBlob = gitWithInput(repo, ['hash-object', '-w', '--stdin'], 'other\n')
+        const tree = gitWithInput(
+          repo,
+          ['mktree'],
+          `100644 blob ${read.blob}\tfix-login.md\n100644 blob ${otherBlob}\tother.md\n`
+        )
+        const commit = gitWithInput(repo, ['commit-tree', tree, '-p', startTip, '-m', 'add other'], '')
+        mustGit(repo, ['update-ref', 'refs/logbook/threads', commit, startTip])
+        other.commit = commit
+      }
+    })
+    assert.ok(result.ok)
+    assert.ok(other.commit !== null)
+    const tip = tipOf(repo)
+    assert.equal(result.value.commit, tip)
+    assert.deepEqual(parentsOf(repo, tip), [other.commit])
+    assert.deepEqual(namesAt(repo, tip), ['fix-login.md', 'other.md'])
+    assert.equal(textAt(repo, tip, 'fix-login.md'), 'two\n')
+    assert.equal(textAt(repo, tip, 'other.md'), 'other\n')
+  })
+})
+
+test('store.commit-returns-git-s-error-when-the-ref-cannot-be-updated', async () => {
+  const { findRepository } = await import('../../src/thread/paths.ts')
+  const { commitDocuments, readDocument } = await import('../../src/thread/store.ts')
+  withStore(findRepository, ({ repo, rt, paths }) => {
+    assert.ok(commitDocuments(rt, paths, { changes: [{ slug: 'fix-login', text: 'one\n', expectedBlob: null }], message: 'one' }).ok)
+    const read = readDocument(rt, paths, 'fix-login')
+    assert.ok(read !== null)
+    const before = tipOf(repo)
+    writeFileSync(join(paths.commonDir, 'refs', 'logbook', 'threads.lock'), '')
+    const result = commitDocuments(rt, paths, {
+      changes: [{ slug: 'fix-login', text: 'two\n', expectedBlob: read.blob }],
+      message: 'two'
+    })
+    assert.ok(!result.ok)
+    assert.ok('field' in result)
+    assert.equal(result.field, 'refs/logbook/threads')
+    assert.equal(result.retryable, false)
+    assert.ok(result.message.startsWith('git update-ref failed for refs/logbook/threads'))
+    assert.ok(result.message.includes('threads.lock'))
+    assert.equal(tipOf(repo), before)
+  })
+})
+
+test('store.accepts-a-partial-clone-with-git-2-45-or-later', async () => {
+  const { findRepository } = await import('../../src/thread/paths.ts')
+  withTempDir('logbook-thread-partial', (scratch) => {
+    const clone = makePartialClone(scratch)
+    const home = join(scratch, 'home')
+    mkdirSync(home)
+    const found = findRepository(runtimeWith(clone, { HOME: home }), clone)
+    assert.ok(found.ok)
+    assert.equal(realpathSync(found.value.root), realpathSync(clone))
+  })
+})
+
+test('store.accepts-a-full-clone-with-git-older-than-2-45', async () => {
+  const { findRepository } = await import('../../src/thread/paths.ts')
+  withTempDir('logbook-thread-oldgit', (scratch) => {
+    const repo = join(scratch, 'repo')
+    initRepository(repo)
+    const home = join(scratch, 'home')
+    mkdirSync(home)
+    const folder = fakeGitFolder(scratch, 'git version 2.34.1')
+    const found = findRepository(runtimeWith(repo, { HOME: home, PATH: `${folder}:${process.env.PATH}` }), repo)
+    assert.ok(found.ok)
+    assert.equal(realpathSync(found.value.root), realpathSync(repo))
+  })
+})
+
+test('store.refuses-a-partial-clone-with-git-older-than-2-45', async () => {
+  const { findRepository } = await import('../../src/thread/paths.ts')
+  withTempDir('logbook-thread-oldgit-partial', (scratch) => {
+    const clone = makePartialClone(scratch)
+    const home = join(scratch, 'home')
+    mkdirSync(home)
+    const folder = fakeGitFolder(scratch, 'git version 2.34.1')
+    const found = findRepository(runtimeWith(clone, { HOME: home, PATH: `${folder}:${process.env.PATH}` }), clone)
+    assert.ok(!found.ok)
+    assert.ok('field' in found)
+    assert.equal(found.field, 'git')
+    assert.equal(found.retryable, false)
+    assert.ok(found.message.includes('2.45.0'))
+    assert.ok(found.message.includes('git version 2.34.1'))
+  })
+})
+
+test('store.accepts-a-full-clone-when-the-git-version-cannot-be-read', async () => {
+  const { findRepository } = await import('../../src/thread/paths.ts')
+  withTempDir('logbook-thread-unreadable', (scratch) => {
+    const repo = join(scratch, 'repo')
+    initRepository(repo)
+    const home = join(scratch, 'home')
+    mkdirSync(home)
+    const folder = fakeGitFolder(scratch, 'git version unknown')
+    const found = findRepository(runtimeWith(repo, { HOME: home, PATH: `${folder}:${process.env.PATH}` }), repo)
+    assert.ok(found.ok)
+    assert.equal(realpathSync(found.value.root), realpathSync(repo))
+  })
+})
+
+test('store.refuses-a-partial-clone-when-the-git-version-cannot-be-read', async () => {
+  const { findRepository } = await import('../../src/thread/paths.ts')
+  withTempDir('logbook-thread-unreadable-partial', (scratch) => {
+    const clone = makePartialClone(scratch)
+    const home = join(scratch, 'home')
+    mkdirSync(home)
+    const folder = fakeGitFolder(scratch, 'git version unknown')
+    const found = findRepository(runtimeWith(clone, { HOME: home, PATH: `${folder}:${process.env.PATH}` }), clone)
+    assert.ok(!found.ok)
+    assert.ok('field' in found)
+    assert.equal(found.field, 'git')
+    assert.equal(found.retryable, false)
+    assert.ok(found.message.includes('2.45.0'))
+    assert.ok(found.message.includes('git version unknown'))
   })
 })

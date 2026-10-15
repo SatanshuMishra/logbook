@@ -58,13 +58,48 @@ const parseRevParse = (stdout: string): { root: string; commonDir: string } | nu
   return { root, commonDir }
 }
 
-export const findRepository = (rt: Runtime, dir: string): Ok<RepoPaths> | Refusal => {
+const LAZY_FETCH_FLOOR = [2, 45, 0] as const
+const GIT_VERSION_LINE = /^git version (\d+)\.(\d+)\.(\d+)/
+const PARTIAL_CLONE_KEYS = '^(remote\\..+\\.promisor|extensions\\.partialclone)$'
+
+const meetsFloor = (line: string): boolean => {
+  const match = GIT_VERSION_LINE.exec(line)
+  if (match === null) return false
+  const version = [Number(match[1]), Number(match[2]), Number(match[3])]
+  for (let index = 0; index < LAZY_FETCH_FLOOR.length; index += 1) {
+    const have = version[index] as number
+    const need = LAZY_FETCH_FLOOR[index] as number
+    if (have !== need) return have > need
+  }
+  return true
+}
+
+const partialCloneTooOld = (line: string): Refusal => ({
+  ok: false,
+  field: 'git',
+  accepted: 'git 2.45.0 or later in a partial clone',
+  example: 'git version 2.45.0',
+  retryable: false,
+  message: `logbook needs git 2.45.0 or later in a partial clone, which this repository is, so that no git run fetches a missing object without a time limit; git version printed ${JSON.stringify(line)}`
+})
+
+const checkPartialCloneFloor = (rt: Runtime, root: string): Refusal | null => {
+  const version = git(rt, root, ['version'])
+  const line = version.ok ? (version.stdout.split('\n')[0] ?? '') : ''
+  if (meetsFloor(line)) return null
+  const keys = git(rt, root, ['config', '--get-regexp', PARTIAL_CLONE_KEYS])
+  return keys.ok && keys.stdout.trim().length > 0 ? partialCloneTooOld(line) : null
+}
+
+export const findRepository =(rt: Runtime, dir: string): Ok<RepoPaths> | Refusal => {
   const home = rt.env.HOME
   if (home === undefined || home === '') return missingHome()
   const result = git(rt, dir, ['rev-parse', '--path-format=absolute', '--show-toplevel', '--git-common-dir'])
   if (!result.ok) return outsideRepository(dir)
   const found = parseRevParse(result.stdout)
   if (found === null) return outsideRepository(dir)
+  const floor = checkPartialCloneFloor(rt, found.root)
+  if (floor !== null) return floor
   return {
     ok: true,
     value: {

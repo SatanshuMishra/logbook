@@ -43,8 +43,18 @@ const FETCH_ARGS = [
   'origin',
   `+${THREADS_REF}:${REMOTE_THREADS_REF}`
 ]
+const FETCH_MISSING_ARGS = [
+  'fetch',
+  '--no-filter',
+  '--no-tags',
+  '--no-write-fetch-head',
+  '--no-auto-maintenance',
+  'origin',
+  '--stdin'
+]
 const PUSH_ARGS = ['push', 'origin', `${THREADS_REF}:${THREADS_REF}`]
 const MISSING_REMOTE_REF = /couldn't find remote ref/
+const MISSING_OBJECT_PREFIX = '?'
 const ALIASES_FILE = 'aliases.json'
 const DOCUMENT_SUFFIX = '.md'
 const UPDATED_PREFIX = 'Updated: '
@@ -86,6 +96,35 @@ const fetchThreads = async (rt: Runtime, paths: RepoPaths, timeoutMs: number): P
   if (run.code === 0) return { ok: true, value: remoteTip(rt, paths) }
   if (MISSING_REMOTE_REF.test(run.stderr)) return { ok: true, value: null }
   return { ok: false, error: failureOf('fetch from origin', run) }
+}
+
+const missingObjects = (rt: Runtime, paths: RepoPaths, tips: readonly string[]): Step<string[]> => {
+  if (tips.length === 0) return { ok: true, value: [] }
+  const run = gitRun(rt, paths.root, ['rev-list', '--objects', '--missing=print', ...tips])
+  if (run.code !== 0) return { ok: false, error: failureOf('rev-list', run) }
+  return {
+    ok: true,
+    value: run.stdout
+      .split('\n')
+      .filter((line) => line.startsWith(MISSING_OBJECT_PREFIX))
+      .map((line) => line.slice(MISSING_OBJECT_PREFIX.length))
+  }
+}
+
+const fetchMissing = async (
+  rt: Runtime,
+  paths: RepoPaths,
+  tips: readonly string[],
+  timeoutMs: number
+): Promise<Step<void>> => {
+  const missing = missingObjects(rt, paths, tips)
+  if (!missing.ok) return missing
+  if (missing.value.length === 0) return { ok: true, value: undefined }
+  const stdin = missing.value.map((id) => `${id}\n`).join('')
+  const run = await gitTimed(rt, paths.root, FETCH_MISSING_ARGS, { timeoutMs, stdin })
+  return run.code === 0
+    ? { ok: true, value: undefined }
+    : { ok: false, error: failureOf('fetch missing objects from origin', run) }
 }
 
 const isAncestor = (rt: Runtime, paths: RepoPaths, older: string, newer: string): Step<boolean> => {
@@ -163,10 +202,11 @@ const kept = (text: string | null): Step<Chosen> => ({ ok: true, value: { text, 
 const threeWay = (
   rt: Runtime,
   paths: RepoPaths,
+  labels: readonly string[],
   sides: { ours: string; theirs: string; base: string },
   header: Header
-): Step<Chosen> => {
-  const merged = mergeFile(rt, paths, STORED_LABELS, [
+): Step<Merged> => {
+  const merged = mergeFile(rt, paths, labels, [
     withHeader(sides.ours, header),
     sides.base,
     withHeader(sides.theirs, header)
@@ -190,13 +230,13 @@ const mergeWithBase = (
   if (ours === base) return kept(theirs)
   if (ours === null || theirs === null) return kept(ours ?? theirs)
   const header = headerOf(base ?? '')
-  return threeWay(rt, paths, { ours, theirs, base: withHeader(base ?? '', header) }, header)
+  return threeWay(rt, paths, STORED_LABELS, { ours, theirs, base: withHeader(base ?? '', header) }, header)
 }
 
 const mergeUnrelated = (rt: Runtime, paths: RepoPaths, ours: string | null, theirs: string | null): Step<Chosen> => {
   if (ours === null || theirs === null) return kept(ours ?? theirs)
   if (stripHeaderLines(ours) === stripHeaderLines(theirs)) return kept(ours)
-  return threeWay(rt, paths, { ours, theirs, base: '' }, headerOf(ours))
+  return threeWay(rt, paths, STORED_LABELS, { ours, theirs, base: '' }, headerOf(ours))
 }
 
 const textAt = (rt: Runtime, paths: RepoPaths, slug: string, tip: string): string | null =>
@@ -308,11 +348,13 @@ const refreshCopy = (rt: Runtime, paths: RepoPaths, change: StoredChange): boole
     return false
   }
   const header = headerOf(change.old ?? change.next)
-  const merged = mergeFile(rt, paths, COPY_LABELS, [
-    withHeader(copy, header),
-    change.old === null ? '' : withHeader(change.old, header),
-    withHeader(change.next, headerOf(change.next))
-  ])
+  const merged = threeWay(
+    rt,
+    paths,
+    COPY_LABELS,
+    { ours: copy, theirs: change.next, base: change.old === null ? '' : withHeader(change.old, header) },
+    header
+  )
   if (!merged.ok) {
     rt.log({ level: 'warn', event: 'sync.working-copy-unmerged', slug: change.slug, reason: merged.error })
     return false
@@ -367,7 +409,11 @@ export const syncThreads = async (
   const timeoutMs = opts.timeoutMs ?? FETCH_TIMEOUT_MS
   const fetched = await fetchThreads(rt, paths, timeoutMs)
   if (!fetched.ok) return result({ error: fetched.error })
-  const brought = bringIn(rt, paths, threadsTip(rt, paths), fetched.value)
+  const local = threadsTip(rt, paths)
+  const tips = [local, fetched.value].filter((tip): tip is string => tip !== null)
+  const completed = await fetchMissing(rt, paths, tips, timeoutMs)
+  if (!completed.ok) return result({ fetched: true, error: completed.error })
+  const brought = bringIn(rt, paths, local, fetched.value)
   if (!brought.ok) return result({ fetched: true, error: brought.error })
   const settled = { fetched: true, merged: brought.value.merged, conflicts: brought.value.conflicts }
   if (!brought.value.push) return result(settled)

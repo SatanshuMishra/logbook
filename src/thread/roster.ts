@@ -60,23 +60,24 @@ const nextStepOf = (parsed: ParsedDocument): string =>
 const lineFor = (slug: string, text: string, parsed: ParsedDocument, status: string, nextStep: string): string =>
   status !== UNREADABLE && parsed.slug === slug ? rosterLine(text) : `${slug} - ${status} - Next: ${nextStep}`
 
-const parseChangeTimes = (stdout: string): Map<string, number> =>
-  new Map(
-    stdout
-      .split(COMMIT_MARK)
-      .flatMap((block) => {
-        const [header = '', ...names] = block.split('\n')
-        const time = Number(header.trim())
-        if (header.trim() === '' || !Number.isSafeInteger(time)) return []
-        return names.filter((name) => name.length > 0).map((name): [string, number] => [name, time])
-      })
-      .sort(([, left], [, right]) => left - right)
-  )
+const parseChangeTimes = (stdout: string): Map<string, number> => {
+  const ranks = new Map<string, number>()
+  stdout
+    .split(COMMIT_MARK)
+    .flatMap((block) => {
+      const [header = '', ...names] = block.split('\n')
+      return header.trim() === '' ? [] : names.filter((name) => name.length > 0)
+    })
+    .forEach((name) => {
+      if (!ranks.has(name)) ranks.set(name, -ranks.size)
+    })
+  return ranks
+}
 
 const changeTimes = (rt: Runtime, paths: RepoPaths, tip: string): Map<string, number> => {
   const result = git(rt, paths.root, [
     'log',
-    '--format=%x00%ct',
+    '--format=%x00%H',
     '--name-only',
     '--no-renames',
     '--root',

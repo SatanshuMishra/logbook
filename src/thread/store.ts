@@ -1,7 +1,7 @@
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Ok, Refusal } from '../schema/declare.ts'
 import { ULID_PATTERN } from '../schema/ids.ts'
-import { withDetail } from '../store/detail.ts'
+import { detailOf, withDetail } from '../store/detail.ts'
 import { git, gitBuffer, readIdentity, type Identity } from '../store/git.ts'
 import { casUpdateRef, type CasFailure } from '../store/ref.ts'
 import { THREAD_SLUG_PATTERN, checkSlug, type RepoPaths } from './paths.ts'
@@ -225,8 +225,21 @@ export const makeCommit = (
   return identity.ok ? commitTree(rt, paths, identity.value, tree, parents, message) : identity
 }
 
-export const moveRef = (rt: Runtime, paths: RepoPaths, next: string, expected: string | null): Ok<void> | CasFailure =>
-  casUpdateRef(rt, paths.root, THREADS_REF, next, expected)
+export const moveRef = (rt: Runtime, paths: RepoPaths, next: string, expected: string | null): Ok<void> | CasFailure => {
+  const cas = casUpdateRef(rt, paths.root, THREADS_REF, next, expected)
+  if (cas.ok) return cas
+  if (threadsTip(rt, paths) !== expected) return { ...cas, cause: 'ref-moved' }
+  const output = detailOf(cas) ?? ''
+  return {
+    ok: false,
+    cause: 'io',
+    field: THREADS_REF,
+    accepted: cas.accepted,
+    example: cas.example,
+    retryable: false,
+    message: `git update-ref failed for ${THREADS_REF}: ${output.trim()}`
+  }
+}
 
 const aliasesFile = (aliases: Record<string, string> | undefined): [string, string][] =>
   aliases === undefined ? [] : [[ALIASES_FILE, `${JSON.stringify(aliases, null, 2)}\n`]]

@@ -45,6 +45,8 @@ const ABANDONED_STATUS = 'abandoned: abandoned in the old ledger'
 const MISSING_DECISION = 'decision record missing'
 const OUT_OF_SCOPE_PREFIX = 'Out of scope: '
 const NOT_MIGRATED: MigrationResult = { migrated: false, slugs: [], skipped: [] }
+const MISSING_OBJECT_MARK = '?'
+const REFETCH_COMMAND = `git fetch --refetch --no-filter --no-write-fetch-head origin ${LEDGER_REF}`
 
 const anyList = z.array(z.unknown()).catch([])
 
@@ -137,6 +139,22 @@ const treeFailure = (error: unknown): Refusal => ({
   message: `the converted documents could not be written to the object store: ${describeError(error)}; nothing was migrated`
 })
 
+const missingObjects = (first: string): Refusal => ({
+  ok: false,
+  field: LEDGER_REF,
+  accepted: 'an old ledger whose objects this clone holds',
+  example: REFETCH_COMMAND,
+  retryable: true,
+  message: `this clone lacks objects of ${LEDGER_REF}, as a partial clone can (the first missing is ${first}); nothing was migrated; run \`${REFETCH_COMMAND}\` and try again`
+})
+
+const checkObjectsPresent = (rt: Runtime, paths: RepoPaths, tip: string): Refusal | null => {
+  const result = git(rt, paths.root, ['rev-list', '--objects', '--no-walk', '--missing=print', tip])
+  if (!result.ok) return ledgerFailure('rev-list', result.code, result.stderr)
+  const first = result.stdout.split('\n').find((line) => line.startsWith(MISSING_OBJECT_MARK))
+  return first === undefined ? null : missingObjects(first.slice(MISSING_OBJECT_MARK.length))
+}
+
 const resolveRef = (rt: Runtime, paths: RepoPaths, ref: string): string | null => {
   const result = git(rt, paths.root, ['rev-parse', '--verify', '--quiet', ref])
   return result.ok ? result.stdout.trim() : null
@@ -211,6 +229,8 @@ const entriesOf = <T>(schema: z.ZodType<T>, entries: readonly unknown[]): T[] =>
   })
 
 const readLedger = (rt: Runtime, paths: RepoPaths, tip: string): Ok<Ledger> | Refusal => {
+  const absent = checkObjectsPresent(rt, paths, tip)
+  if (absent !== null) return absent
   const listed = listLedger(rt, paths, tip)
   if (!listed.ok) return listed
   const threadEntries = listed.value.filter((entry) => THREAD_FILE_PATTERN.test(entry.path))
