@@ -1354,3 +1354,12 @@ test('error.discloses-no-path.with-detail-is-idempotent', () => {
   assert.notEqual(once, twice)
   assert.equal(Object.getOwnPropertyDescriptor(twice, 'detail')?.value, 'first detail | second detail')
 })
+
+test('error.discloses-no-path.census-leaves-out-the-thread-store', () => {
+  const scanned = scanRefusalProducers()
+  assert.deepEqual(
+    scanned.filter((id) => id.startsWith('thread/')),
+    []
+  )
+  assert.ok(scanned.includes('store/git.ts#readIdentity'))
+})

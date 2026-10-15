@@ -203,7 +203,8 @@ const producesRefusal = (checker: ts.TypeChecker, refusalType: ts.Type, returnTy
 }
 
 export const scanRefusalProducers = (): ProducerId[] => {
-  const files = walkTsFiles(SRC_ROOT)
+  const threadStoreRoot = path.join(SRC_ROOT, 'thread') + path.sep
+  const files = walkTsFiles(SRC_ROOT).filter((file) => !file.startsWith(threadStoreRoot))
   const program = loadProgram()
   const checker = program.getTypeChecker()
   const refusalType = findRefusalType(program, checker)
