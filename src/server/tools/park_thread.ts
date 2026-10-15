@@ -1,410 +1,188 @@
 import { z } from 'zod'
-import type { ToolSpec, ToolReply } from '../register.ts'
-import type { Refusal } from '../../schema/declare.ts'
-import { ULID_PATTERN } from '../../schema/ids.ts'
-import * as caps from '../../schema/caps.ts'
-import { escapeStored } from '../../render/escape.ts'
-import type { SessionEntry } from '../../schema/session.ts'
-import { PARK_THREAD_ACTOR } from '../../domain/session-log.ts'
-import { ThreadRecord, type Thread } from '../../schema/thread.ts'
-import type { Store } from '../../store/records.ts'
-import type { RecordChange } from '../../store/write-path.ts'
-import type { StoreLayout } from '../../store/layout.ts'
-import { layoutFor } from '../../store/layout.ts'
-import { readPointer, releasePointer, releasePointerIfOwned } from '../../domain/pointer.ts'
-import { withDetail } from '../../store/detail.ts'
-import {
-  NEXT_STEP_RECORDS_DESCRIPTION,
-  NEXT_STEP_RECORD_ID_DESCRIPTION,
-  STEP_RECORDS_OUTPUT_DESCRIPTION,
-  checkStepRecords,
-  contributeToSpine,
-  renderStepRecords,
-  type SpineContribution,
-  type StepRecords
-} from '../../domain/spine.ts'
+import { parseDocument, type Status } from '../../doc/document.ts'
+import { oneLine, replaceSection, setStatus } from '../../doc/render.ts'
 import type { Runtime } from '../../runtime/runtime.ts'
-import { openProjectStore } from '../tool-support.ts'
+import type { Ok, Refusal } from '../../schema/declare.ts'
+import { actingSession, heldBy, releaseHold } from '../../thread/holds.ts'
+import { findRepository, startDirectory, workingCopyPath, type RepoPaths } from '../../thread/paths.ts'
+import { applyToolChange, type ToolChange } from '../../thread/reconcile.ts'
+import { readAliases, resolveThreadId } from '../../thread/store.ts'
+import type { ToolSpec } from '../register.ts'
 
-const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
+const TOOL_NAME = 'park_thread'
+const NOT_BLANK = /\S/
+const NEXT_STEP_SECTION = 'Next step'
+const PARKED = 'parked'
+const RECORDS_ACCEPTED = 'ids of items in the document, such as D3 or R1'
 
-const ParkThreadInputSchema = z.strictObject({
-  outcome: z
-    .string()
-    .min(1)
-    .max(caps.SESSION_BODY_MAX)
-    .optional()
-    .describe(
-      'anything about this session that the session log does not already hold, written to the session log as-is; omit it and the thread is still parked and the closing session log entry is still written, just carrying no outcome text'
-    ),
-  thread_id: ulidField(
-    'the id of the thread being worked; omit it and the machine resolves it from what is currently marked as being worked'
-  ).optional(),
-  next_step: z
-    .string()
-    .optional()
-    .describe('replaces the spine next_step field when supplied, stated as one decision about what to do next: an action someone could begin without re-deriving anything, naming the file and the place in it, an action, not a goal or a phase name; omit to leave it unchanged'),
-  next_step_records: z
-    .array(ulidField(NEXT_STEP_RECORD_ID_DESCRIPTION))
-    .optional()
-    .describe(NEXT_STEP_RECORDS_DESCRIPTION)
-})
+const ParkThreadInputSchema = z
+  .strictObject({
+    thread_id: z
+      .string()
+      .optional()
+      .describe(
+        "the thread's slug, or an old thread id listed in aliases.json; omit it to park the thread this session holds"
+      ),
+    outcome: z
+      .string()
+      .optional()
+      .describe(
+        'what this session achieved, written on one line as the line of the commit after its first; omit it to park with no outcome'
+      ),
+    next_step: z
+      .string()
+      .regex(NOT_BLANK)
+      .optional()
+      .describe(
+        `replaces the body of "## ${NEXT_STEP_SECTION}": one action someone could begin without re-deriving anything; refused when empty or only whitespace; omit it to leave the next step as it is`
+      ),
+    next_step_records: z
+      .array(z.string().describe('the id of one item of the document, such as D3 or R1'))
+      .optional()
+      .describe(
+        'the ids of the document\'s items the next step needs, such as ["D3", "R1"], written after the next step as "Needs: D3, R1."; refused without next_step, and refused when it names an id the document does not hold'
+      )
+  })
+  .superRefine((input, ctx) => {
+    if (input.next_step_records !== undefined && input.next_step === undefined) {
+      ctx.addIssue({
+        code: 'invalid_value',
+        values: [],
+        path: ['next_step_records'],
+        message: 'next_step_records was sent without next_step',
+        input: input.next_step_records
+      })
+    }
+  })
+  .describe(
+    'the thread to park, or none to park the thread this session holds, with an optional outcome and an optional next_step and its next_step_records'
+  )
 
 const ParkThreadOutputSchema = z.object({
-  status: z
-    .enum([
-      'parked',
-      'not-the-worked-thread',
-      'nothing-to-park',
-      'stale-pointer-released',
-      'terminal-pointer-released',
-      'quarantined-pointer-released'
-    ])
-    .describe('what this call actually did'),
   parked_thread_ids: z
     .array(z.string())
-    .describe('the id of the thread that was parked by this call, empty when nothing was parked'),
-  session_entry_ids: z
-    .array(z.string())
-    .describe('the id of the session log entry this call wrote, empty when none was written'),
-  spine_fields_updated: z
-    .array(z.enum(['next_step']))
-    .describe('which spine fields this call changed'),
-  pointer_released: z
-    .boolean()
-    .describe('whether the record of what is being worked was released by this call'),
-  step_records: z.string().optional().describe(STEP_RECORDS_OUTPUT_DESCRIPTION)
+    .describe("the parked thread's slug, followed by each old thread id that aliases.json maps to it")
 })
 
 type ParkThreadInput = z.infer<typeof ParkThreadInputSchema>
 type ParkThreadOutput = z.infer<typeof ParkThreadOutputSchema>
 
-const invalidThreadRecordRefusal = (issue: string): Refusal => ({
+const noWorkingDirectory = (): Refusal => ({
   ok: false,
-  field: 'thread',
-  accepted: 'a thread record that matches its stored shape',
-  example: 'correct the value named in the message and retry',
-  retryable: true,
-  message: `the thread record after this change failed its stored-shape validation: ${issue}`
+  field: 'cwd',
+  accepted: 'a readable working directory inside a git repository, or CLAUDE_PROJECT_DIR naming one',
+  example: '/home/me/projects/my-app',
+  retryable: false,
+  message: 'logbook could not read its working directory and CLAUDE_PROJECT_DIR is not set, so it cannot find the repository'
 })
 
-const commitFailureRefusal = (detail: string): Refusal =>
-  withDetail(
-    {
-      ok: false,
-      field: 'thread',
-      accepted: 'a ledger that is not concurrently moving and remains writable',
-      example: 'retry the call',
-      retryable: true,
-      message: 'the ledger commit for this park did not complete; retry the call.'
-    },
-    detail
-  )
-
-const sessionBodyCapRefusal = (observed: number): Refusal => ({
+const nothingHeld = (): Refusal => ({
   ok: false,
-  field: 'outcome',
-  accepted: `at most ${caps.SESSION_BODY_MAX} characters after escaping`,
-  example: 'shipped the health check and left the merge order test for next session',
+  field: 'thread_id',
+  accepted: "the slug of a thread, or an old thread id listed in aliases.json; it may be omitted only while this session holds a thread",
+  example: 'fix-login',
   retryable: true,
-  message: `outcome exceeds its cap of ${caps.SESSION_BODY_MAX} characters after escaping; observed ${observed}; remedy: shorten the outcome and retry.`
+  message:
+    'no thread_id was named and this session holds no thread, so nothing was parked; name the thread to park, and call list_threads to see each slug'
 })
 
-type Carried = Pick<ParkThreadInput, 'outcome' | 'next_step' | 'next_step_records'>
+const closedThread = (slug: string, status: Status): Refusal => ({
+  ok: false,
+  field: 'thread_id',
+  accepted: 'a thread whose status is not done or abandoned',
+  example: 'fix-login',
+  retryable: false,
+  message: `the thread ${slug} is closed (Status: ${status.raw}), so nothing was committed; a closed thread is not parked`
+})
 
-const carriesSomethingToStore = (input: Carried): boolean =>
-  input.outcome !== undefined || input.next_step !== undefined || input.next_step_records !== undefined
+const unknownRecords = (ids: readonly string[]): Refusal => ({
+  ok: false,
+  field: 'next_step_records',
+  accepted: RECORDS_ACCEPTED,
+  example: 'D1',
+  retryable: true,
+  message: `${ids.map((id) => JSON.stringify(id)).join(', ')} ${ids.length === 1 ? 'is not an item' : 'are not items'} of the thread's document, so nothing was committed; name the c, D, R or S ids the document holds`
+})
 
-const carriedNames = (input: Carried): string[] => [
-  ...(input.outcome !== undefined ? ['the outcome'] : []),
-  ...(input.next_step !== undefined ? ['the next step'] : []),
-  ...(input.next_step_records !== undefined
-    ? [input.next_step !== undefined ? 'its records list' : 'the records list']
-    : [])
-]
+const documentRefused = (message: string): Refusal => ({
+  ok: false,
+  field: 'document',
+  accepted: 'a stored document holding every section of the state document format',
+  example: `## ${NEXT_STEP_SECTION}`,
+  retryable: false,
+  message: `${message}, so nothing was committed`
+})
 
-const listedNames = (names: readonly string[]): string =>
-  names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
-
-const notStored = (input: Carried): string => {
-  const names = carriedNames(input)
-  return `${listedNames(names)} ${names.length === 1 ? 'was' : 'were'} NOT stored and must be re-sent`
+const locate = (rt: Runtime): Ok<RepoPaths> | Refusal => {
+  const dir = startDirectory(rt, rt.cwd ?? '')
+  return dir === '' ? noWorkingDirectory() : findRepository(rt, dir)
 }
 
-const RELEASE_ONLY_CALL = 'call park_thread with none of outcome, next_step and next_step_records'
-
-const carriedField = (input: Carried): string => {
-  if (input.outcome !== undefined) return 'outcome'
-  return input.next_step !== undefined ? 'next_step' : 'next_step_records'
+const targetOf = (rt: Runtime, paths: RepoPaths, threadId: string | undefined): Ok<string> | Refusal => {
+  if (threadId !== undefined) return resolveThreadId(rt, paths, threadId)
+  const held = heldBy(paths, actingSession(paths, rt.sessionId))
+  return held === null ? nothingHeld() : { ok: true, value: held }
 }
 
-const CARRIED = 'an outcome, next step or records list'
+const isClosed = (status: Status | null): status is Status => status?.kind === 'done' || status?.kind === 'abandoned'
 
-const noWorkedThreadRefusal = (input: Carried): Refusal => ({
-  ok: false,
-  field: carriedField(input),
-  accepted: `${CARRIED} supplied while some thread is marked as being worked`,
-  example: 'call resume_thread first, then send the same park_thread call again',
-  retryable: true,
-  message: `no thread is currently marked as being worked, so nothing this call carries has anywhere to be written; ${notStored(input)}; remedy: call resume_thread on the thread this session worked and then call park_thread again, re-sending what was not stored, or ${RELEASE_ONLY_CALL} to confirm there is nothing to park.`
-})
+const unique = (ids: readonly string[]): string[] => [...new Set(ids)]
 
-const notTheWorkedThreadRefusal = (input: Carried, pointerThreadId: string, suppliedThreadId: string): Refusal => ({
-  ok: false,
-  field: carriedField(input),
-  accepted: `${CARRIED} supplied together with the thread that is actually marked as being worked`,
-  example: 'send the same park_thread call with thread_id set to the thread this message names',
-  retryable: true,
-  message: `thread_id ${suppliedThreadId} is not the thread currently marked as being worked (${pointerThreadId}), so nothing this call carries has anywhere to be written; ${notStored(input)}; the pointer was left untouched; remedy: call park_thread again with thread_id ${pointerThreadId}, re-sending what was not stored.`
-})
+const nextStepBody = (nextStep: string, records: readonly string[]): string[] =>
+  records.length === 0 ? [nextStep] : [nextStep, '', `Needs: ${records.join(', ')}.`]
 
-const otherSessionRefusal = (input: Carried, pointerThreadId: string): Refusal => ({
-  ok: false,
-  field: carriedField(input),
-  accepted: `${CARRIED} supplied by the session that holds the record of what is being worked`,
-  example: 'call resume_thread in this session, then send the same park_thread call again',
-  retryable: true,
-  message: `the record of what is being worked names thread ${pointerThreadId} and belongs to a different session, so nothing this call carries has anywhere to be written; ${notStored(input)}; the pointer was left untouched; remedy: call resume_thread in this session and then call park_thread again, re-sending what was not stored.`
-})
+const outcomeLines = (outcome: string | undefined): string[] =>
+  outcome === undefined || outcome.trim() === '' ? [] : [oneLine(outcome)]
 
-const missingThreadRecordRefusal = (input: Carried, threadId: string): Refusal => ({
-  ok: false,
-  field: carriedField(input),
-  accepted: `${CARRIED} supplied for a thread whose stored record still exists`,
-  example: `${RELEASE_ONLY_CALL} to release the stale pointer, then record what was not stored elsewhere`,
-  retryable: false,
-  message: `the thread marked as being worked (${threadId}) no longer has a stored record, so nothing this call carries has anywhere to be written; ${notStored(input)}; the pointer was left in place so this call can be retried; remedy: ${RELEASE_ONLY_CALL} to release the stale pointer, then record what was not stored on a thread that still exists.`
-})
+const withNextStep = (text: string, input: ParkThreadInput): Ok<string> | Refusal => {
+  if (input.next_step === undefined) return { ok: true, value: text }
+  const records = unique(input.next_step_records ?? [])
+  const known = new Set(parseDocument(text).items.map((item) => item.id))
+  const missing = records.filter((id) => !known.has(id))
+  if (missing.length > 0) return unknownRecords(missing)
+  const replaced = replaceSection(text, NEXT_STEP_SECTION, nextStepBody(input.next_step, records))
+  return replaced.ok ? { ok: true, value: replaced.text } : documentRefused(replaced.message)
+}
 
-const terminalThreadRefusal = (input: Carried, threadId: string, status: Thread['status']): Refusal => ({
-  ok: false,
-  field: carriedField(input),
-  accepted: `${CARRIED} supplied for a thread that is still open`,
-  example: `${RELEASE_ONLY_CALL} to release the pointer, then record what was not stored on a new thread`,
-  retryable: false,
-  message: `the thread marked as being worked (${threadId}) is already ${status}, which is terminal, so nothing this call carries can be written to it; ${notStored(input)}; the pointer was left in place so this call can be retried; remedy: ${RELEASE_ONLY_CALL} to release the pointer, then open a new thread that references this one and record what was not stored there.`
-})
-
-const corruptPointerRefusal = (input: Carried): Refusal => ({
-  ok: false,
-  field: carriedField(input),
-  accepted: `${CARRIED} supplied while the record of what is being worked parses cleanly`,
-  example: `${RELEASE_ONLY_CALL} to release the unreadable pointer, then resume the thread again`,
-  retryable: true,
-  message: `the record of what is being worked does not parse, so the thread this call belongs to cannot be resolved; ${notStored(input)}; the unreadable pointer was left in place so this call can be retried; remedy: ${RELEASE_ONLY_CALL} to release it, call resume_thread on the intended thread, then call park_thread again, re-sending what was not stored.`
-})
-
-const quarantinedPointerRefusal = (input: Carried, threadId: string): Refusal => ({
-  ok: false,
-  field: carriedField(input),
-  accepted: `${CARRIED} supplied for a thread whose stored record parses cleanly`,
-  example: `${RELEASE_ONLY_CALL} to release the pointer, then record what was not stored elsewhere`,
-  retryable: false,
-  message: `the thread currently marked as being worked (${threadId}) has a stored record that failed to parse and was quarantined, so nothing this call carries can be written to it; ${notStored(input)}; the pointer was left in place so this call can be retried; remedy: ${RELEASE_ONLY_CALL} to release the pointer, then record what was not stored on a thread whose record parses.`
-})
-
-const emptyStatusReply = (status: 'not-the-worked-thread' | 'nothing-to-park'): ToolReply<ParkThreadOutput> => ({
-  ok: true,
-  text:
-    status === 'nothing-to-park'
-      ? 'no thread is currently marked as being worked; nothing to park.'
-      : 'the given thread is not the one currently marked as being worked; nothing changed.',
-  structured: {
-    status,
-    parked_thread_ids: [],
-    session_entry_ids: [],
-    spine_fields_updated: [],
-    pointer_released: false
-  }
-})
-
-const releasedStatusReply = (
-  status: 'stale-pointer-released' | 'terminal-pointer-released' | 'quarantined-pointer-released',
-  text: string,
-  pointerReleased: boolean
-): ToolReply<ParkThreadOutput> => ({
-  ok: true,
-  text,
-  structured: {
-    status,
-    parked_thread_ids: [],
-    session_entry_ids: [],
-    spine_fields_updated: [],
-    pointer_released: pointerReleased
-  }
-})
-
-const parkResolvedThread = (
-  rt: Runtime,
-  store: Store,
-  layout: StoreLayout,
-  threadId: string,
-  input: ParkThreadInput,
-  stepRecords: StepRecords | null
-): ToolReply<ParkThreadOutput> => {
-  const slot = store.readThread(threadId)
-
-  if (slot === null) {
-    if (carriesSomethingToStore(input)) {
-      return { ok: false, refusal: missingThreadRecordRefusal(input, threadId) }
-    }
-    const released = releasePointerIfOwned(rt, layout, threadId)
-    return releasedStatusReply(
-      'stale-pointer-released',
-      'the thread marked as being worked no longer has a record; the stale pointer was released.',
-      released === 'released'
-    )
+const parkChange =
+  (slug: string, input: ParkThreadInput): ToolChange =>
+  (text) => {
+    const status = parseDocument(text).status
+    if (isClosed(status)) return { ok: false, refusal: closedThread(slug, status) }
+    const parked = setStatus(text, PARKED)
+    if (!parked.ok) return { ok: false, refusal: documentRefused(parked.message) }
+    const stepped = withNextStep(parked.text, input)
+    if (!stepped.ok) return { ok: false, refusal: stepped }
+    return { ok: true, text: stepped.value, summary: PARKED, details: outcomeLines(input.outcome), noteLines: [] }
   }
 
-  if (slot.quarantined) {
-    if (carriesSomethingToStore(input)) {
-      return { ok: false, refusal: quarantinedPointerRefusal(input, threadId) }
-    }
-    const released = releasePointerIfOwned(rt, layout, threadId)
-    return releasedStatusReply(
-      'quarantined-pointer-released',
-      'the thread marked as being worked has a stored record that failed to parse; the pointer was released so another thread can be resumed.',
-      released === 'released'
-    )
-  }
-
-  const thread = slot.record
-
-  if (thread.status !== 'open') {
-    if (carriesSomethingToStore(input)) {
-      return { ok: false, refusal: terminalThreadRefusal(input, threadId, thread.status) }
-    }
-    const released = releasePointerIfOwned(rt, layout, threadId)
-    return releasedStatusReply(
-      'terminal-pointer-released',
-      `the thread marked as being worked is already ${thread.status}, which is terminal; the pointer was released.`,
-      released === 'released'
-    )
-  }
-
-  const escapedOutcome = input.outcome === undefined ? null : escapeStored(input.outcome)
-  if (escapedOutcome !== null && escapedOutcome.length > caps.SESSION_BODY_MAX) {
-    return { ok: false, refusal: sessionBodyCapRefusal(escapedOutcome.length) }
-  }
-
-  const spineContribution: SpineContribution = {
-    ...(input.next_step !== undefined ? { next_step: input.next_step } : {}),
-    ...(input.next_step_records !== undefined ? { next_step_records: input.next_step_records } : {})
-  }
-  const spineFieldsUpdated: 'next_step'[] = input.next_step !== undefined ? ['next_step'] : []
-
-  const contributed = contributeToSpine(thread.spine, spineContribution)
-  if (!contributed.ok) {
-    return { ok: false, refusal: contributed }
-  }
-
-  const nextThread: Thread = {
-    ...thread,
-    spine: contributed.value,
-    updated_at: rt.now()
-  }
-
-  const validated = ThreadRecord.parse(nextThread)
-  if (!validated.ok) {
-    return { ok: false, refusal: invalidThreadRecordRefusal(validated.message) }
-  }
-
-  const sessionEntry: SessionEntry = {
-    id: rt.ulid(),
-    thread_id: thread.id,
-    actor: PARK_THREAD_ACTOR,
-    body: escapedOutcome === null ? '' : escapedOutcome,
-    created_at: rt.now()
-  }
-
-  const changes: RecordChange[] = [
-    { kind: 'thread', record: validated.value },
-    { kind: 'session', record: sessionEntry }
-  ]
-
-  const committed = store.commit(changes, `park thread ${thread.slug}`)
-  if (!committed.ok) {
-    return { ok: false, refusal: commitFailureRefusal(committed.detail) }
-  }
-
-  const released = releasePointerIfOwned(rt, layout, thread.id)
-
-  return {
-    ok: true,
-    text:
-      escapedOutcome === null
-        ? `parked thread ${thread.slug} without an outcome; the session log entry that closes this session was still written.`
-        : `parked thread ${thread.slug}.`,
-    structured: {
-      status: 'parked',
-      parked_thread_ids: [thread.id],
-      session_entry_ids: [sessionEntry.id],
-      spine_fields_updated: spineFieldsUpdated,
-      pointer_released: released === 'released',
-      ...(stepRecords === null ? {} : { step_records: renderStepRecords(store, stepRecords, validated.value.spine.next_step) })
-    }
-  }
+const parkedIds = (rt: Runtime, paths: RepoPaths, slug: string): string[] => {
+  const aliases = readAliases(rt, paths)
+  return [slug, ...Object.keys(aliases).filter((id) => aliases[id] === slug)]
 }
 
 export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
-  name: 'park_thread',
+  name: TOOL_NAME,
   title: 'Park thread',
-  description:
-    'Ends work on the thread being worked right now, in a single call: it writes the session log entry, sets the next step and the records it needs, and releases the record of what is being worked. The last_session field is no longer accepted here; it is derived from the session log. Send the next step with next_step_records; the thread id is optional because the machine already knows which thread is being worked. The outcome is optional and carries only what the session log does not already hold; omit it and the thread is still parked and the session log entry that closes this session is still written, just carrying no outcome text. Setting next_step requires next_step_records: the records the step needs, found with search_ledger across every thread; the reply returns them in full. The thread stays open, parking is not closing, and a parked thread appears in the next roster.',
+  description: `Sets a thread's status to parked in one commit and releases the session's hold on it, so the thread waits in the roster for the next session. Name the thread with thread_id, or omit it to park the thread this session holds. outcome, when given, is kept in the commit. next_step replaces the body of "## ${NEXT_STEP_SECTION}", followed by the line "Needs: <ids>." when next_step_records names the items of the document that step needs. A thread that is done or abandoned is refused. Returns the parked thread's slug and each old thread id that maps to it.`,
   input: ParkThreadInputSchema,
   output: ParkThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   handler: async (rt, _ctx, input) => {
-    const opened = openProjectStore(rt)
-    if (!opened.ok) return { ok: false, refusal: opened.refusal }
-    const store = opened.value
-
-    const layout = layoutFor(rt, rt.cwd)
-    if (!layout.ok) return { ok: false, refusal: layout }
-
-    const checkedStepRecords = checkStepRecords(store, input)
-    if (!checkedStepRecords.ok) return { ok: false, refusal: checkedStepRecords }
-    const stepRecords = checkedStepRecords.value
-
-    const pointerRead = readPointer(rt, layout.value)
-
-    if (pointerRead.kind === 'corrupt') {
-      if (carriesSomethingToStore(input)) {
-        return { ok: false, refusal: corruptPointerRefusal(input) }
-      }
-      releasePointer(rt, layout.value)
-      return releasedStatusReply(
-        'stale-pointer-released',
-        'the record of what is being worked failed to parse; the stale pointer was released.',
-        true
-      )
+    const paths = locate(rt)
+    if (!paths.ok) return { ok: false, refusal: paths }
+    const slug = targetOf(rt, paths.value, input.thread_id)
+    if (!slug.ok) return { ok: false, refusal: slug }
+    const file = workingCopyPath(paths.value, slug.value)
+    if (!file.ok) return { ok: false, refusal: file }
+    const applied = applyToolChange(rt, paths.value, slug.value, { tool: TOOL_NAME, change: parkChange(slug.value, input) })
+    if (!applied.ok) return { ok: false, refusal: applied }
+    applied.value.push?.unref()
+    releaseHold(rt, paths.value, slug.value)
+    return {
+      ok: true,
+      text: `parked thread ${slug.value}\n${file.value}`,
+      structured: { parked_thread_ids: parkedIds(rt, paths.value, slug.value) }
     }
-
-    if (pointerRead.kind === 'absent') {
-      if (carriesSomethingToStore(input)) {
-        return { ok: false, refusal: noWorkedThreadRefusal(input) }
-      }
-      return emptyStatusReply('nothing-to-park')
-    }
-
-    const pointer = pointerRead.value
-
-    if (input.thread_id !== undefined) {
-      if (pointer.thread_id !== input.thread_id) {
-        if (carriesSomethingToStore(input)) {
-          return { ok: false, refusal: notTheWorkedThreadRefusal(input, pointer.thread_id, input.thread_id) }
-        }
-        return emptyStatusReply('not-the-worked-thread')
-      }
-      return parkResolvedThread(rt, store, layout.value, pointer.thread_id, input, stepRecords)
-    }
-
-    if (pointer.session_id !== rt.sessionId) {
-      if (carriesSomethingToStore(input)) {
-        return { ok: false, refusal: otherSessionRefusal(input, pointer.thread_id) }
-      }
-      return emptyStatusReply('not-the-worked-thread')
-    }
-    return parkResolvedThread(rt, store, layout.value, pointer.thread_id, input, stepRecords)
   }
 }

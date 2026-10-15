@@ -7,11 +7,11 @@ export const REQUIRED_FILES = [
   'bin/logbook-server.ts',
   'hooks/hooks.json',
   'hooks/lib/io.ts',
+  'hooks/post-tool-use.ts',
   'hooks/pre-tool-use.ts',
   'hooks/session-end.ts',
   'hooks/session-start.ts',
   'hooks/stop.ts',
-  'hooks/user-prompt-submit.ts',
   'skills/debrief/SKILL.md',
   'skills/file/SKILL.md',
   'skills/preflight/SKILL.md',
@@ -45,18 +45,20 @@ export const FORBIDDEN_SERVER_ENV_KEYS = [
 
 export const REQUIRED_HOOK_EVENTS = [
   'SessionStart',
-  'UserPromptSubmit',
   'PreToolUse',
-  'SessionEnd',
-  'Stop'
+  'PostToolUse',
+  'PostToolUseFailure',
+  'Stop',
+  'SessionEnd'
 ]
 
 export const EVENT_HOOK_FILES = {
   SessionStart: 'session-start',
-  UserPromptSubmit: 'user-prompt-submit',
   PreToolUse: 'pre-tool-use',
-  SessionEnd: 'session-end',
-  Stop: 'stop'
+  PostToolUse: 'post-tool-use',
+  PostToolUseFailure: 'post-tool-use',
+  Stop: 'stop',
+  SessionEnd: 'session-end'
 }
 
 export const USER_CONFIG_CONSUMER_ROOTS = ['src', 'hooks', 'bin']

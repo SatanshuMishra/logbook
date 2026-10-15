@@ -3,20 +3,36 @@
     "SessionStart": [
       { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.ts\"", "timeout": 30 }] }
     ],
-    "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/user-prompt-submit.ts\"", "timeout": 15 }] }
-    ],
     "PreToolUse": [
       {
-        "matcher": "^(Read|Write|Edit|MultiEdit|NotebookEdit|Bash|mcp__(?:plugin_logbook_)?ledger__[A-Za-z][A-Za-z0-9_]*)$",
+        "matcher": "^(Bash|Agent|Task)$",
         "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.ts\"", "timeout": 10 }]
+      },
+      {
+        "matcher": "^(Read|Edit)$",
+        "hooks": [
+          { "type": "command", "if": "Read(~/.logbook/**)", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.ts\"", "timeout": 10 },
+          { "type": "command", "if": "Edit(~/.logbook/**)", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.ts\"", "timeout": 10 }
+        ]
       }
     ],
-    "SessionEnd": [
-      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.ts\"", "timeout": 15 }] }
+    "PostToolUse": [
+      {
+        "matcher": "^(Edit|Write|MultiEdit|NotebookEdit|Bash|Agent|Task|mcp__.+__(create|merge)_pull_request)$",
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/post-tool-use.ts\"", "timeout": 30 }]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "^(Bash|Agent|Task)$",
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/post-tool-use.ts\"", "timeout": 10 }]
+      }
     ],
     "Stop": [
       { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/stop.ts\"", "timeout": 15 }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.ts\"", "timeout": 15 }] }
     ]
   }
 }

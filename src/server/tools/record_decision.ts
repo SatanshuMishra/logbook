@@ -1,297 +1,192 @@
 import { z } from 'zod'
+import { LETTER_SECTION, parseDocument } from '../../doc/document.ts'
+import { addItem, oneLine, removeItem } from '../../doc/render.ts'
+import type { Runtime } from '../../runtime/runtime.ts'
+import type { Ok, Refusal } from '../../schema/declare.ts'
+import { findRepository, startDirectory, type RepoPaths } from '../../thread/paths.ts'
+import { applyToolChange } from '../../thread/reconcile.ts'
+import { resolveThreadId } from '../../thread/store.ts'
 import type { ToolSpec } from '../register.ts'
-import type { Refusal } from '../../schema/declare.ts'
-import { ULID_PATTERN } from '../../schema/ids.ts'
-import * as caps from '../../schema/caps.ts'
-import { escapeStored } from '../../render/escape.ts'
-import { DecisionRecord, type Decision } from '../../schema/decision.ts'
-import { ThreadRecord, type KeyDecision, type Thread } from '../../schema/thread.ts'
-import type { RecordChange } from '../../store/write-path.ts'
-import { readProjectHead } from '../../store/git.ts'
-import { withDetail } from '../../store/detail.ts'
-import { openProjectStore, loadThread, decisionResolver } from '../tool-support.ts'
 
-const ulidField = (description: string) => z.string().regex(ULID_PATTERN).describe(description)
+const TOOL_NAME = 'record_decision'
+const NOT_BLANK = /\S/
+const DECISION_ID = /^D[1-9][0-9]*$/
 
-const RecordDecisionInputSchema = z.strictObject({
-  thread_id: ulidField('the id of the thread this decision belongs to; the thread must currently be open'),
-  title: z.string().min(1).describe('a one-line title for the decision'),
-  context: z
-    .string()
-    .describe('what forced this choice: the situation that made a decision necessary; refused when empty or only whitespace'),
-  options: z
-    .array(z.string().describe('one option that was on the table'))
-    .max(caps.DECISION_OPTIONS_MAX_ELEMENTS)
-    .describe(
-      'the options that were on the table, at least two, for example ["ship the fast path", "keep the safe default"]; refused with fewer than two or with an option that is empty or only whitespace'
+const filledText = (description: string) => z.string().regex(NOT_BLANK).describe(description)
+
+const RecordDecisionInputSchema = z
+  .strictObject({
+    thread_id: z
+      .string()
+      .describe("the thread's slug, or an old thread id listed in aliases.json; call list_threads to see each slug"),
+    title: filledText('a one-line title for the decision; refused when empty or only whitespace'),
+    context: filledText(
+      'what forced this choice: the situation that made a decision necessary; refused when empty or only whitespace'
     ),
-  option_reasons: z
-    .array(z.string().describe('the reason for the option at the same position in options'))
-    .max(caps.DECISION_OPTIONS_MAX_ELEMENTS)
-    .optional()
-    .describe(
-      'one reason per option, in the same order as options, saying for each option why it was or was not chosen; refused when its length differs from options or a reason is empty or only whitespace; omit it to record no reasons'
-    ),
-  outcome: z
-    .string()
-    .describe('which option was chosen and why; refused when empty or only whitespace'),
-  scope: z
-    .string()
-    .min(1)
-    .optional()
-    .describe(
-      'the criterion or area of the thread this decision resolved, stored on the spine link; omit it and the decision is recorded with no particular scope'
-    ),
-  criterion_id: z
-    .string()
-    .regex(ULID_PATTERN)
-    .optional()
-    .describe(
-      'the completion criterion this decision ranks against, stored on the spine link; refused when it names no criterion on this thread; omit it when the decision is not anchored to one criterion'
-    ),
-  supersedes: z
-    .array(ulidField('the id of a decision this new one reverses or replaces'))
-    .max(caps.DECISION_SUPERSEDES_MAX_ELEMENTS)
-    .optional()
-    .describe('decision ids this new decision supersedes; omit or send an empty array when this decision supersedes nothing')
-})
+    options: z
+      .array(filledText('one option that was on the table; refused when empty or only whitespace'))
+      .min(2)
+      .describe(
+        'the options that were on the table, at least two, for example ["retry in the client", "retry inside charge()"]'
+      ),
+    option_reasons: z
+      .array(filledText('the reason for the option at the same position in options; refused when empty or only whitespace'))
+      .optional()
+      .describe(
+        'one reason per option, in the same order as options, saying for each option why it was or was not chosen; refused when its count differs from options; omit it to record no reasons'
+      ),
+    outcome: filledText('which option was chosen and why; refused when empty or only whitespace'),
+    supersedes: z
+      .array(
+        z
+          .string()
+          .regex(DECISION_ID)
+          .describe('the id of a decision listed under "## Decisions in force" that this decision replaces, such as D1')
+      )
+      .optional()
+      .describe('the decisions in force this decision replaces; each is removed from the document; omit it when it replaces none')
+  })
+  .superRefine((input, ctx) => {
+    const reasons = input.option_reasons
+    const count = input.options.length
+    if (reasons === undefined || reasons.length === count) return
+    const message = `option_reasons carries ${reasons.length} reasons for ${count} options`
+    ctx.addIssue(
+      reasons.length > count
+        ? { code: 'too_big', origin: 'array', maximum: count, inclusive: true, path: ['option_reasons'], message, input: reasons }
+        : { code: 'too_small', origin: 'array', minimum: count, inclusive: true, path: ['option_reasons'], message, input: reasons }
+    )
+  })
 
 const RecordDecisionOutputSchema = z.object({
-  decision_id: z.string().describe('the id minted for the new decision record'),
-  thread_id: z.string().describe('the id of the thread the decision was recorded against'),
-  commit: z.string().nullable().describe('the project HEAD sha recorded on the decision, or null when it could not be read'),
-  scope: z
-    .string()
-    .nullable()
-    .describe('the scope recorded on the spine link, or null when none was supplied'),
-  linked: z.boolean().describe('whether this call also linked the decision into the thread running summary'),
-  link_skipped_reason: z
-    .string()
-    .nullable()
-    .describe('why the spine link was not written, or null when it was written')
+  thread_id: z.string().describe('the slug of the thread the decision was added to'),
+  decision_id: z.string().describe('the id of the new decision in force, such as D3'),
+  removed: z
+    .array(z.string())
+    .describe('the ids of the decisions this one superseded, each removed from Decisions in force')
 })
 
 type RecordDecisionInput = z.infer<typeof RecordDecisionInputSchema>
 type RecordDecisionOutput = z.infer<typeof RecordDecisionOutputSchema>
 
-export const invalidDecisionRefusal = (issue: string): Refusal => ({
+type Recorded =
+  | { ok: true; decisionId: string; text: string; summary: string; details: string[]; noteLines: string[] }
+  | { ok: false; refusal: Refusal }
+
+type Removal = { ok: true; text: string; noteLines: string[] } | { ok: false; message: string }
+
+const noWorkingDirectory = (): Refusal => ({
   ok: false,
-  field: 'decision',
-  accepted: 'a decision record that stays within its stored-shape caps',
-  example: 'shorten the title or an option and retry',
-  retryable: true,
-  message: `the decision record failed its stored-shape validation: ${issue}`
+  field: 'cwd',
+  accepted: 'a readable working directory inside a git repository, or CLAUDE_PROJECT_DIR naming one',
+  example: '/home/me/projects/my-app',
+  retryable: false,
+  message: 'logbook could not read its working directory and CLAUDE_PROJECT_DIR is not set, so it cannot find the repository'
 })
 
-const isBlank = (text: string): boolean => text.trim().length === 0
-
-export const blankFieldRefusal = (field: 'context' | 'outcome'): Refusal => ({
+const notInForce = (index: number, id: string): Refusal => ({
   ok: false,
-  field,
-  accepted:
-    field === 'context'
-      ? 'a context that states what forced this choice, not empty and not only whitespace'
-      : 'an outcome that states which option was chosen and why, not empty and not only whitespace',
-  example:
-    field === 'context'
-      ? 'retries double-charge customers when the payment provider times out'
-      : 'retry inside charge(), because only charges are idempotent',
+  field: `supersedes.${index}`,
+  accepted: 'the id of a decision listed under "## Decisions in force" in the thread\'s document, such as D1',
+  example: 'D1',
   retryable: true,
-  message: `${field} is empty or only whitespace; nothing was stored.`
+  message: `${id} is not a decision in force on this thread, so nothing was committed; read the thread's document for the D ids under "## Decisions in force"`
 })
 
-export const tooFewOptionsRefusal = (received: number): Refusal => ({
+const documentRefused = (message: string): Refusal => ({
   ok: false,
-  field: 'options',
-  accepted: 'at least two options that were on the table',
-  example: '["retry in the client", "retry inside charge()"]',
-  retryable: true,
-  message: `options carries ${received} option${received === 1 ? '' : 's'}; a decision chooses between at least two, so nothing was stored.`
+  field: 'document',
+  accepted: 'a stored document holding every section of the state document format',
+  example: '## Decisions in force',
+  retryable: false,
+  message: `${message}, so nothing was committed`
 })
 
-export const blankOptionRefusal = (index: number): Refusal => ({
-  ok: false,
-  field: 'options',
-  accepted: 'options that each state a choice, none empty or only whitespace',
-  example: '["retry in the client", "retry inside charge()"]',
-  retryable: true,
-  message: `options[${index}] is empty or only whitespace; nothing was stored.`
-})
-
-export const optionReasonsLengthRefusal = (reasons: number, options: number): Refusal => ({
-  ok: false,
-  field: 'option_reasons',
-  accepted: 'exactly one reason per option, in the same order as options, or no option_reasons at all',
-  example: '["retries every request, unsafe for payments", "chosen: only charges are idempotent"]',
-  retryable: true,
-  message: `option_reasons carries ${reasons} reason${reasons === 1 ? '' : 's'} for ${options} options; nothing was stored.`
-})
-
-export const blankOptionReasonRefusal = (index: number): Refusal => ({
-  ok: false,
-  field: 'option_reasons',
-  accepted: 'reasons that each say why their option was or was not chosen, none empty or only whitespace',
-  example: '["retries every request, unsafe for payments", "chosen: only charges are idempotent"]',
-  retryable: true,
-  message: `option_reasons[${index}] is empty or only whitespace; nothing was stored.`
-})
-
-const standardRefusal = (input: RecordDecisionInput): Refusal | null => {
-  if (isBlank(input.context)) return blankFieldRefusal('context')
-  if (input.options.length < 2) return tooFewOptionsRefusal(input.options.length)
-  const blankOption = input.options.findIndex(isBlank)
-  if (blankOption !== -1) return blankOptionRefusal(blankOption)
-  if (input.option_reasons !== undefined) {
-    if (input.option_reasons.length !== input.options.length) {
-      return optionReasonsLengthRefusal(input.option_reasons.length, input.options.length)
-    }
-    const blankReason = input.option_reasons.findIndex(isBlank)
-    if (blankReason !== -1) return blankOptionReasonRefusal(blankReason)
-  }
-  if (isBlank(input.outcome)) return blankFieldRefusal('outcome')
-  return null
+const locate = (rt: Runtime): Ok<RepoPaths> | Refusal => {
+  const dir = startDirectory(rt, rt.cwd ?? '')
+  return dir === '' ? noWorkingDirectory() : findRepository(rt, dir)
 }
 
-export const commitFailureRefusal = (detail: string): Refusal =>
-  withDetail(
-    {
-      ok: false,
-      field: 'decision',
-      accepted: 'a ledger that is not concurrently moving and remains writable',
-      example: 'retry the call',
-      retryable: true,
-      message: 'the ledger commit for this decision did not complete; retry the call.'
-    },
-    detail
+const decisionsInForce = (text: string): ReadonlySet<string> =>
+  new Set(
+    parseDocument(text)
+      .items.filter((item) => item.letter === 'D' && item.section === LETTER_SECTION.D)
+      .map((item) => item.id)
   )
 
-export const unknownCriterionRefusal = (id: string): Refusal => ({
-  ok: false,
-  field: 'criterion_id',
-  accepted: 'a criterion_id that names a completion criterion already present on this thread',
-  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
-  retryable: true,
-  message: `criterion_id names an id not present on this thread: ${id}.`
-})
+const optionLine = (option: string, reason: string | undefined): string =>
+  reason === undefined ? `Option: ${oneLine(option)}` : `Option: ${oneLine(option)} - ${oneLine(reason)}`
 
-export const unresolvedSupersedesRefusal = (index: number, decisionId: string): Refusal => ({
-  ok: false,
-  field: 'supersedes',
-  accepted: 'a decision id that resolves to a stored decision record',
-  example: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
-  retryable: true,
-  message: `supersedes[${index}] does not resolve to a stored decision record; received ${decisionId}.`
-})
+const withoutSuperseded = (text: string, ids: readonly string[], by: string): Removal =>
+  ids.reduce<Removal>(
+    (state, id) => {
+      if (!state.ok) return state
+      const removed = removeItem(state.text, id, `superseded by ${by}`)
+      if (!removed.ok) return { ok: false, message: removed.message }
+      return {
+        ok: true,
+        text: removed.text,
+        noteLines: removed.noteLine === null ? state.noteLines : [...state.noteLines, removed.noteLine]
+      }
+    },
+    { ok: true, text, noteLines: [] }
+  )
+
+const recordIn = (text: string, input: RecordDecisionInput): Recorded => {
+  const supersedes = input.supersedes ?? []
+  const inForce = decisionsInForce(text)
+  const missing = supersedes.findIndex((id) => !inForce.has(id))
+  const missingId = supersedes[missing]
+  if (missingId !== undefined) return { ok: false, refusal: notInForce(missing, missingId) }
+  const added = addItem(text, 'D', `${oneLine(input.title)}: ${oneLine(input.outcome)}`)
+  if (!added.ok) return { ok: false, refusal: documentRefused(added.message) }
+  if (added.id === null) return { ok: false, refusal: documentRefused('the decision was given no id') }
+  const decisionId = added.id
+  const removal = withoutSuperseded(added.text, [...new Set(supersedes)], decisionId)
+  if (!removal.ok) return { ok: false, refusal: documentRefused(removal.message) }
+  return {
+    ok: true,
+    decisionId,
+    text: removal.text,
+    summary: `${decisionId} ${oneLine(input.title)}`,
+    details: [
+      `Context: ${oneLine(input.context)}`,
+      ...input.options.map((option, index) => optionLine(option, input.option_reasons?.[index])),
+      `Outcome: ${oneLine(input.outcome)}`
+    ],
+    noteLines: removal.noteLines
+  }
+}
 
 export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOutput> = {
-  name: 'record_decision',
+  name: TOOL_NAME,
   title: 'Record decision',
   description:
-    "Writes down one decision the moment it is made, with the reasoning that produced it, and returns the new record's id. Takes the thread it belongs to, a one-line title, the situation that forced the choice, the options that were on the table as a list of strings, and the outcome that was chosen. Whoever chose between the options records the choice. A decision needs a context and an outcome that are not blank and at least two options; option_reasons may give one reason per option, in the same order, saying why it was or was not chosen. A decision cannot be edited afterwards by any tool here; reversing one means recording a new decision that names the old one in supersedes, and the old record stays readable. It also stores the project's current commit, so a later reader can see what the code looked like when this was settled.",
+    'Adds one decision in force to a thread\'s document, as the line "- D<n> <title>: <outcome>", and keeps the context, every option with its reason and the outcome in the commit message. Whoever chose between the options records the choice. It takes the thread, a one-line title, the situation that forced the choice, at least two options that were on the table, optionally one reason per option in the same order, and the outcome. A decision that replaces earlier ones names their D ids in supersedes; each of those lines is removed from Decisions in force with a note naming the decision that superseded it. Returns the new decision\'s id.',
   input: RecordDecisionInputSchema,
   output: RecordDecisionOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   handler: async (rt, _ctx, input) => {
-    const opened = openProjectStore(rt)
-    if (!opened.ok) return { ok: false, refusal: opened.refusal }
-    const store = opened.value
-
-    const loaded = loadThread(store, 'thread_id', input.thread_id)
-    if (!loaded.ok) return { ok: false, refusal: loaded.refusal }
-    const thread = loaded.value
-
-    const substandard = standardRefusal(input)
-    if (substandard !== null) return { ok: false, refusal: substandard }
-
-    if (input.criterion_id !== undefined && !thread.completion_criteria.some((c) => c.id === input.criterion_id)) {
-      return { ok: false, refusal: unknownCriterionRefusal(input.criterion_id) }
-    }
-
-    const supersedes = input.supersedes ?? []
-    const resolveDecision = decisionResolver(store)
-    const unresolvedIndex = supersedes.findIndex((decisionId) => !resolveDecision(decisionId))
-    const unresolvedDecisionId = unresolvedIndex === -1 ? undefined : supersedes[unresolvedIndex]
-    if (unresolvedDecisionId !== undefined) {
-      return { ok: false, refusal: unresolvedSupersedesRefusal(unresolvedIndex, unresolvedDecisionId) }
-    }
-
-    const escapedTitle = escapeStored(input.title)
-    const escapedOptions = input.options.map((option) => escapeStored(option))
-    const escapedOptionReasons = input.option_reasons?.map((reason) => escapeStored(reason))
-
-    const escapedScope = input.scope === undefined ? '' : escapeStored(input.scope)
-
-    const commit = readProjectHead(rt, rt.cwd)
-    const decisionId = rt.ulid()
-    const createdAt = rt.now()
-
-    const escapedContext = escapeStored(input.context)
-    const escapedOutcome = escapeStored(input.outcome)
-
-    const decision: Decision = {
-      id: decisionId,
-      thread_id: thread.id,
-      title: escapedTitle,
-      context: escapedContext,
-      options: escapedOptions,
-      ...(escapedOptionReasons === undefined ? {} : { option_reasons: escapedOptionReasons }),
-      outcome: escapedOutcome,
-      commit,
-      supersedes,
-      created_at: createdAt
-    }
-
-    const validated = DecisionRecord.parse(decision)
-    if (!validated.ok) {
-      return { ok: false, refusal: invalidDecisionRefusal(validated.message) }
-    }
-
-    const keyDecision: KeyDecision = {
-      id: rt.ulid(),
-      decision_id: validated.value.id,
-      title: validated.value.title,
-      scope: escapedScope,
-      criterion_id: input.criterion_id
-    }
-
-    const prospective: Thread = {
-      ...thread,
-      spine: { ...thread.spine, key_decisions: [...thread.spine.key_decisions, keyDecision] },
-      updated_at: rt.now()
-    }
-
-    const prospectiveValidated = ThreadRecord.parse(prospective)
-
-    const linkSkippedReason = prospectiveValidated.ok
-      ? null
-      : `the thread record carrying this link failed its stored-shape validation, so the decision was recorded and the spine link was not written: ${prospectiveValidated.message}`
-
-    const changes: RecordChange[] = prospectiveValidated.ok
-      ? [
-          { kind: 'decision', record: validated.value },
-          { kind: 'thread', record: prospectiveValidated.value }
-        ]
-      : [{ kind: 'decision', record: validated.value }]
-
-    const committed = store.commit(changes, `record decision ${validated.value.id} on thread ${thread.slug}`)
-    if (!committed.ok) {
-      return { ok: false, refusal: commitFailureRefusal(committed.detail) }
-    }
-
+    const paths = locate(rt)
+    if (!paths.ok) return { ok: false, refusal: paths }
+    const slug = resolveThreadId(rt, paths.value, input.thread_id)
+    if (!slug.ok) return { ok: false, refusal: slug }
+    let decisionId: string | null = null
+    const applied = applyToolChange(rt, paths.value, slug.value, {
+      tool: TOOL_NAME,
+      change: (text) => {
+        const recorded = recordIn(text, input)
+        if (recorded.ok) decisionId = recorded.decisionId
+        return recorded
+      }
+    })
+    if (!applied.ok) return { ok: false, refusal: applied }
+    applied.value.push?.unref()
+    const recordedId = decisionId ?? ''
     return {
       ok: true,
-      text:
-        linkSkippedReason === null
-          ? `recorded decision ${validated.value.id} on thread ${thread.slug} and linked it into the running summary.`
-          : `recorded decision ${validated.value.id} on thread ${thread.slug}; the running-summary link was not written.`,
-      structured: {
-        decision_id: validated.value.id,
-        thread_id: thread.id,
-        commit: validated.value.commit,
-        scope: input.scope === undefined ? null : escapedScope,
-        linked: linkSkippedReason === null,
-        link_skipped_reason: linkSkippedReason
-      }
+      text: `recorded decision ${recordedId} on thread ${slug.value}`,
+      structured: { thread_id: slug.value, decision_id: recordedId, removed: applied.value.removed }
     }
   }
 }

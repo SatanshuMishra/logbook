@@ -1,283 +1,142 @@
+import { mkdirSync } from 'node:fs'
+import path from 'node:path'
 import { z } from 'zod'
+import { LETTER_SECTION } from '../../doc/document.ts'
+import { newDocument } from '../../doc/render.ts'
+import type { Runtime } from '../../runtime/runtime.ts'
+import type { Ok, Refusal } from '../../schema/declare.ts'
+import { SLUG_PATTERN } from '../../schema/ids.ts'
+import { durableWrite } from '../../store/durable-write.ts'
+import { actingSession, foldHold, takeHold } from '../../thread/holds.ts'
+import { migrateIfNeeded } from '../../thread/migrate.ts'
+import { findRepository, startDirectory, workingCopyPath, type RepoPaths } from '../../thread/paths.ts'
+import { startPush } from '../../thread/reconcile.ts'
+import { commitDocuments, readDocument, type ThreadMoved } from '../../thread/store.ts'
 import type { ToolSpec } from '../register.ts'
-import type { Refusal } from '../../schema/declare.ts'
-import type { Artifact, Criterion, Thread } from '../../schema/thread.ts'
-import { criterionSettledness } from '../../schema/thread.ts'
-import { SLUG_PATTERN, ULID_PATTERN } from '../../schema/ids.ts'
-import { ULID_LENGTH } from '../../schema/ulid-length.ts'
-import * as caps from '../../schema/caps.ts'
-import { displayStored, escapeStored } from '../../render/escape.ts'
-import { ArtifactAddSchema, commitThread, loadThreadForReference, mintArtifacts, openProjectStore } from '../tool-support.ts'
-import { layoutFor } from '../../store/layout.ts'
-import { recordBriefed } from '../../domain/briefed.ts'
-import {
-  NEXT_STEP_RECORDS_DESCRIPTION,
-  NEXT_STEP_RECORD_ID_DESCRIPTION,
-  STEP_RECORDS_OUTPUT_DESCRIPTION,
-  renderStepRecords,
-  resolveStepRecords
-} from '../../domain/spine.ts'
 
-const CriterionCreateSchema = z
+const TOOL_NAME = 'open_thread'
+const NOT_BLANK = /\S/
+const SLUG_MAX_LENGTH = 64
+const DONE_WHEN = LETTER_SECTION.c
+
+const filledText = (description: string) => z.string().regex(NOT_BLANK).describe(description)
+
+const OpenThreadInputSchema = z
   .strictObject({
-    text: z
+    slug: z
       .string()
-      .min(1)
-      .describe('one completion criterion as plain text; the server mints its id and display ordinal'),
-    check: z
-      .string()
-      .min(1)
-      .optional()
-      .describe('the re-runnable check that decides whether this criterion is true, for example npm test exits 0; required unless settledness is unsettled'),
-    settledness: z
-      .enum(['confirmed', 'proposed', 'unsettled'])
+      .regex(SLUG_PATTERN)
+      .max(SLUG_MAX_LENGTH)
       .describe(
-        'who stands behind this criterion: confirmed when the human stated or agreed it, proposed when you derived it, unsettled when done is genuinely not known for this part yet'
+        `the thread's name, unique in this repository: lowercase letters, digits and hyphens, starting with a letter or digit, at most ${SLUG_MAX_LENGTH} characters, for example fix-login`
       ),
-    settled_by: z
-      .string()
-      .regex(/\S/)
+    title: filledText('what the work is, in one line; refused when empty or only whitespace'),
+    goal: filledText(
+      'what the work is trying to achieve, in one or two sentences a fresh session can act on; refused when empty or only whitespace'
+    ),
+    next_step: filledText(
+      'the next action, one someone could begin without re-deriving anything; refused when empty or only whitespace'
+    ),
+    criteria: z
+      .array(filledText('one thing that must be true for the work to be done; refused when empty or only whitespace'))
       .optional()
-      .describe('the human words behind a confirmed criterion, quoted verbatim; refused on any other settledness')
+      .describe(
+        `what must be true for the work to be done, written in the given order under "## ${DONE_WHEN}" as c1, c2 and so on; omit it when done is not known yet`
+      ),
+    details: z
+      .array(
+        filledText(
+          'one line saying where more about the work lives, such as "Spec: docs/specs/login.md"; refused when empty or only whitespace'
+        )
+      )
+      .optional()
+      .describe('where the details of the work live, each written as one line under "## Where the details live"')
   })
-  .describe('one completion criterion together with the check that decides it and the settledness that says who stands behind it')
-
-const OpenThreadInputSchema = z.strictObject({
-  title: z.string().min(1).describe('the one-line thread title'),
-  slug: z
-    .string()
-    .min(1)
-    .regex(SLUG_PATTERN)
-    .describe('a short lowercase label unique in this project, letters digits and hyphens, for example merge-and-sync'),
-  predecessor_id: z
-    .string()
-    .regex(ULID_PATTERN)
-    .optional()
-    .describe(
-      `the id of an existing thread this new thread succeeds, a ${ULID_LENGTH}-character ULID such as 01M0NDPM0ACCR9CD68PMHYWGGD; omit it when this thread succeeds no earlier thread`
-    ),
-  active_goal: z
-    .string()
-    .regex(/\S/)
-    .describe('what this thread is trying to achieve, in one or two sentences a fresh session can act on'),
-  next_step: z
-    .string()
-    .regex(/\S/)
-    .describe(
-      'the next action someone would take, stated as one decision about what to do next: an action someone could begin without re-deriving anything, naming the file and the place in it where the action involves one, an action, not a goal or a phase name'
-    ),
-  next_step_records: z
-    .array(z.string().regex(ULID_PATTERN).describe(NEXT_STEP_RECORD_ID_DESCRIPTION))
-    .describe(NEXT_STEP_RECORDS_DESCRIPTION),
-  completion_criteria: z
-    .array(CriterionCreateSchema)
-    .max(caps.CRITERIA_MAX_ELEMENTS)
-    .optional()
-    .describe('what finishing looks like where that is already known; omit it and the definition of done is owed later'),
-  artifacts: z
-    .array(ArtifactAddSchema)
-    .max(caps.ARTIFACTS_PER_CALL_MAX_ELEMENTS)
-    .optional()
-    .describe('documents this thread already needs; each one is minted a stable id, exactly as artifacts_add does on update_thread')
-})
+  .describe('the new thread: slug, title, goal and next_step, and optionally criteria and details')
 
 const OpenThreadOutputSchema = z.object({
-  thread_id: z.string().describe('the id of the newly created thread'),
-  slug: z.string().describe('the slug recorded on the new thread'),
-  status: z.enum(['open', 'done', 'abandoned']).describe('the lifecycle state of the new thread, always open'),
-  completion_criteria: z
-    .array(
-      z.object({
-        id: z.string().describe('the id minted for this criterion'),
-        ordinal: z.number().int().describe('the display position of this criterion'),
-        text: z.string().describe('the stored text of this criterion'),
-        check: z
-          .string()
-          .nullable()
-          .describe('the stored check that decides this criterion, or null when none was recorded because the criterion is unsettled'),
-        settledness: z
-          .enum(['confirmed', 'proposed', 'unsettled'])
-          .describe('who stands behind this criterion as stored: confirmed by the human, proposed by you, or unsettled because done is not known yet')
-      })
-    )
-    .describe('the criteria minted for this thread, in display order'),
-  step_records: z.string().optional().describe(STEP_RECORDS_OUTPUT_DESCRIPTION)
+  thread_id: z.string().describe('the slug of the thread that was opened'),
+  path: z.string().describe("the working copy of the thread's state document, the file to edit with the Edit tool")
 })
 
 type OpenThreadInput = z.infer<typeof OpenThreadInputSchema>
 type OpenThreadOutput = z.infer<typeof OpenThreadOutputSchema>
 
-const RELAY_INSTRUCTION =
-  'put each of these to the human as it stands, and record what they answer with criteria_settled on update_thread.'
+const noWorkingDirectory = (): Refusal => ({
+  ok: false,
+  field: 'cwd',
+  accepted: 'a readable working directory inside a git repository, or CLAUDE_PROJECT_DIR naming one',
+  example: '/home/me/projects/my-app',
+  retryable: false,
+  message: 'logbook could not read its working directory and CLAUDE_PROJECT_DIR is not set, so it cannot find the repository'
+})
 
-const DEFINITION_OF_DONE_OWED = 'no completion criteria were recorded, so a definition of done is still owed.'
-
-const criterionLine = (criterion: Criterion): string =>
-  `${criterion.ordinal}. ${displayStored(criterion.text)} [${criterionSettledness(criterion)}]`
-
-const openedThreadText = (thread: Thread): string => {
-  const opened = `opened thread ${thread.slug} (${thread.id}).`
-  if (thread.completion_criteria.length === 0) return `${opened}\n${DEFINITION_OF_DONE_OWED}`
-  const stored = thread.completion_criteria.map(criterionLine).join('\n')
-  return `${opened}\ncompletion criteria as stored:\n${stored}\n${RELAY_INSTRUCTION}`
-}
-
-export const duplicateSlugRefusal = (slug: string): Refusal => ({
+const slugTaken = (slug: string): Refusal => ({
   ok: false,
   field: 'slug',
-  accepted: 'a slug not already used by another thread in this project',
-  example: 'merge-and-sync-2',
+  accepted: 'a slug no thread in this repository has yet',
+  example: `${slug}-2`,
   retryable: true,
-  message: `slug "${slug}" is already used by another thread in this project.`
+  message: `thread ${slug} already exists, so nothing was written; call resume_thread with thread_id ${slug} to pick it up, or open a new thread under another slug`
 })
 
-const checkOwedRefusal = (index: number, settledness: string): Refusal => ({
-  ok: false,
-  field: 'completion_criteria',
-  accepted: 'a check on every confirmed or proposed criterion',
-  example: 'npm test exits 0',
-  retryable: true,
-  message: `completion_criteria[${index}] is ${settledness} and carries no check; a criterion that asserts something needs something to decide it; remedy: add a check, or record it as unsettled if done is not known for this part yet.`
-})
+const isThreadMoved = (failure: Refusal | ThreadMoved): failure is ThreadMoved =>
+  'cause' in failure && failure.cause === 'thread-moved'
 
-const quoteOwedRefusal = (index: number): Refusal => ({
-  ok: false,
-  field: 'completion_criteria',
-  accepted: 'the human words behind a confirmed criterion, quoted verbatim',
-  example: 'it has to block before the turn ends',
-  retryable: true,
-  message: `completion_criteria[${index}] is confirmed and carries no settled_by; remedy: quote what the human said, or record it as proposed.`
-})
+const commitRefusal = (slug: string, failure: Refusal | ThreadMoved): Refusal =>
+  isThreadMoved(failure) ? slugTaken(slug) : failure
 
-const quoteNotOwedRefusal = (index: number, settledness: string): Refusal => ({
-  ok: false,
-  field: 'completion_criteria',
-  accepted: 'settled_by only on a confirmed criterion',
-  example: 'omit settled_by',
-  retryable: true,
-  message: `completion_criteria[${index}] is ${settledness} and carries a settled_by quote; remedy: drop the quote, or record the criterion as confirmed if the human really said it.`
-})
+const locate = (rt: Runtime): Ok<RepoPaths> | Refusal => {
+  const dir = startDirectory(rt, rt.cwd ?? '')
+  return dir === '' ? noWorkingDirectory() : findRepository(rt, dir)
+}
+
+const writeWorkingCopy = (rt: Runtime, file: string, text: string): void => {
+  mkdirSync(path.dirname(file), { recursive: true })
+  durableWrite(file, text, { log: rt.log })
+}
+
+const openedText = (slug: string, file: string): string =>
+  `opened thread ${slug}. Its state document is ${file}. Keep it true by editing that file with the Edit tool.`
 
 export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
-  name: 'open_thread',
+  name: TOOL_NAME,
   title: 'Open thread',
-  description:
-    `Creates a new thread of work and returns its id. A thread needs a one-line title, a short slug that is unique in this project, what the work is, and what happens next. Setting next_step requires next_step_records: the records the step needs, found with search_ledger across every thread; the reply returns them in full. Completion criteria are optional at this moment; when supplied, every criterion records who stands behind it: confirmed when the human said so, proposed when derived, or unsettled when done is not yet known. A confirmed or proposed criterion also carries its own check, the re-runnable thing that decides whether it is true, and a criterion missing what its settledness requires is refused. A confirmed criterion also carries settled_by, the human's own words quoted verbatim, and a settled_by given on any other settledness is refused. Criteria are supplied as objects and the server assigns each one a stable id and its display ordinal, so [{"text": "the merge test passes in both push orders", "check": "npm test exits 0", "settledness": "proposed"}] is a complete value. The slug is lowercase letters, digits and hyphens, for example merge-and-sync.`,
+  description: `Starts a new thread of work and makes this session its holder. The thread's state document is the one record of the work: its goal, what must be true for it to be done, where things stand, the next step, the decisions in force, the open risks, what is settled and where the details live. Send a slug unique in this repository, a one-line title, the goal and the next step, and optionally criteria and details. Criteria are what must be true for the work to be done; each is written under "## ${DONE_WHEN}" as c1, c2 and so on, in the order given. Details are lines saying where more about the work lives, such as a spec path. Each text is written on one line. The reply names the working copy of the document; keep the document true by editing that file with the Edit tool whenever logbook asks you to. A slug that already has a document is refused; call resume_thread to pick that thread up.`,
   input: OpenThreadInputSchema,
   output: OpenThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   handler: async (rt, _ctx, input) => {
-    const opened = openProjectStore(rt)
-    if (!opened.ok) return { ok: false, refusal: opened.refusal }
-    const store = opened.value
-
-    const collision = store.readThreads().find((slot) => !slot.quarantined && slot.record.slug === input.slug)
-    if (collision !== undefined) {
-      return { ok: false, refusal: duplicateSlugRefusal(input.slug) }
-    }
-
-    const escapedTitle = escapeStored(input.title)
-    const escapedActiveGoal = escapeStored(input.active_goal)
-    const escapedNextStep = escapeStored(input.next_step)
-
-    const criteria = input.completion_criteria ?? []
-
-    const escapedCriteria = criteria.map((entry) => ({
-      text: escapeStored(entry.text),
-      check: entry.check === undefined ? undefined : escapeStored(entry.check),
-      settledness: entry.settledness,
-      settled_by: entry.settled_by === undefined ? undefined : escapeStored(entry.settled_by)
-    }))
-    const checkOwedIndex = escapedCriteria.findIndex((entry) => entry.settledness !== 'unsettled' && entry.check === undefined)
-    if (checkOwedIndex !== -1) {
-      const entry = escapedCriteria[checkOwedIndex]
-      return { ok: false, refusal: checkOwedRefusal(checkOwedIndex, entry === undefined ? '' : entry.settledness) }
-    }
-    const quoteOwedIndex = escapedCriteria.findIndex(
-      (entry) => entry.settledness === 'confirmed' && (entry.settled_by === undefined || entry.settled_by.length === 0)
-    )
-    if (quoteOwedIndex !== -1) {
-      return { ok: false, refusal: quoteOwedRefusal(quoteOwedIndex) }
-    }
-    const quoteNotOwedIndex = escapedCriteria.findIndex(
-      (entry) => entry.settledness !== 'confirmed' && entry.settled_by !== undefined
-    )
-    if (quoteNotOwedIndex !== -1) {
-      const entry = escapedCriteria[quoteNotOwedIndex]
-      return { ok: false, refusal: quoteNotOwedRefusal(quoteNotOwedIndex, entry === undefined ? '' : entry.settledness) }
-    }
-
-    const predecessorId = input.predecessor_id
-    if (predecessorId !== undefined) {
-      const predecessor = loadThreadForReference(store, 'predecessor_id', predecessorId)
-      if (!predecessor.ok) return { ok: false, refusal: predecessor.refusal }
-    }
-
-    const stepRecords = resolveStepRecords(store, input.next_step_records)
-    if (!stepRecords.ok) return { ok: false, refusal: stepRecords }
-
+    const paths = locate(rt)
+    if (!paths.ok) return { ok: false, refusal: paths }
+    const file = workingCopyPath(paths.value, input.slug)
+    if (!file.ok) return { ok: false, refusal: file }
+    const migrated = migrateIfNeeded(rt, paths.value)
+    if (!migrated.ok) return { ok: false, refusal: migrated }
+    if (readDocument(rt, paths.value, input.slug) !== null) return { ok: false, refusal: slugTaken(input.slug) }
     const now = rt.now()
-    const completionCriteria: Criterion[] = escapedCriteria.map((entry, index) => ({
-      id: rt.ulid(),
-      ordinal: index + 1,
-      text: entry.text,
-      done: false,
-      kind: 'planned',
-      check: entry.check ?? null,
-      result: null,
-      result_status: null,
-      struck_by: null,
-      settledness: entry.settledness,
-      settled_by: entry.settled_by ?? null
-    }))
-
-    const mintedArtifacts: Artifact[] = mintArtifacts(rt, input.artifacts ?? [])
-
-    const thread: Thread = {
-      id: rt.ulid(),
+    const text = newDocument({
       slug: input.slug,
-      title: escapedTitle,
-      status: 'open',
-      blocked_by: null,
-      ...(predecessorId === undefined ? {} : { predecessor_id: predecessorId }),
-      completion_criteria: completionCriteria,
-      ...(mintedArtifacts.length === 0 ? {} : { artifacts: mintedArtifacts }),
-      spine: {
-        active_goal: escapedActiveGoal,
-        next_step: escapedNextStep,
-        next_step_records: [...input.next_step_records],
-        landed: '',
-        last_session: '',
-        open_risks: [],
-        key_decisions: [],
-        out_of_scope: []
-      },
-      created_at: now,
-      updated_at: now
-    }
-
-    const committed = commitThread(store, thread, `open thread ${thread.slug}`)
-    if (!committed.ok) return { ok: false, refusal: committed.refusal }
-
-    const layout = layoutFor(rt, rt.cwd)
-    if (layout.ok) recordBriefed(rt, layout.value, committed.value.id)
-
+      title: input.title,
+      goal: input.goal,
+      nextStep: input.next_step,
+      criteria: input.criteria ?? [],
+      details: input.details ?? [],
+      now
+    })
+    const committed = commitDocuments(rt, paths.value, {
+      changes: [{ slug: input.slug, text, expectedBlob: null }],
+      message: `${TOOL_NAME} ${input.slug}: opened`
+    })
+    if (!committed.ok) return { ok: false, refusal: commitRefusal(input.slug, committed) }
+    writeWorkingCopy(rt, file.value, text)
+    takeHold(rt, paths.value, input.slug, actingSession(paths.value, rt.sessionId), null)
+    foldHold(rt, paths.value, input.slug, now)
+    startPush(rt, paths.value)?.unref()
     return {
       ok: true,
-      text: openedThreadText(committed.value),
-      structured: {
-        thread_id: committed.value.id,
-        slug: committed.value.slug,
-        status: committed.value.status,
-        completion_criteria: committed.value.completion_criteria.map((c) => ({
-          id: c.id,
-          ordinal: c.ordinal,
-          text: c.text,
-          check: c.check ?? null,
-          settledness: criterionSettledness(c)
-        })),
-        step_records: renderStepRecords(store, stepRecords.value, committed.value.spine.next_step)
-      }
+      text: openedText(input.slug, file.value),
+      structured: { thread_id: input.slug, path: file.value }
     }
   }
 }

@@ -9,15 +9,11 @@ import { rawGit, type RawGitResult } from '../support/git-fixture.ts'
 import { spawnServer } from '../support/spawn-client.ts'
 
 const EXPECTED_TOOL_NAMES = [
-  'amend_criteria',
-  'bind_branch',
   'close_thread',
   'list_threads',
-  'log_session_event',
   'open_thread',
   'park_thread',
   'record_decision',
-  'resolve_conflict',
   'resume_thread',
   'search_ledger',
   'sync_ledger',

@@ -8,31 +8,31 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 export const MUTANTS = [
   {
-    name: 'escape-treats-an-ordinary-space-as-extraordinary',
-    file: 'src/render/escape.ts',
-    find: 'char !== ORDINARY_SPACE',
-    replace: 'char === ORDINARY_SPACE',
+    name: 'a-tick-without-evidence-is-accepted',
+    file: 'src/doc/check.ts',
+    find: "after.box === 'x' && before.box !== 'x' && !hasReason(after.text, EVIDENCE_MARKER)",
+    replace: "after.box === 'x' && before.box !== 'x' && hasReason(after.text, EVIDENCE_MARKER)",
     caughtBy: 'test/unit/**/*.test.ts'
   },
   {
-    name: 'a-superseded-decision-is-matched-by-file-name',
-    file: 'src/domain/record-index.ts',
-    find: "record.live && (record.kind === 'decision' || record.kind === 'risk')",
-    replace: "(record.live || record.kind === 'decision') && (record.kind === 'decision' || record.kind === 'risk')",
+    name: 'a-done-close-with-open-criteria-is-accepted',
+    file: 'src/doc/check.ts',
+    find: "if (after.status?.kind !== 'done' || before.status?.kind === 'done') return []",
+    replace: "if (after.status?.kind !== 'abandoned' || before.status?.kind === 'done') return []",
     caughtBy: 'test/unit/**/*.test.ts'
   },
   {
-    name: 'resolving-record-ids-drops-the-first-found-record',
-    file: 'src/domain/record-index.ts',
-    find: 'found: distinct.flatMap((id) => {',
-    replace: 'found: distinct.slice(1).flatMap((id) => {',
+    name: 'the-next-id-reuses-the-highest-number',
+    file: 'src/doc/document.ts',
+    find: 'Math.max(highest, item.number + 1)',
+    replace: 'Math.max(highest, item.number)',
     caughtBy: 'test/unit/**/*.test.ts'
   },
   {
-    name: 'the-first-other-record-on-the-thread-is-never-listed',
-    file: 'src/render/briefing.ts',
-    find: 'otherRecords.map((record) => renderOtherRecordLine(record))',
-    replace: 'otherRecords.filter((_record, position) => position > 0).map((record) => renderOtherRecordLine(record))',
+    name: 'a-base-conflict-marker-is-not-reported',
+    file: 'src/doc/document.ts',
+    find: "const CONFLICT_MARKERS: readonly string[] = ['<<<<<<<', '|||||||', '>>>>>>>']",
+    replace: "const CONFLICT_MARKERS: readonly string[] = ['<<<<<<<', '>>>>>>>']",
     caughtBy: 'test/unit/**/*.test.ts'
   }
 ]

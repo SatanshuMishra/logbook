@@ -1,89 +1,88 @@
 import { z } from 'zod'
+import type { Runtime } from '../../runtime/runtime.ts'
+import type { Ok, Refusal } from '../../schema/declare.ts'
+import { findRepository, startDirectory, type RepoPaths } from '../../thread/paths.ts'
+import { searchHistory, type SearchMatch } from '../../thread/roster.ts'
 import type { ToolSpec } from '../register.ts'
-import { indexRecords, normaliseForSearch, searchRecords, type SearchFilters } from '../../domain/record-index.ts'
-import { renderSearch } from '../../render/briefing.ts'
-import { openProjectStore } from '../tool-support.ts'
 
-const SearchLedgerInputSchema = z.strictObject({
-  text: z
-    .string()
-    .min(1)
-    .optional()
-    .describe(
-      'words to look for, matched case-insensitively as exact characters in the record text, where any run of spaces or line breaks counts as one space; omit to list every record the other filters allow'
-    ),
-  kind: z
-    .enum(['decision', 'risk', 'criterion', 'entry', 'artifact', 'out-of-scope'])
-    .optional()
-    .describe('only records of this kind; entry means a session log entry; omit for every kind'),
-  thread: z
-    .string()
-    .optional()
-    .describe('only records on this thread, given by id or slug; omit to search every thread, closed ones included'),
-  status: z
-    .enum(['live', 'all'])
-    .optional()
-    .describe(
-      'live, the default, leaves out superseded decisions, retired risks and artifacts, and struck criteria; all includes them'
-    )
+const TOOL_NAME = 'search_ledger'
+const NOT_BLANK = /\S/
+const SHORT_COMMIT_LENGTH = 8
+
+const SearchLedgerInputSchema = z
+  .strictObject({
+    text: z
+      .string()
+      .regex(NOT_BLANK)
+      .describe(
+        'the text to look for, matched case-insensitively against every version of every thread document and against the archived ledger; refused when empty or only whitespace'
+      )
+  })
+  .describe('the text to search the history for')
+
+const SearchMatchSchema = z.object({
+  commit: z.string().describe('the full id of a commit that added or removed the text'),
+  date: z.string().describe("the commit's date, an ISO 8601 timestamp"),
+  file: z.string().describe('a file the commit changed that holds the text, such as fix-login.md'),
+  lines: z
+    .array(z.string())
+    .describe("the file's lines holding the text, from the commit's version, or its parent's when the commit removed it")
 })
 
 const SearchLedgerOutputSchema = z.object({
-  results: z
-    .string()
-    .describe('one line per matching record: kind, id, thread slug and status, and its title or first line'),
-  matched: z.number().describe('how many records match the filters'),
-  searched: z.number().describe('how many records were searched, on every thread and of every status'),
-  threads: z.number().describe('how many threads the searched records sit on, closed threads included')
+  matches: z
+    .array(SearchMatchSchema)
+    .describe('one entry per commit and file holding the text, newest commit first; empty when nothing matched')
 })
 
 type SearchLedgerInput = z.infer<typeof SearchLedgerInputSchema>
 type SearchLedgerOutput = z.infer<typeof SearchLedgerOutputSchema>
 
-const filtersOf = (input: SearchLedgerInput): SearchFilters => ({
-  ...(input.text === undefined ? {} : { text: input.text }),
-  ...(input.kind === undefined ? {} : { kind: input.kind }),
-  ...(input.thread === undefined ? {} : { thread: input.thread }),
-  ...(input.status === undefined ? {} : { status: input.status })
+const noWorkingDirectory = (): Refusal => ({
+  ok: false,
+  field: 'cwd',
+  accepted: 'a readable working directory inside a git repository, or CLAUDE_PROJECT_DIR naming one',
+  example: '/home/me/projects/my-app',
+  retryable: false,
+  message: 'logbook could not read its working directory and CLAUDE_PROJECT_DIR is not set, so it cannot find the repository'
 })
 
+const locate = (rt: Runtime): Ok<RepoPaths> | Refusal => {
+  const dir = startDirectory(rt, rt.cwd ?? '')
+  return dir === '' ? noWorkingDirectory() : findRepository(rt, dir)
+}
+
+const matchLines = (match: SearchMatch): string[] =>
+  match.lines.map((line) => `${match.commit.slice(0, SHORT_COMMIT_LENGTH)} ${match.date} ${match.file}: ${line}`)
+
+const textOf = (text: string, matches: readonly SearchMatch[]): string =>
+  matches.length === 0
+    ? `No version of a thread document and no record of the archived ledger holds ${JSON.stringify(text)}.`
+    : matches.flatMap(matchLines).join('\n')
+
 export const searchLedgerTool: ToolSpec<SearchLedgerInput, SearchLedgerOutput> = {
-  name: 'search_ledger',
+  name: TOOL_NAME,
   title: 'Search ledger',
   description:
-    "Lists and searches this project's recorded decisions, risks, criteria, session entries, artifacts and out-of-scope notes across every thread, closed threads included, one line per record with its id. Use it before setting a next step, to find the records that step needs, and before recording something, to see whether it is already recorded. A decision is read in full at logbook://decision/{id}, and any record is shown in full when a next step names it in next_step_records. By default it lists live records only, leaving out superseded decisions, retired risks and artifacts, and struck criteria; set status to all to include them. A text search matches exact characters only, so finding nothing proves nothing: try other words, or list by kind or thread.",
+    'Searches the whole history of this repository\'s threads, every version of every state document and the archived old ledger, for a text, ignoring case. Replies with one line per matching line: the commit\'s first 8 characters, its date, the file and the line, such as "3f2b7c1e 2026-10-14T09:00:00+00:00 fix-login.md: - D1 Use Postgres: ...". A line removed from a document is still found, in the commit that removed it.',
   input: SearchLedgerInputSchema,
   output: SearchLedgerOutputSchema,
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   handler: async (rt, _ctx, input) => {
-    const opened = openProjectStore(rt)
-    if (!opened.ok) return { ok: false, refusal: opened.refusal }
-
-    if (input.text !== undefined && normaliseForSearch(input.text).length === 0) {
-      return {
-        ok: false,
-        refusal: {
-          ok: false,
-          field: 'text',
-          accepted: 'words to look for, holding at least one character that is not a space or line break',
-          example: 'timeout',
-          retryable: true,
-          message:
-            'text holds only spaces or line breaks, which would match every record; send words to look for, or leave text out to list every record the other filters allow.'
-        }
-      }
-    }
-
-    const result = searchRecords(indexRecords(opened.value), filtersOf(input))
-
+    const paths = locate(rt)
+    if (!paths.ok) return { ok: false, refusal: paths }
+    const found = searchHistory(rt, paths.value, input.text)
+    if (!found.ok) return { ok: false, refusal: found }
     return {
       ok: true,
-      text: '',
+      text: textOf(input.text, found.value),
       structured: {
-        results: renderSearch(result),
-        matched: result.records.length,
-        searched: result.searched,
-        threads: result.threads
+        matches: found.value.map((match) => ({
+          commit: match.commit,
+          date: match.date,
+          file: match.file,
+          lines: match.lines
+        }))
       }
     }
   }

@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 import { runHook } from './lib/io.ts'
-import { productionRuntime } from '../src/runtime/runtime.ts'
-import { parseSessionEndEvent, runSessionEnd } from '../src/cli/session-end.ts'
+import { writeHandover } from '../src/thread/handover.ts'
+import { addTranscript, heldBy } from '../src/thread/holds.ts'
 
-await runHook('session-end', (event) => {
-  const parsed = parseSessionEndEvent(event)
-  if (parsed === null) return { block: false, json: {} }
+const CLEAR_REASON = 'clear'
 
-  const rt = productionRuntime()
-  const reply = runSessionEnd(rt, parsed)
-  if (reply.message === null) return { block: false, json: {} }
-  return { block: false, json: { systemMessage: reply.message } }
+await runHook('session-end', ({ event, sessionId, paths, rt }) => {
+  if (event.reason !== CLEAR_REASON) return {}
+  const slug = heldBy(paths, sessionId)
+  const transcript = typeof event.transcript_path === 'string' && event.transcript_path !== '' ? event.transcript_path : null
+  if (slug !== null && transcript !== null) addTranscript(rt, paths, slug, transcript)
+  writeHandover(rt, paths, { session: sessionId, slug, transcript, at: rt.now() })
+  return {}
 })

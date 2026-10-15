@@ -8,7 +8,10 @@ const INSTRUCTIONS =
 
 const RULE_PHRASES: readonly string[] = [
   'Describe the present only.',
-  'Finished work becomes one line naming where its proof is.',
+  'Where things stand says only where the work is now: a finished step leaves it, and its proof goes on the criterion it ticks as evidence.',
+  'As the document grows, finished-step detail in Where things stand gives way first, then decisions and risks that no longer constrain future work.',
+  'Where the details live names each file or document once with what it holds, never the steps or commits that changed it.',
+  'State each fact in one place only, in as few words as hold it.',
   'No timeline and no clock times.',
   'Tick a criterion only with "evidence: <what proves it>".',
   'Strike a criterion only with [~] and "struck: <reason>".',
@@ -172,4 +175,23 @@ test('rules.name-the-stale-line-rule', async () => {
     reason: { kind: 'milestone', detail: 'Bash: git commit -m fix' }
   })
   assert.ok(text.includes('Remove every line that belongs to an option the owner did not take.'))
+})
+
+test('rules.finished-steps-leave-where-things-stand', async () => {
+  const { updateRequest } = await import('../../../src/doc/rules.ts')
+  const text = updateRequest({
+    path: PATH,
+    documentText: documentWith(['- [ ] c1 The login page loads']),
+    reason: { kind: 'milestone', detail: 'Bash: git commit -m fix' }
+  })
+  const lines = text.split('\n')
+  const start = lines.indexOf('- Describe the present only.')
+  assert.ok(start >= 0, 'the text holds the line "- Describe the present only."')
+  assert.deepEqual(lines.slice(start + 1, start + 5), [
+    '- Where things stand says only where the work is now: a finished step leaves it, and its proof goes on the criterion it ticks as evidence.',
+    '- As the document grows, finished-step detail in Where things stand gives way first, then decisions and risks that no longer constrain future work.',
+    '- Where the details live names each file or document once with what it holds, never the steps or commits that changed it.',
+    '- State each fact in one place only, in as few words as hold it.'
+  ])
+  assert.ok(!text.includes('Finished work becomes one line naming where its proof is.'))
 })

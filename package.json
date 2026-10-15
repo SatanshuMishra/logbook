@@ -1,6 +1,6 @@
 {
   "name": "logbook",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "private": true,
   "type": "module",
   "description": "Git-native, multi-user, drift-aware logbook plugin for Claude Code.",
@@ -12,6 +12,7 @@
   "scripts": {
     "test": "node --test \"test/unit/**/*.test.ts\" \"test/store/**/*.test.ts\" \"test/contract/**/*.test.ts\" \"test/sync/**/*.test.ts\" \"test/spawn/**/*.test.ts\" \"test/hooks/**/*.test.ts\"",
     "lint": "node --test \"test/lint/**/*.test.ts\"",
+    "prove": "node --test --test-concurrency=1 \"test/live/**/*.test.ts\"",
     "prepare": "node scripts/install-githooks.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "inspect": "mcp-inspector --config inspector.config.json --server logbook",

@@ -1,17 +1,13 @@
 export const LEDGER_TOOL_NAMES = [
   'open_thread',
-  'update_thread',
-  'close_thread',
-  'amend_criteria',
-  'bind_branch',
   'resume_thread',
-  'park_thread',
   'record_decision',
-  'log_session_event',
-  'sync_ledger',
-  'resolve_conflict',
+  'update_thread',
+  'park_thread',
+  'close_thread',
   'list_threads',
-  'search_ledger'
+  'search_ledger',
+  'sync_ledger'
 ] as const
 
 export type LedgerToolName = (typeof LEDGER_TOOL_NAMES)[number]
