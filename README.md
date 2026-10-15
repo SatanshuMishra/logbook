@@ -1,216 +1,116 @@
 # Logbook
 
-Logbook is a Claude Code plugin that keeps a durable "ledger" of what happened across coding sessions in a project — threads of work opened and closed, decisions made along the way, and a log of session events — so a later session, yours or someone else's, can pick up the right context instead of re-deriving it. Claude reads and writes that ledger through the Model Context Protocol (MCP), the standard way Claude Code talks to an external tool server; this plugin ships its own MCP server for that purpose.
+Logbook is a Claude Code plugin that lets Claude Code continue a piece of work across compactions, `/clear` and new sessions without you explaining it again. It keeps the present state of each piece of work, called a thread, in one short markdown file, the state document, and stores every version of that file as a git commit inside the project's own repository. A later session, yours or a teammate's, is handed that document and carries on from it.
 
-The current version lives in `package.json:3` and `.claude-plugin/plugin.json:3`; a test checks that both match the version the running server reports at startup.
+The current version lives in `package.json` and `.claude-plugin/plugin.json`.
 
-## What Logbook promises
+## The state document
 
-These are the promises Logbook publishes. Each carries the identifier the goal model gives it in section 4.1 of the goal-model specification, a local development document. Wherever that specification is present, a lint test fails if any of those identifiers stops appearing here or if this file names one the goal model does not declare (`test/lint/readme-promises-census.test.ts`).
+Each thread has one state document. It describes the present, not a history, in eight fixed sections, always in this order:
 
-The case for Logbook is **continuity and auditability** — that a later session picks up where an earlier one stopped, and that you can always see how a record came to be there. Logbook makes no claim about making any model perform better.
-
-| ID | Promise |
+| Section | Holds |
 |---|---|
-| **LG1** | **You can work your goals in any order.** Nothing in Logbook behaves differently because you finished the third one first |
-| **LG2** | **However you work, you can record.** Anything holding a thread's identifier can write to it. No kind of record is reachable only through one working style, and for the same recorded content no style reaches a limit sooner than another |
-| **LG3** | **Logbook never invents a value you did not give it.** Anything you left out — including which goal an item belongs to — is stored as absent and reported back as absent, and no stored link points at something that does not resolve |
-| **LG4** | **Your code is never stored.** No file contents, no diffs, no source. Git already holds those, and Logbook hands you back to git rather than copying it |
-| **LG5** | **What you write is what is stored, or the write is refused.** Where a value has to be transformed on the way in, the transform is declared and can be undone. **One exception, which this build does not yet close:** a line break, and certain other characters, are stored as a written-out token such as `U+000A` — and text that already contained that token as ordinary characters is stored in exactly the same way, so when the value is read back the two cannot be told apart. That overlap is known and tracked |
-| **LG6** | **When you read a record you see all of it.** No piece of text is stored that no surface ever shows you |
-| **LG7** | **You can find any record without guessing.** Every kind of record has an identifier you can list and then ask for directly |
-| **LG8** | **No display rule drops an item in silence.** Where something is left out, the output says how many were left out and gives the address that fetches them |
-| **LG9** | **Anything that shortens text says that it shortened it**, and shortens only as far as its budget forces |
-| **LG10** | **Logbook never scores, ranks or prioritises your records.** What you recorded is what you get back |
-| **LG11** | **A crash puts at most one step's work at risk.** Everything recorded before it has already landed as a commit |
-| **LG12** | **You never have to remember to close the session.** Logbook does not depend on a tidy-up step you might forget |
-| **LG13** | **Reading one record never gets slower as your history grows** |
-| **LG14** | **What Logbook loads is bounded by the work still open, not by everything ever recorded** — and nothing is deleted to keep it that way |
-| **LG15** | **Nothing recorded is ever rewritten or deleted.** Correcting a decision means recording a new one that names the old; the old one stays readable |
-| **LG16** | **Logbook never runs anything it stores.** Records can arrive from a shared remote, and none of them can execute on your machine |
-| **LG17** | **A goal counts as finished only when you record how you know.** Marking one done asks what was observed, and whether the check behind it was actually run |
+| `## Goal` | What the thread is for |
+| `## Done when` | The criteria that make it done, each a checkbox item |
+| `## Where things stand` | What is true now, with finished work reduced to one line naming where its proof is |
+| `## Next step` | The very next thing to do, and where |
+| `## Decisions in force` | Decisions that still constrain the work |
+| `## Open risks` | Risks that still bear on the work |
+| `## Settled, do not reopen` | Questions already settled, so nobody reopens them |
+| `## Where the details live` | Pointers to specs, runbooks and other material |
 
-## What Logbook does not do
+Above the sections sit the title line `# <slug>: <title>`, the `Status:` line (`active`, `blocked: <reason>`, `waiting: <reason>`, `parked`, `done` or `abandoned: <reason>`), the `Updated:` line and the `Next ids:` line, which says the next free number for each kind of item.
 
-These are non-goals — things deliberately not built, each with its reason. They are held by decision records and review, not by an automated check. The grounds are recorded in full in section 3.2 of the goal-model specification, a local development document.
+The four item sections hold item lines, each with a permanent id: a letter and a number. Criteria are `c` items and carry a box, decisions are `D`, risks are `R` and settled questions are `S`:
 
-| Not a goal | Why |
+```markdown
+## Done when
+- [x] c1 The login page loads evidence: test login.loads passed
+- [ ] c2 A wrong password shows an error
+- [~] c3 Remember-me works struck: dropped by D2
+
+## Decisions in force
+- D2 Sessions end when the browser closes.
+
+## Open risks
+- R1 The old endpoint may still receive traffic. Bears on c2.
+```
+
+An item is never renumbered and a number is never reused. A criterion is never deleted: it is ticked `[x]` with `evidence:`, struck `[~]` with `struck:`, or reopened to `[ ]` with `reopened:`.
+
+## Where the working copy lives
+
+The working copy of a thread's state document is `~/.logbook/<repository key>/<slug>.md`. The repository key is the lowercased name of the folder holding the repository's git directory, followed by a hash of that directory's path, so the main checkout, a subfolder and a linked worktree of one repository all share the same working copies.
+
+The working copy sits outside `.git` because Claude Code refuses to edit files inside it. Logbook's `PreToolUse` hook lets Claude `Read` and `Edit` exactly those files, `~/.logbook/<key>/<slug>.md`, without a permission prompt, in every permission mode; it allows nothing else, and `Write` is never allowed.
+
+Every accepted edit becomes a commit on `refs/logbook/threads` in the repository's own `.git`, so the commit history of a document is the log of its thread. The other per-thread files, which session holds which thread and which tools were running, live under `<git common dir>/logbook/`. Nothing logbook does touches your checkout: HEAD, branches, the index and the working tree stay as they were.
+
+## How updates happen
+
+Claude keeps the document true by editing the working copy with the Edit tool when a hook asks it to. The hooks ask at two moments:
+
+- Right after a milestone finishes: a `git commit`, `git push` or `git merge`, a `gh pr create` or `gh pr merge`, a pull request created or merged through an MCP tool, or a subagent's work. They ask at most once per prompt.
+- At the end of a turn that changed something, and when a blocked or waiting thread hears from you.
+
+When the edit lands, logbook checks it in the same turn. The checker looks only at structure: lost items, deleted criteria, ticks without evidence, criterion rewording without a new decision, reused ids, and closing as done while a criterion is open. It never judges content. An accepted edit is committed with a note saying what changed and why each removed item left; a refused edit is answered with the line, the id and the fix, and Claude corrects it with one more edit.
+
+The hooks never block a tool or a turn. They add context and nothing else.
+
+When a session starts, resumes, compacts or clears, the `SessionStart` hook puts the held thread's document in Claude's context, with the activity since the last update read from the session transcripts and any tool that was still running when an earlier session ended. Claude never retypes the document, and you see one line naming the thread, its status, its next step and the file path. In a new session, `/logbook:preflight` picks a thread up, `/logbook:file` opens one and `/logbook:debrief` brings the document up to date and parks the thread.
+
+## Tools
+
+The plugin's MCP server, under the key `ledger`, publishes nine tools and no resources or prompts:
+
+| Tool | What it does |
 |---|---|
-| **Two sessions on one project at the same time** | Deliberate. Logbook is single-session-per-project by design. That is a limit, stated here rather than left for you to discover |
-| A ranking, vector or embedding layer | Less accurate than the plain record set at this scale, it fails the simplicity constraint, and it was measured to reduce how much an agent used material it had already been handed |
-| A multi-level index over the records | Measured worse than the flat one it would replace |
-| Event sourcing, or projections over the ledger | Hard in ways that are well documented, and it fails the simplicity constraint outright |
-| Automatic capture of file edits, diffs, tool calls or test runs | Duplicates what git already holds; records actions rather than reasons, so it cannot supply the why; and it widens what leaves your machine |
-| Summarising or consolidating stored records with a model | Measured to lose compliance with recorded constraints, and to corrupt records that had been correct |
-| Pruning, archiving or deleting records to control growth | Growth is bounded by leaving settled work out of the surfaces that load it, never by destroying history |
-| An importance scorer or ranking system | The forcing function is the existing refusal when a cap is reached; a coarse scorer propagates its own errors |
-| A model that judges whether a goal is genuinely complete | An agent assessing its own work makes false completion claims, and a second model checking that claim scores at or near chance. Ground truth comes from state, never testimony — and this plugin's server has no model access at all |
-| Enforcement machinery over the content of a gated record | Measured and withdrawn: an inert gate and an enforced gate produced a runnable check equally often |
+| `open_thread` | Starts a thread from a slug, a title, a goal and a next step, with optional criteria and details, and makes this session its holder |
+| `resume_thread` | Picks up a thread by its slug or an old thread id, makes this session its holder and puts its state document in context |
+| `record_decision` | Adds a decision in force and keeps its context, its options with their reasons and its outcome in the commit |
+| `update_thread` | Sets the next step and the items it needs, ticks criteria with their evidence, and adds or retires risks, in one commit |
+| `park_thread` | Sets the status to parked and releases this session's hold, so a later session can pick the thread up |
+| `close_thread` | Closes a thread as done, refused while a criterion is open, or as abandoned with the reason |
+| `list_threads` | Lists the repository's threads with the status and next step of each |
+| `search_ledger` | Searches every version of every state document, and the archived old ledger, for a text |
+| `sync_ledger` | Fetches origin's threads, merges them with this repository's and pushes the result |
+
+Every tool that changes a document sends its change through the same checker as an edit. A refusal names the field that was wrong and what it accepts.
+
+## Sharing threads through git
+
+Threads travel with the repository through the remote named `origin`. After every accepted update logbook starts a background `git push` of `refs/logbook/threads` that never delays a reply and gives up after 15 seconds; a push origin rejects changes nothing locally and is left to the next sync.
+
+**Every accepted update is pushed to origin, so nothing secret belongs in a state document.** Anyone who can fetch from origin can read every version of every thread.
+
+`sync_ledger` brings two clones into agreement. It fetches origin's threads, moves the local ref forward when it is behind, pushes when it is ahead, and when both sides changed it merges each state document line by line with `git merge-file` and pushes the merge. A document both sides changed on the same lines keeps git's conflict markers and is named as a conflict; you resolve it by editing the working copy, as with any other update. `resume_thread` syncs first whenever the repository has an origin.
+
+## Migrating from the old ledger
+
+Releases before 0.16.0 kept records as JSON in `refs/logbook/ledger`. The first time logbook works in a repository that has that ref and no `refs/logbook/threads`, it converts each old thread into a state document in one commit, maps each old thread id to its slug so old ids keep resolving, and points `refs/logbook/archive/ledger` at the old ledger. `refs/logbook/ledger` itself is left exactly as it was, and `search_ledger` still searches it. The first resume of a converted thread asks Claude to tidy the document.
 
 ## Requirements
 
-Node.js **22.19 or newer** (`package.json:8-9`).
-
-That floor is one minor above the lowest Node version that can actually load this plugin's TypeScript source, because it is driven by a **developer-only** constraint, not by anything an installed plugin user hits:
-
-1. `.npmrc:1` sets `engine-strict=true`. This guards the **developer** workflow: cloning the repository and running `npm install` yourself. A plugin user installed through Claude Code's marketplace flow (see Installation below) never runs `npm install`, so this check never runs for them. The 22.19 figure itself comes from two `devDependencies` that only a developer ever installs — `@modelcontextprotocol/inspector` and its transitive dependency `undici` — which each declare `engines.node: ">=22.19.0"`; `engine-strict` turns that into a hard failure on anything older when a developer or CI runs `npm ci`/`npm install`.
-2. A runtime guard, `nodeFloorFailure` (`src/runtime/node-floor.ts:30-34`), runs at the top of the MCP server entrypoint (`bin/logbook-server.ts:24-28`) and inside every hook's stdin-reading helper (`hooks/lib/io.ts:57-61`), and where it does run, it writes a clear message to stderr and exits with code 1. Its reach is narrower than that description implies: below Node 22.18.0, loading a `.ts` entry point fails during module resolution — before any code in that file, including this guard, has a chance to run. In practice the guard fires in two bands below the declared 22.19 floor: Node 22.6 through 22.17.x with `--experimental-strip-types` passed explicitly, and — because this plugin's declared floor sits one minor above what Node itself requires — flag-free Node 22.18.0 through 22.18.x as well, a version where Node can already load the `.ts` entry point on its own. Outside those two bands, it is Node itself that refuses the file, with Node's own error rather than this plugin's.
-
-This plugin ships TypeScript source directly — everything under `src/`, `bin/`, and `hooks/` is a `.ts` file, and there is no compiled JavaScript output (`tsconfig.json:12` sets `noEmit: true`; no `dist/` directory exists anywhere in the tree). Node runs `.ts` files itself through "type stripping" — erasing TypeScript's type syntax without compiling it — and that became available without a command-line flag in Node 22.18.0 (and separately in 23.6.0) ([Node.js TypeScript docs](https://nodejs.org/api/typescript.html)). A plugin user on Node 22.18.x can therefore already load and run this plugin's entry points at the interpreter level; the runtime guard rejects that version anyway, so its threshold tracks the same 22.19 figure declared in `package.json:8-9` rather than the lower value Node itself would tolerate. `tsconfig.json:9` further restricts the source to syntax that stripping alone can erase (`erasableSyntaxOnly: true`), matching what Node's stripper actually supports.
+Node.js 22.19 or newer. Logbook ships TypeScript source and Node runs it directly through type stripping; there is no build step and no compiled output. Each repository logbook works in must be a git repository with a working tree, and `HOME` must be set.
 
 ## Installation
 
-This repository is itself a Claude Code plugin marketplace. `.claude-plugin/marketplace.json:1-12` declares a marketplace named `logbook`, owned by `SatanshuMishra`, listing exactly one plugin — also named `logbook` — sourced from the repository root (`"source": "./"`).
+This repository is a Claude Code plugin marketplace named `logbook`, listing one plugin, also named `logbook`.
 
-Installing from a marketplace is two separate steps in Claude Code, per Anthropic's own documentation ([Discover and install plugins](https://code.claude.com/docs/en/discover-plugins)):
+1. Register the marketplace: `/plugin marketplace add <path to a clone of this repository>`.
+2. Install the plugin: `/plugin install logbook@logbook`.
 
-1. Register the marketplace: `/plugin marketplace add <path-to-a-clone-of-this-repo>`. A local path works; a hosted git repository works too, as `owner/repo` on GitHub or a full git URL elsewhere.
-2. Install the plugin it lists: `/plugin install logbook@logbook`.
-
-What the repository does not state: neither `.claude-plugin/plugin.json:1-9` nor `.claude-plugin/marketplace.json:1-12` declares a canonical hosted URL for this project (no `repository` or `homepage` field). The exact `owner/repo` form of step 1 is **[unverified]** from the repository's own tracked content — install from the path to your own clone.
-
-Upgrading from 14.0.0 or earlier: 0.15.0 is a lower number than the releases 1.0.0 to 14.0.0, as Public interface below explains. `claude plugin update` installs the version the marketplace lists whenever it differs from the installed one, not only when it is higher, so `claude plugin marketplace update logbook` followed by `claude plugin update logbook@logbook` moves an installed 14.0.0 to 0.15.0 and keeps the plugin's data (checked with Claude Code 2.1.295). If the marketplace is a local clone of this repository, bring the clone to this release first, for example with `git pull`. Run the update from inside each project that installs logbook at project or local scope, too; it moves only that project's install. If updating leaves 14.0.0 installed, uninstall logbook while keeping its data and install it again: `claude plugin uninstall logbook@logbook --keep-data` then `claude plugin install logbook@logbook`, adding the same `--scope project` or `--scope local` to both for an install at that scope. Without `--keep-data`, uninstalling the last install deletes the plugin's data directory, which holds every project's working copy and state files; the ledger itself, `refs/logbook/ledger` in each project's `.git`, is not touched.
-
-## What ships
-
-| Path | Holds |
-|---|---|
-| `bin/` | The MCP server entry point (`bin/logbook-server.ts`) |
-| `hooks/` | Five lifecycle hooks — `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `SessionEnd`, `Stop` — wired in `hooks/hooks.json:1-22`, plus their shared helpers under `hooks/lib/`. Nothing runs after a tool call. There is deliberately no `PreCompact` hook; a dedicated test enforces its absence (`test/hooks/precompact-absent.test.ts:7-18`). |
-| `src/` | The TypeScript source, organized by feature: `schema/` (validated record shapes), `domain/` (thread-lifecycle rules), `store/` (the storage engine), `server/` (the MCP server and its tools), `hooklib/` (hook support code, including the write guard), `merge/` (multi-clone sync and conflict resolution), `render/` (text rendering for briefings and rosters), `runtime/` (process-level helpers, including the Node floor check), `cli/` (session-start/session-end helpers) |
-| `skills/` | Three Claude Code skills, `preflight`, `debrief` and `file`, each one `SKILL.md` (`skills/preflight/SKILL.md`, `skills/debrief/SKILL.md`, `skills/file/SKILL.md`) |
-| `test/` | The automated suite, split by concern: `unit/`, `store/`, `contract/`, `sync/`, `spawn/`, `hooks/`, `lint/`, plus `registers/`, which holds the limits register the lint suite checks the code against and the public-interface register described below |
-| `scripts/` | Development-time scripts: git-hook installation, a packaging check, an audit-markdown generator |
-| `docs/` | Local development documents: specifications, plans, audits and rules. Git ignores the directory, so it is not part of the published repository; the lint tests that check it run only where it exists (`test/support/local-docs.ts`) |
-| `.claude-plugin/` | The plugin manifest (`plugin.json`) and the marketplace manifest (`marketplace.json`) |
-
-At the repository root: `package.json`, `tsconfig.json`, `.npmrc`, `.mcp.json` (declares the MCP server under the server key `ledger`, `.mcp.json:3`, pointing at `bin/logbook-server.ts`, `.mcp.json:5`), `inspector.config.json`.
-
-The MCP server registers thirteen tools, listed in one place: `src/server/tools/index.ts:17-31` (`open_thread`, `update_thread`, `close_thread`, `amend_criteria`, `bind_branch`, `resume_thread`, `park_thread`, `record_decision`, `log_session_event`, `sync_ledger`, `resolve_conflict`, `list_threads`, `search_ledger`).
-
-## Public interface
-
-Logbook's tool names, their inputs and their outputs are a contract. Other people's hooks match these tools by name and read their results, so a change to any of them is versioned like an API change.
-
-Claude Code calls each tool by one of two wire names, and those are the names a hook's matcher sees. A server configured directly under the key `ledger`, as this repository's `.mcp.json` does, gives `mcp__ledger__<tool>`. The same server installed as the `logbook` plugin gives `mcp__plugin_logbook_ledger__<tool>`.
-
-| Tool | Configured directly | Installed as a plugin |
-|---|---|---|
-| `open_thread` | `mcp__ledger__open_thread` | `mcp__plugin_logbook_ledger__open_thread` |
-| `update_thread` | `mcp__ledger__update_thread` | `mcp__plugin_logbook_ledger__update_thread` |
-| `close_thread` | `mcp__ledger__close_thread` | `mcp__plugin_logbook_ledger__close_thread` |
-| `amend_criteria` | `mcp__ledger__amend_criteria` | `mcp__plugin_logbook_ledger__amend_criteria` |
-| `bind_branch` | `mcp__ledger__bind_branch` | `mcp__plugin_logbook_ledger__bind_branch` |
-| `resume_thread` | `mcp__ledger__resume_thread` | `mcp__plugin_logbook_ledger__resume_thread` |
-| `park_thread` | `mcp__ledger__park_thread` | `mcp__plugin_logbook_ledger__park_thread` |
-| `record_decision` | `mcp__ledger__record_decision` | `mcp__plugin_logbook_ledger__record_decision` |
-| `log_session_event` | `mcp__ledger__log_session_event` | `mcp__plugin_logbook_ledger__log_session_event` |
-| `sync_ledger` | `mcp__ledger__sync_ledger` | `mcp__plugin_logbook_ledger__sync_ledger` |
-| `resolve_conflict` | `mcp__ledger__resolve_conflict` | `mcp__plugin_logbook_ledger__resolve_conflict` |
-| `list_threads` | `mcp__ledger__list_threads` | `mcp__plugin_logbook_ledger__list_threads` |
-| `search_ledger` | `mcp__ledger__search_ledger` | `mcp__plugin_logbook_ledger__search_ledger` |
-
-`test/registers/public-interface.json` pins the contract: every tool's name, every input property with whether it is required or optional, and every output property, beside the release series that published them: the version's first two numbers while logbook is below 1.0.0, such as `0.15`, and its first number from 1.0.0 on. `test/contract/public-interface.test.ts` starts the server, reads its published tool list and fails, naming each tool and property that differs, whenever the two disagree. A change to the interface is therefore a change to the register, made on purpose and reviewed with the code.
-
-The compatibility rule decides the version number. While logbook is below 1.0.0, renaming or removing a tool, removing an input or output property, or adding a required input is a new minor version, and any other change is a new patch version. From 1.0.0 on, those changes are a new major version, adding an optional input or an output property is a new minor version, and any other change is a new patch version. Version 0.15.0 is a new minor version because `record_decision` now refuses input it used to accept, as described under The decision standard below, and because the hook that ran after every Bash call was removed. Releases 1.0.0 to 14.0.0 were numbered as if logbook had reached a stable 1.0.0, which it never had; numbering returns below 1.0.0 with 0.15.0, which follows 14.0.0.
-
-## How the ledger is stored
-
-Everything lives under one root: `<CLAUDE_PLUGIN_DATA>/<projectKey>`, where `projectKey` is the first 32 hex characters of a SHA-256 hash of the project's canonicalized absolute path (`src/store/project-key.ts:3-4`, used at `src/store/layout.ts:77-78`).
-
-Two things sit under that root:
-
-- **`records/`** — a plain directory of JSON files: `threads/<id>.json`, `decisions/<id>.json`, `sessions/<thread-id>/<id>.json` (`src/store/layout.ts:79`; paths built at `src/store/records.ts:51-55`). This is the readable working copy.
-- **`state/`** — small pointer and bookkeeping files, including `origin.json`, which records the real project path (`src/store/layout.ts:80,88-91`).
-
-The durable half is git-native. Every write to the working copy also lands as a commit on a dedicated ref, `refs/logbook/ledger` (`src/store/ref.ts:6`) — and that ref lives directly inside the **host project's own `.git`**, not a separate repository. Every git call in the write path runs `git -C <project-root> ...` (`src/store/git.ts:68`), with the project root passed as `layout.projectRoot` (`src/store/write-path.ts:77,85,97,106,195,206`); the host project must already be a git repository for this to work.
-
-There is **no worktree**. Building a commit uses raw git plumbing against a throwaway index file rather than checking anything out: `read-tree`, `hash-object`, `update-index`, and `write-tree` build a tree object, then `commit-tree` and `update-ref` land it (`src/store/write-path.ts:75-111,190-208`). Nothing is ever checked out to a working directory for this ref.
-
-Concurrent writers are handled with compare-and-swap: `update-ref` is called with the previous commit it expects to be replacing. A write that loses the race re-reads both the ref and the record it is about to rewrite before retrying, and refuses rather than retrying when that record changed underneath it; it retries up to 5 times (`src/store/ref.ts:15-23`; `src/store/write-path.ts:29,175-221`).
-
-## What a session is given
-
-**At session start, a bounded listing.** The `SessionStart` hook lists the project's resumable threads, one line each with the thread's slug, title, next step and id (`src/cli/session-start.ts`). It names at most twenty threads, most recently updated first in the order `list_threads` uses, and when more are resumable it ends with a count line such as `15 more open threads: list_threads or logbook://roster`. The whole hook output, including the crash report that comes first when a previous session left its pointer behind, is at most 10,000 UTF-16 code units, so it arrives whole under Claude Code's 10,000-character cap on a hook's added context.
-
-When twenty thread lines do not fit, fewer are listed and the count line says how many were left out; that line always survives. A single thread line longer than the whole budget is clipped with a marker rather than dropped. The reply the `UserPromptSubmit` hook gives to a request to resume carries the same bounded listing.
-
-**After a compaction, the thread the session holds.** Claude Code compacts a long conversation into a summary and then fires `SessionStart` with the source `compact`. In the session that holds a thread, the hook then gives that thread back instead of the listing, under the heading `# Logbook: the thread this session holds`. A session holds a thread once it has called `resume_thread`, which writes the project's pointer under that session's id. A thread opened with `open_thread` and never resumed is not held, and every other source or session gets the crash report and listing above.
-
-The compact briefing carries the thread's id, title, status, goal and next step, the records the next step names, the open completion criteria, the live decisions newest first, the live risks, and where to read more: `logbook://thread/<thread id>`, `logbook://sessions/<thread id>`, `logbook://decision/<id>` and `search_ledger`. It stays under Claude Code's cap the same way, at most 10,000 UTF-16 code units (`src/render/compact-briefing.ts`). When everything does not fit, records shorten to id-and-headline lines and then are left out, and the last line counts each kind shortened or left out with the address or tool that reads them, such as `41 decisions left out (logbook://decision/<id> or search_ledger)`. Stored text goes through the same display escaping as the resume briefing, so a stored heading or tag cannot pass for the briefing's own structure.
-
-Producing the compact briefing changes no state. It writes no pointer, no record of which threads the session was briefed on, no session baseline and no ledger commit, and it never calls `resume_thread`. The one file it may refresh is the derived record index the hooks cache in the store's `state/` directory, which is rebuilt from the ledger ref whenever it cannot be trusted. `resume_thread` with `full_briefing` remains the way to read the whole, unbounded briefing.
-
-## The decision standard
-
-`record_decision` refuses a decision a later reader could not follow, and stores nothing when it refuses (`src/server/tools/record_decision.ts`). A context or an outcome that is empty or only whitespace is refused, naming that field. Fewer than two options, or an option that is empty or only whitespace, is refused naming `options`.
-
-Each option may carry its reason. The optional `option_reasons` list gives one reason per option, in the same order as `options`, saying why that option was or was not chosen. A list whose length differs from `options`, or a reason that is empty or only whitespace, is refused naming `option_reasons`; leaving the list out is always accepted. Reasons are optional, as the MADR decision-record template treats them; a workflow that needs them required can enforce that in its own hook.
-
-Reasons are stored beside `options`, which stays a list of strings. The resume briefing and `logbook://decision/<id>` show each option with its reason on one line, `- <option>: <reason>`, and `search_ledger` finds a decision by a word that appears only in a reason. Decisions stored by earlier releases are not migrated: they read as before and render one `- <option>` line per option.
-
-The same standard is written into the descriptions the model reads when it calls a tool, rather than reaching it only when the Stop hook blocks: `record_decision` and its `context`, `options`, `option_reasons` and `outcome` properties; the `next_step` property of `open_thread`, `update_thread` and `park_thread`; `update_thread` and `amend_criteria` on keeping the definition of done true; and `log_session_event` on recording what a subagent could not record itself.
-
-## Protection and its limits
-
-Writes are guarded on the way in. `src/hooklib/guard.ts` is called by the `PreToolUse` hook (`hooks/pre-tool-use.ts:1-36`). Claude Code starts that hook for every `Read`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit` and `Bash` call and every call to the ledger's own MCP tools, with no condition (`hooks/hooks.json:10-13`). Every other tool starts no Logbook process.
-
-The guard reads each Bash command whole, as Claude Code passes it to the hook (`src/hooklib/guard.ts:70-74`). A store path in a redirect target, a heredoc or a here-string counts like any other path, as long as whitespace or a quote separates it from the operator before it, and a relative or symbolic-link path is resolved against the working directory and through its links before it is compared with the store root (`src/hooklib/guard.ts:29,33-51,77-83`).
-
-The same hook brings recorded rulings to a file before it changes. On the first read or edit of a file in a session, and separately on the first one inside each helper, it adds every live decision and live risk whose text names that file's path relative to the project, each in full; later touches of that file add nothing, and a file no record names adds nothing (`src/hooklib/file-records.ts`). This is context, never a block: the guard decides first and its verdict is unchanged, and the records reach the session beside the tool's result, uncut (`hooks/pre-tool-use.ts:15-35`; `hooks/lib/io.ts:35-46`).
-
-| Situation | Verdict | Where |
-|---|---|---|
-| Tool name matches the ledger MCP pattern (`mcp__ledger__*` / `mcp__plugin_logbook_ledger__*`) **and** its suffix is a registered tool name | `allow` — auto-approved | `src/hooklib/guard.ts:17,19-23,99-101` |
-| Any `Bash` command at all, when the session's permission mode is `bypassPermissions` or the plugin's `disable_bash_guard` option is on | `silent` — decided before the store is even located | `src/hooklib/guard.ts:106`; `src/hooklib/bash-prompt-optout.ts:14-15` |
-| The store root is configured but cannot be canonicalized on disk | `deny` for a write tool, `ask` for `Bash` | `src/hooklib/guard.ts:110-114` |
-| A write tool's target path resolves inside the store root | `deny` | `src/hooklib/guard.ts:25,116-120` |
-| A `Bash` command names the ledger ref, the token `CLAUDE_PLUGIN_DATA`, or a path inside the store root, and is not proved to be a pure read | `ask` — Claude Code prompts before running it | `src/hooklib/guard.ts:77-83,130,133` |
-| The same command, proved to be a pure read of the store | `silent` | `src/hooklib/guard.ts:132`; `src/hooklib/bash-read.ts:79-90` |
-| Anything else | `silent` — no verdict, the tool proceeds | `src/hooklib/guard.ts:97,105,109,118,119,131` |
-
-**Reading the store does not prompt, but a read has to be proved.** The classifier is closed: everything it cannot positively recognize falls through to `unclassifiable` (`src/hooklib/bash-read.ts:76`), and an unclassifiable command that touches the store still prompts. The proof is per segment, not per command, so one hostile half of a pipeline cannot ride along behind a harmless first half (`src/hooklib/bash-read.ts:82-89`).
-
-Segments come from a small lexer that understands quoting rather than a substring split. Whitespace ends a token; `;`, a newline, `|` and `&` end a segment; and an unquoted `$`, backtick, backslash, `(`, `)`, `{`, `}`, `<` or `!` aborts the whole scan (`src/hooklib/bash-lex.ts:2,4,48-55,59-100`). An aborted scan is not a read, so the command prompts (`src/hooklib/bash-read.ts:80-81`).
-
-A segment counts as a read when its first word is one of twenty listed reading commands — `cat`, `jq`, `ls`, `grep`, `stat` and the rest (`src/hooklib/bash-read.ts:4-25`) — or when it is `git` with one of fifteen listed read subcommands and only listed read flags, so `git show refs/logbook/ledger` passes and `git show --ext-diff` does not (`src/hooklib/bash-git.ts:3-19,121-128`). A command invoked by path, such as `/bin/cat`, and a segment carrying a leading `VAR=value` assignment are both refused as unclassifiable (`src/hooklib/bash-read.ts:70-71`). Redirection is refused too, with exactly two survivors: `2>/dev/null` and `2>&1` (`src/hooklib/bash-lex.ts:9,12,35-46`).
-
-Two carve-outs let a segment count as inert — present in the command, but judged not to reach the store. One is an interpreter handed its program inline, such as `node -e` or `python3 -c` (`src/hooklib/bash-read.ts:27-36,53-59`); the other is `tee` with only its own flags (`src/hooklib/bash-read.ts:38-40,61-65`). Both are refused outright if any token contains `~`, `$`, a backtick, `*`, `?` or `[` (`src/hooklib/bash-read.ts:42,50-51,74`).
-
-**The guard also stands down on request, in two ways.** It reads `permission_mode` off the hook event (`src/hooklib/guard.ts:85,92`), and only `bypassPermissions` suppresses the Bash prompt (`src/hooklib/bash-prompt-optout.ts:3,9-10`); `default`, `plan`, `acceptEdits`, `dontAsk`, `auto`, any unrecognized string, a non-string value and an absent field all keep prompting. `dontAsk` and `auto` are excluded on purpose because neither is permissive — Claude Code documents `dontAsk` as "Auto-denies tools unless pre-approved" and `auto` as auto-approval "with background safety checks", a classifier that would otherwise lose the guard's reason string as evidence ([Configure permissions](https://code.claude.com/docs/en/permissions)). No permission mode softens the `deny` on a write tool, which is decided after the mode check and never consults it (`src/hooklib/guard.ts:106,116-120`).
-
-The second way is a plugin option, `disable_bash_guard`, declared in `.claude-plugin/plugin.json:18-25`. Claude Code exports a user-config value to hook processes as `CLAUDE_PLUGIN_OPTION_<KEY>` with the key uppercased ([Plugins reference](https://code.claude.com/docs/en/plugins-reference)), and the guard treats only the exact string `true` as on (`src/hooklib/bash-prompt-optout.ts:5,7,12`). It suppresses the Bash prompt and nothing else; editing the store by hand with `Write`, `Edit`, `MultiEdit` or `NotebookEdit` stays denied either way.
-
-The guard says what it is, in its own text: *"this guard prompts for confirmation and is not a security boundary"* (`src/hooklib/guard.ts:26`, repeated in every `ask`/`deny` message it returns, e.g. `:113,127,133`).
-
-Confirmed gaps, each grounded in the current guard:
-
-1. **The plugin's own registered MCP tools are trusted completely, and the server they came from is not checked.** A tool name whose prefix matches the ledger pattern and whose suffix is a name this server actually registers is `allow`ed with no inspection of its arguments (`src/hooklib/guard.ts:17,19-23,99-101`). Checking the name against the registry narrows the surface and does not close it, because the PreToolUse event carries no server identity — the guard parses out only the tool name, its input, the working directory and the permission mode (`src/hooklib/guard.ts:85,87-93`). A hostile server keyed `ledger` exposing a tool named `open_thread` still auto-approves. This hook is not a second check on the plugin's own writes — only on everything else that might touch the store.
-2. **An unconfigured store is a silent store.** When `CLAUDE_PLUGIN_DATA` is unset, empty, or set to a relative path, the layout call fails and the guard returns no verdict at all, for every write tool and every `Bash` command (`src/store/layout.ts:65-85`; `src/hooklib/guard.ts:57,109`). That is a different case from the table row above it: a root that is configured but cannot be canonicalized on disk does still deny or prompt (`src/hooklib/guard.ts:110-114`). It cannot protect a store it was never told how to locate.
-3. **Whether a command touches the store is still decided from text, even though segmentation no longer is.** Touching is a substring test for the ledger ref and the token `CLAUDE_PLUGIN_DATA`, plus a regex that pulls slash-bearing runs out of the raw command and resolves each one (`src/hooklib/guard.ts:28-29,77-83`). A path the shell would assemble — from a variable, a command substitution, or a leading `~` — never appears as text, so the command is silent at `src/hooklib/guard.ts:130-131` and the read classifier is never consulted. The one consolation is that an unquoted `$` or backtick aborts the lexer scan, so a command that both names the store in text and expands something prompts rather than passing (`src/hooklib/bash-lex.ts:4,53`; `src/hooklib/bash-read.ts:81`).
-4. **A command naming a strict ancestor of the store root passes with no prompt.** The containment check only matches a resolved path equal to, or nested under, the store root (`src/hooklib/guard.ts:47-51`); a command naming the whole plugin-data directory, the store root's own parent, is shorter than that check and evades it.
-5. **A `key=value` operand carrying an absolute path is invisible to the touch detector.** The path-token regex is greedy from the start of a run, so an operand like `of=/…/records/threads/<id>.json` matches as a single token *including* the `of=` prefix, and resolving that yields a path under the working directory rather than the store (`src/hooklib/guard.ts:29,80-83`). `dd of=<a path in the store>` and `rsync --files-from=<a path in the store>` are therefore silent. The miss belongs to the touch detector, which runs first and short-circuits (`src/hooklib/guard.ts:130-131`), not to the read classifier.
-6. **The interpreter carve-out cannot see a path the program builds at runtime.** `node -e` counts as inert as long as none of its tokens carries a shell expansion character, and that check is on shell-level expansion only, never on string building inside the program (`src/hooklib/bash-read.ts:53-59,74`). So `git show refs/logbook/ledger | node -e 'require("node:fs").rmSync(process.env.STORE, {recursive: true})'` is judged a pure read: the first segment touches the store and is a read, the second names no store path the token scan can extract and is inert, and the whole command is silent (`src/hooklib/bash-read.ts:82-89`).
-7. **Nothing is logged when the guard stands down.** There is no logging call on any path through `src/hooklib/guard.ts`, `src/hooklib/bash-read.ts` or `src/hooklib/bash-prompt-optout.ts`; a silent verdict writes an empty JSON object and exits zero (`hooks/pre-tool-use.ts:14`; `hooks/lib/io.ts:70-71`). A shell profile or `.envrc` that exports `CLAUDE_PLUGIN_OPTION_DISABLE_BASH_GUARD=true` therefore turns the Bash prompt off for every session launched from that shell, and leaves no record anywhere that it did.
-8. **`git show` remains a read only if your git config has no `diff.external`. [unverified]** `show` is on the read-subcommand list (`src/hooklib/bash-git.ts:3-5`) and `--ext-diff` is not among its accepted flags (`src/hooklib/bash-git.ts:62`), but whether `git show` honors a pre-existing `diff.external` without that flag is ambiguous in git's own documentation and has not been verified here. No classifier that reads only the command text could see it either way, because the deciding value lives in your git config rather than in the command.
+To upgrade an existing install, update the marketplace and then the plugin: `claude plugin marketplace update logbook` followed by `claude plugin update logbook@logbook`.
 
 ## Development
 
-There is no build script. Nothing here compiles the TypeScript — `npm test` and the server itself both run the `.ts` files directly (see Requirements above).
-
-| Script | Command | What it does |
-|---|---|---|
-| `npm test` | `node --test "test/unit/**/*.test.ts" "test/store/**/*.test.ts" "test/contract/**/*.test.ts" "test/sync/**/*.test.ts" "test/spawn/**/*.test.ts" "test/hooks/**/*.test.ts"` | Runs the suite with Node's built-in test runner, against the TypeScript sources directly (`package.json:12`) |
-| `npm run prepare` | `node scripts/install-githooks.mjs` | Installs this repository's local git hooks — npm's `prepare` lifecycle script (`package.json:13`) |
-| `npm run typecheck` | `tsc -p tsconfig.json --noEmit` | Type-checks the whole tree without emitting output (`package.json:14`) |
-| `npm run inspect` | `mcp-inspector --config inspector.config.json --server logbook` | Opens the MCP Inspector against this server (`package.json:15`) |
-| `npm run inspect:cli` | `mcp-inspector --cli --config inspector.config.json --server logbook --method tools/list` | Lists the server's tools from the command line (`package.json:16`) |
+| Script | What it does |
+|---|---|
+| `npm test` | Runs the unit, store, contract, sync, spawn and hook tests with Node's test runner |
+| `npm run lint` | Runs the lint tests under `test/lint` |
+| `npm run typecheck` | Type-checks the whole tree without emitting output |
+| `npm run prepare` | Installs this repository's local git hooks |
 
 ## License
 
-Apache 2.0. (A project's own history should be free to keep.)
-
-Use it, ship it, sell what you build with it. Two asks, both encoded in the license:
-keep the `NOTICE` file with your redistribution (§4(d)), and don't market your fork
-as `logbook` (§6). The patent grant in §3 is there so adopting this doesn't expose
-you to a patent claim over it.
+Apache 2.0. Keep the `NOTICE` file with your redistribution, and do not market your fork as `logbook`.

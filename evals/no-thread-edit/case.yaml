@@ -1,6 +1,0 @@
-schema_version: "1.1"
-name: no-thread-edit
-tags: [proof]
-runs: 10
-context:
-  scaffold_script: scaffold.sh

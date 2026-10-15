@@ -1,9 +1,6 @@
 import type { z } from 'zod'
 import type { Refusal } from './declare.ts'
 import { type JsonSchemaNode, resolveNode, synthesise } from './example.ts'
-import { escapeStored } from '../render/escape.ts'
-import { clipWithMarker } from '../render/clip.ts'
-import * as caps from './caps.ts'
 
 const isNode = (value: unknown): value is JsonSchemaNode =>
   typeof value === 'object' && value !== null
@@ -32,12 +29,16 @@ const nodeAtPath = (root: JsonSchemaNode, path: (string | number | symbol)[]): J
 const renderField = (path: (string | number | symbol)[]): string =>
   path.length === 0 ? '(root)' : path.map((segment) => String(segment)).join('.')
 
+const UNRECOGNIZED_KEYS_SHOWN = 8
+const UNRECOGNIZED_KEY_LENGTH = 64
+
+const cutKey = (key: string): string =>
+  key.length > UNRECOGNIZED_KEY_LENGTH ? `${key.slice(0, UNRECOGNIZED_KEY_LENGTH)}...` : key
+
 const renderUnrecognizedKeysField = (issue: z.core.$ZodIssue): string | null => {
   if (issue.code !== 'unrecognized_keys') return null
   const prefix = issue.path.map((segment) => String(segment)).join('.')
-  const shown = issue.keys
-    .slice(0, caps.UNRECOGNIZED_KEYS_SHOWN_MAX)
-    .map((key) => clipWithMarker(escapeStored(key), caps.UNRECOGNIZED_KEY_NAME_MAX))
+  const shown = issue.keys.slice(0, UNRECOGNIZED_KEYS_SHOWN).map(cutKey)
   const remainder = issue.keys.length - shown.length
   const keys = remainder > 0 ? `${shown.join(',')} (+${remainder} more)` : shown.join(',')
   return prefix.length === 0 ? keys : `${prefix}.${keys}`
