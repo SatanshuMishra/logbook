@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -102,6 +102,79 @@ export const gitRun = (rt: Runtime, repo: string, args: string[], opts: GitOpts 
   } finally {
     removeSelfAllocatedIndex(indexFile, opts)
   }
+}
+
+export type GitTimedOpts = GitOpts & { timeoutMs: number }
+
+const timedOutMessage = (args: string[], timeoutMs: number): string =>
+  `git ${args[0] ?? ''} timed out after ${timeoutMs} ms`
+
+const killProcessGroup = (child: ChildProcess): void => {
+  if (child.pid === undefined) return
+  try {
+    process.kill(-child.pid, 'SIGKILL')
+  } catch {
+    child.kill('SIGKILL')
+  }
+}
+
+const keepGitsExitStatus = (): void => {}
+
+export const gitTimed = (rt: Runtime, repo: string, args: string[], opts: GitTimedOpts): Promise<GitRun> => {
+  const indexFile = opts.indexFile ?? freshIndexPath()
+  const env = buildGitEnv(rt, indexFile, opts)
+  const run = new Promise<GitRun>((resolve) => {
+    const child = spawn('git', ['-C', repo, ...args], {
+      env,
+      detached: true,
+      stdio: [opts.stdin !== undefined ? 'pipe' : 'ignore', 'pipe', 'pipe']
+    })
+    const stdoutChunks: Buffer[] = []
+    const stderrChunks: Buffer[] = []
+    let timedOut = false
+    let settled = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      killProcessGroup(child)
+    }, opts.timeoutMs)
+    const settle = (result: GitRun): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(result)
+    }
+    child.stdout?.on('data', (chunk: Buffer) => stdoutChunks.push(chunk))
+    child.stderr?.on('data', (chunk: Buffer) => stderrChunks.push(chunk))
+    child.on('error', (error) => settle({ code: -1, stdout: '', stderr: error.message }))
+    child.on('close', (code) =>
+      settle(
+        timedOut
+          ? { code: -1, stdout: '', stderr: timedOutMessage(args, opts.timeoutMs) }
+          : {
+              code: code ?? -1,
+              stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+              stderr: Buffer.concat(stderrChunks).toString('utf8')
+            }
+      )
+    )
+    if (opts.stdin !== undefined) {
+      child.stdin?.on('error', keepGitsExitStatus)
+      child.stdin?.end(opts.stdin)
+    }
+  })
+  return run.finally(() => removeSelfAllocatedIndex(indexFile, opts))
+}
+
+const PUSH_HELPER_PATH = join(import.meta.dirname, '..', '..', 'bin', 'logbook-push.ts')
+
+export const startBackgroundPush = (rt: Runtime, repo: string, timeoutMs: number): ChildProcess => {
+  const child = spawn(process.execPath, [PUSH_HELPER_PATH, repo, String(timeoutMs)], {
+    detached: true,
+    stdio: 'ignore',
+    env: sanitisedRuntimeEnv(rt.env)
+  })
+  child.on('error', (error) => rt.log({ level: 'warn', event: 'git.background-push-unstarted', reason: error.message }))
+  return child
 }
 
 export const git = (rt: Runtime, repo: string, args: string[], opts: GitOpts = {}): GitResult => {
