@@ -19,3 +19,7 @@ graphify-out/
 
 # claude plugin eval writes one directory per run
 evals/results/
+
+/test/live/
+/scripts/generate-audit-md.mjs
+receipts.config.json.bak-*
