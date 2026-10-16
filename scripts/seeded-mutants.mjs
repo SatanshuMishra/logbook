@@ -10,15 +10,15 @@ export const MUTANTS = [
   {
     name: 'a-tick-without-evidence-is-accepted',
     file: 'src/doc/check.ts',
-    find: "after.box === 'x' && before.box !== 'x' && !hasReason(after.text, EVIDENCE_MARKER)",
-    replace: "after.box === 'x' && before.box !== 'x' && hasReason(after.text, EVIDENCE_MARKER)",
+    find: '!hasReason(after.text, EVIDENCE_MARKER)',
+    replace: 'hasReason(after.text, EVIDENCE_MARKER)',
     caughtBy: 'test/unit/**/*.test.ts'
   },
   {
     name: 'a-done-close-with-open-criteria-is-accepted',
     file: 'src/doc/check.ts',
-    find: "if (after.status?.kind !== 'done' || before.status?.kind === 'done') return []",
-    replace: "if (after.status?.kind !== 'abandoned' || before.status?.kind === 'done') return []",
+    find: 'if (after.status?.kind !== "done" || before.status?.kind === "done")',
+    replace: 'if (after.status?.kind !== "abandoned" || before.status?.kind === "done")',
     caughtBy: 'test/unit/**/*.test.ts'
   },
   {
