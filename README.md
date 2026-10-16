@@ -104,6 +104,8 @@ To upgrade an existing install, update the marketplace and then the plugin: `cla
 
 ## Development
 
+The plugin runs straight from this repository with no install step, so `node_modules` is committed and holds the production dependencies only. Run `npm ci` before the scripts below to add the development tools; git ignores them. After changing a production dependency, rebuild the committed tree with `npm ci --omit=dev`, stage it with `git add -f node_modules ':!node_modules/.package-lock.json'`, then run `npm ci` again.
+
 | Script | What it does |
 |---|---|
 | `npm test` | Runs the unit, store, contract, sync, spawn and hook tests with Node's test runner |

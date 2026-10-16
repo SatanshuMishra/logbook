@@ -1,3 +1,4 @@
+/node_modules/
 .mitosis/
 .DS_Store
 /dist/
