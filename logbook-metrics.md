@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: active
-Updated: 2026-10-26T23:41:22.875Z
+Updated: 2026-10-26T23:42:59.835Z
 Next ids: c5 D1 R1 S1
 
 ## Goal
@@ -16,7 +16,7 @@ Logbook records metrics personalised to its purpose (keeping a piece of work's s
 
 ## Where things stand
 
-Stage 1 of pipeline:run, full lane, interphase Phase 9. Lighthouse readiness passes with an untracked .lighthouse/profile.json written unattended; receipts set-up is skipped because the committed tree holds receipts.config.json. The interview is answered on the owner's behalf; the spec, record and items pass their checks, and the one spec review is running. Plan: 6 Steps in 3 stacked MSPs (metrics-writer, thread-events, thread-summary), 17 criteria, 5.17 unproven.
+Stage 1 of pipeline:run, full lane, interphase Phase 9. Lighthouse readiness passes with an untracked .lighthouse/profile.json written unattended; receipts set-up is skipped because the committed tree holds receipts.config.json. The interview is answered on the owner's behalf; the spec, record and items pass their checks, and the one spec review is running. Plan: 6 Steps in 3 stacked MSPs (metrics-writer, thread-events, thread-summary), 17 criteria, 5.17 unproven. GLOSSARY.md and docs/adr/0001-a-metrics-run-is-one-thread.md are written uncommitted. The run home holds CHARTER.md, worker-rules.txt and dispatch.zsh; run.zsh, items.json and graph.json wait for the feature branch; ~/.mitosis/logbook/accept.zsh already exists and is reused.
 
 ## Next step
 
