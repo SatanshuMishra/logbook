@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: active
-Updated: 2026-10-26T23:25:25.633Z
+Updated: 2026-10-26T23:25:59.585Z
 Next ids: c5 D1 R1 S1
 
 ## Goal
@@ -16,7 +16,7 @@ Logbook records metrics personalised to its purpose (keeping a piece of work's s
 
 ## Where things stand
 
-Not started.
+Stage 1 of pipeline:run, full lane. The checkout is in sync with origin/main; its only local change is an uncommitted receipts.config.json from a receipts doctor run, and the committed tree already holds receipts.config.json, so the receipts set-up is skipped. The lighthouse readiness gate reports one open item: no lighthouse profile, to be answered by lighthouse:init --unattended.
 
 ## Next step
 
