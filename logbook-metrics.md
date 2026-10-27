@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T06:27:23.733Z
+Updated: 2026-10-27T06:27:25.483Z
 Next ids: c8 D3 R1 S1
 
 ## Goal
@@ -41,4 +41,4 @@ Needs: D2.
 - Pipeline decisions and intent I1 to I6: /Users/satanshumishra/Documents/DevLabs/pipeline/docs/specs/unified-metrics.decisions.md
 - Pipeline ADRs: docs/adr/0010-plugin-metrics-share-one-jsonl-store.md and 0011-each-run-records-only-its-own-spend.md in the pipeline checkout
 - This spec and its decisions, record and items: docs/specs/logbook-metrics.{md,decisions.md,record.json,items.json} in the logbook checkout
-- Run home: ~/.mitosis/logbook/logbook-metrics/
+- Run home: ~/.mitosis/logbook/logbook-metrics/ (build-1.log holds the first build's output)
