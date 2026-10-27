@@ -2,10 +2,15 @@ import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult, ServerNotification, ServerRequest } from '@modelcontextprotocol/sdk/types.js'
 import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'
+import { recordEvent, recordInRun, startRun } from '../metrics/record.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import { declare, type Refusal } from '../schema/declare.ts'
+import { actingSession, heldBy } from '../thread/holds.ts'
+import { findRepository, startDirectory, type RepoPaths } from '../thread/paths.ts'
+import { readDocument, resolveThreadId } from '../thread/store.ts'
 import { toolOk, toolRefusal } from './errors.ts'
 import { NO_ARGUMENTS } from './no-arguments.ts'
+import type { LedgerToolName } from './tool-names.ts'
 import { TOOL_SPECS } from './tools/index.ts'
 
 export { NO_ARGUMENTS } from './no-arguments.ts'
@@ -85,6 +90,80 @@ const reportCrash = (rt: Runtime, toolName: string, error: unknown): CallToolRes
   }
 }
 
+type Outcome = 'ok' | 'refused' | 'crashed'
+
+type Answer = { result: CallToolResult; outcome: Outcome; refusalField: string | null }
+
+type Concern = { paths: RepoPaths; slug: string | null }
+
+const TOOL_CALL_EVENT = 'tool.call'
+const STARTS_A_RUN: LedgerToolName = 'open_thread'
+const MILLISECONDS_PER_SECOND = 1000
+
+const refusedAnswer = (refusal: Refusal): Answer => ({
+  result: toolRefusal(refusal),
+  outcome: 'refused',
+  refusalField: refusal.field
+})
+
+const stringArgument = (rawArgs: unknown, key: string): string | null => {
+  if (!isJsonObject(rawArgs)) return null
+  const value = rawArgs[key]
+  return typeof value === 'string' ? value : null
+}
+
+const namedThread = (rt: Runtime, paths: RepoPaths, rawArgs: unknown): string | null => {
+  const threadId = stringArgument(rawArgs, 'thread_id')
+  const resolved = threadId === null ? null : resolveThreadId(rt, paths, threadId)
+  if (resolved !== null && resolved.ok) return resolved.value
+  const slug = stringArgument(rawArgs, 'slug')
+  return slug !== null && readDocument(rt, paths, slug) !== null ? slug : null
+}
+
+const concernOf = (rt: Runtime, rawArgs: unknown): Concern | null => {
+  try {
+    const found = findRepository(rt, startDirectory(rt, rt.cwd ?? ''))
+    if (!found.ok) return null
+    const paths = found.value
+    const slug = namedThread(rt, paths, rawArgs) ?? heldBy(paths, actingSession(paths, rt.sessionId))
+    return { paths, slug }
+  } catch (error) {
+    rt.log({
+      level: 'warn',
+      event: 'metrics.not-written',
+      reason: `the thread a call concerns could not be found: ${error instanceof Error ? error.message : String(error)}`
+    })
+    return null
+  }
+}
+
+const elapsedSeconds = (startedAt: string, finishedAt: string): number =>
+  (Date.parse(finishedAt) - Date.parse(startedAt)) / MILLISECONDS_PER_SECOND
+
+const recordCall = (
+  rt: Runtime,
+  toolName: string,
+  rawArgs: unknown,
+  concern: Concern | null,
+  answer: Answer,
+  seconds: number
+): void => {
+  if (concern === null) return
+  const fields = {
+    tool: toolName,
+    outcome: answer.outcome,
+    refusal_field: answer.refusalField,
+    call_seconds: seconds
+  }
+  const opened = toolName === STARTS_A_RUN && answer.outcome === 'ok' ? stringArgument(rawArgs, 'slug') : null
+  if (opened !== null) {
+    const run = startRun(rt, concern.paths, opened)
+    if (run !== null) recordInRun(rt, concern.paths, run, TOOL_CALL_EVENT, fields)
+    return
+  }
+  if (concern.slug !== null) recordEvent(rt, concern.paths, concern.slug, TOOL_CALL_EVENT, fields)
+}
+
 export const registerTool = <I, O>(server: McpServer, rt: Runtime, spec: ToolSpec<I, O>): void => {
   const enforcedKeys = shapeKeysOf(spec.input)
   if (enforcedKeys !== null && enforcedKeys.length === 0 && spec.input !== NO_ARGUMENTS) {
@@ -97,20 +176,28 @@ export const registerTool = <I, O>(server: McpServer, rt: Runtime, spec: ToolSpe
   assertPublishableSchema(spec.name, declared.jsonSchema)
   const publishedInput = forgePublishedInput(declared.jsonSchema)
 
-  const wrappedHandler = async (rawArgs: unknown, extra: ToolContext): Promise<CallToolResult> => {
+  const answer = async (rawArgs: unknown, extra: ToolContext): Promise<Answer> => {
     try {
       const parsed = declared.parse(rawArgs)
       if (!parsed.ok) {
-        return toolRefusal(parsed)
+        return refusedAnswer(parsed)
       }
       const reply = await spec.handler(rt, extra, parsed.value)
       if (reply.ok) {
-        return toolOk(reply.text, reply.structured)
+        return { result: toolOk(reply.text, reply.structured), outcome: 'ok', refusalField: null }
       }
-      return toolRefusal(reply.refusal)
+      return refusedAnswer(reply.refusal)
     } catch (error) {
-      return reportCrash(rt, spec.name, error)
+      return { result: reportCrash(rt, spec.name, error), outcome: 'crashed', refusalField: null }
     }
+  }
+
+  const wrappedHandler = async (rawArgs: unknown, extra: ToolContext): Promise<CallToolResult> => {
+    const startedAt = rt.now()
+    const concern = concernOf(rt, rawArgs)
+    const answered = await answer(rawArgs, extra)
+    recordCall(rt, spec.name, rawArgs, concern, answered, elapsedSeconds(startedAt, rt.now()))
+    return answered.result
   }
 
   server.registerTool(

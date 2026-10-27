@@ -1,0 +1,87 @@
+{
+  "format": 1,
+  "plugin": "logbook",
+  "purpose": "Logbook keeps the state of a piece of work, a thread, true across sessions, compactions and /clear, in the project's own git repository. It calls no model, so its own spend is none.",
+  "objectives": [
+    {
+      "id": "tools-answer",
+      "text": "Tools answer without refusal or crash.",
+      "measured_by": ["tool.call.outcome", "tool.call.refusal_field"]
+    }
+  ],
+  "events": {
+    "tool.call": {
+      "description": "One call of a logbook tool that concerns a thread, recorded after its reply is built. A call that concerns no thread is not recorded.",
+      "writer": "The logbook MCP server's tool wrapper, for every call of every tool.",
+      "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+      "questions": [
+        "Which tools are called most, and how often does each refuse or crash?",
+        "Which argument fields are refused most often?",
+        "How long do tool calls take to answer?"
+      ],
+      "fields": {
+        "tool": {
+          "type": "enum",
+          "description": "The name of the logbook tool that was called.",
+          "measured_from": "The name the tool is registered under in the logbook MCP server.",
+          "unit": "none",
+          "includes": "Every logbook tool call that concerns a thread.",
+          "excludes": "Calls that concern no thread, and tools of other servers.",
+          "reading": "Group by it to compare tools; a tool absent from the rows had no recorded call in the runs read.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "Which tools are called, and how often each?",
+          "values": [
+            "open_thread",
+            "resume_thread",
+            "record_decision",
+            "update_thread",
+            "park_thread",
+            "close_thread",
+            "list_threads",
+            "search_ledger",
+            "sync_ledger"
+          ]
+        },
+        "outcome": {
+          "type": "enum",
+          "description": "How the call ended: ok when the tool replied with its result, refused when an argument or the thread's state was refused, crashed when the tool failed unexpectedly.",
+          "measured_from": "The reply the tool wrapper built: a successful reply, a refusal from argument parsing or from the tool itself, or the unexpected-failure reply.",
+          "unit": "none",
+          "includes": "Refusals of arguments and refusals the tool makes after reading the thread.",
+          "excludes": "Failures of the metrics store, which never change the outcome.",
+          "reading": "The share of refused and crashed among all calls describes how often a tool did not do what was asked; zero refused and zero crashed means every recorded call answered with its result.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How often do tools refuse or crash?",
+          "values": ["ok", "refused", "crashed"]
+        },
+        "refusal_field": {
+          "type": "string",
+          "description": "The argument or input the refusal named as wrong.",
+          "measured_from": "The field of the refusal the tool returned, the same text its reply shows after \"field: \".",
+          "unit": "text",
+          "includes": "Refusals from argument parsing and from the tool itself.",
+          "excludes": "Calls that were not refused.",
+          "reading": "Null when the call was not refused; group refused calls by it to see which fields are refused most.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "Which fields do tool calls get wrong?"
+        },
+        "call_seconds": {
+          "type": "number",
+          "description": "The time from the call's start to its reply.",
+          "measured_from": "The difference between the server clock read when the call arrived and when its reply was built.",
+          "unit": "seconds",
+          "includes": "Argument parsing, the tool's own work and any git commands it ran.",
+          "excludes": "Transport time between Claude Code and the server, and the metrics write itself.",
+          "reading": "Higher means the call took longer to answer; zero means it answered within the clock's resolution.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How long do tool calls take?"
+        }
+      }
+    }
+  },
+  "summary": {
+    "description": "One line per thread run holding the thread's figures.",
+    "fields": {}
+  },
+  "queries": []
+}
