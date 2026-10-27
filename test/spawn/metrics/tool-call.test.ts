@@ -173,3 +173,76 @@ test('metrics.call-with-no-thread-not-recorded', async () => {
     assert.deepEqual(filesUnder(join(storeOf(fixture), 'plugin=logbook', 'kind=event')), [])
   })
 })
+
+const THREADS_REF = 'refs/logbook/threads'
+
+const toolCallsByThread = (home: string, repo: string): Record<string, string[]> => {
+  const folder = join(home, '.plugin-metrics', 'plugin=logbook', 'kind=event', `repo=${basename(repo)}`)
+  const files = existsSync(folder) ? readdirSync(folder) : []
+  return Object.fromEntries(
+    files.map((file) => [
+      file.replace(/\.[0-9]{8}T[0-9]{6}Z\.jsonl$/, ''),
+      readFileSync(join(folder, file), 'utf8')
+        .split('\n')
+        .filter((line) => line !== '')
+        .map((line) => JSON.parse(line) as Line)
+        .filter((line) => line.event === 'tool.call')
+        .map((line) => `${String(line.tool)}:${String(line.outcome)}`)
+    ])
+  )
+}
+
+const withClone = async (
+  repo: string,
+  home: string,
+  session: string,
+  fn: (spawned: SpawnedServer) => Promise<void>
+): Promise<void> => {
+  const spawned = await spawnServer({
+    projectRoot: repo,
+    entry: ENTRY,
+    env: { HOME: home, CLAUDE_CODE_SESSION_ID: session }
+  })
+  try {
+    await fn(spawned)
+  } finally {
+    await spawned.close()
+  }
+}
+
+const cloneCall = async (spawned: SpawnedServer, name: string, args: Record<string, unknown>): Promise<CallToolResult> =>
+  (await spawned.client.callTool({ name, arguments: args })) as CallToolResult
+
+test('metrics.cross-clone-resume-goes-to-named', async () => {
+  await import('../../../src/metrics/record.ts')
+  const root = mkdtempSync(join(tmpdir(), 'logbook-metrics-clones-'))
+  try {
+    const origin = join(root, 'origin.git')
+    mustGit(root, ['init', '--bare', '--initial-branch=main', origin])
+    const first = makeRepo()
+    const second = makeRepo()
+    const firstHome = mkdtempSync(join(root, 'home-a-'))
+    const secondHome = mkdtempSync(join(root, 'home-b-'))
+    try {
+      mustGit(first, ['remote', 'add', 'origin', origin])
+      mustGit(second, ['remote', 'add', 'origin', origin])
+      await withClone(first, firstHome, 's-a', async (spawned) => {
+        assertSucceeded(await cloneCall(spawned, 'open_thread', OPEN_ARGS))
+      })
+      mustGit(first, ['push', '--quiet', 'origin', `+${THREADS_REF}:${THREADS_REF}`])
+      await withClone(second, secondHome, 's-b', async (spawned) => {
+        assertSucceeded(await cloneCall(spawned, 'open_thread', { ...OPEN_ARGS, slug: 'other-thread' }))
+        assertSucceeded(await cloneCall(spawned, 'resume_thread', { thread_id: 'fix-login' }))
+      })
+      assert.deepEqual(toolCallsByThread(secondHome, second), {
+        'fix-login': ['resume_thread:ok'],
+        'other-thread': ['open_thread:ok']
+      })
+    } finally {
+      rmSync(first, { recursive: true, force: true })
+      rmSync(second, { recursive: true, force: true })
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
