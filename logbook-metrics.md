@@ -1,7 +1,7 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T07:50:38.605Z
-Next ids: c8 D4 R2 S1
+Updated: 2026-10-27T07:50:45.162Z
+Next ids: c8 D5 R2 S1
 
 ## Goal
 
@@ -29,7 +29,7 @@ Needs: D3.
 
 ## Decisions in force
 
-- D3 Interphase hand-off boundary: first build restarts from items with tsconfig.json in writer-copy: Restart the first build with run.zsh from the corrected items (plan d32ad79360da), copying the writer from origin/feat/unified-metrics a39ab11, then Stage 3 review, Validate, the fix pass and Ship.
+- D4 Ship boundary: both MSPs ship from their green, fully tested heads: Ship now: run SHIP=1 run.zsh --resume with both proven heads, then open both pull requests in stack order, assign them to the owner and post each saved comment; the ADR under docs/ stays local because docs/ is never committed in this public repository.
 
 ## Open risks
 
