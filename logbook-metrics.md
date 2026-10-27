@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: active
-Updated: 2026-10-26T23:43:01.786Z
+Updated: 2026-10-27T03:09:00.876Z
 Next ids: c5 D1 R1 S1
 
 ## Goal
@@ -9,7 +9,7 @@ Logbook records metrics personalised to its purpose (keeping a piece of work's s
 
 ## Done when
 
-- [ ] c1 The spec, decisions file, record and items for logbook-metrics are in docs/specs/, with intent I1 to I6 copied word for word and every delegated answer citing an intent line or binding decision
+- [x] c1 The spec, decisions file, record and items for logbook-metrics are in docs/specs/, with intent I1 to I6 copied word for word and every delegated answer citing an intent line or binding decision evidence: check_record --complete, check_spec and check_items pass after the 11 review fixes, the tree guard verified clean, and the record is handed-off
 - [ ] c2 The FEATURE branch is pushed and the run home ~/.mitosis/logbook/logbook-metrics/ holds CHARTER.md, worker-rules.txt, dispatch.zsh and run.zsh, plus accept.zsh in the repository
 - [ ] c3 run.zsh --plan-only passes with no fatal finding and no build has run
 - [ ] c4 The thread is parked with a next step gated on the shared writer existing on origin/feat/unified-metrics or origin/main
