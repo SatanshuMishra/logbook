@@ -9,7 +9,7 @@ export type PathClassification = { path: string; bucket: string }
 
 const DOCS_PREFIX = 'docs/'
 const EVALS_PREFIX = 'evals/'
-const README_FILE = 'README.md'
+const DOCUMENTATION_FILES = new Set(['README.md', 'GLOSSARY.md'])
 
 const REPO_INFRA_PREFIXES = ['node_modules/', '.github/', 'scripts/', '.claude-plugin/']
 
@@ -31,7 +31,7 @@ const NEW_TREE_SOURCE_EXTENSIONS = new Set(['.ts', '.json', '.md'])
 const LEGACY_JS_EXTENSIONS = new Set(['.mjs', '.cjs', '.js'])
 
 export const classify = (filePath: string): PathClassification => {
-  if (filePath.startsWith(DOCS_PREFIX) || filePath === README_FILE) {
+  if (filePath.startsWith(DOCS_PREFIX) || DOCUMENTATION_FILES.has(filePath)) {
     return { path: filePath, bucket: 'documentation' }
   }
   if (filePath.startsWith(EVALS_PREFIX)) {
