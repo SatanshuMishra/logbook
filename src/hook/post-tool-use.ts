@@ -2,6 +2,7 @@ import { realpathSync } from 'node:fs'
 import path from 'node:path'
 import { formatViolation, type Violation } from '../doc/check.ts'
 import { updateRequest } from '../doc/rules.ts'
+import { recordEvent } from '../metrics/record.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Refusal } from '../schema/declare.ts'
 import { activityLine, toolSummary } from '../thread/activity.ts'
@@ -104,6 +105,19 @@ const reconcileText = (edited: string, slug: string, result: ReconcileResult | R
   return acceptedText(slug, result.commit, result.removed)
 }
 
+const editFields = (result: ReconcileResult | Refusal): Record<string, unknown> | null => {
+  if (isRefusal(result)) return { outcome: 'failed', rules: [], violations: 0, refusal_field: result.field }
+  if (result.kind === 'accepted') return { outcome: 'accepted', rules: [], violations: 0, refusal_field: null }
+  if (result.kind !== 'refused') return null
+  const rules = [...new Set(result.violations.map((entry) => entry.rule))].sort()
+  return { outcome: 'refused', rules, violations: result.violations.length, refusal_field: null }
+}
+
+const recordEdit = (rt: Runtime, paths: RepoPaths, slug: string, result: ReconcileResult | Refusal): void => {
+  const fields = editFields(result)
+  if (fields !== null) recordEvent(rt, paths, slug, 'doc.edit', fields)
+}
+
 const matchingSlug = (rt: Runtime, paths: RepoPaths, editedReal: string): string | undefined =>
   listSlugs(rt, paths).find((slug) => {
     const file = workingCopyPath(paths, slug)
@@ -117,7 +131,10 @@ const editContext = (rt: Runtime, paths: RepoPaths, call: ToolCall): string | nu
   const editedReal = realPathOf(edited)
   if (editedReal === null) return null
   const slug = matchingSlug(rt, paths, editedReal)
-  return slug === undefined ? null : reconcileText(edited, slug, reconcileThread(rt, paths, slug))
+  if (slug === undefined) return null
+  const result = reconcileThread(rt, paths, slug)
+  recordEdit(rt, paths, slug, result)
+  return reconcileText(edited, slug, result)
 }
 
 const responseText = (response: unknown): string | null => {

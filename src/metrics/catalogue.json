@@ -7,6 +7,11 @@
       "id": "tools-answer",
       "text": "Tools answer without refusal or crash.",
       "measured_by": ["tool.call.outcome", "tool.call.refusal_field"]
+    },
+    {
+      "id": "document-kept-true",
+      "text": "The document is kept true with little friction.",
+      "measured_by": ["doc.edit.outcome", "doc.edit.rules", "doc.commit.criteria_ticked"]
     }
   ],
   "events": {
@@ -75,6 +80,208 @@
           "reading": "Higher means the call took longer to answer; zero means it answered within the clock's resolution.",
           "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
           "question": "How long do tool calls take?"
+        }
+      }
+    },
+    "doc.edit": {
+      "description": "One checked edit of a thread's working copy, recorded by the PostToolUse hook after it reconciles the working copy with the stored document. An edit that leaves the document unchanged is not recorded.",
+      "writer": "The logbook PostToolUse hook, for every Edit, Write, MultiEdit or NotebookEdit of a thread's working copy.",
+      "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+      "questions": [
+        "How often is an edit of the state document committed, refused by the checker or failed?",
+        "Which checks refuse edits most often?",
+        "How many violations does a refused edit carry?"
+      ],
+      "fields": {
+        "outcome": {
+          "type": "enum",
+          "description": "How the edit ended: accepted when it was committed, refused when logbook's checks found violations, failed when reconciling the working copy returned a refusal.",
+          "measured_from": "The result of reconciling the edited working copy with the thread's stored document.",
+          "unit": "none",
+          "includes": "Every edit of a working copy that changed the document.",
+          "excludes": "Edits that left the document equal to the stored one, and edits of files that are not a working copy.",
+          "reading": "The share of refused and failed among all edits describes how often an edit did not reach the document; zero refused and zero failed means every recorded edit was committed.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How often does an edit of the state document reach a commit?",
+          "values": ["accepted", "refused", "failed"]
+        },
+        "rules": {
+          "type": "array",
+          "description": "The distinct names of the checks whose violations refused the edit, sorted.",
+          "measured_from": "The rule each violation carries, the name of the check in logbook's document checker that produced it.",
+          "unit": "none",
+          "includes": "Every check that produced at least one violation of the edit.",
+          "excludes": "How many times each check fired, which violations counts in total.",
+          "reading": "An empty list when the edit was not refused; unnest it to count refused edits by check.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "Which checks refuse edits?",
+          "items": {
+            "type": "string",
+            "description": "The name of one check that produced a violation.",
+            "measured_from": "The rule of a violation the checker returned.",
+            "unit": "text",
+            "includes": "One check name.",
+            "excludes": "Repeats of the same check.",
+            "reading": "One of the checker's rule names, such as box or removal.",
+            "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+            "question": "Which check refused the edit?"
+          }
+        },
+        "violations": {
+          "type": "integer",
+          "description": "The number of violations the checker returned for the edit.",
+          "measured_from": "The count of violations in the refused reconcile result.",
+          "unit": "count",
+          "includes": "Every violation of every check.",
+          "excludes": "Refusals that are not violations, which failed edits carry instead.",
+          "reading": "Zero when the edit was not refused; higher means the refused edit broke more rules.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How far from passing are refused edits?"
+        },
+        "refusal_field": {
+          "type": "string",
+          "description": "The field the refusal named when reconciling the edit failed.",
+          "measured_from": "The field of the refusal reconciling the working copy returned.",
+          "unit": "text",
+          "includes": "Failed edits.",
+          "excludes": "Accepted and refused edits.",
+          "reading": "Null when the edit did not fail; group failed edits by it to see what made them fail.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "Why do edits fail before they are checked?"
+        }
+      }
+    },
+    "doc.commit": {
+      "description": "One committed version of a thread's state document, with the items it changed against the previous version.",
+      "writer": "The logbook commit of a new version, whether from the working copy or from a tool.",
+      "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+      "questions": [
+        "How many versions of the document are committed, and through which path?",
+        "How many criteria are ticked, struck or reopened per commit?",
+        "How often are decisions, risks and settled items added or removed?"
+      ],
+      "fields": {
+        "via": {
+          "type": "enum",
+          "description": "What made the new version: edit when it came from the working copy, otherwise the name of the logbook tool that made it.",
+          "measured_from": "The path the version took to its commit: the working copy reconcile, or the tool whose change was applied.",
+          "unit": "none",
+          "includes": "Every committed version of a state document.",
+          "excludes": "Versions that were refused or failed, which are never committed.",
+          "reading": "Group by it to compare edits of the working copy with tool calls.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "Which path keeps the document true?",
+          "values": ["edit", "update_thread", "record_decision", "park_thread", "close_thread"]
+        },
+        "criteria_added": {
+          "type": "integer",
+          "description": "The number of criteria added, ids starting c that the new version has and the previous lacks.",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many criteria added does each commit make?"
+        },
+        "criteria_ticked": {
+          "type": "integer",
+          "description": "The number of criteria ticked, whose box became [x].",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many criteria ticked does each commit make?"
+        },
+        "criteria_struck": {
+          "type": "integer",
+          "description": "The number of criteria struck, whose box became [~].",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many criteria struck does each commit make?"
+        },
+        "criteria_reopened": {
+          "type": "integer",
+          "description": "The number of criteria reopened, whose box went from [x] or [~] to [ ].",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many criteria reopened does each commit make?"
+        },
+        "decisions_added": {
+          "type": "integer",
+          "description": "The number of decisions added, ids starting D that the new version has and the previous lacks.",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many decisions added does each commit make?"
+        },
+        "decisions_removed": {
+          "type": "integer",
+          "description": "The number of decisions removed, ids starting D that the previous version has and the new lacks.",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many decisions removed does each commit make?"
+        },
+        "risks_added": {
+          "type": "integer",
+          "description": "The number of risks added, ids starting R that the new version has and the previous lacks.",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many risks added does each commit make?"
+        },
+        "risks_removed": {
+          "type": "integer",
+          "description": "The number of risks removed, ids starting R that the previous version has and the new lacks.",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many risks removed does each commit make?"
+        },
+        "settled_added": {
+          "type": "integer",
+          "description": "The number of settled items added, ids starting S that the new version has and the previous lacks.",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many settled items added does each commit make?"
+        },
+        "settled_removed": {
+          "type": "integer",
+          "description": "The number of settled items removed, ids starting S that the previous version has and the new lacks.",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many settled items removed does each commit make?"
         }
       }
     }

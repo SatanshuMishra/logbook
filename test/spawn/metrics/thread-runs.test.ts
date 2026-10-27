@@ -211,7 +211,9 @@ test('metrics.thread-before-metrics-gets-a-run', async () => {
     const folder = eventFolder(store, basename(repo))
     const file = onlyRunFile(folder)
     assert.deepEqual(
-      linesOf(join(folder, file)).map((line) => [line.event, line.tool]),
+      linesOf(join(folder, file))
+        .filter((line) => line.event === 'tool.call')
+        .map((line) => [line.event, line.tool]),
       [['tool.call', 'update_thread']]
     )
     assert.ok(existsSync(join(store, 'plugin=logbook', 'catalogue.json')), 'the catalogue must be copied')
