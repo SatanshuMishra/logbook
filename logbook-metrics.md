@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T07:44:48.639Z
+Updated: 2026-10-27T07:44:50.588Z
 Next ids: c8 D4 R2 S1
 
 ## Goal
@@ -23,7 +23,7 @@ Stage 3 round 2 of pipeline:run, full lane, files in ~/.mitosis/logbook/logbook-
 
 ## Next step
 
-Record the metrics-writer round 2 validator's verdicts, then record and verdict; collect the thread-events round 2 reviewers' findings, then candidates, Validate, record and verdict; fix every confirmed advisory on its branch.
+Record the thread-events round 2 validator's verdicts, then record and verdict; fix its confirmed advisories, merge mitosis/metrics-writer at c1fcdd33 into it, and run a final suite at the merged head before Green and Ship.
 
 Needs: D3.
 
