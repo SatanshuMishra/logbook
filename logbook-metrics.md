@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T07:53:00.966Z
+Updated: 2026-10-27T08:25:32.027Z
 Next ids: c8 D5 R2 S1
 
 ## Goal
@@ -19,7 +19,7 @@ Logbook records metrics personalised to its purpose (keeping a piece of work's s
 
 ## Where things stand
 
-pipeline:run, full lane, has shipped and waits on the owner's merges: #297 (thread-events) must merge into mitosis/metrics-writer before #296 (metrics-writer) merges into feat/logbook-metrics. The ADR docs/adr/0001-a-metrics-run-is-one-thread.md stays local because nothing under docs/ is committed in this public repository. Criterion 5.17 and three negative acceptance tests (inert at the gate) are unproven. Fresh worktrees get the dev tools from symlinks in ~/.mitosis/runs/logbook/logbook-metrics/node_modules to the owner checkout's git-ignored packages; the copied writer passes logbook's strict tsc flags. Plan: 6 Steps in 2 stacked MSPs (metrics-writer, then thread-events, which holds the events, summary, catalogue and skill because they share the recorder, register.ts, session-end.ts and the catalogue), 17 criteria, 5.17 unproven. Lighthouse readiness passes with an untracked .lighthouse/profile.json; receipts set-up is skipped because the committed tree holds receipts.config.json. GLOSSARY.md and docs/adr/0001-a-metrics-run-is-one-thread.md are written uncommitted, and docs/ is gitignored, so Ship must force-add the ADR or leave it local.
+pipeline:run, full lane, is in Integration: SatanshuMishra/logbook#296 and #297 are merged into feat/logbook-metrics at bc792b3d, and pipeline integration-ready reports both MSPs merged. Lighthouse run 1 (~/.mitosis/logbook/logbook-metrics/lighthouse/run-1) is blocked because its child session hit the account's weekly usage limit, which resets at 4pm America/Edmonton; before that the suite passed on main and FEATURE and one new-behaviour path was driven. That block is not a FEATURE failure, so it is recorded as no finding. The ADR docs/adr/0001-a-metrics-run-is-one-thread.md stays local because nothing under docs/ is committed in this public repository. Criterion 5.17 and three negative acceptance tests (inert at the gate) are unproven. Fresh worktrees get the dev tools from symlinks in ~/.mitosis/runs/logbook/logbook-metrics/node_modules to the owner checkout's git-ignored packages; the copied writer passes logbook's strict tsc flags. Plan: 6 Steps in 2 stacked MSPs (metrics-writer, then thread-events, which holds the events, summary, catalogue and skill because they share the recorder, register.ts, session-end.ts and the catalogue), 17 criteria, 5.17 unproven. Lighthouse readiness passes with an untracked .lighthouse/profile.json; receipts set-up is skipped because the committed tree holds receipts.config.json. GLOSSARY.md and docs/adr/0001-a-metrics-run-is-one-thread.md are written uncommitted, and docs/ is gitignored, so Ship must force-add the ADR or leave it local.
 
 ## Next step
 
