@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T07:39:13.482Z
+Updated: 2026-10-27T07:39:31.472Z
 Next ids: c8 D4 R2 S1
 
 ## Goal
@@ -23,7 +23,7 @@ Stage 3 round 2 of pipeline:run, full lane, files in ~/.mitosis/logbook/logbook-
 
 ## Next step
 
-Run round 2: the metrics-writer code reviewer on its rendered brief, the thread-events suite at 40727831 then its code and security reviewers, then collect findings, Validate and verdict for each MSP.
+Run round 2: the metrics-writer code reviewer on its rendered brief, the thread-events suite at 3cd0259d then its code and security reviewers, then collect findings, Validate and verdict for each MSP.
 
 Needs: D3.
 
