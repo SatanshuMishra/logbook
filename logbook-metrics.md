@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T08:28:13.272Z
+Updated: 2026-10-27T08:28:15.726Z
 Next ids: c8 D5 R2 S1
 
 ## Goal
