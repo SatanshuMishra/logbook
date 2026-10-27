@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: active
-Updated: 2026-10-27T03:10:30.702Z
+Updated: 2026-10-27T03:10:38.455Z
 Next ids: c5 D2 R1 S1
 
 ## Goal
@@ -16,7 +16,7 @@ Logbook records metrics personalised to its purpose (keeping a piece of work's s
 
 ## Where things stand
 
-Stage 2 of pipeline:run, full lane, set-up. The FEATURE branch feat/logbook-metrics is cut from main at 579cc66c. Plan: 6 Steps in 3 stacked MSPs (metrics-writer, thread-events, thread-summary), 17 criteria, 5.17 unproven. Lighthouse readiness passes with an untracked .lighthouse/profile.json; receipts set-up is skipped because the committed tree holds receipts.config.json. GLOSSARY.md and docs/adr/0001-a-metrics-run-is-one-thread.md are written uncommitted. The run home holds CHARTER.md, worker-rules.txt and dispatch.zsh; ~/.mitosis/logbook/accept.zsh is reused.
+Stage 2 of pipeline:run, full lane, waiting before the first build on the shared writer. Plan: 6 Steps in 2 stacked MSPs (metrics-writer, then thread-events, which holds the events, summary, catalogue and skill because they share the recorder, register.ts, session-end.ts and the catalogue), 17 criteria, 5.17 unproven. Lighthouse readiness passes with an untracked .lighthouse/profile.json; receipts set-up is skipped because the committed tree holds receipts.config.json. GLOSSARY.md and docs/adr/0001-a-metrics-run-is-one-thread.md are written uncommitted, and docs/ is gitignored, so Ship must force-add the ADR or leave it local.
 
 ## Next step
 
