@@ -5,19 +5,8 @@ import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { REPOSITORY_ROOT, readSourceRecord } from '../../support/metrics-source.ts'
 
-type SourceRecord = {
-  repository: string
-  ref: string
-  commit: string
-  files: Record<string, { from: string; sha256: string }>
-}
-
-const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
-
-const readSourceRecord = (): SourceRecord =>
-  JSON.parse(readFileSync(path.join(REPOSITORY_ROOT, 'metrics/source.json'), 'utf8')) as SourceRecord
 
 const environmentWithoutMetrics = (): NodeJS.ProcessEnv =>
   Object.fromEntries(
