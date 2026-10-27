@@ -1,7 +1,7 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T06:27:22.583Z
-Next ids: c5 D3 R1 S1
+Updated: 2026-10-27T06:27:23.733Z
+Next ids: c8 D3 R1 S1
 
 ## Goal
 
@@ -13,10 +13,13 @@ Logbook records metrics personalised to its purpose (keeping a piece of work's s
 - [x] c2 The FEATURE branch is pushed and the run home ~/.mitosis/logbook/logbook-metrics/ holds CHARTER.md, worker-rules.txt, dispatch.zsh and run.zsh, plus accept.zsh in the repository evidence: pipeline feature-branch pushed feat/logbook-metrics at 579cc66c (git ls-remote shows it), and the run home holds CHARTER.md, worker-rules.txt, dispatch.zsh, run.zsh, items.json, graph.json and feature.json, with ~/.mitosis/logbook/accept.zsh reused
 - [x] c3 run.zsh --plan-only passes with no fatal finding and no build has run evidence: run.zsh --plan-only exited 0 with plan id c64786cab3fa, no fatal finding and no drift, and nothing was spawned
 - [x] c4 The thread is parked with a next step gated on the shared writer existing on origin/feat/unified-metrics or origin/main evidence: the next step is gated on the dependency check listing the writer files on origin/feat/unified-metrics or origin/main (Needs: D1), and park_thread follows this update with that next step
+- [ ] c5 The first build commits both MSPs, metrics-writer and thread-events, with the writer copied from origin/feat/unified-metrics a39ab11 (D2)
+- [ ] c6 Stage 3 review reaches green or blocked for each MSP, with every confirmed blocker and advisory fixed on its branch
+- [ ] c7 Both MSP pull requests are open in stack order, assigned to the owner, each with its pipeline comment posted
 
 ## Where things stand
 
-Stage 2 of pipeline:run, full lane, waiting before the first build on the shared writer. Plan: 6 Steps in 2 stacked MSPs (metrics-writer, then thread-events, which holds the events, summary, catalogue and skill because they share the recorder, register.ts, session-end.ts and the catalogue), 17 criteria, 5.17 unproven. Lighthouse readiness passes with an untracked .lighthouse/profile.json; receipts set-up is skipped because the committed tree holds receipts.config.json. GLOSSARY.md and docs/adr/0001-a-metrics-run-is-one-thread.md are written uncommitted, and docs/ is gitignored, so Ship must force-add the ADR or leave it local.
+Stage 2 of pipeline:run, full lane: the first build is running. Plan: 6 Steps in 2 stacked MSPs (metrics-writer, then thread-events, which holds the events, summary, catalogue and skill because they share the recorder, register.ts, session-end.ts and the catalogue), 17 criteria, 5.17 unproven. Lighthouse readiness passes with an untracked .lighthouse/profile.json; receipts set-up is skipped because the committed tree holds receipts.config.json. GLOSSARY.md and docs/adr/0001-a-metrics-run-is-one-thread.md are written uncommitted, and docs/ is gitignored, so Ship must force-add the ADR or leave it local.
 
 ## Next step
 
