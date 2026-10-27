@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: active
-Updated: 2026-10-27T03:09:00.876Z
+Updated: 2026-10-27T03:09:06.659Z
 Next ids: c5 D1 R1 S1
 
 ## Goal
@@ -16,11 +16,11 @@ Logbook records metrics personalised to its purpose (keeping a piece of work's s
 
 ## Where things stand
 
-Stage 1 of pipeline:run, full lane, interphase Phase 9. Lighthouse readiness passes with an untracked .lighthouse/profile.json written unattended; receipts set-up is skipped because the committed tree holds receipts.config.json. The interview is answered on the owner's behalf; the spec, record and items pass their checks, and the one spec review is running. Plan: 6 Steps in 3 stacked MSPs (metrics-writer, thread-events, thread-summary), 17 criteria, 5.17 unproven. GLOSSARY.md and docs/adr/0001-a-metrics-run-is-one-thread.md are written uncommitted. The run home holds CHARTER.md, worker-rules.txt and dispatch.zsh; run.zsh, items.json and graph.json wait for the feature branch; ~/.mitosis/logbook/accept.zsh already exists and is reused.
+Stage 2 of pipeline:run, full lane, set-up. The FEATURE branch feat/logbook-metrics is cut from main at 579cc66c. Plan: 6 Steps in 3 stacked MSPs (metrics-writer, thread-events, thread-summary), 17 criteria, 5.17 unproven. Lighthouse readiness passes with an untracked .lighthouse/profile.json; receipts set-up is skipped because the committed tree holds receipts.config.json. GLOSSARY.md and docs/adr/0001-a-metrics-run-is-one-thread.md are written uncommitted. The run home holds CHARTER.md, worker-rules.txt and dispatch.zsh; ~/.mitosis/logbook/accept.zsh is reused.
 
 ## Next step
 
-Fix what the spec review finds that would build the wrong thing, re-render and re-check, then finish interphase Phase 10 (tree guard verify, record handed-off) and start Stage 2 with pipeline feature-branch --repo /Users/satanshumishra/Documents/DevLabs/logbook --slug logbook-metrics --type feat.
+Copy items.json and graph.json into the run home, write run.zsh, and run it with --plan-only until it passes; then record the hand-off boundary and park.
 
 ## Decisions in force
 
