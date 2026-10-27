@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T07:50:49.396Z
+Updated: 2026-10-27T07:52:52.549Z
 Next ids: c8 D5 R2 S1
 
 ## Goal
@@ -15,7 +15,7 @@ Logbook records metrics personalised to its purpose (keeping a piece of work's s
 - [x] c4 The thread is parked with a next step gated on the shared writer existing on origin/feat/unified-metrics or origin/main evidence: the next step is gated on the dependency check listing the writer files on origin/feat/unified-metrics or origin/main (Needs: D1), and park_thread follows this update with that next step
 - [x] c5 The first build commits both MSPs, metrics-writer and thread-events, with the writer copied from origin/feat/unified-metrics a39ab11 (D2) evidence: run.zsh (plan d32ad79360da) committed mitosis/metrics-writer at 36662637 (gate pass 3/3) and mitosis/thread-events at 0fabaf17 (gate 39 pass, 3 inert negative tests), reconcile clean; metrics/source.json names origin/feat/unified-metrics a39ab110
 - [x] c6 Stage 3 review reaches green or blocked for each MSP, with every confirmed blocker and advisory fixed on its branch evidence: pipeline verdict printed green in round 2 for metrics-writer and thread-events (review/round-2/<msp>.verdict.json), with blockers U1, U2 and C1 fixed by receipt tests and advisories fixed at c1fcdd33 and cd680a65; final suites pass at c1fcdd33 (463 tests, lint 46/46, typecheck) and 8c241094 (506 tests, lint 46/46, typecheck)
-- [ ] c7 Both MSP pull requests are open in stack order, assigned to the owner, each with its pipeline comment posted
+- [x] c7 Both MSP pull requests are open in stack order, assigned to the owner, each with its pipeline comment posted evidence: SatanshuMishra/logbook#296 (mitosis/metrics-writer into feat/logbook-metrics) and #297 (mitosis/thread-events into mitosis/metrics-writer) are open ready for review, both assigned to SatanshuMishra, each with its saved pipeline comment posted
 
 ## Where things stand
 
