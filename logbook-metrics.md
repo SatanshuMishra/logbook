@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T06:26:55.891Z
+Updated: 2026-10-27T06:26:58.152Z
 Next ids: c5 D3 R1 S1
 
 ## Goal
@@ -20,9 +20,9 @@ Stage 2 of pipeline:run, full lane, waiting before the first build on the shared
 
 ## Next step
 
-When `git fetch -q origin && git ls-tree --name-only origin/feat/unified-metrics -- pipeline_tool/metrics_writer.py metrics/metrics-writer.ts docs/metrics-format.md`, run in /Users/satanshumishra/Documents/DevLabs/pipeline, prints a path (check origin/main the same way), resume this thread and run /Users/satanshumishra/.mitosis/logbook/logbook-metrics/run.zsh, then carry on with the rest of pipeline:run: Stage 3 review, Validate, the fix pass and Ship.
+Run /Users/satanshumishra/.mitosis/logbook/logbook-metrics/run.zsh for the first build, then Stage 3 review of the metrics-writer and thread-events MSPs, Validate, the fix pass and Ship.
 
-Needs: D1.
+Needs: D2.
 
 ## Decisions in force
 
