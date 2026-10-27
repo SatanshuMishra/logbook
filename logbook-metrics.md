@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T08:28:15.726Z
+Updated: 2026-10-27T10:26:51.972Z
 Next ids: c8 D5 R2 S1
 
 ## Goal
@@ -23,7 +23,7 @@ pipeline:run, full lane, is in Integration: SatanshuMishra/logbook#296 and #297 
 
 ## Next step
 
-After the usage limit resets (4pm America/Edmonton), resume_thread logbook-metrics and invoke lighthouse:test as run 2: --repo /Users/satanshumishra/Documents/DevLabs/logbook --core main --feature feat/logbook-metrics --spec /Users/satanshumishra/Documents/DevLabs/logbook/docs/specs/logbook-metrics.md --results ~/.mitosis/logbook/logbook-metrics/lighthouse/run-2 --previous ~/.mitosis/logbook/logbook-metrics/lighthouse/run-1, then follow pipeline:run's Integration on its verdict through the FEATURE pull request.
+The owner starts Clean-up by saying SatanshuMishra/logbook#298 (feat/logbook-metrics into main) merged: then resume_thread logbook-metrics and run pipeline:run's Clean-up for slug logbook-metrics. The preflight-routing neighbour (a plain request to pick up earlier work calls resume_thread without logbook:preflight) failed on both builds and was classed pre-existing; it is not this change's to fix.
 
 Needs: D4.
 
