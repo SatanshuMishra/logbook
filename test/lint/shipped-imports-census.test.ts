@@ -85,7 +85,7 @@ const readRuntimeDependencyNames = (): ReadonlySet<string> => {
   return new Set(Object.keys(dependencies))
 }
 
-const SHIPPED_TREE_ROOT_DIRS = ['src', 'bin', 'hooks'] as const
+const SHIPPED_TREE_ROOT_DIRS = ['src', 'bin', 'hooks', 'metrics'] as const
 const SHIPPED_CODE_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'])
 
 const walkFilesRecursively = (absoluteDir: string): string[] =>

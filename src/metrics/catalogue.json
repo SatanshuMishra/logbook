@@ -1,0 +1,872 @@
+{
+  "format": 1,
+  "plugin": "logbook",
+  "purpose": "Logbook keeps the state of a piece of work, a thread, true across sessions, compactions and /clear, in the project's own git repository. It calls no model, so its own spend is none.",
+  "objectives": [
+    {
+      "id": "tools-answer",
+      "text": "Tools answer without refusal or crash.",
+      "measured_by": ["tool.call.outcome", "tool.call.refusal_field"]
+    },
+    {
+      "id": "document-kept-true",
+      "text": "The document is kept true with little friction.",
+      "measured_by": ["doc.edit.outcome", "doc.edit.rules", "doc.commit.criteria_ticked"]
+    },
+    {
+      "id": "state-carried-across-sessions",
+      "text": "A thread's state is carried across sessions, compactions and /clear.",
+      "measured_by": ["thread.pickup.source", "thread.pickup.delivered", "summary.handovers"]
+    },
+    {
+      "id": "little-context",
+      "text": "Logbook adds little context.",
+      "measured_by": ["thread.pickup.context_chars"]
+    },
+    {
+      "id": "work-reaches-done",
+      "text": "Work reaches done with evidence.",
+      "measured_by": ["summary.status", "summary.criteria_ticked", "summary.criteria_open", "summary.lifetime_seconds"]
+    }
+  ],
+  "events": {
+    "tool.call": {
+      "description": "One call of a logbook tool that concerns a thread, recorded after its reply is built. A call that concerns no thread is not recorded.",
+      "writer": "The logbook MCP server's tool wrapper, for every call of every tool.",
+      "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+      "questions": [
+        "Which tools are called most, and how often does each refuse or crash?",
+        "Which argument fields are refused most often?",
+        "How long do tool calls take to answer?"
+      ],
+      "fields": {
+        "tool": {
+          "type": "enum",
+          "description": "The name of the logbook tool that was called.",
+          "measured_from": "The name the tool is registered under in the logbook MCP server.",
+          "unit": "none",
+          "includes": "Every logbook tool call that concerns a thread.",
+          "excludes": "Calls that concern no thread, and tools of other servers.",
+          "reading": "Group by it to compare tools; a tool absent from the rows had no recorded call in the runs read.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "Which tools are called, and how often each?",
+          "values": [
+            "open_thread",
+            "resume_thread",
+            "record_decision",
+            "update_thread",
+            "park_thread",
+            "close_thread",
+            "list_threads",
+            "search_ledger",
+            "sync_ledger"
+          ]
+        },
+        "outcome": {
+          "type": "enum",
+          "description": "How the call ended: ok when the tool replied with its result, refused when an argument or the thread's state was refused, crashed when the tool failed unexpectedly.",
+          "measured_from": "The reply the tool wrapper built: a successful reply, a refusal from argument parsing or from the tool itself, or the unexpected-failure reply.",
+          "unit": "none",
+          "includes": "Refusals of arguments and refusals the tool makes after reading the thread.",
+          "excludes": "Failures of the metrics store, which never change the outcome.",
+          "reading": "The share of refused and crashed among all calls describes how often a tool did not do what was asked; zero refused and zero crashed means every recorded call answered with its result.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How often do tools refuse or crash?",
+          "values": ["ok", "refused", "crashed"]
+        },
+        "refusal_field": {
+          "type": "string",
+          "description": "The argument or input the refusal named as wrong.",
+          "measured_from": "The field of the refusal the tool returned, the same text its reply shows after \"field: \".",
+          "unit": "text",
+          "includes": "Refusals from argument parsing and from the tool itself.",
+          "excludes": "Calls that were not refused.",
+          "reading": "Null when the call was not refused; group refused calls by it to see which fields are refused most.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "Which fields do tool calls get wrong?"
+        },
+        "call_seconds": {
+          "type": "number",
+          "description": "The time from the call's start to its reply.",
+          "measured_from": "The difference between the server clock read when the call arrived and when its reply was built.",
+          "unit": "seconds",
+          "includes": "Argument parsing, the tool's own work and any git commands it ran.",
+          "excludes": "Transport time between Claude Code and the server, and the metrics write itself.",
+          "reading": "Higher means the call took longer to answer; zero means it answered within the clock's resolution.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How long do tool calls take?"
+        }
+      }
+    },
+    "doc.edit": {
+      "description": "One checked edit of a thread's working copy, recorded by the PostToolUse hook after it reconciles the working copy with the stored document. An edit that leaves the document unchanged is not recorded.",
+      "writer": "The logbook PostToolUse hook, for every Edit, Write, MultiEdit or NotebookEdit of a thread's working copy.",
+      "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+      "questions": [
+        "How often is an edit of the state document committed, refused by the checker or failed?",
+        "Which checks refuse edits most often?",
+        "How many violations does a refused edit carry?"
+      ],
+      "fields": {
+        "outcome": {
+          "type": "enum",
+          "description": "How the edit ended: accepted when it was committed, refused when logbook's checks found violations, failed when reconciling the working copy returned a refusal.",
+          "measured_from": "The result of reconciling the edited working copy with the thread's stored document.",
+          "unit": "none",
+          "includes": "Every edit of a working copy that changed the document.",
+          "excludes": "Edits that left the document equal to the stored one, and edits of files that are not a working copy.",
+          "reading": "The share of refused and failed among all edits describes how often an edit did not reach the document; zero refused and zero failed means every recorded edit was committed.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How often does an edit of the state document reach a commit?",
+          "values": ["accepted", "refused", "failed"]
+        },
+        "rules": {
+          "type": "array",
+          "description": "The distinct names of the checks whose violations refused the edit, sorted.",
+          "measured_from": "The rule each violation carries, the name of the check in logbook's document checker that produced it.",
+          "unit": "none",
+          "includes": "Every check that produced at least one violation of the edit.",
+          "excludes": "How many times each check fired, which violations counts in total.",
+          "reading": "An empty list when the edit was not refused; unnest it to count refused edits by check.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "Which checks refuse edits?",
+          "items": {
+            "type": "string",
+            "description": "The name of one check that produced a violation.",
+            "measured_from": "The rule of a violation the checker returned.",
+            "unit": "text",
+            "includes": "One check name.",
+            "excludes": "Repeats of the same check.",
+            "reading": "One of the checker's rule names, such as box or removal.",
+            "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+            "question": "Which check refused the edit?"
+          }
+        },
+        "violations": {
+          "type": "integer",
+          "description": "The number of violations the checker returned for the edit.",
+          "measured_from": "The count of violations in the refused reconcile result.",
+          "unit": "count",
+          "includes": "Every violation of every check.",
+          "excludes": "Refusals that are not violations, which failed edits carry instead.",
+          "reading": "Zero when the edit was not refused; higher means the refused edit broke more rules.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How far from passing are refused edits?"
+        },
+        "refusal_field": {
+          "type": "string",
+          "description": "The field the refusal named when reconciling the edit failed.",
+          "measured_from": "The field of the refusal reconciling the working copy returned.",
+          "unit": "text",
+          "includes": "Failed edits.",
+          "excludes": "Accepted and refused edits.",
+          "reading": "Null when the edit did not fail; group failed edits by it to see what made them fail.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "Why do edits fail before they are checked?"
+        }
+      }
+    },
+    "doc.commit": {
+      "description": "One committed version of a thread's state document, with the items it changed against the previous version.",
+      "writer": "The logbook commit of a new version, whether from the working copy or from a tool.",
+      "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+      "questions": [
+        "How many versions of the document are committed, and through which path?",
+        "How many criteria are ticked, struck or reopened per commit?",
+        "How often are decisions, risks and settled items added or removed?"
+      ],
+      "fields": {
+        "via": {
+          "type": "enum",
+          "description": "What made the new version: edit when it came from the working copy, otherwise the name of the logbook tool that made it.",
+          "measured_from": "The path the version took to its commit: the working copy reconcile, or the tool whose change was applied.",
+          "unit": "none",
+          "includes": "Every committed version of a state document.",
+          "excludes": "Versions that were refused or failed, which are never committed.",
+          "reading": "Group by it to compare edits of the working copy with tool calls.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "Which path keeps the document true?",
+          "values": ["edit", "update_thread", "record_decision", "park_thread", "close_thread"]
+        },
+        "criteria_added": {
+          "type": "integer",
+          "description": "The number of criteria added, ids starting c that the new version has and the previous lacks.",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many criteria added does each commit make?"
+        },
+        "criteria_ticked": {
+          "type": "integer",
+          "description": "The number of criteria ticked, whose box became [x].",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many criteria ticked does each commit make?"
+        },
+        "criteria_struck": {
+          "type": "integer",
+          "description": "The number of criteria struck, whose box became [~].",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many criteria struck does each commit make?"
+        },
+        "criteria_reopened": {
+          "type": "integer",
+          "description": "The number of criteria reopened, whose box went from [x] or [~] to [ ].",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many criteria reopened does each commit make?"
+        },
+        "decisions_added": {
+          "type": "integer",
+          "description": "The number of decisions added, ids starting D that the new version has and the previous lacks.",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many decisions added does each commit make?"
+        },
+        "decisions_removed": {
+          "type": "integer",
+          "description": "The number of decisions removed, ids starting D that the previous version has and the new lacks.",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many decisions removed does each commit make?"
+        },
+        "risks_added": {
+          "type": "integer",
+          "description": "The number of risks added, ids starting R that the new version has and the previous lacks.",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many risks added does each commit make?"
+        },
+        "risks_removed": {
+          "type": "integer",
+          "description": "The number of risks removed, ids starting R that the previous version has and the new lacks.",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many risks removed does each commit make?"
+        },
+        "settled_added": {
+          "type": "integer",
+          "description": "The number of settled items added, ids starting S that the new version has and the previous lacks.",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many settled items added does each commit make?"
+        },
+        "settled_removed": {
+          "type": "integer",
+          "description": "The number of settled items removed, ids starting S that the previous version has and the new lacks.",
+          "measured_from": "A comparison of the items of the previous and the new version of the document, each parsed by logbook's document parser.",
+          "unit": "count",
+          "includes": "Each item counted once by its id.",
+          "excludes": "Changes to an item's wording, and repeats of an id after its first occurrence.",
+          "reading": "Zero means none in this commit; higher means more in one commit.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How many settled items removed does each commit make?"
+        }
+      }
+    },
+    "thread.pickup": {
+      "description": "One pickup of a held thread by the SessionStart hook after a resume, a compaction or a /clear, recorded when the hook adds the thread's state to the session's context. A startup, or a session that holds no thread, records nothing.",
+      "writer": "The logbook SessionStart hook, for every resume, compact or clear start of a session that holds a thread.",
+      "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+      "questions": [
+        "How often is a thread picked up after a resume, a compaction or a /clear?",
+        "How often does the whole state document fit in the added context?",
+        "How much context does logbook add at a pickup?"
+      ],
+      "fields": {
+        "source": {
+          "type": "enum",
+          "description": "What started the session that picked the thread up: resume, compact or clear.",
+          "measured_from": "The source of the SessionStart event Claude Code gave the hook.",
+          "unit": "none",
+          "includes": "Every pickup of a held thread.",
+          "excludes": "Startups, which add the list of threads and pick none up.",
+          "reading": "Group by it to compare boundaries; a source absent from the rows had no recorded pickup in the runs read.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "Across which boundaries is a thread's state carried?",
+          "values": ["resume", "compact", "clear"]
+        },
+        "delivered": {
+          "type": "enum",
+          "description": "What form of the state document the added context held: document when it held the whole document, short when only the short form with the path to read fitted.",
+          "measured_from": "The branch the hook took when fitting the document, the activity lines and the running tools under its context ceiling.",
+          "unit": "none",
+          "includes": "Every pickup of a held thread.",
+          "excludes": "The activity and running-tool lines, which activity_lines and the context length describe.",
+          "reading": "Short means the session had to read the working copy itself to see the whole document; document means the whole document arrived in the context.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "Does the whole state document reach the session at a pickup?",
+          "values": ["document", "short"]
+        },
+        "activity_lines": {
+          "type": "integer",
+          "description": "The number of activity lines, tool calls made since the document's last update, kept in the added context.",
+          "measured_from": "The count of activity lines the hook kept after fitting the context under its ceiling.",
+          "unit": "count",
+          "includes": "Activity lines kept in the context.",
+          "excludes": "Activity lines left out to fit the ceiling, and the running-tool lines.",
+          "reading": "Zero means no activity line was kept, either because there was none or because none fitted; higher means more of the recent work was carried over.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How much recent work is carried into the session at a pickup?"
+        },
+        "context_chars": {
+          "type": "integer",
+          "description": "The length in characters of the context the hook added to the session.",
+          "measured_from": "The length of the additionalContext the SessionStart hook returned.",
+          "unit": "count",
+          "includes": "The opening line, the document or its short form, and any activity and running-tool lines.",
+          "excludes": "The one-line message shown to the user, which is not added to the model's context.",
+          "reading": "Higher means logbook placed more text in the session's context; it stands in for model spend, which logbook has none of.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "How much context does logbook add at a pickup?"
+        }
+      }
+    },
+    "thread.handover": {
+      "description": "One hand-over of a held thread by the SessionEnd hook when a session ends with /clear, so the session that starts next can pick the thread up. It carries the ending session in the envelope and has no fields of its own.",
+      "writer": "The logbook SessionEnd hook, for every end with reason clear of a session that holds a thread.",
+      "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+      "questions": [
+        "How often is a thread handed on through /clear?",
+        "Is every hand-over followed by a pickup in the next session?"
+      ],
+      "fields": {}
+    },
+    "doc.request": {
+      "description": "One request logbook made to the session to update a held thread's state document.",
+      "writer": "The logbook PostToolUse hook after a milestone tool call, and the logbook Stop hook after a turn that changed something or after the user wrote while the thread is blocked or waiting.",
+      "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+      "questions": [
+        "How often does logbook ask for the document to be updated, and why?",
+        "Which kind of request is most frequent?"
+      ],
+      "fields": {
+        "reason": {
+          "type": "enum",
+          "description": "Why logbook asked: milestone after a milestone tool call such as a commit, push or pull request, turn-changed after a turn that changed something, blocked-user-wrote after the user wrote while the thread was blocked or waiting.",
+          "measured_from": "The kind of the update reason the hook passed to logbook's update request.",
+          "unit": "none",
+          "includes": "Every update request a hook returned to the session.",
+          "excludes": "Hooks that made no request, including a repeat milestone in the same prompt.",
+          "reading": "Group by it to compare the kinds of request; a reason absent from the rows had no recorded request in the runs read.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "What makes logbook ask for the document to be updated?",
+          "values": ["milestone", "turn-changed", "blocked-user-wrote"]
+        }
+      }
+    }
+  },
+  "summary": {
+    "description": "One line per thread run holding the thread's figures.",
+    "fields": {
+      "status": {
+        "type": "enum",
+        "description": "The thread's status when the summary was written.",
+        "measured_from": "The kind of the Status line of the thread's current state document, read by logbook's document parser.",
+        "unit": "none",
+        "includes": "The six kinds a Status line can carry.",
+        "excludes": "The reason a blocked, waiting or abandoned status gives, and any earlier status.",
+        "reading": "Done means the thread closed with its criteria met, abandoned that it closed without; parked, active, blocked and waiting mean it is still open. Null means the document could not be read or its Status line has no known kind.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How did the thread end, or where does it stand?",
+        "values": ["active", "blocked", "waiting", "parked", "done", "abandoned"]
+      },
+      "lifetime_seconds": {
+        "type": "number",
+        "description": "The time from the run's first event to this summary.",
+        "measured_from": "The difference between the ts of the first line of the run's event file and the summary's own ts.",
+        "unit": "seconds",
+        "includes": "Time the thread spent parked as well as held.",
+        "excludes": "Time before the run's first recorded event.",
+        "reading": "Higher means the thread lived longer; zero means the run's event file held no line or the summary was written at the first event's instant.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How long does a thread stay open?"
+      },
+      "sessions": {
+        "type": "integer",
+        "description": "The number of distinct sessions that wrote an event to the run.",
+        "measured_from": "The count of distinct non-null session values over the run's event file.",
+        "unit": "count",
+        "includes": "Every session id an event line carries.",
+        "excludes": "Lines with a null session, written by a process given no session id.",
+        "reading": "One means a single session did all the recorded work; higher means the thread was carried across more sessions.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "Across how many sessions is a thread carried?"
+      },
+      "tool_calls": {
+        "type": "integer",
+        "description": "The number of logbook tool calls recorded for the thread.",
+        "measured_from": "The number of tool.call lines in the run's event file.",
+        "unit": "count",
+        "includes": "Every matching line the run's event file holds when the summary is written.",
+        "excludes": "Calls that concern no thread, which are not recorded.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How many tool calls does a thread take?"
+      },
+      "tool_refusals": {
+        "type": "integer",
+        "description": "The number of tool calls that were refused.",
+        "measured_from": "The number of tool.call lines in the run's event file whose outcome is refused.",
+        "unit": "count",
+        "includes": "Every matching line the run's event file holds when the summary is written.",
+        "excludes": "Calls that answered or crashed.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How often are a thread's tool calls refused?"
+      },
+      "tool_crashes": {
+        "type": "integer",
+        "description": "The number of tool calls that failed unexpectedly.",
+        "measured_from": "The number of tool.call lines in the run's event file whose outcome is crashed.",
+        "unit": "count",
+        "includes": "Every matching line the run's event file holds when the summary is written.",
+        "excludes": "Calls that answered or were refused.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How often do a thread's tool calls crash?"
+      },
+      "refusals": {
+        "type": "array",
+        "description": "The refused tool calls grouped by tool and refused field, ordered by tool then field.",
+        "measured_from": "The tool.call lines of the run whose outcome is refused, counted by their tool and refusal_field.",
+        "unit": "none",
+        "includes": "One record per pair of tool and field that was refused at least once.",
+        "excludes": "Calls that were not refused.",
+        "reading": "An empty list means no call was refused; unnest it to count refusals by tool and field.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "Which tools and fields are refused for this thread?",
+        "items": {
+          "type": "object",
+          "description": "One tool and field with the number of times calls of that tool were refused naming that field.",
+          "measured_from": "A group of the run's refused tool.call lines.",
+          "unit": "none",
+          "includes": "One pair of tool and field.",
+          "excludes": "Other pairs.",
+          "reading": "Each record is one pair; count is at least one.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "Which field of which tool was refused, and how often?",
+          "fields": {
+            "tool": {
+              "type": "string",
+              "description": "The name of the refused tool.",
+              "measured_from": "The tool of the refused tool.call lines.",
+              "unit": "text",
+              "includes": "One tool name.",
+              "excludes": "Other tools.",
+              "reading": "One of logbook's tool names.",
+              "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+              "question": "Which tool was refused?"
+            },
+            "field": {
+              "type": "string",
+              "description": "The argument or input the refusals named as wrong.",
+              "measured_from": "The refusal_field of the refused tool.call lines.",
+              "unit": "text",
+              "includes": "One field name.",
+              "excludes": "Other fields.",
+              "reading": "The same text the refused reply shows after \"field: \".",
+              "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+              "question": "Which field was refused?"
+            },
+            "count": {
+              "type": "integer",
+              "description": "The number of refused calls of that tool naming that field.",
+              "measured_from": "The count of the run's refused tool.call lines with that tool and refusal_field.",
+              "unit": "count",
+              "includes": "Each refused call once.",
+              "excludes": "Calls that were not refused.",
+              "reading": "At least one; higher means the same refusal recurred.",
+              "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+              "question": "How often was that field of that tool refused?"
+            }
+          }
+        }
+      },
+      "edits_accepted": {
+        "type": "integer",
+        "description": "The number of working-copy edits that were committed.",
+        "measured_from": "The number of doc.edit lines in the run's event file whose outcome is accepted.",
+        "unit": "count",
+        "includes": "Every matching line the run's event file holds when the summary is written.",
+        "excludes": "Refused and failed edits, and edits that left the document unchanged.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How many edits of the working copy reach a commit?"
+      },
+      "edits_refused": {
+        "type": "integer",
+        "description": "The number of working-copy edits logbook's checks refused.",
+        "measured_from": "The number of doc.edit lines in the run's event file whose outcome is refused.",
+        "unit": "count",
+        "includes": "Every matching line the run's event file holds when the summary is written.",
+        "excludes": "Accepted and failed edits.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How often are edits of the working copy refused?"
+      },
+      "edits_failed": {
+        "type": "integer",
+        "description": "The number of working-copy edits whose reconcile returned a refusal before any check.",
+        "measured_from": "The number of doc.edit lines in the run's event file whose outcome is failed.",
+        "unit": "count",
+        "includes": "Every matching line the run's event file holds when the summary is written.",
+        "excludes": "Accepted and refused edits.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How often do edits of the working copy fail?"
+      },
+      "edit_rules": {
+        "type": "array",
+        "description": "The checks that refused edits, each with the number of refused edits it refused, ordered by check.",
+        "measured_from": "The rules of the run's doc.edit lines whose outcome is refused, each rule counted once per edit.",
+        "unit": "none",
+        "includes": "One record per check that refused at least one edit.",
+        "excludes": "Accepted and failed edits.",
+        "reading": "An empty list means no edit was refused; unnest it to count refused edits by check.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "Which checks refuse this thread's edits?",
+        "items": {
+          "type": "object",
+          "description": "One check with the number of refused edits it refused.",
+          "measured_from": "A group of the run's refused doc.edit lines by rule.",
+          "unit": "none",
+          "includes": "One check.",
+          "excludes": "Other checks.",
+          "reading": "Each record is one check; count is at least one.",
+          "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+          "question": "Which check refused edits, and how often?",
+          "fields": {
+            "rule": {
+              "type": "string",
+              "description": "The name of the check.",
+              "measured_from": "A rule of a refused doc.edit line.",
+              "unit": "text",
+              "includes": "One check name.",
+              "excludes": "Other checks.",
+              "reading": "One of the checker's rule names, such as box or removal.",
+              "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+              "question": "Which check refused the edit?"
+            },
+            "count": {
+              "type": "integer",
+              "description": "The number of refused edits the check refused.",
+              "measured_from": "The count of the run's refused doc.edit lines whose rules hold that check.",
+              "unit": "count",
+              "includes": "Each refused edit once.",
+              "excludes": "How many violations of the check an edit carried.",
+              "reading": "At least one; higher means the check refused more edits.",
+              "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+              "question": "How often did that check refuse an edit?"
+            }
+          }
+        }
+      },
+      "commits": {
+        "type": "integer",
+        "description": "The number of versions of the state document committed.",
+        "measured_from": "The number of doc.commit lines in the run's event file.",
+        "unit": "count",
+        "includes": "Every matching line the run's event file holds when the summary is written.",
+        "excludes": "Refused and failed edits and tool calls, which commit nothing.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How many versions of the document does a thread take?"
+      },
+      "criteria_added": {
+        "type": "integer",
+        "description": "The number of criteria added over the thread's commits.",
+        "measured_from": "The sum of criteria_added over the doc.commit lines of the run's event file.",
+        "unit": "count",
+        "includes": "Every commit of the run, whether from the working copy or a tool.",
+        "excludes": "Versions that were refused or failed, which are never committed.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How many criteria added does a thread make?"
+      },
+      "criteria_ticked": {
+        "type": "integer",
+        "description": "The number of criteria ticked over the thread's commits.",
+        "measured_from": "The sum of criteria_ticked over the doc.commit lines of the run's event file.",
+        "unit": "count",
+        "includes": "Every commit of the run, whether from the working copy or a tool.",
+        "excludes": "Versions that were refused or failed, which are never committed.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How many criteria ticked does a thread make?"
+      },
+      "criteria_struck": {
+        "type": "integer",
+        "description": "The number of criteria struck over the thread's commits.",
+        "measured_from": "The sum of criteria_struck over the doc.commit lines of the run's event file.",
+        "unit": "count",
+        "includes": "Every commit of the run, whether from the working copy or a tool.",
+        "excludes": "Versions that were refused or failed, which are never committed.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How many criteria struck does a thread make?"
+      },
+      "criteria_reopened": {
+        "type": "integer",
+        "description": "The number of criteria reopened over the thread's commits.",
+        "measured_from": "The sum of criteria_reopened over the doc.commit lines of the run's event file.",
+        "unit": "count",
+        "includes": "Every commit of the run, whether from the working copy or a tool.",
+        "excludes": "Versions that were refused or failed, which are never committed.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How many criteria reopened does a thread make?"
+      },
+      "decisions_added": {
+        "type": "integer",
+        "description": "The number of decisions added over the thread's commits.",
+        "measured_from": "The sum of decisions_added over the doc.commit lines of the run's event file.",
+        "unit": "count",
+        "includes": "Every commit of the run, whether from the working copy or a tool.",
+        "excludes": "Versions that were refused or failed, which are never committed.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How many decisions added does a thread make?"
+      },
+      "decisions_removed": {
+        "type": "integer",
+        "description": "The number of decisions removed over the thread's commits.",
+        "measured_from": "The sum of decisions_removed over the doc.commit lines of the run's event file.",
+        "unit": "count",
+        "includes": "Every commit of the run, whether from the working copy or a tool.",
+        "excludes": "Versions that were refused or failed, which are never committed.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How many decisions removed does a thread make?"
+      },
+      "risks_added": {
+        "type": "integer",
+        "description": "The number of risks added over the thread's commits.",
+        "measured_from": "The sum of risks_added over the doc.commit lines of the run's event file.",
+        "unit": "count",
+        "includes": "Every commit of the run, whether from the working copy or a tool.",
+        "excludes": "Versions that were refused or failed, which are never committed.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How many risks added does a thread make?"
+      },
+      "risks_removed": {
+        "type": "integer",
+        "description": "The number of risks removed over the thread's commits.",
+        "measured_from": "The sum of risks_removed over the doc.commit lines of the run's event file.",
+        "unit": "count",
+        "includes": "Every commit of the run, whether from the working copy or a tool.",
+        "excludes": "Versions that were refused or failed, which are never committed.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How many risks removed does a thread make?"
+      },
+      "settled_added": {
+        "type": "integer",
+        "description": "The number of settled items added over the thread's commits.",
+        "measured_from": "The sum of settled_added over the doc.commit lines of the run's event file.",
+        "unit": "count",
+        "includes": "Every commit of the run, whether from the working copy or a tool.",
+        "excludes": "Versions that were refused or failed, which are never committed.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How many settled items added does a thread make?"
+      },
+      "settled_removed": {
+        "type": "integer",
+        "description": "The number of settled items removed over the thread's commits.",
+        "measured_from": "The sum of settled_removed over the doc.commit lines of the run's event file.",
+        "unit": "count",
+        "includes": "Every commit of the run, whether from the working copy or a tool.",
+        "excludes": "Versions that were refused or failed, which are never committed.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How many settled items removed does a thread make?"
+      },
+      "criteria_total": {
+        "type": "integer",
+        "description": "The number of criteria in the thread's current state document.",
+        "measured_from": "The count of items with an id starting c in the current document, read by logbook's document parser.",
+        "unit": "count",
+        "includes": "Open, ticked and struck criteria.",
+        "excludes": "Criteria removed from the document.",
+        "reading": "Zero means the document lists no criterion.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How many criteria does the thread carry?"
+      },
+      "criteria_open": {
+        "type": "integer",
+        "description": "The number of criteria in the current state document whose box is empty.",
+        "measured_from": "The count of items with an id starting c and an empty box in the current document, read by logbook's document parser.",
+        "unit": "count",
+        "includes": "Criteria marked [ ].",
+        "excludes": "Ticked [x] and struck [~] criteria.",
+        "reading": "Zero means every criterion is ticked or struck; higher means more work is left.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How much of the thread's work is still open?"
+      },
+      "pickups_resume": {
+        "type": "integer",
+        "description": "The number of pickups of the thread after a resume.",
+        "measured_from": "The number of thread.pickup lines in the run's event file whose source is resume.",
+        "unit": "count",
+        "includes": "Every matching line the run's event file holds when the summary is written.",
+        "excludes": "Pickups from other sources, and startups.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How often is the thread picked up after a resume?"
+      },
+      "pickups_compact": {
+        "type": "integer",
+        "description": "The number of pickups of the thread after a compact.",
+        "measured_from": "The number of thread.pickup lines in the run's event file whose source is compact.",
+        "unit": "count",
+        "includes": "Every matching line the run's event file holds when the summary is written.",
+        "excludes": "Pickups from other sources, and startups.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How often is the thread picked up after a compact?"
+      },
+      "pickups_clear": {
+        "type": "integer",
+        "description": "The number of pickups of the thread after a clear.",
+        "measured_from": "The number of thread.pickup lines in the run's event file whose source is clear.",
+        "unit": "count",
+        "includes": "Every matching line the run's event file holds when the summary is written.",
+        "excludes": "Pickups from other sources, and startups.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How often is the thread picked up after a clear?"
+      },
+      "pickups_short": {
+        "type": "integer",
+        "description": "The number of pickups that delivered only the short form of the document.",
+        "measured_from": "The number of thread.pickup lines in the run's event file whose delivered is short.",
+        "unit": "count",
+        "includes": "Every matching line the run's event file holds when the summary is written.",
+        "excludes": "Pickups that delivered the whole document.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How often does the whole document not fit at a pickup?"
+      },
+      "handovers": {
+        "type": "integer",
+        "description": "The number of times the thread was handed on through /clear.",
+        "measured_from": "The number of thread.handover lines in the run's event file.",
+        "unit": "count",
+        "includes": "Every matching line the run's event file holds when the summary is written.",
+        "excludes": "Session ends with any reason other than clear.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How often is the thread handed on through /clear?"
+      },
+      "requests_milestone": {
+        "type": "integer",
+        "description": "The number of requests to update the document with reason milestone.",
+        "measured_from": "The number of doc.request lines in the run's event file whose reason is milestone.",
+        "unit": "count",
+        "includes": "Every matching line the run's event file holds when the summary is written.",
+        "excludes": "Requests with other reasons, and hooks that made no request.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How often does logbook ask for an update with reason milestone?"
+      },
+      "requests_turn_changed": {
+        "type": "integer",
+        "description": "The number of requests to update the document with reason turn-changed.",
+        "measured_from": "The number of doc.request lines in the run's event file whose reason is turn-changed.",
+        "unit": "count",
+        "includes": "Every matching line the run's event file holds when the summary is written.",
+        "excludes": "Requests with other reasons, and hooks that made no request.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How often does logbook ask for an update with reason turn-changed?"
+      },
+      "requests_blocked_user_wrote": {
+        "type": "integer",
+        "description": "The number of requests to update the document with reason blocked-user-wrote.",
+        "measured_from": "The number of doc.request lines in the run's event file whose reason is blocked-user-wrote.",
+        "unit": "count",
+        "includes": "Every matching line the run's event file holds when the summary is written.",
+        "excludes": "Requests with other reasons, and hooks that made no request.",
+        "reading": "Zero means none in this run; higher means more.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How often does logbook ask for an update with reason blocked-user-wrote?"
+      },
+      "context_chars": {
+        "type": "integer",
+        "description": "The total length in characters of the context logbook added at the thread's pickups.",
+        "measured_from": "The sum of context_chars over the thread.pickup lines of the run's event file.",
+        "unit": "count",
+        "includes": "Every pickup of the run.",
+        "excludes": "The one-line messages shown to the user, and the context added by startups and update requests.",
+        "reading": "Zero means no pickup was recorded; higher means logbook placed more text in sessions' context; it stands in for model spend, which logbook has none of.",
+        "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
+        "question": "How much context does logbook add over a thread's life?"
+      }
+    }
+  },
+  "queries": [
+    {
+      "name": "pickups_by_source",
+      "question": "Across which boundaries are threads picked up, and how often after each?",
+      "sql": "select source, count(*) as pickups from events where plugin = 'logbook' and event = 'thread.pickup' group by source order by pickups desc, source"
+    },
+    {
+      "name": "edit_outcomes",
+      "question": "How often does an edit of a working copy reach a commit, get refused by the checks, or fail?",
+      "sql": "select outcome, count(*) as edits from events where plugin = 'logbook' and event = 'doc.edit' group by outcome order by edits desc, outcome"
+    },
+    {
+      "name": "refused_edit_rules",
+      "question": "Which checks refuse edits of the state document most often?",
+      "sql": "select rule, count(*) as edits from (select unnest(rules) as rule from events where plugin = 'logbook' and event = 'doc.edit' and outcome = 'refused') group by rule order by edits desc, rule"
+    },
+    {
+      "name": "tool_refusals",
+      "question": "Which tools refuse calls, and on which field?",
+      "sql": "select tool, refusal_field, count(*) as calls from events where plugin = 'logbook' and event = 'tool.call' and outcome = 'refused' group by tool, refusal_field order by calls desc, tool, refusal_field"
+    },
+    {
+      "name": "thread_lifetimes",
+      "question": "How long has each thread lived, and where does it stand?",
+      "sql": "select run, status, lifetime_seconds from summaries where plugin = 'logbook' order by run"
+    }
+  ]
+}

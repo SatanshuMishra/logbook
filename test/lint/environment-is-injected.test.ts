@@ -4,6 +4,7 @@ import path from 'node:path'
 import * as ts from 'typescript'
 import { census } from '../support/census.ts'
 import type { Classified } from '../support/census.ts'
+import { recordedCopies } from '../support/metrics-source.ts'
 import {
   REBUILD_ROOT,
   findNamedImportSymbols,
@@ -140,6 +141,9 @@ const collectEnvironmentCandidates = (
   return found
 }
 
+const allowedFilesFor = (permittedFiles: ReadonlySet<string>): Set<string> =>
+  new Set([...permittedFiles, ...recordedCopies()])
+
 const classifyCandidate = (candidate: EnvironmentCandidate): Classified<EnvironmentCandidate>['verdict'] | 'unclassifiable' =>
   KNOWN_CAPABILITIES.has(candidate.capability) ? candidate.verdict : 'unclassifiable'
 
@@ -149,8 +153,10 @@ test('contract.environment-is-injected', () => {
   const permittedFiles = findPermittedFiles(checker, program, productionFiles, runtimeType)
   assert.ok(permittedFiles.size > 0, 'expected at least one production module to export a Runtime factory')
 
+  const allowedFiles = allowedFilesFor(permittedFiles)
+
   const population = productionFiles.flatMap((file) =>
-    collectEnvironmentCandidates(checker, sourceFileFor(program, file), relativeToRoot(file), permittedFiles)
+    collectEnvironmentCandidates(checker, sourceFileFor(program, file), relativeToRoot(file), allowedFiles)
   )
   assert.ok(population.length > 0, 'expected at least one ambient-environment reference in the production partition')
 
@@ -178,4 +184,30 @@ test('contract.environment-is-injected.collector-catches-named-process-imports',
   const candidates = collectEnvironmentCandidates(checker, sourceFile, relFile, new Set<string>())
   assert.ok(candidates.length > 0, 'expected the collector to find the env/cwd process import usage in the fixture')
   assert.throws(() => census(candidates, classifyCandidate))
+})
+
+test('contract.environment-is-injected.exempts-only-recorded-copies', () => {
+  const { checker, program, productionFiles } = loadSourceProgram()
+  const runtimeType = findRuntimeType(checker, program, productionFiles)
+  const allowedFiles = allowedFilesFor(findPermittedFiles(checker, program, productionFiles, runtimeType))
+  const writerPath = path.join(REBUILD_ROOT, 'metrics', 'metrics-writer.ts')
+  const fixturePath = path.join(REBUILD_ROOT, 'test', 'fixtures', 'environment-is-injected-violation.ts')
+
+  const writerCandidates = collectEnvironmentCandidates(
+    checker,
+    sourceFileFor(program, writerPath),
+    relativeToRoot(writerPath),
+    allowedFiles
+  )
+  assert.ok(writerCandidates.length > 0)
+  assert.ok(writerCandidates.every((candidate) => candidate.verdict === 'allowed'))
+
+  const unrecordedCandidates = collectEnvironmentCandidates(
+    checker,
+    sourceFileFor(program, fixturePath),
+    'metrics/unrecorded.ts',
+    allowedFiles
+  )
+  assert.ok(unrecordedCandidates.length > 0)
+  assert.ok(unrecordedCandidates.every((candidate) => candidate.verdict === 'forbidden'))
 })

@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
+import { itemChanges } from '../doc/changes.ts'
 import { checkVersion, formatViolation, removedIds, type Violation } from '../doc/check.ts'
 import {
   NOTE_HEADING,
@@ -10,6 +11,7 @@ import {
   stripHeaderLines,
   type NextIds
 } from '../doc/document.ts'
+import { recordEvent } from '../metrics/record.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Ok, Refusal } from '../schema/declare.ts'
 import { durableWrite } from '../store/durable-write.ts'
@@ -47,7 +49,7 @@ type Settled =
   | { kind: 'refused'; violations: Violation[] }
   | ({ kind: 'accepted' } & Accepted)
 
-type Version = { text: string; message: string; beforeCas: (() => void) | undefined }
+type Version = { text: string; message: string; via: string; beforeCas: (() => void) | undefined }
 
 const unknownThread = (slug: string): Refusal => ({
   ok: false,
@@ -136,6 +138,7 @@ const commitVersion = (
     ...(version.beforeCas === undefined ? {} : { beforeCas: version.beforeCas })
   })
   if (!committed.ok) return committed
+  recordEvent(rt, paths, stored.slug, 'doc.commit', { via: version.via, ...itemChanges(stored.text, normalised) })
   writeWorkingCopy(rt, file, normalised)
   settleHold(rt, paths, stored.slug, acceptedAt)
   return {
@@ -166,6 +169,7 @@ const settleOnce = (
   const accepted = commitVersion(rt, paths, stored, file.value, {
     text: copy.value,
     message: commitMessage(slug, stored.text, copy.value),
+    via: 'edit',
     beforeCas
   })
   return accepted.ok ? { ok: true, value: { kind: 'accepted', ...accepted.value } } : accepted
@@ -223,6 +227,7 @@ const applyOnce = (
   return commitVersion(rt, paths, stored, file.value, {
     text: noted,
     message: toolMessage(input.tool, slug, changed.summary, [...changed.details, ...changed.noteLines]),
+    via: input.tool,
     beforeCas: input.beforeCas
   })
 }

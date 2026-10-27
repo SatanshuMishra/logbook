@@ -1,0 +1,35 @@
+{
+  "repository": "SatanshuMishra/pipeline",
+  "ref": "origin/main",
+  "commit": "42b614535c2ca9d6522afb7c20b9192010a0d680",
+  "files": {
+    "metrics/metrics-writer.ts": {
+      "from": "metrics/metrics-writer.ts",
+      "sha256": "c57ab0559744616945b6aaf249ac10cb0a9fe8de4250f1b60d50445a22a2a36b"
+    },
+    "metrics/conform.ts": {
+      "from": "metrics/conform.ts",
+      "sha256": "79be21131e0b30d63186f9f1b3214a6a527f3ffc0bd16292a7a33eb5efd3d4ed"
+    },
+    "metrics/fixtures/cases.json": {
+      "from": "metrics/fixtures/cases.json",
+      "sha256": "41148e7ded3e8953daecb0cd237289fa6d61a56404e2e357dd5150d4bb9d299b"
+    },
+    "metrics/fixtures/expected.json": {
+      "from": "metrics/fixtures/expected.json",
+      "sha256": "bf86703837e5870789366e1b74e8bfa9c3809d8a282649df359ea7e8d4b4ebef"
+    },
+    "metrics/schema/line.schema.json": {
+      "from": "metrics/schema/line.schema.json",
+      "sha256": "9c651f481b118fe5b06c44f25aac1d5e107e7f7b621e1b4fdd3a4fbb4bb406b0"
+    },
+    "metrics/schema/catalogue.schema.json": {
+      "from": "metrics/schema/catalogue.schema.json",
+      "sha256": "f2952113cb36030777975ad6618b35b599d91eb66f4175509f318930bc8129a6"
+    },
+    "metrics/metrics-format.md": {
+      "from": "docs/metrics-format.md",
+      "sha256": "a00142a2515764be2327535b86f81228dce8194a626aaeb7068b5c94ff1440e3"
+    }
+  }
+}

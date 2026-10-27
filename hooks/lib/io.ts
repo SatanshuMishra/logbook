@@ -42,12 +42,18 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const nonEmptyString = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null)
 
+const sessionRuntime = (base: Runtime, sessionId: string): Runtime => ({
+  ...base,
+  env: { ...base.env, CLAUDE_CODE_SESSION_ID: sessionId },
+  sessionId
+})
+
 const hookInputFor = (parsed: unknown): HookInput | null => {
   if (!isRecord(parsed)) return null
   const sessionId = nonEmptyString(parsed.session_id)
   const cwd = nonEmptyString(parsed.cwd)
   if (sessionId === null || cwd === null) return null
-  const rt = productionRuntime()
+  const rt = sessionRuntime(productionRuntime(), sessionId)
   const found = findRepository(rt, startDirectory(rt, cwd))
   if (!found.ok) return null
   return { event: parsed, sessionId, paths: found.value, rt }

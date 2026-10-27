@@ -14,7 +14,12 @@ import {
   type StatusKind,
 } from "./document.ts";
 
-export type Violation = { line: number; id: string | null; message: string };
+export type Violation = {
+  rule: string;
+  line: number;
+  id: string | null;
+  message: string;
+};
 
 type RemovedLine = { id: string; line: number; text: string };
 
@@ -47,10 +52,11 @@ const DECISION_ID_PATTERN = /\bD[1-9][0-9]*\b/g;
 const SECTION_ORDER = SECTION_NAMES.map((name) => `"## ${name}"`).join(", ");
 
 const violation = (
+  rule: string,
   line: number,
   id: string | null,
   message: string,
-): Violation => ({ line, id, message });
+): Violation => ({ rule, line, id, message });
 
 const inLineOrder = (violations: readonly Violation[]): Violation[] =>
   [...violations].sort((left, right) => left.line - right.line);
@@ -88,6 +94,7 @@ const titleViolations = (parsed: ParsedDocument, slug: string): Violation[] => {
   if (parsed.slug === null) {
     return [
       violation(
+        "title",
         1,
         null,
         `the first line must be the title in the form "${TITLE_FORM}"; write "# ${slug}: <title>" there`,
@@ -97,6 +104,7 @@ const titleViolations = (parsed: ParsedDocument, slug: string): Violation[] => {
   if (parsed.slug !== slug) {
     return [
       violation(
+        "title",
         1,
         null,
         `the title must start "# ${slug}: ", because ${slug} is the slug of this thread; change the first line to "# ${slug}: ${parsed.title ?? "<title>"}"`,
@@ -111,6 +119,7 @@ const statusViolations = (parsed: ParsedDocument): Violation[] => {
   if (status === null || parsed.statusLine === null) {
     return [
       violation(
+        "status",
         2,
         null,
         `the Status line is missing; add "Status: <value>" right after the title line, where <value> is one of ${STATUS_VALUES}`,
@@ -120,6 +129,7 @@ const statusViolations = (parsed: ParsedDocument): Violation[] => {
   if (status.kind === null) {
     return [
       violation(
+        "status",
         parsed.statusLine,
         null,
         `the status "${status.raw}" is not one of ${STATUS_VALUES}; change the line to "Status: " followed by one of these`,
@@ -129,6 +139,7 @@ const statusViolations = (parsed: ParsedDocument): Violation[] => {
   if (REASONED_KINDS.includes(status.kind) && status.reason === null) {
     return [
       violation(
+        "status",
         parsed.statusLine,
         null,
         `the status ${status.kind} needs a reason after the colon; write "Status: ${status.kind}: <reason>"`,
@@ -176,6 +187,7 @@ const missingSectionViolation = (
     presentNames.has(known),
   );
   return violation(
+    "missing-section",
     missingSectionLine(name, parsed),
     null,
     `the section "## ${name}" is missing; add the heading "## ${name}" with its lines ${placeOf(previous, next)}`,
@@ -196,6 +208,7 @@ const orderViolations = (firsts: readonly Section[]): Violation[] => {
   if (ahead === undefined) return [];
   return [
     violation(
+      "order",
       section.line,
       null,
       `"## ${section.name}" comes after "## ${ahead.name}", but the sections go in this order: ${SECTION_ORDER}; move "## ${section.name}" and its lines before "## ${ahead.name}"`,
@@ -215,6 +228,7 @@ const sectionViolations = (parsed: ParsedDocument): Violation[] => {
     )
     .map((section) =>
       violation(
+        "section",
         section.line,
         null,
         `"## ${section.name}" is not a section of a state document, whose sections are ${SECTION_ORDER}; rename the heading to one of them, or move its lines into one of them and delete the heading`,
@@ -224,6 +238,7 @@ const sectionViolations = (parsed: ParsedDocument): Violation[] => {
     .filter((section) => section.name === NOTE_HEADING)
     .map((section) =>
       violation(
+        "section",
         section.line,
         null,
         `"## ${NOTE_HEADING}" must be the last section; move it and its lines to the end of the document`,
@@ -235,6 +250,7 @@ const sectionViolations = (parsed: ParsedDocument): Violation[] => {
       ? []
       : [
           violation(
+            "section",
             section.line,
             null,
             `"## ${section.name}" appears a second time, first at line ${first.line}; move its lines into that section and delete this heading`,
@@ -264,6 +280,7 @@ const badLineViolation =
           ? `${usedUpMessage(letter)}; it matches no item form`
           : `write it in the form "${ITEM_FORMS[letter]}", giving a new item the number on the Next ids line`;
     return violation(
+      "bad-line",
       bad.line,
       null,
       `"${bad.text}" under "## ${bad.section}" is not an item line; ${fix}`,
@@ -277,6 +294,7 @@ const itemViolations = (item: Item): Violation[] => {
       ? []
       : [
           violation(
+            "item",
             item.line,
             item.id,
             `${item.id} sits under "## ${item.section}", but ${item.letter} items belong under "## ${home}"; move the line there`,
@@ -286,6 +304,7 @@ const itemViolations = (item: Item): Violation[] => {
     item.letter === "c" && item.box === null
       ? [
           violation(
+            "item",
             item.line,
             item.id,
             `criterion ${item.id} has no checkbox; write it in the form "${ITEM_FORMS.c}", as "- [ ] ${item.id} ${item.text}"`,
@@ -296,6 +315,7 @@ const itemViolations = (item: Item): Violation[] => {
     item.letter !== "c" && item.box !== null
       ? [
           violation(
+            "item",
             item.line,
             item.id,
             `${item.id} has a checkbox, and only criteria under "## ${LETTER_SECTION.c}" take one; write it as "- ${item.id} ${item.text}"`,
@@ -329,6 +349,7 @@ const repeatedIdViolations = (
       ? []
       : [
           violation(
+            "repeated-id",
             item.line,
             item.id,
             isUsedUp(free[item.letter])
@@ -342,6 +363,7 @@ const repeatedIdViolations = (
 const conflictViolations = (parsed: ParsedDocument): Violation[] =>
   parsed.conflictLines.map((conflict) =>
     violation(
+      "conflict",
       conflict.line,
       null,
       `"${conflict.text}" is a merge conflict marker; resolve the conflict by keeping the lines that should stay, then delete this marker line`,
@@ -408,6 +430,7 @@ const removalViolations = (
   if (item.letter === "c") {
     return [
       violation(
+        "removal",
         home,
         item.id,
         `criterion ${item.id} was removed, but a criterion is never removed: it is struck with [~] and struck: instead; put it back as "- [~] ${item.id} ${wordingOf(item.text)} struck: <reason>"${named ? ` and delete the Removed line for ${item.id}` : ""}`,
@@ -417,6 +440,7 @@ const removalViolations = (
   if (named) return [];
   return [
     violation(
+      "removal",
       home,
       item.id,
       `${item.id} was removed without a reason; add the line "Removed: ${item.id} because <reason>" to the "## ${NOTE_HEADING}" section at the end of the document, adding that section if it is missing, or put ${item.id} back`,
@@ -433,6 +457,7 @@ const removedLineViolations = (
     if (!beforeIds.has(removed.id)) {
       return [
         violation(
+          "removed-line",
           removed.line,
           removed.id,
           `"${removed.text}" names ${removed.id}, but the old version has no ${removed.id}; delete this line`,
@@ -443,6 +468,7 @@ const removedLineViolations = (
     if (present === undefined) return [];
     return [
       violation(
+        "removed-line",
         removed.line,
         removed.id,
         `"${removed.text}" names ${removed.id}, but ${removed.id} is still in the document at line ${present.line}; delete this line to keep ${removed.id}, or delete the ${removed.id} line to remove it`,
@@ -458,6 +484,7 @@ const boxViolations = (before: Item, after: Item): Violation[] => {
   ) {
     return [
       violation(
+        "box",
         after.line,
         after.id,
         `${after.id} was ticked [x] without evidence; add " evidence: <what proves it>" to the end of the line, or set the box back to [${before.box ?? " "}]`,
@@ -471,6 +498,7 @@ const boxViolations = (before: Item, after: Item): Violation[] => {
   ) {
     return [
       violation(
+        "box",
         after.line,
         after.id,
         `${after.id} was struck [~] without a reason; add " struck: <reason>" to the end of the line`,
@@ -484,6 +512,7 @@ const boxViolations = (before: Item, after: Item): Violation[] => {
   ) {
     return [
       violation(
+        "box",
         after.line,
         after.id,
         `${after.id} was reopened to [ ] without a reason; add " reopened: <reason>" to the end of the line`,
@@ -509,6 +538,7 @@ const wordingViolations = (
   if (newlyCited.length === 0) {
     return [
       violation(
+        "wording",
         after.line,
         after.id,
         `the wording of ${after.id} changed without citing a new decision; restore the wording "${oldWording}", or add the decision behind the change as a new D item under "## ${LETTER_SECTION.D}" and cite its id in the wording`,
@@ -517,6 +547,7 @@ const wordingViolations = (
   }
   return [
     violation(
+      "wording",
       after.line,
       after.id,
       `the wording of ${after.id} changed without a decision in force: it cites ${newlyCited.join(", ")}, which "## ${LETTER_SECTION.D}" does not hold; add the decision there, or restore the wording "${oldWording}"`,
@@ -563,6 +594,7 @@ const newIdViolations = (
     .map((item) => {
       const lowest = `${item.letter}${oldNext[item.letter]}`;
       return violation(
+        "new-id",
         item.line,
         item.id,
         isUsedUp(oldNext[item.letter])
@@ -578,6 +610,7 @@ const slugViolations = (
   before.slug !== null && after.slug !== null && before.slug !== after.slug
     ? [
         violation(
+          "slug",
           1,
           null,
           `the slug of this thread stays ${before.slug}; change the first line back to "# ${before.slug}: ${after.title ?? "<title>"}"`,
@@ -614,6 +647,7 @@ export const checkClose = (oldText: string, newText: string): Violation[] => {
     )
     .map((item) =>
       violation(
+        "close",
         item.line,
         item.id,
         `${item.id} is still open; before the thread is done, tick it [x] with " evidence: <what proves it>" or strike it [~] with " struck: <reason>"`,
@@ -638,5 +672,5 @@ export const removedIds = (oldText: string, newText: string): string[] => {
   ].filter((id) => !kept.has(id));
 };
 
-export const formatViolation = (entry: Violation): string =>
+export const formatViolation = (entry: Omit<Violation, "rule">): string =>
   `line ${entry.line}: ${entry.message}`;
