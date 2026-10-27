@@ -1,7 +1,7 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: active
-Updated: 2026-10-27T03:09:06.659Z
-Next ids: c5 D1 R1 S1
+Updated: 2026-10-27T03:10:30.702Z
+Next ids: c5 D2 R1 S1
 
 ## Goal
 
@@ -23,6 +23,8 @@ Stage 2 of pipeline:run, full lane, set-up. The FEATURE branch feat/logbook-metr
 Copy items.json and graph.json into the run home, write run.zsh, and run it with --plan-only until it passes; then record the hand-off boundary and park.
 
 ## Decisions in force
+
+- D1 Interphase hand-off boundary: build waits on the shared writer: Park. The first build starts with /Users/satanshumishra/.mitosis/logbook/logbook-metrics/run.zsh once the dependency check in the pipeline checkout lists the writer files, then the rest of pipeline:run (Stage 3 review, Validate, Ship).
 
 ## Open risks
 
