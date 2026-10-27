@@ -1,7 +1,7 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T03:10:54.766Z
-Next ids: c5 D2 R1 S1
+Updated: 2026-10-27T06:26:55.891Z
+Next ids: c5 D3 R1 S1
 
 ## Goal
 
@@ -26,7 +26,7 @@ Needs: D1.
 
 ## Decisions in force
 
-- D1 Interphase hand-off boundary: build waits on the shared writer: Park. The first build starts with /Users/satanshumishra/.mitosis/logbook/logbook-metrics/run.zsh once the dependency check in the pipeline checkout lists the writer files, then the rest of pipeline:run (Stage 3 review, Validate, Ship).
+- D2 Interphase hand-off boundary: first build starts on the shared writer at origin/feat/unified-metrics a39ab11: Start the first build now with run.zsh, copying the writer from origin/feat/unified-metrics at a39ab11, then carry on through Stage 3 review, Validate, the fix pass and Ship.
 
 ## Open risks
 
