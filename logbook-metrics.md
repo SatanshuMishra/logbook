@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T07:19:25.868Z
+Updated: 2026-10-27T07:19:47.607Z
 Next ids: c8 D4 R2 S1
 
 ## Goal
@@ -19,7 +19,7 @@ Logbook records metrics personalised to its purpose (keeping a piece of work's s
 
 ## Where things stand
 
-Stage 3 round 1 of pipeline:run, full lane: three reviewers (both security, thread-events code) are running on the briefs under ~/.mitosis/logbook/logbook-metrics/review/round-1/, whose raw/ folder keeps each finished reviewer's array: both conformance audits found every criterion met (5.17 not applicable), and metrics-writer code review found C1 and C2, the two lint failures, to be fixed by scoping the lint tests to exempt the files metrics/source.json lists, never by editing the copy, as the parent session requires; both suites pass npm test and typecheck, and npm run lint fails two tests on the copied metrics/ writer (environment-is-injected at metrics-writer.ts:62, old-tree-absent). Fresh worktrees get the dev tools from symlinks in ~/.mitosis/runs/logbook/logbook-metrics/node_modules to the owner checkout's git-ignored packages; the copied writer passes logbook's strict tsc flags. Plan: 6 Steps in 2 stacked MSPs (metrics-writer, then thread-events, which holds the events, summary, catalogue and skill because they share the recorder, register.ts, session-end.ts and the catalogue), 17 criteria, 5.17 unproven. Lighthouse readiness passes with an untracked .lighthouse/profile.json; receipts set-up is skipped because the committed tree holds receipts.config.json. GLOSSARY.md and docs/adr/0001-a-metrics-run-is-one-thread.md are written uncommitted, and docs/ is gitignored, so Ship must force-add the ADR or leave it local.
+Stage 3 round 1 of pipeline:run, full lane: two reviewers (thread-events code and security) are running on the briefs under ~/.mitosis/logbook/logbook-metrics/review/round-1/, whose raw/ folder keeps each finished reviewer's array: both conformance audits found every criterion met (5.17 not applicable), and metrics-writer code review found C1 and C2, the two lint failures, to be fixed by scoping the lint tests to exempt the files metrics/source.json lists, never by editing the copy, as the parent session requires; both suites pass npm test and typecheck, and npm run lint fails two tests on the copied metrics/ writer (environment-is-injected at metrics-writer.ts:62, old-tree-absent). Fresh worktrees get the dev tools from symlinks in ~/.mitosis/runs/logbook/logbook-metrics/node_modules to the owner checkout's git-ignored packages; the copied writer passes logbook's strict tsc flags. Plan: 6 Steps in 2 stacked MSPs (metrics-writer, then thread-events, which holds the events, summary, catalogue and skill because they share the recorder, register.ts, session-end.ts and the catalogue), 17 criteria, 5.17 unproven. Lighthouse readiness passes with an untracked .lighthouse/profile.json; receipts set-up is skipped because the committed tree holds receipts.config.json. GLOSSARY.md and docs/adr/0001-a-metrics-run-is-one-thread.md are written uncommitted, and docs/ is gitignored, so Ship must force-add the ADR or leave it local.
 
 ## Next step
 
