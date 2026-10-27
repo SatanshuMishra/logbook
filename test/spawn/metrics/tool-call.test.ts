@@ -224,11 +224,11 @@ test('metrics.cross-clone-resume-goes-to-named', async () => {
     const firstHome = mkdtempSync(join(root, 'home-a-'))
     const secondHome = mkdtempSync(join(root, 'home-b-'))
     try {
-      mustGit(first, ['remote', 'add', 'origin', origin])
       mustGit(second, ['remote', 'add', 'origin', origin])
       await withClone(first, firstHome, 's-a', async (spawned) => {
         assertSucceeded(await cloneCall(spawned, 'open_thread', OPEN_ARGS))
       })
+      mustGit(first, ['remote', 'add', 'origin', origin])
       mustGit(first, ['push', '--quiet', 'origin', `+${THREADS_REF}:${THREADS_REF}`])
       await withClone(second, secondHome, 's-b', async (spawned) => {
         assertSucceeded(await cloneCall(spawned, 'open_thread', { ...OPEN_ARGS, slug: 'other-thread' }))
