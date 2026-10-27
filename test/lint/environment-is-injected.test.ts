@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import * as ts from 'typescript'
 import { census } from '../support/census.ts'
@@ -140,6 +141,13 @@ const collectEnvironmentCandidates = (
   return found
 }
 
+const readRecordedCopies = (): ReadonlySet<string> => {
+  const source: { files: Record<string, unknown> } = JSON.parse(
+    readFileSync(path.join(REBUILD_ROOT, 'metrics', 'source.json'), 'utf8')
+  )
+  return new Set(Object.keys(source.files))
+}
+
 const classifyCandidate = (candidate: EnvironmentCandidate): Classified<EnvironmentCandidate>['verdict'] | 'unclassifiable' =>
   KNOWN_CAPABILITIES.has(candidate.capability) ? candidate.verdict : 'unclassifiable'
 
@@ -149,8 +157,10 @@ test('contract.environment-is-injected', () => {
   const permittedFiles = findPermittedFiles(checker, program, productionFiles, runtimeType)
   assert.ok(permittedFiles.size > 0, 'expected at least one production module to export a Runtime factory')
 
+  const allowedFiles = new Set([...permittedFiles, ...readRecordedCopies()])
+
   const population = productionFiles.flatMap((file) =>
-    collectEnvironmentCandidates(checker, sourceFileFor(program, file), relativeToRoot(file), permittedFiles)
+    collectEnvironmentCandidates(checker, sourceFileFor(program, file), relativeToRoot(file), allowedFiles)
   )
   assert.ok(population.length > 0, 'expected at least one ambient-environment reference in the production partition')
 
@@ -178,4 +188,19 @@ test('contract.environment-is-injected.collector-catches-named-process-imports',
   const candidates = collectEnvironmentCandidates(checker, sourceFile, relFile, new Set<string>())
   assert.ok(candidates.length > 0, 'expected the collector to find the env/cwd process import usage in the fixture')
   assert.throws(() => census(candidates, classifyCandidate))
+})
+
+test('contract.environment-is-injected.exempts-only-recorded-copies', () => {
+  const { checker, program } = loadSourceProgram()
+  const recordedCopies = readRecordedCopies()
+  assert.ok(recordedCopies.has('metrics/metrics-writer.ts'))
+  const fixturePath = path.join(REBUILD_ROOT, 'test', 'fixtures', 'environment-is-injected-violation.ts')
+  const candidates = collectEnvironmentCandidates(
+    checker,
+    sourceFileFor(program, fixturePath),
+    relativeToRoot(fixturePath),
+    new Set(recordedCopies)
+  )
+  assert.ok(candidates.length > 0)
+  assert.ok(candidates.every((candidate) => candidate.verdict === 'forbidden'))
 })

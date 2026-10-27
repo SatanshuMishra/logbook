@@ -26,7 +26,7 @@ const REPO_INFRA_EXACT_FILES = new Set([
   'NOTICE'
 ])
 
-const NEW_TREE_ROOTS = new Set(['bin', 'hooks', 'skills', 'src', 'test'])
+const NEW_TREE_ROOTS = new Set(['bin', 'hooks', 'metrics', 'skills', 'src', 'test'])
 const NEW_TREE_SOURCE_EXTENSIONS = new Set(['.ts', '.json', '.md'])
 const LEGACY_JS_EXTENSIONS = new Set(['.mjs', '.cjs', '.js'])
 
