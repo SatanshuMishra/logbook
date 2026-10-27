@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T07:48:19.115Z
+Updated: 2026-10-27T07:48:21.156Z
 Next ids: c8 D4 R2 S1
 
 ## Goal
@@ -23,7 +23,7 @@ Stage 3 of pipeline:run, full lane, is at Green: both MSPs' round 2 verdicts are
 
 ## Next step
 
-Record the thread-events round 2 validator's verdicts, then record and verdict; fix its confirmed advisories, merge mitosis/metrics-writer at c1fcdd33 into it, and run a final suite at the merged head before Green and Ship.
+When the final suites pass, run the slow checks rerun-plan names and record their proofs, then Ship: copy GLOSSARY.md and the ADR into the metrics-writer worktree, pipeline comment and promote, record the ship boundary, SHIP=1 run.zsh --resume with both proven heads, and open, assign and comment both pull requests.
 
 Needs: D3.
 
