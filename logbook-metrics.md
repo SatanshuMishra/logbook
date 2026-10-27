@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T06:36:14.513Z
+Updated: 2026-10-27T06:36:25.822Z
 Next ids: c8 D4 R2 S1
 
 ## Goal
@@ -19,7 +19,7 @@ Logbook records metrics personalised to its purpose (keeping a piece of work's s
 
 ## Where things stand
 
-Stage 2 of pipeline:run, full lane: the first build is resumed (run.zsh --resume, output in build-2.log). Fresh worktrees get the dev tools from symlinks in ~/.mitosis/runs/logbook/logbook-metrics/node_modules to the owner checkout's git-ignored packages; the copied writer passes logbook's strict tsc flags. Plan: 6 Steps in 2 stacked MSPs (metrics-writer, then thread-events, which holds the events, summary, catalogue and skill because they share the recorder, register.ts, session-end.ts and the catalogue), 17 criteria, 5.17 unproven. Lighthouse readiness passes with an untracked .lighthouse/profile.json; receipts set-up is skipped because the committed tree holds receipts.config.json. GLOSSARY.md and docs/adr/0001-a-metrics-run-is-one-thread.md are written uncommitted, and docs/ is gitignored, so Ship must force-add the ADR or leave it local.
+Stage 2 of pipeline:run, full lane: the first build is running from plan d32ad79360da (output in build-3.log); the earlier empty attempt is kept at ~/.mitosis/runs/logbook/logbook-metrics.attempt-1. Fresh worktrees get the dev tools from symlinks in ~/.mitosis/runs/logbook/logbook-metrics/node_modules to the owner checkout's git-ignored packages; the copied writer passes logbook's strict tsc flags. Plan: 6 Steps in 2 stacked MSPs (metrics-writer, then thread-events, which holds the events, summary, catalogue and skill because they share the recorder, register.ts, session-end.ts and the catalogue), 17 criteria, 5.17 unproven. Lighthouse readiness passes with an untracked .lighthouse/profile.json; receipts set-up is skipped because the committed tree holds receipts.config.json. GLOSSARY.md and docs/adr/0001-a-metrics-run-is-one-thread.md are written uncommitted, and docs/ is gitignored, so Ship must force-add the ADR or leave it local.
 
 ## Next step
 
