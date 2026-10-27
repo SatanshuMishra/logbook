@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T08:25:32.027Z
+Updated: 2026-10-27T08:25:34.521Z
 Next ids: c8 D5 R2 S1
 
 ## Goal
@@ -23,7 +23,7 @@ pipeline:run, full lane, is in Integration: SatanshuMishra/logbook#296 and #297 
 
 ## Next step
 
-The owner merges #297 into mitosis/metrics-writer, then #296 into feat/logbook-metrics, and says the MSP pull requests merged; that starts Integration: resume_thread logbook-metrics, read ~/.mitosis/logbook/logbook-metrics/CHARTER.md, and run lighthouse:test on feat/logbook-metrics.
+After the usage limit resets (4pm America/Edmonton), resume_thread logbook-metrics and invoke lighthouse:test as run 2: --repo /Users/satanshumishra/Documents/DevLabs/logbook --core main --feature feat/logbook-metrics --spec /Users/satanshumishra/Documents/DevLabs/logbook/docs/specs/logbook-metrics.md --results ~/.mitosis/logbook/logbook-metrics/lighthouse/run-2 --previous ~/.mitosis/logbook/logbook-metrics/lighthouse/run-1, then follow pipeline:run's Integration on its verdict through the FEATURE pull request.
 
 Needs: D4.
 
