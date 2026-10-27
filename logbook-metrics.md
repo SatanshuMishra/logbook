@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: active
-Updated: 2026-10-27T03:10:38.455Z
+Updated: 2026-10-27T03:10:42.270Z
 Next ids: c5 D2 R1 S1
 
 ## Goal
@@ -10,8 +10,8 @@ Logbook records metrics personalised to its purpose (keeping a piece of work's s
 ## Done when
 
 - [x] c1 The spec, decisions file, record and items for logbook-metrics are in docs/specs/, with intent I1 to I6 copied word for word and every delegated answer citing an intent line or binding decision evidence: check_record --complete, check_spec and check_items pass after the 11 review fixes, the tree guard verified clean, and the record is handed-off
-- [ ] c2 The FEATURE branch is pushed and the run home ~/.mitosis/logbook/logbook-metrics/ holds CHARTER.md, worker-rules.txt, dispatch.zsh and run.zsh, plus accept.zsh in the repository
-- [ ] c3 run.zsh --plan-only passes with no fatal finding and no build has run
+- [x] c2 The FEATURE branch is pushed and the run home ~/.mitosis/logbook/logbook-metrics/ holds CHARTER.md, worker-rules.txt, dispatch.zsh and run.zsh, plus accept.zsh in the repository evidence: pipeline feature-branch pushed feat/logbook-metrics at 579cc66c (git ls-remote shows it), and the run home holds CHARTER.md, worker-rules.txt, dispatch.zsh, run.zsh, items.json, graph.json and feature.json, with ~/.mitosis/logbook/accept.zsh reused
+- [x] c3 run.zsh --plan-only passes with no fatal finding and no build has run evidence: run.zsh --plan-only exited 0 with plan id c64786cab3fa, no fatal finding and no drift, and nothing was spawned
 - [ ] c4 The thread is parked with a next step gated on the shared writer existing on origin/feat/unified-metrics or origin/main
 
 ## Where things stand
@@ -20,7 +20,9 @@ Stage 2 of pipeline:run, full lane, waiting before the first build on the shared
 
 ## Next step
 
-Copy items.json and graph.json into the run home, write run.zsh, and run it with --plan-only until it passes; then record the hand-off boundary and park.
+When `git fetch -q origin && git ls-tree --name-only origin/feat/unified-metrics -- pipeline_tool/metrics_writer.py metrics/metrics-writer.ts docs/metrics-format.md`, run in /Users/satanshumishra/Documents/DevLabs/pipeline, prints a path (check origin/main the same way), resume this thread and run /Users/satanshumishra/.mitosis/logbook/logbook-metrics/run.zsh, then carry on with the rest of pipeline:run: Stage 3 review, Validate, the fix pass and Ship.
+
+Needs: D1.
 
 ## Decisions in force
 
