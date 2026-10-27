@@ -2,7 +2,8 @@ import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult, ServerNotification, ServerRequest } from '@modelcontextprotocol/sdk/types.js'
 import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'
-import { recordEvent, recordInRun, startRun, writeThreadSummary } from '../metrics/record.ts'
+import { guarded, recordEvent, recordInRun, startRun, writeThreadSummary } from '../metrics/record.ts'
+import { secondsBetween } from '../metrics/summary.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import { declare, type Refusal } from '../schema/declare.ts'
 import { actingSession, heldBy } from '../thread/holds.ts'
@@ -94,12 +95,13 @@ type Outcome = 'ok' | 'refused' | 'crashed'
 
 type Answer = { result: CallToolResult; outcome: Outcome; refusalField: string | null }
 
+type Holding = { paths: RepoPaths; held: string | null }
+
 type Concern = { paths: RepoPaths; slug: string | null }
 
 const TOOL_CALL_EVENT = 'tool.call'
 const STARTS_A_RUN: LedgerToolName = 'open_thread'
 const WRITES_A_SUMMARY: ReadonlySet<string> = new Set<LedgerToolName>(['park_thread', 'close_thread'])
-const MILLISECONDS_PER_SECOND = 1000
 
 const refusedAnswer = (refusal: Refusal): Answer => ({
   result: toolRefusal(refusal),
@@ -121,25 +123,18 @@ const namedThread = (rt: Runtime, paths: RepoPaths, rawArgs: unknown): string | 
   return slug !== null && readDocument(rt, paths, slug) !== null ? slug : null
 }
 
-const concernOf = (rt: Runtime, rawArgs: unknown): Concern | null => {
-  try {
+const holdingAtStart = (rt: Runtime): Holding | null =>
+  guarded(rt, null, () => {
     const found = findRepository(rt, startDirectory(rt, rt.cwd ?? ''))
     if (!found.ok) return null
     const paths = found.value
-    const slug = namedThread(rt, paths, rawArgs) ?? heldBy(paths, actingSession(paths, rt.sessionId))
-    return { paths, slug }
-  } catch (error) {
-    rt.log({
-      level: 'warn',
-      event: 'metrics.not-written',
-      reason: `the thread a call concerns could not be found: ${error instanceof Error ? error.message : String(error)}`
-    })
-    return null
-  }
-}
+    return { paths, held: heldBy(paths, actingSession(paths, rt.sessionId)) }
+  })
 
-const elapsedSeconds = (startedAt: string, finishedAt: string): number =>
-  (Date.parse(finishedAt) - Date.parse(startedAt)) / MILLISECONDS_PER_SECOND
+const concernOf = (rt: Runtime, holding: Holding | null, rawArgs: unknown): Concern | null =>
+  holding === null
+    ? null
+    : guarded(rt, null, () => ({ paths: holding.paths, slug: namedThread(rt, holding.paths, rawArgs) ?? holding.held }))
 
 const recordCall = (
   rt: Runtime,
@@ -158,7 +153,7 @@ const recordCall = (
   }
   const opened = toolName === STARTS_A_RUN && answer.outcome === 'ok' ? stringArgument(rawArgs, 'slug') : null
   if (opened !== null) {
-    const run = startRun(rt, concern.paths, opened)
+    const run = startRun(rt, opened)
     if (run !== null) recordInRun(rt, concern.paths, run, TOOL_CALL_EVENT, fields)
     return
   }
@@ -200,9 +195,11 @@ export const registerTool = <I, O>(server: McpServer, rt: Runtime, spec: ToolSpe
 
   const wrappedHandler = async (rawArgs: unknown, extra: ToolContext): Promise<CallToolResult> => {
     const startedAt = rt.now()
-    const concern = concernOf(rt, rawArgs)
+    const holding = holdingAtStart(rt)
     const answered = await answer(rawArgs, extra)
-    recordCall(rt, spec.name, rawArgs, concern, answered, elapsedSeconds(startedAt, rt.now()))
+    const finishedAt = rt.now()
+    const concern = concernOf(rt, holding, rawArgs)
+    recordCall(rt, spec.name, rawArgs, concern, answered, secondsBetween(startedAt, finishedAt))
     summarise(rt, spec.name, concern, answered)
     return answered.result
   }

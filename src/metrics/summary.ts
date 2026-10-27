@@ -99,11 +99,13 @@ const ruleRecords = (edits: readonly EventLine[]): RuleRecord[] => {
     .sort((left, right) => byText(left.rule, right.rule))
 }
 
+export const secondsBetween = (startedAt: string, endedAt: string): number =>
+  (Date.parse(endedAt) - Date.parse(startedAt)) / MILLISECONDS_PER_SECOND
+
 const lifetimeSeconds = (lines: readonly EventLine[], summaryTs: string): number => {
   const first = textOf(lines[0]?.ts)
-  const started = first === null ? Number.NaN : Date.parse(first)
-  const ended = Date.parse(summaryTs)
-  return Number.isFinite(started) && Number.isFinite(ended) ? (ended - started) / MILLISECONDS_PER_SECOND : 0
+  const seconds = first === null ? Number.NaN : secondsBetween(first, summaryTs)
+  return Number.isFinite(seconds) ? seconds : 0
 }
 
 const sessionCount = (lines: readonly EventLine[]): number =>

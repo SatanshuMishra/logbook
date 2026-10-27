@@ -29,7 +29,7 @@ const reported = (rt: Runtime, warning: string | null | undefined): void => {
   if (typeof warning === 'string') warn(rt, warning)
 }
 
-const guarded = <T>(rt: Runtime, fallback: T, work: () => T): T => {
+export const guarded = <T>(rt: Runtime, fallback: T, work: () => T): T => {
   try {
     return work()
   } catch (error) {
@@ -46,7 +46,7 @@ const copyCatalogue = (rt: Runtime): void =>
     reported(rt, writeCatalogue({ plugin: PLUGIN, catalogue, environ: rt.env }))
   })
 
-export const startRun = (rt: Runtime, _paths: RepoPaths, slug: string): string | null => {
+export const startRun = (rt: Runtime, slug: string): string | null => {
   copyCatalogue(rt)
   return guarded(rt, null, () => runId(slug, new Date(rt.now())))
 }
@@ -76,7 +76,7 @@ const newestRun = (rt: Runtime, paths: RepoPaths, slug: string): string | null =
 }
 
 export const threadRun = (rt: Runtime, paths: RepoPaths, slug: string): string | null =>
-  guarded(rt, null, () => newestRun(rt, paths, slug)) ?? startRun(rt, paths, slug)
+  guarded(rt, null, () => newestRun(rt, paths, slug)) ?? startRun(rt, slug)
 
 export const recordInRun = (rt: Runtime, paths: RepoPaths, run: string, event: string, fields: Fields): void =>
   guarded(rt, undefined, () => {
@@ -131,7 +131,8 @@ export const writeThreadSummary = (rt: Runtime, paths: RepoPaths, slug: string):
     const run = threadRun(rt, paths, slug)
     if (run === null) return
     const now = rt.now()
-    const fields = buildSummary(runLines(rt, paths, run), readDocument(rt, paths, slug)?.text ?? '', now)
+    const summaryTs = `${new Date(now).toISOString().slice(0, 19)}Z`
+    const fields = buildSummary(runLines(rt, paths, run), readDocument(rt, paths, slug)?.text ?? '', summaryTs)
     copyCatalogue(rt)
     reported(
       rt,
