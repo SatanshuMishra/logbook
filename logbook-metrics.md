@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T06:36:25.822Z
+Updated: 2026-10-27T07:14:41.520Z
 Next ids: c8 D4 R2 S1
 
 ## Goal
@@ -13,7 +13,7 @@ Logbook records metrics personalised to its purpose (keeping a piece of work's s
 - [x] c2 The FEATURE branch is pushed and the run home ~/.mitosis/logbook/logbook-metrics/ holds CHARTER.md, worker-rules.txt, dispatch.zsh and run.zsh, plus accept.zsh in the repository evidence: pipeline feature-branch pushed feat/logbook-metrics at 579cc66c (git ls-remote shows it), and the run home holds CHARTER.md, worker-rules.txt, dispatch.zsh, run.zsh, items.json, graph.json and feature.json, with ~/.mitosis/logbook/accept.zsh reused
 - [x] c3 run.zsh --plan-only passes with no fatal finding and no build has run evidence: run.zsh --plan-only exited 0 with plan id c64786cab3fa, no fatal finding and no drift, and nothing was spawned
 - [x] c4 The thread is parked with a next step gated on the shared writer existing on origin/feat/unified-metrics or origin/main evidence: the next step is gated on the dependency check listing the writer files on origin/feat/unified-metrics or origin/main (Needs: D1), and park_thread follows this update with that next step
-- [ ] c5 The first build commits both MSPs, metrics-writer and thread-events, with the writer copied from origin/feat/unified-metrics a39ab11 (D2)
+- [x] c5 The first build commits both MSPs, metrics-writer and thread-events, with the writer copied from origin/feat/unified-metrics a39ab11 (D2) evidence: run.zsh (plan d32ad79360da) committed mitosis/metrics-writer at 36662637 (gate pass 3/3) and mitosis/thread-events at 0fabaf17 (gate 39 pass, 3 inert negative tests), reconcile clean; metrics/source.json names origin/feat/unified-metrics a39ab110
 - [ ] c6 Stage 3 review reaches green or blocked for each MSP, with every confirmed blocker and advisory fixed on its branch
 - [ ] c7 Both MSP pull requests are open in stack order, assigned to the owner, each with its pipeline comment posted
 
@@ -23,7 +23,7 @@ Stage 2 of pipeline:run, full lane: the first build is running from plan d32ad79
 
 ## Next step
 
-Run /Users/satanshumishra/.mitosis/logbook/logbook-metrics/run.zsh for the first build from plan d32ad79360da, then Stage 3 review of the metrics-writer and thread-events MSPs, Validate, the fix pass and Ship.
+When the suite runs in ~/.mitosis/logbook/logbook-metrics/review/round-1/ finish, dispatch code-reviewer, security-reviewer and conformance-auditor for each MSP with the rendered briefs there, then collect findings (lint failures on metrics/ as suite findings), Validate and the fix pass.
 
 Needs: D3.
 
