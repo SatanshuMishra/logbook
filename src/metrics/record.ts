@@ -8,11 +8,14 @@ import {
   storeRoot,
   summaryPath,
   writeCatalogue,
+  writeSummary,
   type Fields
 } from '../../metrics/metrics-writer.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import { pluginVersion } from '../runtime/version.ts'
 import type { RepoPaths } from '../thread/paths.ts'
+import { readDocument } from '../thread/store.ts'
+import { buildSummary, type EventLine } from './summary.ts'
 
 const PLUGIN = 'logbook'
 const CATALOGUE_URL = new URL('./catalogue.json', import.meta.url)
@@ -96,4 +99,50 @@ export const recordEvent = (rt: Runtime, paths: RepoPaths, slug: string, event: 
   guarded(rt, undefined, () => {
     const run = threadRun(rt, paths, slug)
     if (run !== null) recordInRun(rt, paths, run, event, fields)
+  })
+
+const isEventLine = (value: unknown): value is EventLine =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const parsedLine = (text: string): EventLine | null => {
+  try {
+    const value: unknown = JSON.parse(text)
+    return isEventLine(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
+const runLines = (rt: Runtime, paths: RepoPaths, run: string): EventLine[] => {
+  const file = eventPath(storeRoot(rt.env), PLUGIN, metricsRepo(paths), run)
+  try {
+    return readFileSync(file, 'utf8')
+      .split('\n')
+      .filter((line) => line.length > 0)
+      .map(parsedLine)
+      .filter((line): line is EventLine => line !== null)
+  } catch {
+    return []
+  }
+}
+
+export const writeThreadSummary = (rt: Runtime, paths: RepoPaths, slug: string): void =>
+  guarded(rt, undefined, () => {
+    const run = threadRun(rt, paths, slug)
+    if (run === null) return
+    const now = rt.now()
+    const fields = buildSummary(runLines(rt, paths, run), readDocument(rt, paths, slug)?.text ?? '', now)
+    copyCatalogue(rt)
+    reported(
+      rt,
+      writeSummary({
+        plugin: PLUGIN,
+        pluginVersion: pluginVersion(),
+        repo: metricsRepo(paths),
+        run,
+        fields,
+        environ: rt.env,
+        now: new Date(now)
+      })
+    )
   })

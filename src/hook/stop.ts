@@ -1,5 +1,6 @@
 import { parseDocument, type Status } from '../doc/document.ts'
 import { updateRequest, type UpdateReason } from '../doc/rules.ts'
+import { recordEvent } from '../metrics/record.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import { buildActivity, type Activity } from '../thread/activity.ts'
 import { addTranscript, heldBy, readHold } from '../thread/holds.ts'
@@ -46,6 +47,7 @@ export const stop = (input: StopInput): StopOutput => {
   })
   const reason = reasonFor(activity, parseDocument(stored.text).status)
   if (reason === null) return {}
+  recordEvent(rt, paths, held, 'doc.request', { reason: reason.kind })
   return {
     hookSpecificOutput: {
       hookEventName: HOOK_EVENT,

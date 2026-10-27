@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult, ServerNotification, ServerRequest } from '@modelcontextprotocol/sdk/types.js'
 import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'
-import { recordEvent, recordInRun, startRun } from '../metrics/record.ts'
+import { recordEvent, recordInRun, startRun, writeThreadSummary } from '../metrics/record.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import { declare, type Refusal } from '../schema/declare.ts'
 import { actingSession, heldBy } from '../thread/holds.ts'
@@ -98,6 +98,7 @@ type Concern = { paths: RepoPaths; slug: string | null }
 
 const TOOL_CALL_EVENT = 'tool.call'
 const STARTS_A_RUN: LedgerToolName = 'open_thread'
+const WRITES_A_SUMMARY: ReadonlySet<string> = new Set<LedgerToolName>(['park_thread', 'close_thread'])
 const MILLISECONDS_PER_SECOND = 1000
 
 const refusedAnswer = (refusal: Refusal): Answer => ({
@@ -164,6 +165,11 @@ const recordCall = (
   if (concern.slug !== null) recordEvent(rt, concern.paths, concern.slug, TOOL_CALL_EVENT, fields)
 }
 
+const summarise = (rt: Runtime, toolName: string, concern: Concern | null, answer: Answer): void => {
+  if (concern === null || concern.slug === null || answer.outcome !== 'ok' || !WRITES_A_SUMMARY.has(toolName)) return
+  writeThreadSummary(rt, concern.paths, concern.slug)
+}
+
 export const registerTool = <I, O>(server: McpServer, rt: Runtime, spec: ToolSpec<I, O>): void => {
   const enforcedKeys = shapeKeysOf(spec.input)
   if (enforcedKeys !== null && enforcedKeys.length === 0 && spec.input !== NO_ARGUMENTS) {
@@ -197,6 +203,7 @@ export const registerTool = <I, O>(server: McpServer, rt: Runtime, spec: ToolSpe
     const concern = concernOf(rt, rawArgs)
     const answered = await answer(rawArgs, extra)
     recordCall(rt, spec.name, rawArgs, concern, answered, elapsedSeconds(startedAt, rt.now()))
+    summarise(rt, spec.name, concern, answered)
     return answered.result
   }
 

@@ -171,6 +171,7 @@ const milestoneContext = (
     reason: { kind: 'milestone', detail: activityLine(call.name, summary) }
   })
   if (promptId !== null) setNudged(rt, paths, held, promptId)
+  recordEvent(rt, paths, held, 'doc.request', { reason: 'milestone' })
   return request
 }
 
