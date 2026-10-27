@@ -2,10 +2,16 @@ import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult, ServerNotification, ServerRequest } from '@modelcontextprotocol/sdk/types.js'
 import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'
+import { guarded, recordEvent, recordInRun, startRun, writeThreadSummary } from '../metrics/record.ts'
+import { secondsBetween } from '../metrics/summary.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import { declare, type Refusal } from '../schema/declare.ts'
+import { actingSession, heldBy } from '../thread/holds.ts'
+import { findRepository, startDirectory, type RepoPaths } from '../thread/paths.ts'
+import { readDocument, resolveThreadId } from '../thread/store.ts'
 import { toolOk, toolRefusal } from './errors.ts'
 import { NO_ARGUMENTS } from './no-arguments.ts'
+import type { LedgerToolName } from './tool-names.ts'
 import { TOOL_SPECS } from './tools/index.ts'
 
 export { NO_ARGUMENTS } from './no-arguments.ts'
@@ -85,6 +91,80 @@ const reportCrash = (rt: Runtime, toolName: string, error: unknown): CallToolRes
   }
 }
 
+type Outcome = 'ok' | 'refused' | 'crashed'
+
+type Answer = { result: CallToolResult; outcome: Outcome; refusalField: string | null }
+
+type Holding = { paths: RepoPaths; held: string | null }
+
+type Concern = { paths: RepoPaths; slug: string | null }
+
+const TOOL_CALL_EVENT = 'tool.call'
+const STARTS_A_RUN: LedgerToolName = 'open_thread'
+const WRITES_A_SUMMARY: ReadonlySet<string> = new Set<LedgerToolName>(['park_thread', 'close_thread'])
+
+const refusedAnswer = (refusal: Refusal): Answer => ({
+  result: toolRefusal(refusal),
+  outcome: 'refused',
+  refusalField: refusal.field
+})
+
+const stringArgument = (rawArgs: unknown, key: string): string | null => {
+  if (!isJsonObject(rawArgs)) return null
+  const value = rawArgs[key]
+  return typeof value === 'string' ? value : null
+}
+
+const namedThread = (rt: Runtime, paths: RepoPaths, rawArgs: unknown): string | null => {
+  const threadId = stringArgument(rawArgs, 'thread_id')
+  const resolved = threadId === null ? null : resolveThreadId(rt, paths, threadId)
+  if (resolved !== null && resolved.ok) return resolved.value
+  const slug = stringArgument(rawArgs, 'slug')
+  return slug !== null && readDocument(rt, paths, slug) !== null ? slug : null
+}
+
+const holdingAtStart = (rt: Runtime): Holding | null =>
+  guarded(rt, null, () => {
+    const found = findRepository(rt, startDirectory(rt, rt.cwd ?? ''))
+    if (!found.ok) return null
+    const paths = found.value
+    return { paths, held: heldBy(paths, actingSession(paths, rt.sessionId)) }
+  })
+
+const concernOf = (rt: Runtime, holding: Holding | null, rawArgs: unknown): Concern | null =>
+  holding === null
+    ? null
+    : guarded(rt, null, () => ({ paths: holding.paths, slug: namedThread(rt, holding.paths, rawArgs) ?? holding.held }))
+
+const recordCall = (
+  rt: Runtime,
+  toolName: string,
+  rawArgs: unknown,
+  concern: Concern | null,
+  answer: Answer,
+  seconds: number
+): void => {
+  if (concern === null) return
+  const fields = {
+    tool: toolName,
+    outcome: answer.outcome,
+    refusal_field: answer.refusalField,
+    call_seconds: seconds
+  }
+  const opened = toolName === STARTS_A_RUN && answer.outcome === 'ok' ? stringArgument(rawArgs, 'slug') : null
+  if (opened !== null) {
+    const run = startRun(rt, opened)
+    if (run !== null) recordInRun(rt, concern.paths, run, TOOL_CALL_EVENT, fields)
+    return
+  }
+  if (concern.slug !== null) recordEvent(rt, concern.paths, concern.slug, TOOL_CALL_EVENT, fields)
+}
+
+const summarise = (rt: Runtime, toolName: string, concern: Concern | null, answer: Answer): void => {
+  if (concern === null || concern.slug === null || answer.outcome !== 'ok' || !WRITES_A_SUMMARY.has(toolName)) return
+  writeThreadSummary(rt, concern.paths, concern.slug)
+}
+
 export const registerTool = <I, O>(server: McpServer, rt: Runtime, spec: ToolSpec<I, O>): void => {
   const enforcedKeys = shapeKeysOf(spec.input)
   if (enforcedKeys !== null && enforcedKeys.length === 0 && spec.input !== NO_ARGUMENTS) {
@@ -97,20 +177,31 @@ export const registerTool = <I, O>(server: McpServer, rt: Runtime, spec: ToolSpe
   assertPublishableSchema(spec.name, declared.jsonSchema)
   const publishedInput = forgePublishedInput(declared.jsonSchema)
 
-  const wrappedHandler = async (rawArgs: unknown, extra: ToolContext): Promise<CallToolResult> => {
+  const answer = async (rawArgs: unknown, extra: ToolContext): Promise<Answer> => {
     try {
       const parsed = declared.parse(rawArgs)
       if (!parsed.ok) {
-        return toolRefusal(parsed)
+        return refusedAnswer(parsed)
       }
       const reply = await spec.handler(rt, extra, parsed.value)
       if (reply.ok) {
-        return toolOk(reply.text, reply.structured)
+        return { result: toolOk(reply.text, reply.structured), outcome: 'ok', refusalField: null }
       }
-      return toolRefusal(reply.refusal)
+      return refusedAnswer(reply.refusal)
     } catch (error) {
-      return reportCrash(rt, spec.name, error)
+      return { result: reportCrash(rt, spec.name, error), outcome: 'crashed', refusalField: null }
     }
+  }
+
+  const wrappedHandler = async (rawArgs: unknown, extra: ToolContext): Promise<CallToolResult> => {
+    const startedAt = rt.now()
+    const holding = holdingAtStart(rt)
+    const answered = await answer(rawArgs, extra)
+    const finishedAt = rt.now()
+    const concern = concernOf(rt, holding, rawArgs)
+    recordCall(rt, spec.name, rawArgs, concern, answered, secondsBetween(startedAt, finishedAt))
+    summarise(rt, spec.name, concern, answered)
+    return answered.result
   }
 
   server.registerTool(

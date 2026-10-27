@@ -1,5 +1,6 @@
 import { parseDocument, type Section } from '../doc/document.ts'
 import { userLine } from '../doc/render.ts'
+import { recordEvent } from '../metrics/record.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import { activityLine, buildActivity } from '../thread/activity.ts'
 import { takeHandover } from '../thread/handover.ts'
@@ -18,6 +19,8 @@ export type SessionStartOutput = EmptyHookOutput | SessionStartHookOutput
 type ListPart = { heading: string; lines: readonly string[]; replacement: (count: number) => string }
 
 type Pickup = { opening: string; document: string; shortDocument: string; activity: ListPart; markers: ListPart }
+
+type Fitted = { context: string; delivered: 'document' | 'short'; activityLines: number }
 
 const HOOK_EVENT = 'SessionStart'
 const STARTUP_SOURCE = 'startup'
@@ -98,15 +101,20 @@ const rendered = (pickup: Pickup, document: string, activityKept: number, marker
     .filter((block) => block.length > 0)
     .join(BLOCK_SEPARATOR)
 
-const fittedContext = (pickup: Pickup): string => {
+const fittedContext = (pickup: Pickup): Fitted => {
   const fixed = pickup.opening.length + blockCost(pickup.document)
   const allMarkers = pickup.markers.lines.length
   const markersCost = listCost(pickup.markers, allMarkers, totalLength(pickup.markers.lines))
   const activityKept = keptCount(pickup.activity, CONTEXT_CEILING - fixed - markersCost)
-  if (activityKept !== null) return rendered(pickup, pickup.document, activityKept, allMarkers)
+  if (activityKept !== null) {
+    const context = rendered(pickup, pickup.document, activityKept, allMarkers)
+    return { context, delivered: 'document', activityLines: activityKept }
+  }
   const markersKept = keptCount(pickup.markers, CONTEXT_CEILING - fixed - listCost(pickup.activity, 0, 0))
-  if (markersKept !== null) return rendered(pickup, pickup.document, 0, markersKept)
-  return rendered(pickup, pickup.shortDocument, 0, 0)
+  if (markersKept !== null) {
+    return { context: rendered(pickup, pickup.document, 0, markersKept), delivered: 'document', activityLines: 0 }
+  }
+  return { context: rendered(pickup, pickup.shortDocument, 0, 0), delivered: 'short', activityLines: 0 }
 }
 
 const contextOutput = (additionalContext: string, systemMessage: string | null): SessionStartOutput => ({
@@ -129,7 +137,13 @@ const passHandover = (rt: Runtime, paths: RepoPaths, sessionId: string, transcri
   if (handover.slug !== null) takeHold(rt, paths, handover.slug, sessionId, transcript)
 }
 
-const pickupOutput = (rt: Runtime, paths: RepoPaths, sessionId: string, slug: string): SessionStartOutput => {
+const pickupOutput = (
+  rt: Runtime,
+  paths: RepoPaths,
+  sessionId: string,
+  slug: string,
+  source: string
+): SessionStartOutput => {
   const file = workingCopyPath(paths, slug)
   const stored = readDocument(rt, paths, slug)
   const hold = readHold(paths, slug)
@@ -139,14 +153,20 @@ const pickupOutput = (rt: Runtime, paths: RepoPaths, sessionId: string, slug: st
     .filter((marker) => marker.session !== sessionId)
     .map((marker) => activityLine(marker.tool, marker.summary))
   const document = stored.text.replace(/\n+$/, '')
-  const additionalContext = fittedContext({
+  const fitted = fittedContext({
     opening: openingLine(slug, file.value),
     document,
     shortDocument: shortDocumentOf(document, file.value),
     activity: { heading: ACTIVITY_HEADING, lines: activity.lines, replacement: earlierLinesLine },
     markers: { heading: MARKERS_HEADING, lines: markerLines, replacement: runningToolsLine }
   })
-  return contextOutput(additionalContext, userLine(stored.text, file.value))
+  recordEvent(rt, paths, slug, 'thread.pickup', {
+    source,
+    delivered: fitted.delivered,
+    activity_lines: fitted.activityLines,
+    context_chars: fitted.context.length
+  })
+  return contextOutput(fitted.context, userLine(stored.text, file.value))
 }
 
 export const sessionStart = (input: SessionStartInput): SessionStartOutput => {
@@ -159,5 +179,5 @@ export const sessionStart = (input: SessionStartInput): SessionStartOutput => {
   const held = heldBy(paths, sessionId)
   if (held === null) return {}
   if (transcript !== null) addTranscript(rt, paths, held, transcript)
-  return pickupOutput(rt, paths, sessionId, held)
+  return pickupOutput(rt, paths, sessionId, held, source)
 }
