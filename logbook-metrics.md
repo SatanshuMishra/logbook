@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T07:52:57.839Z
+Updated: 2026-10-27T07:53:00.966Z
 Next ids: c8 D5 R2 S1
 
 ## Goal
@@ -23,7 +23,7 @@ pipeline:run, full lane, has shipped and waits on the owner's merges: #297 (thre
 
 ## Next step
 
-Run SHIP=1 ~/.mitosis/logbook/logbook-metrics/run.zsh --resume --proven-head metrics-writer=564d95c9 --proven-head thread-events=27a72370, then open both pull requests in stack order through the GitHub MCP with mitosis's title and body, assign them to the owner and post each saved comment.
+The owner merges #297 into mitosis/metrics-writer, then #296 into feat/logbook-metrics, and says the MSP pull requests merged; that starts Integration: resume_thread logbook-metrics, read ~/.mitosis/logbook/logbook-metrics/CHARTER.md, and run lighthouse:test on feat/logbook-metrics.
 
 Needs: D4.
 
