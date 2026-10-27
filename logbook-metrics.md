@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T07:50:45.162Z
+Updated: 2026-10-27T07:50:49.396Z
 Next ids: c8 D5 R2 S1
 
 ## Goal
@@ -14,7 +14,7 @@ Logbook records metrics personalised to its purpose (keeping a piece of work's s
 - [x] c3 run.zsh --plan-only passes with no fatal finding and no build has run evidence: run.zsh --plan-only exited 0 with plan id c64786cab3fa, no fatal finding and no drift, and nothing was spawned
 - [x] c4 The thread is parked with a next step gated on the shared writer existing on origin/feat/unified-metrics or origin/main evidence: the next step is gated on the dependency check listing the writer files on origin/feat/unified-metrics or origin/main (Needs: D1), and park_thread follows this update with that next step
 - [x] c5 The first build commits both MSPs, metrics-writer and thread-events, with the writer copied from origin/feat/unified-metrics a39ab11 (D2) evidence: run.zsh (plan d32ad79360da) committed mitosis/metrics-writer at 36662637 (gate pass 3/3) and mitosis/thread-events at 0fabaf17 (gate 39 pass, 3 inert negative tests), reconcile clean; metrics/source.json names origin/feat/unified-metrics a39ab110
-- [ ] c6 Stage 3 review reaches green or blocked for each MSP, with every confirmed blocker and advisory fixed on its branch
+- [x] c6 Stage 3 review reaches green or blocked for each MSP, with every confirmed blocker and advisory fixed on its branch evidence: pipeline verdict printed green in round 2 for metrics-writer and thread-events (review/round-2/<msp>.verdict.json), with blockers U1, U2 and C1 fixed by receipt tests and advisories fixed at c1fcdd33 and cd680a65; final suites pass at c1fcdd33 (463 tests, lint 46/46, typecheck) and 8c241094 (506 tests, lint 46/46, typecheck)
 - [ ] c7 Both MSP pull requests are open in stack order, assigned to the owner, each with its pipeline comment posted
 
 ## Where things stand
@@ -23,9 +23,9 @@ pipeline:run, full lane, is at Ship. metrics-writer's head is 564d95c9, which ad
 
 ## Next step
 
-When the final suites pass, run the slow checks rerun-plan names and record their proofs, then Ship: copy GLOSSARY.md and the ADR into the metrics-writer worktree, pipeline comment and promote, record the ship boundary, SHIP=1 run.zsh --resume with both proven heads, and open, assign and comment both pull requests.
+Run SHIP=1 ~/.mitosis/logbook/logbook-metrics/run.zsh --resume --proven-head metrics-writer=564d95c9 --proven-head thread-events=27a72370, then open both pull requests in stack order through the GitHub MCP with mitosis's title and body, assign them to the owner and post each saved comment.
 
-Needs: D3.
+Needs: D4.
 
 ## Decisions in force
 
