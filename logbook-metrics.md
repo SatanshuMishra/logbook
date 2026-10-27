@@ -1,6 +1,6 @@
 # logbook-metrics: Logbook records its own metrics in the shared plugin-metrics store
 Status: parked
-Updated: 2026-10-27T06:36:11.313Z
+Updated: 2026-10-27T06:36:14.513Z
 Next ids: c8 D4 R2 S1
 
 ## Goal
@@ -23,9 +23,9 @@ Stage 2 of pipeline:run, full lane: the first build is resumed (run.zsh --resume
 
 ## Next step
 
-Run /Users/satanshumishra/.mitosis/logbook/logbook-metrics/run.zsh for the first build, then Stage 3 review of the metrics-writer and thread-events MSPs, Validate, the fix pass and Ship.
+Run /Users/satanshumishra/.mitosis/logbook/logbook-metrics/run.zsh for the first build from plan d32ad79360da, then Stage 3 review of the metrics-writer and thread-events MSPs, Validate, the fix pass and Ship.
 
-Needs: D2.
+Needs: D3.
 
 ## Decisions in force
 
@@ -33,7 +33,6 @@ Needs: D2.
 
 ## Open risks
 
-- R1 tsconfig.json is in no Step's write-set, yet the import census test fails on metrics/conform.ts until its include holds "metrics/**/*.ts"; the review fix pass must take that file and the pull request name it under risk. Bears on c6.
 
 ## Settled, do not reopen
 
