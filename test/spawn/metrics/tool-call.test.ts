@@ -40,28 +40,40 @@ const makeRepo = (): string => {
   return repo
 }
 
+const withSpawned = async (
+  repo: string,
+  home: string,
+  session: string,
+  fn: (spawned: SpawnedServer) => Promise<void>
+): Promise<void> => {
+  const spawned = await spawnServer({
+    projectRoot: repo,
+    entry: ENTRY,
+    env: { HOME: home, CLAUDE_CODE_SESSION_ID: session }
+  })
+  try {
+    await fn(spawned)
+  } finally {
+    await spawned.close()
+  }
+}
+
 const withServer = async (fn: (fixture: Fixture) => Promise<void>): Promise<void> => {
   const repo = makeRepo()
   const home = mkdtempSync(join(tmpdir(), 'logbook-metrics-home-'))
   try {
-    const spawned = await spawnServer({
-      projectRoot: repo,
-      entry: ENTRY,
-      env: { HOME: home, CLAUDE_CODE_SESSION_ID: 's-1' }
-    })
-    try {
-      await fn({ repo, home, spawned })
-    } finally {
-      await spawned.close()
-    }
+    await withSpawned(repo, home, 's-1', (spawned) => fn({ repo, home, spawned }))
   } finally {
     rmSync(home, { recursive: true, force: true })
     rmSync(repo, { recursive: true, force: true })
   }
 }
 
-const callTool = async (fixture: Fixture, name: string, args: Record<string, unknown>): Promise<CallToolResult> =>
-  (await fixture.spawned.client.callTool({ name, arguments: args })) as CallToolResult
+const callOn = async (spawned: SpawnedServer, name: string, args: Record<string, unknown>): Promise<CallToolResult> =>
+  (await spawned.client.callTool({ name, arguments: args })) as CallToolResult
+
+const callTool = (fixture: Fixture, name: string, args: Record<string, unknown>): Promise<CallToolResult> =>
+  callOn(fixture.spawned, name, args)
 
 const assertSucceeded = (reply: CallToolResult): void => {
   assert.equal(reply.isError, undefined, `expected success, got: ${JSON.stringify(reply)}`)
@@ -75,8 +87,16 @@ const textOf = (reply: CallToolResult): string => {
 
 const storeOf = (fixture: Fixture): string => join(fixture.home, '.plugin-metrics')
 
-const eventFolder = (fixture: Fixture): string =>
-  join(storeOf(fixture), 'plugin=logbook', 'kind=event', `repo=${basename(fixture.repo)}`)
+const eventFolderOf = (home: string, repo: string): string =>
+  join(home, '.plugin-metrics', 'plugin=logbook', 'kind=event', `repo=${basename(repo)}`)
+
+const eventFolder = (fixture: Fixture): string => eventFolderOf(fixture.home, fixture.repo)
+
+const eventLinesIn = (folder: string, file: string): Line[] =>
+  readFileSync(join(folder, file), 'utf8')
+    .split('\n')
+    .filter((line) => line !== '')
+    .map((line) => JSON.parse(line) as Line)
 
 const runLines = (fixture: Fixture): Line[] => {
   const folder = eventFolder(fixture)
@@ -84,10 +104,7 @@ const runLines = (fixture: Fixture): Line[] => {
   assert.equal(files.length, 1, `expected exactly one run file, got: ${JSON.stringify(files)}`)
   const [file = ''] = files
   assert.match(file, RUN_FILE)
-  return readFileSync(join(folder, file), 'utf8')
-    .split('\n')
-    .filter((line) => line !== '')
-    .map((line) => JSON.parse(line) as Line)
+  return eventLinesIn(folder, file)
 }
 
 const filesUnder = (folder: string): string[] =>
@@ -177,41 +194,17 @@ test('metrics.call-with-no-thread-not-recorded', async () => {
 const THREADS_REF = 'refs/logbook/threads'
 
 const toolCallsByThread = (home: string, repo: string): Record<string, string[]> => {
-  const folder = join(home, '.plugin-metrics', 'plugin=logbook', 'kind=event', `repo=${basename(repo)}`)
+  const folder = eventFolderOf(home, repo)
   const files = existsSync(folder) ? readdirSync(folder) : []
   return Object.fromEntries(
     files.map((file) => [
       file.replace(/\.[0-9]{8}T[0-9]{6}Z\.jsonl$/, ''),
-      readFileSync(join(folder, file), 'utf8')
-        .split('\n')
-        .filter((line) => line !== '')
-        .map((line) => JSON.parse(line) as Line)
+      eventLinesIn(folder, file)
         .filter((line) => line.event === 'tool.call')
         .map((line) => `${String(line.tool)}:${String(line.outcome)}`)
     ])
   )
 }
-
-const withClone = async (
-  repo: string,
-  home: string,
-  session: string,
-  fn: (spawned: SpawnedServer) => Promise<void>
-): Promise<void> => {
-  const spawned = await spawnServer({
-    projectRoot: repo,
-    entry: ENTRY,
-    env: { HOME: home, CLAUDE_CODE_SESSION_ID: session }
-  })
-  try {
-    await fn(spawned)
-  } finally {
-    await spawned.close()
-  }
-}
-
-const cloneCall = async (spawned: SpawnedServer, name: string, args: Record<string, unknown>): Promise<CallToolResult> =>
-  (await spawned.client.callTool({ name, arguments: args })) as CallToolResult
 
 test('metrics.cross-clone-resume-goes-to-named', async () => {
   await import('../../../src/metrics/record.ts')
@@ -225,14 +218,14 @@ test('metrics.cross-clone-resume-goes-to-named', async () => {
     const secondHome = mkdtempSync(join(root, 'home-b-'))
     try {
       mustGit(second, ['remote', 'add', 'origin', origin])
-      await withClone(first, firstHome, 's-a', async (spawned) => {
-        assertSucceeded(await cloneCall(spawned, 'open_thread', OPEN_ARGS))
+      await withSpawned(first, firstHome, 's-a', async (spawned) => {
+        assertSucceeded(await callOn(spawned, 'open_thread', OPEN_ARGS))
       })
       mustGit(first, ['remote', 'add', 'origin', origin])
       mustGit(first, ['push', '--quiet', 'origin', `+${THREADS_REF}:${THREADS_REF}`])
-      await withClone(second, secondHome, 's-b', async (spawned) => {
-        assertSucceeded(await cloneCall(spawned, 'open_thread', { ...OPEN_ARGS, slug: 'other-thread' }))
-        assertSucceeded(await cloneCall(spawned, 'resume_thread', { thread_id: 'fix-login' }))
+      await withSpawned(second, secondHome, 's-b', async (spawned) => {
+        assertSucceeded(await callOn(spawned, 'open_thread', { ...OPEN_ARGS, slug: 'other-thread' }))
+        assertSucceeded(await callOn(spawned, 'resume_thread', { thread_id: 'fix-login' }))
       })
       assert.deepEqual(toolCallsByThread(secondHome, second), {
         'fix-login': ['resume_thread:ok'],
