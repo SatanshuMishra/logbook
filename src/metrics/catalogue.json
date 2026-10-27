@@ -16,7 +16,7 @@
     {
       "id": "state-carried-across-sessions",
       "text": "A thread's state is carried across sessions, compactions and /clear.",
-      "measured_by": ["thread.pickup.source", "thread.pickup.delivered", "thread.handover"]
+      "measured_by": ["thread.pickup.source", "thread.pickup.delivered", "summary.handovers"]
     },
     {
       "id": "little-context",
@@ -842,5 +842,31 @@
       }
     }
   },
-  "queries": []
+  "queries": [
+    {
+      "name": "pickups_by_source",
+      "question": "Across which boundaries are threads picked up, and how often after each?",
+      "sql": "select source, count(*) as pickups from events where plugin = 'logbook' and event = 'thread.pickup' group by source order by pickups desc, source"
+    },
+    {
+      "name": "edit_outcomes",
+      "question": "How often does an edit of a working copy reach a commit, get refused by the checks, or fail?",
+      "sql": "select outcome, count(*) as edits from events where plugin = 'logbook' and event = 'doc.edit' group by outcome order by edits desc, outcome"
+    },
+    {
+      "name": "refused_edit_rules",
+      "question": "Which checks refuse edits of the state document most often?",
+      "sql": "select rule, count(*) as edits from (select unnest(rules) as rule from events where plugin = 'logbook' and event = 'doc.edit' and outcome = 'refused') group by rule order by edits desc, rule"
+    },
+    {
+      "name": "tool_refusals",
+      "question": "Which tools refuse calls, and on which field?",
+      "sql": "select tool, refusal_field, count(*) as calls from events where plugin = 'logbook' and event = 'tool.call' and outcome = 'refused' group by tool, refusal_field order by calls desc, tool, refusal_field"
+    },
+    {
+      "name": "thread_lifetimes",
+      "question": "How long has each thread lived, and where does it stand?",
+      "sql": "select run, status, lifetime_seconds from summaries where plugin = 'logbook' order by run"
+    }
+  ]
 }

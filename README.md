@@ -85,6 +85,25 @@ Threads travel with the repository through the remote named `origin`. After ever
 
 `sync_ledger` brings two clones into agreement. It fetches origin's threads, moves the local ref forward when it is behind, pushes when it is ahead, and when both sides changed it merges each state document line by line with `git merge-file` and pushes the merge. A document both sides changed on the same lines keeps git's conflict markers and is named as a conflict; you resolve it by editing the working copy, as with any other update. `resume_thread` syncs first whenever the repository has an origin.
 
+## Metrics
+
+Logbook records metrics about its own work in the metrics store, a folder tree on this machine shared by every plugin that uses the plugin metrics format. Its root is `PLUGIN_METRICS_DIR` when that variable is set and non-empty, otherwise `~/.plugin-metrics`. Logbook writes only under `plugin=logbook`, through the copy of the shared writer in `metrics/`, and a metrics failure never changes a tool's reply or a hook's output: the writer's warning goes to logbook's log at warn level.
+
+Logbook's run is one thread. Its run id is `<slug>.<UTC start as YYYYMMDDTHHMMSSZ>`: `open_thread` starts a new run, and every later event about the thread, from any session, server process or hook, joins the slug's newest run. Every line starts with the shared envelope, `v`, `ts`, `plugin`, `plugin_version`, `kind`, `event`, `run`, `parent`, `session` and `repo`. The repo is the name of the folder that holds the repository's git common directory, so a linked worktree shares its main checkout's repo, and the parent is whatever `PLUGIN_METRICS_PARENT` the process was given.
+
+| Event | Written when |
+|---|---|
+| `tool.call` | A logbook tool replies to a call that concerns a thread, with its outcome, the refused field and its duration |
+| `doc.edit` | The PostToolUse hook checks an edit of a working copy, with its outcome and the check rules a refused edit broke |
+| `doc.commit` | A new version of a state document is committed, with the criteria, decisions, risks and settled items it changed |
+| `doc.request` | Logbook asks the session to update the document, after a milestone or at the end of a turn |
+| `thread.pickup` | A resume, compaction or /clear puts a held thread's document back in context, with how much context it added |
+| `thread.handover` | A /clear hands a held thread on to the next session |
+
+Events are appended to `plugin=logbook/kind=event/repo=<repo>/<run>.jsonl`. When a thread is parked or closed, and when a session that holds it ends, logbook writes the thread's run summary to `plugin=logbook/kind=summary/repo=<repo>/<run>.json`: its status, lifetime, sessions, tool calls and refusals, edits by outcome and refused edits by rule, commits and the items they changed, criteria still open, pickups, handovers, update requests and the context added. Logbook calls no model, so the summary holds no cost and no tokens. Each summary write prunes logbook's folder for that repository to the event files of the newest 100 runs and the summary files of the newest 1000.
+
+`src/metrics/catalogue.json`, copied to `plugin=logbook/catalogue.json`, describes every event and field with its readers and the question it answers, and holds named queries over views called `events` and `summaries`. The `metrics` skill answers how logbook is performing from those records with the DuckDB command-line tool (`brew install duckdb`), without reading transcripts.
+
 ## Migrating from the old ledger
 
 Releases before 0.16.0 kept records as JSON in `refs/logbook/ledger`. The first time logbook works in a repository that has that ref and no `refs/logbook/threads`, it converts each old thread into a state document in one commit, maps each old thread id to its slug so old ids keep resolving, and points `refs/logbook/archive/ledger` at the old ledger. `refs/logbook/ledger` itself is left exactly as it was, and `search_ledger` still searches it. The first resume of a converted thread asks Claude to tidy the document.
