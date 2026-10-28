@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: active
-Updated: 2026-10-28T06:41:46.440Z
+Updated: 2026-10-28T06:46:18.692Z
 Next ids: c4 D3 R2 S1
 
 ## Goal
@@ -15,7 +15,7 @@ Run 5 of the harness-redesign program (~/.mitosis/harness-redesign/PROGRAM.md, s
 
 ## Where things stand
 
-holds-and-pickup round 1 verdict is loop at 0cc48949: blockers C1, C2 and S1 share one cause (a live session's hold can lack a live process, since only the server records one and only the resume hook takes a hold back) and are all diagnosed fixable; advisories C3, C4 and S2; C5 rejected. Fix attempt 1 (O5) is committed on mitosis/holds-and-pickup at 103c90cb (receipts in test/spawn/tools/hold-take-back.test.ts; suite 523 of 523; ten locked tests pass) and merged into test-home at 4442351d. Round 2 of holds-and-pickup (O6): the code reviewer found C1 (MEDIUM, takeHold's widened release loop writes from a stale read, so another session's take of a released hold is overwritten) and C2 (LOW, takeBackHolds keeps a plural name); the security reviewer found three LOW forced-timing races (take-back writes without re-checking the holder is still null, the same stale-read loop, and the server recording its process into a hold another session just took). A validator is judging these and whether round 1's C1, C2 and S1 are fixed. test-home is green and ready to ship at 4442351d: suite 523 of 523, all eleven locked tests pass, its advisory C1 fixed at 0621c6e6. Because the brief lane did not fit, the request runs the full review loop, still without an interview. The checkout's uncommitted receipts.config.json and untracked .lighthouse/ belong to someone else and stay untouched; GLOSSARY.md's uncommitted Hold and Roster terms are this run's and ship with the first MSP.
+holds-and-pickup is at 103c90cb (suite 523 of 523, ten locked tests pass, merged into test-home at 4442351d). Its round 2 verdict is diagnose: round 1's three blockers are fixed; the new blocker C1 (MEDIUM, takeHold's widened release loop writes from a stale read, so a hold another session just took is overwritten with no holder) is under a diagnosis agent; advisory S1 (take-back writes without re-checking the holder is still null); C2, S2 and S3 rejected. test-home is green and ready to ship at 4442351d: suite 523 of 523, all eleven locked tests pass, its advisory C1 fixed at 0621c6e6. Because the brief lane did not fit, the request runs the full review loop, still without an interview. The checkout's uncommitted receipts.config.json and untracked .lighthouse/ belong to someone else and stay untouched; GLOSSARY.md's uncommitted Hold and Roster terms are this run's and ship with the first MSP.
 
 ## Next step
 
