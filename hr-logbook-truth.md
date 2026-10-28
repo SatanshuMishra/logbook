@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: parked
-Updated: 2026-10-28T07:33:33.004Z
+Updated: 2026-10-28T08:14:35.027Z
 Next ids: c4 D4 R2 S1
 
 ## Goal
@@ -15,7 +15,7 @@ Run 5 of the harness-redesign program (~/.mitosis/harness-redesign/PROGRAM.md, s
 
 ## Where things stand
 
-Integration is running: both MSP pull requests (SatanshuMishra/logbook#300, #301) merged into feat/hr-logbook-truth at ac9a2d37, integration-ready passed, and lighthouse run 1 tests the FEATURE branch against core main, results in the run home's lighthouse/run-1. A narrowed take-back race remains in takeBackHolds (its re-check and takeHold's write use separate reads); the validator rejected it as not introduced by the last round, so it does not block and goes to the final report. The checkout's uncommitted receipts.config.json and untracked .lighthouse/ belong to someone else and stay untouched.
+Integration is in its second lighthouse run: run 1 found one failure (U1, list_threads structured output did not carry the working-copy difference), diagnosed fixable and fixed on feat/hr-logbook-truth at 6aa93068 (receipt test 42d4903c), pushed; lighthouse run 2 retests from run 1 into the run home's lighthouse/run-2. A narrowed take-back race remains in takeBackHolds (its re-check and takeHold's write use separate reads); the validator rejected it as not introduced by the last round, so it does not block and goes to the final report. The checkout's uncommitted receipts.config.json and untracked .lighthouse/ belong to someone else and stay untouched.
 
 ## Next step
 
