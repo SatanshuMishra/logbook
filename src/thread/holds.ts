@@ -215,11 +215,19 @@ const sessionEnded = (hold: Hold, nowMs: number): boolean =>
     : hold.transcripts.length > 0 &&
       hold.transcripts.every((transcript) => changedBefore(transcript, nowMs - ENDED_TRANSCRIPT_AGE_MS))
 
+const stillJudged = (judged: Hold, current: Hold | null): current is Hold =>
+  current !== null && current.holder === judged.holder && current.process === judged.process
+
 export const releaseEndedHolds = (rt: Runtime, paths: RepoPaths, startingSession: string): Hold[] => {
   const nowMs = Date.parse(rt.now())
   return allHolds(paths)
     .filter((hold) => hold.holder !== null && hold.holder !== startingSession && sessionEnded(hold, nowMs))
-    .map((hold) => storeHold(rt, paths, hold, { ...hold, holder: null, process: null, released_from: hold.holder }))
+    .flatMap((judged) => {
+      const current = readHold(paths, judged.slug)
+      return stillJudged(judged, current)
+        ? [storeHold(rt, paths, current, { ...current, holder: null, process: null, released_from: current.holder })]
+        : []
+    })
 }
 
 export const takeBackHolds = (rt: Runtime, paths: RepoPaths, session: string): Hold | null => {

@@ -27,7 +27,11 @@ const RosterThreadSchema = z.object({
     .describe(
       'the Status line of the thread\'s state document, such as active or "blocked: the owner", or unreadable when that line cannot be read'
     ),
-  next_step: z.string().describe("the first sentence of the thread's next step"),
+  next_step: z
+    .string()
+    .describe(
+      "the first sentence of the thread's next step, or 'read the working copy.' when its uncommitted working copy changes the next step"
+    ),
   path: z.string().describe("the working copy of the thread's state document")
 })
 
