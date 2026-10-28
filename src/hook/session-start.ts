@@ -4,7 +4,16 @@ import { recordEvent } from '../metrics/record.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import { activityLine, buildActivity } from '../thread/activity.ts'
 import { takeHandover } from '../thread/handover.ts'
-import { addTranscript, heldBy, readHold, takeHold, writeRedirect } from '../thread/holds.ts'
+import {
+  actingSession,
+  addTranscript,
+  heldBy,
+  readHold,
+  releaseEndedHolds,
+  takeBackHolds,
+  takeHold,
+  writeRedirect
+} from '../thread/holds.ts'
 import { listMarkers } from '../thread/inflight.ts'
 import { migrateIfNeeded } from '../thread/migrate.ts'
 import { checkSessionId, workingCopyPath, type RepoPaths } from '../thread/paths.ts'
@@ -24,8 +33,9 @@ type Fitted = { context: string; delivered: 'document' | 'short'; activityLines:
 
 const HOOK_EVENT = 'SessionStart'
 const STARTUP_SOURCE = 'startup'
+const RESUME_SOURCE = 'resume'
 const CLEAR_SOURCE = 'clear'
-const PICKUP_SOURCES: ReadonlySet<string> = new Set(['resume', 'compact', CLEAR_SOURCE])
+const PICKUP_SOURCES: ReadonlySet<string> = new Set([RESUME_SOURCE, 'compact', CLEAR_SOURCE])
 const CONTEXT_CEILING = 9500
 const HEADER_LINE_LIMIT = 500
 const NEXT_STEP_LIMIT = 2000
@@ -134,7 +144,9 @@ const passHandover = (rt: Runtime, paths: RepoPaths, sessionId: string, transcri
   const handover = takeHandover(rt, paths, transcript)
   if (handover === null) return
   writeRedirect(rt, paths, handover.session, sessionId)
-  if (handover.slug !== null) takeHold(rt, paths, handover.slug, sessionId, transcript)
+  if (handover.slug === null) return
+  const handedOver = readHold(paths, handover.slug)
+  takeHold(rt, paths, handover.slug, sessionId, transcript, handedOver?.process ?? null)
 }
 
 const pickupOutput = (
@@ -172,10 +184,12 @@ const pickupOutput = (
 export const sessionStart = (input: SessionStartInput): SessionStartOutput => {
   const { event, paths, rt, sessionId } = input
   const source = nonEmptyString(event.source)
+  if (source === null || (source !== STARTUP_SOURCE && !PICKUP_SOURCES.has(source))) return {}
+  releaseEndedHolds(rt, paths, actingSession(paths, sessionId))
   if (source === STARTUP_SOURCE) return startupOutput(rt, paths)
-  if (source === null || !PICKUP_SOURCES.has(source)) return {}
   const transcript = nonEmptyString(event.transcript_path)
   if (source === CLEAR_SOURCE) passHandover(rt, paths, sessionId, transcript)
+  if (source === RESUME_SOURCE) takeBackHolds(rt, paths, sessionId)
   const held = heldBy(paths, sessionId)
   if (held === null) return {}
   if (transcript !== null) addTranscript(rt, paths, held, transcript)

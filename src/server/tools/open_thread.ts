@@ -130,7 +130,7 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
     })
     if (!committed.ok) return { ok: false, refusal: commitRefusal(input.slug, committed) }
     writeWorkingCopy(rt, file.value, text)
-    takeHold(rt, paths.value, input.slug, actingSession(paths.value, rt.sessionId), null)
+    takeHold(rt, paths.value, input.slug, actingSession(paths.value, rt.sessionId), null, rt.parentProcess)
     foldHold(rt, paths.value, input.slug, now)
     startPush(rt, paths.value)?.unref()
     return {
