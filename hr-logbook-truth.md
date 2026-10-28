@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: active
-Updated: 2026-10-28T06:19:12.789Z
+Updated: 2026-10-28T06:19:14.633Z
 Next ids: c4 D3 R1 S1
 
 ## Goal
@@ -19,7 +19,7 @@ Review round 1: a validator is judging holds-and-pickup's seven findings at 0cc4
 
 ## Next step
 
-When every round 1 reviewer has replied, collect the findings per MSP into review/round-1/<msp>.findings.json, then validate and run the fix pass.
+Record the holds-and-pickup verdicts, run pipeline verdict, then diagnose and fix per O5 and O6; merge any holds-and-pickup fix into test-home.
 
 Needs: D1.
 
