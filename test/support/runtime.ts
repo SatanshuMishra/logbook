@@ -13,6 +13,7 @@ export type TestRuntimeOptions = {
   env?: Readonly<Record<string, string | undefined>>
   cwd?: string | null
   sessionId?: string
+  parentProcess?: number | null
 }
 
 const encodeMonotonicSuffix = (seq: number): string => {
@@ -47,6 +48,7 @@ export const testRuntime = (opts: TestRuntimeOptions = {}): Runtime => {
     env,
     cwd: opts.cwd !== undefined ? opts.cwd : '/test-cwd',
     log: () => {},
-    sessionId: opts.sessionId ?? DEFAULT_SESSION_ID
+    sessionId: opts.sessionId ?? DEFAULT_SESSION_ID,
+    parentProcess: opts.parentProcess ?? null
   }
 }

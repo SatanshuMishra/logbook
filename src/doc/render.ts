@@ -250,6 +250,19 @@ export const userLine = (text: string, path: string): string => {
   return `Logbook: ${readable(parsed.title)} - ${readable(parsed.status?.raw)}. Next: ${sentence}${period} Full state: ${path}`
 }
 
+export const READ_WORKING_COPY = 'Next: read the working copy.'
+
+export const differenceSentence = (path: string, parts: readonly string[]): string =>
+  `The working copy ${path} differs from the committed document in ${parts.join(', ')}.`
+
+export const differenceUserLine = (text: string, path: string, parts: readonly string[]): string => {
+  if (parts.length === 0) return userLine(text, path)
+  const sentence = differenceSentence(path, parts)
+  if (!parts.includes(NEXT_STEP_SECTION)) return `${userLine(text, path)} ${sentence}`
+  const parsed = parseDocument(text)
+  return `Logbook: ${readable(parsed.title)} - ${readable(parsed.status?.raw)}. ${READ_WORKING_COPY} ${sentence}`
+}
+
 export const rosterLine = (text: string): string => {
   const parsed = parseDocument(text)
   return `${readable(parsed.slug)} - ${readable(parsed.status?.raw)} - Next: ${nextStepOf(parsed)}`
