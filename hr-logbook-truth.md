@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: active
-Updated: 2026-10-28T06:14:48.183Z
+Updated: 2026-10-28T06:14:49.708Z
 Next ids: c4 D3 R1 S1
 
 ## Goal
@@ -19,7 +19,7 @@ Review round 1 is running on both MSPs: holds-and-pickup at 0cc48949 (code, conf
 
 ## Next step
 
-When the build ends, read mitosis's last JSON line in build-1.log, run the locked checks at each MSP head, then start review round 1 per MSP.
+When every round 1 reviewer has replied, collect the findings per MSP into review/round-1/<msp>.findings.json, then validate and run the fix pass.
 
 Needs: D1.
 
