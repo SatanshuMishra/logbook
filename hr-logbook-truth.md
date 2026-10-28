@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
-Status: parked
-Updated: 2026-10-28T08:42:55.895Z
+Status: done
+Updated: 2026-10-28T08:42:58.163Z
 Next ids: c4 D4 R2 S1
 
 ## Goal
