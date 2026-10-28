@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: active
-Updated: 2026-10-28T05:54:35.960Z
+Updated: 2026-10-28T06:02:34.869Z
 Next ids: c4 D2 R1 S1
 
 ## Goal
@@ -15,11 +15,11 @@ Run 5 of the harness-redesign program (~/.mitosis/harness-redesign/PROGRAM.md, s
 
 ## Where things stand
 
-interphase has handed off (spec reviewed once, eight issues fixed). FEATURE branch feat/hr-logbook-truth is cut from main at 02dcaf46. The O2 check author is writing the locked acceptance tests in its own worktree of the FEATURE branch. Because the brief lane did not fit, the request runs the full review loop from here, still without an interview. The checkout's uncommitted receipts.config.json and untracked .lighthouse/ belong to someone else and stay untouched.
+The first mitosis build (two MSPs: holds-and-pickup, test-home) is running from feat/hr-logbook-truth, whose head 52622d6a holds the five locked acceptance files; all eleven locked tests fail there for the absent behaviour, and the receipt lock is in the run home's receipts-lock.txt. Because the brief lane did not fit, the request runs the full review loop, still without an interview. The checkout's uncommitted receipts.config.json and untracked .lighthouse/ belong to someone else and stay untouched; GLOSSARY.md's uncommitted Hold and Roster terms are this run's and ship with the first MSP.
 
 ## Next step
 
-Once the locked tests are on feat/hr-logbook-truth and receipts lock is saved, run ~/.mitosis/logbook/hr-logbook-truth/run.zsh in the background (first build), then run the locked checks at each MSP head.
+When the build ends, read mitosis's last JSON line in build-1.log, run the locked checks at each MSP head, then start review round 1 per MSP.
 
 Needs: D1.
 
