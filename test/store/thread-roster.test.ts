@@ -150,7 +150,8 @@ test('roster.lists-open-threads-newest-first', async () => {
         status: 'parked',
         nextStep: 'Pick the cache work back up!',
         path: join(paths.workingDir, 'gamma.md'),
-        line: 'gamma - parked - Next: Pick the cache work back up!'
+        line: 'gamma - parked - Next: Pick the cache work back up!',
+        difference: null
       },
       {
         slug: 'beta',
@@ -158,7 +159,8 @@ test('roster.lists-open-threads-newest-first', async () => {
         status: 'blocked: x',
         nextStep: 'Wait for x to land.',
         path: join(paths.workingDir, 'beta.md'),
-        line: 'beta - blocked: x - Next: Wait for x to land.'
+        line: 'beta - blocked: x - Next: Wait for x to land.',
+        difference: null
       },
       {
         slug: 'alpha',
@@ -166,7 +168,8 @@ test('roster.lists-open-threads-newest-first', async () => {
         status: 'active',
         nextStep: 'Write the login fix.',
         path: join(paths.workingDir, 'alpha.md'),
-        line: 'alpha - active - Next: Write the login fix.'
+        line: 'alpha - active - Next: Write the login fix.',
+        difference: null
       }
     ])
   })

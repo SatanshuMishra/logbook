@@ -32,7 +32,13 @@ const RosterThreadSchema = z.object({
     .describe(
       "the first sentence of the thread's next step, or 'read the working copy.' when its uncommitted working copy changes the next step"
     ),
-  path: z.string().describe("the working copy of the thread's state document")
+  path: z.string().describe("the working copy of the thread's state document"),
+  difference: z
+    .string()
+    .nullable()
+    .describe(
+      'the sentence the startup roster names when the uncommitted working copy differs from the committed document, otherwise null'
+    )
 })
 
 const ListThreadsOutputSchema = z.object({
@@ -65,7 +71,8 @@ const structuredOf = (roster: Roster): ListThreadsOutput => ({
     title: thread.title,
     status: thread.status,
     next_step: thread.nextStep,
-    path: thread.path
+    path: thread.path,
+    difference: thread.difference
   })),
   closed_count: roster.closedCount
 })

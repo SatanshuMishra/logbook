@@ -19,7 +19,15 @@ import { workingCopyPath, type RepoPaths } from './paths.ts'
 import { THREADS_REF, listSlugs, readDocument, threadsTip } from './store.ts'
 import { missingObjects } from './sync.ts'
 
-export type RosterThread = { slug: string; title: string; status: string; nextStep: string; path: string; line: string }
+export type RosterThread = {
+  slug: string
+  title: string
+  status: string
+  nextStep: string
+  path: string
+  line: string
+  difference: string | null
+}
 
 export type Roster = { threads: RosterThread[]; closedCount: number; text: string }
 
@@ -83,9 +91,8 @@ export const workingCopyParts = (file: string, committed: string): string[] => {
   return copy === null ? [] : changedParts(committed, copy)
 }
 
-const differingLine = (line: string, slug: string, status: string, file: string, parts: readonly string[]): string => {
-  if (parts.length === 0) return line
-  const sentence = differenceSentence(file, parts)
+const differingLine = (line: string, slug: string, status: string, parts: readonly string[], sentence: string | null): string => {
+  if (sentence === null) return line
   return nextStepDiffers(parts) ? `${slug} - ${status} - ${READ_WORKING_COPY} ${sentence}` : `${line} ${sentence}`
 }
 
@@ -126,6 +133,7 @@ const listed = (rt: Runtime, paths: RepoPaths, tip: string, times: Map<string, n
   const raw = status === null ? UNREADABLE : status.raw
   const nextStep = nextStepOf(parsed)
   const parts = workingCopyParts(where.value, stored.text)
+  const difference = parts.length === 0 ? null : differenceSentence(where.value, parts)
   return [
     {
       thread: {
@@ -134,7 +142,8 @@ const listed = (rt: Runtime, paths: RepoPaths, tip: string, times: Map<string, n
         status: raw,
         nextStep: nextStepDiffers(parts) ? READ_WORKING_COPY_STEP : nextStep,
         path: where.value,
-        line: differingLine(lineFor(slug, stored.text, parsed, raw, nextStep), slug, raw, where.value, parts)
+        line: differingLine(lineFor(slug, stored.text, parsed, raw, nextStep), slug, raw, parts, difference),
+        difference
       },
       closed: status !== null && status.closed,
       time: times.get(`${slug}${DOCUMENT_SUFFIX}`) ?? -Infinity
