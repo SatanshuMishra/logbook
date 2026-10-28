@@ -62,9 +62,8 @@ const installerEnv = (home: string): Record<string, string | undefined> => ({
 
 type Observation = { status: number; stdout: string; stderr: string; pointerWritten: boolean }
 
-const runInstaller = (workingDirectory: string): RawGitResult => {
-  const home = mkdtempSync(path.join(tmpdir(), 'logbook-test-home-'))
-  try {
+const runInstaller = (workingDirectory: string): RawGitResult =>
+  withScratchDir('logbook-test-home-', (home) => {
     const result = spawnSync(process.execPath, [INSTALLER_PATH], {
       cwd: workingDirectory,
       env: installerEnv(home),
@@ -74,10 +73,7 @@ const runInstaller = (workingDirectory: string): RawGitResult => {
       throw new Error(`failed to spawn the installer at "${INSTALLER_PATH}": ${result.error.message}`)
     }
     return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
-  } finally {
-    rmSync(home, { recursive: true, force: true })
-  }
-}
+  })
 
 const pointerHookPath = (repo: string): string => path.join(repo, POINTER_HOOK_RELATIVE)
 
