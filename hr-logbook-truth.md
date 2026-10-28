@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: active
-Updated: 2026-10-28T06:25:22.278Z
+Updated: 2026-10-28T06:27:18.634Z
 Next ids: c4 D3 R2 S1
 
 ## Goal
@@ -15,7 +15,7 @@ Run 5 of the harness-redesign program (~/.mitosis/harness-redesign/PROGRAM.md, s
 
 ## Where things stand
 
-holds-and-pickup round 1 verdict is diagnose at 0cc48949: blockers C1 (take-back gives a session two holds), C2 (a taken-back hold has no process, so the 24-hour rule can release a live session) and S1 (a hold released in a resumed session's startup window is never taken back), each under a diagnosis agent; advisories C3, C4 and S2; C5 rejected. test-home is green, its advisory C1 fixed at 0621c6e6. Both heads pass 516 of 516 suite tests and all eleven locked tests pass at test-home's head. Because the brief lane did not fit, the request runs the full review loop, still without an interview. The checkout's uncommitted receipts.config.json and untracked .lighthouse/ belong to someone else and stay untouched; GLOSSARY.md's uncommitted Hold and Roster terms are this run's and ship with the first MSP.
+holds-and-pickup round 1 verdict is diagnose at 0cc48949: blockers C1 (take-back gives a session two holds), C2 (a taken-back hold has no process, so the 24-hour rule can release a live session) and S1 (a hold released in a resumed session's startup window is never taken back); C1's kind is diagnosed fixable (takeHold clears the session's released_from markers; takeBackHolds takes back one hold, only when the session holds none, through takeHold), and C2's and S1's diagnoses are running; advisories C3, C4 and S2; C5 rejected. test-home is green, its advisory C1 fixed at 0621c6e6. Both heads pass 516 of 516 suite tests and all eleven locked tests pass at test-home's head. Because the brief lane did not fit, the request runs the full review loop, still without an interview. The checkout's uncommitted receipts.config.json and untracked .lighthouse/ belong to someone else and stay untouched; GLOSSARY.md's uncommitted Hold and Roster terms are this run's and ship with the first MSP.
 
 ## Next step
 
