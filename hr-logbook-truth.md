@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: active
-Updated: 2026-10-28T05:52:07.456Z
+Updated: 2026-10-28T05:53:23.517Z
 Next ids: c4 D2 R1 S1
 
 ## Goal
@@ -15,11 +15,11 @@ Run 5 of the harness-redesign program (~/.mitosis/harness-redesign/PROGRAM.md, s
 
 ## Where things stand
 
-Stage 1 (interphase, feature pathway, full spec without an interview) is in Phase 9: the spec, decisions, record and items are written and pass their checks; the one spec review found eight issues, being fixed now. The checkout's uncommitted receipts.config.json and untracked .lighthouse/ belong to someone else and stay untouched.
+interphase has handed off (spec reviewed once, eight issues fixed). FEATURE branch feat/hr-logbook-truth is cut from main at 02dcaf46. The O2 check author is writing the locked acceptance tests in its own worktree of the FEATURE branch. Because the brief lane did not fit, the request runs the full review loop from here, still without an interview. The checkout's uncommitted receipts.config.json and untracked .lighthouse/ belong to someone else and stay untouched.
 
 ## Next step
 
-Fix the spec review's issues in the record and spec, re-render and re-check, then hand off (Phase 10) and start O2's check author.
+When the check author reports, verify its commit fails each locked test at the base, run receipts lock over the locked files, then write the run home (CHARTER.md, worker-rules.txt, dispatch.zsh, run.zsh, items.json, graph.json) and run --plan-only.
 
 ## Decisions in force
 
