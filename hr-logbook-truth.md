@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: active
-Updated: 2026-10-28T06:36:36.956Z
+Updated: 2026-10-28T06:38:26.256Z
 Next ids: c4 D3 R2 S1
 
 ## Goal
@@ -11,7 +11,7 @@ Run 5 of the harness-redesign program (~/.mitosis/harness-redesign/PROGRAM.md, s
 
 - [ ] c1 G1: a hold whose session has ended is released at the next session start; proof: a test where a thread is held by a session that ended sees the hold released when a new session starts.
 - [ ] c2 G2: the briefing compares the working copy of a state document with the committed copy and names any difference instead of showing a stale next step; proof: a test that edits the working copy without committing sees the briefing name the difference.
-- [ ] c3 G3: tests never write under the real HOME; proof: a test fails when any test writes under the real HOME.
+- [x] c3 G3: tests never write under the real HOME; proof: a test fails when any test writes under the real HOME. evidence: the locked test/lint/home-isolation.test.ts (census, fixture proof and empty-HOME child suite) passes alone at test-home head 4442351d, and test-home's review is green.
 
 ## Where things stand
 
