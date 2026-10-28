@@ -172,6 +172,28 @@ test('roster.lists-open-threads-newest-first', async () => {
   })
 })
 
+test('roster.next-step-agrees-with-the-line-when-the-working-copy-changes-it', async () => {
+  const { listRoster } = await import('../../src/thread/roster.ts')
+  withRoster(({ repo, rt, paths }) => {
+    const start = baseTime()
+    const alpha: DocumentInput = { slug: 'alpha', status: 'active', nextStep: 'Write the login fix. Then run the suite.' }
+    const beta: DocumentInput = { slug: 'beta', status: 'active', nextStep: 'Wait for x to land.' }
+    importCommits(repo, [threadCommit(start, alpha), threadCommit(start + 60, beta)])
+    mkdirSync(paths.workingDir, { recursive: true })
+    writeFileSync(join(paths.workingDir, 'alpha.md'), documentText({ ...alpha, nextStep: 'Ship the fix.' }))
+    writeFileSync(join(paths.workingDir, 'beta.md'), documentText(beta).replace('Not started.', 'Half done.'))
+    const roster = listRoster(rt, paths, { includeClosed: false })
+    const bySlug = new Map(roster.threads.map((thread) => [thread.slug, thread]))
+    const changed = bySlug.get('alpha')
+    const elsewhere = bySlug.get('beta')
+    assert.ok(changed !== undefined && elsewhere !== undefined)
+    assert.ok(changed.line.startsWith('alpha - active - Next: read the working copy. '), changed.line)
+    assert.equal(changed.nextStep, 'read the working copy.')
+    assert.ok(elsewhere.line.startsWith('beta - active - Next: Wait for x to land. '), elsewhere.line)
+    assert.equal(elsewhere.nextStep, 'Wait for x to land.')
+  })
+})
+
 test('roster.counts-closed-threads', async () => {
   const { listRoster } = await import('../../src/thread/roster.ts')
   withRoster(({ repo, rt, paths }) => {

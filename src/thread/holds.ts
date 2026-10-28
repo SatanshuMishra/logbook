@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Refusal } from '../schema/declare.ts'
@@ -18,11 +18,16 @@ export type Hold = {
   transcripts: string[]
   folded_at: string | null
   nudged_prompt_id: string | null
+  process: number | null
+  released_from: string | null
 }
 
 const HOLDS_FOLDER = 'holds'
 const HOLD_SUFFIX = '.json'
 const TRANSCRIPT_SUFFIX = '.jsonl'
+const ENDED_TRANSCRIPT_AGE_MS = 24 * 60 * 60 * 1000
+const PROBE_SIGNAL = 0
+const NO_SUCH_PROCESS = 'ESRCH'
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -47,13 +52,32 @@ const writeJson = (rt: Runtime, file: string, value: unknown): void => {
 
 const refused = (refusal: Refusal): Error => new Error(`${refusal.field}: ${refusal.message}`)
 
+const recordedProcess = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
+
 const parseHold = (slug: string, value: unknown): Hold | null => {
   if (!isPlainObject(value)) return null
-  const { slug: storedSlug, holder, transcripts, folded_at: foldedAt, nudged_prompt_id: nudgedPromptId } = value
+  const {
+    slug: storedSlug,
+    holder,
+    transcripts,
+    folded_at: foldedAt,
+    nudged_prompt_id: nudgedPromptId,
+    process: storedProcess,
+    released_from: releasedFrom = null
+  } = value
   if (storedSlug !== slug) return null
   if (!isStringOrNull(holder) || !isStringList(transcripts)) return null
-  if (!isStringOrNull(foldedAt) || !isStringOrNull(nudgedPromptId)) return null
-  return { slug, holder, transcripts: [...transcripts], folded_at: foldedAt, nudged_prompt_id: nudgedPromptId }
+  if (!isStringOrNull(foldedAt) || !isStringOrNull(nudgedPromptId) || !isStringOrNull(releasedFrom)) return null
+  return {
+    slug,
+    holder,
+    transcripts: [...transcripts],
+    folded_at: foldedAt,
+    nudged_prompt_id: nudgedPromptId,
+    process: recordedProcess(storedProcess),
+    released_from: releasedFrom
+  }
 }
 
 export const readHold = (paths: RepoPaths, slug: string): Hold | null => {
@@ -85,11 +109,13 @@ const holdSlugs = (paths: RepoPaths): string[] => {
   }
 }
 
-const holdsOf = (paths: RepoPaths, session: string): Hold[] =>
+const allHolds = (paths: RepoPaths): Hold[] =>
   holdSlugs(paths).flatMap((slug) => {
     const hold = readHold(paths, slug)
-    return hold !== null && hold.holder === session ? [hold] : []
+    return hold === null ? [] : [hold]
   })
+
+const holdsOf = (paths: RepoPaths, session: string): Hold[] => allHolds(paths).filter((hold) => hold.holder === session)
 
 export const heldBy = (paths: RepoPaths, session: string): string | null => holdsOf(paths, session)[0]?.slug ?? null
 
@@ -98,18 +124,40 @@ export const takeHold = (
   paths: RepoPaths,
   slug: string,
   session: string,
-  transcript: string | null
+  transcript: string | null,
+  process: number | null = null
 ): Hold => {
   const file = holdPath(paths, slug)
   if (!file.ok) throw refused(file)
-  for (const other of holdsOf(paths, session).filter((hold) => hold.slug !== slug)) {
-    storeHold(rt, paths, other, { ...other, holder: null })
+  const others = allHolds(paths).filter(
+    (hold) => hold.slug !== slug && (hold.holder === session || hold.released_from === session)
+  )
+  for (const other of others) {
+    updateHold(rt, paths, other.slug, (current) => ({
+      ...current,
+      holder: current.holder === session ? null : current.holder,
+      released_from: current.released_from === session ? null : current.released_from
+    }))
   }
   const previous = readHold(paths, slug)
   const next: Hold =
     previous === null
-      ? { slug, holder: session, transcripts: withTranscript([], transcript), folded_at: null, nudged_prompt_id: null }
-      : { ...previous, holder: session, transcripts: withTranscript(previous.transcripts, transcript) }
+      ? {
+          slug,
+          holder: session,
+          transcripts: withTranscript([], transcript),
+          folded_at: null,
+          nudged_prompt_id: null,
+          process,
+          released_from: null
+        }
+      : {
+          ...previous,
+          holder: session,
+          transcripts: withTranscript(previous.transcripts, transcript),
+          process,
+          released_from: null
+        }
   return storeHold(rt, paths, previous, next)
 }
 
@@ -137,6 +185,60 @@ export const releaseHold = (rt: Runtime, paths: RepoPaths, slug: string): Hold |
 
 export const setNudged = (rt: Runtime, paths: RepoPaths, slug: string, promptId: string): Hold | null =>
   updateHold(rt, paths, slug, (hold) => ({ ...hold, nudged_prompt_id: promptId }))
+
+export const recordProcess = (rt: Runtime, paths: RepoPaths, slug: string, process: number | null): Hold | null =>
+  updateHold(rt, paths, slug, (hold) => ({ ...hold, process }))
+
+const errorCode = (error: unknown): unknown =>
+  typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined
+
+const processRuns = (processId: number): boolean => {
+  try {
+    process.kill(processId, PROBE_SIGNAL)
+    return true
+  } catch (error) {
+    return errorCode(error) !== NO_SUCH_PROCESS
+  }
+}
+
+const changedBefore = (transcript: string, cutoffMs: number): boolean => {
+  try {
+    return statSync(transcript).mtimeMs < cutoffMs
+  } catch {
+    return false
+  }
+}
+
+const sessionEnded = (hold: Hold, nowMs: number): boolean =>
+  hold.process !== null
+    ? !processRuns(hold.process)
+    : hold.transcripts.length > 0 &&
+      hold.transcripts.every((transcript) => changedBefore(transcript, nowMs - ENDED_TRANSCRIPT_AGE_MS))
+
+const stillJudged = (judged: Hold, current: Hold | null): current is Hold =>
+  current !== null && current.holder === judged.holder && current.process === judged.process
+
+export const releaseEndedHolds = (rt: Runtime, paths: RepoPaths, startingSession: string): Hold[] => {
+  const nowMs = Date.parse(rt.now())
+  return allHolds(paths)
+    .filter((hold) => hold.holder !== null && hold.holder !== startingSession && sessionEnded(hold, nowMs))
+    .flatMap((judged) => {
+      const current = readHold(paths, judged.slug)
+      return stillJudged(judged, current)
+        ? [storeHold(rt, paths, current, { ...current, holder: null, process: null, released_from: current.holder })]
+        : []
+    })
+}
+
+export const takeBackHolds = (rt: Runtime, paths: RepoPaths, session: string): Hold | null => {
+  if (heldBy(paths, session) !== null) return null
+  const isReleasedFrom = (hold: Hold | null): hold is Hold =>
+    hold !== null && hold.holder === null && hold.released_from === session
+  const released = allHolds(paths).find(isReleasedFrom)
+  if (released === undefined) return null
+  const current = readHold(paths, released.slug)
+  return isReleasedFrom(current) ? takeHold(rt, paths, current.slug, session, null, current.process) : null
+}
 
 const readRedirect = (paths: RepoPaths, session: string): string | null => {
   const file = redirectPath(paths, session)

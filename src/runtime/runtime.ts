@@ -8,6 +8,7 @@ export type Runtime = {
   cwd: string | null
   log: (record: Record<string, unknown>) => void
   sessionId: string
+  parentProcess: number | null
 }
 
 const SESSION_ID_ENV_KEY = 'CLAUDE_CODE_SESSION_ID'
@@ -42,6 +43,7 @@ export const productionRuntime = (): Runtime => {
     env,
     cwd,
     log,
-    sessionId
+    sessionId,
+    parentProcess: process.ppid
   }
 }

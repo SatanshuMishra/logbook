@@ -48,7 +48,15 @@ const readStored = (file: string): unknown => JSON.parse(readFileSync(file, 'utf
 test('holds.take-an-unheld-thread', async () => {
   const holds = await import('../../src/thread/holds.ts')
   withHolds((rt, paths, repo) => {
-    const expected = { slug: 'fix-login', holder: 's1', transcripts: [t1], folded_at: null, nudged_prompt_id: null }
+    const expected = {
+      slug: 'fix-login',
+      holder: 's1',
+      transcripts: [t1],
+      folded_at: null,
+      nudged_prompt_id: null,
+      process: null,
+      released_from: null
+    }
     const taken = holds.takeHold(rt, paths, 'fix-login', 's1', t1)
     assert.deepEqual(taken, expected)
     const stored = join(realpathSync(repo), '.git', 'logbook', 'holds', 'fix-login.json')
@@ -71,7 +79,15 @@ test('holds.take-a-thread-another-session-held', async () => {
       nudged_prompt_id: null
     })
     const taken = holds.takeHold(rt, paths, 'fix-login', 's2', t2)
-    const expected = { slug: 'fix-login', holder: 's2', transcripts: [t1, t2], folded_at: f, nudged_prompt_id: null }
+    const expected = {
+      slug: 'fix-login',
+      holder: 's2',
+      transcripts: [t1, t2],
+      folded_at: f,
+      nudged_prompt_id: null,
+      process: null,
+      released_from: null
+    }
     assert.deepEqual(taken, expected)
     assert.deepEqual(readStored(holdFile(paths, 'fix-login')), expected)
     assert.equal(holds.heldBy(paths, 's1'), null)
@@ -101,7 +117,15 @@ test('holds.take-a-released-thread', async () => {
 test('holds.take-again-by-the-holder', async () => {
   const holds = await import('../../src/thread/holds.ts')
   withHolds((rt, paths) => {
-    const given = { slug: 'fix-login', holder: 's1', transcripts: [t1], folded_at: null, nudged_prompt_id: null }
+    const given = {
+      slug: 'fix-login',
+      holder: 's1',
+      transcripts: [t1],
+      folded_at: null,
+      nudged_prompt_id: null,
+      process: null,
+      released_from: null
+    }
     writeHoldFile(paths, 'fix-login', given)
     const before = readFileSync(holdFile(paths, 'fix-login'), 'utf8')
     const taken = holds.takeHold(rt, paths, 'fix-login', 's1', t1)
@@ -120,14 +144,18 @@ test('holds.taking-releases-the-sessions-other-thread', async () => {
       holder: 's1',
       transcripts: [t1],
       folded_at: null,
-      nudged_prompt_id: null
+      nudged_prompt_id: null,
+      process: null,
+      released_from: null
     })
     assert.deepEqual(readStored(holdFile(paths, 'alpha')), {
       slug: 'alpha',
       holder: null,
       transcripts: [t1],
       folded_at: null,
-      nudged_prompt_id: null
+      nudged_prompt_id: null,
+      process: null,
+      released_from: null
     })
     assert.equal(holds.heldBy(paths, 's1'), 'beta')
   })
@@ -148,7 +176,9 @@ test('holds.taking-with-no-other-thread', async () => {
       holder: 's1',
       transcripts: [t1],
       folded_at: null,
-      nudged_prompt_id: null
+      nudged_prompt_id: null,
+      process: null,
+      released_from: null
     })
   })
 })
@@ -184,7 +214,15 @@ test('holds.accept-folds-and-clears-the-nudge', async () => {
       nudged_prompt_id: p
     })
     const folded = holds.foldHold(rt, paths, 'fix-login', a)
-    const expected = { slug: 'fix-login', holder: 's2', transcripts: [t2], folded_at: a, nudged_prompt_id: null }
+    const expected = {
+      slug: 'fix-login',
+      holder: 's2',
+      transcripts: [t2],
+      folded_at: a,
+      nudged_prompt_id: null,
+      process: null,
+      released_from: null
+    }
     assert.deepEqual(folded, expected)
     assert.deepEqual(readStored(holdFile(paths, 'fix-login')), expected)
   })
@@ -202,7 +240,15 @@ test('holds.release-keeps-the-transcripts', async () => {
       nudged_prompt_id: null
     })
     const released = holds.releaseHold(rt, paths, 'fix-login')
-    const expected = { slug: 'fix-login', holder: null, transcripts: [t1], folded_at: f, nudged_prompt_id: null }
+    const expected = {
+      slug: 'fix-login',
+      holder: null,
+      transcripts: [t1],
+      folded_at: f,
+      nudged_prompt_id: null,
+      process: null,
+      released_from: null
+    }
     assert.deepEqual(released, expected)
     assert.deepEqual(readStored(holdFile(paths, 'fix-login')), expected)
     assert.equal(holds.heldBy(paths, 's1'), null)
@@ -243,7 +289,15 @@ test('holds.reads-a-broken-hold-as-no-hold', async () => {
       for (const session of ['s1', 's2']) {
         assert.equal(holds.heldBy(paths, session), null, `holds/fix-login.json holding ${text}, session ${session}`)
       }
-      const expected = { slug: 'fix-login', holder: 's1', transcripts: [t1], folded_at: null, nudged_prompt_id: null }
+      const expected = {
+        slug: 'fix-login',
+        holder: 's1',
+        transcripts: [t1],
+        folded_at: null,
+        nudged_prompt_id: null,
+        process: null,
+        released_from: null
+      }
       assert.deepEqual(holds.takeHold(rt, paths, 'fix-login', 's1', t1), expected)
       assert.deepEqual(readStored(holdFile(paths, 'fix-login')), expected)
     }
