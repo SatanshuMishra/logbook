@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: active
-Updated: 2026-10-28T06:02:34.869Z
+Updated: 2026-10-28T06:02:37.035Z
 Next ids: c4 D2 R1 S1
 
 ## Goal
@@ -37,3 +37,4 @@ Needs: D1.
 - Audit evidence: ~/.mitosis/harness-redesign/audit/vmlab-logbook.md, logbook section
 - Worked example of the overrides: ~/.mitosis/VMLab/hr-vmlab-capabilities/ (CHARTER.md, worker-rules.txt, run.zsh, receipts-lock.txt)
 - Spec, decisions, record and items: docs/specs/hr-logbook-truth.{md,decisions.md,record.json,items.json} in this checkout
+- Run home: ~/.mitosis/logbook/hr-logbook-truth (CHARTER.md with the Locked list, run.zsh, worker-rules.txt, receipts-lock.txt, review/, rounds.md)
