@@ -129,8 +129,15 @@ export const takeHold = (
 ): Hold => {
   const file = holdPath(paths, slug)
   if (!file.ok) throw refused(file)
-  for (const other of holdsOf(paths, session).filter((hold) => hold.slug !== slug)) {
-    storeHold(rt, paths, other, { ...other, holder: null })
+  const others = allHolds(paths).filter(
+    (hold) => hold.slug !== slug && (hold.holder === session || hold.released_from === session)
+  )
+  for (const other of others) {
+    storeHold(rt, paths, other, {
+      ...other,
+      holder: other.holder === session ? null : other.holder,
+      released_from: other.released_from === session ? null : other.released_from
+    })
   }
   const previous = readHold(paths, slug)
   const next: Hold =
@@ -215,10 +222,11 @@ export const releaseEndedHolds = (rt: Runtime, paths: RepoPaths, startingSession
     .map((hold) => storeHold(rt, paths, hold, { ...hold, holder: null, process: null, released_from: hold.holder }))
 }
 
-export const takeBackHolds = (rt: Runtime, paths: RepoPaths, session: string): Hold[] =>
-  allHolds(paths)
-    .filter((hold) => hold.holder === null && hold.released_from === session)
-    .map((hold) => storeHold(rt, paths, hold, { ...hold, holder: session, released_from: null }))
+export const takeBackHolds = (rt: Runtime, paths: RepoPaths, session: string): Hold | null => {
+  if (heldBy(paths, session) !== null) return null
+  const released = allHolds(paths).find((hold) => hold.holder === null && hold.released_from === session)
+  return released === undefined ? null : takeHold(rt, paths, released.slug, session, null, released.process)
+}
 
 const readRedirect = (paths: RepoPaths, session: string): string | null => {
   const file = redirectPath(paths, session)

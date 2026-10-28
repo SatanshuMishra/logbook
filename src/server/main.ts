@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { Runtime } from '../runtime/runtime.ts'
-import { actingSession, heldBy, recordProcess } from '../thread/holds.ts'
+import { actingSession, heldBy, recordProcess, takeBackHolds } from '../thread/holds.ts'
 import { findRepository, startDirectory } from '../thread/paths.ts'
 import { pluginVersion } from '../runtime/version.ts'
 import { INSTRUCTIONS } from './instructions.ts'
@@ -15,7 +15,9 @@ const recordServerProcess = (rt: Runtime): void => {
   try {
     const found = findRepository(rt, startDirectory(rt, rt.cwd ?? ''))
     if (!found.ok) return
-    const slug = heldBy(found.value, actingSession(found.value, rt.sessionId))
+    const session = actingSession(found.value, rt.sessionId)
+    takeBackHolds(rt, found.value, session)
+    const slug = heldBy(found.value, session)
     if (slug !== null) recordProcess(rt, found.value, slug, rt.parentProcess)
   } catch (error) {
     rt.log({
