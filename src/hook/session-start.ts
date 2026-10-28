@@ -196,7 +196,7 @@ export const sessionStart = (input: SessionStartInput): SessionStartOutput => {
   if (source === STARTUP_SOURCE) return startupOutput(rt, paths)
   const transcript = nonEmptyString(event.transcript_path)
   if (source === CLEAR_SOURCE) passHandover(rt, paths, sessionId, transcript)
-  if (source === RESUME_SOURCE) takeBackHolds(rt, paths, sessionId)
+  takeBackHolds(rt, paths, sessionId)
   const held = heldBy(paths, sessionId)
   if (held === null) return {}
   if (transcript !== null) addTranscript(rt, paths, held, transcript)

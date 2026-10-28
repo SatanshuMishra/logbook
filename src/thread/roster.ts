@@ -1,6 +1,15 @@
 import { readFileSync, statSync } from 'node:fs'
 import { changedParts, parseDocument, type ParsedDocument, type StatusKind } from '../doc/document.ts'
-import { READ_WORKING_COPY, differenceSentence, firstSentence, oneLine, rosterLine } from '../doc/render.ts'
+import {
+  NEXT_STEP_SECTION,
+  READ_WORKING_COPY,
+  READ_WORKING_COPY_STEP,
+  differenceSentence,
+  firstSentence,
+  nextStepDiffers,
+  oneLine,
+  rosterLine
+} from '../doc/render.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Ok, Refusal } from '../schema/declare.ts'
 import { withDetail } from '../store/detail.ts'
@@ -24,7 +33,6 @@ type HistoryCommit = { commit: string; date: string; subject: string }
 
 const DOCUMENT_SUFFIX = '.md'
 const UNREADABLE = 'unreadable'
-const NEXT_STEP_SECTION = 'Next step'
 const CLOSED_KINDS: readonly StatusKind[] = ['done', 'abandoned']
 const CONFLICT_OPEN = '<<<<<<<'
 const CONFLICT_CLOSE = '>>>>>>>'
@@ -78,7 +86,7 @@ export const workingCopyParts = (file: string, committed: string): string[] => {
 const differingLine = (line: string, slug: string, status: string, file: string, parts: readonly string[]): string => {
   if (parts.length === 0) return line
   const sentence = differenceSentence(file, parts)
-  return parts.includes(NEXT_STEP_SECTION) ? `${slug} - ${status} - ${READ_WORKING_COPY} ${sentence}` : `${line} ${sentence}`
+  return nextStepDiffers(parts) ? `${slug} - ${status} - ${READ_WORKING_COPY} ${sentence}` : `${line} ${sentence}`
 }
 
 const parseChangeTimes = (stdout: string): Map<string, number> => {
@@ -117,21 +125,16 @@ const listed = (rt: Runtime, paths: RepoPaths, tip: string, times: Map<string, n
   const status = readableStatus(parsed)
   const raw = status === null ? UNREADABLE : status.raw
   const nextStep = nextStepOf(parsed)
+  const parts = workingCopyParts(where.value, stored.text)
   return [
     {
       thread: {
         slug,
         title: readableText(parsed.title),
         status: raw,
-        nextStep,
+        nextStep: nextStepDiffers(parts) ? READ_WORKING_COPY_STEP : nextStep,
         path: where.value,
-        line: differingLine(
-          lineFor(slug, stored.text, parsed, raw, nextStep),
-          slug,
-          raw,
-          where.value,
-          workingCopyParts(where.value, stored.text)
-        )
+        line: differingLine(lineFor(slug, stored.text, parsed, raw, nextStep), slug, raw, where.value, parts)
       },
       closed: status !== null && status.closed,
       time: times.get(`${slug}${DOCUMENT_SUFFIX}`) ?? -Infinity

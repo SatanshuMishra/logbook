@@ -33,7 +33,7 @@ const UPDATED_PREFIX = 'Updated:'
 const NEXT_IDS_PREFIX = 'Next ids:'
 const NEW_STATUS = 'active'
 const NOT_STARTED = 'Not started.'
-const NEXT_STEP_SECTION: SectionName = 'Next step'
+export const NEXT_STEP_SECTION: SectionName = 'Next step'
 const UNREADABLE = 'unreadable'
 const NO_NEXT_STEP = 'none'
 const EVIDENCE_MARKER = ' evidence: '
@@ -250,7 +250,11 @@ export const userLine = (text: string, path: string): string => {
   return `Logbook: ${readable(parsed.title)} - ${readable(parsed.status?.raw)}. Next: ${sentence}${period} Full state: ${path}`
 }
 
-export const READ_WORKING_COPY = 'Next: read the working copy.'
+export const READ_WORKING_COPY_STEP = 'read the working copy.'
+
+export const READ_WORKING_COPY = `Next: ${READ_WORKING_COPY_STEP}`
+
+export const nextStepDiffers = (parts: readonly string[]): boolean => parts.includes(NEXT_STEP_SECTION)
 
 export const differenceSentence = (path: string, parts: readonly string[]): string =>
   `The working copy ${path} differs from the committed document in ${parts.join(', ')}.`
@@ -258,7 +262,7 @@ export const differenceSentence = (path: string, parts: readonly string[]): stri
 export const differenceUserLine = (text: string, path: string, parts: readonly string[]): string => {
   if (parts.length === 0) return userLine(text, path)
   const sentence = differenceSentence(path, parts)
-  if (!parts.includes(NEXT_STEP_SECTION)) return `${userLine(text, path)} ${sentence}`
+  if (!nextStepDiffers(parts)) return `${userLine(text, path)} ${sentence}`
   const parsed = parseDocument(text)
   return `Logbook: ${readable(parsed.title)} - ${readable(parsed.status?.raw)}. ${READ_WORKING_COPY} ${sentence}`
 }
