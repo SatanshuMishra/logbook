@@ -1,8 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { checkStructure } from '../../../src/doc/check.ts'
@@ -284,6 +284,78 @@ test('list_threads.includes-closed-threads', async () => {
     assert.deepEqual(threadIdsOf(reply), ['alpha', 'beta'])
     assert.equal(structuredOf(reply).closed_count, 1)
     assert.equal(textOf(reply), `${ALPHA_ROSTER_LINE}\n${BETA_ROSTER_LINE}`)
+  })
+})
+
+const fixLoginDocument = (nextStep: string): string =>
+  threadDocument({
+    slug: 'fix-login',
+    title: 'Fix the login page',
+    status: 'active',
+    nextIds: 'Next ids: c2 D1 R1 S1',
+    nextStep,
+    decisions: []
+  })
+
+test('list_threads.structured-names-the-working-copy-difference', async () => {
+  await import('../../../src/server/tools/list_threads.ts')
+  const committedNextStep = 'Fix the submit handler. Then rerun the login tests.'
+  const alphaCommitted = alphaDocument([])
+  const threads = [
+    { slug: 'fix-login', text: fixLoginDocument(committedNextStep) },
+    { slug: 'alpha', text: alphaCommitted },
+    { slug: 'beta', text: betaDocument().replace('Status: done', 'Status: active') }
+  ]
+  await withServer(threads, async (spawned) => {
+    const before = await callTool(spawned, 'list_threads', {})
+    const pathOf = (slug: string): string => {
+      const listed = structuredOf(before).threads as { thread_id: string; path: string }[]
+      const entry = listed.find((thread) => thread.thread_id === slug)
+      assert.ok(entry !== undefined, `${slug} must be listed`)
+      return entry.path
+    }
+    const writeWorkingCopy = (slug: string, text: string): void => {
+      mkdirSync(dirname(pathOf(slug)), { recursive: true })
+      writeFileSync(pathOf(slug), text)
+    }
+    writeWorkingCopy('fix-login', fixLoginDocument('Ship the fix.'))
+    writeWorkingCopy(
+      'alpha',
+      alphaCommitted.replace('The page renders but the handler is missing.', 'The handler is half written.')
+    )
+    writeWorkingCopy('beta', betaDocument().replace('Status: done', 'Status: active'))
+
+    const reply = await callTool(spawned, 'list_threads', {})
+    const lines = textOf(reply).split('\n')
+    const lineOf = (slug: string): string => {
+      const line = lines.find((candidate) => candidate.startsWith(`${slug} - `))
+      assert.ok(line !== undefined, `the text must carry a line for ${slug}`)
+      return line
+    }
+    const entries = structuredOf(reply).threads as {
+      thread_id: string
+      next_step: string
+      difference: string | null
+    }[]
+    const entryOf = (slug: string) => {
+      const entry = entries.find((thread) => thread.thread_id === slug)
+      assert.ok(entry !== undefined, `${slug} must be listed`)
+      return entry
+    }
+
+    const fixLogin = entryOf('fix-login')
+    const fixLoginSentence = `The working copy ${pathOf('fix-login')} differs from the committed document in Next step.`
+    assert.equal(fixLogin.next_step, 'read the working copy.')
+    assert.equal(fixLogin.difference, fixLoginSentence)
+    assert.ok(lineOf('fix-login').endsWith(fixLoginSentence))
+
+    const alpha = entryOf('alpha')
+    const alphaSentence = `The working copy ${pathOf('alpha')} differs from the committed document in Where things stand.`
+    assert.equal(alpha.next_step, 'Write the alpha handler.')
+    assert.equal(alpha.difference, alphaSentence)
+    assert.ok(lineOf('alpha').endsWith(alphaSentence))
+
+    assert.equal(entryOf('beta').difference, null)
   })
 })
 
