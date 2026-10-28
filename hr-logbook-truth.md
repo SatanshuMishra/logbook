@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: active
-Updated: 2026-10-28T07:08:11.265Z
+Updated: 2026-10-28T07:08:15.059Z
 Next ids: c4 D4 R2 S1
 
 ## Goal
@@ -9,8 +9,8 @@ Run 5 of the harness-redesign program (~/.mitosis/harness-redesign/PROGRAM.md, s
 
 ## Done when
 
-- [ ] c1 G1: a hold whose session has ended is released at the next session start; proof: a test where a thread is held by a session that ended sees the hold released when a new session starts.
-- [ ] c2 G2: the briefing compares the working copy of a state document with the committed copy and names any difference instead of showing a stale next step; proof: a test that edits the working copy without committing sees the briefing name the difference.
+- [x] c1 G1: a hold whose session has ended is released at the next session start; proof: a test where a thread is held by a session that ended sees the hold released when a new session starts. evidence: the five locked hold-liveness tests and the two hold-process tests pass at holds-and-pickup head 662ce341 (suite 526 of 526), and review round 3 is green
+- [x] c2 G2: the briefing compares the working copy of a state document with the committed copy and names any difference instead of showing a stale next step; proof: a test that edits the working copy without committing sees the briefing name the difference. evidence: the three locked working-copy-difference tests pass at holds-and-pickup head 662ce341 (suite 526 of 526), and review round 3 is green
 - [x] c3 G3: tests never write under the real HOME; proof: a test fails when any test writes under the real HOME. evidence: the locked test/lint/home-isolation.test.ts (census, fixture proof and empty-HOME child suite) passes alone at test-home head 4442351d, and test-home's review is green.
 
 ## Where things stand
@@ -19,9 +19,9 @@ holds-and-pickup is at 103c90cb (suite 523 of 523, ten locked tests pass, merged
 
 ## Next step
 
-Collect and validate round 3 findings for holds-and-pickup; when green, rerun test-home's suite and G3 check at its merged head, run rerun-plan for both MSPs, and ship.
+Run SHIP=1 ~/.mitosis/logbook/hr-logbook-truth/run.zsh --resume --proven-head holds-and-pickup=7c11b072, then open both pull requests ready for review with mitosis's titles and bodies, assign them, and post review/<msp>.comment.md on each.
 
-Needs: D1.
+Needs: D3, D2.
 
 ## Decisions in force
 
