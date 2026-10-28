@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: active
-Updated: 2026-10-28T06:09:47.827Z
+Updated: 2026-10-28T06:14:48.183Z
 Next ids: c4 D3 R1 S1
 
 ## Goal
@@ -15,7 +15,7 @@ Run 5 of the harness-redesign program (~/.mitosis/harness-redesign/PROGRAM.md, s
 
 ## Where things stand
 
-The first mitosis build (two MSPs: holds-and-pickup, test-home) is running from feat/hr-logbook-truth, whose head 52622d6a holds the five locked acceptance files; all eleven locked tests fail there for the absent behaviour, and the receipt lock is in the run home's receipts-lock.txt. Because the brief lane did not fit, the request runs the full review loop, still without an interview. The checkout's uncommitted receipts.config.json and untracked .lighthouse/ belong to someone else and stay untouched; GLOSSARY.md's uncommitted Hold and Roster terms are this run's and ship with the first MSP.
+Review round 1 is running on both MSPs: holds-and-pickup at 0cc48949 (code, conformance and security reviewers) and test-home at 4c046142 (code and conformance). Both heads pass 516 of 516 suite tests and all eleven locked tests pass at test-home's head. Because the brief lane did not fit, the request runs the full review loop, still without an interview. The checkout's uncommitted receipts.config.json and untracked .lighthouse/ belong to someone else and stay untouched; GLOSSARY.md's uncommitted Hold and Roster terms are this run's and ship with the first MSP.
 
 ## Next step
 
