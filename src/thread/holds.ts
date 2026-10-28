@@ -133,11 +133,11 @@ export const takeHold = (
     (hold) => hold.slug !== slug && (hold.holder === session || hold.released_from === session)
   )
   for (const other of others) {
-    storeHold(rt, paths, other, {
-      ...other,
-      holder: other.holder === session ? null : other.holder,
-      released_from: other.released_from === session ? null : other.released_from
-    })
+    updateHold(rt, paths, other.slug, (current) => ({
+      ...current,
+      holder: current.holder === session ? null : current.holder,
+      released_from: current.released_from === session ? null : current.released_from
+    }))
   }
   const previous = readHold(paths, slug)
   const next: Hold =
