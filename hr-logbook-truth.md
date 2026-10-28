@@ -1,7 +1,7 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: active
-Updated: 2026-10-28T05:49:46.950Z
-Next ids: c4 D1 R1 S1
+Updated: 2026-10-28T05:52:07.456Z
+Next ids: c4 D2 R1 S1
 
 ## Goal
 
@@ -22,6 +22,8 @@ Stage 1 (interphase, feature pathway, full spec without an interview) is in Phas
 Fix the spec review's issues in the record and spec, re-render and re-check, then hand off (Phase 10) and start O2's check author.
 
 ## Decisions in force
+
+- D1 interphase hand-off: build hold liveness, working-copy differences and test-home isolation as two MSPs: Process liveness, with a 24-hour transcript rule only for holds from the earlier release; G2 names differing parts via a shared changedParts; G3 is a lint census plus a child-suite backstop. Two MSPs: holds-and-pickup (Steps hold-liveness, working-copy-difference) and test-home.
 
 ## Open risks
 
