@@ -1,5 +1,6 @@
-import { parseDocument, type ParsedDocument, type StatusKind } from '../doc/document.ts'
-import { firstSentence, oneLine, rosterLine } from '../doc/render.ts'
+import { readFileSync, statSync } from 'node:fs'
+import { changedParts, parseDocument, type ParsedDocument, type StatusKind } from '../doc/document.ts'
+import { READ_WORKING_COPY, differenceSentence, firstSentence, oneLine, rosterLine } from '../doc/render.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Ok, Refusal } from '../schema/declare.ts'
 import { withDetail } from '../store/detail.ts'
@@ -61,6 +62,25 @@ const nextStepOf = (parsed: ParsedDocument): string =>
 const lineFor = (slug: string, text: string, parsed: ParsedDocument, status: string, nextStep: string): string =>
   status !== UNREADABLE && parsed.slug === slug ? rosterLine(text) : `${slug} - ${status} - Next: ${nextStep}`
 
+const readCopy = (file: string): string | null => {
+  try {
+    return statSync(file).isFile() ? readFileSync(file, 'utf8') : null
+  } catch {
+    return null
+  }
+}
+
+export const workingCopyParts = (file: string, committed: string): string[] => {
+  const copy = readCopy(file)
+  return copy === null ? [] : changedParts(committed, copy)
+}
+
+const differingLine = (line: string, slug: string, status: string, file: string, parts: readonly string[]): string => {
+  if (parts.length === 0) return line
+  const sentence = differenceSentence(file, parts)
+  return parts.includes(NEXT_STEP_SECTION) ? `${slug} - ${status} - ${READ_WORKING_COPY} ${sentence}` : `${line} ${sentence}`
+}
+
 const parseChangeTimes = (stdout: string): Map<string, number> => {
   const ranks = new Map<string, number>()
   stdout
@@ -105,7 +125,13 @@ const listed = (rt: Runtime, paths: RepoPaths, tip: string, times: Map<string, n
         status: raw,
         nextStep,
         path: where.value,
-        line: lineFor(slug, stored.text, parsed, raw, nextStep)
+        line: differingLine(
+          lineFor(slug, stored.text, parsed, raw, nextStep),
+          slug,
+          raw,
+          where.value,
+          workingCopyParts(where.value, stored.text)
+        )
       },
       closed: status !== null && status.closed,
       time: times.get(`${slug}${DOCUMENT_SUFFIX}`) ?? -Infinity

@@ -1,5 +1,5 @@
 import { parseDocument, type Section } from '../doc/document.ts'
-import { userLine } from '../doc/render.ts'
+import { differenceSentence, differenceUserLine } from '../doc/render.ts'
 import { recordEvent } from '../metrics/record.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import { activityLine, buildActivity } from '../thread/activity.ts'
@@ -17,7 +17,7 @@ import {
 import { listMarkers } from '../thread/inflight.ts'
 import { migrateIfNeeded } from '../thread/migrate.ts'
 import { checkSessionId, workingCopyPath, type RepoPaths } from '../thread/paths.ts'
-import { sessionStartRoster } from '../thread/roster.ts'
+import { sessionStartRoster, workingCopyParts } from '../thread/roster.ts'
 import { readDocument } from '../thread/store.ts'
 import type { EmptyHookOutput, SessionStartHookOutput } from './output.ts'
 
@@ -27,7 +27,7 @@ export type SessionStartOutput = EmptyHookOutput | SessionStartHookOutput
 
 type ListPart = { heading: string; lines: readonly string[]; replacement: (count: number) => string }
 
-type Pickup = { opening: string; document: string; shortDocument: string; activity: ListPart; markers: ListPart }
+type Pickup = { opening: string; pending: string; document: string; shortDocument: string; activity: ListPart; markers: ListPart }
 
 type Fitted = { context: string; delivered: 'document' | 'short'; activityLines: number }
 
@@ -50,6 +50,11 @@ const nonEmptyString = (value: unknown): string | null => (typeof value === 'str
 
 const openingLine = (slug: string, file: string): string =>
   `Logbook: this session holds thread ${slug}. Its state document follows and is now in your context; do not print it. Keep it true by editing ${file} when logbook asks.`
+
+const pendingBlock = (file: string, parts: readonly string[]): string =>
+  parts.length === 0
+    ? ''
+    : `${differenceSentence(file, parts)} Logbook has not committed it; read the working copy before acting on the next step below.`
 
 const readFileLine = (file: string): string => `The document is too long to include; Read ${file} now.`
 
@@ -107,12 +112,12 @@ const listBlock = (part: ListPart, kept: number): string => {
 }
 
 const rendered = (pickup: Pickup, document: string, activityKept: number, markersKept: number): string =>
-  [pickup.opening, document, listBlock(pickup.activity, activityKept), listBlock(pickup.markers, markersKept)]
+  [pickup.opening, pickup.pending, document, listBlock(pickup.activity, activityKept), listBlock(pickup.markers, markersKept)]
     .filter((block) => block.length > 0)
     .join(BLOCK_SEPARATOR)
 
 const fittedContext = (pickup: Pickup): Fitted => {
-  const fixed = pickup.opening.length + blockCost(pickup.document)
+  const fixed = pickup.opening.length + blockCost(pickup.pending) + blockCost(pickup.document)
   const allMarkers = pickup.markers.lines.length
   const markersCost = listCost(pickup.markers, allMarkers, totalLength(pickup.markers.lines))
   const activityKept = keptCount(pickup.activity, CONTEXT_CEILING - fixed - markersCost)
@@ -165,8 +170,10 @@ const pickupOutput = (
     .filter((marker) => marker.session !== sessionId)
     .map((marker) => activityLine(marker.tool, marker.summary))
   const document = stored.text.replace(/\n+$/, '')
+  const parts = workingCopyParts(file.value, stored.text)
   const fitted = fittedContext({
     opening: openingLine(slug, file.value),
+    pending: pendingBlock(file.value, parts),
     document,
     shortDocument: shortDocumentOf(document, file.value),
     activity: { heading: ACTIVITY_HEADING, lines: activity.lines, replacement: earlierLinesLine },
@@ -178,7 +185,7 @@ const pickupOutput = (
     activity_lines: fitted.activityLines,
     context_chars: fitted.context.length
   })
-  return contextOutput(fitted.context, userLine(stored.text, file.value))
+  return contextOutput(fitted.context, differenceUserLine(stored.text, file.value, parts))
 }
 
 export const sessionStart = (input: SessionStartInput): SessionStartOutput => {
