@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, copyFileSync, mkdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
@@ -9,12 +10,21 @@ import { rawGit, withRepo, type RawGitResult } from '../support/git-fixture.ts'
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const REAL_TSC_BIN_DIR = path.join(PROJECT_ROOT, 'node_modules', '.bin')
 
-const HOOK_TRIGGERING_ENV: Record<string, string | undefined> = {
+const hookTriggeringEnv = (home: string): Record<string, string | undefined> => ({
   PATH: `${REAL_TSC_BIN_DIR}${path.delimiter}${process.env.PATH ?? ''}`,
-  HOME: process.env.HOME,
+  HOME: home,
   GIT_CONFIG_NOSYSTEM: '1',
   GIT_CONFIG_GLOBAL: '/dev/null',
   GIT_TERMINAL_PROMPT: '0'
+})
+
+const withFreshHome = <T>(fn: (home: string) => T): T => {
+  const home = mkdtempSync(path.join(tmpdir(), 'logbook-test-home-'))
+  try {
+    return fn(home)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
 }
 
 const CHECK_FILE_RELATIVE = 'check.ts'
@@ -77,23 +87,25 @@ const seedFixture = (repo: string): CopyOutcome[] => {
   return SCRIPTS_TO_COPY.map((spec) => copyIfPresent(repo, spec))
 }
 
-const runInstaller = (repo: string): RawGitResult => {
-  const result = spawnSync(process.execPath, ['scripts/install-githooks.mjs'], {
-    cwd: repo,
-    env: HOOK_TRIGGERING_ENV,
-    encoding: 'utf8'
+const runInstaller = (repo: string): RawGitResult =>
+  withFreshHome((home) => {
+    const result = spawnSync(process.execPath, ['scripts/install-githooks.mjs'], {
+      cwd: repo,
+      env: hookTriggeringEnv(home),
+      encoding: 'utf8'
+    })
+    return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
   })
-  return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
-}
 
-const commitThroughHook = (repo: string, message: string): RawGitResult => {
-  const result = spawnSync('git', ['-C', repo, 'commit', '-m', message], {
-    cwd: repo,
-    env: HOOK_TRIGGERING_ENV,
-    encoding: 'utf8'
+const commitThroughHook = (repo: string, message: string): RawGitResult =>
+  withFreshHome((home) => {
+    const result = spawnSync('git', ['-C', repo, 'commit', '-m', message], {
+      cwd: repo,
+      env: hookTriggeringEnv(home),
+      encoding: 'utf8'
+    })
+    return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
   })
-  return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
-}
 
 const revListCount = (repo: string): number => {
   const result = rawGit(repo, ['rev-list', '--count', 'HEAD'])

