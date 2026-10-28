@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: parked
-Updated: 2026-10-28T08:14:35.027Z
+Updated: 2026-10-28T08:14:36.917Z
 Next ids: c4 D4 R2 S1
 
 ## Goal
@@ -19,7 +19,7 @@ Integration is in its second lighthouse run: run 1 found one failure (U1, list_t
 
 ## Next step
 
-Read lighthouse run 1's last JSON line; on green it has opened the FEATURE pull request, otherwise record its failures and fix them in the integration worktree.
+Read lighthouse run 2's launch.json; on green it has opened the FEATURE pull request, otherwise record its failures as integration round 2 and fix them in ~/.mitosis/runs/logbook/hr-logbook-truth/integration.
 
 ## Decisions in force
 
