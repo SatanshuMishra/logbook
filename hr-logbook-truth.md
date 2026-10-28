@@ -1,7 +1,7 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: active
-Updated: 2026-10-28T06:19:14.633Z
-Next ids: c4 D3 R1 S1
+Updated: 2026-10-28T06:19:26.595Z
+Next ids: c4 D3 R2 S1
 
 ## Goal
 
@@ -29,6 +29,8 @@ Needs: D1.
 - D2 Stack test-home on holds-and-pickup: Merged at 4c046142; test-home is stacked on holds-and-pickup, reviewed on the range mitosis/holds-and-pickup...mitosis/test-home.
 
 ## Open risks
+
+- R1 Commits in this run pass receipts' tripwire through its RECEIPTS_ACK acknowledgement rather than a receipt, because the receipts CLI is not on agents' PATH; each use is an I6 assumption in review/<msp>.assumptions.txt and goes to the final report.
 
 ## Settled, do not reopen
 
