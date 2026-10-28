@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: active
-Updated: 2026-10-28T07:10:44.267Z
+Updated: 2026-10-28T07:10:45.917Z
 Next ids: c4 D4 R2 S1
 
 ## Goal
@@ -19,9 +19,9 @@ Both MSP pull requests are open, ready for review, assigned and commented: holds
 
 ## Next step
 
-Run SHIP=1 ~/.mitosis/logbook/hr-logbook-truth/run.zsh --resume --proven-head holds-and-pickup=7c11b072, then open both pull requests ready for review with mitosis's titles and bodies, assign them, and post review/<msp>.comment.md on each.
+Park the thread awaiting the merges of #301 and #300.
 
-Needs: D3, D2.
+Needs: D2.
 
 ## Decisions in force
 
