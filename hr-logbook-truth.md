@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: active
-Updated: 2026-10-28T07:10:45.917Z
+Updated: 2026-10-28T07:10:48.533Z
 Next ids: c4 D4 R2 S1
 
 ## Goal
@@ -43,3 +43,4 @@ Needs: D2.
 - Spec, decisions, record and items: docs/specs/hr-logbook-truth.{md,decisions.md,record.json,items.json} in this checkout
 - Run home: ~/.mitosis/logbook/hr-logbook-truth (CHARTER.md with the Locked list, run.zsh, worker-rules.txt, receipts-lock.txt, review/, rounds.md with one verdict line per MSP round)
 - Review records, verdicts and diagnoses per round: ~/.mitosis/logbook/hr-logbook-truth/review/round-<n>/; test-home's green-head suite and slow-check runs: review/green/
+- Ship result with each pull request's title and body: ~/.mitosis/logbook/hr-logbook-truth/ship-1.json
