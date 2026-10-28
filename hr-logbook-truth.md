@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: active
-Updated: 2026-10-28T05:53:23.517Z
+Updated: 2026-10-28T05:54:35.960Z
 Next ids: c4 D2 R1 S1
 
 ## Goal
@@ -19,7 +19,9 @@ interphase has handed off (spec reviewed once, eight issues fixed). FEATURE bran
 
 ## Next step
 
-When the check author reports, verify its commit fails each locked test at the base, run receipts lock over the locked files, then write the run home (CHARTER.md, worker-rules.txt, dispatch.zsh, run.zsh, items.json, graph.json) and run --plan-only.
+Once the locked tests are on feat/hr-logbook-truth and receipts lock is saved, run ~/.mitosis/logbook/hr-logbook-truth/run.zsh in the background (first build), then run the locked checks at each MSP head.
+
+Needs: D1.
 
 ## Decisions in force
 
