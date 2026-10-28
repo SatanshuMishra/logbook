@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: parked
-Updated: 2026-10-28T08:30:08.007Z
+Updated: 2026-10-28T08:30:10.799Z
 Next ids: c4 D4 R2 S1
 
 ## Goal
@@ -19,7 +19,7 @@ Integration is done: lighthouse run 2 is green at feat/hr-logbook-truth 6aa93068
 
 ## Next step
 
-Park the thread awaiting the owner's merge of #302.
+Awaiting the owner's merge of SatanshuMishra/logbook#302: the user starts Clean-up by saying the FEATURE pull request merged; Clean-up then resumes this thread, syncs the checkout and runs pipeline clean for the slug.
 
 ## Decisions in force
 
