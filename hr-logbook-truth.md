@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
-Status: active
-Updated: 2026-10-28T07:10:48.533Z
+Status: parked
+Updated: 2026-10-28T07:10:51.695Z
 Next ids: c4 D4 R2 S1
 
 ## Goal
@@ -19,7 +19,7 @@ Both MSP pull requests are open, ready for review, assigned and commented: holds
 
 ## Next step
 
-Park the thread awaiting the merges of #301 and #300.
+Awaiting merge: the user starts Integration by saying the MSP pull requests merged (#301 into mitosis/holds-and-pickup first, then #300 into feat/hr-logbook-truth); Integration then resumes this thread, reads the run home CHARTER.md and has lighthouse test the FEATURE branch.
 
 Needs: D2.
 
