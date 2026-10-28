@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: active
-Updated: 2026-10-28T05:29:22.409Z
+Updated: 2026-10-28T05:29:34.457Z
 Next ids: c4 D1 R1 S1
 
 ## Goal
@@ -15,11 +15,11 @@ Run 5 of the harness-redesign program (~/.mitosis/harness-redesign/PROGRAM.md, s
 
 ## Where things stand
 
-Not started.
+Stage 1 (interphase) starting; main is in sync with origin at 02dcaf46. The checkout's uncommitted receipts.config.json and untracked .lighthouse/ belong to someone else and stay untouched.
 
 ## Next step
 
-Invoke the pipeline:run skill for the standard lane, then interphase:feature with a request citing I1 to I6 and G1 to G3, ending with Work autonomously.
+Invoke interphase:feature with a request citing I1 to I6 and G1 to G3, ending with Work autonomously.
 
 ## Decisions in force
 
