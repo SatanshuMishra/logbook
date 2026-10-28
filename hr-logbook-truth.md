@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: active
-Updated: 2026-10-28T05:29:34.457Z
+Updated: 2026-10-28T05:49:44.512Z
 Next ids: c4 D1 R1 S1
 
 ## Goal
@@ -15,11 +15,11 @@ Run 5 of the harness-redesign program (~/.mitosis/harness-redesign/PROGRAM.md, s
 
 ## Where things stand
 
-Stage 1 (interphase) starting; main is in sync with origin at 02dcaf46. The checkout's uncommitted receipts.config.json and untracked .lighthouse/ belong to someone else and stay untouched.
+Stage 1 (interphase, feature pathway, full spec without an interview) is in Phase 9: the spec, decisions, record and items are written and pass their checks; the one spec review found eight issues, being fixed now. The checkout's uncommitted receipts.config.json and untracked .lighthouse/ belong to someone else and stay untouched.
 
 ## Next step
 
-Invoke interphase:feature with a request citing I1 to I6 and G1 to G3, ending with Work autonomously.
+Fix the spec review's issues in the record and spec, re-render and re-check, then hand off (Phase 10) and start O2's check author.
 
 ## Decisions in force
 
