@@ -32,3 +32,11 @@ The named check of logbook's document checker that a refused edit broke.
 **Thread run**:
 The metrics run of one thread, named <slug>.<UTC start>, holding every metrics event about that thread and its run summary.
 _Avoid_: session run
+
+**Hold**:
+The record that one session is working on a thread, naming that session and the Claude Code process it runs in.
+_Avoid_: lock, claim
+
+**Roster**:
+The list of open threads, one line each with its status and next step, shown at a session's startup and by list_threads.
+_Avoid_: thread list, index

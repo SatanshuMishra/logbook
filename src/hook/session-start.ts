@@ -1,14 +1,23 @@
 import { parseDocument, type Section } from '../doc/document.ts'
-import { userLine } from '../doc/render.ts'
+import { differenceSentence, differenceUserLine } from '../doc/render.ts'
 import { recordEvent } from '../metrics/record.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import { activityLine, buildActivity } from '../thread/activity.ts'
 import { takeHandover } from '../thread/handover.ts'
-import { addTranscript, heldBy, readHold, takeHold, writeRedirect } from '../thread/holds.ts'
+import {
+  actingSession,
+  addTranscript,
+  heldBy,
+  readHold,
+  releaseEndedHolds,
+  takeBackHolds,
+  takeHold,
+  writeRedirect
+} from '../thread/holds.ts'
 import { listMarkers } from '../thread/inflight.ts'
 import { migrateIfNeeded } from '../thread/migrate.ts'
 import { checkSessionId, workingCopyPath, type RepoPaths } from '../thread/paths.ts'
-import { sessionStartRoster } from '../thread/roster.ts'
+import { sessionStartRoster, workingCopyParts } from '../thread/roster.ts'
 import { readDocument } from '../thread/store.ts'
 import type { EmptyHookOutput, SessionStartHookOutput } from './output.ts'
 
@@ -18,14 +27,15 @@ export type SessionStartOutput = EmptyHookOutput | SessionStartHookOutput
 
 type ListPart = { heading: string; lines: readonly string[]; replacement: (count: number) => string }
 
-type Pickup = { opening: string; document: string; shortDocument: string; activity: ListPart; markers: ListPart }
+type Pickup = { opening: string; pending: string; document: string; shortDocument: string; activity: ListPart; markers: ListPart }
 
 type Fitted = { context: string; delivered: 'document' | 'short'; activityLines: number }
 
 const HOOK_EVENT = 'SessionStart'
 const STARTUP_SOURCE = 'startup'
+const RESUME_SOURCE = 'resume'
 const CLEAR_SOURCE = 'clear'
-const PICKUP_SOURCES: ReadonlySet<string> = new Set(['resume', 'compact', CLEAR_SOURCE])
+const PICKUP_SOURCES: ReadonlySet<string> = new Set([RESUME_SOURCE, 'compact', CLEAR_SOURCE])
 const CONTEXT_CEILING = 9500
 const HEADER_LINE_LIMIT = 500
 const NEXT_STEP_LIMIT = 2000
@@ -40,6 +50,11 @@ const nonEmptyString = (value: unknown): string | null => (typeof value === 'str
 
 const openingLine = (slug: string, file: string): string =>
   `Logbook: this session holds thread ${slug}. Its state document follows and is now in your context; do not print it. Keep it true by editing ${file} when logbook asks.`
+
+const pendingBlock = (file: string, parts: readonly string[]): string =>
+  parts.length === 0
+    ? ''
+    : `${differenceSentence(file, parts)} Logbook has not committed it; read the working copy before acting on the next step below.`
 
 const readFileLine = (file: string): string => `The document is too long to include; Read ${file} now.`
 
@@ -97,12 +112,12 @@ const listBlock = (part: ListPart, kept: number): string => {
 }
 
 const rendered = (pickup: Pickup, document: string, activityKept: number, markersKept: number): string =>
-  [pickup.opening, document, listBlock(pickup.activity, activityKept), listBlock(pickup.markers, markersKept)]
+  [pickup.opening, pickup.pending, document, listBlock(pickup.activity, activityKept), listBlock(pickup.markers, markersKept)]
     .filter((block) => block.length > 0)
     .join(BLOCK_SEPARATOR)
 
 const fittedContext = (pickup: Pickup): Fitted => {
-  const fixed = pickup.opening.length + blockCost(pickup.document)
+  const fixed = pickup.opening.length + blockCost(pickup.pending) + blockCost(pickup.document)
   const allMarkers = pickup.markers.lines.length
   const markersCost = listCost(pickup.markers, allMarkers, totalLength(pickup.markers.lines))
   const activityKept = keptCount(pickup.activity, CONTEXT_CEILING - fixed - markersCost)
@@ -134,7 +149,9 @@ const passHandover = (rt: Runtime, paths: RepoPaths, sessionId: string, transcri
   const handover = takeHandover(rt, paths, transcript)
   if (handover === null) return
   writeRedirect(rt, paths, handover.session, sessionId)
-  if (handover.slug !== null) takeHold(rt, paths, handover.slug, sessionId, transcript)
+  if (handover.slug === null) return
+  const handedOver = readHold(paths, handover.slug)
+  takeHold(rt, paths, handover.slug, sessionId, transcript, handedOver?.process ?? null)
 }
 
 const pickupOutput = (
@@ -153,8 +170,10 @@ const pickupOutput = (
     .filter((marker) => marker.session !== sessionId)
     .map((marker) => activityLine(marker.tool, marker.summary))
   const document = stored.text.replace(/\n+$/, '')
+  const parts = workingCopyParts(file.value, stored.text)
   const fitted = fittedContext({
     opening: openingLine(slug, file.value),
+    pending: pendingBlock(file.value, parts),
     document,
     shortDocument: shortDocumentOf(document, file.value),
     activity: { heading: ACTIVITY_HEADING, lines: activity.lines, replacement: earlierLinesLine },
@@ -166,16 +185,18 @@ const pickupOutput = (
     activity_lines: fitted.activityLines,
     context_chars: fitted.context.length
   })
-  return contextOutput(fitted.context, userLine(stored.text, file.value))
+  return contextOutput(fitted.context, differenceUserLine(stored.text, file.value, parts))
 }
 
 export const sessionStart = (input: SessionStartInput): SessionStartOutput => {
   const { event, paths, rt, sessionId } = input
   const source = nonEmptyString(event.source)
+  if (source === null || (source !== STARTUP_SOURCE && !PICKUP_SOURCES.has(source))) return {}
+  releaseEndedHolds(rt, paths, actingSession(paths, sessionId))
   if (source === STARTUP_SOURCE) return startupOutput(rt, paths)
-  if (source === null || !PICKUP_SOURCES.has(source)) return {}
   const transcript = nonEmptyString(event.transcript_path)
   if (source === CLEAR_SOURCE) passHandover(rt, paths, sessionId, transcript)
+  takeBackHolds(rt, paths, sessionId)
   const held = heldBy(paths, sessionId)
   if (held === null) return {}
   if (transcript !== null) addTranscript(rt, paths, held, transcript)

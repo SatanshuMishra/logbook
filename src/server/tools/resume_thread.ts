@@ -146,7 +146,7 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
     if (stored === null) return { ok: false, refusal: unknownThread(input.thread_id) }
     const session = actingSession(paths.value, rt.sessionId)
     const hold = readHold(paths.value, slug.value)
-    takeHold(rt, paths.value, slug.value, session, null)
+    takeHold(rt, paths.value, slug.value, session, null, rt.parentProcess)
     const mark = convertedPath(paths.value, slug.value)
     const converted = mark.ok && existsSync(mark.value)
     const recovery = recoveryLines(paths.value, slug.value, file.value, {

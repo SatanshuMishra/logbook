@@ -1,5 +1,15 @@
-import { parseDocument, type ParsedDocument, type StatusKind } from '../doc/document.ts'
-import { firstSentence, oneLine, rosterLine } from '../doc/render.ts'
+import { readFileSync, statSync } from 'node:fs'
+import { changedParts, parseDocument, type ParsedDocument, type StatusKind } from '../doc/document.ts'
+import {
+  NEXT_STEP_SECTION,
+  READ_WORKING_COPY,
+  READ_WORKING_COPY_STEP,
+  differenceSentence,
+  firstSentence,
+  nextStepDiffers,
+  oneLine,
+  rosterLine
+} from '../doc/render.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Ok, Refusal } from '../schema/declare.ts'
 import { withDetail } from '../store/detail.ts'
@@ -9,7 +19,15 @@ import { workingCopyPath, type RepoPaths } from './paths.ts'
 import { THREADS_REF, listSlugs, readDocument, threadsTip } from './store.ts'
 import { missingObjects } from './sync.ts'
 
-export type RosterThread = { slug: string; title: string; status: string; nextStep: string; path: string; line: string }
+export type RosterThread = {
+  slug: string
+  title: string
+  status: string
+  nextStep: string
+  path: string
+  line: string
+  difference: string | null
+}
 
 export type Roster = { threads: RosterThread[]; closedCount: number; text: string }
 
@@ -23,7 +41,6 @@ type HistoryCommit = { commit: string; date: string; subject: string }
 
 const DOCUMENT_SUFFIX = '.md'
 const UNREADABLE = 'unreadable'
-const NEXT_STEP_SECTION = 'Next step'
 const CLOSED_KINDS: readonly StatusKind[] = ['done', 'abandoned']
 const CONFLICT_OPEN = '<<<<<<<'
 const CONFLICT_CLOSE = '>>>>>>>'
@@ -61,6 +78,24 @@ const nextStepOf = (parsed: ParsedDocument): string =>
 const lineFor = (slug: string, text: string, parsed: ParsedDocument, status: string, nextStep: string): string =>
   status !== UNREADABLE && parsed.slug === slug ? rosterLine(text) : `${slug} - ${status} - Next: ${nextStep}`
 
+const readCopy = (file: string): string | null => {
+  try {
+    return statSync(file).isFile() ? readFileSync(file, 'utf8') : null
+  } catch {
+    return null
+  }
+}
+
+export const workingCopyParts = (file: string, committed: string): string[] => {
+  const copy = readCopy(file)
+  return copy === null ? [] : changedParts(committed, copy)
+}
+
+const differingLine = (line: string, slug: string, status: string, parts: readonly string[], sentence: string | null): string => {
+  if (sentence === null) return line
+  return nextStepDiffers(parts) ? `${slug} - ${status} - ${READ_WORKING_COPY} ${sentence}` : `${line} ${sentence}`
+}
+
 const parseChangeTimes = (stdout: string): Map<string, number> => {
   const ranks = new Map<string, number>()
   stdout
@@ -97,15 +132,18 @@ const listed = (rt: Runtime, paths: RepoPaths, tip: string, times: Map<string, n
   const status = readableStatus(parsed)
   const raw = status === null ? UNREADABLE : status.raw
   const nextStep = nextStepOf(parsed)
+  const parts = workingCopyParts(where.value, stored.text)
+  const difference = parts.length === 0 ? null : differenceSentence(where.value, parts)
   return [
     {
       thread: {
         slug,
         title: readableText(parsed.title),
         status: raw,
-        nextStep,
+        nextStep: nextStepDiffers(parts) ? READ_WORKING_COPY_STEP : nextStep,
         path: where.value,
-        line: lineFor(slug, stored.text, parsed, raw, nextStep)
+        line: differingLine(lineFor(slug, stored.text, parsed, raw, nextStep), slug, raw, parts, difference),
+        difference
       },
       closed: status !== null && status.closed,
       time: times.get(`${slug}${DOCUMENT_SUFFIX}`) ?? -Infinity

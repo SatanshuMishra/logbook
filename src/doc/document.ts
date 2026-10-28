@@ -312,20 +312,22 @@ const comparedParts = (lines: readonly string[]): ComparedParts => {
 const sectionLines = (parts: ComparedParts, name: string): string[] =>
   parts.sections.filter((section) => section.name === name).flatMap((section) => section.lines)
 
-const changedSummary = (oldText: string, newText: string): string => {
-  const beforeLines = comparedLines(oldText)
-  const afterLines = comparedLines(newText)
-  const before = comparedParts(beforeLines)
-  const after = comparedParts(afterLines)
+export const changedParts = (oldText: string, newText: string): string[] => {
+  const before = comparedParts(comparedLines(oldText))
+  const after = comparedParts(comparedLines(newText))
   const names = [...new Set([...after.sections, ...before.sections].map((section) => section.name))]
-  const changed = [
+  return [
     ...(before.title === after.title ? [] : ['the title']),
     ...(before.status === after.status ? [] : ['Status']),
     ...(sameStrings(before.aboveGoal, after.aboveGoal) ? [] : ['the lines above Goal']),
     ...names.filter((name) => !sameStrings(sectionLines(before, name), sectionLines(after, name)))
   ]
+}
+
+const changedSummary = (oldText: string, newText: string): string => {
+  const changed = changedParts(oldText, newText)
   if (changed.length > 0) return `changed ${changed.join(', ')}`
-  return sameStrings(beforeLines, afterLines)
+  return sameStrings(comparedLines(oldText), comparedLines(newText))
     ? 'changed nothing but the Updated and Next ids lines'
     : 'changed only blank lines'
 }
