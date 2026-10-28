@@ -1,6 +1,6 @@
 # hr-logbook-truth: Harness redesign run 5: logbook tells the truth about holds, working copies and test homes
 Status: active
-Updated: 2026-10-28T07:02:23.449Z
+Updated: 2026-10-28T07:02:25.284Z
 Next ids: c4 D3 R2 S1
 
 ## Goal
@@ -19,7 +19,7 @@ holds-and-pickup is at 103c90cb (suite 523 of 523, ten locked tests pass, merged
 
 ## Next step
 
-When the fix agent returns, run the suite at the new head, merge into test-home, then review round 3 on that fix only; when green, run rerun-plan for both MSPs and ship.
+Collect and validate round 3 findings for holds-and-pickup; when green, rerun test-home's suite and G3 check at its merged head, run rerun-plan for both MSPs, and ship.
 
 Needs: D1.
 
