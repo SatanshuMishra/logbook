@@ -212,22 +212,22 @@ test('old-model.nothing-imports-a-removed-module', () => {
   assert.deepEqual(removedTargets, [], removedTargets.join('\n'))
 })
 
-test('old-model.versions-say-0.17.0', () => {
+test('old-model.versions-say-0.18.0', () => {
   const pkg = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')) as { version?: unknown }
-  assert.equal(pkg.version, '0.17.0')
+  assert.equal(pkg.version, '0.18.0')
 
   const lock = JSON.parse(readFileSync(join(REPO_ROOT, 'package-lock.json'), 'utf8')) as {
     version?: unknown
     packages?: Record<string, { version?: unknown }>
   }
-  assert.equal(lock.version, '0.17.0')
-  assert.equal(lock.packages?.['']?.version, '0.17.0')
+  assert.equal(lock.version, '0.18.0')
+  assert.equal(lock.packages?.['']?.version, '0.18.0')
 
   const plugin = JSON.parse(readFileSync(join(REPO_ROOT, '.claude-plugin', 'plugin.json'), 'utf8')) as Record<
     string,
     unknown
   >
-  assert.equal(plugin.version, '0.17.0')
+  assert.equal(plugin.version, '0.18.0')
   assert.equal('userConfig' in plugin, false, '.claude-plugin/plugin.json still holds userConfig')
 })
 
