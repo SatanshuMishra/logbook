@@ -493,7 +493,7 @@ test('reconcile.accept-without-origin-starts-nothing', async () => {
   })
 })
 
-test('reconcile.accept-push-has-a-time-limit', async () => {
+test('reconcile.accept-push-passes-only-the-repository', async () => {
   const { reconcileThread } = await import('../../src/thread/reconcile.ts')
   await withThreadAsync(async (context, scratch) => {
     addOrigin(context.repo, scratch)
@@ -504,11 +504,11 @@ test('reconcile.accept-push-has-a-time-limit', async () => {
     assert.ok(child !== null, 'a repository with origin must start a push')
     const exited = exitOf(child)
     try {
-      const [helper, top, timeout] = child.spawnargs.slice(-3)
+      assert.equal(child.spawnargs.length, 3, JSON.stringify(child.spawnargs))
+      const [, helper, top] = child.spawnargs
       assert.ok(helper !== undefined && top !== undefined)
       assert.equal(realpathSync(helper), realpathSync(HELPER_PATH))
       assert.equal(realpathSync(top), realpathSync(context.repo))
-      assert.equal(timeout, '15000')
     } finally {
       await exited
     }

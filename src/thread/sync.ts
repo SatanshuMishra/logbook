@@ -1,6 +1,6 @@
 import { stripHeaderLines } from '../doc/document.ts'
 import type { Runtime } from '../runtime/runtime.ts'
-import { git, gitRun, gitTimed } from '../store/git.ts'
+import { git, gitDetached, gitRun } from '../store/git.ts'
 import { failureOf, headerOf, threeWay, withHeader, type Step } from './merge.ts'
 import type { RepoPaths } from './paths.ts'
 import {
@@ -16,8 +16,6 @@ import {
 import { readBaseText, readWorkingCopy, writeWorkingCopy } from './working-copy.ts'
 
 export type SyncResult = { fetched: boolean; merged: boolean; conflicts: string[]; pushed: boolean; error: string | null }
-
-export const FETCH_TIMEOUT_MS = 15000
 
 type Chosen = { text: string | null; conflicted: boolean }
 
@@ -73,8 +71,8 @@ const remoteTip = (rt: Runtime, paths: RepoPaths): string | null => {
   return found.ok ? found.stdout.trim() : null
 }
 
-const fetchThreads = async (rt: Runtime, paths: RepoPaths, timeoutMs: number): Promise<Step<string | null>> => {
-  const run = await gitTimed(rt, paths.root, FETCH_ARGS, { timeoutMs })
+const fetchThreads = async (rt: Runtime, paths: RepoPaths): Promise<Step<string | null>> => {
+  const run = await gitDetached(rt, paths.root, FETCH_ARGS)
   if (run.code === 0) return { ok: true, value: remoteTip(rt, paths) }
   if (MISSING_REMOTE_REF.test(run.stderr)) return { ok: true, value: null }
   return { ok: false, error: failureOf('fetch from origin', run) }
@@ -93,17 +91,12 @@ export const missingObjects = (rt: Runtime, paths: RepoPaths, tips: readonly str
   }
 }
 
-const fetchMissing = async (
-  rt: Runtime,
-  paths: RepoPaths,
-  tips: readonly string[],
-  timeoutMs: number
-): Promise<Step<void>> => {
+const fetchMissing = async (rt: Runtime, paths: RepoPaths, tips: readonly string[]): Promise<Step<void>> => {
   const missing = missingObjects(rt, paths, tips)
   if (!missing.ok) return missing
   if (missing.value.length === 0) return { ok: true, value: undefined }
   const stdin = missing.value.map((id) => `${id}\n`).join('')
-  const run = await gitTimed(rt, paths.root, FETCH_MISSING_ARGS, { timeoutMs, stdin })
+  const run = await gitDetached(rt, paths.root, FETCH_MISSING_ARGS, { stdin })
   return run.code === 0
     ? { ok: true, value: undefined }
     : { ok: false, error: failureOf('fetch missing objects from origin', run) }
@@ -300,24 +293,19 @@ const bringIn = (rt: Runtime, paths: RepoPaths, local: string | null, remote: st
   return mergeDiverged(rt, paths, local, remote)
 }
 
-export const syncThreads = async (
-  rt: Runtime,
-  paths: RepoPaths,
-  opts: { timeoutMs?: number } = {}
-): Promise<SyncResult> => {
+export const syncThreads = async (rt: Runtime, paths: RepoPaths): Promise<SyncResult> => {
   if (!hasOrigin(rt, paths)) return result({ error: 'no-origin' })
-  const timeoutMs = opts.timeoutMs ?? FETCH_TIMEOUT_MS
-  const fetched = await fetchThreads(rt, paths, timeoutMs)
+  const fetched = await fetchThreads(rt, paths)
   if (!fetched.ok) return result({ error: fetched.error })
   const local = threadsTip(rt, paths)
   const tips = [local, fetched.value].filter((tip): tip is string => tip !== null)
-  const completed = await fetchMissing(rt, paths, tips, timeoutMs)
+  const completed = await fetchMissing(rt, paths, tips)
   if (!completed.ok) return result({ fetched: true, error: completed.error })
   const brought = bringIn(rt, paths, local, fetched.value)
   if (!brought.ok) return result({ fetched: true, error: brought.error })
   const settled = { fetched: true, merged: brought.value.merged, conflicts: brought.value.conflicts }
   if (!brought.value.push) return result(settled)
-  const pushed = await gitTimed(rt, paths.root, PUSH_ARGS, { timeoutMs })
+  const pushed = await gitDetached(rt, paths.root, PUSH_ARGS)
   return pushed.code === 0
     ? result({ ...settled, pushed: true })
     : result({ ...settled, error: failureOf('push to origin', pushed) })

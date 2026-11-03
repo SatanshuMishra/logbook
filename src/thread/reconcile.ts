@@ -37,8 +37,6 @@ export type ToolChangeInput = { tool: string; change: ToolChange; beforeCas?: ()
 
 export type ToolChangeResult = { commit: string; text: string; removed: string[]; push: ChildProcess | null }
 
-export const PUSH_TIMEOUT_MS = 15000
-
 type Accepted = { commit: string; text: string; removed: string[] }
 
 type Settled =
@@ -209,7 +207,7 @@ const settleWorkingCopy = (
 
 export const startPush = (rt: Runtime, paths: RepoPaths): ChildProcess | null => {
   const origin = git(rt, paths.root, ['config', '--get', 'remote.origin.url'])
-  return origin.ok && origin.stdout.trim() !== '' ? startBackgroundPush(rt, paths.root, PUSH_TIMEOUT_MS) : null
+  return origin.ok && origin.stdout.trim() !== '' ? startBackgroundPush(rt, paths.root) : null
 }
 
 export const reconcileThread = (

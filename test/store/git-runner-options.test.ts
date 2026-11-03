@@ -1,16 +1,12 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
 import { once } from 'node:events'
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import { rawGit } from '../support/git-fixture.ts'
 import { testRuntime } from '../support/runtime.ts'
-
-const HANGING_SERVER = 'node -e "process.stdin.resume()"'
 
 const runStep = (repo: string, args: string[]): string => {
   const result = rawGit(repo, args)
@@ -39,10 +35,6 @@ const makeClone = (root: string): { local: string; origin: string } => {
 }
 
 const runtimeFor = (home: string): Runtime => testRuntime({ env: { PATH: process.env.PATH, HOME: home } })
-
-const uniqueToken = (): string => randomBytes(8).toString('hex')
-
-const processesMatching = (token: string): string => spawnSync('pgrep', ['-fl', token], { encoding: 'utf8' }).stdout
 
 const shellQuote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`
 
@@ -92,34 +84,17 @@ const makePartialClone = (root: string): { clone: string; firstBlob: string } =>
   return { clone, firstBlob }
 }
 
-test('git.timed-run-returns-the-result-when-git-finishes-in-time', async () => {
-  const { gitTimed } = await import('../../src/store/git.ts')
+test('git.detached-run-returns-the-result-when-git-finishes', async () => {
+  const { gitDetached } = await import('../../src/store/git.ts')
   const root = mkdtempSync(join(tmpdir(), 'logbook-git-runner-options-'))
   try {
     const repo = makeRepo(root)
     const head = runStep(repo, ['rev-parse', 'HEAD'])
 
-    const run = await gitTimed(runtimeFor(root), repo, ['rev-parse', 'HEAD'], { timeoutMs: 10000 })
+    const run = await gitDetached(runtimeFor(root), repo, ['rev-parse', 'HEAD'])
 
     assert.equal(run.code, 0, `git rev-parse HEAD must exit 0, got stderr: ${run.stderr}`)
     assert.equal(run.stdout, `${head}\n`)
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-  }
-})
-
-test('git.timed-run-kills-a-hung-fetch-and-everything-it-started', async () => {
-  const { gitTimed } = await import('../../src/store/git.ts')
-  const root = mkdtempSync(join(tmpdir(), 'logbook-git-runner-options-'))
-  try {
-    const { local } = makeClone(root)
-    const token = uniqueToken()
-    runStep(local, ['config', 'remote.origin.uploadpack', `${HANGING_SERVER} ${token}`])
-
-    const run = await gitTimed(runtimeFor(root), local, ['fetch', 'origin'], { timeoutMs: 500 })
-
-    assert.deepEqual(run, { code: -1, stdout: '', stderr: 'git fetch timed out after 500 ms' })
-    assert.equal(processesMatching(token), '', 'no process running process.stdin.resume() may remain after the call resolves')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -132,7 +107,7 @@ test('git.background-push-returns-before-it-ends', async () => {
     const { local, origin } = makeClone(root)
     const localCommit = runStep(local, ['rev-parse', 'refs/logbook/threads'])
 
-    const child = startBackgroundPush(runtimeFor(root), local, 15000)
+    const child = startBackgroundPush(runtimeFor(root), local)
     const exited = once(child, 'exit')
 
     assert.equal(typeof child.pid, 'number', 'the returned child must have a pid')
@@ -145,47 +120,8 @@ test('git.background-push-returns-before-it-ends', async () => {
   }
 })
 
-test('git.background-push-stops-when-origin-never-answers', async () => {
-  const { startBackgroundPush } = await import('../../src/store/git.ts')
-  const root = mkdtempSync(join(tmpdir(), 'logbook-git-runner-options-'))
-  try {
-    const { local } = makeClone(root)
-    const token = uniqueToken()
-    runStep(local, ['config', 'remote.origin.receivepack', `${HANGING_SERVER} ${token}`])
-
-    const child = startBackgroundPush(runtimeFor(root), local, 500)
-    const [code] = await once(child, 'exit')
-
-    assert.equal(code, 1)
-    assert.equal(processesMatching(token), '', 'no process running process.stdin.resume() may remain after the push child exits')
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-  }
-})
-
-test('git.timed-run-returns-at-the-timeout-while-a-detached-process-holds-its-output', async () => {
-  const { gitTimed } = await import('../../src/store/git.ts')
-  const root = mkdtempSync(join(tmpdir(), 'logbook-git-runner-options-'))
-  const pidFile = join(root, 'holder.pid')
-  try {
-    const { local } = makeClone(root)
-    const server = writeScript(root, 'hold-and-hang.cjs', [...holderLauncher(pidFile), 'process.stdin.resume()'])
-    runStep(local, ['config', 'remote.origin.uploadpack', `${shellQuote(process.execPath)} ${shellQuote(server)}`])
-
-    const started = performance.now()
-    const run = await gitTimed(runtimeFor(root), local, ['fetch', 'origin'], { timeoutMs: 500 })
-    const elapsed = performance.now() - started
-
-    assert.ok(elapsed < 2000, `gitTimed must resolve less than 2000 ms after it started, took ${elapsed} ms`)
-    assert.deepEqual(run, { code: -1, stdout: '', stderr: 'git fetch timed out after 500 ms' })
-  } finally {
-    killHolder(pidFile)
-    rmSync(root, { recursive: true, force: true })
-  }
-})
-
-test('git.timed-run-returns-when-git-exits-while-a-detached-process-holds-its-output', async () => {
-  const { gitTimed } = await import('../../src/store/git.ts')
+test('git.detached-run-returns-when-git-exits-while-a-detached-process-holds-its-output', async () => {
+  const { gitDetached } = await import('../../src/store/git.ts')
   const root = mkdtempSync(join(tmpdir(), 'logbook-git-runner-options-'))
   const pidFile = join(root, 'holder.pid')
   try {
@@ -202,15 +138,16 @@ test('git.timed-run-returns-when-git-exits-while-a-detached-process-holds-its-ou
     runStep(local, ['config', 'remote.origin.uploadpack', shellQuote(server)])
 
     const started = performance.now()
-    const run = await gitTimed(
-      runtimeFor(root),
-      local,
-      ['fetch', '--no-tags', '--no-write-fetch-head', 'origin', '+refs/logbook/threads:refs/logbook/remotes/origin/threads'],
-      { timeoutMs: 5000 }
-    )
+    const run = await gitDetached(runtimeFor(root), local, [
+      'fetch',
+      '--no-tags',
+      '--no-write-fetch-head',
+      'origin',
+      '+refs/logbook/threads:refs/logbook/remotes/origin/threads'
+    ])
     const elapsed = performance.now() - started
 
-    assert.ok(elapsed < 2000, `gitTimed must resolve less than 2000 ms after it started, took ${elapsed} ms`)
+    assert.ok(elapsed < 2000, `gitDetached must resolve less than 2000 ms after it started, took ${elapsed} ms`)
     assert.notEqual(run.code, 0)
     assert.notEqual(run.code, -1)
     assert.ok(
@@ -224,7 +161,7 @@ test('git.timed-run-returns-when-git-exits-while-a-detached-process-holds-its-ou
 })
 
 test('git.never-fetches-a-missing-object', async () => {
-  const { git, gitBuffer, gitRun, gitTimed } = await import('../../src/store/git.ts')
+  const { git, gitBuffer, gitDetached, gitRun } = await import('../../src/store/git.ts')
   const root = mkdtempSync(join(tmpdir(), 'logbook-git-runner-options-'))
   try {
     const { clone, firstBlob } = makePartialClone(root)
@@ -241,13 +178,49 @@ test('git.never-fetches-a-missing-object', async () => {
     const plain = git(rt, clone, args)
     const run = gitRun(rt, clone, args)
     const buffered = gitBuffer(rt, clone, args)
-    const timed = await gitTimed(rt, clone, args, { timeoutMs: 5000 })
+    const detached = await gitDetached(rt, clone, args)
 
     assert.equal(plain.ok, false)
     assert.notEqual(run.code, 0)
     assert.equal(buffered.ok, false)
-    assert.notEqual(timed.code, 0)
+    assert.notEqual(detached.code, 0)
     assert.equal(recordedStarts(log), '', 'no git run may start the origin upload-pack to fetch a missing object')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('git.configured-ssh-command-is-left-as-it-is', async () => {
+  const { findRepository } = await import('../../src/thread/paths.ts')
+  const { syncThreads } = await import('../../src/thread/sync.ts')
+  const root = mkdtempSync(join(tmpdir(), 'logbook-git-runner-options-'))
+  try {
+    const local = makeRepo(root)
+    runStep(local, ['update-ref', 'refs/logbook/threads', 'HEAD'])
+    runStep(local, ['remote', 'add', 'origin', 'ssh://example.invalid/x.git'])
+    const configuredLog = join(root, 'configured-ssh.log')
+    const pathLog = join(root, 'path-ssh.log')
+    const configured = writeScript(root, 'configured-ssh.sh', [
+      '#!/bin/sh',
+      `printf '%s\\n' "$*" >> ${shellQuote(configuredLog)}`,
+      'exit 255'
+    ])
+    const bin = join(root, 'bin')
+    mkdirSync(bin)
+    writeScript(bin, 'ssh', ['#!/bin/sh', `printf '%s\\n' "$*" >> ${shellQuote(pathLog)}`, 'exit 255'])
+    runStep(local, ['config', 'core.sshCommand', shellQuote(configured)])
+    const rt = testRuntime({ env: { PATH: `${bin}:${process.env.PATH ?? ''}`, HOME: root } })
+    const found = findRepository(rt, local)
+    assert.ok(found.ok, 'the scratch repository must be found')
+
+    const result = await syncThreads(rt, found.value)
+
+    assert.equal(result.fetched, false, JSON.stringify(result))
+    const recorded = recordedStarts(configuredLog)
+    assert.notEqual(recorded, '', 'the configured ssh command must have been run')
+    assert.ok(!recorded.includes('BatchMode'), recorded)
+    assert.ok(!recorded.includes('ServerAlive'), recorded)
+    assert.equal(recordedStarts(pathLog), '', 'the ssh first on PATH must never run')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
