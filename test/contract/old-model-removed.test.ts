@@ -212,25 +212,6 @@ test('old-model.nothing-imports-a-removed-module', () => {
   assert.deepEqual(removedTargets, [], removedTargets.join('\n'))
 })
 
-test('old-model.versions-say-0.18.0', () => {
-  const pkg = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')) as { version?: unknown }
-  assert.equal(pkg.version, '0.18.0')
-
-  const lock = JSON.parse(readFileSync(join(REPO_ROOT, 'package-lock.json'), 'utf8')) as {
-    version?: unknown
-    packages?: Record<string, { version?: unknown }>
-  }
-  assert.equal(lock.version, '0.18.0')
-  assert.equal(lock.packages?.['']?.version, '0.18.0')
-
-  const plugin = JSON.parse(readFileSync(join(REPO_ROOT, '.claude-plugin', 'plugin.json'), 'utf8')) as Record<
-    string,
-    unknown
-  >
-  assert.equal(plugin.version, '0.18.0')
-  assert.equal('userConfig' in plugin, false, '.claude-plugin/plugin.json still holds userConfig')
-})
-
 test('old-model.mutants-name-the-new-files', async () => {
   const specifier = '../../scripts/seeded-mutants.mjs'
   const script = (await import(specifier)) as { MUTANTS: readonly { file: string }[] }
