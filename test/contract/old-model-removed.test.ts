@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
@@ -212,8 +213,8 @@ test('old-model.nothing-imports-a-removed-module', () => {
   assert.deepEqual(removedTargets, [], removedTargets.join('\n'))
 })
 
-test('old-model.plugin-manifest-holds-no-user-config', () => {
-  const plugin = JSON.parse(readFileSync(join(REPO_ROOT, '.claude-plugin', 'plugin.json'), 'utf8')) as Record<
+test('old-model.plugin-manifest-holds-no-user-config', async () => {
+  const plugin = JSON.parse(await readFile(join(REPO_ROOT, '.claude-plugin', 'plugin.json'), 'utf8')) as Record<
     string,
     unknown
   >
