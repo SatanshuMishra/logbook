@@ -1,6 +1,6 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: active
-Updated: 2026-11-03T20:51:02.403Z
+Updated: 2026-11-03T20:53:26.656Z
 Next ids: c6 D3 R2 S1
 
 ## Goal
@@ -17,7 +17,7 @@ A process with no Claude Code session, such as the pipeline's background drive, 
 
 ## Where things stand
 
-The spec, record and items are written and pass interphase's checks: 12 criteria (5.11 unproven, host PATH) and 5 Steps in one MSP, command-writer-path, working-copy-base, git-without-wall-clock, command-line and release, after the check-author Step. Glossary terms Writer, Command write and Copy base and ADR 0003 are written. The FEATURE branch feat/cli-and-run-writers is pushed from main 1fdd0f0f, and the run home holds the charter, worker rules, dispatch and run scripts, with dev tools linked above the build worktrees. The one spec review is running.
+The spec is handed off after the one review's eleven fixes, passing every interphase check, the guard and pipeline guarantees; D2 records the hand-off. The mitosis plan (11a33cc9e44c) is clean after each Step's task gained a one-sentence summary for its change line and the pull-request subject and Why lines were shortened under the render caps. The build of five Lanes in one MSP is running in the background, writing to build.out and build.err in the run home.
 
 ## Next step
 
