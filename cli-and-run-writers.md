@@ -1,7 +1,7 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: active
-Updated: 2026-11-03T20:31:28.391Z
-Next ids: c6 D1 R1 S1
+Updated: 2026-11-03T20:37:05.575Z
+Next ids: c6 D2 R2 S1
 
 ## Goal
 
@@ -17,15 +17,19 @@ A process with no Claude Code session, such as the pipeline's background drive, 
 
 ## Where things stand
 
-The spec, record and items are written and pass interphase's checks: 12 criteria (5.11 unproven, host PATH) and 5 Steps in one MSP, command-writer-path, working-copy-base, git-without-wall-clock, command-line and release, after the check-author Step. The one spec review is running.
+The spec, record and items are written and pass interphase's checks: 12 criteria (5.11 unproven, host PATH) and 5 Steps in one MSP, command-writer-path, working-copy-base, git-without-wall-clock, command-line and release, after the check-author Step. Glossary terms Writer, Command write and Copy base and ADR 0003 are written. The FEATURE branch feat/cli-and-run-writers is pushed from main 1fdd0f0f, and the run home holds the charter, worker rules, dispatch and run scripts, with dev tools linked above the build worktrees. The one spec review is running.
 
 ## Next step
 
-Apply the spec review's real findings, re-render and recheck, then hand off: glossary terms, guard verify, record handed-off, and start the mitosis build.
+Apply the spec review's real findings, re-render and recheck, then hand off: guard verify, record handed-off, copy items to the run home, record the hand-off boundary, and run the mitosis plan-only then build.
 
 ## Decisions in force
 
+- D1 The run's stages are driven from this session rather than by pipeline drive start: the drive is the code being rebuilt by the parallel pipeline spec and was the source of the halts this program fixes, so each stage runs here by the pipeline:run skill's own steps.
+
 ## Open risks
+
+- R1 mitosis 0.11.0 still requires --timeout; run.zsh passes 86400 seconds per Worker until the interphase and mitosis spec removes it.
 
 ## Settled, do not reopen
 
