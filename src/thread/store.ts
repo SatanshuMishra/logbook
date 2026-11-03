@@ -157,7 +157,7 @@ export const resolveThreadId = (rt: Runtime, paths: RepoPaths, threadId: string)
   return slug === undefined ? unknownThread(threadId) : { ok: true, value: slug }
 }
 
-const hashBlob = (rt: Runtime, paths: RepoPaths, text: string): Ok<string> | Refusal => {
+export const hashBlob = (rt: Runtime, paths: RepoPaths, text: string): Ok<string> | Refusal => {
   const result = git(rt, paths.root, ['hash-object', '-w', '--stdin'], { stdin: text })
   return result.ok ? { ok: true, value: result.stdout.trim() } : gitFailure('hash-object', result.code, result.stderr)
 }

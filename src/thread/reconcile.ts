@@ -1,5 +1,3 @@
-import { mkdirSync, readFileSync, statSync } from 'node:fs'
-import path from 'node:path'
 import { itemChanges } from '../doc/changes.ts'
 import { checkVersion, formatViolation, removedIds, type Violation } from '../doc/check.ts'
 import {
@@ -14,12 +12,12 @@ import {
 import { recordEvent } from '../metrics/record.ts'
 import type { Runtime, Writer } from '../runtime/runtime.ts'
 import type { Ok, Refusal } from '../schema/declare.ts'
-import { durableWrite } from '../store/durable-write.ts'
 import { git, startBackgroundPush } from '../store/git.ts'
 import { foldHold, readHold } from './holds.ts'
 import { sweepMarkers } from './inflight.ts'
 import { workingCopyPath, type RepoPaths } from './paths.ts'
-import { commitDocuments, readDocument, type StoredDocument, type ThreadMoved } from './store.ts'
+import { commitDocuments, hashBlob, readDocument, type StoredDocument, type ThreadMoved } from './store.ts'
+import { carryOnto, readWorkingCopy, writeWorkingCopy, type Carried } from './working-copy.ts'
 
 type ChildProcess = ReturnType<typeof startBackgroundPush>
 
@@ -60,13 +58,13 @@ const unknownThread = (slug: string): Refusal => ({
   message: `no thread is named ${JSON.stringify(slug)}; call list_threads to see each thread's slug`
 })
 
-const notAFile = (file: string): Refusal => ({
+const unknownCarry = (kind: unknown): Refusal => ({
   ok: false,
   field: 'working_copy',
-  accepted: 'a readable file at the working copy path, or nothing there',
-  example: file,
-  retryable: true,
-  message: `the working copy ${file} is not a readable file, so nothing was committed; move whatever is at that path aside so logbook can write the document there again`
+  accepted: "a carried working copy whose kind is 'copy', 'unedited' or 'merged'",
+  example: 'merged',
+  retryable: false,
+  message: `the carried working copy kind ${JSON.stringify(kind)} is not one logbook knows, so nothing was committed`
 })
 
 export const violationsRefusal = (file: string, violations: Violation[]): Refusal => ({
@@ -89,20 +87,6 @@ const untilSettled = <T>(attempt: () => Ok<T> | Refusal | ThreadMoved): Ok<T> | 
     const result = attempt()
     if (!isThreadMoved(result)) return result
   }
-}
-
-const readWorkingCopy = (file: string): Ok<string | null> | Refusal => {
-  try {
-    if (!statSync(file).isFile()) return notAFile(file)
-    return { ok: true, value: readFileSync(file, 'utf8') }
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? { ok: true, value: null } : notAFile(file)
-  }
-}
-
-const writeWorkingCopy = (rt: Runtime, file: string, text: string): void => {
-  mkdirSync(path.dirname(file), { recursive: true })
-  durableWrite(file, text, { log: rt.log })
 }
 
 const previousNextIds = (text: string): NextIds => parseDocument(text).nextIds ?? highestIds(text)
@@ -135,15 +119,16 @@ const commitVersion = (
   }
 }
 
-const followSessionCommit = (
-  rt: Runtime,
-  paths: RepoPaths,
-  slug: string,
-  file: string,
-  acceptedAt: string,
-  text: string
-): void => {
-  writeWorkingCopy(rt, file, text)
+const committedBlob = (rt: Runtime, paths: RepoPaths, slug: string, text: string): string | null => {
+  const blob = hashBlob(rt, paths, text)
+  if (blob.ok) return blob.value
+  rt.log({ level: 'warn', event: 'reconcile.copy-base-unhashed', slug, reason: blob.message })
+  return null
+}
+
+const followSessionCommit = (rt: Runtime, paths: RepoPaths, slug: string, acceptedAt: string, text: string): void => {
+  const written = writeWorkingCopy(rt, paths, slug, text, committedBlob(rt, paths, slug, text))
+  if (!written.ok) rt.log({ level: 'warn', event: 'reconcile.working-copy-unwritten', slug, reason: written.message })
   settleHold(rt, paths, slug, acceptedAt)
 }
 
@@ -151,13 +136,39 @@ const commitSessionVersion = (
   rt: Runtime,
   paths: RepoPaths,
   stored: StoredDocument,
-  file: string,
   version: Version
 ): Ok<Accepted> | Refusal | ThreadMoved => {
   const acceptedAt = rt.now()
   const committed = commitVersion(rt, paths, stored, version, acceptedAt)
-  if (committed.ok) followSessionCommit(rt, paths, stored.slug, file, acceptedAt, committed.value.text)
+  if (committed.ok) followSessionCommit(rt, paths, stored.slug, acceptedAt, committed.value.text)
   return committed
+}
+
+const materialise = (rt: Runtime, paths: RepoPaths, stored: StoredDocument): Ok<Settled> | Refusal => {
+  const written = writeWorkingCopy(rt, paths, stored.slug, stored.text, stored.blob)
+  return written.ok ? { ok: true, value: { kind: 'materialised' } } : written
+}
+
+const settlingText = (
+  rt: Runtime,
+  paths: RepoPaths,
+  stored: StoredDocument,
+  carried: Carried
+): Ok<string | null> | Refusal => {
+  switch (carried.kind) {
+    case 'copy':
+      return { ok: true, value: carried.text }
+    case 'unedited': {
+      const written = writeWorkingCopy(rt, paths, stored.slug, carried.text, stored.blob)
+      return written.ok ? { ok: true, value: null } : written
+    }
+    case 'merged': {
+      const written = writeWorkingCopy(rt, paths, stored.slug, carried.text, stored.blob)
+      return written.ok ? { ok: true, value: carried.text } : written
+    }
+    default:
+      return unknownCarry((carried as { kind: unknown }).kind)
+  }
 }
 
 const settleOnce = (
@@ -168,20 +179,21 @@ const settleOnce = (
 ): Ok<Settled> | Refusal | ThreadMoved => {
   const stored = readDocument(rt, paths, slug)
   if (stored === null) return unknownThread(slug)
-  const file = workingCopyPath(paths, slug)
-  if (!file.ok) return file
-  const copy = readWorkingCopy(file.value)
+  const copy = readWorkingCopy(paths, slug)
   if (!copy.ok) return copy
-  if (copy.value === null) {
-    writeWorkingCopy(rt, file.value, stored.text)
-    return { ok: true, value: { kind: 'materialised' } }
-  }
-  if (stripHeaderLines(copy.value) === stripHeaderLines(stored.text)) return { ok: true, value: { kind: 'unchanged' } }
-  const violations = checkVersion(stored.text, copy.value, slug)
+  if (copy.value.text === null) return materialise(rt, paths, stored)
+  const carried = carryOnto(rt, paths, slug, copy.value.text, copy.value.base, stored)
+  if (!carried.ok) return carried
+  const settling = settlingText(rt, paths, stored, carried.value)
+  if (!settling.ok) return settling
+  if (settling.value === null) return { ok: true, value: { kind: 'materialised' } }
+  const text = settling.value
+  if (stripHeaderLines(text) === stripHeaderLines(stored.text)) return { ok: true, value: { kind: 'unchanged' } }
+  const violations = checkVersion(stored.text, text, slug)
   if (violations.length > 0) return { ok: true, value: { kind: 'refused', violations } }
-  const accepted = commitSessionVersion(rt, paths, stored, file.value, {
-    text: copy.value,
-    message: commitMessage(slug, stored.text, copy.value),
+  const accepted = commitSessionVersion(rt, paths, stored, {
+    text,
+    message: commitMessage(slug, stored.text, text),
     via: 'edit',
     beforeCas
   })
@@ -255,7 +267,7 @@ const applySessionOnce = (
   if (stored === null) return unknownThread(slug)
   const version = toolVersion(stored, file.value, input)
   if (!version.ok) return version
-  return commitSessionVersion(rt, paths, stored, file.value, version.value)
+  return commitSessionVersion(rt, paths, stored, version.value)
 }
 
 const applyCommandOnce = (

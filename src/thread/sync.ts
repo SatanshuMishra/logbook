@@ -1,10 +1,8 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
-import path from 'node:path'
-import { formatNextIds, highestIds, parseDocument, stripHeaderLines, type NextIds } from '../doc/document.ts'
+import { stripHeaderLines } from '../doc/document.ts'
 import type { Runtime } from '../runtime/runtime.ts'
-import { durableWrite } from '../store/durable-write.ts'
-import { git, gitRun, gitTimed, type GitRun } from '../store/git.ts'
-import { workingCopyPath, type RepoPaths } from './paths.ts'
+import { git, gitRun, gitTimed } from '../store/git.ts'
+import { failureOf, headerOf, threeWay, withHeader, type Step } from './merge.ts'
+import type { RepoPaths } from './paths.ts'
 import {
   THREADS_REF,
   listSlugs,
@@ -15,16 +13,11 @@ import {
   threadsTip,
   writeTree
 } from './store.ts'
+import { readBaseText, readWorkingCopy, writeWorkingCopy } from './working-copy.ts'
 
 export type SyncResult = { fetched: boolean; merged: boolean; conflicts: string[]; pushed: boolean; error: string | null }
 
 export const FETCH_TIMEOUT_MS = 15000
-
-type Step<T> = { ok: true; value: T } | { ok: false; error: string }
-
-type Header = { updated: string | null; nextIds: NextIds | null }
-
-type Merged = { text: string; conflicted: boolean }
 
 type Chosen = { text: string | null; conflicted: boolean }
 
@@ -32,7 +25,7 @@ type Brought = { merged: boolean; conflicts: string[]; push: boolean }
 
 type TreeMerge = { files: Record<string, string>; conflicts: string[] }
 
-type StoredChange = { slug: string; old: string | null; next: string }
+type StoredChange = { slug: string; old: string | null; next: string; nextBlob: string }
 
 const REMOTE_THREADS_REF = 'refs/logbook/remotes/origin/threads'
 const FETCH_ARGS = [
@@ -57,11 +50,9 @@ const MISSING_REMOTE_REF = /couldn't find remote ref/
 const MISSING_OBJECT_PREFIX = '?'
 const ALIASES_FILE = 'aliases.json'
 const DOCUMENT_SUFFIX = '.md'
-const UPDATED_PREFIX = 'Updated: '
 const STORED_LABELS = ['local', 'base', 'origin'] as const
 const COPY_LABELS = ['working copy', 'stored before sync', 'stored after sync'] as const
 const MERGE_MESSAGE = 'sync: merge the threads of origin'
-const HIGHEST_CONFLICT_EXIT = 127
 
 const result = (fields: Partial<SyncResult>): SyncResult => ({
   fetched: false,
@@ -71,15 +62,6 @@ const result = (fields: Partial<SyncResult>): SyncResult => ({
   error: null,
   ...fields
 })
-
-const failureOf = (step: string, run: GitRun): string => {
-  const detail = run.stderr
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line !== '')
-    .join(' ')
-  return `${step} failed: ${detail === '' ? `git exited with code ${run.code}` : detail}`
-}
 
 const hasOrigin = (rt: Runtime, paths: RepoPaths): boolean => {
   const origin = git(rt, paths.root, ['config', '--get', 'remote.origin.url'])
@@ -141,83 +123,7 @@ const mergeBaseOf = (rt: Runtime, paths: RepoPaths, local: string, remote: strin
   return { ok: false, error: failureOf('merge-base', run) }
 }
 
-const headerOf = (text: string): Header => {
-  const parsed = parseDocument(text)
-  return { updated: parsed.updated, nextIds: parsed.nextIds }
-}
-
-const headerLines = (header: Header): string[] => [
-  ...(header.updated === null ? [] : [`${UPDATED_PREFIX}${header.updated}`]),
-  ...(header.nextIds === null ? [] : [formatNextIds(header.nextIds)])
-]
-
-const headerEnd = (lines: readonly string[]): number => {
-  const parsed = parseDocument(lines.join('\n'))
-  const firstHeading = parsed.sections[0]?.line ?? parsed.noteLine ?? lines.length + 1
-  return lines
-    .slice(0, firstHeading - 1)
-    .reduce((end, line, index) => (line.trim() === '' ? end : index + 1), 0)
-}
-
-const withHeader = (text: string, header: Header): string => {
-  const lines = stripHeaderLines(text).split('\n')
-  const at = headerEnd(lines)
-  return [...lines.slice(0, at), ...headerLines(header), ...lines.slice(at)].join('\n')
-}
-
-const idsOf = (text: string): NextIds => parseDocument(text).nextIds ?? highestIds(text)
-
-const larger = (left: NextIds, right: NextIds): NextIds => ({
-  c: Math.max(left.c, right.c),
-  D: Math.max(left.D, right.D),
-  R: Math.max(left.R, right.R),
-  S: Math.max(left.S, right.S)
-})
-
-const mergeFile = (
-  rt: Runtime,
-  paths: RepoPaths,
-  labels: readonly string[],
-  versions: readonly [string, string, string]
-): Step<Merged> => {
-  mkdirSync(paths.logbookDir, { recursive: true })
-  const dir = mkdtempSync(path.join(paths.logbookDir, 'sync-'))
-  try {
-    const files = versions.map((text, index) => {
-      const file = path.join(dir, `version-${index}`)
-      durableWrite(file, text, { log: rt.log })
-      return file
-    })
-    const run = gitRun(rt, paths.root, ['merge-file', '-p', ...labels.flatMap((label) => ['-L', label]), ...files])
-    if (run.code === 0) return { ok: true, value: { text: run.stdout, conflicted: false } }
-    if (run.code > 0 && run.code <= HIGHEST_CONFLICT_EXIT) return { ok: true, value: { text: run.stdout, conflicted: true } }
-    return { ok: false, error: failureOf('merge-file', run) }
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-}
-
 const kept = (text: string | null): Step<Chosen> => ({ ok: true, value: { text, conflicted: false } })
-
-const threeWay = (
-  rt: Runtime,
-  paths: RepoPaths,
-  labels: readonly string[],
-  sides: { ours: string; theirs: string; base: string },
-  header: Header
-): Step<Merged> => {
-  const merged = mergeFile(rt, paths, labels, [
-    withHeader(sides.ours, header),
-    sides.base,
-    withHeader(sides.theirs, header)
-  ])
-  if (!merged.ok) return merged
-  const settled = withHeader(merged.value.text, {
-    updated: rt.now(),
-    nextIds: larger(idsOf(sides.ours), idsOf(sides.theirs))
-  })
-  return { ok: true, value: { text: settled, conflicted: merged.value.conflicted } }
-}
 
 const mergeWithBase = (
   rt: Runtime,
@@ -318,48 +224,42 @@ const moveTo = (rt: Runtime, paths: RepoPaths, next: string, expected: string | 
   return moved.ok ? moved : { ok: false, error: moved.message }
 }
 
-const readCopy = (file: string): string | null => {
-  try {
-    return statSync(file).isFile() ? readFileSync(file, 'utf8') : null
-  } catch {
-    return null
-  }
-}
-
-const writeCopy = (rt: Runtime, file: string, text: string): void => {
-  mkdirSync(path.dirname(file), { recursive: true })
-  durableWrite(file, text, { log: rt.log })
-}
-
 const storedChanges = (rt: Runtime, paths: RepoPaths, before: string | null, after: string): StoredChange[] =>
   listSlugs(rt, paths, after).flatMap((slug) => {
-    const next = textAt(rt, paths, slug, after)
+    const next = readDocument(rt, paths, slug, after)
     const old = before === null ? null : textAt(rt, paths, slug, before)
-    return next === null || next === old ? [] : [{ slug, old, next }]
+    return next === null || next.text === old ? [] : [{ slug, old, next: next.text, nextBlob: next.blob }]
   })
 
+const copyBaseText = (rt: Runtime, paths: RepoPaths, base: string | null): string | null =>
+  base === null ? null : readBaseText(rt, paths, base)
+
+const writeCopy = (rt: Runtime, paths: RepoPaths, change: StoredChange, text: string): void => {
+  const written = writeWorkingCopy(rt, paths, change.slug, text, change.nextBlob)
+  if (!written.ok) rt.log({ level: 'warn', event: 'sync.working-copy-unwritten', slug: change.slug, reason: written.message })
+}
+
 const refreshCopy = (rt: Runtime, paths: RepoPaths, change: StoredChange): boolean => {
-  const file = workingCopyPath(paths, change.slug)
-  if (!file.ok) return false
-  const copy = readCopy(file.value)
-  if (copy === null) return false
-  if (stripHeaderLines(copy) === stripHeaderLines(change.old ?? '')) {
-    writeCopy(rt, file.value, change.next)
+  const copy = readWorkingCopy(paths, change.slug)
+  if (!copy.ok || copy.value.text === null) return false
+  const base = copyBaseText(rt, paths, copy.value.base) ?? change.old
+  if (stripHeaderLines(copy.value.text) === stripHeaderLines(base ?? '')) {
+    writeCopy(rt, paths, change, change.next)
     return false
   }
-  const header = headerOf(change.old ?? change.next)
+  const header = headerOf(base ?? change.next)
   const merged = threeWay(
     rt,
     paths,
     COPY_LABELS,
-    { ours: copy, theirs: change.next, base: change.old === null ? '' : withHeader(change.old, header) },
+    { ours: copy.value.text, theirs: change.next, base: base === null ? '' : withHeader(base, header) },
     header
   )
   if (!merged.ok) {
     rt.log({ level: 'warn', event: 'sync.working-copy-unmerged', slug: change.slug, reason: merged.error })
     return false
   }
-  writeCopy(rt, file.value, merged.value.text)
+  writeCopy(rt, paths, change, merged.value.text)
   return merged.value.conflicted
 }
 

@@ -141,6 +141,9 @@ export const workingCopyPath = (paths: RepoPaths, slug: string): Ok<string> | Re
 export const holdPath = (paths: RepoPaths, slug: string): Ok<string> | Refusal =>
   built(checkSlug('slug', slug), () => path.join(paths.logbookDir, 'holds', `${slug}.json`))
 
+export const copyBasePath = (paths: RepoPaths, slug: string): Ok<string> | Refusal =>
+  built(checkSlug('slug', slug), () => path.join(paths.logbookDir, 'bases', slug))
+
 export const inflightDir = (paths: RepoPaths, slug: string): Ok<string> | Refusal =>
   built(checkSlug('slug', slug), () => path.join(paths.logbookDir, 'inflight', slug))
 
