@@ -1,5 +1,6 @@
 import { ulid as generateUlid } from 'ulid'
 import { createStderrLogger } from './logger.ts'
+import { PROJECT_DIR_ENV_KEY, RUN_WRITER_PREFIX } from '../thread/paths.ts'
 
 export type Writer = { kind: 'session' | 'command'; name: string }
 
@@ -52,12 +53,11 @@ export const productionRuntime = (): Runtime => {
   }
 }
 
-const PROJECT_DIR_ENV_KEY = 'CLAUDE_PROJECT_DIR'
-const RUN_WRITER_PREFIX = 'run:'
-
 export type CommandRuntimeInput = { repo: string; writer?: string }
 
 const DECISIONS_READER = 'decisions'
+
+export const actsAsSession = (rt: Runtime): boolean => rt.writer.name === rt.sessionId
 
 export const commandRuntime = (input: CommandRuntimeInput): Runtime => {
   const env = Object.freeze({ ...process.env, [PROJECT_DIR_ENV_KEY]: input.repo })

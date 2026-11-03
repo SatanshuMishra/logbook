@@ -2,10 +2,10 @@ import path from 'node:path'
 import { commandRuntime } from '../runtime/runtime.ts'
 import type { Refusal } from '../schema/declare.ts'
 import { refusalPayload } from '../server/errors.ts'
-import { runTool, type ToolOutcome, type ToolSpec } from '../server/register.ts'
+import { crashMessage, runTool, type ToolOutcome, type ToolSpec } from '../server/register.ts'
 import { TOOL_SPECS } from '../server/tools/index.ts'
 import { readDecisionsInForce } from '../thread/decisions.ts'
-import { findRepository, SESSION_ID_PATTERN, THREAD_SLUG_PATTERN } from '../thread/paths.ts'
+import { findRepository, RUN_WRITER_PREFIX, SESSION_ID_PATTERN, THREAD_SLUG_PATTERN } from '../thread/paths.ts'
 
 export type CommandResult = { stdout: string[]; stderr: string[]; exitCode: 0 | 1 | 2 }
 
@@ -29,7 +29,6 @@ const FLAG_NAMES: readonly FlagName[] = ['repo', 'writer', 'args', 'thread']
 const WRITE_FLAGS: readonly FlagName[] = ['repo', 'writer', 'args']
 const DECISIONS_FLAGS: readonly FlagName[] = ['repo', 'thread']
 const FLAG_PREFIX = '--'
-const RUN_WRITER_PREFIX = 'run:'
 const USAGE_PREFIX = 'logbook: '
 const USAGE_HINT = `usage: logbook <${WRITE_COMMANDS.join('|')}> --repo <root> --writer <name> --args <json>, or logbook decisions --repo <root> --thread <slug>`
 
@@ -64,26 +63,13 @@ const commandNamed = (name: string): CommandName | null => COMMAND_NAMES.find((c
 const flagNamed = (token: string): FlagName | null =>
   token.startsWith(FLAG_PREFIX) ? (FLAG_NAMES.find((flag) => `${FLAG_PREFIX}${flag}` === token) ?? null) : null
 
-const flagsTaken = (command: CommandName): readonly FlagName[] => {
-  switch (command) {
-    case 'update_thread':
-    case 'record_decision':
-    case 'park_thread':
-      return WRITE_FLAGS
-    case 'decisions':
-      return DECISIONS_FLAGS
-    default:
-      throw new Error(`flagsTaken: unknown command ${JSON.stringify(command as unknown)}`)
-  }
-}
-
 const readFlags = (command: CommandName, tokens: readonly string[], flags: Flags = {}): Parsed<Flags> => {
   const [token, value, ...rest] = tokens
   if (token === undefined) return { ok: true, value: flags }
   if (!token.startsWith(FLAG_PREFIX)) return failed(`unexpected argument ${JSON.stringify(token)}; every argument after the command is a flag and its value`)
   const flag = flagNamed(token)
   if (flag === null) return failed(`unknown flag ${JSON.stringify(token)}`)
-  if (!flagsTaken(command).includes(flag)) return failed(`${command} does not take ${token}`)
+  if (!COMMAND_TABLE[command].flags.includes(flag)) return failed(`${command} does not take ${token}`)
   if (flags[flag] !== undefined) return failed(`${token} was given more than once`)
   if (value === undefined || flagNamed(value) !== null) return failed(`${token} needs a value after it`)
   if (value === '') return failed(`${token} was given an empty value`)
@@ -146,6 +132,20 @@ const decisionsInvocation = (flags: Flags): Parsed<Invocation> => {
   return { ok: true, value: { kind: 'decisions', repo: path.resolve(repo.value), thread: thread.value } }
 }
 
+type CommandEntry = { flags: readonly FlagName[]; invocation: (flags: Flags) => Parsed<Invocation> }
+
+const writeEntry = (tool: WriteCommand): CommandEntry => ({
+  flags: WRITE_FLAGS,
+  invocation: (flags) => writeInvocation(tool, flags)
+})
+
+const COMMAND_TABLE: Readonly<Record<CommandName, CommandEntry>> = {
+  update_thread: writeEntry('update_thread'),
+  record_decision: writeEntry('record_decision'),
+  park_thread: writeEntry('park_thread'),
+  decisions: { flags: DECISIONS_FLAGS, invocation: decisionsInvocation }
+}
+
 export const parseCommandLine = (argv: readonly string[]): Parsed<Invocation> => {
   const [name, ...tokens] = argv
   if (name === undefined) return failed('no command given')
@@ -153,16 +153,7 @@ export const parseCommandLine = (argv: readonly string[]): Parsed<Invocation> =>
   if (command === null) return failed(`unknown command ${JSON.stringify(name)}`)
   const flags = readFlags(command, tokens)
   if (!flags.ok) return flags
-  switch (command) {
-    case 'update_thread':
-    case 'record_decision':
-    case 'park_thread':
-      return writeInvocation(command, flags.value)
-    case 'decisions':
-      return decisionsInvocation(flags.value)
-    default:
-      throw new Error(`parseCommandLine: unknown command ${JSON.stringify(command as unknown)}`)
-  }
+  return COMMAND_TABLE[command].invocation(flags.value)
 }
 
 const specNamed = (tool: WriteCommand): ToolSpec<unknown, unknown> => {
@@ -216,6 +207,6 @@ export const runCommandLine = async (argv: readonly string[]): Promise<CommandRe
   try {
     return await runInvocation(parsed.value)
   } catch (error) {
-    return crashed(commandOf(parsed.value), error instanceof Error ? error.message : String(error))
+    return crashed(commandOf(parsed.value), crashMessage(error))
   }
 }

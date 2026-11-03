@@ -212,6 +212,14 @@ test('old-model.nothing-imports-a-removed-module', () => {
   assert.deepEqual(removedTargets, [], removedTargets.join('\n'))
 })
 
+test('old-model.plugin-manifest-holds-no-user-config', () => {
+  const plugin = JSON.parse(readFileSync(join(REPO_ROOT, '.claude-plugin', 'plugin.json'), 'utf8')) as Record<
+    string,
+    unknown
+  >
+  assert.equal('userConfig' in plugin, false, '.claude-plugin/plugin.json still holds userConfig')
+})
+
 test('old-model.mutants-name-the-new-files', async () => {
   const specifier = '../../scripts/seeded-mutants.mjs'
   const script = (await import(specifier)) as { MUTANTS: readonly { file: string }[] }

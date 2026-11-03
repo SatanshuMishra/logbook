@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { runCommandLine } from '../src/cli/main.ts'
+import { runCommandLine } from '../src/command/main.ts'
 import { NODE_FLOOR_MAJOR, NODE_FLOOR_MINOR, nodeFloorFailure } from '../src/runtime/node-floor.ts'
 import { writeAllSync } from '../src/runtime/write-all.ts'
 import { refusalPayload } from '../src/server/errors.ts'

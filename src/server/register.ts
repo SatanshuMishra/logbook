@@ -87,7 +87,7 @@ const shapeKeysOf = (schema: z.ZodObject<z.ZodRawShape>): readonly string[] | nu
   return Object.keys(rawShape as Record<string, unknown>)
 }
 
-const crashMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+export const crashMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
 const logCrash = (rt: Runtime, toolName: string, error: unknown): void => {
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error)

@@ -26,6 +26,8 @@ const REPO_INFRA_EXACT_FILES = new Set([
   'NOTICE'
 ])
 
+const NEW_TREE_LAUNCHERS = new Set(['bin/logbook'])
+
 const NEW_TREE_ROOTS = new Set(['bin', 'hooks', 'metrics', 'skills', 'src', 'test'])
 const NEW_TREE_SOURCE_EXTENSIONS = new Set(['.ts', '.json', '.md'])
 const LEGACY_JS_EXTENSIONS = new Set(['.mjs', '.cjs', '.js'])
@@ -42,6 +44,9 @@ export const classify = (filePath: string): PathClassification => {
   }
   if (REPO_INFRA_EXACT_FILES.has(filePath)) {
     return { path: filePath, bucket: 'repository-infrastructure' }
+  }
+  if (NEW_TREE_LAUNCHERS.has(filePath)) {
+    return { path: filePath, bucket: 'new-tree' }
   }
   const segments = filePath.split('/')
   const firstSegment = segments[0]
