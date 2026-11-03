@@ -1,6 +1,6 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: active
-Updated: 2026-11-03T22:23:42.258Z
+Updated: 2026-11-03T22:23:45.094Z
 Next ids: c6 D3 R2 S1
 
 ## Goal
@@ -45,3 +45,5 @@ Needs: D1, D2, R1.
 - Run home: ~/.mitosis/logbook/cli-and-run-writers/
 - Drive spec: /Users/satanshumishra/Documents/DevLabs/pipeline/docs/specs/runs-complete-unattended.decisions.md
 - Diagnosis: ~/.claude/projects/-Users-satanshumishra-Documents-DevLabs-pipeline/memory/run-halts-root-causes.md
+- MSP worktree: ~/.mitosis/runs/logbook/cli-and-run-writers/trees/cli-and-run-writers
+- Review files: ~/.mitosis/logbook/cli-and-run-writers/review/
