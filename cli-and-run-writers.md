@@ -1,6 +1,6 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: active
-Updated: 2026-11-03T22:26:26.205Z
+Updated: 2026-11-03T22:34:52.198Z
 Next ids: c6 D3 R2 S1
 
 ## Goal
@@ -17,11 +17,11 @@ A process with no Claude Code session, such as the pipeline's background drive, 
 
 ## Where things stand
 
-The build committed all five Lanes on mitosis/cli-and-run-writers (base 97f2e838) and the glossary terms are committed on top (head f595cdd1), unpushed because the gate judged one property weak: git.network-code-holds-no-wall-clock-timer is a source scan no mutant can fail. The round 1 suite passes 555 of 557; its two failures are old-model tests that still list src/cli as removed. Lint fails on the census, which has no rule for bin/logbook, and on home isolation, which only re-runs that suite. The release Step also deleted the userConfig assertion with the old version test. Planned fixes: drop src/cli from the removed paths, classify bin/logbook by exact path as a new-tree launcher, and restore the userConfig check. Reconcile lists src/server/tools/sync_ledger.ts as declared but unwritten; its handler never took a context argument, and this shows as a pull-request trade-off without blocking the ship. code-reviewer, security-reviewer and conformance-auditor are reviewing round 1.
+The build committed all five Lanes on mitosis/cli-and-run-writers (base 97f2e838) and the glossary terms are committed on top (head f595cdd1), unpushed because the gate judged one property weak: git.network-code-holds-no-wall-clock-timer is a source scan no mutant can fail. Round 1 review found every testable criterion met (5.11 not applicable) and raised 13 candidates in review/round-1/cli-and-run-writers.findings.json: two HIGH (src/cli still on the old-model removed list; the lint census has no rule for bin/logbook), one MEDIUM (a session-id command park leaves the hold, against the spec's assumption that it acts as that session), and LOW advisories (copy-base damage treated as no base, unchecked writer names in the trailer, the dropped userConfig guard, a loosened sync assertion, duplicated constants, the weak gate property). Reconcile lists src/server/tools/sync_ledger.ts as declared but unwritten; its handler never took a context argument, and this shows as a pull-request trade-off without blocking the ship. The validator is judging the candidates.
 
 ## Next step
 
-When the three round 1 reviewers finish, run pipeline candidates on their replies, the validator, verdict, then the fix pass with the planned fixes, keeping every fix off the locked test files.
+When the validator finishes, save its verdicts, run pipeline record, verdict and outcome, then fix every confirmed finding on the MSP branch, keeping every fix off the locked test files.
 
 Needs: D1, D2, R1.
 
