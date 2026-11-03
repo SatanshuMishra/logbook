@@ -1,6 +1,6 @@
 # cli-and-run-writers: Logbook command line and run writers
-Status: active
-Updated: 2026-11-03T22:57:23.390Z
+Status: parked
+Updated: 2026-11-03T22:57:27.305Z
 Next ids: c6 D4 R2 S1
 
 ## Goal
@@ -21,9 +21,9 @@ Pull request 305 (mitosis/cli-and-run-writers at a523570a into feat/cli-and-run-
 
 ## Next step
 
-Run SHIP=1 ~/.mitosis/logbook/cli-and-run-writers/run.zsh --resume --proven-head cli-and-run-writers=a523570a, then open the pull request with mitosis's title and body through GitHub MCP, assign it, post review/cli-and-run-writers.comment.md, bind it and turn on Auto-Fix.
+The owner turns on Auto-Fix for pull request 305 and merges it into feat/cli-and-run-writers; then the owner says the MSP pull requests merged, which starts Integration: lighthouse tests feat/cli-and-run-writers and opens the FEATURE pull request into main.
 
-Needs: D1, D2, D3, R1.
+Needs: D3, R1.
 
 ## Decisions in force
 
