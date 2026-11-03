@@ -1,6 +1,8 @@
 import { ulid as generateUlid } from 'ulid'
 import { createStderrLogger } from './logger.ts'
 
+export type Writer = { kind: 'session' | 'command'; name: string }
+
 export type Runtime = {
   now: () => string
   ulid: () => string
@@ -8,6 +10,7 @@ export type Runtime = {
   cwd: string | null
   log: (record: Record<string, unknown>) => void
   sessionId: string
+  writer: Writer
   parentProcess: number | null
 }
 
@@ -44,6 +47,7 @@ export const productionRuntime = (): Runtime => {
     cwd,
     log,
     sessionId,
+    writer: { kind: 'session', name: sessionId },
     parentProcess: process.ppid
   }
 }

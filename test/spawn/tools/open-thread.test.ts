@@ -137,7 +137,10 @@ test('open_thread.spawn.contract', async () => {
     assert.ok(lines.includes('- [ ] c2 Errors show'), `c2 must be stored, got:\n${stored}`)
     assert.ok(lines.includes('- Spec: docs/specs/login.md'), `the detail line must be stored, got:\n${stored}`)
     assert.ok(lines.includes('Next ids: c3 D1 R1 S1'), `the next ids must follow the criteria, got:\n${stored}`)
-    assert.equal(mustGit(fixture.repo, ['log', '-1', '--format=%B', THREADS_REF]).trim(), 'open_thread fix-login: opened')
+    assert.equal(
+      mustGit(fixture.repo, ['log', '-1', '--format=%B', THREADS_REF]).trim(),
+      'open_thread fix-login: opened\n\nWriter: s1'
+    )
     assert.equal(readFileSync(structured.path, 'utf8'), stored)
 
     const hold = JSON.parse(readFileSync(holdFile(fixture.repo, 'fix-login'), 'utf8')) as Record<string, unknown>

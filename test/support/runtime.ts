@@ -1,4 +1,4 @@
-import type { Runtime } from '../../src/runtime/runtime.ts'
+import type { Runtime, Writer } from '../../src/runtime/runtime.ts'
 
 const CROCKFORD_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 const ULID_TIME_PREFIX = '01ARZ3NDEK'
@@ -13,6 +13,7 @@ export type TestRuntimeOptions = {
   env?: Readonly<Record<string, string | undefined>>
   cwd?: string | null
   sessionId?: string
+  writer?: Writer
   parentProcess?: number | null
 }
 
@@ -42,13 +43,15 @@ export const testRuntime = (opts: TestRuntimeOptions = {}): Runtime => {
     ulidSeq += 1
     return `${ULID_TIME_PREFIX}${suffix}`
   }
+  const sessionId = opts.sessionId ?? DEFAULT_SESSION_ID
   return {
     now,
     ulid,
     env,
     cwd: opts.cwd !== undefined ? opts.cwd : '/test-cwd',
     log: () => {},
-    sessionId: opts.sessionId ?? DEFAULT_SESSION_ID,
+    sessionId,
+    writer: opts.writer ?? { kind: 'session', name: sessionId },
     parentProcess: opts.parentProcess ?? null
   }
 }

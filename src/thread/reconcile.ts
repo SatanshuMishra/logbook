@@ -12,14 +12,14 @@ import {
   type NextIds
 } from '../doc/document.ts'
 import { recordEvent } from '../metrics/record.ts'
-import type { Runtime } from '../runtime/runtime.ts'
+import type { Runtime, Writer } from '../runtime/runtime.ts'
 import type { Ok, Refusal } from '../schema/declare.ts'
 import { durableWrite } from '../store/durable-write.ts'
 import { git, startBackgroundPush } from '../store/git.ts'
 import { foldHold, readHold } from './holds.ts'
 import { sweepMarkers } from './inflight.ts'
 import { workingCopyPath, type RepoPaths } from './paths.ts'
-import { THREADS_REF, commitDocuments, readDocument, type StoredDocument, type ThreadMoved } from './store.ts'
+import { commitDocuments, readDocument, type StoredDocument, type ThreadMoved } from './store.ts'
 
 type ChildProcess = ReturnType<typeof startBackgroundPush>
 
@@ -69,15 +69,6 @@ const notAFile = (file: string): Refusal => ({
   message: `the working copy ${file} is not a readable file, so nothing was committed; move whatever is at that path aside so logbook can write the document there again`
 })
 
-const threadKeptMoving = (slug: string): Refusal => ({
-  ok: false,
-  field: THREADS_REF,
-  accepted: 'a thread that no other commit changes while its new version is committed',
-  example: 'call the tool again',
-  retryable: true,
-  message: `the thread ${slug} changed again while its new version was being committed, so nothing was committed`
-})
-
 export const violationsRefusal = (file: string, violations: Violation[]): Refusal => ({
   ok: false,
   field: 'document',
@@ -93,11 +84,11 @@ export const violationsRefusal = (file: string, violations: Violation[]): Refusa
 const isThreadMoved = <T>(result: Ok<T> | Refusal | ThreadMoved): result is ThreadMoved =>
   !result.ok && 'cause' in result && result.cause === 'thread-moved'
 
-const onceMore = <T>(slug: string, attempt: () => Ok<T> | Refusal | ThreadMoved): Ok<T> | Refusal => {
-  const first = attempt()
-  if (!isThreadMoved(first)) return first
-  const second = attempt()
-  return isThreadMoved(second) ? threadKeptMoving(slug) : second
+const untilSettled = <T>(attempt: () => Ok<T> | Refusal | ThreadMoved): Ok<T> | Refusal => {
+  for (;;) {
+    const result = attempt()
+    if (!isThreadMoved(result)) return result
+  }
 }
 
 const readWorkingCopy = (file: string): Ok<string | null> | Refusal => {
@@ -127,10 +118,9 @@ const commitVersion = (
   rt: Runtime,
   paths: RepoPaths,
   stored: StoredDocument,
-  file: string,
-  version: Version
+  version: Version,
+  acceptedAt: string
 ): Ok<Accepted> | Refusal | ThreadMoved => {
-  const acceptedAt = rt.now()
   const normalised = normaliseDocument(version.text, { acceptedAt, previousNextIds: previousNextIds(stored.text) })
   const committed = commitDocuments(rt, paths, {
     changes: [{ slug: stored.slug, text: normalised, expectedBlob: stored.blob }],
@@ -139,12 +129,35 @@ const commitVersion = (
   })
   if (!committed.ok) return committed
   recordEvent(rt, paths, stored.slug, 'doc.commit', { via: version.via, ...itemChanges(stored.text, normalised) })
-  writeWorkingCopy(rt, file, normalised)
-  settleHold(rt, paths, stored.slug, acceptedAt)
   return {
     ok: true,
     value: { commit: committed.value.commit, text: normalised, removed: removedIds(stored.text, normalised) }
   }
+}
+
+const followSessionCommit = (
+  rt: Runtime,
+  paths: RepoPaths,
+  slug: string,
+  file: string,
+  acceptedAt: string,
+  text: string
+): void => {
+  writeWorkingCopy(rt, file, text)
+  settleHold(rt, paths, slug, acceptedAt)
+}
+
+const commitSessionVersion = (
+  rt: Runtime,
+  paths: RepoPaths,
+  stored: StoredDocument,
+  file: string,
+  version: Version
+): Ok<Accepted> | Refusal | ThreadMoved => {
+  const acceptedAt = rt.now()
+  const committed = commitVersion(rt, paths, stored, version, acceptedAt)
+  if (committed.ok) followSessionCommit(rt, paths, stored.slug, file, acceptedAt, committed.value.text)
+  return committed
 }
 
 const settleOnce = (
@@ -166,7 +179,7 @@ const settleOnce = (
   if (stripHeaderLines(copy.value) === stripHeaderLines(stored.text)) return { ok: true, value: { kind: 'unchanged' } }
   const violations = checkVersion(stored.text, copy.value, slug)
   if (violations.length > 0) return { ok: true, value: { kind: 'refused', violations } }
-  const accepted = commitVersion(rt, paths, stored, file.value, {
+  const accepted = commitSessionVersion(rt, paths, stored, file.value, {
     text: copy.value,
     message: commitMessage(slug, stored.text, copy.value),
     via: 'edit',
@@ -180,7 +193,7 @@ const settleWorkingCopy = (
   paths: RepoPaths,
   slug: string,
   beforeCas: (() => void) | undefined
-): Ok<Settled> | Refusal => onceMore(slug, () => settleOnce(rt, paths, slug, beforeCas))
+): Ok<Settled> | Refusal => untilSettled(() => settleOnce(rt, paths, slug, beforeCas))
 
 export const startPush = (rt: Runtime, paths: RepoPaths): ChildProcess | null => {
   const origin = git(rt, paths.root, ['config', '--get', 'remote.origin.url'])
@@ -206,7 +219,28 @@ const withUpdateNote = (text: string, noteLines: readonly string[]): string =>
 const toolMessage = (tool: string, slug: string, summary: string, bodyLines: readonly string[]): string =>
   bodyLines.length === 0 ? `${tool} ${slug}: ${summary}` : [`${tool} ${slug}: ${summary}`, '', ...bodyLines].join('\n')
 
-const applyOnce = (
+const toolVersion = (
+  stored: StoredDocument,
+  file: string,
+  input: ToolChangeInput
+): Ok<Version> | Refusal => {
+  const changed = input.change(stored.text)
+  if (!changed.ok) return changed.refusal
+  const noted = withUpdateNote(changed.text, [changed.summary, ...changed.noteLines])
+  const violations = checkVersion(stored.text, noted, stored.slug)
+  if (violations.length > 0) return violationsRefusal(file, violations)
+  return {
+    ok: true,
+    value: {
+      text: noted,
+      message: toolMessage(input.tool, stored.slug, changed.summary, [...changed.details, ...changed.noteLines]),
+      via: input.tool,
+      beforeCas: input.beforeCas
+    }
+  }
+}
+
+const applySessionOnce = (
   rt: Runtime,
   paths: RepoPaths,
   slug: string,
@@ -219,17 +253,51 @@ const applyOnce = (
   if (pending.value.kind === 'refused') return violationsRefusal(file.value, pending.value.violations)
   const stored = readDocument(rt, paths, slug)
   if (stored === null) return unknownThread(slug)
-  const changed = input.change(stored.text)
-  if (!changed.ok) return changed.refusal
-  const noted = withUpdateNote(changed.text, [changed.summary, ...changed.noteLines])
-  const violations = checkVersion(stored.text, noted, slug)
-  if (violations.length > 0) return violationsRefusal(file.value, violations)
-  return commitVersion(rt, paths, stored, file.value, {
-    text: noted,
-    message: toolMessage(input.tool, slug, changed.summary, [...changed.details, ...changed.noteLines]),
-    via: input.tool,
-    beforeCas: input.beforeCas
-  })
+  const version = toolVersion(stored, file.value, input)
+  if (!version.ok) return version
+  return commitSessionVersion(rt, paths, stored, file.value, version.value)
+}
+
+const applyCommandOnce = (
+  rt: Runtime,
+  paths: RepoPaths,
+  slug: string,
+  input: ToolChangeInput
+): Ok<Accepted> | Refusal | ThreadMoved => {
+  const file = workingCopyPath(paths, slug)
+  if (!file.ok) return file
+  const stored = readDocument(rt, paths, slug)
+  if (stored === null) return unknownThread(slug)
+  const version = toolVersion(stored, file.value, input)
+  if (!version.ok) return version
+  return commitVersion(rt, paths, stored, version.value, rt.now())
+}
+
+type ApplyOnce = (
+  rt: Runtime,
+  paths: RepoPaths,
+  slug: string,
+  input: ToolChangeInput
+) => Ok<Accepted> | Refusal | ThreadMoved
+
+const unknownWriter = (kind: unknown): Refusal => ({
+  ok: false,
+  field: 'writer',
+  accepted: "a writer whose kind is 'session' or 'command'",
+  example: 'command',
+  retryable: false,
+  message: `the writer kind ${JSON.stringify(kind)} is not one logbook knows, so nothing was committed`
+})
+
+const applyOnceFor = (writer: Writer): Ok<ApplyOnce> | Refusal => {
+  switch (writer.kind) {
+    case 'session':
+      return { ok: true, value: applySessionOnce }
+    case 'command':
+      return { ok: true, value: applyCommandOnce }
+    default:
+      return unknownWriter((writer as { kind: unknown }).kind)
+  }
 }
 
 export const applyToolChange = (
@@ -238,6 +306,8 @@ export const applyToolChange = (
   slug: string,
   input: ToolChangeInput
 ): Ok<ToolChangeResult> | Refusal => {
-  const applied = onceMore(slug, () => applyOnce(rt, paths, slug, input))
+  const applyOnce = applyOnceFor(rt.writer)
+  if (!applyOnce.ok) return applyOnce
+  const applied = untilSettled(() => applyOnce.value(rt, paths, slug, input))
   return applied.ok ? { ok: true, value: { ...applied.value, push: startPush(rt, paths) } } : applied
 }

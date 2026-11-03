@@ -45,7 +45,8 @@ const nonEmptyString = (value: unknown): string | null => (typeof value === 'str
 const sessionRuntime = (base: Runtime, sessionId: string): Runtime => ({
   ...base,
   env: { ...base.env, CLAUDE_CODE_SESSION_ID: sessionId },
-  sessionId
+  sessionId,
+  writer: { kind: 'session', name: sessionId }
 })
 
 const hookInputFor = (parsed: unknown): HookInput | null => {
