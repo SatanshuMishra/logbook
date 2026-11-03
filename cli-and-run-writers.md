@@ -1,6 +1,6 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: active
-Updated: 2026-11-03T22:47:37.813Z
+Updated: 2026-11-03T22:51:58.197Z
 Next ids: c6 D3 R2 S1
 
 ## Goal
@@ -17,11 +17,11 @@ A process with no Claude Code session, such as the pipeline's background drive, 
 
 ## Where things stand
 
-mitosis/cli-and-run-writers (base 97f2e838) holds the five Lanes, the glossary terms and the round 1 fix pass (head 779e6872), unpushed; the gate's one weak property is a source scan no mutant can fail. The fix pass resolved round 1's blockers C3 (a session-id command park now releases its hold through actsAsSession, proved by test/spawn/cli/session-writer-hold.test.ts) and U1 (the command module moved to src/command), and advisories C1 and C4 to C8, and classified bin/logbook in the cutover census as a recorded assumption. Round 2's suite passes 560 of 560 at 779e6872; its standard checks raised one LOW sync-io note on a test file. Lint, code-reviewer and security-reviewer are running on round 2. Reconcile will list src/server/tools/sync_ledger.ts as declared but unwritten, a pull-request trade-off that does not block the ship.
+mitosis/cli-and-run-writers (base 97f2e838) holds the five Lanes, the glossary terms and the round 1 fix pass (head 779e6872), unpushed; the gate's one weak property is a source scan no mutant can fail. The fix pass resolved round 1's blockers C3 (a session-id command park now releases its hold through actsAsSession, proved by test/spawn/cli/session-writer-hold.test.ts) and U1 (the command module moved to src/command), and advisories C1 and C4 to C8, and classified bin/logbook in the cutover census as a recorded assumption. At 779e6872 the suite passes 560 of 560, lint 47 of 47, and both round 2 reviewers report no findings; pipeline release-check passes for logbook 0.19.0. The round 2 validator is judging two candidates: carried blocker P1 (the hold, now fixed) and the LOW sync-io note on a test file. Reconcile will list src/server/tools/sync_ledger.ts as declared but unwritten, a pull-request trade-off that does not block the ship.
 
 ## Next step
 
-When the round 2 reviewers and lint finish, collect findings, run candidates, the validator if any candidate, record and verdict; on green, ship.
+When the round 2 validator finishes, record its verdicts and run verdict and outcome; on green, run comment, promote and propose, record the ship boundary, run SHIP=1 run.zsh --resume --proven-head cli-and-run-writers=779e6872, and open the pull request through GitHub MCP.
 
 Needs: D1, D2, R1.
 
