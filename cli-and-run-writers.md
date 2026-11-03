@@ -1,6 +1,6 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: active
-Updated: 2026-11-03T22:55:27.090Z
+Updated: 2026-11-03T22:57:18.861Z
 Next ids: c6 D4 R2 S1
 
 ## Goal
@@ -9,10 +9,10 @@ A process with no Claude Code session, such as the pipeline's background drive, 
 
 ## Done when
 
-- [ ] c1 The logbook command writes update_thread, record_decision and park_thread through each tool's own handler and reads decisions in force, with the exits and output lines the shared contract states.
-- [ ] c2 A command write is never blocked by and never discards a session's pending or refused working-copy edit, and neither side loses the other's writes.
-- [ ] c3 Compare-and-swap retries carry no count cap, and fetch and push carry no wall-clock limit, with git run non-interactively and with dead-peer detection.
-- [ ] c4 Every commit names its writer, run:<slug> or the session id.
+- [x] c1 The logbook command writes update_thread, record_decision and park_thread through each tool's own handler and reads decisions in force, with the exits and output lines the shared contract states. evidence: the 15 command.* acceptance tests in test/spawn/cli/logbook-command.test.ts pass at a523570a, and the conformance auditor judged 5.1 to 5.4 MET
+- [x] c2 A command write is never blocked by and never discards a session's pending or refused working-copy edit, and neither side loses the other's writes. evidence: writers.* tests for 5.5, 5.6 and command.run-and-session-write-one-thread-together pass, conformance auditor MET on 5.5, 5.6 and 5.12
+- [x] c3 Compare-and-swap retries carry no count cap, and fetch and push carry no wall-clock limit, with git run non-interactively and with dead-peer detection. evidence: writers.commit-lands-after-another-thread-moves-the-ref-25-times and the five git.* tests pass; conformance auditor MET on 5.7 and 5.8
+- [x] c4 Every commit names its writer, run:<slug> or the session id. evidence: the three writers.* trailer tests for 5.9 pass, and every command test asserts the Writer: line
 - [ ] c5 The pull request is open, bound with the ccd_pr tools, with Auto-Fix on, and the logbook version bumped.
 
 ## Where things stand
