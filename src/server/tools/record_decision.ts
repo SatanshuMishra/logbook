@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { LETTER_SECTION, parseDocument } from '../../doc/document.ts'
+import { decisionsInForce } from '../../doc/document.ts'
 import { addItem, oneLine, removeItem } from '../../doc/render.ts'
 import type { Runtime } from '../../runtime/runtime.ts'
 import type { Ok, Refusal } from '../../schema/declare.ts'
@@ -107,12 +107,8 @@ const locate = (rt: Runtime): Ok<RepoPaths> | Refusal => {
   return dir === '' ? noWorkingDirectory() : findRepository(rt, dir)
 }
 
-const decisionsInForce = (text: string): ReadonlySet<string> =>
-  new Set(
-    parseDocument(text)
-      .items.filter((item) => item.letter === 'D' && item.section === LETTER_SECTION.D)
-      .map((item) => item.id)
-  )
+const decisionIdsInForce = (text: string): ReadonlySet<string> =>
+  new Set(decisionsInForce(text).map((item) => item.id))
 
 const optionLine = (option: string, reason: string | undefined): string =>
   reason === undefined ? `Option: ${oneLine(option)}` : `Option: ${oneLine(option)} - ${oneLine(reason)}`
@@ -134,7 +130,7 @@ const withoutSuperseded = (text: string, ids: readonly string[], by: string): Re
 
 const recordIn = (text: string, input: RecordDecisionInput): Recorded => {
   const supersedes = input.supersedes ?? []
-  const inForce = decisionsInForce(text)
+  const inForce = decisionIdsInForce(text)
   const missing = supersedes.findIndex((id) => !inForce.has(id))
   const missingId = supersedes[missing]
   if (missingId !== undefined) return { ok: false, refusal: notInForce(missing, missingId) }
@@ -166,7 +162,7 @@ export const recordDecisionTool: ToolSpec<RecordDecisionInput, RecordDecisionOut
   input: RecordDecisionInputSchema,
   output: RecordDecisionOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  handler: async (rt, _ctx, input) => {
+  handler: async (rt, input) => {
     const paths = locate(rt)
     if (!paths.ok) return { ok: false, refusal: paths }
     const slug = resolveThreadId(rt, paths.value, input.thread_id)

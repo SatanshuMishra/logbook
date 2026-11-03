@@ -51,3 +51,27 @@ export const productionRuntime = (): Runtime => {
     parentProcess: process.ppid
   }
 }
+
+const PROJECT_DIR_ENV_KEY = 'CLAUDE_PROJECT_DIR'
+const RUN_WRITER_PREFIX = 'run:'
+
+export type CommandRuntimeInput = { repo: string; writer?: string }
+
+const DECISIONS_READER = 'decisions'
+
+export const commandRuntime = (input: CommandRuntimeInput): Runtime => {
+  const env = Object.freeze({ ...process.env, [PROJECT_DIR_ENV_KEY]: input.repo })
+  const writerName = input.writer ?? DECISIONS_READER
+  const sessionId =
+    input.writer === undefined || input.writer.startsWith(RUN_WRITER_PREFIX) ? generateUlid() : input.writer
+  return {
+    now: () => new Date().toISOString(),
+    ulid: () => generateUlid(),
+    env,
+    cwd: input.repo,
+    log: createStderrLogger(env),
+    sessionId,
+    writer: { kind: 'command', name: writerName },
+    parentProcess: process.ppid
+  }
+}

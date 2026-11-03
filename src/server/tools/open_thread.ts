@@ -99,7 +99,7 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
   input: OpenThreadInputSchema,
   output: OpenThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  handler: async (rt, _ctx, input) => {
+  handler: async (rt, input) => {
     const paths = locate(rt)
     if (!paths.ok) return { ok: false, refusal: paths }
     const file = workingCopyPath(paths.value, input.slug)

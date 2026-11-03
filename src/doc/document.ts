@@ -220,7 +220,10 @@ export const parseDocument = (text: string): ParsedDocument => {
   }
 }
 
-export const formatNextIds = (ids: NextIds): string => `${NEXT_IDS_PREFIX} c${ids.c} D${ids.D} R${ids.R} S${ids.S}`
+export const decisionsInForce = (text: string): Item[] =>
+  parseDocument(text).items.filter((item) => item.letter === 'D' && item.section === LETTER_SECTION.D)
+
+export const formatNextIds =(ids: NextIds): string => `${NEXT_IDS_PREFIX} c${ids.c} D${ids.D} R${ids.R} S${ids.S}`
 
 export const highestIds = (text: string): NextIds => highestOf(parseDocument(text).items)
 
