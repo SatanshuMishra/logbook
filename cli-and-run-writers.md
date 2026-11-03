@@ -1,6 +1,6 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: active
-Updated: 2026-11-03T22:55:25.693Z
+Updated: 2026-11-03T22:55:27.090Z
 Next ids: c6 D4 R2 S1
 
 ## Goal
@@ -21,9 +21,9 @@ mitosis/cli-and-run-writers (base 97f2e838) holds the five Lanes, the glossary t
 
 ## Next step
 
-When the round 2 validator finishes, record its verdicts and run verdict and outcome; on green, run comment, promote and propose, record the ship boundary, run SHIP=1 run.zsh --resume --proven-head cli-and-run-writers=779e6872, and open the pull request through GitHub MCP.
+Run SHIP=1 ~/.mitosis/logbook/cli-and-run-writers/run.zsh --resume --proven-head cli-and-run-writers=a523570a, then open the pull request with mitosis's title and body through GitHub MCP, assign it, post review/cli-and-run-writers.comment.md, bind it and turn on Auto-Fix.
 
-Needs: D1, D2, R1.
+Needs: D1, D2, D3, R1.
 
 ## Decisions in force
 
