@@ -1,6 +1,6 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: active
-Updated: 2026-11-03T20:31:20.056Z
+Updated: 2026-11-03T20:31:28.391Z
 Next ids: c6 D1 R1 S1
 
 ## Goal
@@ -31,6 +31,8 @@ Apply the spec review's real findings, re-render and recheck, then hand off: glo
 
 ## Where the details live
 
+- Spec: docs/specs/cli-and-run-writers.md
+- Items: docs/specs/cli-and-run-writers.items.json
 - Decisions: docs/specs/cli-and-run-writers.decisions.md
 - Record: docs/specs/cli-and-run-writers.record.json
 - Run home: ~/.mitosis/logbook/cli-and-run-writers/
