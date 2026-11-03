@@ -1,6 +1,6 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: active
-Updated: 2026-11-03T22:57:18.861Z
+Updated: 2026-11-03T22:57:23.390Z
 Next ids: c6 D4 R2 S1
 
 ## Goal
@@ -17,7 +17,7 @@ A process with no Claude Code session, such as the pipeline's background drive, 
 
 ## Where things stand
 
-mitosis/cli-and-run-writers (base 97f2e838) holds the five Lanes, the glossary terms and the round 1 fix pass (head 779e6872), unpushed; the gate's one weak property is a source scan no mutant can fail. The fix pass resolved round 1's blockers C3 (a session-id command park now releases its hold through actsAsSession, proved by test/spawn/cli/session-writer-hold.test.ts) and U1 (the command module moved to src/command), and advisories C1 and C4 to C8, and classified bin/logbook in the cutover census as a recorded assumption. At 779e6872 the suite passes 560 of 560, lint 47 of 47, and both round 2 reviewers report no findings; pipeline release-check passes for logbook 0.19.0. The round 2 validator is judging two candidates: carried blocker P1 (the hold, now fixed) and the LOW sync-io note on a test file. Reconcile will list src/server/tools/sync_ledger.ts as declared but unwritten, a pull-request trade-off that does not block the ship.
+Pull request 305 (mitosis/cli-and-run-writers at a523570a into feat/cli-and-run-writers) is open as ready, assigned, carrying the review comment and bound to this session, with logbook at 0.19.0; review went green in round 2 with every advisory fixed. Auto-Fix is off: the app refuses to enable it for a pull request opened through GitHub MCP, so the owner turns it on. CI was running at open with 4 checks passing and 4 pending.
 
 ## Next step
 
