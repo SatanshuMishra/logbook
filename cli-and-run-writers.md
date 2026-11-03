@@ -1,7 +1,7 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: active
-Updated: 2026-11-03T22:51:58.197Z
-Next ids: c6 D3 R2 S1
+Updated: 2026-11-03T22:55:25.693Z
+Next ids: c6 D4 R2 S1
 
 ## Goal
 
@@ -29,6 +29,7 @@ Needs: D1, D2, R1.
 
 - D1 The run's stages are driven from this session rather than by pipeline drive start: the drive is the code being rebuilt by the parallel pipeline spec and was the source of the halts this program fixes, so each stage runs here by the pipeline:run skill's own steps.
 - D2 Interphase hand-off: build the spec as one MSP on feat/cli-and-run-writers: One MSP, cli-and-run-writers, built by mitosis 0.11.0 from the run home's run.zsh on feat/cli-and-run-writers, with the prevent rules for expand-contract, reliable-coding, secure-coding and tests appended to the worker rules.
+- D3 Ship: push the reviewed MSP head and open it as a ready pull request: Ship cli-and-run-writers=a523570a as the proven head and open it ready for review into feat/cli-and-run-writers through GitHub MCP, then bind it and turn on Auto-Fix.
 
 ## Open risks
 
