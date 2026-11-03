@@ -1,6 +1,6 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: active
-Updated: 2026-11-03T20:53:26.656Z
+Updated: 2026-11-03T22:23:42.258Z
 Next ids: c6 D3 R2 S1
 
 ## Goal
@@ -17,11 +17,11 @@ A process with no Claude Code session, such as the pipeline's background drive, 
 
 ## Where things stand
 
-The spec is handed off after the one review's eleven fixes, passing every interphase check, the guard and pipeline guarantees; D2 records the hand-off. The mitosis plan (11a33cc9e44c) is clean after each Step's task gained a one-sentence summary for its change line and the pull-request subject and Why lines were shortened under the render caps. The build of five Lanes in one MSP is running in the background, writing to build.out and build.err in the run home.
+The build committed all five Lanes on mitosis/cli-and-run-writers (base 97f2e838) and the glossary terms are committed on top (head f595cdd1), unpushed because the gate judged one property weak: git.network-code-holds-no-wall-clock-timer is a source scan no mutant can fail. Known suite failures to fix: test/contract/old-model-removed.test.ts still lists src/cli as removed, the lint census cannot classify bin/logbook, and the release Step deleted the userConfig assertion with the old version test. Reconcile lists src/server/tools/sync_ledger.ts as declared but unwritten; its handler never took a context argument, and this shows as a pull-request trade-off without blocking the ship. Round 1 review diff, obligations, standard checks and assumptions are written; the round 1 suite is running.
 
 ## Next step
 
-Run ~/.mitosis/logbook/cli-and-run-writers/run.zsh --plan-only, then the build, and read mitosis's last JSON line for the MSP's worktree, base, branch and lane notes.
+When the round 1 suite finishes, run review/render-round.zsh 1 f595cdd1 none none none in the run home, dispatch code-reviewer, security-reviewer and conformance-auditor through pipeline agent, then candidates, validator, verdict and the fix pass, keeping every fix off the locked test files.
 
 Needs: D1, D2, R1.
 
