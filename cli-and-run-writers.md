@@ -1,6 +1,6 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: active
-Updated: 2026-11-03T20:16:29.729Z
+Updated: 2026-11-03T20:31:20.056Z
 Next ids: c6 D1 R1 S1
 
 ## Goal
@@ -17,11 +17,11 @@ A process with no Claude Code session, such as the pipeline's background drive, 
 
 ## Where things stand
 
-Not started.
+The spec, record and items are written and pass interphase's checks: 12 criteria (5.11 unproven, host PATH) and 5 Steps in one MSP, command-writer-path, working-copy-base, git-without-wall-clock, command-line and release, after the check-author Step. The one spec review is running.
 
 ## Next step
 
-Settle the interphase frontier for docs/specs/cli-and-run-writers from the intent, write the record's seams, criteria and Steps, and render the spec and items.
+Apply the spec review's real findings, re-render and recheck, then hand off: glossary terms, guard verify, record handed-off, and start the mitosis build.
 
 ## Decisions in force
 
