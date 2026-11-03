@@ -1,7 +1,7 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: active
-Updated: 2026-11-03T20:37:05.575Z
-Next ids: c6 D2 R2 S1
+Updated: 2026-11-03T20:50:54.215Z
+Next ids: c6 D3 R2 S1
 
 ## Goal
 
@@ -26,6 +26,7 @@ Apply the spec review's real findings, re-render and recheck, then hand off: gua
 ## Decisions in force
 
 - D1 The run's stages are driven from this session rather than by pipeline drive start: the drive is the code being rebuilt by the parallel pipeline spec and was the source of the halts this program fixes, so each stage runs here by the pipeline:run skill's own steps.
+- D2 Interphase hand-off: build the spec as one MSP on feat/cli-and-run-writers: One MSP, cli-and-run-writers, built by mitosis 0.11.0 from the run home's run.zsh on feat/cli-and-run-writers, with the prevent rules for expand-contract, reliable-coding, secure-coding and tests appended to the worker rules.
 
 ## Open risks
 
