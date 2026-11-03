@@ -1,6 +1,6 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: active
-Updated: 2026-11-03T20:50:54.215Z
+Updated: 2026-11-03T20:51:02.403Z
 Next ids: c6 D3 R2 S1
 
 ## Goal
@@ -21,7 +21,9 @@ The spec, record and items are written and pass interphase's checks: 12 criteria
 
 ## Next step
 
-Apply the spec review's real findings, re-render and recheck, then hand off: guard verify, record handed-off, copy items to the run home, record the hand-off boundary, and run the mitosis plan-only then build.
+Run ~/.mitosis/logbook/cli-and-run-writers/run.zsh --plan-only, then the build, and read mitosis's last JSON line for the MSP's worktree, base, branch and lane notes.
+
+Needs: D1, D2, R1.
 
 ## Decisions in force
 
