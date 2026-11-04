@@ -1,7 +1,7 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: parked
-Updated: 2026-11-04T06:31:19.054Z
-Next ids: c6 D4 R2 S1
+Updated: 2026-11-04T06:31:21.373Z
+Next ids: c6 D4 R3 S1
 
 ## Goal
 
@@ -34,6 +34,7 @@ Needs: R1, R2.
 ## Open risks
 
 - R1 mitosis 0.11.0 still requires --timeout; run.zsh passes 86400 seconds per Worker until the interphase and mitosis spec removes it.
+- R2 pipeline 0.12.3 checks, suite and integration-plan refuse an interphase record holding an unproven criterion, so 5.11 is proven by no check and rests on lighthouse alone.
 
 ## Settled, do not reopen
 
