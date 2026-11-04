@@ -1,6 +1,6 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: parked
-Updated: 2026-11-04T08:12:51.182Z
+Updated: 2026-11-04T08:12:56.554Z
 Next ids: c6 D4 R3 S1
 
 ## Goal
