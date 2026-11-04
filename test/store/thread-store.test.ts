@@ -360,7 +360,10 @@ test('store.first-commit-creates-the-ref', async () => {
     assert.deepEqual(parentsOf(repo, tip), [])
     assert.deepEqual(namesAt(repo, tip), ['fix-login.md'])
     assert.equal(textAt(repo, tip, 'fix-login.md'), text)
-    assert.equal(mustGit(repo, ['log', '-1', '--format=%B', tip]).trim(), 'open_thread fix-login: opened')
+    assert.equal(
+      mustGit(repo, ['log', '-1', '--format=%B', tip]).trim(),
+      'open_thread fix-login: opened\n\nWriter: test-session-id'
+    )
   })
 })
 
@@ -453,7 +456,7 @@ test('store.commit-stops-when-the-same-thread-moved', async () => {
   })
 })
 
-test('store.commit-refuses-when-the-ref-keeps-moving', async () => {
+test('store.commit-lands-after-the-ref-moves-past-the-old-retry-count', async () => {
   const { findRepository } = await import('../../src/thread/paths.ts')
   const { commitDocuments, readDocument } = await import('../../src/thread/store.ts')
   withStore(findRepository, ({ repo, rt, paths }) => {
@@ -465,6 +468,7 @@ test('store.commit-refuses-when-the-ref-keeps-moving', async () => {
       changes: [{ slug: 'a', text: 'a two\n', expectedBlob: readA.blob }],
       message: 'a two',
       beforeCas: () => {
+        if (moves.count >= 12) return
         moves.count += 1
         const moved = commitDocuments(rt, paths, {
           changes: [{ slug: 'b', text: `b ${moves.count}\n`, expectedBlob: readDocument(rt, paths, 'b')?.blob ?? null }],
@@ -473,12 +477,11 @@ test('store.commit-refuses-when-the-ref-keeps-moving', async () => {
         assert.ok(moved.ok)
       }
     })
-    assert.ok(!result.ok)
-    assert.ok('field' in result)
-    assert.equal(result.field, 'refs/logbook/threads')
-    assert.ok(result.message.includes('refs/logbook/threads kept moving'))
-    assert.equal(moves.count, 11)
-    assert.equal(textAt(repo, tipOf(repo), 'a.md'), 'a one\n')
+    assert.ok(result.ok)
+    assert.equal(moves.count, 12)
+    assert.equal(tipOf(repo), result.value.commit)
+    assert.equal(textAt(repo, tipOf(repo), 'a.md'), 'a two\n')
+    assert.equal(textAt(repo, tipOf(repo), 'b.md'), 'b 12\n')
   })
 })
 

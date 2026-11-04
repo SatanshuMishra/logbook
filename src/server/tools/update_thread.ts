@@ -282,7 +282,7 @@ export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> =
   input: UpdateThreadInputSchema,
   output: UpdateThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  handler: async (rt, _ctx, input) => {
+  handler: async (rt, input) => {
     const paths = locate(rt)
     if (!paths.ok) return { ok: false, refusal: paths }
     const slug = resolveThreadId(rt, paths.value, input.thread_id)

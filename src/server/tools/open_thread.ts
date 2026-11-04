@@ -1,17 +1,15 @@
-import { mkdirSync } from 'node:fs'
-import path from 'node:path'
 import { z } from 'zod'
 import { LETTER_SECTION } from '../../doc/document.ts'
 import { newDocument } from '../../doc/render.ts'
 import type { Runtime } from '../../runtime/runtime.ts'
 import type { Ok, Refusal } from '../../schema/declare.ts'
 import { SLUG_PATTERN } from '../../schema/ids.ts'
-import { durableWrite } from '../../store/durable-write.ts'
 import { actingSession, foldHold, takeHold } from '../../thread/holds.ts'
 import { migrateIfNeeded } from '../../thread/migrate.ts'
 import { findRepository, startDirectory, workingCopyPath, type RepoPaths } from '../../thread/paths.ts'
 import { startPush } from '../../thread/reconcile.ts'
-import { commitDocuments, readDocument, type ThreadMoved } from '../../thread/store.ts'
+import { commitDocuments, hashBlob, readDocument, type ThreadMoved } from '../../thread/store.ts'
+import { writeWorkingCopy } from '../../thread/working-copy.ts'
 import type { ToolSpec } from '../register.ts'
 
 const TOOL_NAME = 'open_thread'
@@ -91,11 +89,6 @@ const locate = (rt: Runtime): Ok<RepoPaths> | Refusal => {
   return dir === '' ? noWorkingDirectory() : findRepository(rt, dir)
 }
 
-const writeWorkingCopy = (rt: Runtime, file: string, text: string): void => {
-  mkdirSync(path.dirname(file), { recursive: true })
-  durableWrite(file, text, { log: rt.log })
-}
-
 const openedText = (slug: string, file: string): string =>
   `opened thread ${slug}. Its state document is ${file}. Keep it true by editing that file with the Edit tool.`
 
@@ -106,7 +99,7 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
   input: OpenThreadInputSchema,
   output: OpenThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  handler: async (rt, _ctx, input) => {
+  handler: async (rt, input) => {
     const paths = locate(rt)
     if (!paths.ok) return { ok: false, refusal: paths }
     const file = workingCopyPath(paths.value, input.slug)
@@ -129,7 +122,10 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
       message: `${TOOL_NAME} ${input.slug}: opened`
     })
     if (!committed.ok) return { ok: false, refusal: commitRefusal(input.slug, committed) }
-    writeWorkingCopy(rt, file.value, text)
+    const blob = hashBlob(rt, paths.value, text)
+    if (!blob.ok) return { ok: false, refusal: blob }
+    const written = writeWorkingCopy(rt, paths.value, input.slug, text, blob.value)
+    if (!written.ok) return { ok: false, refusal: written }
     takeHold(rt, paths.value, input.slug, actingSession(paths.value, rt.sessionId), null, rt.parentProcess)
     foldHold(rt, paths.value, input.slug, now)
     startPush(rt, paths.value)?.unref()

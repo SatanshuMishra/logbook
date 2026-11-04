@@ -29,7 +29,7 @@ const R1 = '- R1 The staging database may be stale'
 const R2 = '- R2 The cookie domain may differ between hosts'
 const STAND = 'The form renders but submitting it fails.'
 const NEXT_STEP = 'Fix the submit handler.'
-const HANGING_SERVER = 'node -e "process.stdin.resume()"'
+const FAILING_SERVER = 'node -e "process.exit(3)"'
 const MARKER_LINE = /^(<<<<<<<|=======|>>>>>>>)/
 const RETRY_STAND = 'Keep the retry rule when the submit fails.'
 
@@ -305,16 +305,16 @@ test('sync.fetch-failure-changes-nothing', async () => {
   await withWorld(async ({ a }) => {
     commitThread(a, 'fix-login', threadDoc({ updated: timeAt(0) }))
     const token = randomBytes(8).toString('hex')
-    mustGit(a.repo, ['config', 'remote.origin.uploadpack', `${HANGING_SERVER} ${token}`])
+    mustGit(a.repo, ['config', 'remote.origin.uploadpack', `${FAILING_SERVER} ${token}`])
     const before = allRefs(a.repo)
-    const result = await syncThreads(a.rt, a.paths, { timeoutMs: 500 })
+    const result = await syncThreads(a.rt, a.paths)
     assert.equal(result.fetched, false)
     assert.equal(result.merged, false)
     assert.equal(result.pushed, false)
     assert.deepEqual(result.conflicts, [])
-    assert.match(result.error ?? '', /git fetch timed out after 500 ms/)
+    assert.match(result.error ?? '', /^fetch from origin failed: /)
     assert.equal(allRefs(a.repo), before)
-    assert.equal(processesMatching(token), '', 'no process running process.stdin.resume() may remain')
+    assert.equal(processesMatching(token), '', 'no upload-pack process the fetch started may remain')
   })
 })
 

@@ -1,7 +1,7 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { Refusal } from '../schema/declare.ts'
 
-type RefusalPayload = {
+export type RefusalPayload = {
   ok: false
   field: string
   accepted: string
@@ -10,7 +10,7 @@ type RefusalPayload = {
   message: string
 }
 
-const pickRefusalFields = (r: Refusal): RefusalPayload => ({
+export const refusalPayload = (r: Refusal): RefusalPayload => ({
   ok: false,
   field: r.field,
   accepted: r.accepted,
@@ -29,7 +29,7 @@ const renderRefusalText = (payload: RefusalPayload): string =>
   ].join('\n')
 
 export const toolRefusal = (r: Refusal): CallToolResult => {
-  const payload = pickRefusalFields(r)
+  const payload = refusalPayload(r)
   return {
     isError: true,
     content: [{ type: 'text', text: renderRefusalText(payload) }]

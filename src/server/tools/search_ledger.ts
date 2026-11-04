@@ -68,7 +68,7 @@ export const searchLedgerTool: ToolSpec<SearchLedgerInput, SearchLedgerOutput> =
   input: SearchLedgerInputSchema,
   output: SearchLedgerOutputSchema,
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  handler: async (rt, _ctx, input) => {
+  handler: async (rt, input) => {
     const paths = locate(rt)
     if (!paths.ok) return { ok: false, refusal: paths }
     const found = searchHistory(rt, paths.value, input.text)

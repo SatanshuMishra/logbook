@@ -220,7 +220,9 @@ test('park_thread.commit-message-keeps-the-outcome-below-a-blank-line', async ()
     assert.deepEqual(messageLines(fixture.repo), [
       'park_thread fix-login: parked',
       '',
-      'The submit handler now posts the form.'
+      'The submit handler now posts the form.',
+      '',
+      'Writer: s1'
     ])
     assert.equal(subjectOf(fixture.repo), 'park_thread fix-login: parked')
   })
@@ -246,7 +248,7 @@ test('park_thread.parks-a-named-thread-with-no-fields', async () => {
     assertSucceeded(reply)
     assert.equal(statusLine(fixture.repo), 'Status: parked')
     assert.deepEqual(nextStepBody(storedLines(fixture.repo)), ['Fix the submit handler.'])
-    assert.equal(messageLines(fixture.repo).join('\n'), 'park_thread fix-login: parked')
+    assert.equal(messageLines(fixture.repo).join('\n'), 'park_thread fix-login: parked\n\nWriter: s1')
   })
 })
 
@@ -323,7 +325,13 @@ test('close_thread.commit-message-keeps-the-detail-below-a-blank-line', async ()
     })
 
     assertSucceeded(reply)
-    assert.deepEqual(messageLines(fixture.repo), ['close_thread fix-login: done', '', 'The login page works again.'])
+    assert.deepEqual(messageLines(fixture.repo), [
+      'close_thread fix-login: done',
+      '',
+      'The login page works again.',
+      '',
+      'Writer: s1'
+    ])
     assert.equal(subjectOf(fixture.repo), 'close_thread fix-login: done')
   })
 })

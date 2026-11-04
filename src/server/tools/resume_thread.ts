@@ -129,7 +129,7 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
   input: ResumeThreadInputSchema,
   output: ResumeThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  handler: async (rt, _ctx, input) => {
+  handler: async (rt, input) => {
     const paths = locate(rt)
     if (!paths.ok) return { ok: false, refusal: paths }
     const migrated = migrateIfNeeded(rt, paths.value)

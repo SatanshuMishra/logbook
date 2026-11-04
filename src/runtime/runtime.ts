@@ -1,5 +1,8 @@
 import { ulid as generateUlid } from 'ulid'
 import { createStderrLogger } from './logger.ts'
+import { PROJECT_DIR_ENV_KEY, RUN_WRITER_PREFIX } from '../thread/paths.ts'
+
+export type Writer = { kind: 'session' | 'command'; name: string }
 
 export type Runtime = {
   now: () => string
@@ -8,6 +11,7 @@ export type Runtime = {
   cwd: string | null
   log: (record: Record<string, unknown>) => void
   sessionId: string
+  writer: Writer
   parentProcess: number | null
 }
 
@@ -44,6 +48,30 @@ export const productionRuntime = (): Runtime => {
     cwd,
     log,
     sessionId,
+    writer: { kind: 'session', name: sessionId },
+    parentProcess: process.ppid
+  }
+}
+
+export type CommandRuntimeInput = { repo: string; writer?: string }
+
+const DECISIONS_READER = 'decisions'
+
+export const actsAsSession = (rt: Runtime): boolean => rt.writer.name === rt.sessionId
+
+export const commandRuntime = (input: CommandRuntimeInput): Runtime => {
+  const env = Object.freeze({ ...process.env, [PROJECT_DIR_ENV_KEY]: input.repo })
+  const writerName = input.writer ?? DECISIONS_READER
+  const sessionId =
+    input.writer === undefined || input.writer.startsWith(RUN_WRITER_PREFIX) ? generateUlid() : input.writer
+  return {
+    now: () => new Date().toISOString(),
+    ulid: () => generateUlid(),
+    env,
+    cwd: input.repo,
+    log: createStderrLogger(env),
+    sessionId,
+    writer: { kind: 'command', name: writerName },
     parentProcess: process.ppid
   }
 }

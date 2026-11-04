@@ -9,7 +9,8 @@ export type RepoPaths = { root: string; commonDir: string; logbookDir: string; w
 export const THREAD_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/
 export const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
 
-const PROJECT_DIR_ENV_KEY = 'CLAUDE_PROJECT_DIR'
+export const PROJECT_DIR_ENV_KEY = 'CLAUDE_PROJECT_DIR'
+export const RUN_WRITER_PREFIX = 'run:'
 const REPO_NAME_LENGTH = 40
 const REPO_HASH_LENGTH = 12
 const REPO_NAME_UNSAFE = /[^a-z0-9-]/gu
@@ -140,6 +141,9 @@ export const workingCopyPath = (paths: RepoPaths, slug: string): Ok<string> | Re
 
 export const holdPath = (paths: RepoPaths, slug: string): Ok<string> | Refusal =>
   built(checkSlug('slug', slug), () => path.join(paths.logbookDir, 'holds', `${slug}.json`))
+
+export const copyBasePath = (paths: RepoPaths, slug: string): Ok<string> | Refusal =>
+  built(checkSlug('slug', slug), () => path.join(paths.logbookDir, 'bases', slug))
 
 export const inflightDir = (paths: RepoPaths, slug: string): Ok<string> | Refusal =>
   built(checkSlug('slug', slug), () => path.join(paths.logbookDir, 'inflight', slug))

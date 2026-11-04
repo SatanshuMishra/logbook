@@ -26,7 +26,6 @@ type TreeEntry = { mode: string; type: string; object: string; name: string }
 const ALIASES_FILE = 'aliases.json'
 const DOCUMENT_SUFFIX = '.md'
 const BLOB_MODE = '100644'
-const MAX_RETRIES = 10
 const SAFE_REVISION = /^[^\s:-][^\s:]*$/
 
 const documentName = (slug: string): string => `${slug}${DOCUMENT_SUFFIX}`
@@ -43,15 +42,6 @@ const gitFailure = (step: string, code: number, stderr: string): Refusal =>
     },
     stderr.trim()
   )
-
-const keptMoving = (): Refusal => ({
-  ok: false,
-  field: THREADS_REF,
-  accepted: `a ${THREADS_REF} that stays still between reading its tip and moving it`,
-  example: 'call the tool again',
-  retryable: true,
-  message: `${THREADS_REF} kept moving: another commit landed first on each of ${MAX_RETRIES + 1} attempts, so nothing was committed`
-})
 
 const unknownThread = (threadId: string): Refusal => ({
   ok: false,
@@ -167,7 +157,7 @@ export const resolveThreadId = (rt: Runtime, paths: RepoPaths, threadId: string)
   return slug === undefined ? unknownThread(threadId) : { ok: true, value: slug }
 }
 
-const hashBlob = (rt: Runtime, paths: RepoPaths, text: string): Ok<string> | Refusal => {
+export const hashBlob = (rt: Runtime, paths: RepoPaths, text: string): Ok<string> | Refusal => {
   const result = git(rt, paths.root, ['hash-object', '-w', '--stdin'], { stdin: text })
   return result.ok ? { ok: true, value: result.stdout.trim() } : gitFailure('hash-object', result.code, result.stderr)
 }
@@ -198,8 +188,8 @@ export const writeTree = (rt: Runtime, paths: RepoPaths, files: Record<string, s
   return tree.value
 }
 
-const commitMessageInput = (message: string): string =>
-  message.length === 0 || message.endsWith('\n') ? message : `${message}\n`
+const commitMessageInput = (message: string, writer: string): string =>
+  `${message.replace(/\n+$/, '')}\n\nWriter: ${writer}\n`
 
 const commitTree = (
   rt: Runtime,
@@ -210,7 +200,7 @@ const commitTree = (
   message: string
 ): Ok<string> | Refusal => {
   const args = ['commit-tree', tree, ...parents.flatMap((parent) => ['-p', parent])]
-  const result = git(rt, paths.root, args, { identity, stdin: commitMessageInput(message) })
+  const result = git(rt, paths.root, args, { identity, stdin: commitMessageInput(message, rt.writer.name) })
   return result.ok ? { ok: true, value: result.stdout.trim() } : gitFailure('commit-tree', result.code, result.stderr)
 }
 
@@ -267,7 +257,7 @@ export const commitDocuments = (
   if (!identity.ok) return identity
   const replacements = hashFiles(rt, paths, changedFiles(input))
   if (!replacements.ok) return replacements
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+  for (;;) {
     const tip = threadsTip(rt, paths)
     const base: Ok<TreeEntry[]> | Refusal = tip === null ? { ok: true, value: [] } : listTree(rt, paths, tip)
     if (!base.ok) return base
@@ -282,5 +272,4 @@ export const commitDocuments = (
     if (cas.ok) return { ok: true, value: { commit: commit.value } }
     if (cas.cause !== 'ref-moved') return cas
   }
-  return keptMoving()
 }

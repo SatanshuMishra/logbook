@@ -18,6 +18,7 @@ import { ARCHIVE_REF, REFETCH_COMMAND } from './migrate.ts'
 import { workingCopyPath, type RepoPaths } from './paths.ts'
 import { THREADS_REF, listSlugs, readDocument, threadsTip } from './store.ts'
 import { missingObjects } from './sync.ts'
+import { comparisonText } from './working-copy.ts'
 
 export type RosterThread = {
   slug: string
@@ -132,7 +133,7 @@ const listed = (rt: Runtime, paths: RepoPaths, tip: string, times: Map<string, n
   const status = readableStatus(parsed)
   const raw = status === null ? UNREADABLE : status.raw
   const nextStep = nextStepOf(parsed)
-  const parts = workingCopyParts(where.value, stored.text)
+  const parts = workingCopyParts(where.value, comparisonText(rt, paths, slug, stored.text))
   const difference = parts.length === 0 ? null : differenceSentence(where.value, parts)
   return [
     {
