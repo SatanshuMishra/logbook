@@ -1,6 +1,6 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: parked
-Updated: 2026-11-04T06:34:32.352Z
+Updated: 2026-11-04T08:12:51.182Z
 Next ids: c6 D4 R3 S1
 
 ## Goal
@@ -17,13 +17,11 @@ A process with no Claude Code session, such as the pipeline's background drive, 
 
 ## Where things stand
 
-The FEATURE pull request 306 (feat/cli-and-run-writers at 459a8b23 into main) is open as ready, assigned, bound to this session, with logbook at 0.19.0. On that head 33 of 33 acceptance lines and 560 of 560 suite tests pass, and integration-plan printed lighthouse skip. Auto-Fix is off: the app refuses it for a pull request opened through GitHub MCP, so the owner turns it on.
+The work is in main at 605a4ea with logbook at 0.19.0, and pipeline clean has removed the run's worktrees, branches, run folders and spec files, keeping nothing. The installed logbook plugin has not been updated to 0.19.0, because the owner's session installs it after its parallel builds finish. Auto-Fix was never on for pull request 306, which the app refuses for a pull request opened through GitHub MCP. The owner's checkout stays at 1fdd0f0f, because its uncommitted receipts.config.json blocks the fast-forward.
 
 ## Next step
 
-The owner turns on Auto-Fix for pull request 306 and merges it into main, then says the FEATURE pull request merged, which starts Clean-up.
-
-Needs: R1, R2.
+After the owner's session installs logbook 0.19.0, run pipeline installed for logbook@logbook against main, then strike or tick c5 and close the thread.
 
 ## Decisions in force
 
@@ -31,19 +29,12 @@ Needs: R1, R2.
 
 ## Open risks
 
-- R1 mitosis 0.11.0 still requires --timeout; run.zsh passes 86400 seconds per Worker until the interphase and mitosis spec removes it.
-- R2 pipeline 0.12.3 checks, suite and integration-plan refuse an interphase record holding an unproven criterion, so integration ran on record-proven.json without 5.11, and 5.11 is proven by nothing.
+- R2 pipeline 0.12.3 checks, suite and integration-plan refuse an interphase record holding an unproven criterion, so integration ran without criterion 5.11, and 5.11 is proven by nothing.
 
 ## Settled, do not reopen
 
 ## Where the details live
 
-- Spec: docs/specs/cli-and-run-writers.md
-- Items: docs/specs/cli-and-run-writers.items.json
-- Decisions: docs/specs/cli-and-run-writers.decisions.md
-- Record: docs/specs/cli-and-run-writers.record.json
-- Run home: ~/.mitosis/logbook/cli-and-run-writers/, holding record-proven.json (the record without 5.11) and the integration checks, suite, plan and FEATURE pull request fields
+- Archive: ~/.mitosis/logbook/archive/cli-and-run-writers/, holding the spec, items, decisions, record, record-proven.json and every review file
 - Drive spec: /Users/satanshumishra/Documents/DevLabs/pipeline/docs/specs/runs-complete-unattended.decisions.md
 - Diagnosis: ~/.claude/projects/-Users-satanshumishra-Documents-DevLabs-pipeline/memory/run-halts-root-causes.md
-- Integration worktree: ~/.mitosis/runs/logbook/cli-and-run-writers/integration
-- Review files: ~/.mitosis/logbook/cli-and-run-writers/review/
