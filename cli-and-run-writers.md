@@ -1,6 +1,6 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: parked
-Updated: 2026-11-04T06:31:21.373Z
+Updated: 2026-11-04T06:34:26.546Z
 Next ids: c6 D4 R3 S1
 
 ## Goal
@@ -17,24 +17,22 @@ A process with no Claude Code session, such as the pipeline's background drive, 
 
 ## Where things stand
 
-Integration is running on feat/cli-and-run-writers at 459a8b23, the merge of pull request 305, in the integration worktree; integration-ready reports the one MSP merged. pipeline checks refuses a criterion with no acceptance list, so 5.11, which is unproven, is left out: the charter's Record line points at record-proven.json until the integration verbs finish, then CHARTER.md.orig restores it.
+The FEATURE pull request 306 (feat/cli-and-run-writers at 459a8b23 into main) is open as ready, assigned, bound to this session, with logbook at 0.19.0. On that head 33 of 33 acceptance lines and 560 of 560 suite tests pass, and integration-plan printed lighthouse skip. Auto-Fix is off: the app refuses it for a pull request opened through GitHub MCP, so the owner turns it on.
 
 ## Next step
 
-Finish pipeline checks, run the integration suite and integration-plan, restore the charter, then run lighthouse:test as run 1 so it opens the FEATURE pull request into main.
+The owner turns on Auto-Fix for pull request 306 and merges it into main, then says the FEATURE pull request merged, which starts Clean-up.
 
 Needs: R1, R2.
 
 ## Decisions in force
 
 - D1 The run's stages are driven from this session rather than by pipeline drive start: the drive is the code being rebuilt by the parallel pipeline spec and was the source of the halts this program fixes, so each stage runs here by the pipeline:run skill's own steps.
-- D2 Interphase hand-off: build the spec as one MSP on feat/cli-and-run-writers: One MSP, cli-and-run-writers, built by mitosis 0.11.0 from the run home's run.zsh on feat/cli-and-run-writers, with the prevent rules for expand-contract, reliable-coding, secure-coding and tests appended to the worker rules.
-- D3 Ship: push the reviewed MSP head and open it as a ready pull request: Ship cli-and-run-writers=a523570a as the proven head and open it ready for review into feat/cli-and-run-writers through GitHub MCP, then bind it and turn on Auto-Fix.
 
 ## Open risks
 
 - R1 mitosis 0.11.0 still requires --timeout; run.zsh passes 86400 seconds per Worker until the interphase and mitosis spec removes it.
-- R2 pipeline 0.12.3 checks, suite and integration-plan refuse an interphase record holding an unproven criterion, so 5.11 is proven by no check and rests on lighthouse alone.
+- R2 pipeline 0.12.3 checks, suite and integration-plan refuse an interphase record holding an unproven criterion, so integration ran on record-proven.json without 5.11, and 5.11 is proven by nothing.
 
 ## Settled, do not reopen
 
@@ -44,8 +42,8 @@ Needs: R1, R2.
 - Items: docs/specs/cli-and-run-writers.items.json
 - Decisions: docs/specs/cli-and-run-writers.decisions.md
 - Record: docs/specs/cli-and-run-writers.record.json
-- Run home: ~/.mitosis/logbook/cli-and-run-writers/
+- Run home: ~/.mitosis/logbook/cli-and-run-writers/, holding record-proven.json (the record without 5.11) and the integration checks, suite, plan and FEATURE pull request fields
 - Drive spec: /Users/satanshumishra/Documents/DevLabs/pipeline/docs/specs/runs-complete-unattended.decisions.md
 - Diagnosis: ~/.claude/projects/-Users-satanshumishra-Documents-DevLabs-pipeline/memory/run-halts-root-causes.md
-- MSP worktree: ~/.mitosis/runs/logbook/cli-and-run-writers/trees/cli-and-run-writers
+- Integration worktree: ~/.mitosis/runs/logbook/cli-and-run-writers/integration
 - Review files: ~/.mitosis/logbook/cli-and-run-writers/review/
