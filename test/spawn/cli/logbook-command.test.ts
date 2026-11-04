@@ -501,6 +501,35 @@ test('command.decisions-refuses-an-unknown-thread', async () => {
   })
 })
 
+const DANGLING_ALIAS = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
+
+const storeDanglingAlias = (seeded: Seeded): void => {
+  const aliasFile = join(seeded.root, 'aliases.json')
+  writeFileSync(aliasFile, `${JSON.stringify({ [DANGLING_ALIAS]: 'ghost' })}\n`)
+  const blob = mustGit(seeded.repo, ['hash-object', '-w', aliasFile]).trim()
+  mustGit(seeded.repo, ['read-tree', THREADS_REF])
+  mustGit(seeded.repo, ['update-index', '--add', '--cacheinfo', `100644,${blob},aliases.json`])
+  const tree = mustGit(seeded.repo, ['write-tree']).trim()
+  const commit = mustGit(seeded.repo, ['commit-tree', tree, '-p', THREADS_REF, '-m', 'alias a thread with no document']).trim()
+  mustGit(seeded.repo, ['update-ref', THREADS_REF, commit])
+  mustGit(seeded.repo, ['read-tree', 'HEAD'])
+}
+
+test('command.decisions-refuses-an-alias-whose-thread-has-no-document', async () => {
+  await withThread({}, (seeded) => {
+    storeDanglingAlias(seeded)
+    const run = runCommand(['decisions', '--repo', seeded.repo, '--thread', DANGLING_ALIAS], seeded.outside, seeded.env)
+    const refusal = assertRefusal(run)
+    assert.deepEqual(Object.keys(refusal).sort(), REFUSAL_KEYS)
+    assert.equal(refusal.field, 'thread_id')
+    assert.equal(refusal.retryable, true)
+    assert.equal(
+      refusal.message,
+      `the thread ghost has no document at the tip of ${THREADS_REF}, so its decisions could not be read`
+    )
+  })
+})
+
 test('command.run-and-session-write-one-thread-together', async () => {
   await withThread({}, (seeded) => {
     const session = sessionRuntime(seeded)

@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -32,14 +33,17 @@ const makeRepo = (): string => {
   return repo
 }
 
-const withServer = async (fn: (fixture: Fixture) => Promise<void>): Promise<void> => {
+const withServer = async (
+  fn: (fixture: Fixture) => Promise<void>,
+  extraEnv: Record<string, string> = {}
+): Promise<void> => {
   const repo = makeRepo()
   const home = mkdtempSync(join(tmpdir(), 'logbook-open-thread-home-'))
   try {
     const spawned = await spawnServer({
       projectRoot: repo,
       entry: ENTRY,
-      env: { CLAUDE_CODE_SESSION_ID: SESSION, HOME: home }
+      env: { CLAUDE_CODE_SESSION_ID: SESSION, HOME: home, ...extraEnv }
     })
     try {
       await fn({ repo, home, spawned })
@@ -240,4 +244,52 @@ test('open_thread.returns-gits-error-when-the-ref-cannot-be-updated', async () =
     assert.deepEqual(workingCopiesNamed(fixture.home, 'fix-login.md'), [])
     assert.equal(existsSync(holdFile(fixture.repo, 'fix-login')), false, 'a failed commit must take no hold')
   })
+})
+
+const realGitPath = (): string => {
+  const found = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' })
+  const path = found.stdout.trim()
+  assert.ok(found.status === 0 && path.length > 0, 'git must be on PATH')
+  return path
+}
+
+const hashFailsAfterCommitShim = (slug: string): { dir: string; path: string } => {
+  const dir = mkdtempSync(join(tmpdir(), 'logbook-open-thread-shim-'))
+  const realGit = realGitPath()
+  const script = [
+    '#!/bin/sh',
+    `if [ "$1" = "-C" ] && [ "$3" = "hash-object" ] && "${realGit}" -C "$2" cat-file -e "${THREADS_REF}:${slug}.md" 2>/dev/null; then`,
+    '  echo "fatal: hash-object refused by the test shim" >&2',
+    '  exit 128',
+    'fi',
+    `exec "${realGit}" "$@"`,
+    ''
+  ].join('\n')
+  writeFileSync(join(dir, 'git'), script)
+  chmodSync(join(dir, 'git'), 0o755)
+  return { dir, path: `${dir}:${process.env.PATH ?? ''}` }
+}
+
+test('open_thread.refuses-when-hashing-the-working-copy-fails-after-the-commit', async () => {
+  const shim = hashFailsAfterCommitShim('fix-login')
+  try {
+    await withServer(
+      async (fixture) => {
+        const refusal = refusalLines(await openThread(fixture, fixLoginArgs({})))
+
+        assert.equal(refusal.field, THREADS_REF)
+        assert.equal(refusal.accepted, 'a repository whose object store git can read and write')
+        assert.ok(
+          refusal.text.includes(`git hash-object failed while committing to ${THREADS_REF} (exit 128)`),
+          `the refusal must name the failed hash:\n${refusal.text}`
+        )
+        assert.equal(refExists(fixture.repo), true, 'the commit before the failed hash stays on refs/logbook/threads')
+        assert.deepEqual(workingCopiesNamed(fixture.home, 'fix-login.md'), [])
+        assert.equal(existsSync(holdFile(fixture.repo, 'fix-login')), false, 'a failed hash must take no hold')
+      },
+      { PATH: shim.path }
+    )
+  } finally {
+    rmSync(shim.dir, { recursive: true, force: true })
+  }
 })
