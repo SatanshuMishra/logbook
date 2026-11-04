@@ -29,16 +29,8 @@
   "agent": {
     "loop_skills": ["gates"],
     "staging_query_patterns": [],
-    "drive": {
-      "confirmed": true,
-      "auth": "none needed - logbook is an MCP server plus local hook scripts with no authenticated surface",
-      "bypass": "none - there is no sign-in to bypass",
-      "data": "self-seeding - each test builds its own disposable store in a temp directory; no shared seeded environment",
-      "browser_surfaces": []
-    },
     "closeout_fixed_statuses": ["Pending Retest", "Verified"],
-    "repo_name": "logbook",
-    "receipts_version": "0.5.2"
+    "repo_name": "logbook"
   },
   "gates": {
     "medium": "library",
