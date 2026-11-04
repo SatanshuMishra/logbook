@@ -40,3 +40,15 @@ _Avoid_: lock, claim
 **Roster**:
 The list of open threads, one line each with its status and next step, shown at a session's startup and by list_threads.
 _Avoid_: thread list, index
+
+**Writer**:
+The run or session that made a commit on refs/logbook/threads, named on the commit's last line as run:<slug> or the session id.
+_Avoid_: author, actor
+
+**Command write**:
+A write to a thread through the logbook command, made by a writer with no working copy of its own.
+_Avoid_: CLI write, headless write
+
+**Copy base**:
+The stored version of a state document that a working copy was taken from, recorded beside the repository's holds.
+_Avoid_: parent, snapshot

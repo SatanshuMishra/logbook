@@ -77,6 +77,26 @@ The plugin's MCP server, under the key `ledger`, publishes nine tools and no res
 
 Every tool that changes a document sends its change through the same checker as an edit. A refusal names the field that was wrong and what it accepts.
 
+## Command line
+
+The plugin also ships a `logbook` command, in `bin/logbook`, for a process that has no Claude Code session, such as a pipeline run working unattended. It reads and writes the same threads as the tools, through the same checker, the same commits and the same push.
+
+```sh
+logbook update_thread|record_decision|park_thread --repo <root> --writer <name> --args <json>
+```
+
+A write runs that tool with its MCP input object, given as JSON in `--args`, and commits exactly as the tool does. The writer is `run:<slug>` for a run or a session id for a session, and the commit names it on its `Writer:` line, so the history of a thread says which run or session wrote each version.
+
+```sh
+logbook decisions --repo <root> --thread <slug>
+```
+
+`decisions` prints the decisions in force of the thread as a JSON array of `{id, title, outcome}`.
+
+Exit 0 prints the result as one JSON line on stdout. Exit 1 is a refusal: it prints the refusal as one JSON line on stdout and its message on stderr, and leaves the thread unchanged. Exit 2 is a usage error. The command never reads input, so it never waits for an answer.
+
+A command write never touches a session's working copy. When a session holds the same thread and has an edit pending, its next settle carries that edit onto the newer version, so neither the command nor the session loses the other's writes.
+
 ## Sharing threads through git
 
 Threads travel with the repository through the remote named `origin`. After every accepted update logbook starts a background `git push` of `refs/logbook/threads` that never delays a reply and gives up after 15 seconds; a push origin rejects changes nothing locally and is left to the next sync.

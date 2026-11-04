@@ -19,6 +19,7 @@ import { migrateIfNeeded } from '../thread/migrate.ts'
 import { checkSessionId, workingCopyPath, type RepoPaths } from '../thread/paths.ts'
 import { sessionStartRoster, workingCopyParts } from '../thread/roster.ts'
 import { readDocument } from '../thread/store.ts'
+import { comparisonText } from '../thread/working-copy.ts'
 import type { EmptyHookOutput, SessionStartHookOutput } from './output.ts'
 
 export type SessionStartInput = { event: Record<string, unknown>; sessionId: string; paths: RepoPaths; rt: Runtime }
@@ -170,7 +171,7 @@ const pickupOutput = (
     .filter((marker) => marker.session !== sessionId)
     .map((marker) => activityLine(marker.tool, marker.summary))
   const document = stored.text.replace(/\n+$/, '')
-  const parts = workingCopyParts(file.value, stored.text)
+  const parts = workingCopyParts(file.value, comparisonText(rt, paths, slug, stored.text))
   const fitted = fittedContext({
     opening: openingLine(slug, file.value),
     pending: pendingBlock(file.value, parts),

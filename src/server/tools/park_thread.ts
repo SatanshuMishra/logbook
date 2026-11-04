@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { parseDocument, type Status } from '../../doc/document.ts'
 import { oneLine, replaceSection, setStatus } from '../../doc/render.ts'
-import type { Runtime } from '../../runtime/runtime.ts'
+import { actsAsSession, type Runtime } from '../../runtime/runtime.ts'
 import type { Ok, Refusal } from '../../schema/declare.ts'
 import { actingSession, heldBy, releaseHold } from '../../thread/holds.ts'
 import { findRepository, startDirectory, workingCopyPath, type RepoPaths } from '../../thread/paths.ts'
@@ -168,7 +168,7 @@ export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
   input: ParkThreadInputSchema,
   output: ParkThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  handler: async (rt, _ctx, input) => {
+  handler: async (rt, input) => {
     const paths = locate(rt)
     if (!paths.ok) return { ok: false, refusal: paths }
     const slug = targetOf(rt, paths.value, input.thread_id)
@@ -178,7 +178,7 @@ export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
     const applied = applyToolChange(rt, paths.value, slug.value, { tool: TOOL_NAME, change: parkChange(slug.value, input) })
     if (!applied.ok) return { ok: false, refusal: applied }
     applied.value.push?.unref()
-    releaseHold(rt, paths.value, slug.value)
+    if (actsAsSession(rt)) releaseHold(rt, paths.value, slug.value)
     return {
       ok: true,
       text: `parked thread ${slug.value}\n${file.value}`,

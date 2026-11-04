@@ -85,7 +85,7 @@ export const listThreadsTool: ToolSpec<ListThreadsInput, ListThreadsOutput> = {
   input: ListThreadsInputSchema,
   output: ListThreadsOutputSchema,
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  handler: async (rt, _ctx, input) => {
+  handler: async (rt, input) => {
     const paths = locate(rt)
     if (!paths.ok) return { ok: false, refusal: paths }
     const roster = listRoster(rt, paths.value, { includeClosed: input.include_closed ?? false })
