@@ -1,6 +1,6 @@
 # cli-and-run-writers: Logbook command line and run writers
 Status: parked
-Updated: 2026-11-03T22:57:27.305Z
+Updated: 2026-11-04T06:31:19.054Z
 Next ids: c6 D4 R2 S1
 
 ## Goal
@@ -17,13 +17,13 @@ A process with no Claude Code session, such as the pipeline's background drive, 
 
 ## Where things stand
 
-Pull request 305 (mitosis/cli-and-run-writers at a523570a into feat/cli-and-run-writers) is open as ready, assigned, carrying the review comment and bound to this session, with logbook at 0.19.0; review went green in round 2 with every advisory fixed. Auto-Fix is off: the app refuses to enable it for a pull request opened through GitHub MCP, so the owner turns it on. CI was running at open with 4 checks passing and 4 pending.
+Integration is running on feat/cli-and-run-writers at 459a8b23, the merge of pull request 305, in the integration worktree; integration-ready reports the one MSP merged. pipeline checks refuses a criterion with no acceptance list, so 5.11, which is unproven, is left out: the charter's Record line points at record-proven.json until the integration verbs finish, then CHARTER.md.orig restores it.
 
 ## Next step
 
-The owner turns on Auto-Fix for pull request 305 and merges it into feat/cli-and-run-writers; then the owner says the MSP pull requests merged, which starts Integration: lighthouse tests feat/cli-and-run-writers and opens the FEATURE pull request into main.
+Finish pipeline checks, run the integration suite and integration-plan, restore the charter, then run lighthouse:test as run 1 so it opens the FEATURE pull request into main.
 
-Needs: D3, R1.
+Needs: R1, R2.
 
 ## Decisions in force
 
