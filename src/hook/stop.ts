@@ -4,8 +4,8 @@ import { recordEvent } from '../metrics/record.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import { buildActivity, type Activity } from '../thread/activity.ts'
 import { addTranscript, heldBy, readHold } from '../thread/holds.ts'
-import { workingCopyPath, type RepoPaths } from '../thread/paths.ts'
-import { readDocument } from '../thread/store.ts'
+import { RUN_WRITER_PREFIX, workingCopyPath, type RepoPaths } from '../thread/paths.ts'
+import { lastWriter, readDocument } from '../thread/store.ts'
 import type { EmptyHookOutput, StopHookOutput } from './output.ts'
 
 export type StopInput = { event: Record<string, unknown>; sessionId: string; paths: RepoPaths; rt: Runtime }
@@ -23,8 +23,18 @@ const withTranscript = (transcripts: readonly string[], transcript: string | nul
 const isWaiting = (status: Status | null): status is Status =>
   status !== null && status.kind !== null && WAITING_KINDS.has(status.kind)
 
-const reasonFor = (activity: Activity, status: Status | null): UpdateReason | null => {
-  if (activity.changed) return { kind: 'turn-changed' }
+const runWroteLast = (rt: Runtime, paths: RepoPaths, slug: string): boolean =>
+  lastWriter(rt, paths, slug)?.startsWith(RUN_WRITER_PREFIX) === true
+
+const sessionDidTheWork = (activity: Activity, runHoldsTheDocument: () => boolean): boolean =>
+  activity.changed && (activity.edited || !runHoldsTheDocument())
+
+const reasonFor = (
+  activity: Activity,
+  status: Status | null,
+  runHoldsTheDocument: () => boolean
+): UpdateReason | null => {
+  if (sessionDidTheWork(activity, runHoldsTheDocument)) return { kind: 'turn-changed' }
   if (activity.userWrote && isWaiting(status)) return { kind: 'blocked-user-wrote', status: status.raw }
   return null
 }
@@ -45,7 +55,7 @@ export const stop = (input: StopInput): StopOutput => {
     since: hold.folded_at,
     workingCopyPath: file.value
   })
-  const reason = reasonFor(activity, parseDocument(stored.text).status)
+  const reason = reasonFor(activity, parseDocument(stored.text).status, () => runWroteLast(rt, paths, held))
   if (reason === null) return {}
   recordEvent(rt, paths, held, 'doc.request', { reason: reason.kind })
   return {

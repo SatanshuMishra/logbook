@@ -4,7 +4,7 @@ import path from 'node:path'
 type Entry = Record<string, unknown>
 type ToolResult = { text: string; isError: boolean }
 
-export type Activity = { lines: string[]; changed: boolean; userWrote: boolean }
+export type Activity = { lines: string[]; changed: boolean; edited: boolean; userWrote: boolean }
 
 export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   'Read',
@@ -146,6 +146,7 @@ export const buildActivity = (input: { transcripts: string[]; since: string | nu
   const results = toolResultsOf(entries)
   const lines: string[] = []
   let changed = false
+  let edited = false
   let userWrote = false
   let lastReply: string | null = null
   for (const entry of entries.filter((candidate) => isAfter(candidate, input.since))) {
@@ -164,10 +165,11 @@ export const buildActivity = (input: { transcripts: string[]; since: string | nu
       const toolInput = isPlainObject(block.input) ? block.input : {}
       if (isReadOnlyCall(block.name, toolInput, input.workingCopyPath)) continue
       changed = true
+      edited = edited || EDIT_TOOLS.has(block.name)
       const result = typeof block.id === 'string' ? results.get(block.id) : undefined
       const line = activityLine(block.name, toolSummary(block.name, toolInput, result?.text ?? null))
       lines.push(result?.isError === true ? `${line} (failed)` : line)
     }
   }
-  return { lines: lastReply === null ? lines : [...lines, `Last reply: ${lastReply}`], changed, userWrote }
+  return { lines: lastReply === null ? lines : [...lines, `Last reply: ${lastReply}`], changed, edited, userWrote }
 }

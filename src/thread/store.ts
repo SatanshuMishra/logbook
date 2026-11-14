@@ -26,6 +26,7 @@ type TreeEntry = { mode: string; type: string; object: string; name: string }
 const ALIASES_FILE = 'aliases.json'
 const DOCUMENT_SUFFIX = '.md'
 const BLOB_MODE = '100644'
+const WRITER_FORMAT = '--format=%(trailers:key=Writer,valueonly=true)'
 const SAFE_REVISION = /^[^\s:-][^\s:]*$/
 
 const documentName = (slug: string): string => `${slug}${DOCUMENT_SUFFIX}`
@@ -107,6 +108,17 @@ export const readDocument = (
   if (at === null) return null
   const found = readBlob(rt, paths, at, documentName(slug))
   return found === null ? null : { slug, text: found.text, blob: found.blob }
+}
+
+export const lastWriter = (rt: Runtime, paths: RepoPaths, slug: string): string | null => {
+  if (!THREAD_SLUG_PATTERN.test(slug)) return null
+  const newest = git(rt, paths.root, ['log', '-1', WRITER_FORMAT, THREADS_REF, '--', documentName(slug)])
+  if (!newest.ok) return null
+  const names = newest.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+  return names.at(-1) ?? null
 }
 
 export const listSlugs = (rt: Runtime, paths: RepoPaths, tip?: string | null): string[] => {
