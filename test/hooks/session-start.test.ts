@@ -169,9 +169,15 @@ const startEvent = (
   source
 })
 
-const runStart = async (fixture: Fixture, event: Record<string, unknown>): Promise<{ stdout: string; output: HookOutput }> => {
+const UNATTENDED_CHILD: Record<string, string> = { HARNESS_UNATTENDED: '1' }
+
+const runStart = async (
+  fixture: Fixture,
+  event: Record<string, unknown>,
+  launcherEnv: Record<string, string> = {}
+): Promise<{ stdout: string; output: HookOutput }> => {
   const { runHookProcess } = await import('../support/run-hook.ts')
-  const run = await runHookProcess({ hook: 'session-start', event, env: { HOME: fixture.home } })
+  const run = await runHookProcess({ hook: 'session-start', event, env: { ...launcherEnv, HOME: fixture.home } })
   assert.equal(run.code, 0, run.stderr)
   const output: unknown = JSON.parse(run.stdout)
   assert.ok(isRecord(output), `the hook must print a JSON object, got ${run.stdout}`)
@@ -271,6 +277,35 @@ test('session-start.startup-without-threads-is-quiet', async () => {
   await withFixture(async (fixture) => {
     const { stdout } = await runStart(fixture, startEvent(fixture, 's1', 'startup'))
     assert.equal(stdout, '{}')
+  })
+})
+
+test('session-start.unattended-startup-gives-no-roster', async () => {
+  await withFixture(async (fixture) => {
+    seedThreads(fixture, { alpha: stateDocument({ slug: 'alpha', title: 'Build the parser' }) })
+    const { stdout } = await runStart(fixture, startEvent(fixture, 's1', 'startup'), UNATTENDED_CHILD)
+    assert.equal(stdout, '{}')
+  })
+})
+
+test('session-start.startup-gives-the-roster-when-unattended-is-not-1', async () => {
+  await withFixture(async (fixture) => {
+    seedThreads(fixture, { alpha: stateDocument({ slug: 'alpha', title: 'Build the parser', nextStep: 'Write the parser.' }) })
+    const { output } = await runStart(fixture, startEvent(fixture, 's1', 'startup'), { HARNESS_UNATTENDED: '0' })
+    const context = contextOf(output)
+    assert.ok(context.includes('alpha - active - Next: Write the parser.'), context)
+  })
+})
+
+test('session-start.unattended-resume-still-gives-the-document', async () => {
+  await withFixture(async (fixture) => {
+    const document = stateDocument()
+    seedThreads(fixture, { 'fix-login': document })
+    takeHold(fixture.rt, fixture.paths, 'fix-login', 's1', null)
+    const { output } = await runStart(fixture, startEvent(fixture, 's1', 'resume'), UNATTENDED_CHILD)
+    const context = contextOf(output)
+    assert.ok(context.startsWith(openingOf(fixture)), context)
+    assert.ok(context.includes(document.trimEnd()), context)
   })
 })
 

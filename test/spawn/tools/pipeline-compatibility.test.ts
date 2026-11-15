@@ -172,17 +172,6 @@ test('pipeline.resume-by-thread-id', async () => {
   })
 })
 
-test('pipeline.resume-with-full-briefing', async () => {
-  await import('../../../src/server/tools/resume_thread.ts')
-  await withPipelineSession(null, async (call) => {
-    await openAndResume(call)
-    const reply = await call('resume_thread', { thread_id: SLUG, full_briefing: true })
-
-    assertAnswered(reply)
-    assert.equal(structured(reply).thread_id, 'export-report')
-  })
-})
-
 test('pipeline.record-a-boundary-decision', async () => {
   await import('../../../src/server/tools/record_decision.ts')
   await withPipelineSession(null, async (call) => {

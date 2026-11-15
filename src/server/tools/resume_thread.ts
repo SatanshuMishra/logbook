@@ -30,11 +30,7 @@ const ResumeThreadInputSchema = z
       .string()
       .describe(
         "the thread's slug, such as fix-login, or an old thread id listed in aliases.json; call list_threads to see each slug"
-      ),
-    full_briefing: z
-      .boolean()
-      .optional()
-      .describe('accepted for callers that send it and ignored: every resume returns the whole document')
+      )
   })
   .describe('the thread to resume, named by its slug or an old thread id')
 
@@ -125,7 +121,7 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
   name: TOOL_NAME,
   title: 'Resume thread',
   description:
-    "Picks up a thread and makes this session its holder. It brings in the thread's changes from origin when the repository has one, commits a pending valid edit of the working copy, and returns the thread's state document, which is then in your context; do not print it. The reply names the working copy, the file to edit with the Edit tool whenever logbook asks for an update, and lists what happened since the last accepted update: the earlier session's activity, tools still running when it ended, edits of the working copy logbook refused, a failed sync, conflicts left by a sync, and a request to tidy a document converted from the old ledger. Name the thread by its slug, or by an old thread id listed in aliases.json; call list_threads to see each slug. full_briefing is accepted and changes nothing.",
+    "Picks up a thread and makes this session its holder. It brings in the thread's changes from origin when the repository has one, commits a pending valid edit of the working copy, and returns the thread's state document, which is then in your context; do not print it. The reply names the working copy, the file to edit with the Edit tool whenever logbook asks for an update, and lists what happened since the last accepted update: the earlier session's activity, tools still running when it ended, edits of the working copy logbook refused, a failed sync, conflicts left by a sync, and a request to tidy a document converted from the old ledger. Name the thread by its slug, or by an old thread id listed in aliases.json; call list_threads to see each slug.",
   input: ResumeThreadInputSchema,
   output: ResumeThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },

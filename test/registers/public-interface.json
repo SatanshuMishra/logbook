@@ -17,8 +17,7 @@
     },
     "resume_thread": {
       "input": {
-        "thread_id": "required",
-        "full_briefing": "optional"
+        "thread_id": "required"
       },
       "output": [
         "thread_id",

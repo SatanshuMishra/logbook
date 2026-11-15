@@ -24,7 +24,7 @@ const notAFile = (file: string): Refusal => ({
   field: 'working_copy',
   accepted: 'a readable file at the working copy path, or nothing there',
   example: file,
-  retryable: true,
+  retryable: false,
   message: `the working copy ${file} is not a readable file, so nothing was committed; move whatever is at that path aside so logbook can write the document there again`
 })
 
@@ -33,8 +33,8 @@ const unmerged = (file: string): Refusal => ({
   field: 'working_copy',
   accepted: 'a working copy git can merge onto the stored version',
   example: file,
-  retryable: true,
-  message: `logbook could not merge the working copy ${file} onto the newer stored version, so nothing was committed`
+  retryable: false,
+  message: `logbook could not merge the working copy ${file} onto the newer stored version, so nothing was committed; move that file aside so logbook writes the stored version there again, then make the edit again`
 })
 
 const writeFile = (rt: Runtime, file: string, text: string): void => {

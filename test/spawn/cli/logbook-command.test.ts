@@ -457,17 +457,81 @@ test('command.finishes-with-an-open-input-pipe', async () => {
   })
 })
 
-test('command.decisions-lists-the-decisions-in-force-from-their-commits', async () => {
+test('command.decisions-lists-every-recorded-decision-oldest-first', async () => {
   await withThread({}, (seeded) => {
     const common = { thread_id: 'fix-login', context: 'c', options: ['a', 'b'] }
     recordDecision(seeded, { ...common, title: 'Pick a store: git', outcome: 'git, because it is already there' })
     recordDecision(seeded, { ...common, title: 'Retry policy', outcome: 'retry until it lands' })
     recordDecision(seeded, { ...common, title: 'Retry forever', outcome: 'no cap', supersedes: ['D2'] })
+    assert.deepEqual(sectionLines(storedText(seeded.repo), 'Decisions in force'), [
+      '- D1 Pick a store: git: git, because it is already there',
+      '- D3 Retry forever: no cap'
+    ])
     const run = runCommand(['decisions', '--repo', seeded.repo, '--thread', 'fix-login'], seeded.outside, seeded.env)
     assert.equal(run.status, 0, describeRun(run))
     assert.deepEqual(JSON.parse(singleLine(run.stdout)), [
       { id: 'D1', title: 'Pick a store: git', outcome: 'git, because it is already there' },
+      { id: 'D2', title: 'Retry policy', outcome: 'retry until it lands' },
       { id: 'D3', title: 'Retry forever', outcome: 'no cap' }
+    ])
+  })
+})
+
+const HAND_OFF_LINE = '- D1 hand-off: spec approved at the read-back: build'
+
+const editWorkingCopy = (seeded: Seeded, edit: (text: string) => string): void => {
+  const session = sessionRuntime(seeded)
+  seeded.modules.holds.takeHold(session, seeded.paths, 'fix-login', SESSION_HOLDER, null)
+  const materialised = seeded.modules.reconcile.reconcileThread(session, seeded.paths, 'fix-login')
+  assert.ok('kind' in materialised && materialised.kind === 'materialised', JSON.stringify(materialised))
+  const copy = workingCopyFile(seeded)
+  const before = readFileSync(copy, 'utf8')
+  const after = edit(before)
+  assert.notEqual(after, before, 'the edit must change the working copy')
+  writeFileSync(copy, after)
+  const settled = seeded.modules.reconcile.reconcileThread(session, seeded.paths, 'fix-login')
+  assert.ok('kind' in settled && settled.kind === 'accepted', JSON.stringify(settled))
+}
+
+test('command.decisions-keeps-a-decision-a-session-removed-from-the-document', async () => {
+  await withThread({}, (seeded) => {
+    recordDecision(seeded, {
+      thread_id: 'fix-login',
+      title: 'hand-off: spec approved at the read-back',
+      context: 'The spec and its steps are written and reviewed.',
+      options: ['build', 'stop'],
+      outcome: 'build'
+    })
+    assert.deepEqual(sectionLines(storedText(seeded.repo), 'Decisions in force'), [HAND_OFF_LINE])
+    editWorkingCopy(
+      seeded,
+      (text) =>
+        `${text.replace(`${HAND_OFF_LINE}\n`, '')}\n## This update\n\nTidied the decisions.\nRemoved: D1 because it no longer constrains future work\n`
+    )
+    assert.equal(sectionBody(storedText(seeded.repo), 'Decisions in force'), '')
+    const run = runCommand(['decisions', '--repo', seeded.repo, '--thread', 'fix-login'], seeded.outside, seeded.env)
+    assert.equal(run.status, 0, describeRun(run))
+    assert.deepEqual(JSON.parse(singleLine(run.stdout)), [
+      { id: 'D1', title: 'hand-off: spec approved at the read-back', outcome: 'build' }
+    ])
+  })
+})
+
+test('command.decisions-lists-a-reworded-line-after-its-record', async () => {
+  await withThread({}, (seeded) => {
+    recordDecision(seeded, {
+      thread_id: 'fix-login',
+      title: 'hand-off: spec approved at the read-back',
+      context: 'The spec and its steps are written and reviewed.',
+      options: ['build', 'stop'],
+      outcome: 'build'
+    })
+    editWorkingCopy(seeded, (text) => text.replace(HAND_OFF_LINE, '- D1 Build approved: go'))
+    const run = runCommand(['decisions', '--repo', seeded.repo, '--thread', 'fix-login'], seeded.outside, seeded.env)
+    assert.equal(run.status, 0, describeRun(run))
+    assert.deepEqual(JSON.parse(singleLine(run.stdout)), [
+      { id: 'D1', title: 'hand-off: spec approved at the read-back', outcome: 'build' },
+      { id: 'D1', title: 'Build approved', outcome: 'go' }
     ])
   })
 })

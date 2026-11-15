@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ChildProcess } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Runtime } from '../../src/runtime/runtime.ts'
@@ -14,6 +14,7 @@ const THREADS_REF = 'refs/logbook/threads'
 const STORED_AT = '2023-12-31T09:00:00.000Z'
 const SESSION_HOLDER = 'session-holder'
 const PENDING_RISK = '- R1 Pending risk from the session.'
+const NUL_CHARACTER = '\u0000'
 const PUSH_LIMIT_MS = 120000
 
 type Modules = {
@@ -388,7 +389,54 @@ test('writers.conflicting-edits-leave-markers-and-keep-the-command-write', async
   })
 })
 
-type Clone = { repo: string; paths: RepoPaths; session: Runtime; command: CommandRuntime }
+test('writers.unmergeable-copy-is-refused-as-not-retryable-and-settles-once-moved-aside', async () => {
+  await withFixture((fixture) => {
+    const { modules } = fixture
+    materialise(modules, fixture.session, fixture.paths)
+    const copy = workingCopyFile(fixture)
+    const copyBefore = editCopy(copy, (text) => replaceOnce(text, 'Find the fault.', `Find the fault.${NUL_CHARACTER}`))
+    const written = modules.reconcile.applyToolChange(fixture.command, fixture.paths, 'fix-login', {
+      tool: 'update_thread',
+      change: nextStepChange(modules, 'Ship the fix.')
+    })
+    assert.ok(written.ok, describe(written))
+    const before = tipOf(fixture.repo)
+    const refused = modules.reconcile.reconcileThread(fixture.session, fixture.paths, 'fix-login')
+    assert.ok(!('kind' in refused), describe(refused))
+    assert.equal(refused.field, 'working_copy')
+    assert.equal(refused.retryable, false)
+    assert.ok(
+      refused.message.endsWith(
+        'move that file aside so logbook writes the stored version there again, then make the edit again'
+      ),
+      refused.message
+    )
+    assert.equal(tipOf(fixture.repo), before)
+    assert.deepEqual(readFileSync(copy), copyBefore)
+    renameSync(copy, `${copy}.aside`)
+    const settled = modules.reconcile.reconcileThread(fixture.session, fixture.paths, 'fix-login')
+    assert.ok('kind' in settled && settled.kind === 'materialised', describe(settled))
+    assert.equal(readFileSync(copy, 'utf8'), storedText(fixture.repo))
+  })
+})
+
+test('writers.copy-that-is-not-a-file-is-refused-as-not-retryable-and-settles-once-moved-aside', async () => {
+  await withFixture((fixture) => {
+    const { modules } = fixture
+    const copy = workingCopyFile(fixture)
+    mkdirSync(copy, { recursive: true })
+    const refused = modules.reconcile.reconcileThread(fixture.session, fixture.paths, 'fix-login')
+    assert.ok(!('kind' in refused), describe(refused))
+    assert.equal(refused.field, 'working_copy')
+    assert.equal(refused.retryable, false)
+    renameSync(copy, `${copy}.aside`)
+    const settled = modules.reconcile.reconcileThread(fixture.session, fixture.paths, 'fix-login')
+    assert.ok('kind' in settled && settled.kind === 'materialised', describe(settled))
+    assert.equal(readFileSync(copy, 'utf8'), storedText(fixture.repo))
+  })
+})
+
+type Clone ={ repo: string; paths: RepoPaths; session: Runtime; command: CommandRuntime }
 
 const cloneFor = (modules: Modules, root: string, origin: string, name: string): Clone => {
   mustGit(root, ['clone', '--quiet', origin, name])

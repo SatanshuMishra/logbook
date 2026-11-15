@@ -313,7 +313,7 @@ test('resume_thread.rejects-invalid', async () => {
     const replies = await resumeCalls(clone, 's1', [
       {},
       { thread_id: 'ghost' },
-      { thread_id: 'fix-login', full_briefing: 'yes' },
+      { thread_id: 'fix-login', full_briefing: true },
       { thread_id: 'fix-login', pickup: true }
     ])
 
@@ -590,25 +590,6 @@ test('resume_thread.brings-in-origin-changes', async () => {
     const resumed = resumedOf(reply)
     assert.ok(resumed.briefing.includes(update), `B's briefing must hold A's update, got:\n${resumed.briefing}`)
     assert.ok(storedText(b).includes(update), "B's stored document must hold A's update")
-  })
-})
-
-test('resume_thread.accepts-full-briefing', async () => {
-  await import('../../../src/server/tools/resume_thread.ts')
-  await withDirs(async (makeDir) => {
-    const clone = cloneIn(makeDir, 'full-briefing')
-    seed(clone, fixLogin(STAND))
-
-    const [plain, withTrue, withFalse] = await resumeCalls(clone, 's1', [
-      { thread_id: 'fix-login' },
-      { thread_id: 'fix-login', full_briefing: true },
-      { thread_id: 'fix-login', full_briefing: false }
-    ])
-
-    assert.ok(plain !== undefined && withTrue !== undefined && withFalse !== undefined, 'every call must have a reply')
-    assertSucceeded(plain)
-    assert.deepEqual(withTrue, plain)
-    assert.deepEqual(withFalse, plain)
   })
 })
 

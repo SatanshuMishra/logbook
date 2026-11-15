@@ -94,9 +94,9 @@ const logCrash = (rt: Runtime, toolName: string, error: unknown): void => {
   rt.log({ level: 'error', source: 'server.register', tool: toolName, message })
 }
 
-const crashResult = (toolName: string): CallToolResult => ({
+const crashResult = (toolName: string, message: string): CallToolResult => ({
   isError: true,
-  content: [{ type: 'text', text: `logbook: "${toolName}" failed unexpectedly and the failure was logged.` }]
+  content: [{ type: 'text', text: `logbook: "${toolName}" failed unexpectedly and the failure was logged: ${message}` }]
 })
 
 type Outcome = ToolOutcome<unknown>['kind']
@@ -131,7 +131,7 @@ const resultOf = <O>(toolName: string, outcome: ToolOutcome<O>): CallToolResult 
     case 'refused':
       return toolRefusal(outcome.refusal)
     case 'crashed':
-      return crashResult(toolName)
+      return crashResult(toolName, outcome.message)
     default:
       throw new Error(`resultOf: unknown outcome kind ${JSON.stringify((outcome as { kind: unknown }).kind)}`)
   }

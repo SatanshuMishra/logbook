@@ -93,7 +93,7 @@ A write runs that tool with its MCP input object, given as JSON in `--args`, and
 logbook decisions --repo <root> --thread <slug>
 ```
 
-`decisions` prints the decisions in force of the thread as a JSON array of `{id, title, outcome}`.
+`decisions` prints every decision recorded on the thread, oldest first, as a JSON array of `{id, title, outcome}`. A decision stays listed after its line leaves Decisions in force, and a line there that no record wrote follows the recorded ones.
 
 Exit 0 prints the result as one JSON line on stdout. Exit 1 is a refusal: it prints the refusal as one JSON line on stdout and its message on stderr, and leaves the thread unchanged. Exit 2 is a usage error. The command never reads input, so it never waits for an answer.
 
@@ -101,7 +101,7 @@ A command write never touches a session's working copy. When a session holds the
 
 ## Sharing threads through git
 
-Threads travel with the repository through the remote named `origin`. After every accepted update logbook starts a background `git push` of `refs/logbook/threads` that never delays a reply and gives up after 15 seconds; a push origin rejects changes nothing locally and is left to the next sync.
+Threads travel with the repository through the remote named `origin`. After every accepted update logbook starts a background `git push` of `refs/logbook/threads` that never delays a reply. The push has no timer: it ends when origin has sent nothing for about a minute, a bound logbook leaves to your own ssh command when you set one. A push origin rejects changes nothing locally and is left to the next sync.
 
 **Every accepted update is pushed to origin, so nothing secret belongs in a state document.** Anyone who can fetch from origin can read every version of every thread.
 

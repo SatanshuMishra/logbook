@@ -38,7 +38,7 @@ The record that one session is working on a thread, naming that session and the 
 _Avoid_: lock, claim
 
 **Roster**:
-The list of open threads, one line each with its status and next step, shown at a session's startup and by list_threads.
+The list of open threads, one line each with its status and next step, shown by list_threads and at a session's startup, except in an unattended child session.
 _Avoid_: thread list, index
 
 **Writer**:
