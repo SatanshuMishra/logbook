@@ -37,6 +37,8 @@ const STARTUP_SOURCE = 'startup'
 const RESUME_SOURCE = 'resume'
 const CLEAR_SOURCE = 'clear'
 const PICKUP_SOURCES: ReadonlySet<string> = new Set([RESUME_SOURCE, 'compact', CLEAR_SOURCE])
+const UNATTENDED_ENV_KEY = 'HARNESS_UNATTENDED'
+const UNATTENDED_VALUE = '1'
 const CONTEXT_CEILING = 9500
 const HEADER_LINE_LIMIT = 500
 const NEXT_STEP_LIMIT = 2000
@@ -138,9 +140,12 @@ const contextOutput = (additionalContext: string, systemMessage: string | null):
   ...(systemMessage === null ? {} : { systemMessage })
 })
 
+const isUnattendedChild = (rt: Runtime): boolean => rt.env[UNATTENDED_ENV_KEY] === UNATTENDED_VALUE
+
 const startupOutput = (rt: Runtime, paths: RepoPaths): SessionStartOutput => {
   const migrated = migrateIfNeeded(rt, paths)
   if (!migrated.ok) rt.log({ level: 'warn', event: 'session-start.migration-failed', reason: migrated.message })
+  if (isUnattendedChild(rt)) return {}
   const roster = sessionStartRoster(rt, paths)
   return roster === null ? {} : contextOutput(roster, null)
 }
