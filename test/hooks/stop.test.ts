@@ -3,10 +3,11 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { Runtime } from '../../src/runtime/runtime.ts'
+import type { Runtime, Writer } from '../../src/runtime/runtime.ts'
 import { foldHold, readHold, takeHold } from '../../src/thread/holds.ts'
 import { findRepository, workingCopyPath, type RepoPaths } from '../../src/thread/paths.ts'
-import { commitDocuments } from '../../src/thread/store.ts'
+import { stop, type StopOutput } from '../../src/hook/stop.ts'
+import { commitDocuments, readDocument } from '../../src/thread/store.ts'
 import { rawGit } from '../support/git-fixture.ts'
 import type { HookProcessResult } from '../support/run-hook.ts'
 import { testRuntime } from '../support/runtime.ts'
@@ -259,5 +260,64 @@ test('stop.counts-everything-before-the-first-update', async () => {
     assert.ok(context.startsWith(`${UPDATE_OPENING}${fixture.workingCopy}.`), context)
     assert.ok(context.includes(TURN_CHANGED), context)
     assert.ok(context.includes('Edit tool'), context)
+  })
+})
+
+const RUN: Writer = { kind: 'command', name: 'run:fix-login' }
+const FIRST_NEXT_STEP = 'Fix the submit handler.'
+
+const writeNextStep = (fixture: Fixture, writer: Writer, step: string, status = 'active'): void => {
+  const stored = readDocument(fixture.rt, fixture.paths, 'fix-login')
+  assert.ok(stored !== null, 'the stored document must be readable')
+  const written = commitDocuments({ ...fixture.rt, writer }, fixture.paths, {
+    changes: [{ slug: 'fix-login', text: fixLogin(status).replace(FIRST_NEXT_STEP, step), expectedBlob: stored.blob }],
+    message: 'update_thread fix-login: next step'
+  })
+  assert.ok(written.ok, 'the next step must be written')
+}
+
+const stopInProcess = (fixture: Fixture): StopOutput =>
+  stop({ event: stopEvent(fixture), sessionId: 's1', paths: fixture.paths, rt: fixture.rt })
+
+const requestOf = (output: StopOutput): string => {
+  assert.ok('hookSpecificOutput' in output, `the hook made no request: ${JSON.stringify(output)}`)
+  return output.hookSpecificOutput.additionalContext
+}
+
+const writeLines = (fixture: Fixture, timestamp: string): Line[] => [
+  toolCall('toolu_write', 'Write', { file_path: join(fixture.repo, 'login.ts'), content: 'export {}\n' }, timestamp),
+  toolResult('toolu_write', 'File created successfully', timestamp)
+]
+
+test('stop.quiet-after-commands-when-a-run-wrote-the-thread-last', async () => {
+  await withThread({}, async (fixture) => {
+    writeNextStep(fixture, RUN, 'The drive entered review and runs it next.')
+    writeTranscript(fixture.transcript, [
+      userEntry('How is the run going?', BEFORE),
+      ...bashLines(AFTER),
+      assistantText('The run is in review.', LATER)
+    ])
+    assert.deepEqual(stopInProcess(fixture), {})
+  })
+})
+
+test('stop.nudges-after-a-file-edit-though-a-run-wrote-the-thread-last', async () => {
+  await withThread({}, async (fixture) => {
+    writeNextStep(fixture, RUN, 'The drive entered review and runs it next.')
+    writeTranscript(fixture.transcript, [...writeLines(fixture, AFTER), assistantText('Added the login module.', LATER)])
+    assert.ok(requestOf(stopInProcess(fixture)).includes(TURN_CHANGED))
+  })
+})
+
+test('stop.nudges-when-waiting-and-the-user-wrote-though-a-run-wrote-the-thread-last', async () => {
+  const waiting = 'waiting: the owner merges'
+  await withThread({ status: waiting }, async (fixture) => {
+    writeNextStep(fixture, RUN, 'The drive entered awaiting-merge.', waiting)
+    writeTranscript(fixture.transcript, [
+      userEntry('They are merged', AFTER),
+      ...bashLines(LATER),
+      assistantText('The run moves on.', LATER)
+    ])
+    assert.ok(requestOf(stopInProcess(fixture)).includes(BLOCKED_USER_WROTE))
   })
 })

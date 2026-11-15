@@ -53,6 +53,8 @@ Claude keeps the document true by editing the working copy with the Edit tool wh
 - Right after a milestone finishes: a `git commit`, `git push` or `git merge`, a `gh pr create` or `gh pr merge`, a pull request created or merged through an MCP tool, or a subagent's work. They ask at most once per prompt.
 - At the end of a turn that changed something, and when a blocked or waiting thread hears from you.
 
+While a run was the last writer of a thread's document, the end of a turn asks only when the turn edited a file. The run keeps that document true as it works, so a turn that only ran commands, such as reading the run's status or sending it an event, adds nothing the document should say. The first write by the session, or the next milestone, makes the session the last writer again.
+
 When the edit lands, logbook checks it in the same turn. The checker looks only at structure: lost items, deleted criteria, ticks without evidence, criterion rewording without a new decision, reused ids, and closing as done while a criterion is open. It never judges content. An accepted edit is committed with a note saying what changed and why each removed item left; a refused edit is answered with the line, the id and the fix, and Claude corrects it with one more edit.
 
 The hooks never block a tool or a turn. They add context and nothing else.

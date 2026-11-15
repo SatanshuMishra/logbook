@@ -284,7 +284,7 @@ test('activity.skips-other-entries-and-broken-lines', async () => {
       '{broken'
     ])
     const activity = buildActivity({ transcripts: [transcript], since: SINCE, workingCopyPath: join(dir, 'doc.md') })
-    assert.deepEqual(activity, { lines: [], changed: false, userWrote: false })
+    assert.deepEqual(activity, { lines: [], changed: false, edited: false, userWrote: false })
   })
 })
 
@@ -308,7 +308,7 @@ test('activity.entry-at-the-time-is-left-out', async () => {
       userEntry('Ship it', SINCE)
     ])
     const activity = buildActivity({ transcripts: [transcript], since: SINCE, workingCopyPath: join(dir, 'doc.md') })
-    assert.deepEqual(activity, { lines: [], changed: false, userWrote: false })
+    assert.deepEqual(activity, { lines: [], changed: false, edited: false, userWrote: false })
   })
 })
 
@@ -327,5 +327,41 @@ test('activity.reads-transcripts-in-order-and-skips-missing-ones', async () => {
       workingCopyPath: join(dir, 'doc.md')
     })
     assert.deepEqual(activity.lines, ['Bash: echo one', 'Bash: echo two'])
+  })
+})
+
+test('activity.a-file-the-turn-edited-counts-as-edited', async () => {
+  const { buildActivity } = await import('../../../src/thread/activity.ts')
+  await withDir(async (dir) => {
+    const transcript = writeTranscript(dir, 't.jsonl', [
+      assistantEntry([toolUse('toolu_1', 'Edit', { file_path: join(dir, 'login.ts'), old_string: 'a', new_string: 'b' })], AFTER)
+    ])
+    const activity = buildActivity({ transcripts: [transcript], since: SINCE, workingCopyPath: join(dir, 'doc.md') })
+    assert.deepEqual([activity.changed, activity.edited], [true, true])
+  })
+})
+
+test('activity.commands-alone-change-without-editing', async () => {
+  const { buildActivity } = await import('../../../src/thread/activity.ts')
+  await withDir(async (dir) => {
+    const transcript = writeTranscript(dir, 't.jsonl', [
+      assistantEntry([toolUse('toolu_1', 'Bash', { command: 'pipeline drive status' })], AFTER),
+      assistantEntry([toolUse('toolu_2', 'Agent', { description: 'review the diff' })], at(2000))
+    ])
+    const activity = buildActivity({ transcripts: [transcript], since: SINCE, workingCopyPath: join(dir, 'doc.md') })
+    assert.deepEqual([activity.changed, activity.edited], [true, false])
+  })
+})
+
+test('activity.an-edit-of-the-working-copy-is-not-an-edit', async () => {
+  const { buildActivity } = await import('../../../src/thread/activity.ts')
+  await withDir(async (dir) => {
+    const workingCopyPath = join(dir, 'fix-login.md')
+    writeFileSync(workingCopyPath, '# Fix login\n')
+    const transcript = writeTranscript(dir, 't.jsonl', [
+      assistantEntry([toolUse('toolu_1', 'Edit', { file_path: workingCopyPath, old_string: 'a', new_string: 'b' })], AFTER)
+    ])
+    const activity = buildActivity({ transcripts: [transcript], since: SINCE, workingCopyPath })
+    assert.equal(activity.edited, false)
   })
 })
