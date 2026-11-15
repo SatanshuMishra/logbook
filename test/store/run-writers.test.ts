@@ -420,6 +420,22 @@ test('writers.unmergeable-copy-is-refused-as-not-retryable-and-settles-once-move
   })
 })
 
+test('writers.copy-that-is-not-a-file-is-refused-as-not-retryable-and-settles-once-moved-aside', async () => {
+  await withFixture((fixture) => {
+    const { modules } = fixture
+    const copy = workingCopyFile(fixture)
+    mkdirSync(copy, { recursive: true })
+    const refused = modules.reconcile.reconcileThread(fixture.session, fixture.paths, 'fix-login')
+    assert.ok(!('kind' in refused), describe(refused))
+    assert.equal(refused.field, 'working_copy')
+    assert.equal(refused.retryable, false)
+    renameSync(copy, `${copy}.aside`)
+    const settled = modules.reconcile.reconcileThread(fixture.session, fixture.paths, 'fix-login')
+    assert.ok('kind' in settled && settled.kind === 'materialised', describe(settled))
+    assert.equal(readFileSync(copy, 'utf8'), storedText(fixture.repo))
+  })
+})
+
 type Clone ={ repo: string; paths: RepoPaths; session: Runtime; command: CommandRuntime }
 
 const cloneFor = (modules: Modules, root: string, origin: string, name: string): Clone => {

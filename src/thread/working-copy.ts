@@ -24,7 +24,7 @@ const notAFile = (file: string): Refusal => ({
   field: 'working_copy',
   accepted: 'a readable file at the working copy path, or nothing there',
   example: file,
-  retryable: true,
+  retryable: false,
   message: `the working copy ${file} is not a readable file, so nothing was committed; move whatever is at that path aside so logbook can write the document there again`
 })
 
