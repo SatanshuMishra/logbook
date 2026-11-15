@@ -4,7 +4,7 @@ import type { Refusal } from '../schema/declare.ts'
 import { refusalPayload } from '../server/errors.ts'
 import { crashMessage, runTool, type ToolOutcome, type ToolSpec } from '../server/register.ts'
 import { TOOL_SPECS } from '../server/tools/index.ts'
-import { readDecisionsInForce } from '../thread/decisions.ts'
+import { readRecordedDecisions } from '../thread/decisions.ts'
 import { findRepository, RUN_WRITER_PREFIX, SESSION_ID_PATTERN, THREAD_SLUG_PATTERN } from '../thread/paths.ts'
 
 export type CommandResult = { stdout: string[]; stderr: string[]; exitCode: 0 | 1 | 2 }
@@ -184,7 +184,7 @@ const runDecisions = (invocation: Extract<Invocation, { kind: 'decisions' }>): C
   const rt = commandRuntime({ repo: invocation.repo })
   const found = findRepository(rt, invocation.repo)
   if (!found.ok) return refused(found)
-  const decisions = readDecisionsInForce(rt, found.value, invocation.thread)
+  const decisions = readRecordedDecisions(rt, found.value, invocation.thread)
   return decisions.ok ? succeeded(decisions.value) : refused(decisions)
 }
 

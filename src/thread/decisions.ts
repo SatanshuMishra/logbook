@@ -5,7 +5,7 @@ import { git } from '../store/git.ts'
 import type { RepoPaths } from './paths.ts'
 import { readDocument, resolveThreadId, THREADS_REF, threadsTip } from './store.ts'
 
-export type DecisionInForce = { id: string; title: string; outcome: string }
+export type RecordedDecision = { id: string; title: string; outcome: string }
 
 type DecisionCommit = { subject: string; outcome: string | null }
 
@@ -15,6 +15,7 @@ const TITLE_SEPARATOR = ': '
 const RECORD_SEPARATOR = '\u001e'
 const FIELD_SEPARATOR = '\u0000'
 const LOG_FORMAT = '--format=%x1e%s%x00%b'
+const ID_THEN_TITLE = /^(D[1-9][0-9]*) (.+)$/
 
 const documentMissing = (slug: string): Refusal => ({
   ok: false,
@@ -51,10 +52,16 @@ const parseLog = (stdout: string): DecisionCommit[] =>
       return [{ subject: record.slice(0, split), outcome: outcomeOf(record.slice(split + 1)) }]
     })
 
-const decisionCommits = (rt: Runtime, paths: RepoPaths, slug: string, tip: string): Ok<DecisionCommit[]> | Refusal => {
+const decisionCommitsOldestFirst = (
+  rt: Runtime,
+  paths: RepoPaths,
+  slug: string,
+  tip: string
+): Ok<DecisionCommit[]> | Refusal => {
   const result = git(rt, paths.root, [
     'log',
     '--no-color',
+    '--reverse',
     '--extended-regexp',
     `--grep=^${subjectPrefix(slug)}`,
     LOG_FORMAT,
@@ -65,38 +72,41 @@ const decisionCommits = (rt: Runtime, paths: RepoPaths, slug: string, tip: strin
   return result.ok ? { ok: true, value: parseLog(result.stdout) } : logFailed(result.code, result.stderr)
 }
 
-const splitLine = (item: Item): DecisionInForce => {
+const splitLine = (item: Item): RecordedDecision => {
   const at = item.text.indexOf(TITLE_SEPARATOR)
   return at < 0
     ? { id: item.id, title: item.text, outcome: '' }
     : { id: item.id, title: item.text.slice(0, at), outcome: item.text.slice(at + TITLE_SEPARATOR.length) }
 }
 
-const fromCommit = (slug: string, item: Item, commit: DecisionCommit): DecisionInForce | null => {
-  const head = `${subjectPrefix(slug)}${item.id} `
-  if (commit.outcome === null || !commit.subject.startsWith(head)) return null
-  const title = commit.subject.slice(head.length)
-  return `${title}${TITLE_SEPARATOR}${commit.outcome}` === item.text ? { id: item.id, title, outcome: commit.outcome } : null
+const fromCommit = (slug: string, commit: DecisionCommit): RecordedDecision[] => {
+  const prefix = subjectPrefix(slug)
+  if (commit.outcome === null || !commit.subject.startsWith(prefix)) return []
+  const match = ID_THEN_TITLE.exec(commit.subject.slice(prefix.length))
+  const id = match?.[1]
+  const title = match?.[2]
+  return id === undefined || title === undefined ? [] : [{ id, title, outcome: commit.outcome }]
 }
 
-const describe = (slug: string, item: Item, commits: readonly DecisionCommit[]): DecisionInForce =>
-  commits.reduce<DecisionInForce | null>((found, commit) => found ?? fromCommit(slug, item, commit), null) ??
-  splitLine(item)
+const wroteLine = (decision: RecordedDecision, item: Item): boolean =>
+  decision.id === item.id && `${decision.title}${TITLE_SEPARATOR}${decision.outcome}` === item.text
 
-export const readDecisionsInForce = (
+export const readRecordedDecisions = (
   rt: Runtime,
   paths: RepoPaths,
   slug: string
-): Ok<DecisionInForce[]> | Refusal => {
+): Ok<RecordedDecision[]> | Refusal => {
   const resolved = resolveThreadId(rt, paths, slug)
   if (!resolved.ok) return resolved
   const tip = threadsTip(rt, paths)
   if (tip === null) return documentMissing(resolved.value)
   const stored = readDocument(rt, paths, resolved.value, tip)
   if (stored === null) return documentMissing(resolved.value)
-  const items = decisionsInForce(stored.text)
-  if (items.length === 0) return { ok: true, value: [] }
-  const commits = decisionCommits(rt, paths, resolved.value, tip)
+  const commits = decisionCommitsOldestFirst(rt, paths, resolved.value, tip)
   if (!commits.ok) return commits
-  return { ok: true, value: items.map((item) => describe(resolved.value, item, commits.value)) }
+  const recorded = commits.value.flatMap((commit) => fromCommit(resolved.value, commit))
+  const linesNoRecordWrote = decisionsInForce(stored.text)
+    .filter((item) => !recorded.some((decision) => wroteLine(decision, item)))
+    .map(splitLine)
+  return { ok: true, value: [...recorded, ...linesNoRecordWrote] }
 }
