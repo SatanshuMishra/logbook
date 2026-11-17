@@ -1,6 +1,6 @@
 import { parseDocument, type Section } from '../doc/document.ts'
 import { differenceSentence, differenceUserLine } from '../doc/render.ts'
-import { recordCommandLines, UPDATE_RULES } from '../doc/rules.ts'
+import { HAND_OFF_LINE, recordCommandLines, UPDATE_RULES } from '../doc/rules.ts'
 import { recordEvent } from '../metrics/record.ts'
 import { claudeProcessOf, type Runtime } from '../runtime/runtime.ts'
 import { git } from '../store/git.ts'
@@ -21,6 +21,7 @@ import { listMarkers } from '../thread/inflight.ts'
 import { migrateIfNeeded } from '../thread/migrate.ts'
 import { checkSessionId, workingCopyPath, type RepoPaths } from '../thread/paths.ts'
 import { listRoster, pickupRoster, sessionStartRoster, workingCopyParts, type RosterThread } from '../thread/roster.ts'
+import { repositoryState } from '../thread/repository-state.ts'
 import { readDocument, THREADS_REF } from '../thread/store.ts'
 import { syncThreads } from '../thread/sync.ts'
 import { comparisonText } from '../thread/working-copy.ts'
@@ -50,13 +51,21 @@ type Pickup = {
   markers: ListPart
   guide: readonly string[]
   roster: ListPart
+  others: readonly string[]
 }
 
-type Shape = { document: string; delivered: 'document' | 'short'; activity: number; markers: number; roster: number }
+type Shape = {
+  document: string
+  delivered: 'document' | 'short'
+  activity: number
+  markers: number
+  roster: number
+  others: number
+}
 
 type Fitted = { context: string; delivered: 'document' | 'short'; activityLines: number }
 
-type StartupExtras = { warnings: string[]; guide: string[]; roster: ListPart }
+type StartupExtras = { warnings: string[]; guide: string[]; roster: ListPart; others: string[] }
 
 const HOOK_EVENT = 'SessionStart'
 const STARTUP_SOURCE = 'startup'
@@ -76,6 +85,7 @@ const NEXT_STEP_SECTION = 'Next step'
 const ACTIVITY_HEADING = 'Activity since the last update:'
 const MARKERS_HEADING = 'Was running when the session ended:'
 const RULES_HEADING = 'Rules:'
+const OTHERS_HEADING = 'Other open threads, which this session does not hold; switch to one before recording in it:'
 const STARTUP_SYNC_LIMIT_MS = 8000
 const NO_ORIGIN_ERROR = 'no-origin'
 const DOCUMENT_SUFFIX = '.md'
@@ -138,6 +148,9 @@ const listBlock = (part: ListPart, kept: number): string => {
   return part.lines.length === 0 ? '' : [...part.lines.slice(0, kept), ...more, ...part.tail].join(LINE_BREAK)
 }
 
+const othersBlock = (documents: readonly string[], kept: number): string =>
+  kept === 0 ? '' : [OTHERS_HEADING, ...documents.slice(0, kept)].join(BLOCK_SEPARATOR)
+
 const rendered = (pickup: Pickup, shape: Shape): string =>
   [
     pickup.opening,
@@ -147,7 +160,8 @@ const rendered = (pickup: Pickup, shape: Shape): string =>
     listBlock(pickup.activity, shape.activity),
     listBlock(pickup.markers, shape.markers),
     ...pickup.guide,
-    listBlock(pickup.roster, shape.roster)
+    listBlock(pickup.roster, shape.roster),
+    othersBlock(pickup.others, shape.others)
   ]
     .filter((block) => block.length > 0)
     .join(BLOCK_SEPARATOR)
@@ -169,13 +183,22 @@ const fittedContext = (pickup: Pickup): Fitted => {
   })
   const allActivity = pickup.activity.lines.length
   const allMarkers = pickup.markers.lines.length
+  const allRoster = pickup.roster.lines.length
   return (
-    largestFitting(pickup, pickup.roster.lines.length, (roster) =>
-      whole({ activity: allActivity, markers: allMarkers, roster })
+    largestFitting(pickup, pickup.others.length, (others) =>
+      whole({ activity: allActivity, markers: allMarkers, roster: allRoster, others })
     ) ??
-    largestFitting(pickup, allActivity, (activity) => whole({ activity, markers: allMarkers, roster: 0 })) ??
-    largestFitting(pickup, allMarkers, (markers) => whole({ activity: 0, markers, roster: 0 })) ?? {
-      context: rendered(pickup, { document: pickup.shortDocument, delivered: 'short', activity: 0, markers: 0, roster: 0 }),
+    largestFitting(pickup, allRoster, (roster) => whole({ activity: allActivity, markers: allMarkers, roster, others: 0 })) ??
+    largestFitting(pickup, allActivity, (activity) => whole({ activity, markers: allMarkers, roster: 0, others: 0 })) ??
+    largestFitting(pickup, allMarkers, (markers) => whole({ activity: 0, markers, roster: 0, others: 0 })) ?? {
+      context: rendered(pickup, {
+        document: pickup.shortDocument,
+        delivered: 'short',
+        activity: 0,
+        markers: 0,
+        roster: 0,
+        others: 0
+      }),
       delivered: 'short',
       activityLines: 0
     }
@@ -211,8 +234,9 @@ const newestFreeThread = (
   sessionId: string,
   holdProcess: number | null
 ): string | null => {
+  const pickedState = threads.length === 0 ? null : repositoryState(rt, paths.root)
   for (const thread of threads) {
-    const take = takeFreeHold(rt, paths, thread.slug, sessionId, holdProcess)
+    const take = takeFreeHold(rt, paths, thread.slug, sessionId, holdProcess, pickedState)
     switch (take.kind) {
       case 'taken':
         return thread.slug
@@ -225,6 +249,19 @@ const newestFreeThread = (
   }
   return null
 }
+
+const otherDocuments = (
+  rt: Runtime,
+  paths: RepoPaths,
+  threads: readonly RosterThread[],
+  picked: string
+): string[] =>
+  threads
+    .filter((thread) => thread.slug !== picked)
+    .flatMap((thread) => {
+      const stored = readDocument(rt, paths, thread.slug)
+      return stored === null ? [] : [stored.text.replace(/\n+$/, '')]
+    })
 
 const startupOutput = (rt: Runtime, paths: RepoPaths, sessionId: string, syncError: string | null): SessionStartOutput => {
   const migrated = migrateIfNeeded(rt, paths)
@@ -239,8 +276,9 @@ const startupOutput = (rt: Runtime, paths: RepoPaths, sessionId: string, syncErr
   const others = pickupRoster(roster, slug)
   return pickupOutput(rt, paths, sessionId, slug, STARTUP_SOURCE, {
     warnings: [...syncWarnings, ...(parkedLast(rt, paths, slug) === false ? [notParkedWarning(slug)] : [])],
-    guide: [recordCommandLines(slug).join(LINE_BREAK), rulesBlock()],
-    roster: { kind: 'roster', ...others }
+    guide: [[...recordCommandLines(slug), HAND_OFF_LINE].join(LINE_BREAK), rulesBlock()],
+    roster: { kind: 'roster', ...others },
+    others: otherDocuments(rt, paths, roster.threads, slug)
   })
 }
 
@@ -251,7 +289,8 @@ const passHandover = (rt: Runtime, paths: RepoPaths, sessionId: string, transcri
   writeRedirect(rt, paths, handover.session, sessionId)
   if (handover.slug === null) return
   const handedOver = readHold(paths, handover.slug)
-  const provisional = handedOver?.provisional === true ? { provisional: true } : {}
+  const provisional =
+    handedOver?.provisional === true ? { provisional: true, pickedState: handedOver.picked_state ?? null } : {}
   takeHold(rt, paths, handover.slug, sessionId, transcript, handedOver?.process ?? null, provisional)
 }
 
@@ -282,7 +321,8 @@ const pickupOutput = (
     activity: { kind: 'latest', heading: ACTIVITY_HEADING, lines: activity.lines, replacement: earlierLinesLine },
     markers: { kind: 'latest', heading: MARKERS_HEADING, lines: markerLines, replacement: runningToolsLine },
     guide: extras?.guide ?? [],
-    roster: extras?.roster ?? NO_ROSTER
+    roster: extras?.roster ?? NO_ROSTER,
+    others: extras?.others ?? []
   })
   recordEvent(rt, paths, slug, 'thread.pickup', {
     source,

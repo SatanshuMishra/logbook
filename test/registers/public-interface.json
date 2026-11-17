@@ -62,6 +62,8 @@
     "park_thread": {
       "input": {
         "thread_id": "optional",
+        "edits": "optional",
+        "note": "optional",
         "outcome": "optional",
         "next_step": "optional",
         "next_step_records": "optional"

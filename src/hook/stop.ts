@@ -5,6 +5,7 @@ import type { Runtime } from '../runtime/runtime.ts'
 import { buildActivity, type Activity } from '../thread/activity.ts'
 import { addTranscript, heldBy, markProvisionalAsked, readHold, type Hold } from '../thread/holds.ts'
 import { RUN_WRITER_PREFIX, workingCopyPath, type RepoPaths } from '../thread/paths.ts'
+import { repositoryState } from '../thread/repository-state.ts'
 import { lastWriter, readDocument } from '../thread/store.ts'
 import type { EmptyHookOutput, StopHookOutput } from './output.ts'
 
@@ -43,8 +44,18 @@ const requestOutput = (text: string): StopHookOutput => ({
   hookSpecificOutput: { hookEventName: HOOK_EVENT, additionalContext: text }
 })
 
-const provisionalReason = (hold: Hold, reason: UpdateReason | null): UpdateReason | null =>
-  hold.provisional_asked !== true && reason?.kind === 'turn-changed' ? reason : null
+const unchangedSincePickup = (rt: Runtime, paths: RepoPaths, hold: Hold): boolean =>
+  hold.picked_state !== undefined && repositoryState(rt, paths.root) === hold.picked_state
+
+const provisionalReason = (
+  rt: Runtime,
+  paths: RepoPaths,
+  hold: Hold,
+  reason: UpdateReason | null
+): UpdateReason | null =>
+  hold.provisional_asked !== true && reason?.kind === 'turn-changed' && !unchangedSincePickup(rt, paths, hold)
+    ? reason
+    : null
 
 export const stop = (input: StopInput): StopOutput => {
   const { event, paths, rt, sessionId } = input
@@ -64,7 +75,7 @@ export const stop = (input: StopInput): StopOutput => {
   })
   const judged = reasonFor(activity, parseDocument(stored.text).status, () => runWroteLast(rt, paths, held))
   const provisional = hold.provisional === true
-  const reason = provisional ? provisionalReason(hold, judged) : judged
+  const reason = provisional ? provisionalReason(rt, paths, hold, judged) : judged
   if (reason === null) return {}
   recordEvent(rt, paths, held, 'doc.request', { reason: reason.kind })
   const text = updateRequest({ path: file.value, documentText: stored.text, reason, provisional })

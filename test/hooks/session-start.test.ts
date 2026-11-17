@@ -206,6 +206,7 @@ const startupOpeningOf = (slug: string): string =>
   `Logbook picked up thread ${slug} at session start, the newest open thread no running session holds.`
 
 const CONTINUE_LINE = 'To switch to another thread, run logbook resume_thread --args \'{"thread_id":"<slug>"}\' in Bash.'
+const OTHERS_HEADING = 'Other open threads, which this session does not hold; switch to one before recording in it:'
 
 const userLineOf = (fixture: Fixture): string =>
   `Logbook: Fix the login page - active. Next: Fix the submit handler. Full state: ${fixture.workingCopy}`
@@ -256,14 +257,13 @@ test('session-start.startup-gives-the-roster', async () => {
 test('session-start.startup-picks-up-a-free-thread-and-lists-the-others', async () => {
   await withFixture(async (fixture) => {
     const alpha = stateDocument({ slug: 'alpha', title: 'Build the parser', nextStep: 'Write the parser. Then test it.' })
-    seedThreads(fixture, {
-      alpha,
-      beta: stateDocument({ slug: 'beta', title: 'Ship the release', nextStep: 'Ship the release.' })
-    })
+    const beta = stateDocument({ slug: 'beta', title: 'Ship the release', nextStep: 'Ship the release.' })
+    seedThreads(fixture, { alpha, beta })
     const context = contextOf(startInProcess(fixture, startEvent(fixture, 's1', 'startup')))
     assert.ok(context.startsWith(startupOpeningOf('alpha')), context)
     assert.ok(context.includes(alpha.trimEnd()), context)
-    assert.ok(context.endsWith(`beta - active - Next: Ship the release.\n${CONTINUE_LINE}`), context)
+    assert.ok(context.includes(`beta - active - Next: Ship the release.\n${CONTINUE_LINE}`), context)
+    assert.ok(context.endsWith(`${OTHERS_HEADING}\n\n${beta.trimEnd()}`), context)
     assert.equal(readHold(fixture.paths, 'alpha')?.holder, 's1')
     assert.equal(readHold(fixture.paths, 'alpha')?.provisional, true)
   })

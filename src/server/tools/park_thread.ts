@@ -10,6 +10,7 @@ import { applyToolChange, type ToolChange } from '../../thread/reconcile.ts'
 import { readAliases, resolveThreadId } from '../../thread/store.ts'
 import { pushThreads, type PushOutcome } from '../../thread/sync.ts'
 import type { ToolSpec } from '../register.ts'
+import { editsInput, noteInput, noteLinesOf, withTextEdits } from './text-edits.ts'
 
 const TOOL_NAME = 'park_thread'
 const NOT_BLANK = /\S/
@@ -28,6 +29,8 @@ const ParkThreadInputSchema = z
       .describe(
         "the thread's slug, or an old thread id listed in aliases.json; omit it to park the thread this session holds"
       ),
+    edits: editsInput('before it is parked'),
+    note: noteInput(),
     outcome: z
       .string()
       .optional()
@@ -60,7 +63,7 @@ const ParkThreadInputSchema = z
     }
   })
   .describe(
-    'the thread to park, or none to park the thread this session holds, with an optional outcome and an optional next_step and its next_step_records'
+    'the thread to park, or none to park the thread this session holds, with optional edits and note recorded in the same commit, an optional outcome and an optional next_step and its next_step_records'
   )
 
 const ParkThreadOutputSchema = z.object({
@@ -159,11 +162,19 @@ const parkChange =
   (text) => {
     const status = parseDocument(text).status
     if (isClosed(status)) return { ok: false, refusal: closedThread(slug, status) }
-    const parked = setStatus(text, PARKED)
+    const edited = withTextEdits(text, input.edits ?? [])
+    if (!edited.ok) return { ok: false, refusal: edited }
+    const parked = setStatus(edited.value, PARKED)
     if (!parked.ok) return { ok: false, refusal: documentRefused(parked.message) }
     const stepped = withNextStep(parked.text, input)
     if (!stepped.ok) return { ok: false, refusal: stepped }
-    return { ok: true, text: stepped.value, summary: PARKED, details: outcomeLines(input.outcome), noteLines: [] }
+    return {
+      ok: true,
+      text: stepped.value,
+      summary: PARKED,
+      details: outcomeLines(input.outcome),
+      noteLines: noteLinesOf(input.note)
+    }
   }
 
 const hasExited = (child: BackgroundPush): boolean => child.exitCode !== null || child.signalCode !== null
@@ -213,7 +224,7 @@ const parkedIds = (rt: Runtime, paths: RepoPaths, slug: string): string[] => {
 export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
   name: TOOL_NAME,
   title: 'Park thread',
-  description: `Sets a thread's status to parked in one commit and releases the session's hold on it, so the thread waits in the roster for the next session. Name the thread with thread_id, or omit it to park the thread this session holds. outcome, when given, is kept in the commit. next_step replaces the body of "## ${NEXT_STEP_SECTION}", followed by the line "Needs: <ids>." when next_step_records names the items of the document that step needs. A thread that is done or abandoned is refused. Before it replies it brings origin up to date, merging origin's threads first when origin has moved, within 10 seconds. Returns the parked thread's slug and each old thread id that maps to it, and whether origin has the parked thread.`,
+  description: `Sets a thread's status to parked in one commit and releases the session's hold on it, so the thread waits in the roster for the next session. Name the thread with thread_id, or omit it to park the thread this session holds. edits and note work as in update_thread and land in the same commit, so one call records the hand-off and parks the thread. outcome, when given, is kept in the commit. next_step replaces the body of "## ${NEXT_STEP_SECTION}", followed by the line "Needs: <ids>." when next_step_records names the items of the document that step needs. A thread that is done or abandoned is refused. Before it replies it brings origin up to date, merging origin's threads first when origin has moved, within 10 seconds. Returns the parked thread's slug and each old thread id that maps to it, and whether origin has the parked thread.`,
   input: ParkThreadInputSchema,
   output: ParkThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },

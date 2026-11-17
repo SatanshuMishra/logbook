@@ -33,14 +33,19 @@ test('skills.file-opens-a-thread', () => {
   }
 })
 
-test('skills.debrief-updates-then-parks', () => {
-  const text = readSkill('debrief')
-
-  const updateAt = text.indexOf('logbook update_thread')
-  const parkAt = text.indexOf('logbook park_thread')
-  assert.ok(updateAt >= 0, 'skills/debrief/SKILL.md names logbook update_thread')
-  assert.ok(parkAt >= 0, 'skills/debrief/SKILL.md names logbook park_thread')
-  assert.ok(updateAt < parkAt, 'skills/debrief/SKILL.md names logbook update_thread before logbook park_thread')
+test('skills.debrief-hands-off-in-one-park-command', async () => {
+  const { parkThreadTool } = await import('../../src/server/tools/park_thread.ts')
+  const lines = readSkill('debrief')
+    .split('\n')
+    .map((line) => line.trim())
+  const commands = lines.filter((line) => line.startsWith('logbook '))
+  assert.deepEqual(commands, ["logbook park_thread --args - <<'EOF'"], 'skills/debrief/SKILL.md runs one logbook command')
+  const argumentsLine = lines[lines.indexOf(commands[0] ?? '') + 1] ?? ''
+  const parsed = parkThreadTool.input.safeParse(JSON.parse(argumentsLine))
+  assert.ok(parsed.success, `park_thread refuses the arguments skills/debrief/SKILL.md sends: ${JSON.stringify(parsed.error?.issues)}`)
+  for (const field of ['thread_id', 'next_step', 'edits', 'note']) {
+    assert.ok(field in parsed.data, `skills/debrief/SKILL.md sends ${field} to park_thread`)
+  }
 })
 
 test('skills.name-no-removed-tool', () => {

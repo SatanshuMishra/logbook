@@ -23,9 +23,10 @@ export type Hold = {
   released_from: string | null
   provisional?: true
   provisional_asked?: true
+  picked_state?: string
 }
 
-export type TakeHoldOptions = { provisional?: boolean }
+export type TakeHoldOptions = { provisional?: boolean; pickedState?: string | null }
 
 export type PickupClaim = { release: () => void }
 
@@ -81,12 +82,14 @@ const parseHold = (slug: string, value: unknown): Hold | null => {
     process: storedProcess,
     released_from: releasedFrom = null,
     provisional,
-    provisional_asked: provisionalAsked
+    provisional_asked: provisionalAsked,
+    picked_state: pickedState
   } = value
   if (storedSlug !== slug) return null
   if (!isStringOrNull(holder) || !isStringList(transcripts)) return null
   if (!isStringOrNull(foldedAt) || !isStringOrNull(nudgedPromptId) || !isStringOrNull(releasedFrom)) return null
   if (!isAbsentOrBoolean(provisional) || !isAbsentOrBoolean(provisionalAsked)) return null
+  if (pickedState !== undefined && typeof pickedState !== 'string') return null
   return {
     slug,
     holder,
@@ -96,7 +99,8 @@ const parseHold = (slug: string, value: unknown): Hold | null => {
     process: recordedProcess(storedProcess),
     released_from: releasedFrom,
     ...(provisional === true ? { provisional: true } : {}),
-    ...(provisionalAsked === true ? { provisional_asked: true } : {})
+    ...(provisionalAsked === true ? { provisional_asked: true } : {}),
+    ...(provisional === true && typeof pickedState === 'string' ? { picked_state: pickedState } : {})
   }
 }
 
@@ -175,7 +179,7 @@ export const takeHold = (
   const previous = readHold(paths, slug)
   const next =
     opts.provisional === true
-      ? provisionalTake(slug, session, process, previous)
+      ? provisionalTake(slug, session, process, previous, opts.pickedState ?? null)
       : fullTake(slug, session, transcript, process, previous)
   return storeHold(rt, paths, previous, next)
 }
@@ -205,11 +209,18 @@ const fullTake = (
         released_from: null
       }
 
-const provisionalTake = (slug: string, session: string, process: number | null, previous: Hold | null): Hold => ({
+const provisionalTake = (
+  slug: string,
+  session: string,
+  process: number | null,
+  previous: Hold | null,
+  pickedState: string | null
+): Hold => ({
   ...(previous === null
     ? { slug, holder: session, transcripts: [], folded_at: null, nudged_prompt_id: null, process, released_from: null }
     : { ...asFull(previous), holder: session, process }),
-  provisional: true
+  provisional: true,
+  ...(pickedState === null ? {} : { picked_state: pickedState })
 })
 
 const updateHold = (rt: Runtime, paths: RepoPaths, slug: string, change: (hold: Hold) => Hold): Hold | null => {
@@ -378,14 +389,15 @@ export const takeFreeHold = (
   paths: RepoPaths,
   slug: string,
   session: string,
-  holdProcess: number | null
+  holdProcess: number | null,
+  pickedState: string | null = null
 ): FreeHoldTake => {
   const claim = claimPickup(rt, paths, slug, session, process.pid)
   if (claim === null) return { kind: 'contended' }
   try {
     const hold = readHold(paths, slug)
     return hold === null || hold.holder === null
-      ? { kind: 'taken', hold: takeHold(rt, paths, slug, session, null, holdProcess, { provisional: true }) }
+      ? { kind: 'taken', hold: takeHold(rt, paths, slug, session, null, holdProcess, { provisional: true, pickedState }) }
       : { kind: 'held' }
   } finally {
     claim.release()
