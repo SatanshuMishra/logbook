@@ -68,6 +68,7 @@ const UNATTENDED_VALUE = '1'
 const CONTEXT_CEILING = 9500
 const HEADER_LINE_LIMIT = 500
 const NEXT_STEP_LIMIT = 2000
+const SYNC_REASON_LIMIT = 500
 const CUT_MARK = '...'
 const LINE_BREAK = '\n'
 const BLOCK_SEPARATOR = '\n\n'
@@ -89,7 +90,7 @@ const startupOpeningLine = (slug: string): string =>
   `Logbook picked up thread ${slug} at session start, the newest open thread no running session holds. Its state document follows and is now in your context; do not print it. If this session's work belongs to another thread or none, leave it.`
 
 const syncWarning = (error: string): string =>
-  `Logbook could not sync threads with origin: ${error}. This copy may be behind origin.`
+  `Logbook could not sync threads with origin: ${cutTo(SYNC_REASON_LIMIT, error.replace(/\s+/g, ' ').trim())}. This copy may be behind origin.`
 
 const notParkedWarning = (slug: string): string =>
   `Thread ${slug} was not parked after its last change: the session that last worked on it may not have recorded its latest changes, or they may not have reached origin.`
