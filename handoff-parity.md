@@ -1,7 +1,7 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: active
-Updated: 2026-11-17T20:41:35.763Z
-Next ids: c6 D1 R1 S1
+Updated: 2026-11-17T21:04:12.450Z
+Next ids: c6 D2 R1 S1
 
 ## Goal
 
@@ -24,6 +24,8 @@ Interphase's spec handoff-parity is written and checked (eight Steps in two MSPs
 Apply the spec review's fixes, finish interphase phase 10 (glossary, ADRs, guard verify, hand-off), then record the hand-off decision and start the mitosis drive.
 
 ## Decisions in force
+
+- D1 hand-off: build the handoff-parity spec as two pull requests through the pipeline drive: Build both MSPs with the mitosis drive from the FEATURE branch, the pickup-across-clones MSP after record-in-one-call, then measure cost, wall time, turns and recall against the handoff-file arm with the built plugin.
 
 ## Open risks
 
