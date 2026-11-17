@@ -1,4 +1,4 @@
-import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
+import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, writeSync } from 'node:fs'
 import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Refusal } from '../schema/declare.ts'
@@ -8,7 +8,6 @@ import {
   THREAD_SLUG_PATTERN,
   checkSessionId,
   holdPath,
-  pickupClaimPath,
   pickupLockPath,
   redirectPath,
   type RepoPaths
@@ -40,6 +39,8 @@ const PROBE_SIGNAL = 0
 const NO_SUCH_PROCESS = 'ESRCH'
 const NO_SUCH_FILE = 'ENOENT'
 const FILE_EXISTS = 'EEXIST'
+const CREATE_EXCLUSIVELY = 'wx'
+const PICKUP_LOCK_WRITE_GRACE_MS = 60 * 1000
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -316,19 +317,40 @@ const removeFile = (file: string): void => {
   }
 }
 
-const linkedLock = (staging: string, lock: string): boolean => {
+const createdLock = (lock: string, contents: string): boolean => {
+  mkdirSync(path.dirname(lock), { recursive: true })
+  let descriptor: number
   try {
-    linkSync(staging, lock)
-    return true
+    descriptor = openSync(lock, CREATE_EXCLUSIVELY)
   } catch (error) {
     if (errorCode(error) === FILE_EXISTS) return false
+    throw error
+  }
+  try {
+    writeSync(descriptor, contents)
+  } catch (error) {
+    closeSync(descriptor)
+    removeFile(lock)
+    throw error
+  }
+  closeSync(descriptor)
+  return true
+}
+
+const lockAgeMs = (rt: Runtime, lock: string): number | null => {
+  try {
+    return Date.parse(rt.now()) - statSync(lock).mtimeMs
+  } catch (error) {
+    if (errorCode(error) === NO_SUCH_FILE) return null
     throw error
   }
 }
 
 const lockOwnerRuns = (rt: Runtime, slug: string, lock: string): boolean => {
-  if (!existsSync(lock)) return false
+  const ageMs = lockAgeMs(rt, lock)
+  if (ageMs === null) return false
   const value = readJson(lock)
+  if (value === undefined && ageMs < PICKUP_LOCK_WRITE_GRACE_MS) return true
   const claimant = isPlainObject(value) ? recordedProcess(value.process) : null
   if (claimant !== null && processRuns(claimant)) return true
   rt.log({ level: 'info', event: 'holds.ended-pickup-claim-removed', slug })
@@ -345,17 +367,10 @@ export const claimPickup = (
 ): PickupClaim | null => {
   const lock = pickupLockPath(paths, slug)
   if (!lock.ok) throw refused(lock)
-  const staging = pickupClaimPath(paths, slug, session)
-  if (!staging.ok) throw refused(staging)
-  writeJson(rt, staging.value, { session, process: claimant })
-  try {
-    const won =
-      linkedLock(staging.value, lock.value) ||
-      (!lockOwnerRuns(rt, slug, lock.value) && linkedLock(staging.value, lock.value))
-    return won ? { release: () => removeFile(lock.value) } : null
-  } finally {
-    removeFile(staging.value)
-  }
+  const contents = JSON.stringify({ session, process: claimant })
+  const won =
+    createdLock(lock.value, contents) || (!lockOwnerRuns(rt, slug, lock.value) && createdLock(lock.value, contents))
+  return won ? { release: () => removeFile(lock.value) } : null
 }
 
 export const takeFreeHold = (
