@@ -18,8 +18,8 @@
   "verify": {
     "test_command": "node --test {test}",
     "suite_command": "npm test",
-    "require_fresh_base": "warn",
     "live_drive": null,
+    "require_fresh_base": "warn",
     "on_load_error_red": "warn"
   },
   "degrade": {
@@ -27,23 +27,54 @@
     "on_unreachable_build": "sha-bind-only"
   },
   "agent": {
-    "loop_skills": ["gates"],
+    "loop_skills": [
+      "gates"
+    ],
     "staging_query_patterns": [],
-    "closeout_fixed_statuses": ["Pending Retest", "Verified"],
-    "repo_name": "logbook"
+    "observe": {
+      "confirmed": true,
+      "surface": "What a Claude Code session with the plugin loaded receives: the replies of the MCP tools in src/server/tools, the output of the hooks registered in hooks/hooks.json (SessionStart, PreToolUse, PostToolUse, PostToolUseFailure, Stop, SessionEnd), and the thread state document under ~/.logbook and on refs/logbook/threads",
+      "value": "A named field of a tool reply or a hook's JSON output (additionalContext, decision, reason), the text of a state document section, or the commit a change lands on refs/logbook/threads, never only that a reply or commit exists",
+      "observe_by": "node:test calling the tool handlers and hook entry points against a disposable store built in a temp directory, and git log or git show on refs/logbook/threads",
+      "terminal_action": "The accepted write to a state document, which commits to refs/logbook/threads, followed by the background push to origin",
+      "build_artifact": "The version in .claude-plugin/plugin.json, installed into ~/.claude/plugins/cache/logbook/logbook/<version> by a release and a reinstall; a running session keeps the version it loaded at start, so working-tree edits reach no session until then",
+      "twin": "A state document is written through three paths that each check and commit the change: the MCP tools in src/server/tools, the working-copy Edit path through hooks/pre-tool-use.ts and src/hook, and the command line in src/command/main.ts",
+      "dependent": "Claude Code sessions with the plugin loaded, the preflight, debrief, file and metrics skills under skills/, and pipeline runs that open, resume and park threads",
+      "receipt": "A node:test file under test/, run with node --test, red on the base and green on the head; behaviour that shows only in a live session is proved with npm run prove (test/live)",
+      "compat_boundary": "State documents on refs/logbook/threads and the ~/.logbook working copies, written by one installed version and read by another on a second device not yet updated; and the hook and MCP interfaces of the Claude Code version that loads the plugin",
+      "reach": {
+        "access": "Load the worktree into Claude Code with claude --plugin-dir <worktree>; the installed copy in ~/.claude/plugins/cache changes only after a release and reinstall",
+        "shortcut": "claude --plugin-dir sessions, plus the test suite, which builds its own disposable store in a temp directory; no publish needed",
+        "fixtures": "A throwaway git repository with an origin remote; the logbook-evals templates are ready-made ones",
+        "special_surfaces": [
+          "hooks firing inside a real Claude Code session (SessionStart, PreToolUse, Stop)",
+          "the background push to a real remote",
+          "loading from the plugin cache"
+        ]
+      }
+    },
+    "closeout_fixed_statuses": [
+      "Pending Retest",
+      "Verified"
+    ],
+    "repo_name": "logbook",
+    "receipts_version": "0.9.5"
   },
   "gates": {
     "medium": "library",
     "enabled": "all",
-    "disabled": ["G4", "G5"],
+    "disabled": [
+      "G4",
+      "G5"
+    ],
+    "G8": {
+      "integration_branch": "main"
+    },
     "G6": {
       "mode": "warn"
     },
     "G7": {
       "mode": "warn"
-    },
-    "G8": {
-      "integration_branch": "main"
     },
     "G10": {
       "mode": "warn"
