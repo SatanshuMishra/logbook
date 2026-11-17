@@ -18,7 +18,7 @@ type DocumentInput = { slug: string; status: string; nextStep: string; decisions
 
 const THREADS = 'refs/logbook/threads'
 const ARCHIVE = 'refs/logbook/archive/ledger'
-const CONTINUE = 'To continue a thread, call resume_thread with its slug.'
+const CONTINUE = 'To switch to another thread, run logbook resume_thread --args \'{"thread_id":"<slug>"}\' in Bash.'
 
 const GIT_ENV: Record<string, string | undefined> = {
   PATH: process.env.PATH,

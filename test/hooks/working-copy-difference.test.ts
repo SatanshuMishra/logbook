@@ -162,22 +162,22 @@ const rosterLineOf = (context: string, slug: string): string => {
   return line
 }
 
-test('the startup roster names an uncommitted next step instead of the committed one', async () => {
+test('the startup pickup of the one free thread names its uncommitted next step in place of a roster line', async () => {
   await withFixture(async (fixture) => {
     seedThreads(fixture, { 'fix-login': stateDocument() })
     const file = writeWorkingCopy(fixture, 'fix-login', stateDocument({ nextStep: 'Ship the fix.' }))
     const copyBefore = readFileSync(file, 'utf8')
     const tipBefore = threadsTip(fixture)
     const context = contextOf(await runStart(fixture, 's1', 'startup'))
-    const expected = `fix-login - active - Next: read the working copy. ${differenceSentence(file, 'Next step')}`
-    assert.ok(context.split('\n').includes(expected), `the roster must hold the line\n${expected}\ngot:\n${context}`)
-    assert.equal(context.includes('Fix the submit handler'), false, context)
+    const expected = `${differenceSentence(file, 'Next step')}${PENDING_BLOCK_TAIL}`
+    assert.ok(context.split('\n\n').includes(expected), `the pickup must hold the block\n${expected}\ngot:\n${context}`)
+    assert.equal(context.split('\n').some((line) => line.startsWith('fix-login - ')), false, context)
     assert.equal(readFileSync(file, 'utf8'), copyBefore)
     assert.equal(threadsTip(fixture), tipBefore)
   })
 })
 
-test('the startup roster keeps the next step and names a difference elsewhere but not a header-only difference', async () => {
+test('the startup pickup names the picked thread difference and the other roster line keeps its next step without a header-only difference', async () => {
   await withFixture(async (fixture) => {
     seedThreads(fixture, {
       alpha: stateDocument({ slug: 'alpha', title: 'Build the parser' }),
@@ -190,10 +190,9 @@ test('the startup roster keeps the next step and names a difference elsewhere bu
     )
     writeWorkingCopy(fixture, 'beta', stateDocument({ slug: 'beta', title: 'Ship the release', updated: EDITED_AT, nextIds: 'c2 D3 R2 S1' }))
     const context = contextOf(await runStart(fixture, 's1', 'startup'))
-    const alphaLine = rosterLineOf(context, 'alpha')
-    assert.ok(alphaLine.includes('Next: Fix the submit handler'), alphaLine)
-    const alphaSentence = differenceSentence(alphaFile, 'Where things stand')
-    assert.ok(alphaLine.endsWith(alphaSentence), `alpha's roster line must end with\n${alphaSentence}\ngot:\n${alphaLine}`)
+    const alphaBlock = `${differenceSentence(alphaFile, 'Where things stand')}${PENDING_BLOCK_TAIL}`
+    assert.ok(context.split('\n\n').includes(alphaBlock), `the pickup must hold the block\n${alphaBlock}\ngot:\n${context}`)
+    assert.equal(context.split('\n').some((line) => line.startsWith('alpha - ')), false, context)
     const betaLine = rosterLineOf(context, 'beta')
     assert.ok(betaLine.includes('Next: Fix the submit handler'), betaLine)
     assert.equal(betaLine.includes('differs from the committed document'), false, betaLine)

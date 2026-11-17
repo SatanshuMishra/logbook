@@ -173,12 +173,13 @@ test('only the hold whose session process has ended is released at a startup', a
     await runStart(fixture, 'new-session', startEvent(fixture, 'new-session', 'startup', unusedTranscript(fixture, 'new-session')))
     assert.deepEqual(readHoldJson(fixture, 'alpha'), {
       slug: 'alpha',
-      holder: null,
+      holder: 'new-session',
       transcripts: [],
       folded_at: null,
       nudged_prompt_id: null,
       process: null,
-      released_from: 'ended-session'
+      released_from: 'ended-session',
+      provisional: true
     })
     assert.equal(readFileSync(holdFile(fixture, 'beta'), 'utf8'), betaBefore)
     assert.equal(threadsTip(fixture), tipBefore)
@@ -254,7 +255,7 @@ test('a hold from an earlier release is released only when every transcript it n
       })
     )
     assert.deepEqual(outcome, {
-      alpha: { holder: null, released_from: 'old-a' },
+      alpha: { holder: 'new-session', released_from: 'old-a' },
       beta: { holder: 'old-b', released_from: null },
       gamma: { holder: 'old-c', released_from: null },
       delta: { holder: 'old-d', released_from: null },

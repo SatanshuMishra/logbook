@@ -192,8 +192,13 @@ const contextOf = (output: HookOutput): string => {
   return String(specific.additionalContext)
 }
 
-const openingOf = (fixture: Fixture): string =>
-  `Logbook: this session holds thread fix-login. Its state document follows and is now in your context; do not print it. Keep it true by editing ${fixture.workingCopy} when logbook asks.`
+const openingOf = (): string =>
+  'Logbook: this session holds thread fix-login. Its state document follows and is now in your context; do not print it. Keep it true with logbook update_thread when logbook asks.'
+
+const startupOpeningOf = (slug: string): string =>
+  `Logbook picked up thread ${slug} at session start, the newest open thread no running session holds.`
+
+const CONTINUE_LINE = 'To switch to another thread, run logbook resume_thread --args \'{"thread_id":"<slug>"}\' in Bash.'
 
 const userLineOf = (fixture: Fixture): string =>
   `Logbook: Fix the login page - active. Next: Fix the submit handler. Full state: ${fixture.workingCopy}`
@@ -229,12 +234,32 @@ test('session-start.startup-gives-the-roster', async () => {
       alpha: stateDocument({ slug: 'alpha', title: 'Build the parser', nextStep: 'Write the parser. Then test it.' }),
       beta: stateDocument({ slug: 'beta', title: 'Ship the release', nextStep: 'Ship the release.' })
     })
+    takeHold(fixture.rt, fixture.paths, 'alpha', 's9', null, process.pid)
+    takeHold(fixture.rt, fixture.paths, 'beta', 's8', null, process.pid)
     const { output } = await runStart(fixture, startEvent(fixture, 's1', 'startup'))
     const context = contextOf(output)
     assert.ok(context.includes('alpha - active - Next: Write the parser.'), context)
     assert.ok(context.includes('beta - active - Next: Ship the release.'), context)
-    assert.ok(context.includes('To continue a thread, call resume_thread with its slug.'), context)
+    assert.ok(context.includes(CONTINUE_LINE), context)
     assert.equal('systemMessage' in output, false)
+    assert.equal(heldBy(fixture.paths, 's1'), null)
+  })
+})
+
+test('session-start.startup-picks-up-a-free-thread-and-lists-the-others', async () => {
+  await withFixture(async (fixture) => {
+    const alpha = stateDocument({ slug: 'alpha', title: 'Build the parser', nextStep: 'Write the parser. Then test it.' })
+    seedThreads(fixture, {
+      alpha,
+      beta: stateDocument({ slug: 'beta', title: 'Ship the release', nextStep: 'Ship the release.' })
+    })
+    const { output } = await runStart(fixture, startEvent(fixture, 's1', 'startup'))
+    const context = contextOf(output)
+    assert.ok(context.startsWith(startupOpeningOf('alpha')), context)
+    assert.ok(context.includes(alpha.trimEnd()), context)
+    assert.ok(context.endsWith(`beta - active - Next: Ship the release.\n${CONTINUE_LINE}`), context)
+    assert.equal(readHold(fixture.paths, 'alpha')?.holder, 's1')
+    assert.equal(readHold(fixture.paths, 'alpha')?.provisional, true)
   })
 })
 
@@ -269,7 +294,8 @@ test('session-start.startup-migrates-an-old-ledger', async () => {
     const { output } = await runStart(fixture, startEvent(fixture, 's1', 'startup'))
     assert.equal(refExists(fixture.repo, 'refs/logbook/threads'), true)
     const context = contextOf(output)
-    assert.ok(context.includes('fix-login - active - Next: Write the refresh handler'), context)
+    assert.ok(context.startsWith(startupOpeningOf('fix-login')), context)
+    assert.ok(context.includes('Write the refresh handler'), context)
   })
 })
 
@@ -293,7 +319,8 @@ test('session-start.startup-gives-the-roster-when-unattended-is-not-1', async ()
     seedThreads(fixture, { alpha: stateDocument({ slug: 'alpha', title: 'Build the parser', nextStep: 'Write the parser.' }) })
     const { output } = await runStart(fixture, startEvent(fixture, 's1', 'startup'), { HARNESS_UNATTENDED: '0' })
     const context = contextOf(output)
-    assert.ok(context.includes('alpha - active - Next: Write the parser.'), context)
+    assert.ok(context.startsWith(startupOpeningOf('alpha')), context)
+    assert.ok(context.includes('## Next step\n\nWrite the parser.'), context)
   })
 })
 
@@ -304,7 +331,7 @@ test('session-start.unattended-resume-still-gives-the-document', async () => {
     takeHold(fixture.rt, fixture.paths, 'fix-login', 's1', null)
     const { output } = await runStart(fixture, startEvent(fixture, 's1', 'resume'), UNATTENDED_CHILD)
     const context = contextOf(output)
-    assert.ok(context.startsWith(openingOf(fixture)), context)
+    assert.ok(context.startsWith(openingOf()), context)
     assert.ok(context.includes(document.trimEnd()), context)
   })
 })
@@ -318,7 +345,7 @@ test('session-start.resume-gives-the-document', async () => {
     writeTranscript(transcript, [bashCall('toolu_r1', 'npm test -- login', timeAt(120))])
     const { output } = await runStart(fixture, startEvent(fixture, 's1', 'resume'))
     const context = contextOf(output)
-    assert.ok(context.startsWith(openingOf(fixture)), context)
+    assert.ok(context.startsWith(openingOf()), context)
     assert.ok(context.includes(document.trimEnd()), context)
     assert.ok(context.includes('Activity since the last update:\nBash: npm test -- login'), context)
     assert.equal(output.systemMessage, userLineOf(fixture))
@@ -341,7 +368,7 @@ test('session-start.compact-gives-the-document-and-markers', async () => {
     markBash(fixture, 'toolu_l1', 'npm run lint', 's1')
     const { output } = await runStart(fixture, startEvent(fixture, 's1', 'compact'))
     const context = contextOf(output)
-    assert.ok(context.startsWith(openingOf(fixture)), context)
+    assert.ok(context.startsWith(openingOf()), context)
     assert.ok(context.includes(document.trimEnd()), context)
     assert.ok(context.includes('Bash: npm run build'), context)
     assert.equal(context.includes('Bash: git status --short'), false)
@@ -368,7 +395,7 @@ test('session-start.clear-gives-the-document-after-handover', async () => {
     const { output } = await runStart(fixture, startEvent(fixture, 's2', 'clear', join(folder, 's2.jsonl')))
     assert.equal(heldBy(fixture.paths, 's2'), 'fix-login')
     const context = contextOf(output)
-    assert.ok(context.startsWith(openingOf(fixture)), context)
+    assert.ok(context.startsWith(openingOf()), context)
     assert.ok(context.includes(document.trimEnd()), context)
     assert.ok(context.includes('Bash: npm run migrate'), context)
     assert.equal(output.systemMessage, userLineOf(fixture))
@@ -402,7 +429,7 @@ test('session-start.old-activity-gives-way-first', async () => {
     const { output } = await runStart(fixture, startEvent(fixture, 's1', 'resume'))
     const context = contextOf(output)
     assert.ok(context.length <= CEILING, `context is ${context.length} characters`)
-    assert.ok(context.startsWith(openingOf(fixture)), context)
+    assert.ok(context.startsWith(openingOf()), context)
     assert.ok(context.includes(document.trimEnd()))
     assert.ok(context.includes('Was running when the session ended:\nBash: npm run e2e\nBash: npm run deploy'), context)
     const kept = linesStarting(context, 'Bash: echo act-')
@@ -423,7 +450,7 @@ test('session-start.markers-give-way-after-activity', async () => {
     const { output } = await runStart(fixture, startEvent(fixture, 's1', 'resume'))
     const context = contextOf(output)
     assert.ok(context.length <= CEILING, `context is ${context.length} characters`)
-    assert.ok(context.startsWith(openingOf(fixture)), context)
+    assert.ok(context.startsWith(openingOf()), context)
     assert.ok(context.includes(document.trimEnd()))
     assert.ok(context.includes('(50 earlier lines left out)'), context)
     assert.deepEqual(linesStarting(context, 'Bash: echo act-'), [])
@@ -449,7 +476,7 @@ test('session-start.too-long-document-is-read-from-the-file', async () => {
     const { output } = await runStart(fixture, startEvent(fixture, 's1', 'resume'))
     const context = contextOf(output)
     assert.ok(context.length <= CEILING, `context is ${context.length} characters`)
-    assert.ok(context.startsWith(openingOf(fixture)), context)
+    assert.ok(context.startsWith(openingOf()), context)
     assert.ok(context.includes('# fix-login: Fix the login page\nStatus: active'), context)
     assert.ok(context.includes('## Next step\n\nFix the submit handler. Then rerun the login tests.'), context)
     assert.ok(context.includes(`The document is too long to include; Read ${fixture.workingCopy} now.`), context)
@@ -480,7 +507,7 @@ test('session-start.kept-lines-are-cut-when-too-long', async () => {
     assert.equal(statusLine.length, 500)
     assert.equal(nextStepSection.length, 2000)
     assert.ok(context.length <= CEILING, `context is ${context.length} characters`)
-    assert.ok(context.startsWith(openingOf(fixture)), context)
+    assert.ok(context.startsWith(openingOf()), context)
     assert.ok(context.includes(`${titleLine}\n${statusLine}\n`), context)
     assert.ok(context.includes(`${nextStepSection}\n`), context)
     assert.ok(context.includes(`The document is too long to include; Read ${fixture.workingCopy} now.`), context)
@@ -506,6 +533,26 @@ test('handover.fresh-handover-passes-the-hold', async () => {
     assert.equal(heldBy(fixture.paths, 's2'), 'fix-login')
     assert.deepEqual(readHold(fixture.paths, 'fix-login')?.transcripts, [oldTranscript, newTranscript])
     assert.deepEqual(JSON.parse(readFileSync(redirectFile(fixture, 's1'), 'utf8')), { session: 's2' })
+  })
+})
+
+test('handover.provisional-hold-is-handed-on-as-provisional', async () => {
+  await withFixture(async (fixture) => {
+    seedThreads(fixture, { 'fix-login': stateDocument() })
+    const folder = join(fixture.home, 'P')
+    const oldTranscript = join(folder, 's1.jsonl')
+    takeHold(fixture.rt, fixture.paths, 'fix-login', 's1', null, null, { provisional: true })
+    writeHandover(fixture.rt, fixture.paths, {
+      session: 's1',
+      slug: 'fix-login',
+      transcript: oldTranscript,
+      at: secondsAgo(5)
+    })
+    await runStart(fixture, startEvent(fixture, 's2', 'clear', join(folder, 's2.jsonl')))
+    const hold = readHold(fixture.paths, 'fix-login')
+    assert.equal(hold?.holder, 's2')
+    assert.equal(hold?.provisional, true)
+    assert.deepEqual(hold?.transcripts, [])
   })
 })
 
