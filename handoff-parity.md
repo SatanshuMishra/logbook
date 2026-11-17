@@ -1,7 +1,7 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: active
-Updated: 2026-11-17T23:19:52.142Z
-Next ids: c6 D2 R1 S1
+Updated: 2026-11-17T23:41:18.702Z
+Next ids: c6 D2 R2 S1
 
 ## Goal
 
@@ -17,17 +17,21 @@ Logbook works as fast and token-efficiently as a committed handoff file, commit 
 
 ## Where things stand
 
-Interphase handed off the spec handoff-parity: eight Steps in two MSPs, record-in-one-call then pickup-across-clones, with the spec review's seventeen fixes applied. Main's suite is 583 of 583 green.
+Pull request #312 (mitosis/record-in-one-call into feat/handoff-parity) carries all eight Steps; the drive marked its lint failure unfixable and parked in awaiting-merge. Commit 559744c6, made in the scratch worktree and not yet pushed, makes lint pass 50 of 50. The rerun puts the built plugin at S1 0.093, S2 0.242 and S3 0.546 dollars against the handoff file's 0.075, 0.225 and 0.458; work sessions already match it. The gap comes from three places: read-only sessions are asked to record at Stop, a hand-off loads MCP tools and syncs again after park, and a crowded repository picks up the newer thread.
 
 ## Next step
 
-The drive entered awaiting-merge: pull requests are ready to merge: lint contract.no-sleeps rejects the timer wait at test/sync/bounded-sync.test.ts:133 (settlesWithin returns false at its deadline instead of throwing), and that file is locked with no finding allowing repair, while loosening test/lint/no-sleeps.test.ts would weaken a check; the other two failures (spawn allowlist and injected clock in src/server/tools/park_thread.ts) can be fixed but would leave lint red.; it resumes on pipeline drive event --name merged.
+In /private/tmp/claude-501/-Users-satanshumishra-Documents-DevLabs-logbook/fe446180-dc5e-4960-9895-ea442f94e2fa/scratchpad/wt/logbook-built, make src/hook/stop.ts skip the provisional ask when HEAD and the worktree are unchanged since pickup, put the other open free threads' documents in the startup context within its ceiling, and let park_thread take edits and note so a hand-off is one logbook command; then run npm test and npm run lint, push to mitosis/record-in-one-call, and rerun the hp stages.
+
+Needs: D1, R1.
 
 ## Decisions in force
 
 - D1 hand-off: build the handoff-parity spec as two pull requests through the pipeline drive: Build both MSPs with the mitosis drive from the FEATURE branch, the pickup-across-clones MSP after record-in-one-call, then measure cost, wall time, turns and recall against the handoff-file arm with the built plugin.
 
 ## Open risks
+
+- R1 Merging #312 before the parity fixes reach its branch strands them, so they would need a second pull request.
 
 ## Settled, do not reopen
 
@@ -38,3 +42,4 @@ The drive entered awaiting-merge: pull requests are ready to merge: lint contrac
 - Cost driver traced in runs/model/s1/L-clean-continue-r1: 8 of 18 tool calls were logbook's (2 tool lookups, resume, read plus 4 separate edits at debrief)
 - Second-device gaps: results/det/d2_checkout_sync.json (M2 teammate discovery GAP; M3 resume syncs first PASS)
 - Lighthouse profile: /Users/satanshumishra/Documents/DevLabs/logbook/.lighthouse/profile.json
+- Parity rerun: logbook-evals runs/model/hp-s1, hp-s2 and hp-s3, scored by harness/hp_score.py into results/hp_scores.jsonl; arm L is the installed 0.20.0, arm L2 loads the folder named by LOGBOOK_PLUGIN_L2
