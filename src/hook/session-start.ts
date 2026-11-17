@@ -13,6 +13,7 @@ import {
   readHold,
   releaseEndedHolds,
   takeBackHolds,
+  takeFreeHold,
   takeHold,
   writeRedirect
 } from '../thread/holds.ts'
@@ -196,11 +197,6 @@ const parkedLast = (rt: Runtime, paths: RepoPaths, slug: string): boolean | null
   return log.stdout.startsWith(parkSubjectPrefix(slug))
 }
 
-const isFree = (paths: RepoPaths, slug: string): boolean => {
-  const hold = readHold(paths, slug)
-  return hold === null || hold.holder === null
-}
-
 const rosterOutput = (rt: Runtime, paths: RepoPaths, warnings: readonly string[]): SessionStartOutput => {
   const roster = sessionStartRoster(rt, paths)
   const blocks = [...warnings, ...(roster === null ? [] : [roster])]
@@ -214,10 +210,10 @@ const startupOutput = (rt: Runtime, paths: RepoPaths, sessionId: string, syncErr
   const syncWarnings = syncError === null ? [] : [syncWarning(syncError)]
   if (heldBy(paths, sessionId) !== null) return rosterOutput(rt, paths, syncWarnings)
   const roster = listRoster(rt, paths, { includeClosed: false })
-  const picked = roster.threads.find((thread) => isFree(paths, thread.slug))
+  const holdProcess = claudeProcessOf(rt.env) ?? rt.parentProcess
+  const picked = roster.threads.find((thread) => takeFreeHold(rt, paths, thread.slug, sessionId, holdProcess) !== null)
   if (picked === undefined) return rosterOutput(rt, paths, syncWarnings)
   const slug = picked.slug
-  takeHold(rt, paths, slug, sessionId, null, claudeProcessOf(rt.env) ?? rt.parentProcess, { provisional: true })
   const others = pickupRoster(roster, slug)
   return pickupOutput(rt, paths, sessionId, slug, STARTUP_SOURCE, {
     warnings: [...syncWarnings, ...(parkedLast(rt, paths, slug) === false ? [notParkedWarning(slug)] : [])],

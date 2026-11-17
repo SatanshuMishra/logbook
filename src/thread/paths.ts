@@ -142,6 +142,14 @@ export const workingCopyPath = (paths: RepoPaths, slug: string): Ok<string> | Re
 export const holdPath = (paths: RepoPaths, slug: string): Ok<string> | Refusal =>
   built(checkSlug('slug', slug), () => path.join(paths.logbookDir, 'holds', `${slug}.json`))
 
+export const pickupClaimDir = (paths: RepoPaths, slug: string): Ok<string> | Refusal =>
+  built(checkSlug('slug', slug), () => path.join(paths.logbookDir, 'pickups', slug))
+
+export const pickupClaimPath = (paths: RepoPaths, slug: string, sessionId: string): Ok<string> | Refusal =>
+  built(checkSlug('slug', slug) ?? checkSessionId('session_id', sessionId), () =>
+    path.join(paths.logbookDir, 'pickups', slug, `${sessionId}.json`)
+  )
+
 export const copyBasePath = (paths: RepoPaths, slug: string): Ok<string> | Refusal =>
   built(checkSlug('slug', slug), () => path.join(paths.logbookDir, 'bases', slug))
 

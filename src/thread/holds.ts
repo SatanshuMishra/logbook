@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Refusal } from '../schema/declare.ts'
@@ -8,6 +8,8 @@ import {
   THREAD_SLUG_PATTERN,
   checkSessionId,
   holdPath,
+  pickupClaimDir,
+  pickupClaimPath,
   redirectPath,
   type RepoPaths
 } from './paths.ts'
@@ -26,12 +28,16 @@ export type Hold = {
 
 export type TakeHoldOptions = { provisional?: boolean }
 
+export type PickupClaim = { release: () => void }
+
 const HOLDS_FOLDER = 'holds'
 const HOLD_SUFFIX = '.json'
 const TRANSCRIPT_SUFFIX = '.jsonl'
 const ENDED_TRANSCRIPT_AGE_MS = 24 * 60 * 60 * 1000
 const PROBE_SIGNAL = 0
 const NO_SUCH_PROCESS = 'ESRCH'
+const NO_SUCH_FILE = 'ENOENT'
+const CLAIM_SUFFIX = '.json'
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -298,6 +304,65 @@ export const takeBackHolds = (rt: Runtime, paths: RepoPaths, session: string): H
   const current = readHold(paths, released.slug)
   if (!isReleasedFrom(current)) return null
   return takeHold(rt, paths, current.slug, session, null, current.holder === null ? current.process : null)
+}
+
+const removeFile = (file: string): void => {
+  try {
+    unlinkSync(file)
+  } catch (error) {
+    if (errorCode(error) !== NO_SUCH_FILE) throw error
+  }
+}
+
+const claimNames = (dir: string): string[] => readdirSync(dir).filter((name) => name.endsWith(CLAIM_SUFFIX))
+
+const claimRuns = (rt: Runtime, file: string): boolean => {
+  const value = readJson(file)
+  const claimant = isPlainObject(value) ? recordedProcess(value.process) : null
+  if (claimant !== null && processRuns(claimant)) return true
+  rt.log({ level: 'info', event: 'holds.ended-pickup-claim-removed', claim: path.basename(file) })
+  removeFile(file)
+  return false
+}
+
+export const claimPickup = (
+  rt: Runtime,
+  paths: RepoPaths,
+  slug: string,
+  session: string,
+  claimant: number
+): PickupClaim | null => {
+  const dir = pickupClaimDir(paths, slug)
+  if (!dir.ok) throw refused(dir)
+  const file = pickupClaimPath(paths, slug, session)
+  if (!file.ok) throw refused(file)
+  writeJson(rt, file.value, { session, process: claimant })
+  const release = (): void => removeFile(file.value)
+  const othersRunning = claimNames(dir.value)
+    .filter((name) => name !== path.basename(file.value))
+    .map((name) => claimRuns(rt, path.join(dir.value, name)))
+  if (!othersRunning.includes(true)) return { release }
+  release()
+  return null
+}
+
+export const takeFreeHold = (
+  rt: Runtime,
+  paths: RepoPaths,
+  slug: string,
+  session: string,
+  holdProcess: number | null
+): Hold | null => {
+  const claim = claimPickup(rt, paths, slug, session, process.pid)
+  if (claim === null) return null
+  try {
+    const hold = readHold(paths, slug)
+    return hold === null || hold.holder === null
+      ? takeHold(rt, paths, slug, session, null, holdProcess, { provisional: true })
+      : null
+  } finally {
+    claim.release()
+  }
 }
 
 const readRedirect = (paths: RepoPaths, session: string): string | null => {
