@@ -15,7 +15,16 @@ export type Runtime = {
   parentProcess: number | null
 }
 
-const SESSION_ID_ENV_KEY = 'CLAUDE_CODE_SESSION_ID'
+export const SESSION_ID_ENV_KEY = 'CLAUDE_CODE_SESSION_ID'
+const CLAUDE_PROCESS_ENV_KEY = 'CLAUDE_PID'
+const POSITIVE_INTEGER = /^[1-9][0-9]*$/
+
+export const claudeProcessOf = (env: Readonly<Record<string, string | undefined>>): number | null => {
+  const text = env[CLAUDE_PROCESS_ENV_KEY]
+  if (text === undefined || !POSITIVE_INTEGER.test(text)) return null
+  const pid = Number(text)
+  return Number.isSafeInteger(pid) ? pid : null
+}
 
 export const productionRuntime = (): Runtime => {
   const env = Object.freeze({ ...process.env })
@@ -53,7 +62,12 @@ export const productionRuntime = (): Runtime => {
   }
 }
 
-export type CommandRuntimeInput = { repo: string; writer?: string }
+export type CommandRuntimeInput = {
+  repo: string
+  writer?: string
+  writerKind?: Writer['kind']
+  parentProcess?: number | null
+}
 
 const DECISIONS_READER = 'decisions'
 
@@ -71,7 +85,7 @@ export const commandRuntime = (input: CommandRuntimeInput): Runtime => {
     cwd: input.repo,
     log: createStderrLogger(env),
     sessionId,
-    writer: { kind: 'command', name: writerName },
-    parentProcess: process.ppid
+    writer: { kind: input.writerKind ?? 'command', name: writerName },
+    parentProcess: input.parentProcess === undefined ? process.ppid : input.parentProcess
   }
 }

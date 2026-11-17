@@ -1,2 +1,3 @@
 #!/bin/sh
+for arg in "$@"; do [ "$arg" = "-" ] && exec node "$(dirname -- "$0")/logbook-cli.ts" "$@"; done
 exec node "$(dirname -- "$0")/logbook-cli.ts" "$@" </dev/null
