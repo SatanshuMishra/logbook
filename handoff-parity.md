@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: active
-Updated: 2026-11-17T20:11:48.542Z
+Updated: 2026-11-17T20:41:35.763Z
 Next ids: c6 D1 R1 S1
 
 ## Goal
@@ -17,11 +17,11 @@ Logbook works as fast and token-efficiently as a committed handoff file, commit 
 
 ## Where things stand
 
-Interphase is grounding the feature spec handoff-parity unattended (phase 3); its record, decisions and guard files are in docs/specs of the checkout. Claude Code 2.1.325 offers an MCP alwaysLoad setting and puts a plugin's bin folder on the Bash PATH, both being confirmed by a headless run.
+Interphase's spec handoff-parity is written and checked (eight Steps in two MSPs, record-in-one-call then pickup-across-clones); its one spec review is running, unattended. Measured facts the design rests on are in docs/specs/handoff-parity.decisions.md.
 
 ## Next step
 
-Run interphase:feature with "Work autonomously." on the user's stated intent and this thread's criteria, as the full lane of the pipeline.
+Apply the spec review's fixes, finish interphase phase 10 (glossary, ADRs, guard verify, hand-off), then record the hand-off decision and start the mitosis drive.
 
 ## Decisions in force
 
