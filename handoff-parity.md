@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: active
-Updated: 2026-11-17T21:50:32.108Z
+Updated: 2026-11-17T22:05:31.954Z
 Next ids: c6 D2 R1 S1
 
 ## Goal
@@ -21,7 +21,7 @@ Interphase handed off the spec handoff-parity: eight Steps in two MSPs, record-i
 
 ## Next step
 
-The drive entered review and runs it next.
+The drive entered validate and runs it next.
 
 ## Decisions in force
 
