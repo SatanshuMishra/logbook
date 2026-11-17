@@ -1,3 +1,4 @@
+import { performance } from 'node:perf_hooks'
 import { ulid as generateUlid } from 'ulid'
 import { createStderrLogger } from './logger.ts'
 import { PROJECT_DIR_ENV_KEY, RUN_WRITER_PREFIX } from '../thread/paths.ts'
@@ -6,6 +7,7 @@ export type Writer = { kind: 'session' | 'command'; name: string }
 
 export type Runtime = {
   now: () => string
+  monotonicMs: () => number
   ulid: () => string
   env: Readonly<Record<string, string | undefined>>
   cwd: string | null
@@ -25,6 +27,10 @@ export const claudeProcessOf = (env: Readonly<Record<string, string | undefined>
   const pid = Number(text)
   return Number.isSafeInteger(pid) ? pid : null
 }
+
+export type Surroundings = { env: Readonly<Record<string, string | undefined>>; cwd: string }
+
+export const processSurroundings = (): Surroundings => ({ env: Object.freeze({ ...process.env }), cwd: process.cwd() })
 
 export const productionRuntime = (): Runtime => {
   const env = Object.freeze({ ...process.env })
@@ -52,6 +58,7 @@ export const productionRuntime = (): Runtime => {
   }
   return {
     now: () => new Date().toISOString(),
+    monotonicMs: () => performance.now(),
     ulid: () => generateUlid(),
     env,
     cwd,
@@ -80,6 +87,7 @@ export const commandRuntime = (input: CommandRuntimeInput): Runtime => {
     input.writer === undefined || input.writer.startsWith(RUN_WRITER_PREFIX) ? generateUlid() : input.writer
   return {
     now: () => new Date().toISOString(),
+    monotonicMs: () => performance.now(),
     ulid: () => generateUlid(),
     env,
     cwd: input.repo,

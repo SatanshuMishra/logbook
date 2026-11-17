@@ -1,11 +1,10 @@
-import type { ChildProcess } from 'node:child_process'
-import { performance } from 'node:perf_hooks'
 import { z } from 'zod'
 import { parseDocument, type Status } from '../../doc/document.ts'
 import { oneLine, replaceSection, setStatus } from '../../doc/render.ts'
 import { actsAsSession, type Runtime } from '../../runtime/runtime.ts'
 import type { Ok, Refusal } from '../../schema/declare.ts'
 import { actingSession, heldBy, releaseHold } from '../../thread/holds.ts'
+import type { BackgroundPush } from '../../store/git.ts'
 import { findRepository, startDirectory, workingCopyPath, type RepoPaths } from '../../thread/paths.ts'
 import { applyToolChange, type ToolChange } from '../../thread/reconcile.ts'
 import { readAliases, resolveThreadId } from '../../thread/store.ts'
@@ -167,9 +166,9 @@ const parkChange =
     return { ok: true, text: stepped.value, summary: PARKED, details: outcomeLines(input.outcome), noteLines: [] }
   }
 
-const hasExited = (child: ChildProcess): boolean => child.exitCode !== null || child.signalCode !== null
+const hasExited = (child: BackgroundPush): boolean => child.exitCode !== null || child.signalCode !== null
 
-const exitsWithin = (child: ChildProcess, limitMs: number): Promise<boolean> =>
+const exitsWithin = (child: BackgroundPush, limitMs: number): Promise<boolean> =>
   hasExited(child)
     ? Promise.resolve(true)
     : new Promise((resolve) => {
@@ -188,12 +187,12 @@ const exitsWithin = (child: ChildProcess, limitMs: number): Promise<boolean> =>
 const bringOriginUpToDate = async (
   rt: Runtime,
   paths: RepoPaths,
-  push: ChildProcess | null
+  push: BackgroundPush | null
 ): Promise<PushOutcome> => {
-  const endsAt = performance.now() + PUSH_LIMIT_MS
+  const endsAt = rt.monotonicMs() + PUSH_LIMIT_MS
   const settled = push === null ? true : await exitsWithin(push, PUSH_LIMIT_MS)
   push?.unref()
-  const left = Math.ceil(endsAt - performance.now())
+  const left = Math.ceil(endsAt - rt.monotonicMs())
   if (!settled || left <= 0) return { pushed: false, error: PUSH_UNFINISHED }
   return pushThreads(rt, paths, { limitMs: left })
 }

@@ -1,4 +1,3 @@
-import { performance } from 'node:perf_hooks'
 import { stripHeaderLines } from '../doc/document.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import { git, gitDetached, gitRun, type GitDetachedOpts, type GitRun } from '../store/git.ts'
@@ -72,16 +71,16 @@ const result = (fields: Partial<SyncResult>): SyncResult => ({
   ...fields
 })
 
-const deadlineOf = (opts: SyncOptions): Deadline =>
-  opts.limitMs === undefined ? null : { limitMs: opts.limitMs, endsAt: performance.now() + opts.limitMs }
+const deadlineOf = (rt: Runtime, opts: SyncOptions): Deadline =>
+  opts.limitMs === undefined ? null : { limitMs: opts.limitMs, endsAt: rt.monotonicMs() + opts.limitMs }
 
-const timeLeft = (deadline: Deadline): number | null =>
-  deadline === null ? null : Math.ceil(deadline.endsAt - performance.now())
+const timeLeft = (rt: Runtime, deadline: Deadline): number | null =>
+  deadline === null ? null : Math.ceil(deadline.endsAt - rt.monotonicMs())
 
 const stoppedMessage = (limitMs: number): string => `sync with origin stopped after ${limitMs} ms`
 
-const pastDeadline = (deadline: Deadline): string | null => {
-  const left = timeLeft(deadline)
+const pastDeadline = (rt: Runtime, deadline: Deadline): string | null => {
+  const left = timeLeft(rt, deadline)
   return deadline === null || left === null || left > 0 ? null : stoppedMessage(deadline.limitMs)
 }
 
@@ -92,11 +91,11 @@ const boundedGit = async (
   deadline: Deadline,
   opts: GitDetachedOpts = {}
 ): Promise<Bounded> => {
-  const before = pastDeadline(deadline)
+  const before = pastDeadline(rt, deadline)
   if (before !== null) return { ok: false, stopped: before }
-  const left = timeLeft(deadline)
+  const left = timeLeft(rt, deadline)
   const run = await gitDetached(rt, paths.root, args, left === null ? opts : { ...opts, limitMs: left })
-  const after = run.code === 0 ? null : pastDeadline(deadline)
+  const after = run.code === 0 ? null : pastDeadline(rt, deadline)
   return after === null ? { ok: true, run } : { ok: false, stopped: after }
 }
 
@@ -342,14 +341,14 @@ const bringIn = (rt: Runtime, paths: RepoPaths, local: string | null, remote: st
 
 export const syncThreads = async (rt: Runtime, paths: RepoPaths, opts: SyncOptions = {}): Promise<SyncResult> => {
   if (!hasOrigin(rt, paths)) return result({ error: 'no-origin' })
-  const deadline = deadlineOf(opts)
+  const deadline = deadlineOf(rt, opts)
   const fetched = await fetchThreads(rt, paths, deadline)
   if (!fetched.ok) return result({ error: fetched.error })
   const local = threadsTip(rt, paths)
   const tips = [local, fetched.value].filter((tip): tip is string => tip !== null)
   const completed = await fetchMissing(rt, paths, tips, deadline)
   if (!completed.ok) return result({ fetched: true, error: completed.error })
-  const expired = pastDeadline(deadline)
+  const expired = pastDeadline(rt, deadline)
   if (expired !== null) return result({ fetched: true, error: expired })
   const brought = bringIn(rt, paths, local, fetched.value)
   if (!brought.ok) return result({ fetched: true, error: brought.error })

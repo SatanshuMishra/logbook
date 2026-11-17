@@ -126,13 +126,12 @@ const cloneOf = (scratch: string, origin: string, name: string): Clone => {
 const processRunning = (commandLine: string): boolean =>
   spawnSync('pgrep', ['-f', `${commandLine.replaceAll('.', '\\.')}$`], { encoding: 'utf8' }).status === 0
 
-const settlesWithin = async (limitMs: number, gone: () => boolean): Promise<boolean> => {
+const settlesWithin = async (limitMs: number, gone: () => boolean, failure: string): Promise<void> => {
   const deadline = performance.now() + limitMs
-  while (performance.now() < deadline) {
-    if (gone()) return true
+  while (!gone()) {
+    if (performance.now() > deadline) throw new Error(`${failure} within ${limitMs} ms`)
     await new Promise((resolve) => setTimeout(resolve, POLL_MS))
   }
-  return gone()
 }
 
 test('bounded-sync.sync-past-its-limit-is-stopped', async () => {
@@ -149,8 +148,9 @@ test('bounded-sync.sync-past-its-limit-is-stopped', async () => {
     assert.equal(result.error, `sync with origin stopped after ${SYNC_LIMIT_MS} ms`)
     assert.equal(result.pushed, false)
     assert.equal(tipOf(solo.repo), before)
-    assert.ok(
-      await settlesWithin(HELPER_GONE_WITHIN_MS, () => !processRunning(sleepCommand)),
+    await settlesWithin(
+      HELPER_GONE_WITHIN_MS,
+      () => !processRunning(sleepCommand),
       'the transport helper git started must be stopped with it'
     )
   })

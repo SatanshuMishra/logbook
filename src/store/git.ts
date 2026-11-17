@@ -141,6 +141,8 @@ export const gitRun = (rt: Runtime, repo: string, args: string[], opts: GitOpts 
 
 export type GitDetachedOpts = GitOpts & { limitMs?: number }
 
+export type BackgroundPush = ChildProcess
+
 const DEAD_PEER_SSH_COMMAND = 'ssh -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4'
 
 const keepGitsExitStatus = (): void => {}
@@ -287,7 +289,7 @@ export const gitDetached = (rt: Runtime, repo: string, args: string[], opts: Git
 
 const PUSH_HELPER_PATH = join(import.meta.dirname, '..', '..', 'bin', 'logbook-push.ts')
 
-export const startBackgroundPush = (rt: Runtime, repo: string): ChildProcess => {
+export const startBackgroundPush = (rt: Runtime, repo: string): BackgroundPush => {
   const child = spawn(process.execPath, [PUSH_HELPER_PATH, repo], {
     detached: true,
     stdio: 'ignore',
