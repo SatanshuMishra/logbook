@@ -54,7 +54,7 @@ const OpenThreadInputSchema = z
 
 const OpenThreadOutputSchema = z.object({
   thread_id: z.string().describe('the slug of the thread that was opened'),
-  path: z.string().describe("the working copy of the thread's state document, the file to edit with the Edit tool")
+  path: z.string().describe("the working copy of the thread's state document, the file logbook checks; keep the document true with logbook update_thread when logbook asks")
 })
 
 type OpenThreadInput = z.infer<typeof OpenThreadInputSchema>
@@ -90,12 +90,12 @@ const locate = (rt: Runtime): Ok<RepoPaths> | Refusal => {
 }
 
 const openedText = (slug: string, file: string): string =>
-  `opened thread ${slug}. Its state document is ${file}. Keep it true by editing that file with the Edit tool.`
+  `opened thread ${slug}. Its state document is ${file}. Keep it true with logbook update_thread when logbook asks.`
 
 export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
   name: TOOL_NAME,
   title: 'Open thread',
-  description: `Starts a new thread of work and makes this session its holder. The thread's state document is the one record of the work: its goal, what must be true for it to be done, where things stand, the next step, the decisions in force, the open risks, what is settled and where the details live. Send a slug unique in this repository, a one-line title, the goal and the next step, and optionally criteria and details. Criteria are what must be true for the work to be done; each is written under "## ${DONE_WHEN}" as c1, c2 and so on, in the order given. Details are lines saying where more about the work lives, such as a spec path. Each text is written on one line. The reply names the working copy of the document; keep the document true by editing that file with the Edit tool whenever logbook asks you to. A slug that already has a document is refused; call resume_thread to pick that thread up.`,
+  description: `Starts a new thread of work and makes this session its holder. The thread's state document is the one record of the work: its goal, what must be true for it to be done, where things stand, the next step, the decisions in force, the open risks, what is settled and where the details live. Send a slug unique in this repository, a one-line title, the goal and the next step, and optionally criteria and details. Criteria are what must be true for the work to be done; each is written under "## ${DONE_WHEN}" as c1, c2 and so on, in the order given. Details are lines saying where more about the work lives, such as a spec path. Each text is written on one line. The reply names the working copy of the document; keep the document true with logbook update_thread whenever logbook asks you to. A slug that already has a document is refused; call resume_thread to pick that thread up.`,
   input: OpenThreadInputSchema,
   output: OpenThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },

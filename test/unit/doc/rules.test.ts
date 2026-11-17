@@ -3,8 +3,9 @@ import { test } from 'node:test'
 
 const PATH = '/home/u/.logbook/repo-0123456789ab/fix-login.md'
 
-const INSTRUCTIONS =
-  'Read that file first if you have not read it in this context, then change it with the Edit tool and do not print the document.'
+const OPENING = "logbook: update thread fix-login's state document."
+
+const COMMAND_LINE = "logbook update_thread --args - <<'EOF'"
 
 const RULE_PHRASES: readonly string[] = [
   'Describe the present only.',
@@ -71,11 +72,10 @@ test('rules.request-after-a-milestone', async () => {
     ]),
     reason: { kind: 'milestone', detail: 'Bash: git commit -m fix' }
   })
-  assert.ok(text.includes(PATH))
+  assert.ok(text.startsWith(`${OPENING}\n`))
   assert.ok(text.includes('git commit -m fix'))
-  assert.ok(text.includes('Read'))
-  assert.ok(text.includes('Edit tool'))
-  assert.ok(text.includes('do not print'))
+  assert.ok(text.split('\n').includes(COMMAND_LINE))
+  assert.ok(!text.includes('Edit tool'))
   assert.ok(text.includes('- c1 The login page loads'))
   assert.ok(!text.includes('c2'))
   assertEveryRule(text)
@@ -91,7 +91,7 @@ test('rules.request-at-the-end-of-a-turn', async () => {
     ]),
     reason: { kind: 'turn-changed' }
   })
-  assert.ok(text.includes(PATH))
+  assert.ok(text.startsWith(`${OPENING}\n`))
   assert.ok(text.includes('the turn changed something'))
   assert.ok(text.includes('No open criteria.'))
   assert.ok(!text.includes('c1'))
@@ -105,7 +105,7 @@ test('rules.request-when-blocked-and-the-user-wrote', async () => {
     documentText: documentWith(['- [ ] c1 The login page loads']),
     reason: { kind: 'blocked-user-wrote', status: 'waiting: the owner picks' }
   })
-  assert.ok(text.includes(PATH))
+  assert.ok(text.startsWith(`${OPENING}\n`))
   assert.ok(text.includes('"waiting: the owner picks"'))
   assert.ok(text.includes("if the user's message settled it, update the Status line"))
   assertEveryRule(text)
@@ -135,8 +135,8 @@ test('rules.request-gives-way-to-many-criteria', async () => {
     reason: { kind: 'milestone', detail: 'Bash: git commit -m fix' }
   })
   assert.ok(text.length <= 9500, `text is ${text.length} characters`)
-  assert.ok(text.includes(PATH))
-  assert.ok(text.includes(INSTRUCTIONS))
+  assert.ok(text.startsWith(`${OPENING}\n`))
+  assert.ok(text.split('\n').includes(COMMAND_LINE))
   assert.ok(text.includes('git commit -m fix'))
   assertEveryRule(text)
   const shown = text.split('\n').filter((line) => /^- c\d+ /.test(line))
@@ -161,8 +161,8 @@ test('rules.request-cuts-a-long-reason', async () => {
   assert.ok(text.length <= 9500, `text is ${text.length} characters`)
   assert.ok(text.includes(`${detail.slice(0, 300)}...`))
   assert.ok(!text.includes(detail.slice(0, 301)))
-  assert.ok(text.includes(PATH))
-  assert.ok(text.includes(INSTRUCTIONS))
+  assert.ok(text.startsWith(`${OPENING}\n`))
+  assert.ok(text.split('\n').includes(COMMAND_LINE))
   assertEveryRule(text)
   assert.match(text, MORE_CRITERIA_PATTERN)
 })

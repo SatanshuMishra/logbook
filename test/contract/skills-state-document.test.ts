@@ -33,14 +33,14 @@ test('skills.file-opens-a-thread', () => {
   }
 })
 
-test('skills.debrief-edits-then-parks', () => {
+test('skills.debrief-updates-then-parks', () => {
   const text = readSkill('debrief')
 
-  const editAt = text.indexOf('Edit tool')
-  const parkAt = text.indexOf('park_thread')
-  assert.ok(editAt >= 0, 'skills/debrief/SKILL.md names the Edit tool')
-  assert.ok(parkAt >= 0, 'skills/debrief/SKILL.md names park_thread')
-  assert.ok(editAt < parkAt, 'skills/debrief/SKILL.md names the Edit tool before park_thread')
+  const updateAt = text.indexOf('logbook update_thread')
+  const parkAt = text.indexOf('logbook park_thread')
+  assert.ok(updateAt >= 0, 'skills/debrief/SKILL.md names logbook update_thread')
+  assert.ok(parkAt >= 0, 'skills/debrief/SKILL.md names logbook park_thread')
+  assert.ok(updateAt < parkAt, 'skills/debrief/SKILL.md names logbook update_thread before logbook park_thread')
 })
 
 test('skills.name-no-removed-tool', () => {
