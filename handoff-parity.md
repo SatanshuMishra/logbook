@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: active
-Updated: 2026-11-17T23:41:18.702Z
+Updated: 2026-11-17T23:55:29.991Z
 Next ids: c6 D2 R2 S1
 
 ## Goal
@@ -17,13 +17,13 @@ Logbook works as fast and token-efficiently as a committed handoff file, commit 
 
 ## Where things stand
 
-Pull request #312 (mitosis/record-in-one-call into feat/handoff-parity) carries all eight Steps; the drive marked its lint failure unfixable and parked in awaiting-merge. Commit 559744c6, made in the scratch worktree and not yet pushed, makes lint pass 50 of 50. The rerun puts the built plugin at S1 0.093, S2 0.242 and S3 0.546 dollars against the handoff file's 0.075, 0.225 and 0.458; work sessions already match it. The gap comes from three places: read-only sessions are asked to record at Stop, a hand-off loads MCP tools and syncs again after park, and a crowded repository picks up the newer thread.
+Pull request #312 (mitosis/record-in-one-call into feat/handoff-parity) carries all eight Steps plus the lint fix and the three parity fixes: Stop skips the ask when the repository is unchanged since pickup, startup shows the other open threads' documents, and a hand-off is one park_thread command carrying edits and note. Its head is 1b5f5f43, where npm test passes 646 of 646 and npm run lint 50 of 50; CI is running on it. The drive rests in awaiting-merge. Before these fixes the built plugin measured S1 0.093, S2 0.242 and S3 0.546 dollars against the handoff file's 0.075, 0.225 and 0.458.
 
 ## Next step
 
-In /private/tmp/claude-501/-Users-satanshumishra-Documents-DevLabs-logbook/fe446180-dc5e-4960-9895-ea442f94e2fa/scratchpad/wt/logbook-built, make src/hook/stop.ts skip the provisional ask when HEAD and the worktree are unchanged since pickup, put the other open free threads' documents in the startup context within its ceiling, and let park_thread take edits and note so a hand-off is one logbook command; then run npm test and npm run lint, push to mitosis/record-in-one-call, and rerun the hp stages.
+Rerun logbook-evals stages S1, S2 and S3 with arms H, L and L2 into new stage names hp2-s1, hp2-s2 and hp2-s3, with LOGBOOK_PLUGIN_L2 set to /private/tmp/claude-501/-Users-satanshumishra-Documents-DevLabs-logbook/fe446180-dc5e-4960-9895-ea442f94e2fa/scratchpad/wt/logbook-built, score them with harness/hp_score.py, and have a code reviewer judge commits 559744c6 and 1b5f5f43.
 
-Needs: D1, R1.
+Needs: D1.
 
 ## Decisions in force
 
