@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { ulid } from 'ulid'
+import { sessionStart } from '../../src/hook/session-start.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
 import { writeHandover } from '../../src/thread/handover.ts'
 import { foldHold, heldBy, readHold, takeHold } from '../../src/thread/holds.ts'
@@ -184,6 +185,12 @@ const runStart = async (
   return { stdout: run.stdout, output }
 }
 
+const startInProcess = (fixture: Fixture, event: Record<string, unknown>): HookOutput => {
+  const session = String(event.session_id)
+  const rt = testRuntime({ cwd: fixture.repo, env: { PATH: process.env.PATH, HOME: fixture.home }, sessionId: session })
+  return sessionStart({ event, sessionId: session, paths: fixture.paths, rt })
+}
+
 const contextOf = (output: HookOutput): string => {
   const specific = output.hookSpecificOutput
   assert.ok(isRecord(specific), 'the output must carry hookSpecificOutput')
@@ -253,8 +260,7 @@ test('session-start.startup-picks-up-a-free-thread-and-lists-the-others', async 
       alpha,
       beta: stateDocument({ slug: 'beta', title: 'Ship the release', nextStep: 'Ship the release.' })
     })
-    const { output } = await runStart(fixture, startEvent(fixture, 's1', 'startup'))
-    const context = contextOf(output)
+    const context = contextOf(startInProcess(fixture, startEvent(fixture, 's1', 'startup')))
     assert.ok(context.startsWith(startupOpeningOf('alpha')), context)
     assert.ok(context.includes(alpha.trimEnd()), context)
     assert.ok(context.endsWith(`beta - active - Next: Ship the release.\n${CONTINUE_LINE}`), context)
@@ -548,7 +554,7 @@ test('handover.provisional-hold-is-handed-on-as-provisional', async () => {
       transcript: oldTranscript,
       at: secondsAgo(5)
     })
-    await runStart(fixture, startEvent(fixture, 's2', 'clear', join(folder, 's2.jsonl')))
+    startInProcess(fixture, startEvent(fixture, 's2', 'clear', join(folder, 's2.jsonl')))
     const hold = readHold(fixture.paths, 'fix-login')
     assert.equal(hold?.holder, 's2')
     assert.equal(hold?.provisional, true)
