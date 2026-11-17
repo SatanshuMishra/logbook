@@ -266,7 +266,7 @@ const stillJudged = (judged: Hold, current: Hold | null): current is Hold =>
   current !== null && current.holder === judged.holder && current.process === judged.process
 
 const releasedOwner = (hold: Hold): string | null =>
-  isProvisional(hold) && hold.released_from !== null ? hold.released_from : hold.holder
+  isProvisional(hold) ? hold.released_from : hold.holder
 
 export const releaseEndedHolds = (rt: Runtime, paths: RepoPaths, startingSession: string): Hold[] => {
   const nowMs = Date.parse(rt.now())
