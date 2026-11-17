@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: active
-Updated: 2026-11-17T23:55:29.991Z
+Updated: 2026-11-17T23:55:35.879Z
 Next ids: c6 D2 R2 S1
 
 ## Goal
@@ -30,8 +30,6 @@ Needs: D1.
 - D1 hand-off: build the handoff-parity spec as two pull requests through the pipeline drive: Build both MSPs with the mitosis drive from the FEATURE branch, the pickup-across-clones MSP after record-in-one-call, then measure cost, wall time, turns and recall against the handoff-file arm with the built plugin.
 
 ## Open risks
-
-- R1 Merging #312 before the parity fixes reach its branch strands them, so they would need a second pull request.
 
 ## Settled, do not reopen
 
