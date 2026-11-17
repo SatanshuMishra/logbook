@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: active
-Updated: 2026-11-17T20:04:42.692Z
+Updated: 2026-11-17T20:11:48.542Z
 Next ids: c6 D1 R1 S1
 
 ## Goal
@@ -17,7 +17,7 @@ Logbook works as fast and token-efficiently as a committed handoff file, commit 
 
 ## Where things stand
 
-Main is synced. The lighthouse profile at .lighthouse/profile.json in the checkout is written, untracked, and passes lighthouse profile check; interphase has not started.
+Interphase is grounding the feature spec handoff-parity unattended (phase 3); its record, decisions and guard files are in docs/specs of the checkout. Claude Code 2.1.325 offers an MCP alwaysLoad setting and puts a plugin's bin folder on the Bash PATH, both being confirmed by a headless run.
 
 ## Next step
 
