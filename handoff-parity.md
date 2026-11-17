@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: active
-Updated: 2026-11-17T23:19:02.303Z
+Updated: 2026-11-17T23:19:52.142Z
 Next ids: c6 D2 R1 S1
 
 ## Goal
@@ -21,7 +21,7 @@ Interphase handed off the spec handoff-parity: eight Steps in two MSPs, record-i
 
 ## Next step
 
-The drive entered ci-fix and runs it next.
+The drive entered awaiting-merge: pull requests are ready to merge: lint contract.no-sleeps rejects the timer wait at test/sync/bounded-sync.test.ts:133 (settlesWithin returns false at its deadline instead of throwing), and that file is locked with no finding allowing repair, while loosening test/lint/no-sleeps.test.ts would weaken a check; the other two failures (spawn allowlist and injected clock in src/server/tools/park_thread.ts) can be fixed but would leave lint red.; it resumes on pipeline drive event --name merged.
 
 ## Decisions in force
 
