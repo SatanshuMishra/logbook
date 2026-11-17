@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: active
-Updated: 2026-11-17T21:04:15.474Z
+Updated: 2026-11-17T21:04:20.949Z
 Next ids: c6 D2 R1 S1
 
 ## Goal
@@ -17,7 +17,7 @@ Logbook works as fast and token-efficiently as a committed handoff file, commit 
 
 ## Where things stand
 
-Interphase's spec handoff-parity is written and checked (eight Steps in two MSPs, record-in-one-call then pickup-across-clones); its one spec review is running, unattended. Measured facts the design rests on are in docs/specs/handoff-parity.decisions.md.
+Interphase handed off the spec handoff-parity: eight Steps in two MSPs, record-in-one-call then pickup-across-clones, with the spec review's seventeen fixes applied. Main's suite is 583 of 583 green.
 
 ## Next step
 
