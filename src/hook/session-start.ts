@@ -20,7 +20,7 @@ import {
 import { listMarkers } from '../thread/inflight.ts'
 import { migrateIfNeeded } from '../thread/migrate.ts'
 import { checkSessionId, workingCopyPath, type RepoPaths } from '../thread/paths.ts'
-import { listRoster, pickupRoster, sessionStartRoster, workingCopyParts } from '../thread/roster.ts'
+import { listRoster, pickupRoster, sessionStartRoster, workingCopyParts, type RosterThread } from '../thread/roster.ts'
 import { readDocument, THREADS_REF } from '../thread/store.ts'
 import { syncThreads } from '../thread/sync.ts'
 import { comparisonText } from '../thread/working-copy.ts'
@@ -204,6 +204,28 @@ const rosterOutput = (rt: Runtime, paths: RepoPaths, warnings: readonly string[]
   return blocks.length === 0 ? {} : contextOutput(blocks.join(BLOCK_SEPARATOR), null)
 }
 
+const newestFreeThread = (
+  rt: Runtime,
+  paths: RepoPaths,
+  threads: readonly RosterThread[],
+  sessionId: string,
+  holdProcess: number | null
+): string | null => {
+  for (const thread of threads) {
+    const take = takeFreeHold(rt, paths, thread.slug, sessionId, holdProcess)
+    switch (take.kind) {
+      case 'taken':
+        return thread.slug
+      case 'contended':
+        rt.log({ level: 'info', event: 'session-start.pickup-contended', slug: thread.slug })
+        return null
+      case 'held':
+        continue
+    }
+  }
+  return null
+}
+
 const startupOutput = (rt: Runtime, paths: RepoPaths, sessionId: string, syncError: string | null): SessionStartOutput => {
   const migrated = migrateIfNeeded(rt, paths)
   if (!migrated.ok) rt.log({ level: 'warn', event: 'session-start.migration-failed', reason: migrated.message })
@@ -212,9 +234,8 @@ const startupOutput = (rt: Runtime, paths: RepoPaths, sessionId: string, syncErr
   if (heldBy(paths, sessionId) !== null) return rosterOutput(rt, paths, syncWarnings)
   const roster = listRoster(rt, paths, { includeClosed: false })
   const holdProcess = claudeProcessOf(rt.env) ?? rt.parentProcess
-  const picked = roster.threads.find((thread) => takeFreeHold(rt, paths, thread.slug, sessionId, holdProcess) !== null)
-  if (picked === undefined) return rosterOutput(rt, paths, syncWarnings)
-  const slug = picked.slug
+  const slug = newestFreeThread(rt, paths, roster.threads, sessionId, holdProcess)
+  if (slug === null) return rosterOutput(rt, paths, syncWarnings)
   const others = pickupRoster(roster, slug)
   return pickupOutput(rt, paths, sessionId, slug, STARTUP_SOURCE, {
     warnings: [...syncWarnings, ...(parkedLast(rt, paths, slug) === false ? [notParkedWarning(slug)] : [])],

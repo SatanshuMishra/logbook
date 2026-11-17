@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
+import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Refusal } from '../schema/declare.ts'
@@ -8,8 +8,8 @@ import {
   THREAD_SLUG_PATTERN,
   checkSessionId,
   holdPath,
-  pickupClaimDir,
   pickupClaimPath,
+  pickupLockPath,
   redirectPath,
   type RepoPaths
 } from './paths.ts'
@@ -30,6 +30,8 @@ export type TakeHoldOptions = { provisional?: boolean }
 
 export type PickupClaim = { release: () => void }
 
+export type FreeHoldTake = { kind: 'taken'; hold: Hold } | { kind: 'held' } | { kind: 'contended' }
+
 const HOLDS_FOLDER = 'holds'
 const HOLD_SUFFIX = '.json'
 const TRANSCRIPT_SUFFIX = '.jsonl'
@@ -37,7 +39,7 @@ const ENDED_TRANSCRIPT_AGE_MS = 24 * 60 * 60 * 1000
 const PROBE_SIGNAL = 0
 const NO_SUCH_PROCESS = 'ESRCH'
 const NO_SUCH_FILE = 'ENOENT'
-const CLAIM_SUFFIX = '.json'
+const FILE_EXISTS = 'EEXIST'
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -314,14 +316,23 @@ const removeFile = (file: string): void => {
   }
 }
 
-const claimNames = (dir: string): string[] => readdirSync(dir).filter((name) => name.endsWith(CLAIM_SUFFIX))
+const linkedLock = (staging: string, lock: string): boolean => {
+  try {
+    linkSync(staging, lock)
+    return true
+  } catch (error) {
+    if (errorCode(error) === FILE_EXISTS) return false
+    throw error
+  }
+}
 
-const claimRuns = (rt: Runtime, file: string): boolean => {
-  const value = readJson(file)
+const lockOwnerRuns = (rt: Runtime, slug: string, lock: string): boolean => {
+  if (!existsSync(lock)) return false
+  const value = readJson(lock)
   const claimant = isPlainObject(value) ? recordedProcess(value.process) : null
   if (claimant !== null && processRuns(claimant)) return true
-  rt.log({ level: 'info', event: 'holds.ended-pickup-claim-removed', claim: path.basename(file) })
-  removeFile(file)
+  rt.log({ level: 'info', event: 'holds.ended-pickup-claim-removed', slug })
+  removeFile(lock)
   return false
 }
 
@@ -332,18 +343,19 @@ export const claimPickup = (
   session: string,
   claimant: number
 ): PickupClaim | null => {
-  const dir = pickupClaimDir(paths, slug)
-  if (!dir.ok) throw refused(dir)
-  const file = pickupClaimPath(paths, slug, session)
-  if (!file.ok) throw refused(file)
-  writeJson(rt, file.value, { session, process: claimant })
-  const release = (): void => removeFile(file.value)
-  const othersRunning = claimNames(dir.value)
-    .filter((name) => name !== path.basename(file.value))
-    .map((name) => claimRuns(rt, path.join(dir.value, name)))
-  if (!othersRunning.includes(true)) return { release }
-  release()
-  return null
+  const lock = pickupLockPath(paths, slug)
+  if (!lock.ok) throw refused(lock)
+  const staging = pickupClaimPath(paths, slug, session)
+  if (!staging.ok) throw refused(staging)
+  writeJson(rt, staging.value, { session, process: claimant })
+  try {
+    const won =
+      linkedLock(staging.value, lock.value) ||
+      (!lockOwnerRuns(rt, slug, lock.value) && linkedLock(staging.value, lock.value))
+    return won ? { release: () => removeFile(lock.value) } : null
+  } finally {
+    removeFile(staging.value)
+  }
 }
 
 export const takeFreeHold = (
@@ -352,14 +364,14 @@ export const takeFreeHold = (
   slug: string,
   session: string,
   holdProcess: number | null
-): Hold | null => {
+): FreeHoldTake => {
   const claim = claimPickup(rt, paths, slug, session, process.pid)
-  if (claim === null) return null
+  if (claim === null) return { kind: 'contended' }
   try {
     const hold = readHold(paths, slug)
     return hold === null || hold.holder === null
-      ? takeHold(rt, paths, slug, session, null, holdProcess, { provisional: true })
-      : null
+      ? { kind: 'taken', hold: takeHold(rt, paths, slug, session, null, holdProcess, { provisional: true }) }
+      : { kind: 'held' }
   } finally {
     claim.release()
   }
