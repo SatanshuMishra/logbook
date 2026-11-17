@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: active
-Updated: 2026-11-17T20:03:11.940Z
+Updated: 2026-11-17T20:04:40.650Z
 Next ids: c6 D1 R1 S1
 
 ## Goal
@@ -17,11 +17,11 @@ Logbook works as fast and token-efficiently as a committed handoff file, commit 
 
 ## Where things stand
 
-Not started.
+Main is synced. The lighthouse profile at .lighthouse/profile.json in the checkout is written, untracked, and passes lighthouse profile check; interphase has not started.
 
 ## Next step
 
-Write the lighthouse profile with lighthouse:init unattended, then run interphase:feature autonomously on the user's stated intent, as the full lane of the pipeline.
+Run interphase:feature with "Work autonomously." on the user's stated intent and this thread's criteria, as the full lane of the pipeline.
 
 ## Decisions in force
 
