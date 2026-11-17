@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: active
-Updated: 2026-11-17T21:04:12.450Z
+Updated: 2026-11-17T21:04:15.474Z
 Next ids: c6 D2 R1 S1
 
 ## Goal
@@ -21,7 +21,9 @@ Interphase's spec handoff-parity is written and checked (eight Steps in two MSPs
 
 ## Next step
 
-Apply the spec review's fixes, finish interphase phase 10 (glossary, ADRs, guard verify, hand-off), then record the hand-off decision and start the mitosis drive.
+Run pipeline setup for slug handoff-parity with ~/.mitosis/logbook/handoff-parity/facts.json, then start the drive and wait for it; after the build, measure the built plugin against the handoff-file arm on logbook-evals S1 to S3.
+
+Needs: D1.
 
 ## Decisions in force
 
