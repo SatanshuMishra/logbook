@@ -20,7 +20,11 @@ export type Hold = {
   nudged_prompt_id: string | null
   process: number | null
   released_from: string | null
+  provisional?: true
+  provisional_asked?: true
 }
+
+export type TakeHoldOptions = { provisional?: boolean }
 
 const HOLDS_FOLDER = 'holds'
 const HOLD_SUFFIX = '.json'
@@ -36,6 +40,8 @@ const isStringOrNull = (value: unknown): value is string | null => value === nul
 
 const isStringList = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === 'string')
+
+const isAbsentOrBoolean = (value: unknown): boolean => value === undefined || typeof value === 'boolean'
 
 const readJson = (file: string): unknown => {
   try {
@@ -64,11 +70,14 @@ const parseHold = (slug: string, value: unknown): Hold | null => {
     folded_at: foldedAt,
     nudged_prompt_id: nudgedPromptId,
     process: storedProcess,
-    released_from: releasedFrom = null
+    released_from: releasedFrom = null,
+    provisional,
+    provisional_asked: provisionalAsked
   } = value
   if (storedSlug !== slug) return null
   if (!isStringOrNull(holder) || !isStringList(transcripts)) return null
   if (!isStringOrNull(foldedAt) || !isStringOrNull(nudgedPromptId) || !isStringOrNull(releasedFrom)) return null
+  if (!isAbsentOrBoolean(provisional) || !isAbsentOrBoolean(provisionalAsked)) return null
   return {
     slug,
     holder,
@@ -76,9 +85,23 @@ const parseHold = (slug: string, value: unknown): Hold | null => {
     folded_at: foldedAt,
     nudged_prompt_id: nudgedPromptId,
     process: recordedProcess(storedProcess),
-    released_from: releasedFrom
+    released_from: releasedFrom,
+    ...(provisional === true ? { provisional: true } : {}),
+    ...(provisionalAsked === true ? { provisional_asked: true } : {})
   }
 }
+
+const asFull = (hold: Hold): Hold => ({
+  slug: hold.slug,
+  holder: hold.holder,
+  transcripts: hold.transcripts,
+  folded_at: hold.folded_at,
+  nudged_prompt_id: hold.nudged_prompt_id,
+  process: hold.process,
+  released_from: hold.released_from
+})
+
+const isProvisional = (hold: Hold): boolean => hold.provisional === true
 
 export const readHold = (paths: RepoPaths, slug: string): Hold | null => {
   const file = holdPath(paths, slug)
@@ -125,7 +148,8 @@ export const takeHold = (
   slug: string,
   session: string,
   transcript: string | null,
-  process: number | null = null
+  process: number | null = null,
+  opts: TakeHoldOptions = {}
 ): Hold => {
   const file = holdPath(paths, slug)
   if (!file.ok) throw refused(file)
@@ -140,26 +164,44 @@ export const takeHold = (
     }))
   }
   const previous = readHold(paths, slug)
-  const next: Hold =
-    previous === null
-      ? {
-          slug,
-          holder: session,
-          transcripts: withTranscript([], transcript),
-          folded_at: null,
-          nudged_prompt_id: null,
-          process,
-          released_from: null
-        }
-      : {
-          ...previous,
-          holder: session,
-          transcripts: withTranscript(previous.transcripts, transcript),
-          process,
-          released_from: null
-        }
+  const next =
+    opts.provisional === true
+      ? provisionalTake(slug, session, process, previous)
+      : fullTake(slug, session, transcript, process, previous)
   return storeHold(rt, paths, previous, next)
 }
+
+const fullTake = (
+  slug: string,
+  session: string,
+  transcript: string | null,
+  process: number | null,
+  previous: Hold | null
+): Hold =>
+  previous === null
+    ? {
+        slug,
+        holder: session,
+        transcripts: withTranscript([], transcript),
+        folded_at: null,
+        nudged_prompt_id: null,
+        process,
+        released_from: null
+      }
+    : {
+        ...asFull(previous),
+        holder: session,
+        transcripts: withTranscript(previous.transcripts, transcript),
+        process,
+        released_from: null
+      }
+
+const provisionalTake = (slug: string, session: string, process: number | null, previous: Hold | null): Hold => ({
+  ...(previous === null
+    ? { slug, holder: session, transcripts: [], folded_at: null, nudged_prompt_id: null, process, released_from: null }
+    : { ...asFull(previous), holder: session, process }),
+  provisional: true
+})
 
 const updateHold = (rt: Runtime, paths: RepoPaths, slug: string, change: (hold: Hold) => Hold): Hold | null => {
   const previous = readHold(paths, slug)
@@ -167,14 +209,19 @@ const updateHold = (rt: Runtime, paths: RepoPaths, slug: string, change: (hold: 
 }
 
 export const addTranscript = (rt: Runtime, paths: RepoPaths, slug: string, transcript: string): Hold | null =>
-  updateHold(rt, paths, slug, (hold) => ({ ...hold, transcripts: withTranscript(hold.transcripts, transcript) }))
+  updateHold(rt, paths, slug, (hold) =>
+    isProvisional(hold) ? hold : { ...hold, transcripts: withTranscript(hold.transcripts, transcript) }
+  )
+
+export const markProvisionalAsked = (rt: Runtime, paths: RepoPaths, slug: string): Hold | null =>
+  updateHold(rt, paths, slug, (hold) => (isProvisional(hold) ? { ...hold, provisional_asked: true } : hold))
 
 const isTranscriptOf = (holder: string | null, transcript: string): boolean =>
   holder === null || path.basename(transcript) === `${holder}${TRANSCRIPT_SUFFIX}`
 
 export const foldHold = (rt: Runtime, paths: RepoPaths, slug: string, at: string): Hold | null =>
   updateHold(rt, paths, slug, (hold) => ({
-    ...hold,
+    ...asFull(hold),
     transcripts: hold.transcripts.filter((transcript) => isTranscriptOf(hold.holder, transcript)),
     folded_at: at,
     nudged_prompt_id: null
@@ -218,6 +265,9 @@ const sessionEnded = (hold: Hold, nowMs: number): boolean =>
 const stillJudged = (judged: Hold, current: Hold | null): current is Hold =>
   current !== null && current.holder === judged.holder && current.process === judged.process
 
+const releasedOwner = (hold: Hold): string | null =>
+  isProvisional(hold) && hold.released_from !== null ? hold.released_from : hold.holder
+
 export const releaseEndedHolds = (rt: Runtime, paths: RepoPaths, startingSession: string): Hold[] => {
   const nowMs = Date.parse(rt.now())
   return allHolds(paths)
@@ -225,7 +275,14 @@ export const releaseEndedHolds = (rt: Runtime, paths: RepoPaths, startingSession
     .flatMap((judged) => {
       const current = readHold(paths, judged.slug)
       return stillJudged(judged, current)
-        ? [storeHold(rt, paths, current, { ...current, holder: null, process: null, released_from: current.holder })]
+        ? [
+            storeHold(rt, paths, current, {
+              ...asFull(current),
+              holder: null,
+              process: null,
+              released_from: releasedOwner(current)
+            })
+          ]
         : []
     })
 }
@@ -233,11 +290,14 @@ export const releaseEndedHolds = (rt: Runtime, paths: RepoPaths, startingSession
 export const takeBackHolds = (rt: Runtime, paths: RepoPaths, session: string): Hold | null => {
   if (heldBy(paths, session) !== null) return null
   const isReleasedFrom = (hold: Hold | null): hold is Hold =>
-    hold !== null && hold.holder === null && hold.released_from === session
+    hold !== null &&
+    hold.released_from === session &&
+    (hold.holder === null || (isProvisional(hold) && hold.holder !== session))
   const released = allHolds(paths).find(isReleasedFrom)
   if (released === undefined) return null
   const current = readHold(paths, released.slug)
-  return isReleasedFrom(current) ? takeHold(rt, paths, current.slug, session, null, current.process) : null
+  if (!isReleasedFrom(current)) return null
+  return takeHold(rt, paths, current.slug, session, null, current.holder === null ? current.process : null)
 }
 
 const readRedirect = (paths: RepoPaths, session: string): string | null => {

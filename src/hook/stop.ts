@@ -3,7 +3,7 @@ import { updateRequest, type UpdateReason } from '../doc/rules.ts'
 import { recordEvent } from '../metrics/record.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import { buildActivity, type Activity } from '../thread/activity.ts'
-import { addTranscript, heldBy, readHold } from '../thread/holds.ts'
+import { addTranscript, heldBy, markProvisionalAsked, readHold, type Hold } from '../thread/holds.ts'
 import { RUN_WRITER_PREFIX, workingCopyPath, type RepoPaths } from '../thread/paths.ts'
 import { lastWriter, readDocument } from '../thread/store.ts'
 import type { EmptyHookOutput, StopHookOutput } from './output.ts'
@@ -39,6 +39,13 @@ const reasonFor = (
   return null
 }
 
+const requestOutput = (text: string): StopHookOutput => ({
+  hookSpecificOutput: { hookEventName: HOOK_EVENT, additionalContext: text }
+})
+
+const provisionalReason = (hold: Hold, reason: UpdateReason | null): UpdateReason | null =>
+  hold.provisional_asked !== true && reason?.kind === 'turn-changed' ? reason : null
+
 export const stop = (input: StopInput): StopOutput => {
   const { event, paths, rt, sessionId } = input
   const held = heldBy(paths, sessionId)
@@ -55,13 +62,12 @@ export const stop = (input: StopInput): StopOutput => {
     since: hold.folded_at,
     workingCopyPath: file.value
   })
-  const reason = reasonFor(activity, parseDocument(stored.text).status, () => runWroteLast(rt, paths, held))
+  const judged = reasonFor(activity, parseDocument(stored.text).status, () => runWroteLast(rt, paths, held))
+  const provisional = hold.provisional === true
+  const reason = provisional ? provisionalReason(hold, judged) : judged
   if (reason === null) return {}
   recordEvent(rt, paths, held, 'doc.request', { reason: reason.kind })
-  return {
-    hookSpecificOutput: {
-      hookEventName: HOOK_EVENT,
-      additionalContext: updateRequest({ path: file.value, documentText: stored.text, reason })
-    }
-  }
+  const text = updateRequest({ path: file.value, documentText: stored.text, reason, provisional })
+  if (provisional) markProvisionalAsked(rt, paths, held)
+  return requestOutput(text)
 }
