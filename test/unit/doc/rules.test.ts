@@ -20,8 +20,7 @@ const RULE_PHRASES: readonly string[] = [
   'Reword a criterion only citing the new decision that changed it.',
   'Keep a decision or a risk only while it still constrains future work; otherwise remove it, or move it to Settled, do not reopen under a new id.',
   'Remove every line that belongs to an option the owner did not take.',
-  'New ids start at the Next ids numbers and no number is reused.',
-  'End with a last section "## This update" holding one line that says what changed and one line "Removed: <id> because <reason>" for each id you removed.'
+  'New ids start at the Next ids numbers and no number is reused.'
 ]
 
 const MORE_CRITERIA_PATTERN = /^\((\d+) more open criteria are under Done when in the file\.\)$/m

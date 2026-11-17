@@ -216,7 +216,36 @@ const orderViolations = (firsts: readonly Section[]): Violation[] => {
   ];
 };
 
-const sectionViolations = (parsed: ParsedDocument): Violation[] => {
+export type NotePlace = "section" | "note";
+
+type NoteRemedies = {
+  addRemovedLine: (id: string) => string;
+  dropRemovedLine: (id: string) => string;
+  dropThisLine: string;
+  misplacedSection: string;
+};
+
+const NOTE_REMEDIES: Record<NotePlace, NoteRemedies> = {
+  section: {
+    addRemovedLine: (id) =>
+      `add the line "Removed: ${id} because <reason>" to the "## ${NOTE_HEADING}" section at the end of the document, adding that section if it is missing`,
+    dropRemovedLine: (id) => `delete the Removed line for ${id}`,
+    dropThisLine: "delete this line",
+    misplacedSection: `"## ${NOTE_HEADING}" must be the last section; move it and its lines to the end of the document`,
+  },
+  note: {
+    addRemovedLine: (id) =>
+      `send the line "Removed: ${id} because <reason>" in the call's note`,
+    dropRemovedLine: (id) => `take the Removed line for ${id} out of the call's note`,
+    dropThisLine: "take this line out of the call's note",
+    misplacedSection: `logbook writes "## ${NOTE_HEADING}" from the call's note; take the section out of the edits and send its lines in note`,
+  },
+};
+
+const sectionViolations = (
+  parsed: ParsedDocument,
+  remedies: NoteRemedies,
+): Violation[] => {
   const known = parsed.sections.filter((section) =>
     isSectionName(section.name),
   );
@@ -241,7 +270,7 @@ const sectionViolations = (parsed: ParsedDocument): Violation[] => {
         "section",
         section.line,
         null,
-        `"## ${NOTE_HEADING}" must be the last section; move it and its lines to the end of the document`,
+        remedies.misplacedSection,
       ),
     );
   const repeated = known.flatMap((section) => {
@@ -370,13 +399,17 @@ const conflictViolations = (parsed: ParsedDocument): Violation[] =>
     ),
   );
 
-export const checkStructure = (text: string, slug: string): Violation[] => {
+export const checkStructure = (
+  text: string,
+  slug: string,
+  notePlace: NotePlace = "section",
+): Violation[] => {
   const parsed = parseDocument(text);
   const free = freeNumbers(text, parsed);
   return inLineOrder([
     ...titleViolations(parsed, slug),
     ...statusViolations(parsed),
-    ...sectionViolations(parsed),
+    ...sectionViolations(parsed, NOTE_REMEDIES[notePlace]),
     ...parsed.badLines.map(badLineViolation(free)),
     ...parsed.items.flatMap(itemViolations),
     ...repeatedIdViolations(parsed, free),
@@ -421,6 +454,7 @@ const removalViolations = (
   item: Item,
   after: ParsedDocument,
   removedLines: readonly RemovedLine[],
+  remedies: NoteRemedies,
 ): Violation[] => {
   const homeName = LETTER_SECTION[item.letter];
   const home =
@@ -433,7 +467,7 @@ const removalViolations = (
         "removal",
         home,
         item.id,
-        `criterion ${item.id} was removed, but a criterion is never removed: it is struck with [~] and struck: instead; put it back as "- [~] ${item.id} ${wordingOf(item.text)} struck: <reason>"${named ? ` and delete the Removed line for ${item.id}` : ""}`,
+        `criterion ${item.id} was removed, but a criterion is never removed: it is struck with [~] and struck: instead; put it back as "- [~] ${item.id} ${wordingOf(item.text)} struck: <reason>"${named ? ` and ${remedies.dropRemovedLine(item.id)}` : ""}`,
       ),
     ];
   }
@@ -443,7 +477,7 @@ const removalViolations = (
       "removal",
       home,
       item.id,
-      `${item.id} was removed without a reason; add the line "Removed: ${item.id} because <reason>" to the "## ${NOTE_HEADING}" section at the end of the document, adding that section if it is missing, or put ${item.id} back`,
+      `${item.id} was removed without a reason; ${remedies.addRemovedLine(item.id)}, or put ${item.id} back`,
     ),
   ];
 };
@@ -452,6 +486,7 @@ const removedLineViolations = (
   removedLines: readonly RemovedLine[],
   beforeIds: ReadonlySet<string>,
   after: ParsedDocument,
+  remedies: NoteRemedies,
 ): Violation[] =>
   removedLines.flatMap((removed) => {
     if (!beforeIds.has(removed.id)) {
@@ -460,7 +495,7 @@ const removedLineViolations = (
           "removed-line",
           removed.line,
           removed.id,
-          `"${removed.text}" names ${removed.id}, but the old version has no ${removed.id}; delete this line`,
+          `"${removed.text}" names ${removed.id}, but the old version has no ${removed.id}; ${remedies.dropThisLine}`,
         ),
       ];
     }
@@ -471,7 +506,7 @@ const removedLineViolations = (
         "removed-line",
         removed.line,
         removed.id,
-        `"${removed.text}" names ${removed.id}, but ${removed.id} is still in the document at line ${present.line}; delete this line to keep ${removed.id}, or delete the ${removed.id} line to remove it`,
+        `"${removed.text}" names ${removed.id}, but ${removed.id} is still in the document at line ${present.line}; ${remedies.dropThisLine} to keep ${removed.id}, or delete the ${removed.id} line to remove it`,
       ),
     ];
   });
@@ -618,7 +653,12 @@ const slugViolations = (
       ]
     : [];
 
-export const checkUpdate = (oldText: string, newText: string): Violation[] => {
+export const checkUpdate = (
+  oldText: string,
+  newText: string,
+  notePlace: NotePlace = "section",
+): Violation[] => {
+  const remedies = NOTE_REMEDIES[notePlace];
   const before = parseDocument(oldText);
   const after = parseDocument(newText);
   const removedLines = removedLinesOf(newText, after);
@@ -629,8 +669,8 @@ export const checkUpdate = (oldText: string, newText: string): Violation[] => {
     ...slugViolations(before, after),
     ...firstOccurrences(before.items)
       .filter((item) => !afterIds.has(item.id))
-      .flatMap((item) => removalViolations(item, after, removedLines)),
-    ...removedLineViolations(removedLines, beforeIds, after),
+      .flatMap((item) => removalViolations(item, after, removedLines, remedies)),
+    ...removedLineViolations(removedLines, beforeIds, after, remedies),
     ...criterionViolations(before, after),
     ...newIdViolations(after, beforeIds, oldNext),
   ]);
@@ -659,9 +699,10 @@ export const checkVersion = (
   oldText: string,
   newText: string,
   slug: string,
+  notePlace: NotePlace = "section",
 ): Violation[] => [
-  ...checkStructure(newText, slug),
-  ...checkUpdate(oldText, newText),
+  ...checkStructure(newText, slug, notePlace),
+  ...checkUpdate(oldText, newText, notePlace),
   ...checkClose(oldText, newText),
 ];
 

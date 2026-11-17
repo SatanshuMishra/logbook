@@ -5,7 +5,7 @@ export type UpdateReason =
   | { kind: 'turn-changed' }
   | { kind: 'blocked-user-wrote'; status: string }
 
-export const UPDATE_RULES: readonly string[] = [
+const SHARED_RULES: readonly string[] = [
   'Describe the present only.',
   'Where things stand says only where the work is now: a finished step leaves it, and its proof goes on the criterion it ticks as evidence.',
   'As the document grows, finished-step detail in Where things stand gives way first, then decisions and risks that no longer constrain future work.',
@@ -18,9 +18,18 @@ export const UPDATE_RULES: readonly string[] = [
   'Reword a criterion only citing the new decision that changed it.',
   'Keep a decision or a risk only while it still constrains future work; otherwise remove it, or move it to Settled, do not reopen under a new id.',
   'Remove every line that belongs to an option the owner did not take.',
-  'New ids start at the Next ids numbers and no number is reused.',
-  'End with a last section "## This update" holding one line that says what changed and one line "Removed: <id> because <reason>" for each id you removed.'
+  'New ids start at the Next ids numbers and no number is reused.'
 ]
+
+const NOTE_RULE =
+  'Send one note line that says what changed and one note line "Removed: <id> because <reason>" for each id you removed; logbook writes the note under "## This update", so no edit adds that section.'
+
+const SECTION_RULE =
+  'End with a last section "## This update" holding one line that says what changed and one line "Removed: <id> because <reason>" for each id you removed.'
+
+export const UPDATE_RULES: readonly string[] = [...SHARED_RULES, NOTE_RULE]
+
+const EDIT_RULES: readonly string[] = [...SHARED_RULES, SECTION_RULE]
 
 export const REQUEST_CEILING = 9500
 
@@ -42,7 +51,7 @@ export const recordCommandLines = (slug: string): string[] => [
 const provisionalLine = (slug: string): string =>
   `Logbook picked this thread up at session start; record only work that belongs to thread ${slug}.`
 
-const RULE_BLOCK: readonly string[] = [RULES_HEADING, ...UPDATE_RULES.map((rule) => `- ${rule}`)]
+const ruleBlock = (rules: readonly string[]): string[] => [RULES_HEADING, ...rules.map((rule) => `- ${rule}`)]
 
 const moreCriteriaLine = (count: number): string => `(${count} more open criteria are under Done when in the file.)`
 
@@ -80,7 +89,7 @@ const requestLines = (frame: Frame, shown: readonly string[], dropped: number): 
   RECORD_LINE,
   ...recordCommandLines(frame.slug),
   ...criteriaBlock(shown, dropped),
-  ...RULE_BLOCK
+  ...ruleBlock(UPDATE_RULES)
 ]
 
 const slugOf = (documentText: string): string => {
@@ -131,5 +140,5 @@ export const updateRequest = (input: {
 export const tidyRequest = (input: { path: string; documentText: string }): string =>
   [
     `logbook: the state document at ${input.path} was converted from the old ledger. Rewrite it with the Edit tool under these rules, keeping every id, and do not print it.`,
-    ...RULE_BLOCK
+    ...ruleBlock(EDIT_RULES)
   ].join('\n')
