@@ -1,3 +1,5 @@
+import type { ChildProcess } from 'node:child_process'
+import { performance } from 'node:perf_hooks'
 import { z } from 'zod'
 import { parseDocument, type Status } from '../../doc/document.ts'
 import { oneLine, replaceSection, setStatus } from '../../doc/render.ts'
@@ -7,6 +9,7 @@ import { actingSession, heldBy, releaseHold } from '../../thread/holds.ts'
 import { findRepository, startDirectory, workingCopyPath, type RepoPaths } from '../../thread/paths.ts'
 import { applyToolChange, type ToolChange } from '../../thread/reconcile.ts'
 import { readAliases, resolveThreadId } from '../../thread/store.ts'
+import { pushThreads, type PushOutcome } from '../../thread/sync.ts'
 import type { ToolSpec } from '../register.ts'
 
 const TOOL_NAME = 'park_thread'
@@ -14,6 +17,9 @@ const NOT_BLANK = /\S/
 const NEXT_STEP_SECTION = 'Next step'
 const PARKED = 'parked'
 const RECORDS_ACCEPTED = 'ids of items in the document, such as D3 or R1'
+const PUSH_LIMIT_MS = 10000
+const PUSH_UNFINISHED = 'the push did not finish within 10 seconds'
+const ORIGIN_HAS_THE_PARK = 'Origin has the parked thread.'
 
 const ParkThreadInputSchema = z
   .strictObject({
@@ -61,7 +67,12 @@ const ParkThreadInputSchema = z
 const ParkThreadOutputSchema = z.object({
   parked_thread_ids: z
     .array(z.string())
-    .describe("the parked thread's slug, followed by each old thread id that aliases.json maps to it")
+    .describe("the parked thread's slug, followed by each old thread id that aliases.json maps to it"),
+  pushed: z
+    .boolean()
+    .nullable()
+    .describe('true when origin has the parked thread, false when the push failed, null when the repository has no origin'),
+  push_error: z.string().nullable().describe("why the push to origin failed, with git's reason; null unless pushed is false")
 })
 
 type ParkThreadInput = z.infer<typeof ParkThreadInputSchema>
@@ -156,6 +167,45 @@ const parkChange =
     return { ok: true, text: stepped.value, summary: PARKED, details: outcomeLines(input.outcome), noteLines: [] }
   }
 
+const hasExited = (child: ChildProcess): boolean => child.exitCode !== null || child.signalCode !== null
+
+const exitsWithin = (child: ChildProcess, limitMs: number): Promise<boolean> =>
+  hasExited(child)
+    ? Promise.resolve(true)
+    : new Promise((resolve) => {
+        const settle = (exited: boolean): void => {
+          clearTimeout(timer)
+          child.off('close', onEnd)
+          child.off('error', onEnd)
+          resolve(exited)
+        }
+        const onEnd = (): void => settle(true)
+        const timer = setTimeout(() => settle(hasExited(child)), limitMs)
+        child.once('close', onEnd)
+        child.once('error', onEnd)
+      })
+
+const bringOriginUpToDate = async (
+  rt: Runtime,
+  paths: RepoPaths,
+  push: ChildProcess | null
+): Promise<PushOutcome> => {
+  const endsAt = performance.now() + PUSH_LIMIT_MS
+  const settled = push === null ? true : await exitsWithin(push, PUSH_LIMIT_MS)
+  push?.unref()
+  const left = Math.ceil(endsAt - performance.now())
+  if (!settled || left <= 0) return { pushed: false, error: PUSH_UNFINISHED }
+  return pushThreads(rt, paths, { limitMs: left })
+}
+
+const pushLines = (outcome: PushOutcome): string[] => {
+  if (outcome.pushed === null) return []
+  if (outcome.pushed) return [ORIGIN_HAS_THE_PARK]
+  return [
+    `The push to origin failed: ${outcome.error ?? 'git gave no reason'}. The park is kept on this computer and will be pushed at the next session start or sync.`
+  ]
+}
+
 const parkedIds = (rt: Runtime, paths: RepoPaths, slug: string): string[] => {
   const aliases = readAliases(rt, paths)
   return [slug, ...Object.keys(aliases).filter((id) => aliases[id] === slug)]
@@ -164,7 +214,7 @@ const parkedIds = (rt: Runtime, paths: RepoPaths, slug: string): string[] => {
 export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
   name: TOOL_NAME,
   title: 'Park thread',
-  description: `Sets a thread's status to parked in one commit and releases the session's hold on it, so the thread waits in the roster for the next session. Name the thread with thread_id, or omit it to park the thread this session holds. outcome, when given, is kept in the commit. next_step replaces the body of "## ${NEXT_STEP_SECTION}", followed by the line "Needs: <ids>." when next_step_records names the items of the document that step needs. A thread that is done or abandoned is refused. Returns the parked thread's slug and each old thread id that maps to it.`,
+  description: `Sets a thread's status to parked in one commit and releases the session's hold on it, so the thread waits in the roster for the next session. Name the thread with thread_id, or omit it to park the thread this session holds. outcome, when given, is kept in the commit. next_step replaces the body of "## ${NEXT_STEP_SECTION}", followed by the line "Needs: <ids>." when next_step_records names the items of the document that step needs. A thread that is done or abandoned is refused. Before it replies it brings origin up to date, merging origin's threads first when origin has moved, within 10 seconds. Returns the parked thread's slug and each old thread id that maps to it, and whether origin has the parked thread.`,
   input: ParkThreadInputSchema,
   output: ParkThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -177,12 +227,19 @@ export const parkThreadTool: ToolSpec<ParkThreadInput, ParkThreadOutput> = {
     if (!file.ok) return { ok: false, refusal: file }
     const applied = applyToolChange(rt, paths.value, slug.value, { tool: TOOL_NAME, change: parkChange(slug.value, input) })
     if (!applied.ok) return { ok: false, refusal: applied }
-    applied.value.push?.unref()
     if (actsAsSession(rt)) releaseHold(rt, paths.value, slug.value)
+    const pushed = await bringOriginUpToDate(rt, paths.value, applied.value.push)
+    if (pushed.pushed === false) {
+      rt.log({ level: 'warn', event: 'park.push-failed', slug: slug.value, reason: pushed.error })
+    }
     return {
       ok: true,
-      text: `parked thread ${slug.value}\n${file.value}`,
-      structured: { parked_thread_ids: parkedIds(rt, paths.value, slug.value) }
+      text: [`parked thread ${slug.value}`, file.value, ...pushLines(pushed)].join('\n'),
+      structured: {
+        parked_thread_ids: parkedIds(rt, paths.value, slug.value),
+        pushed: pushed.pushed,
+        push_error: pushed.error
+      }
     }
   }
 }

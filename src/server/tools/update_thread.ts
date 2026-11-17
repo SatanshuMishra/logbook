@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { LETTER_SECTION, parseDocument, type Item } from '../../doc/document.ts'
+import { LETTER_SECTION, NOTE_HEADING, parseDocument, type Item } from '../../doc/document.ts'
 import { addItem, oneLine, removeItem, replaceSection, tickCriterion, type EditResult } from '../../doc/render.ts'
 import type { Runtime } from '../../runtime/runtime.ts'
 import type { Ok, Refusal } from '../../schema/declare.ts'
@@ -15,6 +15,8 @@ const NOTHING_CHANGED = 'nothing changed'
 const RECORDS_ACCEPTED = 'ids of items in the document, such as D3 or R1'
 const CRITERION_ACCEPTED = `the id of a criterion under "## ${LETTER_SECTION.c}" in the thread's document, such as c1`
 const RISK_ACCEPTED = `the id of a risk under "## ${LETTER_SECTION.R}" in the thread's document, such as R1`
+const OLD_TEXT_ACCEPTED = "text copied exactly from the thread's stored document that occurs there exactly once"
+const OLD_TEXT_EXAMPLE = 'The form renders but submitting it fails.'
 
 const filledText = (description: string) => z.string().regex(NOT_BLANK).describe(description)
 
@@ -56,11 +58,35 @@ const RiskRetireSchema = z
   })
   .describe(`one risk to remove from "## ${LETTER_SECTION.R}"`)
 
+const TextEditSchema = z
+  .strictObject({
+    old_text: z
+      .string()
+      .min(1)
+      .describe(
+        "text copied exactly from the thread's stored document, as it stands after the earlier edits; refused when empty, when the document does not hold it, or when it occurs more than once"
+      ),
+    new_text: z.string().describe('the text that replaces old_text; empty to delete old_text')
+  })
+  .describe('one exact-text replacement in the stored document')
+
 const UpdateThreadInputSchema = z
   .strictObject({
     thread_id: z
       .string()
       .describe("the thread's slug, or an old thread id listed in aliases.json; call list_threads to see each slug"),
+    edits: z
+      .array(TextEditSchema)
+      .optional()
+      .describe(
+        "replacements applied in order to the stored document before the call's other changes, each old_text occurring exactly once in the text as it stands after the earlier edits"
+      ),
+    note: z
+      .array(filledText('one line of the note; refused when empty or only whitespace'))
+      .optional()
+      .describe(
+        `lines written after the call's summary line under "## ${NOTE_HEADING}" and in the commit, such as "Removed: D2 because it was reversed"`
+      ),
     next_step: z
       .string()
       .regex(NOT_BLANK)
@@ -100,6 +126,8 @@ const UpdateThreadInputSchema = z
     }
     const asksChange =
       input.next_step !== undefined ||
+      (input.edits?.length ?? 0) > 0 ||
+      (input.note?.length ?? 0) > 0 ||
       (input.criteria_done?.length ?? 0) > 0 ||
       (input.risks_add?.length ?? 0) > 0 ||
       (input.risks_retire?.length ?? 0) > 0
@@ -108,7 +136,7 @@ const UpdateThreadInputSchema = z
     }
   })
   .describe(
-    'the thread and at least one change to it: next_step, with next_step_records when the step needs items of the document, criteria_done, risks_add or risks_retire'
+    'the thread and at least one change to it: edits, note, next_step, with next_step_records when the step needs items of the document, criteria_done, risks_add or risks_retire'
   )
 
 const UpdateThreadOutputSchema = z.object({
@@ -122,6 +150,7 @@ type UpdateThreadOutput = z.infer<typeof UpdateThreadOutputSchema>
 type CriterionDone = z.infer<typeof CriterionDoneSchema>
 type RiskAdd = z.infer<typeof RiskAddSchema>
 type RiskRetire = z.infer<typeof RiskRetireSchema>
+type TextEdit = z.infer<typeof TextEditSchema>
 
 type Outcome = { summary: string; addedRiskIds: string[] }
 
@@ -165,6 +194,26 @@ const unknownRecords = (ids: readonly string[]): Refusal => ({
   message: `${ids.map((id) => JSON.stringify(id)).join(', ')} ${ids.length === 1 ? 'is not an item' : 'are not items'} of the thread's document once this call's changes are made, so nothing was committed; name the c, D, R or S ids the document holds`
 })
 
+const editField = (index: number): string => `edits.${index}.old_text`
+
+const oldTextAbsent = (index: number): Refusal => ({
+  ok: false,
+  field: editField(index),
+  accepted: OLD_TEXT_ACCEPTED,
+  example: OLD_TEXT_EXAMPLE,
+  retryable: true,
+  message: `the old_text of edit ${index} was not found in the stored document as it stands after the earlier edits, so nothing was committed; copy the text exactly from the thread's document`
+})
+
+const oldTextRepeated = (index: number, occurrences: number): Refusal => ({
+  ok: false,
+  field: editField(index),
+  accepted: OLD_TEXT_ACCEPTED,
+  example: OLD_TEXT_EXAMPLE,
+  retryable: true,
+  message: `the old_text of edit ${index} occurs ${occurrences} times in the stored document as it stands after the earlier edits, so nothing was committed; include more of the surrounding text so it occurs once`
+})
+
 const documentRefused = (message: string): Refusal => ({
   ok: false,
   field: 'document',
@@ -203,6 +252,24 @@ const applyEdits = <T>(text: string, entries: readonly T[], edit: (text: string,
     { ok: true, text, ids: [], noteLines: [] }
   )
 
+const occurrencesOf = (text: string, part: string): number => text.split(part).length - 1
+
+const replaceOnce = (text: string, edit: TextEdit, index: number): Ok<string> | Refusal => {
+  const occurrences = occurrencesOf(text, edit.old_text)
+  if (occurrences === 0) return oldTextAbsent(index)
+  if (occurrences > 1) return oldTextRepeated(index, occurrences)
+  const at = text.indexOf(edit.old_text)
+  return { ok: true, value: `${text.slice(0, at)}${edit.new_text}${text.slice(at + edit.old_text.length)}` }
+}
+
+const withTextEdits = (text: string, edits: readonly TextEdit[]): Ok<string> | Refusal =>
+  edits.reduce<Ok<string> | Refusal>(
+    (state, edit, index) => (state.ok ? replaceOnce(state.value, edit, index) : state),
+    { ok: true, value: text }
+  )
+
+const noteLinesOf = (input: UpdateThreadInput): string[] => (input.note ?? []).map(oneLine)
+
 const riskLine = (risk: RiskAdd): string =>
   risk.bears_on === undefined ? oneLine(risk.text) : `${oneLine(risk.text)} Bears on ${risk.bears_on}.`
 
@@ -240,7 +307,9 @@ const withNextStep = (text: string, input: UpdateThreadInput): Edited => {
 }
 
 const summaryOf = (input: UpdateThreadInput, ticked: readonly string[], added: readonly string[], retired: readonly string[]): string => {
+  const edits = input.edits?.length ?? 0
   const parts = [
+    ...(edits === 0 ? [] : [`${edits} ${edits === 1 ? 'edit' : 'edits'}`]),
     ...(input.next_step === undefined ? [] : ['next step set']),
     ...(ticked.length === 0 ? [] : [`ticked ${ticked.join(' ')}`]),
     ...(added.length === 0 ? [] : [`added ${added.join(' ')}`]),
@@ -249,7 +318,10 @@ const summaryOf = (input: UpdateThreadInput, ticked: readonly string[], added: r
   return parts.length === 0 ? NOTHING_CHANGED : parts.join(', ')
 }
 
-const updateIn = (text: string, input: UpdateThreadInput): Updated => {
+const updateIn = (stored: string, input: UpdateThreadInput): Updated => {
+  const edited = withTextEdits(stored, input.edits ?? [])
+  if (!edited.ok) return { ok: false, refusal: edited }
+  const text = edited.value
   const items = parseDocument(text).items
   const refused = checkIds(items, input)
   if (refused !== null) return { ok: false, refusal: refused }
@@ -269,7 +341,7 @@ const updateIn = (text: string, input: UpdateThreadInput): Updated => {
   return {
     ok: true,
     text: stepped.text,
-    noteLines: retired.noteLines,
+    noteLines: [...retired.noteLines, ...noteLinesOf(input)],
     summary: summaryOf(input, ticked.ids, added.ids, retired.ids),
     addedRiskIds: added.ids
   }
@@ -278,7 +350,7 @@ const updateIn = (text: string, input: UpdateThreadInput): Updated => {
 export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> = {
   name: TOOL_NAME,
   title: 'Update thread',
-  description: `Changes a thread's document in one commit. next_step replaces the body of "## ${NEXT_STEP_SECTION}", followed by the line "Needs: <ids>." when next_step_records names the items of the document that step needs. criteria_done ticks each criterion [x] with its result as evidence, leaving one already [x] as it is. risks_add adds each risk under "## ${LETTER_SECTION.R}" with the next free R id, followed by " Bears on c<n>." when bears_on names a criterion. risks_retire removes each risk, keeping its reason in the commit. Send at least one change; every id must be an item the document holds. Returns what changed and the ids of the added risks.`,
+  description: `Changes a thread's document in one commit. edits replaces each old_text with its new_text, in order and before the other changes, and each old_text must occur exactly once in the document as it stands after the earlier edits. note writes each of its lines after the summary line under "## ${NOTE_HEADING}" and in the commit, such as "Removed: D2 because it was reversed". next_step replaces the body of "## ${NEXT_STEP_SECTION}", followed by the line "Needs: <ids>." when next_step_records names the items of the document that step needs. criteria_done ticks each criterion [x] with its result as evidence, leaving one already [x] as it is. risks_add adds each risk under "## ${LETTER_SECTION.R}" with the next free R id, followed by " Bears on c<n>." when bears_on names a criterion. risks_retire removes each risk, keeping its reason in the commit. Send at least one change; every id must be an item the document holds. Returns what changed and the ids of the added risks.`,
   input: UpdateThreadInputSchema,
   output: UpdateThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },

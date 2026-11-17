@@ -49,7 +49,9 @@
         "next_step_records": "optional",
         "criteria_done": "optional",
         "risks_add": "optional",
-        "risks_retire": "optional"
+        "risks_retire": "optional",
+        "edits": "optional",
+        "note": "optional"
       },
       "output": [
         "thread_id",
@@ -65,7 +67,9 @@
         "next_step_records": "optional"
       },
       "output": [
-        "parked_thread_ids"
+        "parked_thread_ids",
+        "pushed",
+        "push_error"
       ]
     },
     "close_thread": {
