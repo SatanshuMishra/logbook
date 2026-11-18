@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs'
-import { runCommandLine } from '../src/command/main.ts'
-import { processSurroundings } from '../src/runtime/runtime.ts'
-import { NODE_FLOOR_MAJOR, NODE_FLOOR_MINOR, nodeFloorFailure } from '../src/runtime/node-floor.ts'
-import { writeAllSync } from '../src/runtime/write-all.ts'
-import { refusalPayload } from '../src/server/errors.ts'
+import { enableCompileCache } from 'node:module'
+
+enableCompileCache()
+
+const { NODE_FLOOR_MAJOR, NODE_FLOOR_MINOR, nodeFloorFailure } = await import('../src/runtime/node-floor.ts')
+const { writeAllSync } = await import('../src/runtime/write-all.ts')
+const { refusalPayload } = await import('../src/server/errors.ts')
 
 const STDOUT_FD = 1
 const STDERR_FD = 2
@@ -29,6 +31,8 @@ if (floorFailure !== null) {
   writeLines(STDERR_FD, [floorFailure])
   process.exitCode = 1
 } else {
+  const { runCommandLine } = await import('../src/command/main.ts')
+  const { processSurroundings } = await import('../src/runtime/runtime.ts')
   const result = await runCommandLine(process.argv.slice(2), {
     ...processSurroundings(),
     readStdin: () => readFileSync(STDIN_FD, 'utf8')

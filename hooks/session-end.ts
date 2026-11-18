@@ -1,8 +1,12 @@
 #!/usr/bin/env node
-import { runHook } from './lib/io.ts'
-import { recordEvent, writeThreadSummary } from '../src/metrics/record.ts'
-import { writeHandover } from '../src/thread/handover.ts'
-import { addTranscript, heldBy } from '../src/thread/holds.ts'
+import { enableCompileCache } from 'node:module'
+
+enableCompileCache()
+
+const { runHook } = await import('./lib/io.ts')
+const { recordEvent, writeThreadSummary } = await import('../src/metrics/record.ts')
+const { writeHandover } = await import('../src/thread/handover.ts')
+const { addTranscript, heldBy } = await import('../src/thread/holds.ts')
 
 const CLEAR_REASON = 'clear'
 

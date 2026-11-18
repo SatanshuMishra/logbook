@@ -1,4 +1,4 @@
-import { readFileSync, realpathSync } from 'node:fs'
+import { closeSync, constants, fstatSync, openSync, readFileSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 
 type Entry = Record<string, unknown>
@@ -112,9 +112,20 @@ const parseLine = (line: string): Entry[] => {
   }
 }
 
+const NON_BLOCKING_READ = constants.O_RDONLY | constants.O_NONBLOCK
+
+const readRegularFile = (file: string): string => {
+  const descriptor = openSync(file, NON_BLOCKING_READ)
+  try {
+    return fstatSync(descriptor).isFile() ? readFileSync(descriptor, 'utf8') : ''
+  } finally {
+    closeSync(descriptor)
+  }
+}
+
 const readEntries = (transcriptPath: string): Entry[] => {
   try {
-    return readFileSync(transcriptPath, 'utf8').split('\n').flatMap(parseLine)
+    return readRegularFile(transcriptPath).split('\n').flatMap(parseLine)
   } catch {
     return []
   }

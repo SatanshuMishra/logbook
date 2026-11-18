@@ -1,6 +1,7 @@
 ---
 name: file
 description: Use at the start of work to open a new thread and its state document.
+disable-model-invocation: true
 ---
 
 ## Sequence

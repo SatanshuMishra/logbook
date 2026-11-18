@@ -64,3 +64,7 @@ _Avoid_: preflight fetch
 **Copy base**:
 The stored version of a state document that a working copy was taken from, recorded beside the repository's holds.
 _Avoid_: parent, snapshot
+
+**Hook tool**:
+The logbook server tool, hook_event, that Claude Code's mcp_tool hooks call to run logbook's per-call hooks inside the already running server instead of starting a process for each call.
+_Avoid_: hook endpoint, hook server

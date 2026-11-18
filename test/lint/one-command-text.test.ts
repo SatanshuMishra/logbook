@@ -6,7 +6,17 @@ import { fileURLToPath } from 'node:url'
 import { INSTRUCTIONS } from '../../src/server/instructions.ts'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
-const INSTRUCTIONS_BYTE_LIMIT = 2048
+const INSTRUCTIONS_BYTE_LIMIT = 640
+const LEDGER_TOOL_NAMES: readonly string[] = [
+  'open_thread',
+  'resume_thread',
+  'record_decision',
+  'park_thread',
+  'close_thread',
+  'list_threads',
+  'search_ledger',
+  'sync_ledger'
+]
 const SHIPPED_FOLDERS: readonly string[] = ['skills', 'src']
 const HELD_OUT_TEXTS: readonly string[] = ['auth-hardening', 'authsvc', 'lockout', 'Bob will take this work over']
 
@@ -37,6 +47,13 @@ test('one-command-text.instructions-fit-and-name-the-command', () => {
 
   assert.ok(bytes <= INSTRUCTIONS_BYTE_LIMIT, `the server instructions are ${bytes} bytes`)
   assert.ok(INSTRUCTIONS.includes('logbook update_thread'), 'the server instructions hold logbook update_thread')
+  assert.ok(INSTRUCTIONS.includes('state document'), 'the server instructions hold state document')
+  assert.ok(INSTRUCTIONS.includes('do not print'), 'the server instructions hold do not print')
+  assert.deepEqual(
+    LEDGER_TOOL_NAMES.filter((name) => INSTRUCTIONS.includes(name)),
+    [],
+    'the server instructions name no ledger tool'
+  )
 })
 
 test('one-command-text.no-held-out-eval-text', () => {

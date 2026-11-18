@@ -19,6 +19,7 @@ const RULE_PHRASES: readonly string[] = [
   'Never delete a criterion.',
   'Reword a criterion only citing the new decision that changed it.',
   'Keep a decision or a risk only while it still constrains future work; otherwise remove it, or move it to Settled, do not reopen under a new id.',
+  'Keep the lesson of a failed attempt, what was tried and why it failed, as a Settled, do not reopen item while it still constrains future work.',
   'Remove every line that belongs to an option the owner did not take.',
   'New ids start at the Next ids numbers and no number is reused.'
 ]
@@ -193,4 +194,22 @@ test('rules.finished-steps-leave-where-things-stand', async () => {
     '- State each fact in one place only, in as few words as hold it.'
   ])
   assert.ok(!text.includes('Finished work becomes one line naming where its proof is.'))
+})
+
+test('rules.keep-a-failed-attempts-lesson', async () => {
+  const { updateRequest } = await import('../../../src/doc/rules.ts')
+  const text = updateRequest({
+    path: PATH,
+    documentText: documentWith(['- [ ] c1 The login page loads']),
+    reason: { kind: 'milestone', detail: 'Bash: git commit -m fix' }
+  })
+  const lines = text.split('\n')
+  const kept = lines.indexOf(
+    '- Keep a decision or a risk only while it still constrains future work; otherwise remove it, or move it to Settled, do not reopen under a new id.'
+  )
+  assert.ok(kept >= 0, text)
+  assert.equal(
+    lines[kept + 1],
+    '- Keep the lesson of a failed attempt, what was tried and why it failed, as a Settled, do not reopen item while it still constrains future work.'
+  )
 })

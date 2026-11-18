@@ -213,9 +213,9 @@ test('metrics.unwritable-store-keeps-hook-output', async () => {
   await withHeldThread(STORED, async (fixture) => {
     writeFile(fixture.store, 'not a folder\n')
     writeFile(fixture.workingCopy, fixLogin([C1_TICKED, C2_OPEN]))
-    const post = await runHook(fixture, 'post-tool-use', editEvent(fixture))
+    const post = await runHook(fixture, 'hook-event', editEvent(fixture))
     const start = await runHook(fixture, 'session-start', startEvent(fixture, 's-1', 'compact'))
-    const stop = await runHook(fixture, 'stop', stopEvent(fixture))
+    const stop = await runHook(fixture, 'hook-event', stopEvent(fixture))
     const end = await runHook(fixture, 'session-end', endEvent(fixture, 's-1', 'clear'))
     const runs = [post, start, stop, end]
     runs.forEach(outputOf)
@@ -297,7 +297,7 @@ test('metrics.other-end-records-no-handover', async () => {
 
 test('metrics.milestone-request-recorded', async () => {
   await withHeldThread(STORED, async (fixture) => {
-    await runHook(fixture, 'post-tool-use', commitEvent(fixture, 'toolu_01'))
+    await runHook(fixture, 'hook-event', commitEvent(fixture, 'toolu_01'))
     const line = lastLine(fixture)
     assert.equal(line.event, 'doc.request')
     assert.equal(line.reason, 'milestone')
@@ -306,8 +306,8 @@ test('metrics.milestone-request-recorded', async () => {
 
 test('metrics.repeat-milestone-not-recorded', async () => {
   await withHeldThread(STORED, async (fixture) => {
-    await runHook(fixture, 'post-tool-use', commitEvent(fixture, 'toolu_01'))
-    await runHook(fixture, 'post-tool-use', commitEvent(fixture, 'toolu_02'))
+    await runHook(fixture, 'hook-event', commitEvent(fixture, 'toolu_01'))
+    await runHook(fixture, 'hook-event', commitEvent(fixture, 'toolu_02'))
     assert.equal(storeLines(fixture).filter((line) => line.event === 'doc.request').length, 1)
   })
 })
@@ -332,7 +332,7 @@ test('metrics.stop-request-recorded', async () => {
         }
       }
     ])
-    await runHook(fixture, 'stop', stopEvent(fixture))
+    await runHook(fixture, 'hook-event', stopEvent(fixture))
     const line = lastLine(fixture)
     assert.equal(line.event, 'doc.request')
     assert.equal(line.reason, 'turn-changed')

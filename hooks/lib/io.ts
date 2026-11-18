@@ -6,10 +6,8 @@ import type {
   StopHookOutput
 } from '../../src/hook/output.ts'
 import { nodeFloorFailure } from '../../src/runtime/node-floor.ts'
-import { productionRuntime, type Runtime } from '../../src/runtime/runtime.ts'
-import { findRepository, startDirectory, type RepoPaths } from '../../src/thread/paths.ts'
-
-export type HookInput = { event: Record<string, unknown>; sessionId: string; paths: RepoPaths; rt: Runtime }
+import { hookInputFor, type HookInput } from '../../src/hook/input.ts'
+import { productionRuntime } from '../../src/runtime/runtime.ts'
 
 export type HookOutput =
   | EmptyHookOutput
@@ -37,29 +35,6 @@ const parseEvent = (raw: string): unknown => {
   return trimmed.length === 0 ? {} : JSON.parse(trimmed)
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
-
-const nonEmptyString = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null)
-
-const sessionRuntime = (base: Runtime, sessionId: string): Runtime => ({
-  ...base,
-  env: { ...base.env, CLAUDE_CODE_SESSION_ID: sessionId },
-  sessionId,
-  writer: { kind: 'session', name: sessionId }
-})
-
-const hookInputFor = (parsed: unknown): HookInput | null => {
-  if (!isRecord(parsed)) return null
-  const sessionId = nonEmptyString(parsed.session_id)
-  const cwd = nonEmptyString(parsed.cwd)
-  if (sessionId === null || cwd === null) return null
-  const rt = sessionRuntime(productionRuntime(), sessionId)
-  const found = findRepository(rt, startDirectory(rt, cwd))
-  if (!found.ok) return null
-  return { event: parsed, sessionId, paths: found.value, rt }
-}
-
 const writeFlushed = (stream: NodeJS.WritableStream, text: string): Promise<void> =>
   new Promise((resolve) => {
     stream.write(text, () => resolve())
@@ -77,7 +52,7 @@ export const runHook: (
     process.exit(1)
   }
   try {
-    const input = hookInputFor(parseEvent(await readStdin()))
+    const input = hookInputFor(productionRuntime, parseEvent(await readStdin()))
     const output = input === null ? {} : await handler(input)
     await writeFlushed(process.stdout, JSON.stringify(output))
     process.exit(0)
