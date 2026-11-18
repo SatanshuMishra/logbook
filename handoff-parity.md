@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: parked
-Updated: 2026-11-18T05:10:36.130Z
+Updated: 2026-11-18T05:11:15.518Z
 Next ids: c6 D3 R2 S1
 
 ## Goal
@@ -21,9 +21,7 @@ The change meant to close c1 and c2 is specified as lean-session-cost, six Steps
 
 ## Next step
 
-Run pipeline setup for lean-session-cost with the facts file in its run home, start the drive and wait for it; once its pull request merges and the release is installed, rerun logbook-evals hp2 S1 to S3 with arms H and L2 and tick c1 and c2, or record what still separates logbook from the handoff file.
-
-Needs: D2.
+The drive entered amend-spec and runs it next.
 
 ## Decisions in force
 
