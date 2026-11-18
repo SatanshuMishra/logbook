@@ -63,7 +63,7 @@ test('skills.debrief-states-the-update-rules', async () => {
   const { UPDATE_RULES } = await import('../../src/doc/rules.ts')
   const text = readSkill('debrief')
 
-  assert.equal(UPDATE_RULES.length, 15)
+  assert.equal(UPDATE_RULES.length, 16)
   const ruleLines = text
     .split('\n')
     .filter((line) => line.startsWith('   - '))

@@ -23,6 +23,7 @@ disable-model-invocation: true
    - State each fact in one place only, in as few words as hold it.
    - No timeline and no clock times.
    - Tick a criterion only with "evidence: <what proves it>".
+   - A ticked criterion reads as done in every section: a limit it keeps is a risk marked accepted, further work on it is an optional follow-up, and once every criterion is ticked the next step says the work is done and the thread can close.
    - Strike a criterion only with [~] and "struck: <reason>".
    - Never delete a criterion.
    - Reword a criterion only citing the new decision that changed it.
