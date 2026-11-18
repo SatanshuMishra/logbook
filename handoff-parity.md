@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: parked
-Updated: 2026-11-18T07:57:16.866Z
+Updated: 2026-11-18T08:02:35.487Z
 Next ids: c6 D5 R2 S1
 
 ## Goal
@@ -10,7 +10,7 @@ Logbook works as fast and token-efficiently as a committed handoff file, commit 
 ## Done when
 
 - [x] c1 In a rerun of logbook-evals stages S1, S2 and S3, logbook's mean cost and mean wall time per run are no higher than the handoff-file arm's (H), measured on the same harness as a logbook 0.20.0 baseline evidence: hp3 rerun, logbook-evals results/hp3-score.txt, logbook 0.22.0 against H: S1 7.23 against 7.45 cents and 16.63 against 16.56 s, S2 22.76 against 22.44 cents and 59.1 against 59.8 s, S3 46.96 against 48.57 cents and 80.2 against 85.2 s; the S1 time gap of 0.07 s and the S2 cost gap of 1.5 percent sit inside the run-to-run spread, which the owner ruled within margin
-- [ ] c2 In that rerun, logbook's recall answers score 1.0 on the keyword rubric in every stage, as H does
+- [x] c2 In that rerun, logbook's recall answers score 1.0 on the keyword rubric in every stage, as H does evidence: hp3 rerun, logbook-evals results/hp3-score.txt: recall 1.0 in S1 and S2; the three S3 misses state the right facts in other words (two hedged P5 answers, one P2 without the word allowlist), which the owner ruled met
 - [x] c3 A thread debriefed on one clone is listed and picked up at session start on a fresh clone of the same repo under another home folder, without the user naming it, and the session continues the next step evidence: test/sync/two-clone-handoff.test.ts fresh-clone-picks-up-a-parked-thread (clone b under its own HOME gets the parked document at startup), and in all three hp2-s3 runs Bob's fresh clone, holding no logbook refs, picked up auth-hardening unnamed and passed the hidden tests 11 of 11
 - [x] c4 An accepted change that could not reach origin is retried, and a pickup on another clone warns that its copy may be behind instead of silently using older state evidence: test/hooks/startup-sync.test.ts unpushed-change-is-pushed-at-startup, unreachable-origin-is-named and unparked-thread-says-so
 - [x] c5 npm test and npm run lint pass on the final branch evidence: at aebd73d9, the head of #312, npm test passes 650 of 650 and npm run lint 50 of 50
@@ -21,7 +21,7 @@ lean-session-cost shipped as logbook 0.22.0 (tag v0.22.0, main at 5a41a3f5), the
 
 ## Next step
 
-The owner rules whether the hp3 S3 recall answers that state the right facts in other words meet c2; on a yes, tick c2 citing logbook-evals results/hp3-score.txt and close the thread.
+Stop a state document from leading a session to hedge on a finished criterion: find what in the hp3 S3 logbook documents made P5 answer Functionally yes or Mostly, fix it in logbook with a red-then-green test, open the pull request, and rerun S3.
 
 ## Decisions in force
 
