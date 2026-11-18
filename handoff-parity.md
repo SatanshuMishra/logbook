@@ -1,7 +1,7 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: parked
-Updated: 2026-11-18T06:38:58.272Z
-Next ids: c6 D3 R2 S1
+Updated: 2026-11-18T06:38:58.592Z
+Next ids: c6 D4 R2 S1
 
 ## Goal
 
@@ -26,6 +26,7 @@ The drive entered fix and runs it next.
 ## Decisions in force
 
 - D2 hand-off: build the lean-session-cost spec as one pull request through the pipeline drive: Build the six Steps as one MSP with the pipeline drive from feat/lean-session-cost, then rerun logbook-evals S1 to S3 with arms H and L2 on the released plugin to decide c1 and c2.
+- D3 repair: fix fail: rerun: the repair reason stays in the run home for a review-loop failure
 
 ## Open risks
 
