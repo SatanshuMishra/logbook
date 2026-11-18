@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: parked
-Updated: 2026-11-18T01:02:28.836Z
+Updated: 2026-11-18T01:03:18.291Z
 Next ids: c6 D2 R2 S1
 
 ## Goal
@@ -21,7 +21,7 @@ Pull request #312 (mitosis/record-in-one-call into feat/handoff-parity) carries 
 
 ## Next step
 
-The drive entered post-merge and runs it next.
+The drive entered integrate and runs it next.
 
 ## Decisions in force
 
