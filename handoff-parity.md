@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: parked
-Updated: 2026-11-18T06:11:55.654Z
+Updated: 2026-11-18T06:12:14.305Z
 Next ids: c6 D3 R2 S1
 
 ## Goal
@@ -21,7 +21,9 @@ The change meant to close c1 and c2 is specified as lean-session-cost, six Steps
 
 ## Next step
 
-The drive entered awaiting-merge: pull requests are ready to merge; it resumes on pipeline drive event --name merged.
+The user merges pull request #314 (mitosis/lean-session-cost into feat/lean-session-cost); then sync, resume this thread and run pipeline drive event --repo /Users/satanshumishra/Documents/DevLabs/logbook --slug lean-session-cost --name merged, and after the release is installed rerun logbook-evals hp2 S1 to S3 with arms H and L2 to tick c1 and c2.
+
+Needs: D2.
 
 ## Decisions in force
 
