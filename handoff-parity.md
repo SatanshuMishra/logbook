@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: parked
-Updated: 2026-11-18T01:40:37.917Z
+Updated: 2026-11-18T01:40:42.401Z
 Next ids: c6 D2 R2 S1
 
 ## Goal
@@ -21,7 +21,9 @@ Pull request #312 merged into feat/handoff-parity. The drive ended in draft-pr: 
 
 ## Next step
 
-The drive entered draft-pr and the run has ended: draft FEATURE pull request; unmet checks: lighthouse verdict unproven: logbook costs no more than a handoff file on the eval stages, logbook recall stays at 1.0 on the eval stages. After the owner merges it, pipeline drive event --name feature-merged runs clean-up.
+The owner reviews draft FEATURE pull request #313 (feat/handoff-parity into main) and merges it or asks for the cost and recall gaps to be closed first; after it merges, resume this thread and run pipeline drive event --repo /Users/satanshumishra/Documents/DevLabs/logbook --slug handoff-parity --name feature-merged, which runs clean-up.
+
+Needs: D1.
 
 ## Decisions in force
 
