@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: parked
-Updated: 2026-11-18T05:57:47.391Z
+Updated: 2026-11-18T06:02:43.741Z
 Next ids: c6 D3 R2 S1
 
 ## Goal
@@ -21,7 +21,7 @@ The change meant to close c1 and c2 is specified as lean-session-cost, six Steps
 
 ## Next step
 
-The drive entered fix and runs it next.
+The drive entered review and runs it next.
 
 ## Decisions in force
 
