@@ -22,6 +22,8 @@ const NINE_TOOLS = [
   'sync_ledger'
 ]
 
+const LISTED_TOOLS = [...NINE_TOOLS, 'hook_event']
+
 const METHOD_NOT_FOUND = -32601
 
 type RegisterTool = { input: Record<string, string>; output: string[] }
@@ -51,12 +53,12 @@ const methodNotFound = (error: unknown): boolean =>
   'code' in error &&
   (error as { code: unknown }).code === METHOD_NOT_FOUND
 
-test('surface.publishes-the-nine-tools', async () => {
+test('surface.publishes-the-nine-tools-and-the-hook-tool', async () => {
   await import('../../../src/server/main.ts')
   await withServer(async (spawned) => {
     const listed = await spawned.client.listTools()
 
-    assert.deepEqual(sorted(listed.tools.map((tool) => tool.name)), sorted(NINE_TOOLS))
+    assert.deepEqual(sorted(listed.tools.map((tool) => tool.name)), sorted(LISTED_TOOLS))
   })
 })
 
@@ -76,7 +78,7 @@ test('surface.instructions-describe-the-state-document', async () => {
     const instructions = spawned.instructions()
 
     assert.ok(instructions !== undefined, 'the initialize reply must carry server instructions')
-    for (const phrase of ['state document', 'Edit tool', 'do not print', ...NINE_TOOLS]) {
+    for (const phrase of ['state document', 'logbook update_thread', 'do not print']) {
       assert.ok(instructions.includes(phrase), `the server instructions must hold "${phrase}", got:\n${instructions}`)
     }
   })
@@ -96,7 +98,7 @@ test('surface.register-matches-the-tools', async () => {
       Object.entries(register.tools).map(([name, contract]) => [name, sorted(Object.keys(contract.input))])
     )
 
-    assert.deepEqual(sorted(Object.keys(pinned)), sorted(NINE_TOOLS))
+    assert.deepEqual(sorted(Object.keys(pinned)), sorted(LISTED_TOOLS))
     assert.deepEqual(pinned, published)
   })
 })

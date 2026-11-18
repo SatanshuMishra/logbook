@@ -149,7 +149,7 @@ const stopEvent = (fixture: Fixture, fields: Record<string, unknown> = {}): Reco
 
 const runStop = async (fixture: Fixture, event: Record<string, unknown>): Promise<HookProcessResult> => {
   const { runHookProcess } = await import('../support/run-hook.ts')
-  const run = await runHookProcess({ hook: 'stop', event, env: { HOME: fixture.home } })
+  const run = await runHookProcess({ hook: 'hook-event', event, env: { HOME: fixture.home } })
   assert.equal(run.code, 0, run.stderr)
   return run
 }

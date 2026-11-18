@@ -92,7 +92,7 @@ const HOLD_ONLY = [join('holds', 'fix-login.json')]
 test('markers.pre-tool-use-writes-a-marker', async () => {
   await withFixture(async (fixture) => {
     takeHold(fixture.rt, fixture.paths, 'fix-login', 's1', null)
-    const run = await runEntry(fixture, 'pre-tool-use', preEvent(fixture, 's1', { tool_use_id: 'toolu_01' }))
+    const run = await runEntry(fixture, 'hook-event', preEvent(fixture, 's1', { tool_use_id: 'toolu_01' }))
     assert.equal(run.stdout, '{}')
     assert.ok(existsSync(join(fixture.paths.logbookDir, 'inflight', 'fix-login', 'toolu_01.json')))
     const [marker, ...others] = listMarkers(fixture.paths, 'fix-login')
@@ -106,13 +106,13 @@ test('markers.pre-tool-use-writes-a-marker', async () => {
 test('markers.pre-tool-use-without-a-tool-use-id', async () => {
   await withFixture(async (fixture) => {
     takeHold(fixture.rt, fixture.paths, 'fix-login', 's1', null)
-    const missing = await runEntry(fixture, 'pre-tool-use', preEvent(fixture, 's1', {}))
+    const missing = await runEntry(fixture, 'hook-event', preEvent(fixture, 's1', {}))
     assert.equal(missing.stdout, '{}')
-    const traversal = await runEntry(fixture, 'pre-tool-use', preEvent(fixture, 's1', { tool_use_id: '../x' }))
+    const traversal = await runEntry(fixture, 'hook-event', preEvent(fixture, 's1', { tool_use_id: '../x' }))
     assert.equal(traversal.stdout, '{}')
     assert.deepEqual(filesUnder(fixture.paths.logbookDir), HOLD_ONLY)
     assert.deepEqual(listMarkers(fixture.paths, 'fix-login'), [])
-    const usable = await runEntry(fixture, 'pre-tool-use', preEvent(fixture, 's1', { tool_use_id: 'toolu_03' }))
+    const usable = await runEntry(fixture, 'hook-event', preEvent(fixture, 's1', { tool_use_id: 'toolu_03' }))
     assert.equal(usable.stdout, '{}')
     assert.ok(existsSync(markerFile(fixture, 'toolu_03')))
   })
@@ -123,12 +123,12 @@ test('markers.pre-tool-use-ignores-a-call-inside-a-subagent', async () => {
     takeHold(fixture.rt, fixture.paths, 'fix-login', 's1', null)
     const inside = await runEntry(
       fixture,
-      'pre-tool-use',
+      'hook-event',
       preEvent(fixture, 's1', { tool_use_id: 'toolu_02', agent_id: 'a1', agent_type: 'general-purpose' })
     )
     assert.equal(inside.stdout, '{}')
     assert.deepEqual(filesUnder(fixture.paths.logbookDir), HOLD_ONLY)
-    const outside = await runEntry(fixture, 'pre-tool-use', preEvent(fixture, 's1', { tool_use_id: 'toolu_02' }))
+    const outside = await runEntry(fixture, 'hook-event', preEvent(fixture, 's1', { tool_use_id: 'toolu_02' }))
     assert.equal(outside.stdout, '{}')
     assert.ok(existsSync(markerFile(fixture, 'toolu_02')))
   })
@@ -137,10 +137,10 @@ test('markers.pre-tool-use-ignores-a-call-inside-a-subagent', async () => {
 test('markers.pre-tool-use-ignores-a-session-holding-nothing', async () => {
   await withFixture(async (fixture) => {
     takeHold(fixture.rt, fixture.paths, 'fix-login', 's9', null)
-    const run = await runEntry(fixture, 'pre-tool-use', preEvent(fixture, 's1', { tool_use_id: 'toolu_04' }))
+    const run = await runEntry(fixture, 'hook-event', preEvent(fixture, 's1', { tool_use_id: 'toolu_04' }))
     assert.equal(run.stdout, '{}')
     assert.deepEqual(filesUnder(fixture.paths.logbookDir), HOLD_ONLY)
-    const holder = await runEntry(fixture, 'pre-tool-use', preEvent(fixture, 's9', { tool_use_id: 'toolu_04' }))
+    const holder = await runEntry(fixture, 'hook-event', preEvent(fixture, 's9', { tool_use_id: 'toolu_04' }))
     assert.equal(holder.stdout, '{}')
     assert.ok(existsSync(markerFile(fixture, 'toolu_04')))
   })

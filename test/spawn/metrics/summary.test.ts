@@ -257,7 +257,7 @@ test('metrics.summary-counts-hook-events', async () => {
       writeFileSync(workingCopy, String(storedText).replace('- [ ] c1', '- [x] c1'))
       await runHook(
         folders,
-        'post-tool-use',
+        'hook-event',
         hookEvent(folders, 'PostToolUse', {
           prompt_id: 'p-0',
           tool_use_id: 'toolu_00',

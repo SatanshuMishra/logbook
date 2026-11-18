@@ -7,11 +7,9 @@ export const REQUIRED_FILES = [
   'bin/logbook-server.ts',
   'hooks/hooks.json',
   'hooks/lib/io.ts',
-  'hooks/post-tool-use.ts',
   'hooks/pre-tool-use.ts',
   'hooks/session-end.ts',
   'hooks/session-start.ts',
-  'hooks/stop.ts',
   'skills/debrief/SKILL.md',
   'skills/file/SKILL.md',
   'skills/preflight/SKILL.md',
@@ -55,11 +53,18 @@ export const REQUIRED_HOOK_EVENTS = [
 export const EVENT_HOOK_FILES = {
   SessionStart: 'session-start',
   PreToolUse: 'pre-tool-use',
-  PostToolUse: 'post-tool-use',
-  PostToolUseFailure: 'post-tool-use',
-  Stop: 'stop',
   SessionEnd: 'session-end'
 }
+
+export const HOOK_TOOL_NAME = 'hook_event'
+
+export const HOOK_TOOL_PROBE = 'Bash'
+
+export const HOOK_TOOL_EVENTS = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'Stop']
+
+const takesHookTool = (eventName, group) =>
+  HOOK_TOOL_EVENTS.includes(eventName) &&
+  (eventName !== 'PreToolUse' || (typeof group.matcher === 'string' && new RegExp(group.matcher).test(HOOK_TOOL_PROBE)))
 
 export const USER_CONFIG_CONSUMER_ROOTS = ['src', 'hooks', 'bin']
 
@@ -255,12 +260,63 @@ async function checkMcpDeclaration(root, problems) {
   }
 }
 
+async function hookToolServer(root, problems) {
+  const plugin = await readJsonFile(root, '.claude-plugin/plugin.json', problems)
+  const mcp = await readJsonFile(root, '.mcp.json', problems)
+  const serverKeys = Object.keys(mcp?.mcpServers ?? {})
+  if (typeof plugin?.name !== 'string' || serverKeys.length !== 1) return null
+  return `plugin:${plugin.name}:${serverKeys[0]}`
+}
+
+function checkHookToolEntry(eventName, entry, server, problems) {
+  if (server === null) {
+    problems.push(`hooks/hooks.json: ${eventName} names an mcp_tool hook, but no plugin name and one server key say which server it calls`)
+    return
+  }
+  if (entry.server !== server) {
+    problems.push(`hooks/hooks.json: ${eventName} mcp_tool server must be exactly ${JSON.stringify(server)} (found ${JSON.stringify(entry.server)})`)
+  }
+  if (entry.tool !== HOOK_TOOL_NAME) {
+    problems.push(`hooks/hooks.json: ${eventName} mcp_tool tool must be exactly ${JSON.stringify(HOOK_TOOL_NAME)} (found ${JSON.stringify(entry.tool)})`)
+  }
+}
+
+function checkCommandEntry(eventName, entry, problems) {
+  const hookFile = EVENT_HOOK_FILES[eventName]
+  if (hookFile === undefined) {
+    problems.push(`hooks/hooks.json: ${eventName} takes no command hook (found ${JSON.stringify(entry.command)})`)
+    return
+  }
+  const expectedCommand = 'node "${CLAUDE_PLUGIN_ROOT}/hooks/' + hookFile + '.ts"'
+  if (entry.command !== expectedCommand) {
+    problems.push(`hooks/hooks.json: ${eventName} command must be exactly ${JSON.stringify(expectedCommand)} (found ${JSON.stringify(entry.command)})`)
+  }
+}
+
+function checkHookEntry(eventName, group, entry, server, problems) {
+  switch (entry.type) {
+    case 'mcp_tool':
+      if (!takesHookTool(eventName, group)) {
+        problems.push(`hooks/hooks.json: ${eventName} group ${JSON.stringify(group.matcher ?? null)} takes no mcp_tool hook`)
+        return
+      }
+      checkHookToolEntry(eventName, entry, server, problems)
+      return
+    case 'command':
+      checkCommandEntry(eventName, entry, problems)
+      return
+    default:
+      problems.push(`hooks/hooks.json: ${eventName} hook type must be "command" or "mcp_tool" (found ${JSON.stringify(entry.type)})`)
+  }
+}
+
 async function checkHooksBindings(root, problems) {
   const hooksDoc = await readJsonFile(root, 'hooks/hooks.json', problems)
   if (!hooksDoc) return
   if ('env' in hooksDoc) {
     problems.push('hooks/hooks.json: top-level env key must be absent')
   }
+  const server = await hookToolServer(root, problems)
   const events = hooksDoc.hooks ?? {}
   const eventNames = Object.keys(events)
   const unexpected = eventNames.filter((name) => !REQUIRED_HOOK_EVENTS.includes(name))
@@ -273,23 +329,16 @@ async function checkHooksBindings(root, problems) {
       problems.push(`hooks/hooks.json: missing binding for ${eventName}`)
       continue
     }
-    const hookFile = EVENT_HOOK_FILES[eventName]
-    const expectedCommand = 'node "${CLAUDE_PLUGIN_ROOT}/hooks/' + hookFile + '.ts"'
-    let sawCommand = false
+    let sawEntry = false
     for (const group of groups) {
       const entries = Array.isArray(group.hooks) ? group.hooks : []
       for (const entry of entries) {
-        sawCommand = true
-        if (entry.type !== 'command') {
-          problems.push(`hooks/hooks.json: ${eventName} hook type must be "command" (found ${JSON.stringify(entry.type)})`)
-        }
-        if (entry.command !== expectedCommand) {
-          problems.push(`hooks/hooks.json: ${eventName} command must be exactly ${JSON.stringify(expectedCommand)} (found ${JSON.stringify(entry.command)})`)
-        }
+        sawEntry = true
+        checkHookEntry(eventName, group, entry, server, problems)
       }
     }
-    if (!sawCommand) {
-      problems.push(`hooks/hooks.json: ${eventName} has no command entries`)
+    if (!sawEntry) {
+      problems.push(`hooks/hooks.json: ${eventName} has no hook entries`)
     }
   }
 }

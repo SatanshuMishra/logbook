@@ -1,6 +1,7 @@
 ---
 name: preflight
 description: Use at the start of work to pick up an existing thread and continue it from its state document.
+disable-model-invocation: true
 ---
 
 ## Sequence

@@ -6,7 +6,9 @@
     "PreToolUse": [
       {
         "matcher": "^(Bash|Agent|Task)$",
-        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.ts\"", "timeout": 10 }]
+        "hooks": [
+          { "type": "mcp_tool", "server": "plugin:logbook:ledger", "tool": "hook_event", "input": { "hook_event_name": "${hook_event_name}", "session_id": "${session_id}", "cwd": "${cwd}", "transcript_path": "${transcript_path}", "tool_name": "${tool_name}", "tool_input": "${tool_input}", "tool_response": "${tool_response}", "tool_use_id": "${tool_use_id}", "agent_id": "${agent_id}", "prompt_id": "${prompt_id}", "stop_hook_active": "${stop_hook_active}" }, "timeout": 10 }
+        ]
       },
       {
         "matcher": "^(Read|Edit)$",
@@ -19,17 +21,25 @@
     "PostToolUse": [
       {
         "matcher": "^(Edit|Write|MultiEdit|NotebookEdit|Bash|Agent|Task|mcp__.+__(create|merge)_pull_request)$",
-        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/post-tool-use.ts\"", "timeout": 30 }]
+        "hooks": [
+          { "type": "mcp_tool", "server": "plugin:logbook:ledger", "tool": "hook_event", "input": { "hook_event_name": "${hook_event_name}", "session_id": "${session_id}", "cwd": "${cwd}", "transcript_path": "${transcript_path}", "tool_name": "${tool_name}", "tool_input": "${tool_input}", "tool_response": "${tool_response}", "tool_use_id": "${tool_use_id}", "agent_id": "${agent_id}", "prompt_id": "${prompt_id}", "stop_hook_active": "${stop_hook_active}" }, "timeout": 30 }
+        ]
       }
     ],
     "PostToolUseFailure": [
       {
         "matcher": "^(Bash|Agent|Task)$",
-        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/post-tool-use.ts\"", "timeout": 10 }]
+        "hooks": [
+          { "type": "mcp_tool", "server": "plugin:logbook:ledger", "tool": "hook_event", "input": { "hook_event_name": "${hook_event_name}", "session_id": "${session_id}", "cwd": "${cwd}", "transcript_path": "${transcript_path}", "tool_name": "${tool_name}", "tool_input": "${tool_input}", "tool_response": "${tool_response}", "tool_use_id": "${tool_use_id}", "agent_id": "${agent_id}", "prompt_id": "${prompt_id}", "stop_hook_active": "${stop_hook_active}" }, "timeout": 10 }
+        ]
       }
     ],
     "Stop": [
-      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/stop.ts\"", "timeout": 15 }] }
+      {
+        "hooks": [
+          { "type": "mcp_tool", "server": "plugin:logbook:ledger", "tool": "hook_event", "input": { "hook_event_name": "${hook_event_name}", "session_id": "${session_id}", "cwd": "${cwd}", "transcript_path": "${transcript_path}", "tool_name": "${tool_name}", "tool_input": "${tool_input}", "tool_response": "${tool_response}", "tool_use_id": "${tool_use_id}", "agent_id": "${agent_id}", "prompt_id": "${prompt_id}", "stop_hook_active": "${stop_hook_active}" }, "timeout": 15 }
+        ]
+      }
     ],
     "SessionEnd": [
       { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.ts\"", "timeout": 15 }] }

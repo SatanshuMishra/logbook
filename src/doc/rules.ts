@@ -17,6 +17,7 @@ const SHARED_RULES: readonly string[] = [
   'Never delete a criterion.',
   'Reword a criterion only citing the new decision that changed it.',
   'Keep a decision or a risk only while it still constrains future work; otherwise remove it, or move it to Settled, do not reopen under a new id.',
+  'Keep the lesson of a failed attempt, what was tried and why it failed, as a Settled, do not reopen item while it still constrains future work.',
   'Remove every line that belongs to an option the owner did not take.',
   'New ids start at the Next ids numbers and no number is reused.'
 ]
