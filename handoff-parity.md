@@ -1,7 +1,7 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: parked
-Updated: 2026-11-18T04:52:03.288Z
-Next ids: c6 D2 R2 S1
+Updated: 2026-11-18T05:10:25.877Z
+Next ids: c6 D3 R2 S1
 
 ## Goal
 
@@ -25,7 +25,7 @@ Apply the lean-session-cost spec review's findings, hand the spec off, run pipel
 
 ## Decisions in force
 
-- D1 hand-off: build the handoff-parity spec as two pull requests through the pipeline drive: Build both MSPs with the mitosis drive from the FEATURE branch, the pickup-across-clones MSP after record-in-one-call, then measure cost, wall time, turns and recall against the handoff-file arm with the built plugin.
+- D2 hand-off: build the lean-session-cost spec as one pull request through the pipeline drive: Build the six Steps as one MSP with the pipeline drive from feat/lean-session-cost, then rerun logbook-evals S1 to S3 with arms H and L2 on the released plugin to decide c1 and c2.
 
 ## Open risks
 
