@@ -44,16 +44,17 @@ const requestOutput = (text: string): StopHookOutput => ({
   hookSpecificOutput: { hookEventName: HOOK_EVENT, additionalContext: text }
 })
 
-const unchangedSincePickup = (rt: Runtime, paths: RepoPaths, hold: Hold): boolean =>
-  hold.picked_state !== undefined && repositoryState(rt, paths.root) === hold.picked_state
+const readOnlySincePickup = (rt: Runtime, paths: RepoPaths, hold: Hold, activity: Activity): boolean =>
+  !activity.edited && hold.picked_state !== undefined && repositoryState(rt, paths.root) === hold.picked_state
 
 const provisionalReason = (
   rt: Runtime,
   paths: RepoPaths,
   hold: Hold,
+  activity: Activity,
   reason: UpdateReason | null
 ): UpdateReason | null =>
-  hold.provisional_asked !== true && reason?.kind === 'turn-changed' && !unchangedSincePickup(rt, paths, hold)
+  hold.provisional_asked !== true && reason?.kind === 'turn-changed' && !readOnlySincePickup(rt, paths, hold, activity)
     ? reason
     : null
 
@@ -75,7 +76,7 @@ export const stop = (input: StopInput): StopOutput => {
   })
   const judged = reasonFor(activity, parseDocument(stored.text).status, () => runWroteLast(rt, paths, held))
   const provisional = hold.provisional === true
-  const reason = provisional ? provisionalReason(rt, paths, hold, judged) : judged
+  const reason = provisional ? provisionalReason(rt, paths, hold, activity, judged) : judged
   if (reason === null) return {}
   recordEvent(rt, paths, held, 'doc.request', { reason: reason.kind })
   const text = updateRequest({ path: file.value, documentText: stored.text, reason, provisional })

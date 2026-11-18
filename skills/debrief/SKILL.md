@@ -6,7 +6,7 @@ description: Use at session hand-off to bring the thread's state document up to 
 ## Sequence
 
 1. Gather the next action a later session takes first, specific enough to begin without working anything out again, naming the file and the place in it when it involves one.
-2. Bring the thread up to date and park it with one Bash command, `logbook park_thread --args -` with a quoted heredoc carrying `next_step` set to that action, `edits` for Where things stand and any other section that changed, each decision taken as an edit under Decisions in force with its reason, and `note` lines, one "Removed: <id> because <reason>" for each id you removed. Each edit's `old_text` is exact text of the stored document found exactly once. It takes the same fields as `logbook update_thread --args -`, records them, parks the thread and pushes it to origin in one commit, so no sync is needed after it:
+2. Bring the thread up to date and park it with one Bash command, `logbook park_thread --args -` with a quoted heredoc carrying `next_step` set to that action, `edits` for Where things stand and any other section that changed, each decision taken as an edit under Decisions in force with its reason, and `note` lines, one "Removed: <id> because <reason>" for each id you removed. Each edit's `old_text` is exact text of the stored document found exactly once. It accepts `thread_id`, `next_step`, `next_step_records`, `edits`, `note` and `outcome`, with edits and note working as in `logbook update_thread --args -`; it records them and parks the thread in one commit, then pushes it to origin and says in its reply whether origin has it:
 
    ```sh
    logbook park_thread --args - <<'EOF'
@@ -31,4 +31,4 @@ description: Use at session hand-off to bring the thread's state document up to 
    - Send one note line that says what changed and one note line "Removed: <id> because <reason>" for each id you removed; logbook writes the note under "## This update", so no edit adds that section.
 3. Never print the document or any part of it.
 4. When the command refuses, correct the field the refusal names and run it again.
-5. Tell the user in one sentence that the thread is parked and what its next step is.
+5. Tell the user in one sentence that the thread is parked, what its next step is, and whether origin has it, as the reply says.

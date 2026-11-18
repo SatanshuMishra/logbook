@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { sessionStart } from '../../src/hook/session-start.ts'
 import type { Runtime } from '../../src/runtime/runtime.ts'
-import { readHold } from '../../src/thread/holds.ts'
+import { readHold, takeHold } from '../../src/thread/holds.ts'
 import { findRepository, type RepoPaths } from '../../src/thread/paths.ts'
 import { commitDocuments } from '../../src/thread/store.ts'
 import { rawGit } from '../support/git-fixture.ts'
@@ -133,5 +133,19 @@ test('startup-others.documents-are-left-out-before-the-roster-when-the-context-i
     assert.equal(context.includes(OTHERS_HEADING), false, context)
     assert.equal(context.includes(long), false)
     assert.ok(context.includes('older-work - active - Next: Write the older tests.'), context)
+  })
+})
+
+test('startup-others.a-thread-another-running-session-holds-is-left-out', () => {
+  withFixture((fixture) => {
+    const older = stateDocument('older-work', 'Write the older tests.')
+    openThread(fixture, 'older-work', older)
+    openThread(fixture, 'newer-work', stateDocument('newer-work', 'Ship the newer feature.'))
+    takeHold(fixture.rt, fixture.paths, 'older-work', 'running-session', null, process.pid)
+    const context = startup(fixture)
+    assert.equal(readHold(fixture.paths, 'newer-work')?.holder, SESSION)
+    assert.equal(context.includes(older.trimEnd()), false, context)
+    assert.equal(context.includes(OTHERS_HEADING), false, context)
+    assert.ok(context.includes('older-work - '), context)
   })
 })

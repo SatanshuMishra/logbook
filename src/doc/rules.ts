@@ -49,7 +49,7 @@ export const recordCommandLines = (slug: string): string[] => [
 ]
 
 export const HAND_OFF_LINE =
-  'To hand the thread off, send the same fields to logbook park_thread instead: that one command records them, parks the thread and pushes it to origin, so no sync is needed after it.'
+  'To hand the thread off, send the same fields to logbook park_thread instead: that one command records them, parks the thread and pushes it to origin, and its reply says whether origin has it.'
 
 const provisionalLine = (slug: string): string =>
   `Logbook picked this thread up at session start; record only work that belongs to thread ${slug}.`

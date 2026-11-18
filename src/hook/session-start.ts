@@ -257,7 +257,7 @@ const otherDocuments = (
   picked: string
 ): string[] =>
   threads
-    .filter((thread) => thread.slug !== picked)
+    .filter((thread) => thread.slug !== picked && (readHold(paths, thread.slug)?.holder ?? null) === null)
     .flatMap((thread) => {
       const stored = readDocument(rt, paths, thread.slug)
       return stored === null ? [] : [stored.text.replace(/\n+$/, '')]

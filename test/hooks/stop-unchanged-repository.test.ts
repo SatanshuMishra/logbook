@@ -106,22 +106,24 @@ const startup = (fixture: Fixture): void => {
   assert.equal(readHold(fixture.paths, SLUG)?.provisional, true, 'the startup must pick the thread up')
 }
 
-const writeBashTurn = (file: string, command: string): void => {
+const writeToolTurn = (file: string, name: string, input: Record<string, unknown>): void => {
   const lines = [
     {
       type: 'assistant',
       timestamp: AFTER,
-      message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_bash', name: 'Bash', input: { command } }] }
+      message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_turn', name, input }] }
     },
     {
       type: 'user',
       timestamp: AFTER,
-      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_bash', content: 'done' }] }
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_turn', content: 'done' }] }
     }
   ]
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`)
 }
+
+const writeBashTurn = (file: string, command: string): void => writeToolTurn(file, 'Bash', { command })
 
 const runStop = (fixture: Fixture): StopOutput =>
   stop({
@@ -166,6 +168,45 @@ test('stop-unchanged.further-edit-to-a-file-already-changed-at-pickup-is-asked-a
     startup(fixture)
     appendFileSync(join(fixture.repo, TRACKED_FILE), 'export const reset = () => {}\n')
     writeBashTurn(fixture.transcript, `cat >> ${TRACKED_FILE}`)
+    const context = contextOf(runStop(fixture))
+    assert.ok(context?.split('\n').includes(PROVISIONAL_LINE), context)
+  })
+})
+
+test('stop-unchanged.new-file-in-a-tracked-folder-is-asked-about', () => {
+  withPickedUpThread((fixture) => {
+    mkdirSync(join(fixture.repo, 'src', 'form'), { recursive: true })
+    writeFileSync(join(fixture.repo, 'src', 'form', 'fields.js'), 'export const fields = []\n')
+    mustGit(fixture.repo, ['add', 'src'])
+    mustGit(fixture.repo, ['commit', '--quiet', '-m', 'add the form fields'])
+    startup(fixture)
+    writeFileSync(join(fixture.repo, 'src', 'form', 'submit.js'), 'export const submit = () => post()\n')
+    writeBashTurn(fixture.transcript, 'cat > src/form/submit.js')
+    const context = contextOf(runStop(fixture))
+    assert.ok(context?.split('\n').includes(PROVISIONAL_LINE), context)
+  })
+})
+
+test('stop-unchanged.edit-inside-an-untracked-folder-is-asked-about', () => {
+  withPickedUpThread((fixture) => {
+    mkdirSync(join(fixture.repo, 'drafts'), { recursive: true })
+    writeFileSync(join(fixture.repo, 'drafts', 'plan.md'), 'Fix the submit handler.\n')
+    startup(fixture)
+    appendFileSync(join(fixture.repo, 'drafts', 'plan.md'), 'Then add a test.\n')
+    writeBashTurn(fixture.transcript, 'cat >> drafts/plan.md')
+    const context = contextOf(runStop(fixture))
+    assert.ok(context?.split('\n').includes(PROVISIONAL_LINE), context)
+  })
+})
+
+test('stop-unchanged.edit-outside-the-repository-is-asked-about', () => {
+  withPickedUpThread((fixture) => {
+    startup(fixture)
+    writeToolTurn(fixture.transcript, 'Edit', {
+      file_path: join(dirname(fixture.repo), 'shared-config', 'login.json'),
+      old_string: '"retries": 1',
+      new_string: '"retries": 3'
+    })
     const context = contextOf(runStop(fixture))
     assert.ok(context?.split('\n').includes(PROVISIONAL_LINE), context)
   })

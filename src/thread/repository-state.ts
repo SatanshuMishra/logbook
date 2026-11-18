@@ -5,7 +5,9 @@ import type { Runtime } from '../runtime/runtime.ts'
 import { git } from '../store/git.ts'
 
 const HEAD_ARGS = ['rev-parse', '--verify', '--quiet', 'HEAD']
-const STATUS_ARGS = ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=normal']
+const GIT_DIR_ARGS = ['rev-parse', '--absolute-git-dir']
+const INDEX_FILE_NAME = 'index'
+const STATUS_ARGS = ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all']
 const ENTRY_SEPARATOR = '\0'
 const STATUS_PREFIX_LENGTH = 3
 const ABSENT = 'absent'
@@ -22,8 +24,15 @@ const fileStamp = (root: string, entry: string): string => {
   }
 }
 
+const repositoryIndex = (rt: Runtime, root: string): string | null => {
+  const gitDir = git(rt, root, GIT_DIR_ARGS)
+  return gitDir.ok ? path.join(gitDir.stdout.trim(), INDEX_FILE_NAME) : null
+}
+
 export const repositoryState = (rt: Runtime, root: string): string | null => {
-  const status = git(rt, root, STATUS_ARGS)
+  const indexFile = repositoryIndex(rt, root)
+  if (indexFile === null) return null
+  const status = git(rt, root, STATUS_ARGS, { indexFile })
   if (!status.ok) return null
   const head = git(rt, root, HEAD_ARGS)
   const entries = status.stdout.split(ENTRY_SEPARATOR).filter((entry) => entry.length > 0)
