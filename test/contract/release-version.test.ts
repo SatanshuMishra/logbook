@@ -5,13 +5,13 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const LOGBOOK_ROOT = fileURLToPath(new URL('../..', import.meta.url))
-const RELEASE = '0.21.0'
+const RELEASE = '0.22.0'
 
 type VersionFile = { version?: unknown; packages?: Record<string, { version?: unknown }> }
 
 const readJson = (relative: string): VersionFile => JSON.parse(readFileSync(join(LOGBOOK_ROOT, relative), 'utf8')) as VersionFile
 
-test('release.versions-say-0.21.0', () => {
+test('release.versions-say-0.22.0', () => {
   const manifest = readJson('package.json')
   const lock = readJson('package-lock.json')
   const plugin = readJson('.claude-plugin/plugin.json')
