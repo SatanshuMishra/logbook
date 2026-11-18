@@ -1,3 +1,4 @@
+import { performance } from 'node:perf_hooks'
 import { ulid as generateUlid } from 'ulid'
 import { createStderrLogger } from './logger.ts'
 import { PROJECT_DIR_ENV_KEY, RUN_WRITER_PREFIX } from '../thread/paths.ts'
@@ -6,6 +7,7 @@ export type Writer = { kind: 'session' | 'command'; name: string }
 
 export type Runtime = {
   now: () => string
+  monotonicMs: () => number
   ulid: () => string
   env: Readonly<Record<string, string | undefined>>
   cwd: string | null
@@ -15,7 +17,20 @@ export type Runtime = {
   parentProcess: number | null
 }
 
-const SESSION_ID_ENV_KEY = 'CLAUDE_CODE_SESSION_ID'
+export const SESSION_ID_ENV_KEY = 'CLAUDE_CODE_SESSION_ID'
+const CLAUDE_PROCESS_ENV_KEY = 'CLAUDE_PID'
+const POSITIVE_INTEGER = /^[1-9][0-9]*$/
+
+export const claudeProcessOf = (env: Readonly<Record<string, string | undefined>>): number | null => {
+  const text = env[CLAUDE_PROCESS_ENV_KEY]
+  if (text === undefined || !POSITIVE_INTEGER.test(text)) return null
+  const pid = Number(text)
+  return Number.isSafeInteger(pid) ? pid : null
+}
+
+export type Surroundings = { env: Readonly<Record<string, string | undefined>>; cwd: string }
+
+export const processSurroundings = (): Surroundings => ({ env: Object.freeze({ ...process.env }), cwd: process.cwd() })
 
 export const productionRuntime = (): Runtime => {
   const env = Object.freeze({ ...process.env })
@@ -43,6 +58,7 @@ export const productionRuntime = (): Runtime => {
   }
   return {
     now: () => new Date().toISOString(),
+    monotonicMs: () => performance.now(),
     ulid: () => generateUlid(),
     env,
     cwd,
@@ -53,7 +69,12 @@ export const productionRuntime = (): Runtime => {
   }
 }
 
-export type CommandRuntimeInput = { repo: string; writer?: string }
+export type CommandRuntimeInput = {
+  repo: string
+  writer?: string
+  writerKind?: Writer['kind']
+  parentProcess?: number | null
+}
 
 const DECISIONS_READER = 'decisions'
 
@@ -66,12 +87,13 @@ export const commandRuntime = (input: CommandRuntimeInput): Runtime => {
     input.writer === undefined || input.writer.startsWith(RUN_WRITER_PREFIX) ? generateUlid() : input.writer
   return {
     now: () => new Date().toISOString(),
+    monotonicMs: () => performance.now(),
     ulid: () => generateUlid(),
     env,
     cwd: input.repo,
     log: createStderrLogger(env),
     sessionId,
-    writer: { kind: 'command', name: writerName },
-    parentProcess: process.ppid
+    writer: { kind: input.writerKind ?? 'command', name: writerName },
+    parentProcess: input.parentProcess === undefined ? process.ppid : input.parentProcess
   }
 }

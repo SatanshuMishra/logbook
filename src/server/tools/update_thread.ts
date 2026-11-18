@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { LETTER_SECTION, parseDocument, type Item } from '../../doc/document.ts'
+import { LETTER_SECTION, NOTE_HEADING, parseDocument, type Item } from '../../doc/document.ts'
 import { addItem, oneLine, removeItem, replaceSection, tickCriterion, type EditResult } from '../../doc/render.ts'
 import type { Runtime } from '../../runtime/runtime.ts'
 import type { Ok, Refusal } from '../../schema/declare.ts'
@@ -7,6 +7,7 @@ import { findRepository, startDirectory, type RepoPaths } from '../../thread/pat
 import { applyToolChange } from '../../thread/reconcile.ts'
 import { resolveThreadId } from '../../thread/store.ts'
 import type { ToolSpec } from '../register.ts'
+import { editsInput, filledText, noteInput, noteLinesOf, withTextEdits, type TextEdit } from './text-edits.ts'
 
 const TOOL_NAME = 'update_thread'
 const NOT_BLANK = /\S/
@@ -15,8 +16,6 @@ const NOTHING_CHANGED = 'nothing changed'
 const RECORDS_ACCEPTED = 'ids of items in the document, such as D3 or R1'
 const CRITERION_ACCEPTED = `the id of a criterion under "## ${LETTER_SECTION.c}" in the thread's document, such as c1`
 const RISK_ACCEPTED = `the id of a risk under "## ${LETTER_SECTION.R}" in the thread's document, such as R1`
-
-const filledText = (description: string) => z.string().regex(NOT_BLANK).describe(description)
 
 const CriterionDoneSchema = z
   .strictObject({
@@ -61,6 +60,8 @@ const UpdateThreadInputSchema = z
     thread_id: z
       .string()
       .describe("the thread's slug, or an old thread id listed in aliases.json; call list_threads to see each slug"),
+    edits: editsInput("before the call's other changes"),
+    note: noteInput(),
     next_step: z
       .string()
       .regex(NOT_BLANK)
@@ -100,6 +101,8 @@ const UpdateThreadInputSchema = z
     }
     const asksChange =
       input.next_step !== undefined ||
+      (input.edits?.length ?? 0) > 0 ||
+      (input.note?.length ?? 0) > 0 ||
       (input.criteria_done?.length ?? 0) > 0 ||
       (input.risks_add?.length ?? 0) > 0 ||
       (input.risks_retire?.length ?? 0) > 0
@@ -108,7 +111,7 @@ const UpdateThreadInputSchema = z
     }
   })
   .describe(
-    'the thread and at least one change to it: next_step, with next_step_records when the step needs items of the document, criteria_done, risks_add or risks_retire'
+    'the thread and at least one change to it: edits, note, next_step, with next_step_records when the step needs items of the document, criteria_done, risks_add or risks_retire'
   )
 
 const UpdateThreadOutputSchema = z.object({
@@ -240,7 +243,9 @@ const withNextStep = (text: string, input: UpdateThreadInput): Edited => {
 }
 
 const summaryOf = (input: UpdateThreadInput, ticked: readonly string[], added: readonly string[], retired: readonly string[]): string => {
+  const edits = input.edits?.length ?? 0
   const parts = [
+    ...(edits === 0 ? [] : [`${edits} ${edits === 1 ? 'edit' : 'edits'}`]),
     ...(input.next_step === undefined ? [] : ['next step set']),
     ...(ticked.length === 0 ? [] : [`ticked ${ticked.join(' ')}`]),
     ...(added.length === 0 ? [] : [`added ${added.join(' ')}`]),
@@ -249,7 +254,10 @@ const summaryOf = (input: UpdateThreadInput, ticked: readonly string[], added: r
   return parts.length === 0 ? NOTHING_CHANGED : parts.join(', ')
 }
 
-const updateIn = (text: string, input: UpdateThreadInput): Updated => {
+const updateIn = (stored: string, input: UpdateThreadInput): Updated => {
+  const edited = withTextEdits(stored, input.edits ?? [])
+  if (!edited.ok) return { ok: false, refusal: edited }
+  const text = edited.value
   const items = parseDocument(text).items
   const refused = checkIds(items, input)
   if (refused !== null) return { ok: false, refusal: refused }
@@ -269,7 +277,7 @@ const updateIn = (text: string, input: UpdateThreadInput): Updated => {
   return {
     ok: true,
     text: stepped.text,
-    noteLines: retired.noteLines,
+    noteLines: [...retired.noteLines, ...noteLinesOf(input.note)],
     summary: summaryOf(input, ticked.ids, added.ids, retired.ids),
     addedRiskIds: added.ids
   }
@@ -278,7 +286,7 @@ const updateIn = (text: string, input: UpdateThreadInput): Updated => {
 export const updateThreadTool: ToolSpec<UpdateThreadInput, UpdateThreadOutput> = {
   name: TOOL_NAME,
   title: 'Update thread',
-  description: `Changes a thread's document in one commit. next_step replaces the body of "## ${NEXT_STEP_SECTION}", followed by the line "Needs: <ids>." when next_step_records names the items of the document that step needs. criteria_done ticks each criterion [x] with its result as evidence, leaving one already [x] as it is. risks_add adds each risk under "## ${LETTER_SECTION.R}" with the next free R id, followed by " Bears on c<n>." when bears_on names a criterion. risks_retire removes each risk, keeping its reason in the commit. Send at least one change; every id must be an item the document holds. Returns what changed and the ids of the added risks.`,
+  description: `Changes a thread's document in one commit. edits replaces each old_text with its new_text, in order and before the other changes, and each old_text must occur exactly once in the document as it stands after the earlier edits. note writes each of its lines after the summary line under "## ${NOTE_HEADING}" and in the commit, such as "Removed: D2 because it was reversed". next_step replaces the body of "## ${NEXT_STEP_SECTION}", followed by the line "Needs: <ids>." when next_step_records names the items of the document that step needs. criteria_done ticks each criterion [x] with its result as evidence, leaving one already [x] as it is. risks_add adds each risk under "## ${LETTER_SECTION.R}" with the next free R id, followed by " Bears on c<n>." when bears_on names a criterion. risks_retire removes each risk, keeping its reason in the commit. Send at least one change; every id must be an item the document holds. Returns what changed and the ids of the added risks.`,
   input: UpdateThreadInputSchema,
   output: UpdateThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },

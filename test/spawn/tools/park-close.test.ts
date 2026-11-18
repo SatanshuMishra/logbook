@@ -204,7 +204,7 @@ test('park_thread.spawn.contract', async () => {
     assert.equal(message[0], 'park_thread fix-login: parked')
     assert.ok(message.includes('The submit handler now posts the form.'), `the commit must hold the outcome, got:\n${message.join('\n')}`)
     assert.equal(holderOf(fixture.paths), null)
-    assert.deepEqual(reply.structuredContent, { parked_thread_ids: ['fix-login'] })
+    assert.deepEqual(reply.structuredContent, { parked_thread_ids: ['fix-login'], pushed: null, push_error: null })
   })
 })
 
@@ -260,7 +260,7 @@ test('park_thread.names-old-ids', async () => {
     const reply = await callTool(fixture, 'park_thread', { thread_id: oldId })
 
     assertSucceeded(reply)
-    assert.deepEqual(reply.structuredContent, { parked_thread_ids: ['fix-login', oldId] })
+    assert.deepEqual(reply.structuredContent, { parked_thread_ids: ['fix-login', oldId], pushed: null, push_error: null })
     assert.equal(statusLine(fixture.repo), 'Status: parked')
   })
 })

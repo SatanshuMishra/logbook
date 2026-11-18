@@ -46,7 +46,7 @@ const CLOSED_KINDS: readonly StatusKind[] = ['done', 'abandoned']
 const CONFLICT_OPEN = '<<<<<<<'
 const CONFLICT_CLOSE = '>>>>>>>'
 const COMMIT_MARK = '\0'
-const CONTINUE_LINE = 'To continue a thread, call resume_thread with its slug.'
+const CONTINUE_LINE = 'To switch to another thread, run logbook resume_thread --args \'{"thread_id":"<slug>"}\' in Bash.'
 const HISTORY_LINE_PATTERN = /^([0-9a-f]{40,64})\t([^\t]*)\t(.*)$/
 
 const closedLine = (count: number): string => `${count} closed threads: call list_threads with include_closed true.`
@@ -192,6 +192,14 @@ const keptCount = (lines: readonly string[], tail: (dropped: number) => string[]
     { kept: 0, length: 0, open: true }
   ).kept
 }
+
+export type PickupRoster = { lines: string[]; replacement: (count: number) => string; tail: string[] }
+
+export const pickupRoster = (roster: Roster, picked: string): PickupRoster => ({
+  lines: roster.threads.filter((thread) => thread.slug !== picked).map((thread) => thread.line),
+  replacement: moreLine,
+  tail: [CONTINUE_LINE]
+})
 
 export const sessionStartRoster = (rt: Runtime, paths: RepoPaths): string | null => {
   const roster = listRoster(rt, paths, { includeClosed: false })

@@ -37,7 +37,7 @@ const ResumeThreadInputSchema = z
 const ResumeThreadOutputSchema = z.object({
   thread_id: z.string().describe('the slug of the thread that was resumed'),
   briefing: z.string().describe("the thread's stored state document, now in context; do not print it"),
-  path: z.string().describe("the working copy of the thread's state document, the file to edit with the Edit tool"),
+  path: z.string().describe("the working copy of the thread's state document, the file logbook checks; keep the document true with logbook update_thread when logbook asks"),
   recovery: z
     .array(z.string())
     .describe(
@@ -121,7 +121,7 @@ export const resumeThreadTool: ToolSpec<ResumeThreadInput, ResumeThreadOutput> =
   name: TOOL_NAME,
   title: 'Resume thread',
   description:
-    "Picks up a thread and makes this session its holder. It brings in the thread's changes from origin when the repository has one, commits a pending valid edit of the working copy, and returns the thread's state document, which is then in your context; do not print it. The reply names the working copy, the file to edit with the Edit tool whenever logbook asks for an update, and lists what happened since the last accepted update: the earlier session's activity, tools still running when it ended, edits of the working copy logbook refused, a failed sync, conflicts left by a sync, and a request to tidy a document converted from the old ledger. Name the thread by its slug, or by an old thread id listed in aliases.json; call list_threads to see each slug.",
+    "Picks up a thread and makes this session its holder. It brings in the thread's changes from origin when the repository has one, commits a pending valid edit of the working copy, and returns the thread's state document, which is then in your context; do not print it. The reply names the working copy, the file logbook checks; keep the document true with logbook update_thread whenever logbook asks for an update. The reply also lists what happened since the last accepted update: the earlier session's activity, tools still running when it ended, edits of the working copy logbook refused, a failed sync, conflicts left by a sync, and a request to tidy a document converted from the old ledger. Name the thread by its slug, or by an old thread id listed in aliases.json; call list_threads to see each slug.",
   input: ResumeThreadInputSchema,
   output: ResumeThreadOutputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },

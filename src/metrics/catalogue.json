@@ -301,8 +301,8 @@
       }
     },
     "thread.pickup": {
-      "description": "One pickup of a held thread by the SessionStart hook after a resume, a compaction or a /clear, recorded when the hook adds the thread's state to the session's context. A startup, or a session that holds no thread, records nothing.",
-      "writer": "The logbook SessionStart hook, for every resume, compact or clear start of a session that holds a thread.",
+      "description": "One pickup of a thread by the SessionStart hook after a resume, a compaction or a /clear of a session that holds it, or at a startup that picks up the newest open thread no running session holds, recorded when the hook adds the thread's state to the session's context. A startup that picks no thread up, or a session that holds no thread, records nothing.",
+      "writer": "The logbook SessionStart hook, for every resume, compact or clear start of a session that holds a thread, and every startup that picks up a thread.",
       "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
       "questions": [
         "How often is a thread picked up after a resume, a compaction or a /clear?",
@@ -312,15 +312,15 @@
       "fields": {
         "source": {
           "type": "enum",
-          "description": "What started the session that picked the thread up: resume, compact or clear.",
+          "description": "What started the session that picked the thread up: startup, resume, compact or clear.",
           "measured_from": "The source of the SessionStart event Claude Code gave the hook.",
           "unit": "none",
           "includes": "Every pickup of a held thread.",
-          "excludes": "Startups, which add the list of threads and pick none up.",
+          "excludes": "Startups that pick no thread up, which add the list of threads instead.",
           "reading": "Group by it to compare boundaries; a source absent from the rows had no recorded pickup in the runs read.",
           "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
           "question": "Across which boundaries is a thread's state carried?",
-          "values": ["resume", "compact", "clear"]
+          "values": ["startup", "resume", "compact", "clear"]
         },
         "delivered": {
           "type": "enum",

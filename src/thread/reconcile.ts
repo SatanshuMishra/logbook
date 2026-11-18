@@ -237,7 +237,7 @@ const toolVersion = (
   const changed = input.change(stored.text)
   if (!changed.ok) return changed.refusal
   const noted = withUpdateNote(changed.text, [changed.summary, ...changed.noteLines])
-  const violations = checkVersion(stored.text, noted, stored.slug)
+  const violations = checkVersion(stored.text, noted, stored.slug, 'note')
   if (violations.length > 0) return violationsRefusal(file, violations)
   return {
     ok: true,

@@ -6,8 +6,8 @@ import { recordEvent } from '../metrics/record.ts'
 import type { Runtime } from '../runtime/runtime.ts'
 import type { Refusal } from '../schema/declare.ts'
 import { activityLine, toolSummary } from '../thread/activity.ts'
-import { addTranscript, heldBy, readHold, setNudged } from '../thread/holds.ts'
-import { clearMarker } from '../thread/inflight.ts'
+import { addTranscript, heldBy, readHold, setNudged, type Hold } from '../thread/holds.ts'
+import { clearMarker, listMarkers } from '../thread/inflight.ts'
 import { workingCopyPath, type RepoPaths } from '../thread/paths.ts'
 import { reconcileThread, type ReconcileResult } from '../thread/reconcile.ts'
 import { listSlugs, readDocument } from '../thread/store.ts'
@@ -150,17 +150,27 @@ const responseText = (response: unknown): string | null => {
   return text.length === 0 ? null : text
 }
 
+const recordedDuringCall = (hold: Hold, startedAt: string | null): boolean =>
+  startedAt !== null && hold.folded_at !== null && Date.parse(hold.folded_at) >= Date.parse(startedAt)
+
+const markerStart = (paths: RepoPaths, held: string | null, toolUseId: string | null): string | null =>
+  held === null || toolUseId === null
+    ? null
+    : (listMarkers(paths, held).find((marker) => marker.tool_use_id === toolUseId)?.started_at ?? null)
+
 const milestoneContext = (
   rt: Runtime,
   paths: RepoPaths,
   event: Record<string, unknown>,
   held: string | null,
-  call: ToolCall
+  call: ToolCall,
+  startedAt: string | null
 ): string | null => {
   if (held === null || nonEmptyString(event.agent_id) !== null || !isMilestone(call.name, call.input)) return null
   const promptId = nonEmptyString(event.prompt_id)
   const hold = readHold(paths, held)
   if (hold === null || (promptId !== null && hold.nudged_prompt_id === promptId)) return null
+  if (recordedDuringCall(hold, startedAt)) return null
   const file = workingCopyPath(paths, held)
   const stored = readDocument(rt, paths, held)
   if (!file.ok || stored === null) return null
@@ -168,7 +178,8 @@ const milestoneContext = (
   const request = updateRequest({
     path: file.value,
     documentText: stored.text,
-    reason: { kind: 'milestone', detail: activityLine(call.name, summary) }
+    reason: { kind: 'milestone', detail: activityLine(call.name, summary) },
+    provisional: hold.provisional === true
   })
   if (promptId !== null) setNudged(rt, paths, held, promptId)
   recordEvent(rt, paths, held, 'doc.request', { reason: 'milestone' })
@@ -186,10 +197,11 @@ export const postToolUse = (input: PostToolUseInput): PostToolUseOutput => {
   const transcript = nonEmptyString(event.transcript_path)
   const toolUseId = nonEmptyString(event.tool_use_id)
   if (held !== null && transcript !== null) addTranscript(rt, paths, held, transcript)
+  const startedAt = markerStart(paths, held, toolUseId)
   if (held !== null && toolUseId !== null) clearMarker(paths, held, toolUseId)
   if (event.hook_event_name === FAILURE_EVENT) return {}
   const call = toolCallOf(event)
   if (call === null) return {}
-  const contexts = [editContext(rt, paths, call), milestoneContext(rt, paths, event, held, call)]
+  const contexts = [editContext(rt, paths, call), milestoneContext(rt, paths, event, held, call, startedAt)]
   return contextOutput(contexts.filter((context): context is string => context !== null))
 }
