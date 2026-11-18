@@ -3,9 +3,11 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { sessionStart } from '../../../src/hook/session-start.ts'
 import type { Runtime } from '../../../src/runtime/runtime.ts'
 import { runTool } from '../../../src/server/register.ts'
 import { openThreadTool } from '../../../src/server/tools/open_thread.ts'
+import { parkThreadTool } from '../../../src/server/tools/park_thread.ts'
 import { findRepository, type RepoPaths } from '../../../src/thread/paths.ts'
 import { rawGit } from '../../support/git-fixture.ts'
 import { testRuntime } from '../../support/runtime.ts'
@@ -58,6 +60,18 @@ const openFixLogin = async (fixture: Fixture, sessionId: string): Promise<Record
   return opened.structured
 }
 
+const startupContext = (fixture: Fixture, sessionId: string): string => {
+  const output = sessionStart({
+    event: { session_id: sessionId, cwd: fixture.repo, hook_event_name: 'SessionStart', source: 'startup' },
+    sessionId,
+    paths: fixture.paths,
+    rt: fixture.rt(sessionId)
+  })
+  const specific: unknown = 'hookSpecificOutput' in output ? output.hookSpecificOutput : undefined
+  assert.ok(isRecord(specific), `the startup must add context, got ${JSON.stringify(output)}`)
+  return String(specific.additionalContext)
+}
+
 test('claude-receives-the-command.open-thread-structured-reply-names-the-record-command', async () => {
   await withFixture(async (fixture) => {
     const structured = await openFixLogin(fixture, 'A')
@@ -67,5 +81,25 @@ test('claude-receives-the-command.open-thread-structured-reply-names-the-record-
     assert.equal(typeof keepTrue, 'string', JSON.stringify(structured))
     assert.ok(String(keepTrue).includes(RECORD_COMMAND), String(keepTrue))
     assert.ok(String(keepTrue).includes('chained after git commit'), String(keepTrue))
+  })
+})
+
+test('claude-receives-the-command.startup-pickup-says-no-resume-call-is-needed', async () => {
+  await withFixture(async (fixture) => {
+    await openFixLogin(fixture, 'A')
+    const parked = await runTool(fixture.rt('A'), parkThreadTool, { thread_id: SLUG })
+    assert.equal(parked.kind, 'ok', JSON.stringify(parked))
+
+    const context = startupContext(fixture, 'B')
+    const opening = context.split('\n\n')[0] ?? ''
+
+    assert.ok(
+      opening.startsWith(
+        `Logbook picked up thread ${SLUG} at session start, the newest open thread no running session holds.`
+      ),
+      opening
+    )
+    assert.ok(opening.includes(`This session already holds thread ${SLUG}`), opening)
+    assert.ok(opening.includes('no resume_thread call'), opening)
   })
 })

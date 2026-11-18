@@ -97,7 +97,7 @@ const openingLine = (slug: string): string =>
   `Logbook: this session holds thread ${slug}. Its state document follows and is now in your context; do not print it. Keep it true with logbook update_thread when logbook asks.`
 
 const startupOpeningLine = (slug: string): string =>
-  `Logbook picked up thread ${slug} at session start, the newest open thread no running session holds. Its state document follows and is now in your context; do not print it. If this session's work belongs to another thread or none, leave it.`
+  `Logbook picked up thread ${slug} at session start, the newest open thread no running session holds. This session already holds thread ${slug}: continue from its state document, which follows and is now in your context, with no resume_thread call and no tool lookup; do not print it. If this session's work belongs to another thread or none, leave it.`
 
 const syncWarning = (error: string): string =>
   `Logbook could not sync threads with origin: ${cutTo(SYNC_REASON_LIMIT, error.replace(/\s+/g, ' ').trim())}. This copy may be behind origin.`
