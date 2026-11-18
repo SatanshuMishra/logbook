@@ -54,7 +54,8 @@ const OpenThreadInputSchema = z
 
 const OpenThreadOutputSchema = z.object({
   thread_id: z.string().describe('the slug of the thread that was opened'),
-  path: z.string().describe("the working copy of the thread's state document, the file logbook checks; keep the document true with logbook update_thread when logbook asks")
+  path: z.string().describe("the working copy of the thread's state document, the file logbook checks; keep the document true with logbook update_thread when logbook asks"),
+  keep_true: z.string().describe('how to keep the state document true when logbook asks: the one logbook command to run in Bash')
 })
 
 type OpenThreadInput = z.infer<typeof OpenThreadInputSchema>
@@ -88,6 +89,9 @@ const locate = (rt: Runtime): Ok<RepoPaths> | Refusal => {
   const dir = startDirectory(rt, rt.cwd ?? '')
   return dir === '' ? noWorkingDirectory() : findRepository(rt, dir)
 }
+
+const KEEP_TRUE =
+  'Keep the state document true when logbook asks with one Bash command, logbook update_thread --args - with the JSON on standard input, chained after git commit when a step was committed.'
 
 const openedText = (slug: string, file: string): string =>
   `opened thread ${slug}. Its state document is ${file}. Keep it true with logbook update_thread when logbook asks.`
@@ -132,7 +136,7 @@ export const openThreadTool: ToolSpec<OpenThreadInput, OpenThreadOutput> = {
     return {
       ok: true,
       text: openedText(input.slug, file.value),
-      structured: { thread_id: input.slug, path: file.value }
+      structured: { thread_id: input.slug, path: file.value, keep_true: KEEP_TRUE }
     }
   }
 }

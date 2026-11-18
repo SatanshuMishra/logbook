@@ -124,8 +124,9 @@ test('open_thread.spawn.contract', async () => {
     )
 
     assertSucceeded(reply)
-    const structured = reply.structuredContent as { thread_id: string; path: string }
-    assert.deepEqual(Object.keys(structured).sort(), ['path', 'thread_id'])
+    const structured = reply.structuredContent as { thread_id: string; path: string; keep_true: string }
+    assert.deepEqual(Object.keys(structured).sort(), ['keep_true', 'path', 'thread_id'])
+    assert.ok(structured.keep_true.includes('logbook update_thread --args -'), structured.keep_true)
     assert.equal(structured.thread_id, 'fix-login')
     assert.equal(basename(structured.path), 'fix-login.md')
     assert.equal(realpathSync(dirname(dirname(structured.path))), realpathSync(join(fixture.home, '.logbook')))

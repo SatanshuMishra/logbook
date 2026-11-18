@@ -12,7 +12,8 @@
       },
       "output": [
         "thread_id",
-        "path"
+        "path",
+        "keep_true"
       ]
     },
     "resume_thread": {
