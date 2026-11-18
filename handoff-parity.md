@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: parked
-Updated: 2026-11-18T03:41:52.163Z
+Updated: 2026-11-18T03:42:55.863Z
 Next ids: c6 D2 R2 S1
 
 ## Goal
@@ -17,7 +17,7 @@ Logbook works as fast and token-efficiently as a committed handoff file, commit 
 
 ## Where things stand
 
-Pull request #312 merged into feat/handoff-parity. The drive ended in draft-pr: draft FEATURE pull request #313 (feat/handoff-parity into main) is open, because the lighthouse verdict left two checks unproven, cost no higher than a handoff file and recall at 1.0, the same gaps c1 and c2 record. The hp2 rerun of the built plugin against the handoff file: S1 0.080 against 0.073 dollars and 18.5 against 16.2 s, S2 0.237 against 0.243 dollars and 61 against 69 s, S3 0.508 against 0.471 dollars and 89 against 80 s; recall 0.983, 0.967 and 0.939 against 1.0. Continue and hand-off sessions now match or beat the handoff file; the remaining gap is about 2,000 more tokens in each session's first request (state document, update rules, server instructions) and about 0.3 s of hooks per Bash call. Two of the three recall misses answer P5 "functionally yes" or "functionally done", which the keyword rubric scores as not done; one answers "partly", citing the recorded in-memory risk. The rerun measured 1b5f5f43; the review fixes after it change only sessions that edited something.
+Pull request #313 merged feat/handoff-parity into main at 2f89bf82, carrying #312 plus two lighthouse fixes: L1 puts the record command in open_thread's structured reply, and L2 has a startup pickup say it already holds the thread. The drive's clean-up released it as 0.21.0 (tag v0.21.0), deleted the FEATURE branch and ended in ready-pr; 0.21.0 is the installed plugin. c1 and c2 stay open, because lighthouse left cost parity and recall at 1.0 unproven. The hp2 rerun of the built plugin against the handoff file: S1 0.080 against 0.073 dollars and 18.5 against 16.2 s, S2 0.237 against 0.243 dollars and 61 against 69 s, S3 0.508 against 0.471 dollars and 89 against 80 s; recall 0.983, 0.967 and 0.939 against 1.0. Continue and hand-off sessions now match or beat the handoff file; the remaining gap is about 2,000 more tokens in each session's first request (state document, update rules, server instructions) and about 0.3 s of hooks per Bash call. Two of the three recall misses answer P5 "functionally yes" or "functionally done", which the keyword rubric scores as not done; one answers "partly", citing the recorded in-memory risk. The rerun measured 1b5f5f43; the review fixes after it change only sessions that edited something.
 
 ## Next step
 
