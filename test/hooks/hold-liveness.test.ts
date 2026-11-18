@@ -181,7 +181,8 @@ test('only the hold whose session process has ended is released at a startup', a
       process: null,
       released_from: 'ended-session',
       provisional: true,
-      picked_state: repositoryState(fixture.rt, fixture.paths.root)
+      picked_state: repositoryState(fixture.rt, fixture.paths.root),
+      received: { session: 'new-session', commit: tipBefore }
     })
     assert.equal(readFileSync(holdFile(fixture, 'beta'), 'utf8'), betaBefore)
     assert.equal(threadsTip(fixture), tipBefore)
