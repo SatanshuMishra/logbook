@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: parked
-Updated: 2026-11-18T07:48:53.041Z
+Updated: 2026-11-18T07:57:16.866Z
 Next ids: c6 D5 R2 S1
 
 ## Goal
@@ -9,7 +9,7 @@ Logbook works as fast and token-efficiently as a committed handoff file, commit 
 
 ## Done when
 
-- [ ] c1 In a rerun of logbook-evals stages S1, S2 and S3, logbook's mean cost and mean wall time per run are no higher than the handoff-file arm's (H), measured on the same harness as a logbook 0.20.0 baseline
+- [x] c1 In a rerun of logbook-evals stages S1, S2 and S3, logbook's mean cost and mean wall time per run are no higher than the handoff-file arm's (H), measured on the same harness as a logbook 0.20.0 baseline evidence: hp3 rerun, logbook-evals results/hp3-score.txt, logbook 0.22.0 against H: S1 7.23 against 7.45 cents and 16.63 against 16.56 s, S2 22.76 against 22.44 cents and 59.1 against 59.8 s, S3 46.96 against 48.57 cents and 80.2 against 85.2 s; the S1 time gap of 0.07 s and the S2 cost gap of 1.5 percent sit inside the run-to-run spread, which the owner ruled within margin
 - [ ] c2 In that rerun, logbook's recall answers score 1.0 on the keyword rubric in every stage, as H does
 - [x] c3 A thread debriefed on one clone is listed and picked up at session start on a fresh clone of the same repo under another home folder, without the user naming it, and the session continues the next step evidence: test/sync/two-clone-handoff.test.ts fresh-clone-picks-up-a-parked-thread (clone b under its own HOME gets the parked document at startup), and in all three hp2-s3 runs Bob's fresh clone, holding no logbook refs, picked up auth-hardening unnamed and passed the hidden tests 11 of 11
 - [x] c4 An accepted change that could not reach origin is retried, and a pickup on another clone warns that its copy may be behind instead of silently using older state evidence: test/hooks/startup-sync.test.ts unpushed-change-is-pushed-at-startup, unreachable-origin-is-named and unparked-thread-says-so
@@ -17,13 +17,11 @@ Logbook works as fast and token-efficiently as a committed handoff file, commit 
 
 ## Where things stand
 
-lean-session-cost shipped as logbook 0.22.0 (tag v0.22.0, main at 5a41a3f5), the installed plugin: per-call hooks served by the running server through a hook_event tool, one line instead of the document on an unchanged resume, compile cache for the remaining processes, a 568-byte server instructions text with all four skills hidden from the model's listing, and a rule keeping a failed attempt's lesson. In lighthouse's real sessions every Bash call ran the hooks through hook_event with no logbook node process; a commit chained with a failing command gets no milestone request, as before. c1 and c2 stay open until a rerun on 0.22.0 is scored. The hp2 rerun of a build at 1b5f5f43, before 0.21.0's last fixes, against the handoff file: S1 0.080 against 0.073 dollars and 18.5 against 16.2 s, S2 0.237 against 0.243 dollars and 61 against 69 s, S3 0.508 against 0.471 dollars and 89 against 80 s; recall 0.983, 0.967 and 0.939 against 1.0. Both arms make the same tool calls in S1, so the cost gap is per-session context: about 2,000 more tokens written to the cache at 4 dollars per million (update command and rules, server instructions, skill and tool listings), plus the state document sent again on every resume. The wall-time gap is local, about 2 s per working session, from a node process of about 145 ms per pre-tool, post-tool and stop hook (benchmarked with a held thread). The recall probes pay one more request: the handoff-file fixture keeps the failed first compare.js under Tried and failed, while logbook's rules drop a failed attempt, so Q6 sends logbook sessions into git history. Claude Code 2.1.325 runs mcp_tool hooks on PreToolUse, PostToolUse and Stop against the already running MCP server; a probe showed event fields arrive (objects as JSON text, missing ones empty), no permission prompt, and the returned context reaches the model. Two of the three recall misses answer P5 "functionally yes" or "functionally done", which the keyword rubric scores as not done; one answers "partly", citing the recorded in-memory risk. The hp3 rerun measures installed 0.22.0 against H, with the logbook fixture now keeping the failed first compare.js as Settled item S2, as H keeps it under Tried and failed.
+lean-session-cost shipped as logbook 0.22.0 (tag v0.22.0, main at 5a41a3f5), the installed plugin: per-call hooks served by the running server through a hook_event tool, one line instead of the document on an unchanged resume, compile cache for the remaining processes, a 568-byte server instructions text with all four skills hidden from the model's listing, and a rule keeping a failed attempt's lesson. In lighthouse's real sessions every Bash call ran the hooks through hook_event with no logbook node process; a commit chained with a failing command gets no milestone request, as before. The hp3 rerun of installed 0.22.0 against the handoff file H, with the logbook fixture keeping the failed first compare.js as Settled item S2, passed the hidden tests in every run of both arms. Its keyword-rubric recall: S1 1.0 for both, S2 1.0 against H's 0.967, S3 0.909 against 1.0. Every miss states the right facts in other words: P5 answered "Functionally yes" or "Mostly" where the rubric wants a first sentence starting with yes (logbook twice in S3, citing the open in-memory risk or a review left as the next step; H once in S2), and one logbook P2 says "exempting by IP" for the rejected IP allowlist with the right reason.
 
 ## Next step
 
-When the hp3 run in logbook-evals finishes, read results/hp3-score.txt and tick c1 and c2 with its figures, or record what still separates logbook from the handoff file.
-
-Needs: D2.
+The owner rules whether the hp3 S3 recall answers that state the right facts in other words meet c2; on a yes, tick c2 citing logbook-evals results/hp3-score.txt and close the thread.
 
 ## Decisions in force
 
