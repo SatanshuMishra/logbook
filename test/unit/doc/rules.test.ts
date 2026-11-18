@@ -213,3 +213,19 @@ test('rules.keep-a-failed-attempts-lesson', async () => {
     '- Keep the lesson of a failed attempt, what was tried and why it failed, as a Settled, do not reopen item while it still constrains future work.'
   )
 })
+
+test('rules.a-ticked-criterion-reads-as-done', async () => {
+  const { updateRequest } = await import('../../../src/doc/rules.ts')
+  const text = updateRequest({
+    path: PATH,
+    documentText: documentWith(['- [x] c1 The login page loads evidence: the page test passes']),
+    reason: { kind: 'milestone', detail: 'Bash: git commit -m fix' }
+  })
+  const lines = text.split('\n')
+  const tick = lines.indexOf('- Tick a criterion only with "evidence: <what proves it>".')
+  assert.ok(tick >= 0, text)
+  assert.equal(
+    lines[tick + 1],
+    '- A ticked criterion reads as done in every section: a limit it keeps is a risk marked accepted, further work on it is an optional follow-up, and once every criterion is ticked the next step says the work is done and the thread can close.'
+  )
+})
