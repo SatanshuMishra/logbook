@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: parked
-Updated: 2026-11-18T01:38:33.757Z
+Updated: 2026-11-18T01:40:10.878Z
 Next ids: c6 D2 R2 S1
 
 ## Goal
@@ -21,7 +21,7 @@ Pull request #312 (mitosis/record-in-one-call into feat/handoff-parity) carries 
 
 ## Next step
 
-The drive entered feature-pr and runs it next.
+The drive entered draft-pr and the run has ended: draft FEATURE pull request; unmet checks: lighthouse verdict unproven: logbook costs no more than a handoff file on the eval stages, logbook recall stays at 1.0 on the eval stages. After the owner merges it, pipeline drive event --name feature-merged runs clean-up.
 
 ## Decisions in force
 
