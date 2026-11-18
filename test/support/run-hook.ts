@@ -11,8 +11,10 @@ export type HookProcessResult = { code: number | null; stdout: string; stderr: s
 
 const LOGBOOK_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
+const FIXTURE_HOOKS: ReadonlySet<string> = new Set(['io-probe', 'hook-event'])
+
 const entryPath = (hook: string): string =>
-  hook === 'io-probe'
+  FIXTURE_HOOKS.has(hook)
     ? join(LOGBOOK_ROOT, 'test', 'hooks', 'fixtures', `${hook}.ts`)
     : join(LOGBOOK_ROOT, 'hooks', `${hook}.ts`)
 

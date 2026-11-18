@@ -121,7 +121,48 @@ export const lastWriter = (rt: Runtime, paths: RepoPaths, slug: string): string 
   return names.at(-1) ?? null
 }
 
-export const listSlugs = (rt: Runtime, paths: RepoPaths, tip?: string | null): string[] => {
+const COMMIT_ID_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
+const COMMIT_SEPARATOR = '\u0000'
+const SEPARATED_WRITER_FORMAT = '--format=%x00%(trailers:key=Writer,valueonly=true)'
+const NOT_ANCESTOR = 1
+
+const writerOf = (trailers: string): string | null =>
+  trailers
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .at(-1) ?? null
+
+const isAncestorOfThreads = (rt: Runtime, paths: RepoPaths, commit: string): boolean | null => {
+  const run = git(rt, paths.root, ['merge-base', '--is-ancestor', commit, THREADS_REF])
+  if (run.ok) return true
+  return run.code === NOT_ANCESTOR ? false : null
+}
+
+export const writersSince = (
+  rt: Runtime,
+  paths: RepoPaths,
+  slug: string,
+  commit: string
+): Array<string | null> | null => {
+  if (!THREAD_SLUG_PATTERN.test(slug) || !COMMIT_ID_PATTERN.test(commit)) return null
+  if (isAncestorOfThreads(rt, paths, commit) !== true) return null
+  const log = git(rt, paths.root, [
+    'log',
+    '--full-history',
+    SEPARATED_WRITER_FORMAT,
+    `${commit}..${THREADS_REF}`,
+    '--',
+    documentName(slug)
+  ])
+  if (!log.ok) return null
+  return log.stdout
+    .split(COMMIT_SEPARATOR)
+    .slice(1)
+    .map(writerOf)
+}
+
+export const listSlugs =(rt: Runtime, paths: RepoPaths, tip?: string | null): string[] => {
   const at = tipOrCurrent(rt, paths, tip)
   if (at === null) return []
   const entries = listTree(rt, paths, at)

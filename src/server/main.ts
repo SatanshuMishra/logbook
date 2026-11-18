@@ -5,6 +5,7 @@ import { actingSession, heldBy, recordProcess, takeBackHolds } from '../thread/h
 import { findRepository, startDirectory } from '../thread/paths.ts'
 import { pluginVersion } from '../runtime/version.ts'
 import { INSTRUCTIONS } from './instructions.ts'
+import { registerHookTool } from './hook-tool.ts'
 import { ALL_TOOLS, registerTool } from './register.ts'
 
 const SERVER_NAME = 'logbook'
@@ -41,6 +42,7 @@ export const main = async (rt: Runtime): Promise<void> => {
   for (const tool of ALL_TOOLS) {
     registerTool(server, rt, tool)
   }
+  registerHookTool(server, rt)
   recordServerProcess(rt)
   const transport = new StdioServerTransport()
   await server.connect(transport)

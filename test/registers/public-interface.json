@@ -112,6 +112,22 @@
         "pushed",
         "error"
       ]
+    },
+    "hook_event": {
+      "input": {
+        "hook_event_name": "optional",
+        "session_id": "optional",
+        "cwd": "optional",
+        "transcript_path": "optional",
+        "tool_name": "optional",
+        "tool_input": "optional",
+        "tool_response": "optional",
+        "tool_use_id": "optional",
+        "agent_id": "optional",
+        "prompt_id": "optional",
+        "stop_hook_active": "optional"
+      },
+      "output": []
     }
   }
 }

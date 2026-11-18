@@ -1,6 +1,7 @@
 ---
 name: debrief
 description: Use at session hand-off to bring the thread's state document up to date and park the thread.
+disable-model-invocation: true
 ---
 
 ## Sequence
@@ -26,6 +27,7 @@ description: Use at session hand-off to bring the thread's state document up to 
    - Never delete a criterion.
    - Reword a criterion only citing the new decision that changed it.
    - Keep a decision or a risk only while it still constrains future work; otherwise remove it, or move it to Settled, do not reopen under a new id.
+   - Keep the lesson of a failed attempt, what was tried and why it failed, as a Settled, do not reopen item while it still constrains future work.
    - Remove every line that belongs to an option the owner did not take.
    - New ids start at the Next ids numbers and no number is reused.
    - Send one note line that says what changed and one note line "Removed: <id> because <reason>" for each id you removed; logbook writes the note under "## This update", so no edit adds that section.

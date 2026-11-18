@@ -10,6 +10,7 @@ import { spawnServer } from '../support/spawn-client.ts'
 
 const EXPECTED_TOOL_NAMES = [
   'close_thread',
+  'hook_event',
   'list_threads',
   'open_thread',
   'park_thread',

@@ -68,30 +68,19 @@ test('hooks-wiring.events-entries-and-timeouts', () => {
   ])
   assert.equal('UserPromptSubmit' in hooks, false)
 
-  const expectations: ReadonlyArray<{
-    event: string
-    matchers: ReadonlyArray<string | undefined>
-    entry: string
-    timeout: number
-  }> = [
-    { event: 'SessionStart', matchers: [undefined], entry: 'session-start', timeout: 30 },
-    { event: 'PreToolUse', matchers: ['^(Bash|Agent|Task)$', '^(Read|Edit)$'], entry: 'pre-tool-use', timeout: 10 },
-    {
-      event: 'PostToolUse',
-      matchers: ['^(Edit|Write|MultiEdit|NotebookEdit|Bash|Agent|Task|mcp__.+__(create|merge)_pull_request)$'],
-      entry: 'post-tool-use',
-      timeout: 30
-    },
-    { event: 'PostToolUseFailure', matchers: ['^(Bash|Agent|Task)$'], entry: 'post-tool-use', timeout: 10 },
-    { event: 'Stop', matchers: [undefined], entry: 'stop', timeout: 15 },
-    { event: 'SessionEnd', matchers: [undefined], entry: 'session-end', timeout: 15 }
+  const expectations: ReadonlyArray<{ event: string; matcher: string | undefined; entry: string; timeout: number }> = [
+    { event: 'SessionStart', matcher: undefined, entry: 'session-start', timeout: 30 },
+    { event: 'PreToolUse', matcher: '^(Read|Edit)$', entry: 'pre-tool-use', timeout: 10 },
+    { event: 'SessionEnd', matcher: undefined, entry: 'session-end', timeout: 15 }
   ]
 
   for (const expectation of expectations) {
-    const groups = hooks[expectation.event] ?? []
+    const groups = (hooks[expectation.event] ?? []).filter((group) =>
+      group.hooks.some((handler) => handler.type === 'command')
+    )
     assert.deepEqual(
       groups.map((group) => group.matcher),
-      expectation.matchers,
+      [expectation.matcher],
       expectation.event
     )
     for (const group of groups) {
@@ -145,12 +134,10 @@ test('hooks-wiring.packaging-check-expects-the-new-hooks', async () => {
   assert.deepEqual(script.EVENT_HOOK_FILES, {
     SessionStart: 'session-start',
     PreToolUse: 'pre-tool-use',
-    PostToolUse: 'post-tool-use',
-    PostToolUseFailure: 'post-tool-use',
-    Stop: 'stop',
     SessionEnd: 'session-end'
   })
-  assert.ok(script.REQUIRED_FILES.includes('hooks/post-tool-use.ts'))
+  assert.equal(script.REQUIRED_FILES.includes('hooks/post-tool-use.ts'), false)
+  assert.equal(script.REQUIRED_FILES.includes('hooks/stop.ts'), false)
   assert.equal(script.REQUIRED_FILES.includes('hooks/user-prompt-submit.ts'), false)
 
   const result = spawnSync(process.execPath, ['scripts/check-packaging.mjs'], {

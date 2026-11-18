@@ -9,8 +9,10 @@ import { takeHandover } from '../thread/handover.ts'
 import {
   actingSession,
   addTranscript,
+  clearReceived,
   heldBy,
   readHold,
+  recordReceived,
   releaseEndedHolds,
   takeBackHolds,
   takeFreeHold,
@@ -22,7 +24,7 @@ import { migrateIfNeeded } from '../thread/migrate.ts'
 import { checkSessionId, workingCopyPath, type RepoPaths } from '../thread/paths.ts'
 import { listRoster, pickupRoster, sessionStartRoster, workingCopyParts, type RosterThread } from '../thread/roster.ts'
 import { repositoryState } from '../thread/repository-state.ts'
-import { readDocument, THREADS_REF } from '../thread/store.ts'
+import { readDocument, THREADS_REF, threadsTip, writersSince } from '../thread/store.ts'
 import { syncThreads } from '../thread/sync.ts'
 import { comparisonText } from '../thread/working-copy.ts'
 import type { EmptyHookOutput, SessionStartHookOutput } from './output.ts'
@@ -95,6 +97,9 @@ const nonEmptyString = (value: unknown): string | null => (typeof value === 'str
 
 const openingLine = (slug: string): string =>
   `Logbook: this session holds thread ${slug}. Its state document follows and is now in your context; do not print it. Keep it true with logbook update_thread when logbook asks.`
+
+const unchangedLine = (slug: string): string =>
+  `Logbook: this session holds thread ${slug}. Its state document has not changed since this conversation last had it whole, so continue from that copy; do not print it.`
 
 const startupOpeningLine = (slug: string): string =>
   `Logbook picked up thread ${slug} at session start, the newest open thread no running session holds. This session already holds thread ${slug}: continue from its state document, which follows and is now in your context, with no resume_thread call and no tool lookup; do not print it. If this session's work belongs to another thread or none, leave it.`
@@ -205,6 +210,14 @@ const fittedContext = (pickup: Pickup): Fitted => {
   )
 }
 
+const unchangedContext = (slug: string, markers: ListPart): string => {
+  for (let kept = markers.lines.length; kept > 0; kept -= 1) {
+    const context = [unchangedLine(slug), listBlock(markers, kept)].join(BLOCK_SEPARATOR)
+    if (context.length <= CONTEXT_CEILING) return context
+  }
+  return unchangedLine(slug)
+}
+
 const contextOutput = (additionalContext: string, systemMessage: string | null): SessionStartOutput => ({
   hookSpecificOutput: { hookEventName: HOOK_EVENT, additionalContext },
   ...(systemMessage === null ? {} : { systemMessage })
@@ -294,6 +307,41 @@ const passHandover = (rt: Runtime, paths: RepoPaths, sessionId: string, transcri
   takeHold(rt, paths, handover.slug, sessionId, transcript, handedOver?.process ?? null, provisional)
 }
 
+const otherMarkerLines = (paths: RepoPaths, slug: string, sessionId: string): string[] =>
+  listMarkers(paths, slug)
+    .filter((marker) => marker.session !== sessionId)
+    .map((marker) => activityLine(marker.tool, marker.summary))
+
+const unchangedResumeOutput = (
+  rt: Runtime,
+  paths: RepoPaths,
+  sessionId: string,
+  slug: string
+): SessionStartOutput | null => {
+  const received = readHold(paths, slug)?.received
+  if (received === undefined || received.session !== sessionId) return null
+  const file = workingCopyPath(paths, slug)
+  const stored = readDocument(rt, paths, slug)
+  if (!file.ok || stored === null) return null
+  const parts = workingCopyParts(file.value, comparisonText(rt, paths, slug, stored.text))
+  if (parts.length > 0) return null
+  const writers = writersSince(rt, paths, slug, received.commit)
+  if (writers === null || !writers.every((writer) => writer === sessionId)) return null
+  const context = unchangedContext(slug, {
+    kind: 'latest',
+    heading: MARKERS_HEADING,
+    lines: otherMarkerLines(paths, slug, sessionId),
+    replacement: runningToolsLine
+  })
+  recordEvent(rt, paths, slug, 'thread.pickup', {
+    source: RESUME_SOURCE,
+    delivered: 'unchanged',
+    activity_lines: 0,
+    context_chars: context.length
+  })
+  return contextOutput(context, differenceUserLine(stored.text, file.value, parts))
+}
+
 const pickupOutput = (
   rt: Runtime,
   paths: RepoPaths,
@@ -303,13 +351,12 @@ const pickupOutput = (
   extras: StartupExtras | null = null
 ): SessionStartOutput => {
   const file = workingCopyPath(paths, slug)
-  const stored = readDocument(rt, paths, slug)
+  const readAt = threadsTip(rt, paths)
+  const stored = readDocument(rt, paths, slug, readAt)
   const hold = readHold(paths, slug)
-  if (!file.ok || stored === null || hold === null) return {}
+  if (!file.ok || readAt === null || stored === null || hold === null) return {}
   const activity = buildActivity({ transcripts: hold.transcripts, since: hold.folded_at, workingCopyPath: file.value })
-  const markerLines = listMarkers(paths, slug)
-    .filter((marker) => marker.session !== sessionId)
-    .map((marker) => activityLine(marker.tool, marker.summary))
+  const markerLines = otherMarkerLines(paths, slug, sessionId)
   const document = stored.text.replace(/\n+$/, '')
   const parts = workingCopyParts(file.value, comparisonText(rt, paths, slug, stored.text))
   const fitted = fittedContext({
@@ -324,6 +371,8 @@ const pickupOutput = (
     roster: extras?.roster ?? NO_ROSTER,
     others: extras?.others ?? []
   })
+  if (fitted.delivered === 'document') recordReceived(rt, paths, slug, sessionId, readAt)
+  else clearReceived(rt, paths, slug)
   recordEvent(rt, paths, slug, 'thread.pickup', {
     source,
     delivered: fitted.delivered,
@@ -345,7 +394,8 @@ export const sessionStart = (input: SessionStartInput): SessionStartOutput => {
   const held = heldBy(paths, sessionId)
   if (held === null) return {}
   if (transcript !== null) addTranscript(rt, paths, held, transcript)
-  return pickupOutput(rt, paths, sessionId, held, source)
+  const unchanged = source === RESUME_SOURCE ? unchangedResumeOutput(rt, paths, sessionId, held) : null
+  return unchanged ?? pickupOutput(rt, paths, sessionId, held, source)
 }
 
 export const runSessionStart = async (input: SessionStartInput): Promise<SessionStartOutput> => {

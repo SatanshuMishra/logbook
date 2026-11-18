@@ -121,7 +121,7 @@ const editEvent = (fixture: Fixture, file: string): Record<string, unknown> => (
 const runPost = async (fixture: Fixture, file: string): Promise<HookProcessResult> => {
   const { runHookProcess } = await import('../support/run-hook.ts')
   const run = await runHookProcess({
-    hook: 'post-tool-use',
+    hook: 'hook-event',
     event: editEvent(fixture, file),
     env: { HOME: fixture.home, PLUGIN_METRICS_DIR: fixture.store }
   })

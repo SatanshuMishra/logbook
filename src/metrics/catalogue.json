@@ -324,15 +324,15 @@
         },
         "delivered": {
           "type": "enum",
-          "description": "What form of the state document the added context held: document when it held the whole document, short when only the short form with the path to read fitted.",
+          "description": "What form of the state document the added context held: document when it held the whole document, short when only the short form with the path to read fitted, unchanged when a resumed conversation already held the current document, so only one line was sent.",
           "measured_from": "The branch the hook took when fitting the document, the activity lines and the running tools under its context ceiling.",
           "unit": "none",
           "includes": "Every pickup of a held thread.",
           "excludes": "The activity and running-tool lines, which activity_lines and the context length describe.",
-          "reading": "Short means the session had to read the working copy itself to see the whole document; document means the whole document arrived in the context.",
+          "reading": "Short means the session had to read the working copy itself to see the whole document; document means the whole document arrived in the context; unchanged means a resumed conversation already held the current document, so only one line was sent.",
           "readers": ["the owner", "a logbook maintainer", "the metrics skill"],
           "question": "Does the whole state document reach the session at a pickup?",
-          "values": ["document", "short"]
+          "values": ["document", "short", "unchanged"]
         },
         "activity_lines": {
           "type": "integer",

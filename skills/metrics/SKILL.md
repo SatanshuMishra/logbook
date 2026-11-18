@@ -1,6 +1,7 @@
 ---
 name: metrics
 description: Use when asked how logbook is performing, or how its threads, tool calls, state-document edits, pickups after a compaction or /clear, or update requests went, answered from logbook's own records in the metrics store with DuckDB.
+disable-model-invocation: true
 ---
 
 ## Where the records are

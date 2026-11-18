@@ -24,7 +24,10 @@ export type Hold = {
   provisional?: true
   provisional_asked?: true
   picked_state?: string
+  received?: Received
 }
+
+export type Received = { session: string; commit: string }
 
 export type TakeHoldOptions = { provisional?: boolean; pickedState?: string | null }
 
@@ -42,6 +45,7 @@ const NO_SUCH_FILE = 'ENOENT'
 const FILE_EXISTS = 'EEXIST'
 const CREATE_EXCLUSIVELY = 'wx'
 const PICKUP_LOCK_WRITE_GRACE_MS = 60 * 1000
+const COMMIT_ID_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -71,6 +75,20 @@ const refused = (refusal: Refusal): Error => new Error(`${refusal.field}: ${refu
 const recordedProcess = (value: unknown): number | null =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
 
+const parseReceived = (value: unknown): Received | null => {
+  if (!isPlainObject(value)) return null
+  const { session, commit } = value
+  return typeof session === 'string' &&
+    SESSION_ID_PATTERN.test(session) &&
+    typeof commit === 'string' &&
+    COMMIT_ID_PATTERN.test(commit)
+    ? { session, commit }
+    : null
+}
+
+const receivedPart = (received: Received | null | undefined): { received?: Received } =>
+  received === null || received === undefined ? {} : { received: { session: received.session, commit: received.commit } }
+
 const parseHold = (slug: string, value: unknown): Hold | null => {
   if (!isPlainObject(value)) return null
   const {
@@ -83,7 +101,8 @@ const parseHold = (slug: string, value: unknown): Hold | null => {
     released_from: releasedFrom = null,
     provisional,
     provisional_asked: provisionalAsked,
-    picked_state: pickedState
+    picked_state: pickedState,
+    received
   } = value
   if (storedSlug !== slug) return null
   if (!isStringOrNull(holder) || !isStringList(transcripts)) return null
@@ -100,7 +119,8 @@ const parseHold = (slug: string, value: unknown): Hold | null => {
     released_from: releasedFrom,
     ...(provisional === true ? { provisional: true } : {}),
     ...(provisionalAsked === true ? { provisional_asked: true } : {}),
-    ...(provisional === true && typeof pickedState === 'string' ? { picked_state: pickedState } : {})
+    ...(provisional === true && typeof pickedState === 'string' ? { picked_state: pickedState } : {}),
+    ...receivedPart(parseReceived(received))
   }
 }
 
@@ -111,7 +131,8 @@ const asFull = (hold: Hold): Hold => ({
   folded_at: hold.folded_at,
   nudged_prompt_id: hold.nudged_prompt_id,
   process: hold.process,
-  released_from: hold.released_from
+  released_from: hold.released_from,
+  ...receivedPart(hold.received)
 })
 
 const isProvisional = (hold: Hold): boolean => hold.provisional === true
@@ -252,6 +273,17 @@ export const releaseHold = (rt: Runtime, paths: RepoPaths, slug: string): Hold |
 
 export const setNudged = (rt: Runtime, paths: RepoPaths, slug: string, promptId: string): Hold | null =>
   updateHold(rt, paths, slug, (hold) => ({ ...hold, nudged_prompt_id: promptId }))
+
+export const recordReceived = (
+  rt: Runtime,
+  paths: RepoPaths,
+  slug: string,
+  session: string,
+  commit: string
+): Hold | null => updateHold(rt, paths, slug, (hold) => ({ ...hold, received: { session, commit } }))
+
+export const clearReceived = (rt: Runtime, paths: RepoPaths, slug: string): Hold | null =>
+  updateHold(rt, paths, slug, ({ received: _received, ...hold }) => hold)
 
 export const recordProcess = (rt: Runtime, paths: RepoPaths, slug: string, process: number | null): Hold | null =>
   updateHold(rt, paths, slug, (hold) => ({ ...hold, process }))
