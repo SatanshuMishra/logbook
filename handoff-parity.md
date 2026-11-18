@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
-Status: parked
-Updated: 2026-11-18T08:11:58.257Z
+Status: done
+Updated: 2026-11-18T08:39:54.453Z
 Next ids: c6 D5 R2 S1
 
 ## Goal
