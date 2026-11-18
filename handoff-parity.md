@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: parked
-Updated: 2026-11-18T01:40:10.878Z
+Updated: 2026-11-18T01:40:37.917Z
 Next ids: c6 D2 R2 S1
 
 ## Goal
@@ -17,7 +17,7 @@ Logbook works as fast and token-efficiently as a committed handoff file, commit 
 
 ## Where things stand
 
-Pull request #312 (mitosis/record-in-one-call into feat/handoff-parity) carries all eight Steps, the lint fix, the three parity fixes and the review's fixes, at head aebd73d9; CI runs on it and the drive rests in awaiting-merge. The hp2 rerun of the built plugin against the handoff file: S1 0.080 against 0.073 dollars and 18.5 against 16.2 s, S2 0.237 against 0.243 dollars and 61 against 69 s, S3 0.508 against 0.471 dollars and 89 against 80 s; recall 0.983, 0.967 and 0.939 against 1.0. Continue and hand-off sessions now match or beat the handoff file; the remaining gap is about 2,000 more tokens in each session's first request (state document, update rules, server instructions) and about 0.3 s of hooks per Bash call. Two of the three recall misses answer P5 "functionally yes" or "functionally done", which the keyword rubric scores as not done; one answers "partly", citing the recorded in-memory risk. The rerun measured 1b5f5f43; the review fixes after it change only sessions that edited something.
+Pull request #312 merged into feat/handoff-parity. The drive ended in draft-pr: draft FEATURE pull request #313 (feat/handoff-parity into main) is open, because the lighthouse verdict left two checks unproven, cost no higher than a handoff file and recall at 1.0, the same gaps c1 and c2 record. The hp2 rerun of the built plugin against the handoff file: S1 0.080 against 0.073 dollars and 18.5 against 16.2 s, S2 0.237 against 0.243 dollars and 61 against 69 s, S3 0.508 against 0.471 dollars and 89 against 80 s; recall 0.983, 0.967 and 0.939 against 1.0. Continue and hand-off sessions now match or beat the handoff file; the remaining gap is about 2,000 more tokens in each session's first request (state document, update rules, server instructions) and about 0.3 s of hooks per Bash call. Two of the three recall misses answer P5 "functionally yes" or "functionally done", which the keyword rubric scores as not done; one answers "partly", citing the recorded in-memory risk. The rerun measured 1b5f5f43; the review fixes after it change only sessions that edited something.
 
 ## Next step
 
