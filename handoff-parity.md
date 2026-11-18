@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: active
-Updated: 2026-11-17T23:56:46.876Z
+Updated: 2026-11-18T00:10:49.052Z
 Next ids: c6 D2 R2 S1
 
 ## Goal
@@ -11,17 +11,17 @@ Logbook works as fast and token-efficiently as a committed handoff file, commit 
 
 - [ ] c1 In a rerun of logbook-evals stages S1, S2 and S3, logbook's mean cost and mean wall time per run are no higher than the handoff-file arm's (H), measured on the same harness as a logbook 0.20.0 baseline
 - [ ] c2 In that rerun, logbook's recall answers score 1.0 on the keyword rubric in every stage, as H does
-- [ ] c3 A thread debriefed on one clone is listed and picked up at session start on a fresh clone of the same repo under another home folder, without the user naming it, and the session continues the next step
-- [ ] c4 An accepted change that could not reach origin is retried, and a pickup on another clone warns that its copy may be behind instead of silently using older state
-- [ ] c5 npm test and npm run lint pass on the final branch
+- [x] c3 A thread debriefed on one clone is listed and picked up at session start on a fresh clone of the same repo under another home folder, without the user naming it, and the session continues the next step evidence: test/sync/two-clone-handoff.test.ts fresh-clone-picks-up-a-parked-thread (clone b under its own HOME gets the parked document at startup), and in all three hp2-s3 runs Bob's fresh clone, holding no logbook refs, picked up auth-hardening unnamed and passed the hidden tests 11 of 11
+- [x] c4 An accepted change that could not reach origin is retried, and a pickup on another clone warns that its copy may be behind instead of silently using older state evidence: test/hooks/startup-sync.test.ts unpushed-change-is-pushed-at-startup, unreachable-origin-is-named and unparked-thread-says-so
+- [x] c5 npm test and npm run lint pass on the final branch evidence: at aebd73d9, the head of #312, npm test passes 650 of 650 and npm run lint 50 of 50
 
 ## Where things stand
 
-Pull request #312 (mitosis/record-in-one-call into feat/handoff-parity) carries all eight Steps plus the lint fix and the three parity fixes: Stop skips the ask when the repository is unchanged since pickup, startup shows the other open threads' documents, and a hand-off is one park_thread command carrying edits and note. Its head is 1b5f5f43, where npm test passes 646 of 646 and npm run lint 50 of 50; CI is running on it. The drive rests in awaiting-merge. Before these fixes the built plugin measured S1 0.093, S2 0.242 and S3 0.546 dollars against the handoff file's 0.075, 0.225 and 0.458.
+Pull request #312 (mitosis/record-in-one-call into feat/handoff-parity) carries all eight Steps, the lint fix, the three parity fixes and the review's fixes, at head aebd73d9; CI runs on it and the drive rests in awaiting-merge. The hp2 rerun of the built plugin against the handoff file: S1 0.080 against 0.073 dollars and 18.5 against 16.2 s, S2 0.237 against 0.243 dollars and 61 against 69 s, S3 0.508 against 0.471 dollars and 89 against 80 s; recall 0.983, 0.967 and 0.939 against 1.0. Continue and hand-off sessions now match or beat the handoff file; the remaining gap is about 2,000 more tokens in each session's first request (state document, update rules, server instructions) and about 0.3 s of hooks per Bash call. Two of the three recall misses answer P5 "functionally yes" or "functionally done", which the keyword rubric scores as not done; one answers "partly", citing the recorded in-memory risk. The rerun measured 1b5f5f43; the review fixes after it change only sessions that edited something.
 
 ## Next step
 
-Rerun logbook-evals stages S1, S2 and S3 with arms H, L and L2 into new stage names hp2-s1, hp2-s2 and hp2-s3, with LOGBOOK_PLUGIN_L2 set to /private/tmp/claude-501/-Users-satanshumishra-Documents-DevLabs-logbook/fe446180-dc5e-4960-9895-ea442f94e2fa/scratchpad/wt/logbook-built, score them with harness/hp_score.py, and have a code reviewer judge commits 559744c6 and 1b5f5f43.
+The user reviews and merges #312; then resume this thread and run pipeline drive event --repo /Users/satanshumishra/Documents/DevLabs/logbook --slug handoff-parity --name merged.
 
 Needs: D1.
 
