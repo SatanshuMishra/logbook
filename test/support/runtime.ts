@@ -1,3 +1,4 @@
+import { performance } from 'node:perf_hooks'
 import type { Runtime, Writer } from '../../src/runtime/runtime.ts'
 
 const CROCKFORD_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
@@ -46,6 +47,7 @@ export const testRuntime = (opts: TestRuntimeOptions = {}): Runtime => {
   const sessionId = opts.sessionId ?? DEFAULT_SESSION_ID
   return {
     now,
+    monotonicMs: () => performance.now(),
     ulid,
     env,
     cwd: opts.cwd !== undefined ? opts.cwd : '/test-cwd',

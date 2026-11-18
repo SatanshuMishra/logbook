@@ -48,7 +48,7 @@ Every accepted edit becomes a commit on `refs/logbook/threads` in the repository
 
 ## How updates happen
 
-Claude keeps the document true by editing the working copy with the Edit tool when a hook asks it to. The hooks ask at two moments:
+Claude keeps the document true with one `logbook update_thread` command in Bash, chained after `git commit` when a step was committed, when a hook asks it to; editing the working copy with the Edit tool keeps working and is checked and committed the same way. The hooks ask at two moments:
 
 - Right after a milestone finishes: a `git commit`, `git push` or `git merge`, a `gh pr create` or `gh pr merge`, a pull request created or merged through an MCP tool, or a subagent's work. They ask at most once per prompt.
 - At the end of a turn that changed something, and when a blocked or waiting thread hears from you.
@@ -101,7 +101,7 @@ A command write never touches a session's working copy. When a session holds the
 
 ## Sharing threads through git
 
-Threads travel with the repository through the remote named `origin`. After every accepted update logbook starts a background `git push` of `refs/logbook/threads` that never delays a reply. The push has no timer: it ends when origin has sent nothing for about a minute, a bound logbook leaves to your own ssh command when you set one. A push origin rejects changes nothing locally and is left to the next sync.
+Threads travel with the repository through the remote named `origin`. After every accepted update logbook starts a background `git push` of `refs/logbook/threads` that never delays a reply. The push has no timer: it ends when origin has sent nothing for about a minute, a bound logbook leaves to your own ssh command when you set one. A push origin rejects changes nothing locally and is left to the next sync. A session startup syncs threads with origin, within 8 seconds, before it picks up a thread, so a fresh clone picks up origin's threads and local commits origin lacks are pushed; when that sync fails the startup says so and that this copy may be behind. `park_thread` brings origin up to date, merging origin's threads first when origin has moved, before it replies.
 
 **Every accepted update is pushed to origin, so nothing secret belongs in a state document.** Anyone who can fetch from origin can read every version of every thread.
 

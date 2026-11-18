@@ -304,7 +304,7 @@ test('command.park-thread-commits-and-prints-the-structured-result', async () =>
       seeded.env
     )
     assert.equal(run.status, 0, describeRun(run))
-    assert.deepEqual(JSON.parse(singleLine(run.stdout)), { parked_thread_ids: ['fix-login'] })
+    assert.deepEqual(JSON.parse(singleLine(run.stdout)), { parked_thread_ids: ['fix-login'], pushed: null, push_error: null })
     const stored = storedText(seeded.repo)
     assert.ok(stored.split('\n').includes('Status: parked'), stored)
     assert.equal(sectionBody(stored, 'Next step'), 'Resume with the review.')

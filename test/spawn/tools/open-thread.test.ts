@@ -131,7 +131,7 @@ test('open_thread.spawn.contract', async () => {
     assert.equal(realpathSync(dirname(dirname(structured.path))), realpathSync(join(fixture.home, '.logbook')))
     assert.equal(
       textOf(reply),
-      `opened thread fix-login. Its state document is ${structured.path}. Keep it true by editing that file with the Edit tool.`
+      `opened thread fix-login. Its state document is ${structured.path}. Keep it true with logbook update_thread when logbook asks.`
     )
 
     const stored = storedText(fixture.repo, 'fix-login')

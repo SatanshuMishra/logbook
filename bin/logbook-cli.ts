@@ -1,11 +1,14 @@
 #!/usr/bin/env node
+import { readFileSync } from 'node:fs'
 import { runCommandLine } from '../src/command/main.ts'
+import { processSurroundings } from '../src/runtime/runtime.ts'
 import { NODE_FLOOR_MAJOR, NODE_FLOOR_MINOR, nodeFloorFailure } from '../src/runtime/node-floor.ts'
 import { writeAllSync } from '../src/runtime/write-all.ts'
 import { refusalPayload } from '../src/server/errors.ts'
 
 const STDOUT_FD = 1
 const STDERR_FD = 2
+const STDIN_FD = 0
 
 const writeLines = (fd: number, lines: readonly string[]): void => {
   for (const line of lines) writeAllSync(fd, `${line}\n`)
@@ -26,7 +29,10 @@ if (floorFailure !== null) {
   writeLines(STDERR_FD, [floorFailure])
   process.exitCode = 1
 } else {
-  const result = await runCommandLine(process.argv.slice(2))
+  const result = await runCommandLine(process.argv.slice(2), {
+    ...processSurroundings(),
+    readStdin: () => readFileSync(STDIN_FD, 'utf8')
+  })
   writeLines(STDOUT_FD, result.stdout)
   writeLines(STDERR_FD, result.stderr)
   process.exitCode = result.exitCode

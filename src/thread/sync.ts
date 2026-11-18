@@ -1,6 +1,6 @@
 import { stripHeaderLines } from '../doc/document.ts'
 import type { Runtime } from '../runtime/runtime.ts'
-import { git, gitDetached, gitRun } from '../store/git.ts'
+import { git, gitDetached, gitRun, type GitDetachedOpts, type GitRun } from '../store/git.ts'
 import { failureOf, headerOf, threeWay, withHeader, type Step } from './merge.ts'
 import type { RepoPaths } from './paths.ts'
 import {
@@ -16,6 +16,16 @@ import {
 import { readBaseText, readWorkingCopy, writeWorkingCopy } from './working-copy.ts'
 
 export type SyncResult = { fetched: boolean; merged: boolean; conflicts: string[]; pushed: boolean; error: string | null }
+
+export type SyncOptions = { limitMs?: number }
+
+export type PushOptions = { limitMs: number }
+
+export type PushOutcome = { pushed: boolean | null; error: string | null }
+
+type Deadline = { limitMs: number; endsAt: number } | null
+
+type Bounded = { ok: true; run: GitRun } | { ok: false; stopped: string }
 
 type Chosen = { text: string | null; conflicted: boolean }
 
@@ -61,6 +71,34 @@ const result = (fields: Partial<SyncResult>): SyncResult => ({
   ...fields
 })
 
+const deadlineOf = (rt: Runtime, opts: SyncOptions): Deadline =>
+  opts.limitMs === undefined ? null : { limitMs: opts.limitMs, endsAt: rt.monotonicMs() + opts.limitMs }
+
+const timeLeft = (rt: Runtime, deadline: Deadline): number | null =>
+  deadline === null ? null : Math.ceil(deadline.endsAt - rt.monotonicMs())
+
+const stoppedMessage = (limitMs: number): string => `sync with origin stopped after ${limitMs} ms`
+
+const pastDeadline = (rt: Runtime, deadline: Deadline): string | null => {
+  const left = timeLeft(rt, deadline)
+  return deadline === null || left === null || left > 0 ? null : stoppedMessage(deadline.limitMs)
+}
+
+const boundedGit = async (
+  rt: Runtime,
+  paths: RepoPaths,
+  args: string[],
+  deadline: Deadline,
+  opts: GitDetachedOpts = {}
+): Promise<Bounded> => {
+  const before = pastDeadline(rt, deadline)
+  if (before !== null) return { ok: false, stopped: before }
+  const left = timeLeft(rt, deadline)
+  const run = await gitDetached(rt, paths.root, args, left === null ? opts : { ...opts, limitMs: left })
+  const after = run.code === 0 ? null : pastDeadline(rt, deadline)
+  return after === null ? { ok: true, run } : { ok: false, stopped: after }
+}
+
 const hasOrigin = (rt: Runtime, paths: RepoPaths): boolean => {
   const origin = git(rt, paths.root, ['config', '--get', 'remote.origin.url'])
   return origin.ok && origin.stdout.trim() !== ''
@@ -71,8 +109,10 @@ const remoteTip = (rt: Runtime, paths: RepoPaths): string | null => {
   return found.ok ? found.stdout.trim() : null
 }
 
-const fetchThreads = async (rt: Runtime, paths: RepoPaths): Promise<Step<string | null>> => {
-  const run = await gitDetached(rt, paths.root, FETCH_ARGS)
+const fetchThreads = async (rt: Runtime, paths: RepoPaths, deadline: Deadline): Promise<Step<string | null>> => {
+  const bounded = await boundedGit(rt, paths, FETCH_ARGS, deadline)
+  if (!bounded.ok) return { ok: false, error: bounded.stopped }
+  const { run } = bounded
   if (run.code === 0) return { ok: true, value: remoteTip(rt, paths) }
   if (MISSING_REMOTE_REF.test(run.stderr)) return { ok: true, value: null }
   return { ok: false, error: failureOf('fetch from origin', run) }
@@ -91,15 +131,21 @@ export const missingObjects = (rt: Runtime, paths: RepoPaths, tips: readonly str
   }
 }
 
-const fetchMissing = async (rt: Runtime, paths: RepoPaths, tips: readonly string[]): Promise<Step<void>> => {
+const fetchMissing = async (
+  rt: Runtime,
+  paths: RepoPaths,
+  tips: readonly string[],
+  deadline: Deadline
+): Promise<Step<void>> => {
   const missing = missingObjects(rt, paths, tips)
   if (!missing.ok) return missing
   if (missing.value.length === 0) return { ok: true, value: undefined }
   const stdin = missing.value.map((id) => `${id}\n`).join('')
-  const run = await gitDetached(rt, paths.root, FETCH_MISSING_ARGS, { stdin })
-  return run.code === 0
+  const bounded = await boundedGit(rt, paths, FETCH_MISSING_ARGS, deadline, { stdin })
+  if (!bounded.ok) return { ok: false, error: bounded.stopped }
+  return bounded.run.code === 0
     ? { ok: true, value: undefined }
-    : { ok: false, error: failureOf('fetch missing objects from origin', run) }
+    : { ok: false, error: failureOf('fetch missing objects from origin', bounded.run) }
 }
 
 const isAncestor = (rt: Runtime, paths: RepoPaths, older: string, newer: string): Step<boolean> => {
@@ -293,20 +339,30 @@ const bringIn = (rt: Runtime, paths: RepoPaths, local: string | null, remote: st
   return mergeDiverged(rt, paths, local, remote)
 }
 
-export const syncThreads = async (rt: Runtime, paths: RepoPaths): Promise<SyncResult> => {
+export const syncThreads = async (rt: Runtime, paths: RepoPaths, opts: SyncOptions = {}): Promise<SyncResult> => {
   if (!hasOrigin(rt, paths)) return result({ error: 'no-origin' })
-  const fetched = await fetchThreads(rt, paths)
+  const deadline = deadlineOf(rt, opts)
+  const fetched = await fetchThreads(rt, paths, deadline)
   if (!fetched.ok) return result({ error: fetched.error })
   const local = threadsTip(rt, paths)
   const tips = [local, fetched.value].filter((tip): tip is string => tip !== null)
-  const completed = await fetchMissing(rt, paths, tips)
+  const completed = await fetchMissing(rt, paths, tips, deadline)
   if (!completed.ok) return result({ fetched: true, error: completed.error })
+  const expired = pastDeadline(rt, deadline)
+  if (expired !== null) return result({ fetched: true, error: expired })
   const brought = bringIn(rt, paths, local, fetched.value)
   if (!brought.ok) return result({ fetched: true, error: brought.error })
   const settled = { fetched: true, merged: brought.value.merged, conflicts: brought.value.conflicts }
   if (!brought.value.push) return result(settled)
-  const pushed = await gitDetached(rt, paths.root, PUSH_ARGS)
-  return pushed.code === 0
+  const pushed = await boundedGit(rt, paths, PUSH_ARGS, deadline)
+  if (!pushed.ok) return result({ ...settled, error: pushed.stopped })
+  return pushed.run.code === 0
     ? result({ ...settled, pushed: true })
-    : result({ ...settled, error: failureOf('push to origin', pushed) })
+    : result({ ...settled, error: failureOf('push to origin', pushed.run) })
+}
+
+export const pushThreads = async (rt: Runtime, paths: RepoPaths, opts: PushOptions): Promise<PushOutcome> => {
+  if (!hasOrigin(rt, paths)) return { pushed: null, error: null }
+  const synced = await syncThreads(rt, paths, { limitMs: opts.limitMs })
+  return synced.error === null ? { pushed: true, error: null } : { pushed: false, error: synced.error }
 }

@@ -17,6 +17,8 @@ const STORED_AT = '2023-12-31T09:00:00.000Z'
 const SPAWN_LIMIT_MS = 120000
 const NETWORK_SOURCES = ['src/store/git.ts', 'src/thread/sync.ts', 'src/thread/reconcile.ts', 'bin/logbook-push.ts']
 const TIMER_WORDS = ['setTimeout', 'timeoutMs', 'TIMEOUT_MS']
+const BOUNDED_SOURCE = 'src/store/git.ts'
+const BOUNDED_GUARD = 'limitMs !== undefined'
 
 type Scratch = { root: string; repo: string; home: string; bin: string; probeOut: string }
 
@@ -204,8 +206,15 @@ test('git.push-helper-pushes-with-only-the-repository-argument', async () => {
 })
 
 test('git.network-code-holds-no-wall-clock-timer', () => {
-  for (const source of NETWORK_SOURCES) {
+  for (const source of NETWORK_SOURCES.filter((path) => path !== BOUNDED_SOURCE)) {
     const text = readFileSync(join(LOGBOOK_ROOT, source), 'utf8')
     for (const word of TIMER_WORDS) assert.ok(!text.includes(word), `${source} must not contain ${word}`)
   }
+  const boundedLines = readFileSync(join(LOGBOOK_ROOT, BOUNDED_SOURCE), 'utf8').split('\n')
+  for (const word of TIMER_WORDS.filter((timerWord) => timerWord !== 'setTimeout')) {
+    assert.ok(!boundedLines.some((line) => line.includes(word)), `${BOUNDED_SOURCE} must not contain ${word}`)
+  }
+  const timerLines = boundedLines.filter((line) => line.includes('setTimeout'))
+  assert.equal(timerLines.length, 1, `${BOUNDED_SOURCE} may hold one setTimeout, for the caller's limit`)
+  assert.ok(timerLines[0]?.includes(BOUNDED_GUARD), `the one setTimeout in ${BOUNDED_SOURCE} must sit behind ${BOUNDED_GUARD}`)
 })

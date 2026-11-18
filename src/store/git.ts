@@ -139,7 +139,9 @@ export const gitRun = (rt: Runtime, repo: string, args: string[], opts: GitOpts 
   }
 }
 
-export type GitDetachedOpts = GitOpts
+export type GitDetachedOpts = GitOpts & { limitMs?: number }
+
+export type BackgroundPush = ChildProcess
 
 const DEAD_PEER_SSH_COMMAND = 'ssh -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4'
 
@@ -237,21 +239,47 @@ const exitedRun = (output: DetachedOutput, code: number | null): GitRun => {
   }
 }
 
+const stoppedRun = (limitMs: number): GitRun => ({
+  code: -1,
+  stdout: '',
+  stderr: `git was stopped after ${limitMs} ms`
+})
+
+const killProcessGroup = (rt: Runtime, child: ChildProcess): boolean => {
+  if (child.pid === undefined) return false
+  try {
+    process.kill(-child.pid, 'SIGKILL')
+    return true
+  } catch (error) {
+    rt.log({ level: 'warn', event: 'git.detached-unstopped', pid: child.pid, reason: errorMessage(error) })
+    return false
+  }
+}
+
 export const gitDetached = (rt: Runtime, repo: string, args: string[], opts: GitDetachedOpts = {}): Promise<GitRun> => {
   const started = startDetachedRun(rt, repo, args, opts)
   if (!started.ok) return Promise.resolve(started.run)
   const { output, child } = started
+  const { limitMs } = opts
   return new Promise<GitRun>((resolve) => {
     let settled = false
+    let stoppedAfter: number | null = null
+    let timer: NodeJS.Timeout | undefined
     const settle = (result: () => GitRun): void => {
       if (settled) return
       settled = true
+      if (timer !== undefined) clearTimeout(timer)
       const run = result()
       removeDetachedOutput(rt, output)
       resolve(run)
     }
-    child.on('error', (error) => settle(() => failedRun(error)))
-    child.on('exit', (code) => settle(() => exitedRun(output, code)))
+    const stop = (limit: number): void => {
+      stoppedAfter = limit
+      if (!killProcessGroup(rt, child)) settle(() => stoppedRun(limit))
+    }
+    child.on('error', (error) => settle(() => (stoppedAfter === null ? failedRun(error) : stoppedRun(stoppedAfter))))
+    child.on('exit', (code) => settle(() => (stoppedAfter === null ? exitedRun(output, code) : stoppedRun(stoppedAfter))))
+    if (limitMs !== undefined) timer = setTimeout(() => stop(limitMs), limitMs)
     if (opts.stdin !== undefined) {
       child.stdin?.on('error', keepGitsExitStatus)
       child.stdin?.end(opts.stdin)
@@ -261,7 +289,7 @@ export const gitDetached = (rt: Runtime, repo: string, args: string[], opts: Git
 
 const PUSH_HELPER_PATH = join(import.meta.dirname, '..', '..', 'bin', 'logbook-push.ts')
 
-export const startBackgroundPush = (rt: Runtime, repo: string): ChildProcess => {
+export const startBackgroundPush = (rt: Runtime, repo: string): BackgroundPush => {
   const child = spawn(process.execPath, [PUSH_HELPER_PATH, repo], {
     detached: true,
     stdio: 'ignore',

@@ -16,7 +16,7 @@ _Avoid_: ledger entry, notes
 The editable copy of a thread's state document at ~/.logbook/<repository key>/<slug>.md, which logbook checks and commits after each edit.
 
 **Pickup**:
-A session start, resume, compaction or /clear that puts a held thread's state document back in the session's context.
+A session start, resume, compaction or /clear that puts a held thread's state document back in the session's context, including a startup that picks up the newest open thread no running session holds.
 _Avoid_: briefing, reload
 
 **Handover**:
@@ -48,6 +48,18 @@ _Avoid_: author, actor
 **Command write**:
 A write to a thread through the logbook command, made by a writer with no working copy of its own.
 _Avoid_: CLI write, headless write
+
+**Provisional hold**:
+The hold a startup pickup takes before the session has recorded into the thread; it stores no transcript, asks at most once for an end-of-turn update and becomes a full hold at the session's first accepted write or resume_thread.
+_Avoid_: tentative hold, soft lock
+
+**Session command**:
+The logbook command run inside a Claude Code session without --writer, which writes as that session and settles its working copy as a ledger tool call does.
+_Avoid_: session CLI, inline write
+
+**Startup sync**:
+The sync of threads with origin a startup runs before choosing the thread to pick up, stopped after 8 seconds.
+_Avoid_: preflight fetch
 
 **Copy base**:
 The stored version of a state document that a working copy was taken from, recorded beside the repository's holds.

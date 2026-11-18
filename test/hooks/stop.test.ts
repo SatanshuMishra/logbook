@@ -24,7 +24,9 @@ const BEFORE = new Date(FOLDED_MS - 60_000).toISOString()
 const AFTER = new Date(FOLDED_MS + 60_000).toISOString()
 const LATER = new Date(FOLDED_MS + 120_000).toISOString()
 
-const UPDATE_OPENING = 'logbook: update the state document at '
+const UPDATE_OPENING = "logbook: update thread fix-login's state document."
+
+const RECORD_COMMAND_LINE = "logbook update_thread --args - <<'EOF'"
 const TURN_CHANGED = 'the turn changed something'
 const BLOCKED_USER_WROTE = 'blocked or waiting and the user wrote'
 
@@ -187,8 +189,7 @@ test('stop.nudges-after-a-change', async () => {
     const run = await runStop(fixture, stopEvent(fixture))
     const context = contextOf(run)
     assert.ok(context.includes(TURN_CHANGED), context)
-    assert.ok(context.includes(fixture.workingCopy), context)
-    assert.ok(context.startsWith(`${UPDATE_OPENING}${fixture.workingCopy}.`), context)
+    assert.ok(context.startsWith(`${UPDATE_OPENING}\n`), context)
     assert.equal(run.stdout.includes('"decision"'), false, run.stdout)
   })
 })
@@ -218,7 +219,7 @@ test('stop.nudges-when-blocked-and-the-user-wrote', async () => {
     const context = contextOf(await runStop(fixture, stopEvent(fixture)))
     assert.ok(context.includes(BLOCKED_USER_WROTE), context)
     assert.ok(context.includes('"waiting: the owner picks"'), context)
-    assert.ok(context.includes(fixture.workingCopy), context)
+    assert.ok(context.startsWith(`${UPDATE_OPENING}\n`), context)
   })
 })
 
@@ -257,9 +258,9 @@ test('stop.counts-everything-before-the-first-update', async () => {
       toolResult('toolu_write', 'File created successfully', BEFORE)
     ])
     const context = contextOf(await runStop(fixture, stopEvent(fixture)))
-    assert.ok(context.startsWith(`${UPDATE_OPENING}${fixture.workingCopy}.`), context)
+    assert.ok(context.startsWith(`${UPDATE_OPENING}\n`), context)
     assert.ok(context.includes(TURN_CHANGED), context)
-    assert.ok(context.includes('Edit tool'), context)
+    assert.ok(context.split('\n').includes(RECORD_COMMAND_LINE), context)
   })
 })
 

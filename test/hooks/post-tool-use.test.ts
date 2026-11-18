@@ -23,7 +23,9 @@ const C1_TICKED = '- [x] c1 The login page loads evidence: test login.loads pass
 const C2_OPEN = '- [ ] c2 Errors show under the form'
 const R1 = '- R1 The staging database may be stale'
 
-const UPDATE_OPENING = 'logbook: update the state document at '
+const UPDATE_OPENING = "logbook: update thread fix-login's state document."
+
+const RECORD_COMMAND_LINE = "logbook update_thread --args - <<'EOF'"
 
 type DocParts = { criteria?: string[]; risks?: string[]; nextIds?: string; tail?: string[] }
 
@@ -170,9 +172,9 @@ const nudgedOf = (fixture: Fixture): string | null => {
 
 const assertUpdateRequest = (fixture: Fixture, run: HookProcessResult, reason: string): void => {
   const context = contextOf(run)
-  assert.ok(context.startsWith(`${UPDATE_OPENING}${fixture.workingCopy}.`), context)
+  assert.ok(context.startsWith(`${UPDATE_OPENING}\n`), context)
   assert.ok(context.includes(`Reason: a milestone finished: ${reason}.`), context)
-  assert.ok(context.includes('Edit tool'), context)
+  assert.ok(context.split('\n').includes(RECORD_COMMAND_LINE), context)
 }
 
 const ACCEPTED_OPENING = 'logbook: accepted the update to fix-login (commit '
@@ -338,8 +340,8 @@ test('post-tool-use.nudges-after-an-agent-call', async () => {
     )
     const context = contextOf(run)
     assert.ok(context.includes('a milestone finished: Agent'), context)
-    assert.ok(context.includes(fixture.workingCopy), context)
-    assert.ok(context.includes('Edit tool'), context)
+    assert.ok(context.startsWith(`${UPDATE_OPENING}\n`), context)
+    assert.ok(context.split('\n').includes(RECORD_COMMAND_LINE), context)
     assert.equal(nudgedOf(fixture), 'p1')
   })
 })
