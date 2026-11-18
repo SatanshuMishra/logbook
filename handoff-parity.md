@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: parked
-Updated: 2026-11-18T08:02:35.487Z
+Updated: 2026-11-18T08:11:55.909Z
 Next ids: c6 D5 R2 S1
 
 ## Goal
@@ -17,11 +17,11 @@ Logbook works as fast and token-efficiently as a committed handoff file, commit 
 
 ## Where things stand
 
-lean-session-cost shipped as logbook 0.22.0 (tag v0.22.0, main at 5a41a3f5), the installed plugin: per-call hooks served by the running server through a hook_event tool, one line instead of the document on an unchanged resume, compile cache for the remaining processes, a 568-byte server instructions text with all four skills hidden from the model's listing, and a rule keeping a failed attempt's lesson. In lighthouse's real sessions every Bash call ran the hooks through hook_event with no logbook node process; a commit chained with a failing command gets no milestone request, as before. The hp3 rerun of installed 0.22.0 against the handoff file H, with the logbook fixture keeping the failed first compare.js as Settled item S2, passed the hidden tests in every run of both arms. Its keyword-rubric recall: S1 1.0 for both, S2 1.0 against H's 0.967, S3 0.909 against 1.0. Every miss states the right facts in other words: P5 answered "Functionally yes" or "Mostly" where the rubric wants a first sentence starting with yes (logbook twice in S3, citing the open in-memory risk or a review left as the next step; H once in S2), and one logbook P2 says "exempting by IP" for the rejected IP allowlist with the right reason.
+lean-session-cost shipped as logbook 0.22.0 (tag v0.22.0, main at 5a41a3f5), the installed plugin: per-call hooks served by the running server through a hook_event tool, one line instead of the document on an unchanged resume, compile cache for the remaining processes, a 568-byte server instructions text with all four skills hidden from the model's listing, and a rule keeping a failed attempt's lesson. In lighthouse's real sessions every Bash call ran the hooks through hook_event with no logbook node process; a commit chained with a failing command gets no milestone request, as before. The hp3 rerun of installed 0.22.0 against the handoff file H, with the logbook fixture keeping the failed first compare.js as Settled item S2, passed the hidden tests in every run of both arms. Sessions on 0.22.0 sometimes ticked a criterion yet left an undecided risk on it or a next step to review it, so a later session answered whether it was finished with Mostly or Partly; a reading cue in the server instructions did not stop that in an A/B on those documents. Pull request #316 (fix/ticked-criterion-is-done, release 0.22.1) adds an update rule that a ticked criterion reads as done in every section, and six stage 3 hand-offs on it scored recall 1.0 with every audit-log answer starting Yes, at 47.6 cents and 80.6 s against the handoff file's 48.6 cents and 85.2 s.
 
 ## Next step
 
-Stop a state document from leading a session to hedge on a finished criterion: find what in the hp3 S3 logbook documents made P5 answer Functionally yes or Mostly, fix it in logbook with a red-then-green test, open the pull request, and rerun S3.
+The user merges pull request #316; then sync main, install logbook 0.22.1 and close this thread as done.
 
 ## Decisions in force
 
@@ -40,5 +40,6 @@ Stop a state document from leading a session to hedge on a finished criterion: f
 - Lighthouse profile: /Users/satanshumishra/Documents/DevLabs/logbook/.lighthouse/profile.json
 - Parity rerun: logbook-evals runs/model/hp-s1, hp-s2 and hp-s3, scored by harness/hp_score.py into results/hp_scores.jsonl; arm L is the installed 0.20.0, arm L2 loads the folder named by LOGBOOK_PLUGIN_L2
 - Rerun after the parity fixes: logbook-evals runs/model/hp2-s1, hp2-s2 and hp2-s3 with arms H and L2, logs results/hp2-s1.log to hp2-s3.log, scores results/hp2-score.txt
+- Hand-off rerun on the ticked-criterion rule: logbook-evals runs/model/hp4-s3, scores results/hp4-score.txt
 - Rerun on 0.22.0: logbook-evals runs/model/hp3-s1, hp3-s2 and hp3-s3, logs results/hp3-s1.log to hp3-s3.log, scores results/hp3-score.txt; the logbook templates were rebuilt with LOGBOOK_FIXTURE_PLUGIN naming the 0.21.0 cache, old ones kept in the session scratchpad as templates-before-hp3
 - Spec of the change closing c1 and c2: docs/specs/lean-session-cost.md with its record, items and decisions files beside it; run home ~/.mitosis/logbook/lean-session-cost
