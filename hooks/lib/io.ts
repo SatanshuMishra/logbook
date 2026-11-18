@@ -52,7 +52,7 @@ export const runHook: (
     process.exit(1)
   }
   try {
-    const input = hookInputFor(productionRuntime(), parseEvent(await readStdin()))
+    const input = hookInputFor(productionRuntime, parseEvent(await readStdin()))
     const output = input === null ? {} : await handler(input)
     await writeFlushed(process.stdout, JSON.stringify(output))
     process.exit(0)

@@ -67,6 +67,6 @@ const dispatch = (name: string | undefined, input: HookInput): HookEventOutput =
 }
 
 export const answerHookEvent = async (rt: Runtime, fields: HookEventFields): Promise<string> => {
-  const input = hookInputFor(rt, eventOf(fields))
+  const input = hookInputFor(() => rt, eventOf(fields))
   return JSON.stringify(input === null ? {} : dispatch(fields.hook_event_name, input))
 }

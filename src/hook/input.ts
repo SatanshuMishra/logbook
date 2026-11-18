@@ -15,12 +15,12 @@ export const sessionRuntime = (base: Runtime, sessionId: string): Runtime => ({
   writer: { kind: 'session', name: sessionId }
 })
 
-export const hookInputFor = (base: Runtime, parsed: unknown): HookInput | null => {
+export const hookInputFor = (baseRuntime: () => Runtime, parsed: unknown): HookInput | null => {
   if (!isRecord(parsed)) return null
   const sessionId = nonEmptyString(parsed.session_id)
   const cwd = nonEmptyString(parsed.cwd)
   if (sessionId === null || cwd === null) return null
-  const rt = sessionRuntime(base, sessionId)
+  const rt = sessionRuntime(baseRuntime(), sessionId)
   const found = findRepository(rt, startDirectory(rt, cwd))
   if (!found.ok) return null
   return { event: parsed, sessionId, paths: found.value, rt }
