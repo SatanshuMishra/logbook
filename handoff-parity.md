@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: parked
-Updated: 2026-11-18T03:42:57.080Z
+Updated: 2026-11-18T03:43:02.549Z
 Next ids: c6 D2 R2 S1
 
 ## Goal
@@ -21,7 +21,7 @@ Pull request #313 merged feat/handoff-parity into main at 2f89bf82, carrying #31
 
 ## Next step
 
-The drive entered clean-up and runs it next.
+Close the c1 and c2 gaps on a new branch cut from main: shrink what every session loads at startup (the server instructions of about 400 tokens, the startup opening, and the update rules block only if a recording session still gets them when it writes), cut the hook start time on each Bash call, then rerun logbook-evals hp2 S1 to S3 with arms H and L2 on the built plugin and tick c1 and c2, or record what still separates logbook from the handoff file.
 
 ## Decisions in force
 
