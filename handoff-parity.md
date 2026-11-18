@@ -1,6 +1,6 @@
 # handoff-parity: Make logbook as fast and cheap as a handoff file, with pickup on a second computer
 Status: parked
-Updated: 2026-11-18T07:45:32.918Z
+Updated: 2026-11-18T07:48:46.656Z
 Next ids: c6 D5 R2 S1
 
 ## Goal
@@ -17,17 +17,17 @@ Logbook works as fast and token-efficiently as a committed handoff file, commit 
 
 ## Where things stand
 
-The change meant to close c1 and c2 is specified as lean-session-cost, six Steps in one pull request: per-call hooks served by the running server through a hook_event tool, one line instead of the document on an unchanged resume, compile cache for the remaining processes, a 568-byte server instructions text with all four skills hidden from the model's listing, and a rule keeping a failed attempt's lesson; the spec passed its one review and is handed off, with criterion 5.9, a real session firing the hooks, left to the product test. Pull request #313 merged feat/handoff-parity into main at 2f89bf82, carrying #312 plus two lighthouse fixes: L1 puts the record command in open_thread's structured reply, and L2 has a startup pickup say it already holds the thread. The drive's clean-up released it as 0.21.0 (tag v0.21.0), deleted the FEATURE branch and ended in ready-pr; 0.21.0 is the installed plugin. c1 and c2 stay open, because lighthouse left cost parity and recall at 1.0 unproven. The hp2 rerun of the built plugin against the handoff file: S1 0.080 against 0.073 dollars and 18.5 against 16.2 s, S2 0.237 against 0.243 dollars and 61 against 69 s, S3 0.508 against 0.471 dollars and 89 against 80 s; recall 0.983, 0.967 and 0.939 against 1.0. Both arms make the same tool calls in S1, so the cost gap is per-session context: about 2,000 more tokens written to the cache at 4 dollars per million (update command and rules, server instructions, skill and tool listings), plus the state document sent again on every resume. The wall-time gap is local, about 2 s per working session, from a node process of about 145 ms per pre-tool, post-tool and stop hook (benchmarked with a held thread). The recall probes pay one more request: the handoff-file fixture keeps the failed first compare.js under Tried and failed, while logbook's rules drop a failed attempt, so Q6 sends logbook sessions into git history. Claude Code 2.1.325 runs mcp_tool hooks on PreToolUse, PostToolUse and Stop against the already running MCP server; a probe showed event fields arrive (objects as JSON text, missing ones empty), no permission prompt, and the returned context reaches the model. Two of the three recall misses answer P5 "functionally yes" or "functionally done", which the keyword rubric scores as not done; one answers "partly", citing the recorded in-memory risk. The rerun measured 1b5f5f43; the review and lighthouse fixes after it change only sessions that edited something or opened a thread.
+lean-session-cost shipped as logbook 0.22.0 (tag v0.22.0, main at 5a41a3f5), the installed plugin: per-call hooks served by the running server through a hook_event tool, one line instead of the document on an unchanged resume, compile cache for the remaining processes, a 568-byte server instructions text with all four skills hidden from the model's listing, and a rule keeping a failed attempt's lesson. In lighthouse's real sessions every Bash call ran the hooks through hook_event with no logbook node process; a commit chained with a failing command gets no milestone request, as before. c1 and c2 stay open until a rerun on 0.22.0 is scored. The hp2 rerun of 0.21.0's build against the handoff file: S1 0.080 against 0.073 dollars and 18.5 against 16.2 s, S2 0.237 against 0.243 dollars and 61 against 69 s, S3 0.508 against 0.471 dollars and 89 against 80 s; recall 0.983, 0.967 and 0.939 against 1.0. Both arms make the same tool calls in S1, so the cost gap is per-session context: about 2,000 more tokens written to the cache at 4 dollars per million (update command and rules, server instructions, skill and tool listings), plus the state document sent again on every resume. The wall-time gap is local, about 2 s per working session, from a node process of about 145 ms per pre-tool, post-tool and stop hook (benchmarked with a held thread). The recall probes pay one more request: the handoff-file fixture keeps the failed first compare.js under Tried and failed, while logbook's rules drop a failed attempt, so Q6 sends logbook sessions into git history. Claude Code 2.1.325 runs mcp_tool hooks on PreToolUse, PostToolUse and Stop against the already running MCP server; a probe showed event fields arrive (objects as JSON text, missing ones empty), no permission prompt, and the returned context reaches the model. Two of the three recall misses answer P5 "functionally yes" or "functionally done", which the keyword rubric scores as not done; one answers "partly", citing the recorded in-memory risk. The hp3 rerun measures installed 0.22.0 against H, with the logbook fixture now keeping the failed first compare.js as Settled item S2, as H keeps it under Tried and failed.
 
 ## Next step
 
-The drive entered clean-up and runs it next.
+When the hp3 run in logbook-evals finishes, read results/hp3-score.txt and tick c1 and c2 with its figures, or record what still separates logbook from the handoff file.
+
+Needs: D2.
 
 ## Decisions in force
 
 - D2 hand-off: build the lean-session-cost spec as one pull request through the pipeline drive: Build the six Steps as one MSP with the pipeline drive from feat/lean-session-cost, then rerun logbook-evals S1 to S3 with arms H and L2 on the released plugin to decide c1 and c2.
-- D3 repair: fix fail: rerun: the repair reason stays in the run home for a review-loop failure
-- D4 repair: fix fail: dead end: fix: pipeline unchanged exited with code 2
 
 ## Open risks
 
@@ -42,4 +42,5 @@ The drive entered clean-up and runs it next.
 - Lighthouse profile: /Users/satanshumishra/Documents/DevLabs/logbook/.lighthouse/profile.json
 - Parity rerun: logbook-evals runs/model/hp-s1, hp-s2 and hp-s3, scored by harness/hp_score.py into results/hp_scores.jsonl; arm L is the installed 0.20.0, arm L2 loads the folder named by LOGBOOK_PLUGIN_L2
 - Rerun after the parity fixes: logbook-evals runs/model/hp2-s1, hp2-s2 and hp2-s3 with arms H and L2, logs results/hp2-s1.log to hp2-s3.log, scores results/hp2-score.txt
+- Rerun on 0.22.0: logbook-evals runs/model/hp3-s1, hp3-s2 and hp3-s3, logs results/hp3-s1.log to hp3-s3.log, scores results/hp3-score.txt; the logbook templates were rebuilt with LOGBOOK_FIXTURE_PLUGIN naming the 0.21.0 cache, old ones kept in the session scratchpad as templates-before-hp3
 - Spec of the change closing c1 and c2: docs/specs/lean-session-cost.md with its record, items and decisions files beside it; run home ~/.mitosis/logbook/lean-session-cost
